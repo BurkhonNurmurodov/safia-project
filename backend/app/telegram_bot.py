@@ -580,6 +580,12 @@ def notify_status_change(telegram_id: int, status: str, lang: str = "uz", role: 
     """Notify the registrant of the approval/rejection decision.
     Called by the admin panel — the only place decisions are made now.
     ``role`` names which of the user's role requests was decided (multi-role)."""
+    # Ghost Mode (admin header toggle): a decision made while testing must not
+    # ping the registrant. Telegram-button decisions carry no request context so
+    # this is False there — only the web panel under Ghost Mode suppresses.
+    from app.notify_ctx import notifications_suppressed
+    if notifications_suppressed():
+        return
     lang = lang or "uz"
     suffix = f"\n\n💼 {_role(lang, role)}" if role else ""
     try:
