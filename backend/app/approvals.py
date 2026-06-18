@@ -305,6 +305,12 @@ def _approve_reject_kb(code: str, ref, lang: str):
 # ── Send to admins (records one ApprovalNotice per message) ───────────────────
 
 def _broadcast(db, kind: str, ref, data: dict, render_fn) -> None:
+    # Ghost Mode (admin header toggle): an admin testing functions must not blast
+    # approve/reject button-messages at every other admin. The record is still
+    # created; nobody is pinged. See app.notify_ctx.
+    from app.notify_ctx import notifications_suppressed
+    if notifications_suppressed():
+        return
     from app.telegram_bot import bot, _admin_ids, _get_lang
     code = _KIND_CODE[kind]
     for admin_id in sorted(_admin_ids()):
