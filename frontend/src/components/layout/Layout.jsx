@@ -263,6 +263,8 @@ const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 export default function Layout({ children, title, showFilters = true }) {
   const { theme, toggle } = useTheme();
   const { lang, setLang, t, languages } = useLang();
+  const { auth } = useAuth();
+  const { ghost, toggleGhost } = useGhost();
   const { dateFrom, dateTo, shift, unit, brigadirIds } = useFilters();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
