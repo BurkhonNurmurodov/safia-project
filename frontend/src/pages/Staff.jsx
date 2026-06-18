@@ -87,10 +87,6 @@ function parseHHMM(s) {
   const m = parts.length > 1 && parts[1] !== "" ? parseInt(parts[1], 10) : 0;
   return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
 }
-function fmtHHMM(mins) {
-  const v = Math.round(mins);
-  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
-}
 function scheduleStartMin(schedule) {
   return schedule ? parseHHMM(String(schedule).split("до")[0]) : null;
 }
