@@ -67,7 +67,7 @@ function Wheel({ values, valueIndex, resetKey, onChange, ariaLabel }) {
       onScroll={handleScroll}
       role="listbox"
       aria-label={ariaLabel}
-      className="tw-wheel"
+      className="no-scrollbar"
       style={{
         height: VISIBLE * ROW_H, width: 76, overflowY: "auto",
         scrollSnapType: "y mandatory", scrollbarWidth: "none", msOverflowStyle: "none",
