@@ -129,6 +129,7 @@ const t = {
     "staff.newTask":         "Yangi vazifa",
     "staff.selectTargetOpt": "— qabul qiluvchini tanlang —",
     "staff.transferTimeToggle":      "Ko'chirish vaqtini belgilash",
+    "staff.transferTimeLabel":       "Ko'chirish vaqti",
     "staff.transferTimePlaceholder": "Vaqtni tanlang",
     "staff.transferTimeNoOptions":   "Avval ish vaqti ko'rsatilgan xodimlarni tanlang",
     "staff.transferTimeHint":        "Shu vaqtgacha — joriy brigadir; shu vaqtdan keyin — tanlangan brigadir",
