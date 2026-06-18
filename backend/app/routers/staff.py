@@ -1582,10 +1582,12 @@ def _compute_split(snapshot: dict, transfer_time: str) -> Optional[dict]:
 
 
 def _apply_split_exchange(db: Session, doc: HrDocument):
-    """Apply a → supervisor exchange that carries a transfer time, splitting each
-    worker's day across the two units. Records what it did back into the payload
-    so a later cancel/delete can revert precisely."""
+    """Apply an exchange that carries a transfer time, splitting each worker's day
+    at T. For a → supervisor move the task/receiving side is handed to the other
+    unit; for a → task move that side is simply dropped. Records what it did back
+    into the payload so a later cancel/delete can revert precisely."""
     payload = doc.payload or {}
+    is_task = payload.get("target_type") == "task"
     target  = payload.get("target_manager_id")
     ttime   = payload.get("transfer_time")
     for emp in payload.get("employees", []):
@@ -1597,32 +1599,50 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
         if not att:
             continue
         plan = _compute_split(emp.get("snapshot") or {}, ttime)
-        if not plan or not target:
-            att.manager_id = target            # fall back to a plain full move
+        if not plan or (not is_task and not target):
+            # Can't split → fall back to a plain full move.
+            if is_task:
+                att.clock_in_out      = "X"
+                att.hours_worked      = 0
+                att.effective_hours   = None
+                att.early_arrival_min = None
+            else:
+                att.manager_id = target
             emp["applied"] = {"side": "move", "leftover_id": None, "plain": True}
             continue
 
         leftover_id = None
         if plan["stay"]:
-            # Worker keeps their name on the sending unit; clock-out trimmed to T.
+            # Normal-work side wins: worker keeps their name on the sending unit;
+            # clock-out trimmed to T.
             att.clock_in_out    = f'{plan["C"]}-{plan["T"]}'
             att.hours_worked    = plan["orig_full_hours"]
             att.effective_hours = plan["orig_full_eff"]
             # early_arrival_min unchanged — the early portion stays on this side
-            if plan["tgt_leftover"] > 0:
+            if not is_task and plan["tgt_leftover"] > 0:
+                # → supervisor: the task side's hours land on the receiving unit.
+                # → task: dropped (no row).
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
                                  hours_worked=plan["tgt_leftover"])
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "stay", "leftover_id": leftover_id}
         else:
-            # Worker's name moves to the receiving unit; clock-in starts at T,
-            # early arrival no longer applies there.
-            att.manager_id       = target
-            att.clock_in_out     = f'{plan["T"]}-{plan["O"]}'
-            att.hours_worked     = plan["tgt_full_hours"]
-            att.early_arrival_min = 0
-            att.effective_hours  = plan["tgt_full_hours"]
+            # Task/receiving side wins: the worker's name leaves the sending unit's
+            # roster (→ supervisor) or is marked on-task (→ task, hours dropped).
+            if is_task:
+                att.clock_in_out      = "X"
+                att.hours_worked      = 0
+                att.effective_hours   = None
+                att.early_arrival_min = None
+            else:
+                att.manager_id        = target
+                att.clock_in_out      = f'{plan["T"]}-{plan["O"]}'
+                att.hours_worked      = plan["tgt_full_hours"]
+                att.early_arrival_min = 0
+                att.effective_hours   = plan["tgt_full_hours"]
+            # The pre-T worked portion (early removed) stays as a nameless
+            # hours-only row on the sending unit, either way.
             if plan["orig_leftover"] > 0:
                 row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
                                  hours_worked=plan["orig_leftover"])
