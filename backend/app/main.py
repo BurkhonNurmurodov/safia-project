@@ -59,6 +59,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Ghost Mode: admins can suppress change-notifications via the X-Ghost-Mode
+# header. Must wrap the route handlers so its ContextVar is visible inside them.
+from app.notify_ctx import GhostModeMiddleware  # noqa: E402
+app.add_middleware(GhostModeMiddleware)
+
 app.include_router(auth_router.router)
 app.include_router(webhook_router.router)
 app.include_router(admin.router)
