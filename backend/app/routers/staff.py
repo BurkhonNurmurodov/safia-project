@@ -235,6 +235,10 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
 
 
 def _notify(db: Session, telegram_id: int, title: str, body: str, type: str = "info", dm: bool = True):
+    # Ghost Mode (admin header toggle): the change still applies and is recorded
+    # in the audit trail, but no bell/Telegram notification is pushed to anyone.
+    if notifications_suppressed():
+        return
     db.add(Notification(recipient_telegram_id=telegram_id, title=title, body=body, type=type))
     if dm:
         try:
