@@ -1915,6 +1915,7 @@ const t = {
     "staff.newTask":         "Новая задача",
     "staff.selectTargetOpt": "— выберите получателя —",
     "staff.transferTimeToggle":      "Указать время перевода",
+    "staff.transferTimeLabel":       "Время перевода",
     "staff.transferTimePlaceholder": "Выберите время",
     "staff.transferTimeNoOptions":   "Сначала выберите сотрудников с временем ухода",
     "staff.transferTimeHint":        "До этого времени — текущий бригадир; после — выбранный",
