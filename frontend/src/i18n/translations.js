@@ -2804,6 +2804,7 @@ const t = {
     "staff.transferTimePlaceholder": "Select time",
     "staff.transferTimeNoOptions":   "Select workers with a clock-out first",
     "staff.transferTimeHint":        "Before this time → original supervisor; after → selected supervisor",
+    "staff.transferTimeHintTask":    "Before this time → counts as worked; after → on the task (not counted)",
     "staff.extraHoursNote":          "+{n}h added for this supervisor on this date",
     "staff.taskNamePlaceholder": "Task name",
     "staff.chooseTarget":    "Choose a supervisor or task",
