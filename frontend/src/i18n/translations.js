@@ -1022,6 +1022,7 @@ const t = {
     "staff.newTask":         "Янги вазифа",
     "staff.selectTargetOpt": "— қабул қилувчини танланг —",
     "staff.transferTimeToggle":      "Кўчириш вақтини белгилаш",
+    "staff.transferTimeLabel":       "Кўчириш вақти",
     "staff.transferTimePlaceholder": "Вақтни танланг",
     "staff.transferTimeNoOptions":   "Аввал иш вақти кўрсатилган ходимларни танланг",
     "staff.transferTimeHint":        "Шу вақтгача — жорий бригадир; шу вақтдан кейин — танланган бригадир",
