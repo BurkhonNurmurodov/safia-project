@@ -2197,6 +2197,12 @@ def create_document(body: DocCreateBody, caller=Depends(_require_staff), db: Ses
     _record_history(db, doc, "created", caller, {
         "new_role": body.new_role, "employee_count": len(payload["employees"]),
     })
+    # Ghost Mode: an admin's change applies immediately, with no approval step and
+    # no notifications/approval-requests to anyone (notify + broadcast are gated).
+    if notifications_suppressed():
+        _approve_doc(doc, caller, db)
+        db.commit()
+        return {"id": doc.id, "status": doc.status}
     _notify_all_parties(
         db, manager_id,
         "new_role_change",
