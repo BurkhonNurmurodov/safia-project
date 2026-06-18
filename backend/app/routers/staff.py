@@ -1656,14 +1656,16 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
     """Undo an applied transfer-time split: restore the worker's full row from the
     snapshot and delete the nameless leftover row it created."""
     payload = doc.payload or {}
+    is_task = payload.get("target_type") == "task"
     target  = payload.get("target_manager_id")
     for emp in payload.get("employees", []):
         applied = emp.get("applied") or {}
         snap    = emp.get("snapshot") or {}
         wname   = emp.get("worker_name")
         side    = applied.get("side", "move")
-        # The full row lives on the target if it moved, else on the sending unit.
-        cur_mgr = target if side == "move" else doc.manager_id
+        # For a → supervisor move the full row lives on the target if it moved,
+        # else on the sending unit. A → task move never relocates the row.
+        cur_mgr = target if (side == "move" and not is_task) else doc.manager_id
         att = db.query(Attendance).filter(
             Attendance.manager_id  == cur_mgr,
             Attendance.date        == doc.date,
