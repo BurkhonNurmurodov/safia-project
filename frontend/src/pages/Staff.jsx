@@ -1382,7 +1382,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
             ))}
             {useTime && transferTime && (
               <span className="text-[11px] flex-1 min-w-[180px]" style={{ color: "var(--text-4)" }}>
-                {t("staff.transferTimeHint")}
+                {t(targetIsTask ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
               </span>
             )}
           </div>
