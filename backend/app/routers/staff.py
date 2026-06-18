@@ -1516,8 +1516,11 @@ def _revert_role_change(db: Session, doc: HrDocument):
 #     dropped, since no real row claims it. The receiving side's early is always 0.
 #   → supervisor: the receiving side is the target unit, so part2 lands there.
 #   → task:       there is no receiving unit, so part2 is simply DROPPED (the worker
-#                 isn't credited for time spent on the task); only part1 survives,
-#                 on the sending unit.
+#                 isn't credited for on-task time); only the before-T portion
+#                 survives on the sending unit. If the name stays it's her own row
+#                 (clock C-T, early kept); if the name leaves she is removed from the
+#                 roster and the before-T effective hours become a nameless leftover.
+#                 (A → task move with NO transfer time still marks the worker X/0.)
 
 def _parse_hhmm(s) -> Optional[int]:
     """'08:00' / '8-00' / '08.00' / '17:04 (8.43)' → minutes from midnight, else None.
