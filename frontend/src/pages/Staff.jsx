@@ -2685,9 +2685,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                               {canEdit && <ActionBtn icon={Pencil} label={t("staff.edit")} onClick={() => isDeletion
                                 ? setEditingBatch({ managerId: doc.manager_id, managerName: doc.manager_name || doc.supervisor_name, date: doc.date, preSelected: (doc.workers || []).filter(w => w.status === "pending").map(w => w.worker_name), batchId: doc.batch_id })
                                 : onEdit(doc)} />}
-                              {canApprove && <ActionBtn icon={Check}  label={t("staff.post")}   color="#16a34a" onClick={() => isDeletion ? batchMutation.mutate({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "approve" }) : single(doc.id, "approve")} />}
-                              {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706" onClick={() => isDeletion ? batchMutation.mutate({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel")} />}
-                              {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444" onClick={() => isDeletion ? batchMutation.mutate({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" }) : single(doc.id, "delete")} />}
+                              {canApprove && <ActionBtn icon={Check}  label={t("staff.post")}   color="#16a34a"
+                                loading={busyKey === `${rowKey(doc)}:post`} disabled={!!busyKey}
+                                onClick={() => runAction(`${rowKey(doc)}:post`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "approve" }) : single(doc.id, "approve"))} />}
+                              {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706"
+                                loading={busyKey === `${rowKey(doc)}:unpost`} disabled={!!busyKey}
+                                onClick={() => runAction(`${rowKey(doc)}:unpost`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel"))} />}
+                              {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444"
+                                loading={busyKey === `${rowKey(doc)}:delete`} disabled={!!busyKey}
+                                onClick={() => runAction(`${rowKey(doc)}:delete`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" }) : single(doc.id, "delete"))} />}
                               {!isDeletion && <ActionBtn icon={History} label={t("staff.history")} onClick={() => setHistoryId(doc.id)} />}
                             </div>
                           </div>
