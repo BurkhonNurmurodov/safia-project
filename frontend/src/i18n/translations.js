@@ -1872,6 +1872,7 @@ const t = {
     "staff.sending":         "Отправка…",
     "staff.saving":          "Сохранение…",
     "staff.cancel":          "Отмена",
+    "staff.done":            "Готово",
     "staff.export":          "Экспорт",
     "staff.selected":        "выбрано",
     "staff.yes":             "Да",
