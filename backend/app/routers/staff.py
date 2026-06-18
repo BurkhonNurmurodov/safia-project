@@ -1618,23 +1618,23 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
 
         leftover_id = None
         if plan["stay"]:
-            # Normal-work side wins: worker keeps their name on the sending unit;
-            # clock-out trimmed to T.
+            # Before-T side wins: worker keeps their name on the sending unit;
+            # clock-out trimmed to T. Early arrival stays as-is on this side.
             att.clock_in_out    = f'{plan["C"]}-{plan["T"]}'
-            att.hours_worked    = plan["orig_full_hours"]
-            att.effective_hours = plan["orig_full_eff"]
-            # early_arrival_min unchanged — the early portion stays on this side
-            if not is_task and plan["tgt_leftover"] > 0:
-                # → supervisor: the task side's hours land on the receiving unit.
+            att.hours_worked    = plan["part1"]
+            att.effective_hours = plan["part1_eff"]
+            # early_arrival_min unchanged — early belongs to the original unit
+            if not is_task and plan["part2"] > 0:
+                # → supervisor: the after-T hours land on the receiving unit.
                 # → task: dropped (no row).
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
-                                 hours_worked=plan["tgt_leftover"])
+                                 hours_worked=plan["part2"])
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "stay", "leftover_id": leftover_id}
         else:
-            # Task/receiving side wins: the worker's name leaves the sending unit's
-            # roster (→ supervisor) or is marked on-task (→ task, hours dropped).
+            # After-T side wins: the worker's name leaves the sending unit's
+            # roster (→ supervisor) or is marked on-task (→ task, part2 dropped).
             if is_task:
                 att.clock_in_out      = "X"
                 att.hours_worked      = 0
@@ -1643,14 +1643,14 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             else:
                 att.manager_id        = target
                 att.clock_in_out      = f'{plan["T"]}-{plan["O"]}'
-                att.hours_worked      = plan["tgt_full_hours"]
-                att.early_arrival_min = 0
-                att.effective_hours   = plan["tgt_full_hours"]
-            # The pre-T worked portion (early removed) stays as a nameless
+                att.hours_worked      = plan["part2"]
+                att.early_arrival_min = 0          # early stays on the original unit
+                att.effective_hours   = plan["part2"]
+            # The before-T worked portion (incl. early) stays as a nameless
             # hours-only row on the sending unit, either way.
-            if plan["orig_leftover"] > 0:
+            if plan["part1"] > 0:
                 row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
-                                 hours_worked=plan["orig_leftover"])
+                                 hours_worked=plan["part1"])
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "move", "leftover_id": leftover_id}
