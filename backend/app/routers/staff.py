@@ -1496,10 +1496,14 @@ def _revert_role_change(db: Session, doc: HrDocument):
 # ── People exchange (worker move) ────────────────────────────────────────────────
 
 # ── Transfer-time split helpers (admin-only people-exchange feature) ─────────────
-# When an admin sets a transfer time T on a → supervisor exchange, each worker's
-# day is split: [clock-in … T] counts for the sending unit, [T … clock-out] for
-# the receiving unit. The worker's NAME goes to whichever side is larger; the
-# smaller side keeps only a nameless "hours-only" row (folded into extra_hours).
+# When an admin sets a transfer time T on an exchange, each worker's day is split:
+# [clock-in … T] counts for the sending unit, [T … clock-out] for the receiving
+# side. The worker's NAME goes to whichever side is larger; the smaller side keeps
+# only a nameless "hours-only" row (folded into extra_hours).
+#   → supervisor: the receiving side is the target unit, so its hours land there.
+#   → task:       there is no receiving unit, so the task side's hours are simply
+#                 DROPPED (the worker isn't credited for time spent on the task);
+#                 only the pre-T worked portion survives, on the sending unit.
 
 def _parse_hhmm(s) -> Optional[int]:
     """'08:00' / '8-00' / '08.00' → minutes from midnight, else None."""
