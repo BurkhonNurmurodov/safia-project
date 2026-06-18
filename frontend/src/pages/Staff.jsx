@@ -2325,6 +2325,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     onSuccess: invalidate,
   });
 
+  // Per-button in-flight tracking so an action button shows a spinner while its
+  // request runs (and blocks the row's other actions until it settles).
+  const [busyKey, setBusyKey] = useState(null);
+  const runAction = (key, fn) => {
+    if (busyKey) return;
+    setBusyKey(key);
+    Promise.resolve(fn()).catch(() => {}).finally(() => setBusyKey(null));
+  };
+
   function rowKey(d) {
     return d._source === "deletion"
       ? (d.batch_id ? `del-batch-${d.batch_id}` : `del-${d.id}`)
