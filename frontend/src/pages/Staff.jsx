@@ -1374,14 +1374,16 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               </button>
               <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.transferTimeToggle")}</span>
             </label>
-            {useTime && (timeOptions.length ? (
-              <StyledSelect
-                value={transferTime}
-                onChange={setTransferTime}
-                options={timeOptions.map(tm => ({ value: tm, label: tm }))}
-                placeholder={t("staff.transferTimePlaceholder")}
-                className="w-36 text-xs"
-              />
+            {useTime && (timeWindow ? (
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="w-28 text-xs px-3 py-2 rounded-lg outline-none flex items-center justify-between gap-2"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)",
+                         color: transferTime ? "var(--text-1)" : "var(--text-4)" }}>
+                <span>{transferTime || t("staff.transferTimePlaceholder")}</span>
+                <Clock size={13} style={{ color: "var(--text-4)" }} />
+              </button>
             ) : (
               <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("staff.transferTimeNoOptions")}</span>
             ))}
@@ -1390,6 +1392,14 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                 {t(targetIsTask ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
               </span>
             )}
+            <TimeWheelPicker
+              open={pickerOpen && !!timeWindow}
+              lo={timeWindow?.lo}
+              hi={timeWindow?.hi}
+              value={transferTime}
+              onConfirm={(v) => { setTransferTime(v); setPickerOpen(false); }}
+              onClose={() => setPickerOpen(false)}
+            />
           </div>
         )}
 
