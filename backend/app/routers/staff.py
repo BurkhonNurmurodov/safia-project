@@ -1645,30 +1645,39 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 leftover_id = row.id
             emp["applied"] = {"side": "stay", "leftover_id": leftover_id}
         else:
-            # After-T side wins: the worker's name leaves the sending unit's
-            # roster (→ supervisor) or is marked on-task (→ task, part2 dropped).
+            # After-T side wins: the worker's name leaves the sending unit's roster.
             if is_task:
-                att.clock_in_out      = "X"
-                att.hours_worked      = 0
+                # → task: part2 is dropped and there is no receiving unit, so she is
+                # REMOVED from the roster. Her own row is repurposed into the nameless
+                # before-T leftover — blanking the name drops her from the table and
+                # folds the hours into extra_hours. Value-only, exactly like a
+                # supervisor leftover: effective before-T hours (part1_eff, early
+                # stripped), no clock / title / early.
+                att.worker_name       = None
+                att.job_title         = None
+                att.schedule          = None
+                att.clock_in_out      = None
+                att.hours_worked      = plan["part1_eff"]
                 att.effective_hours   = None
                 att.early_arrival_min = None
+                emp["applied"] = {"side": "move", "leftover_id": att.id, "task_blanked": True}
             else:
+                # → supervisor: the row moves to the target with the after-T hours,
+                # and the before-T remainder stays as a nameless hours-only row on
+                # the sending unit. Credited the EFFECTIVE hours (part1_eff = early
+                # stripped): once the name has left, the original unit isn't credited
+                # for the worker clocking in before their scheduled start.
                 att.manager_id        = target
                 att.clock_in_out      = f'{plan["T"]}-{plan["O"]}'
                 att.hours_worked      = plan["part2"]
                 att.early_arrival_min = 0          # early stays on the original unit
                 att.effective_hours   = plan["part2"]
-            # The before-T worked portion stays as a nameless hours-only row on
-            # the sending unit. The worker's name has LEFT, so this phantom row is
-            # credited only the EFFECTIVE before-T hours (part1_eff = early arrival
-            # stripped): the original unit should not be credited for the worker
-            # clocking in before their scheduled start once they're gone.
-            if plan["part1_eff"] > 0:
-                row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part1_eff"])
-                db.add(row); db.flush()
-                leftover_id = row.id
-            emp["applied"] = {"side": "move", "leftover_id": leftover_id}
+                if plan["part1_eff"] > 0:
+                    row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
+                                     hours_worked=plan["part1_eff"])
+                    db.add(row); db.flush()
+                    leftover_id = row.id
+                emp["applied"] = {"side": "move", "leftover_id": leftover_id}
     flag_modified(doc, "payload")
 
 
