@@ -1703,7 +1703,7 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
     payload = doc.payload or {}
     ttype   = payload.get("target_type")
     target  = payload.get("target_manager_id")
-    if ttype == "supervisor" and target and payload.get("transfer_time"):
+    if payload.get("transfer_time") and ((ttype == "supervisor" and target) or ttype == "task"):
         _apply_split_exchange(db, doc)
         return
     for emp in payload.get("employees", []):
