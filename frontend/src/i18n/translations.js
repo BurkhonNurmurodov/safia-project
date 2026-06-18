@@ -131,6 +131,7 @@ const t = {
     "staff.transferTimePlaceholder": "Vaqtni tanlang",
     "staff.transferTimeNoOptions":   "Avval ish vaqti ko'rsatilgan xodimlarni tanlang",
     "staff.transferTimeHint":        "Shu vaqtgacha — joriy rahbar; shu vaqtdan keyin — tanlangan rahbar",
+    "staff.transferTimeHintTask":    "Shu vaqtgacha — ish vaqti; shu vaqtdan keyin — vazifada (hisobga olinmaydi)",
     "staff.extraHoursNote":          "+{n} soat shu sanada bu rahbarga qo'shildi",
     "staff.taskNamePlaceholder": "Vazifa nomi",
     "staff.chooseTarget":    "Qabul qiluvchi yoki vazifani tanlang",
