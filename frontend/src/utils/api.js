@@ -22,7 +22,8 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem("tg_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   // Ghost Mode (admin header toggle): suppress change-notifications server-side.
-  if (localStorage.getItem("ghost_mode") === "1") config.headers["X-Ghost-Mode"] = "1";
+  // sessionStorage (not localStorage) so closing the app always clears it.
+  if (sessionStorage.getItem("ghost_mode") === "1") config.headers["X-Ghost-Mode"] = "1";
   return config;
 });
 
