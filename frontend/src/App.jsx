@@ -274,7 +274,9 @@ export default function App() {
       <QueryClientProvider client={qc}>
         <ThemeProvider>
           <AuthProvider>
-            <AppWithLang />
+            <GhostProvider>
+              <AppWithLang />
+            </GhostProvider>
           </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>
