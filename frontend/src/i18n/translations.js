@@ -1022,6 +1022,7 @@ const t = {
     "staff.transferTimePlaceholder": "Вақтни танланг",
     "staff.transferTimeNoOptions":   "Аввал иш вақти кўрсатилган ходимларни танланг",
     "staff.transferTimeHint":        "Шу вақтгача — жорий раҳбар; шу вақтдан кейин — танланган раҳбар",
+    "staff.transferTimeHintTask":    "Шу вақтгача — иш вақти; шу вақтдан кейин — вазифада (ҳисобга олинмайди)",
     "staff.extraHoursNote":          "+{n} соат шу санада бу раҳбарга қўшилди",
     "staff.taskNamePlaceholder": "Вазифа номи",
     "staff.chooseTarget":    "Қабул қилувчи ёки вазифани танланг",
