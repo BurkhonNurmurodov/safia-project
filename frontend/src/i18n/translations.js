@@ -88,6 +88,7 @@ const t = {
     "staff.sending":         "Yuborilmoqda…",
     "staff.saving":          "Saqlanmoqda…",
     "staff.cancel":          "Bekor qilish",
+    "staff.done":            "Tayyor",
     "staff.export":          "Eksport",
     "staff.selected":        "tanlandi",
     "staff.yes":             "Ha",
