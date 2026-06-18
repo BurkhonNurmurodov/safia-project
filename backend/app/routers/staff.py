@@ -1649,11 +1649,14 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 att.hours_worked      = plan["part2"]
                 att.early_arrival_min = 0          # early stays on the original unit
                 att.effective_hours   = plan["part2"]
-            # The before-T worked portion (incl. early) stays as a nameless
-            # hours-only row on the sending unit, either way.
-            if plan["part1"] > 0:
+            # The before-T worked portion stays as a nameless hours-only row on
+            # the sending unit. The worker's name has LEFT, so this phantom row is
+            # credited only the EFFECTIVE before-T hours (part1_eff = early arrival
+            # stripped): the original unit should not be credited for the worker
+            # clocking in before their scheduled start once they're gone.
+            if plan["part1_eff"] > 0:
                 row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part1"])
+                                 hours_worked=plan["part1_eff"])
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "move", "leftover_id": leftover_id}
