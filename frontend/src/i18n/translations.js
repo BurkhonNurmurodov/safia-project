@@ -2808,6 +2808,7 @@ const t = {
     "staff.newTask":         "New task",
     "staff.selectTargetOpt": "— select destination —",
     "staff.transferTimeToggle":      "Set transfer time",
+    "staff.transferTimeLabel":       "Transfer time",
     "staff.transferTimePlaceholder": "Select time",
     "staff.transferTimeNoOptions":   "Select workers with a clock-out first",
     "staff.transferTimeHint":        "Before this time → original supervisor; after → selected supervisor",
