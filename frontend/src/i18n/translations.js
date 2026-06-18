@@ -2764,6 +2764,7 @@ const t = {
     "staff.sending":         "Sending…",
     "staff.saving":          "Saving…",
     "staff.cancel":          "Cancel",
+    "staff.done":            "Done",
     "staff.export":          "Export",
     "staff.selected":        "selected",
     "staff.yes":             "Yes",
