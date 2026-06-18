@@ -2253,6 +2253,11 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
     _record_history(db, doc, "created", caller, {
         "target": _exchange_target_label(payload), "employee_count": len(payload["employees"]),
     })
+    # Ghost Mode: apply immediately, silently — no approval step, no pings.
+    if notifications_suppressed():
+        _approve_doc(doc, caller, db)
+        db.commit()
+        return {"id": doc.id, "status": doc.status}
     _notify_exchange(db, doc, "created", int(caller["sub"]), admin_dm=False)
     db.commit()
     try:
