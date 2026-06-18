@@ -452,6 +452,21 @@ export default function Layout({ children, title, showFilters = true }) {
               {/* Notifications */}
               <NotificationsPanel />
 
+              {/* Ghost mode — admin-only: silence notifications for own changes */}
+              {auth?.role === "admin" && (
+                <button
+                  onClick={toggleGhost}
+                  className="flex items-center gap-1.5 h-8 px-2 rounded-lg flex-shrink-0 transition-colors text-xs font-medium"
+                  style={ghost
+                    ? { background: "#7c3aed", border: "1px solid #7c3aed", color: "#fff" }
+                    : { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+                  title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
+                >
+                  <Ghost size={14} />
+                  <span className="hidden md:inline">{t("ghost.label")}</span>
+                </button>
+              )}
+
               {/* Theme toggle */}
               <button
                 onClick={toggle}
