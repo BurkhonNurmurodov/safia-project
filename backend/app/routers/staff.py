@@ -1511,10 +1511,13 @@ def _revert_role_change(db: Session, doc: HrDocument):
 #                 on the sending unit.
 
 def _parse_hhmm(s) -> Optional[int]:
-    """'08:00' / '8-00' / '08.00' → minutes from midnight, else None."""
+    """'08:00' / '8-00' / '08.00' / '17:04 (8.43)' → minutes from midnight, else None.
+
+    Tolerates the verifix clock format which carries a trailing ' (8.43)' worked-
+    hours suffix and spaces around the dash (e.g. '07:49 - 17:04 (8.43)')."""
     if not s:
         return None
-    txt = str(s).strip().replace(".", ":").replace("-", ":")
+    txt = str(s).split("(")[0].strip().replace(".", ":").replace("-", ":")
     parts = txt.split(":")
     try:
         h = int(parts[0])
