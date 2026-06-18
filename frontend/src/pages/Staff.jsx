@@ -1564,6 +1564,18 @@ function DocumentViewModal({ docId, onClose }) {
                       : `🗂 ${doc.task_name || "—"}`}
                   </span>
                 </div>
+                {doc.transfer_time && (
+                  <div className="mb-1.5 flex items-center gap-1.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                      style={{ background: "var(--bg-inner)", color: "var(--text-1)" }}>
+                      <Clock size={11} style={{ color: "var(--text-4)" }} />
+                      {t("staff.transferTimeLabel")}: {doc.transfer_time}
+                    </span>
+                    <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                      {t(doc.target_type === "task" ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
+                    </span>
+                  </div>
+                )}
                 <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                   <table className="w-full">
                     <thead>
