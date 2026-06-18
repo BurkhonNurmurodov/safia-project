@@ -1503,8 +1503,12 @@ def _revert_role_change(db: Session, doc: HrDocument):
 #                                       deduction therefore stays inside part2)
 # The worker's NAME goes to whichever side is larger (tie → original unit); the
 # smaller side keeps only a nameless "hours-only" row (folded into extra_hours).
-# Early arrival is ONLY ever credited to the original unit, so the receiving side's
-# early_arrival_min is always 0.
+# Early arrival belongs to the worker's REAL (named) row only:
+#   → if the name STAYS (before-T side wins), the original unit keeps the early on
+#     the worker's row (effective_hours nets it out, early_arrival_min preserved).
+#   → if the name MOVES (after-T side wins), the before-T remainder becomes the
+#     nameless leftover and is credited EFFECTIVE hours (part1_eff) — early is
+#     dropped, since no real row claims it. The receiving side's early is always 0.
 #   → supervisor: the receiving side is the target unit, so part2 lands there.
 #   → task:       there is no receiving unit, so part2 is simply DROPPED (the worker
 #                 isn't credited for time spent on the task); only part1 survives,
