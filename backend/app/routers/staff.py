@@ -1553,36 +1553,36 @@ def _normalize_transfer_time(caller: dict, ttype: Optional[str], raw) -> Optiona
 
 
 def _compute_split(snapshot: dict, transfer_time: str) -> Optional[dict]:
-    """Resolve how a single worker's day splits around the transfer time.
+    """Resolve how a single worker's day splits around the transfer time T.
 
-    Returns None when the worker can't be split (missing/invalid times) so the
-    caller can fall back to a plain full move. Otherwise a dict describing both
-    sides; hours are in decimal hours.
+    Conserves the total worked hours (see module comment):
+      part1 = (T - clock_in)/60     → before-T worked time, INCLUDES early arrival
+      part2 = total_worked - part1  → after-T remainder
+    The NAME goes to the bigger of part1/part2 (tie → original unit); early arrival
+    is only ever credited to the original unit, so the receiving side's early is 0.
+
+    Returns None when the worker can't be split (missing/invalid times or hours) so
+    the caller can fall back to a plain full move. Hours are in decimal hours.
     """
-    S = _schedule_start_min(snapshot.get("schedule"))
-    C, O = _clock_bounds_min(snapshot.get("clock_in_out"))
-    T = _parse_hhmm(transfer_time)
-    if T is None or C is None or O is None or O <= C:
+    C, O  = _clock_bounds_min(snapshot.get("clock_in_out"))
+    T     = _parse_hhmm(transfer_time)
+    total = snapshot.get("hours_worked")
+    early = float(snapshot.get("early_arrival_min") or 0)
+    if T is None or C is None or O is None or O <= C or total is None:
         return None
-    if S is None:
-        S = C                       # no schedule → no early portion
-    T = max(S, min(T, O))           # clamp into the schedule-start … clock-out window
-    orig_raw = max(0, T - C)        # sending side, raw minutes (includes early)
-    tgt_raw  = max(0, O - T)        # receiving side minutes
-    early    = snapshot.get("early_arrival_min") or 0
-    stay     = orig_raw >= tgt_raw  # tie → stays on the original unit
+    total = float(total)
+    T     = max(C, min(T, O))                          # clamp into the worked window
+    part1 = max(0.0, min((T - C) / 60.0, total))       # before-T (incl. early), capped at total
+    part2 = max(0.0, total - part1)                    # after-T remainder; total conserved
     return {
-        "T":            _fmt_hhmm(T),
-        "stay":         stay,
-        "C":            _fmt_hhmm(C),
-        "O":            _fmt_hhmm(O),
-        # full-row values for the side the worker ends up on
-        "orig_full_hours": round(orig_raw / 60, 4),
-        "orig_full_eff":   round(max(0, orig_raw - float(early)) / 60, 4),
-        "tgt_full_hours":  round(tgt_raw / 60, 4),
-        # hours-only leftover for the opposite (smaller) side
-        "tgt_leftover":    round(tgt_raw / 60, 4),               # when worker stays
-        "orig_leftover":   round(max(0, T - S) / 60, 4),         # when worker moves (early removed)
+        "T":         _fmt_hhmm(T),
+        "C":         _fmt_hhmm(C),
+        "O":         _fmt_hhmm(O),
+        "stay":      part1 >= part2,                   # tie → stays on the original unit
+        "part1":     round(part1, 4),                  # original-side hours (incl. early)
+        "part2":     round(part2, 4),                  # receiving-side hours (early already on orig)
+        "part1_eff": round(max(0.0, part1 - early / 60.0), 4),  # original effective (early removed)
+        "early_min": early,
     }
 
 
