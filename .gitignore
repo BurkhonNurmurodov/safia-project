@@ -1,0 +1,59 @@
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+build/
+.eggs/
+venv/
+env/
+.venv/
+*.pyc
+
+# ── Node / Frontend ─────────────────────────────────────
+node_modules/
+frontend/dist-ssr/
+frontend/build/
+*.local
+
+# ── Environment / Secrets ───────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+bot/.env
+
+# ── Google service account key ──────────────────────────
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!jsconfig.json
+!eslint.config.json
+!backend/safia-project-bea00b0b2514.json
+
+# ── Logs ────────────────────────────────────────────────
+*.log
+logs/
+*.log.*
+
+# ── OS / Editor ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.sw?
+
+# ── Misc project artifacts ──────────────────────────────
+backend.zip
+verifix_data.json
+verifix_data.xlsx
+verifix_run.log
+zi47WZ0K
+frontend/dist.tar.gz
+frontend/dist.zip

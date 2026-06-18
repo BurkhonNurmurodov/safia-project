@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# mypy / pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Uploads / local data files
+uploads/
+*.xlsx
+*.csv
+
+# Service account / credentials
+*.json
+
+# Alembic
+alembic/versions/*.pyc
