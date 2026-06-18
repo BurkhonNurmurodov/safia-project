@@ -1194,7 +1194,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const targetIsSup  = target.startsWith("sup:");
   const targetIsTask = target.startsWith("task:") || target === "__new__";
   const canUseTime   = isAdmin && (targetIsSup || targetIsTask);
-  const timeOptions = useMemo(() => {
+  // Valid transfer-time window (minutes from midnight) = earliest start →
+  // latest clock-out across the selected workers. The wheel picker is bounded to
+  // this; null when no worker has a clock-out yet.
+  const timeWindow = useMemo(() => {
     const sels = employees.filter(w => selected.has(w.worker_name));
     const starts = [], outs = [];
     sels.forEach(w => {
@@ -1203,18 +1206,18 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       if (s != null) starts.push(s);
       if (o != null) outs.push(o);
     });
-    if (!starts.length || !outs.length) return [];
-    const lo = Math.ceil(Math.min(...starts) / 5) * 5;
-    const hi = Math.floor(Math.max(...outs) / 5) * 5;
-    const opts = [];
-    for (let mins = lo; mins <= hi; mins += 5) opts.push(fmtHHMM(mins));
-    return opts;
+    if (!starts.length || !outs.length) return null;
+    const lo = Math.min(...starts);
+    const hi = Math.max(...outs);
+    return hi >= lo ? { lo, hi } : null;
   }, [employees, selected]);
 
   // Keep the picked time valid as the selection changes
   useEffect(() => {
-    if (transferTime && !timeOptions.includes(transferTime)) setTransferTime("");
-  }, [timeOptions, transferTime]);
+    if (!transferTime) return;
+    const m = parseHHMM(transferTime);
+    if (!timeWindow || m == null || m < timeWindow.lo || m > timeWindow.hi) setTransferTime("");
+  }, [timeWindow, transferTime]);
 
   function toggle(name) {
     setSelected(s => {
