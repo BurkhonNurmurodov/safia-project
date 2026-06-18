@@ -1917,7 +1917,7 @@ const t = {
     "staff.transferTimeNoOptions":   "Сначала выберите сотрудников с временем ухода",
     "staff.transferTimeHint":        "До этого времени — текущий руководитель; после — выбранный",
     "staff.transferTimeHintTask":    "До этого времени — рабочее время; после — на задаче (не учитывается)",
-    "staff.extraHoursNote":          "+{n} ч добавлено этому руководителю за эту дату",
+    "staff.extraHoursNote":          "+{n} ч добавлено этому бригадиру за эту дату",
     "staff.taskNamePlaceholder": "Название задачи",
     "staff.chooseTarget":    "Выберите получателя или задачу",
     "staff.removeTaskTooltip": "Удалить задачу из списка",
