@@ -980,6 +980,7 @@ const t = {
     "staff.sending":         "Юборилмоқда…",
     "staff.saving":          "Сақланмоқда…",
     "staff.cancel":          "Бекор қилиш",
+    "staff.done":            "Тайёр",
     "staff.export":          "Экспорт",
     "staff.selected":        "танланди",
     "staff.yes":             "Ҳа",
