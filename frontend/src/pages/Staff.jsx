@@ -1208,12 +1208,13 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     return hi >= lo ? { lo, hi } : null;
   }, [employees, selected]);
 
-  // Keep the picked time valid as the selection changes
+  // Keep the picked time valid as the selection changes. Wait for the roster to
+  // load first, so a hydrated edit-mode time isn't cleared during the fetch.
   useEffect(() => {
-    if (!transferTime) return;
+    if (!transferTime || !employees.length) return;
     const m = parseHHMM(transferTime);
     if (!timeWindow || m == null || m < timeWindow.lo || m > timeWindow.hi) setTransferTime("");
-  }, [timeWindow, transferTime]);
+  }, [timeWindow, transferTime, employees.length]);
 
   function toggle(name) {
     setSelected(s => {
