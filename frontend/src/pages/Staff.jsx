@@ -1123,6 +1123,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const [selected, setSelected] = useState(new Set());
   const [useTime, setUseTime]   = useState(false);  // admin-only transfer-time split
   const [transferTime, setTransferTime] = useState("");  // "HH:MM"
+  const [pickerOpen, setPickerOpen]     = useState(false);  // wheel time-picker popup
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
   const [taskToRemove, setTaskToRemove] = useState(null);  // admin-only task removal
