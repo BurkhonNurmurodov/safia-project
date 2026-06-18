@@ -2729,12 +2729,12 @@ function SortBtn({ col, sortCol, sortDir, onSort }) {
   );
 }
 
-function ActionBtn({ icon: Icon, label, color, onClick }) {
+function ActionBtn({ icon: Icon, label, color, onClick, loading, disabled }) {
   return (
-    <button onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
+    <button onClick={onClick} disabled={loading || disabled}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: color || "var(--text-2)" }}>
-      <Icon size={12} /> {label}
+      {loading ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />} {label}
     </button>
   );
 }
