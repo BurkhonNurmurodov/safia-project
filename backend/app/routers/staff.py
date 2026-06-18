@@ -1683,7 +1683,9 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
 
 def _revert_split_exchange(db: Session, doc: HrDocument):
     """Undo an applied transfer-time split: restore the worker's full row from the
-    snapshot and delete the nameless leftover row it created."""
+    snapshot and delete the nameless leftover row it created. For a → task move the
+    worker's own row was blanked into the leftover, so it is restored in place by id
+    (re-attach name + snapshot) rather than deleted."""
     payload = doc.payload or {}
     is_task = payload.get("target_type") == "task"
     target  = payload.get("target_manager_id")
@@ -1692,6 +1694,21 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
         snap    = emp.get("snapshot") or {}
         wname   = emp.get("worker_name")
         side    = applied.get("side", "move")
+        if applied.get("task_blanked"):
+            # → task move: her own row was blanked into a nameless leftover. Restore
+            # it in place by id (re-attach the name + snapshot); never delete it.
+            row = db.query(Attendance).filter(Attendance.id == applied.get("leftover_id")).first()
+            if row:
+                row.worker_name       = wname
+                row.manager_id        = emp.get("old_manager_id") or doc.manager_id
+                row.job_title         = snap.get("job_title")
+                row.schedule          = snap.get("schedule")
+                row.clock_in_out      = snap.get("clock_in_out")
+                row.hours_worked      = snap.get("hours_worked")
+                row.early_arrival_min = snap.get("early_arrival_min")
+                row.effective_hours   = snap.get("effective_hours")
+            emp.pop("applied", None)
+            continue
         # For a → supervisor move the full row lives on the target if it moved,
         # else on the sending unit. A → task move never relocates the row.
         cur_mgr = target if (side == "move" and not is_task) else doc.manager_id
