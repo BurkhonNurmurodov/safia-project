@@ -2082,6 +2082,7 @@ const t = {
     "menu.appearance":     "Оформление",
     "menu.theme":          "Тема",
     "menu.account":        "Аккаунт",
+    "menu.settings":       "Настройки",
     "filter.all":          "Все",
     "filter.shift":        "Смена",
     "filter.unit":         "Единица",
