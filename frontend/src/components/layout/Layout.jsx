@@ -181,7 +181,7 @@ function AccountSection() {
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
 const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 
-export default function Layout({ children, title, showFilters = true }) {
+export default function Layout({ children, title, showFilters = true, filterSlot = null }) {
   const { theme, toggle } = useTheme();
   const { lang, setLang, t, languages } = useLang();
   const { auth } = useAuth();
