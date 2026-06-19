@@ -153,9 +153,26 @@ export default function ShiftDaily() {
   const planned  = brigadirs.map(b => Math.round((b.baseline_util ?? 0) * 100));
   const actual   = brigadirs.map(b => Math.round((b.net_util ?? 0) * 100));
 
-  const ranked    = [...brigadirs].sort((a, b) => (a.net_util ?? 0) - (b.net_util ?? 0));
+  // Ranking — P / A / P−A, mirroring the Overview page.
+  const getRankVal = (b) => {
+    if (rankMode === "planned") return b.baseline_util != null ? Math.round(b.baseline_util * 100) : 0;
+    if (rankMode === "diff")    return (b.baseline_util != null && b.net_util != null)
+                                       ? Math.round((b.baseline_util - b.net_util) * 100) : 0;
+    return b.net_util != null ? Math.round(b.net_util * 100) : 0;
+  };
+  const diffColor = (d) => {
+    if (d < -20) return "#3b82f6";
+    if (d <= 0)  return "#22c55e";
+    if (d <= 5)  return "#eab308";
+    return "#ef4444";
+  };
+  const ranked    = [...brigadirs].sort((a, b) => getRankVal(a) - getRankVal(b));
   const rankNames = ranked.map(b => tl(b.name));
-  const rankVals  = ranked.map(b => b.net_util != null ? Math.round(b.net_util * 100) : 0);
+  const rankVals  = ranked.map(b => getRankVal(b));
+  const rankColors = rankMode === "diff" ? rankVals.map(diffColor) : undefined;
+  const rankXMin = rankMode === "diff" ? (rankVals.length ? Math.min(...rankVals, -5) : -5) : 0;
+  const rankXMax = rankMode === "diff" ? (rankVals.length ? Math.max(...rankVals, 10) : 10) : undefined;
+  const RANK_LABELS = { planned: t("overview.rankPlanned"), actual: t("overview.rankActual"), diff: t("overview.rankDiff") };
 
   const hasData = brigadirs.length > 0;
 
