@@ -291,12 +291,12 @@ export default function Layout({ children, title, showFilters = true, filterSlot
                   <SlidersHorizontal size={14} />
                   <span>{t("filter.filters") || "Filters"}</span>
                   {/* Active-filter count */}
-                  {showFilterBadge && (
+                  {filterBadgeCount > 0 && (
                     <span
                       className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
                       style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
                     >
-                      {activeCount}
+                      {filterBadgeCount}
                     </span>
                   )}
                   {/* Unread-notifications indicator */}
