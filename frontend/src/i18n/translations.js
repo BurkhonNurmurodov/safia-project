@@ -274,6 +274,10 @@ const t = {
 
     // ── Filters ───────────────────────────────────────────────────────────────
     "filter.filters":      "Filtrlar",
+    "menu.title":          "Menyu",
+    "menu.appearance":     "Ko'rinish",
+    "menu.theme":          "Mavzu",
+    "menu.account":        "Hisob",
     "filter.all":          "Barchasi",
     "filter.shift":        "Smena",
     "filter.unit":         "Birlik",
