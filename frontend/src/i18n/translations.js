@@ -1180,6 +1180,7 @@ const t = {
     "menu.appearance":     "Кўриниш",
     "menu.theme":          "Мавзу",
     "menu.account":        "Ҳисоб",
+    "menu.settings":       "Созламалар",
     "filter.all":          "Барчаси",
     "filter.shift":        "Смена",
     "filter.unit":         "Бирлик",
