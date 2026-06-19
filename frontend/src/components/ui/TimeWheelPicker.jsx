@@ -103,6 +103,9 @@ function Wheel({ values, valueIndex, resetKey, onChange, ariaLabel }) {
 function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
   const { t } = useLang();
   const loH = Math.floor(lo / 60), hiH = Math.floor(hi / 60);
+  // Hour values are kept in "extended" form (can exceed 23 for an overnight window
+  // that crossed midnight) so minute bounds stay monotonic; they're shown and
+  // emitted as wall-clock via h % 24 (e.g. 24 → 00, 29 → 05).
   const hours = useMemo(() => {
     const a = []; for (let h = loH; h <= hiH; h++) a.push(h); return a;
   }, [loH, hiH]);
