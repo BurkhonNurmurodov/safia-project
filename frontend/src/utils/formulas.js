@@ -151,10 +151,10 @@ export function hcDiffNumbers(d, approx = false) {
 
 // ── HC-equivalent of the time gap = Difference(hrs) ÷ 8h shift ─────────────────
 // Expresses the hours difference as full person-shifts (8 working hours = 1 HC).
-export function hcEquivNumbers(d, approx = false) {
+export function hcEquivNumbers(d, approx = false, hcLabel = "HC") {
   if (d?.diff_hrs == null) return null;
   const op = approx ? "≈" : "=";
-  return `${signed(d.diff_hrs / 8, 1)} HC ${op} ${signed(d.diff_hrs, 1)} hrs ÷ 8`;
+  return `${signed(d.diff_hrs / 8, 1)} ${hcLabel} ${op} ${signed(d.diff_hrs, 1)} hrs ÷ 8`;
 }
 
 // ── Comparison Table "P" cell = baseline_util × 100 ───────────────────────────

@@ -2528,7 +2528,8 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
               display={approverFilter.length === 1 ? tl(approverFilter[0]) : `${approverFilter.length} ${t("filter.selected2")}`}>
               <DropdownOpts opts={distinctApprovers} sel={approverFilter} onChange={setApproverFilter} render={v => tl(v)} />
             </FilterDropdown>
-            <DatePicker value={dateFilter} onChange={setDateFilter} availableDates={availableDates} />
+            <DatePicker value={createdFilter} onChange={setCreatedFilter}
+              availableDates={availableCreatedDates} placeholder={t("staff.selectCreatedDate")} />
           </FilterButton>
         </div>
 
