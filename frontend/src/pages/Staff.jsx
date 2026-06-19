@@ -1330,7 +1330,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
         </div>
 
         {/* target picker */}
-        <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3" style={{ borderColor: "var(--border)" }}>
+        <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
           <StyledSelect
             value={target}
