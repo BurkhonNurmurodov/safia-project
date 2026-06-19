@@ -1585,7 +1585,15 @@ def _compute_split(snapshot: dict, transfer_time: str) -> Optional[dict]:
     T     = _parse_hhmm(transfer_time)
     total = snapshot.get("hours_worked")
     early = float(snapshot.get("early_arrival_min") or 0)
-    if T is None or C is None or O is None or O <= C or total is None:
+    if T is None or C is None or O is None or total is None:
+        return None
+    # Overnight shift: a clock-out at/under the clock-in crossed midnight, so carry
+    # it (and a post-midnight transfer time) into the next day to keep C ≤ T ≤ O.
+    if O <= C:
+        O += 1440
+    if T < C:
+        T += 1440
+    if O <= C:                                         # still degenerate → can't split
         return None
     total = float(total)
     T     = max(C, min(T, O))                          # clamp into the worked window
