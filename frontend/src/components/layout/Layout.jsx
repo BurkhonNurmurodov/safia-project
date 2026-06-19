@@ -238,7 +238,9 @@ export default function Layout({ children, title, showFilters = true, filterSlot
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuOpen]);
 
-  const showFilterBadge = showFilters && activeCount > 0;
+  // Badge: global filters use the active-filter count; pages that only inject a
+  // unit slot (e.g. Daily) flag a single active filter when not on minutes.
+  const filterBadgeCount = showFilters ? activeCount : (filterSlot && unit !== "min" ? 1 : 0);
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
