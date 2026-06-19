@@ -1274,8 +1274,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     const tgt = resolveTarget();
     if (!tgt)                { setError(t("staff.chooseTarget")); return; }
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
-    // Transfer-time is only meaningful for an admin moving to a supervisor with
-    // the toggle on and a time chosen. Always send the field (empty clears it).
+    // Transfer-time is only meaningful for a → supervisor/task move with the
+    // toggle on and a time chosen. Always send the field (empty clears it).
     const tt = (canUseTime && useTime && transferTime) ? transferTime : "";
     setSaving(true);
     try {
