@@ -58,7 +58,7 @@ function fmtDiff(b, u, hcLabel = "HC") {
   const v = diffValue(b, u);
   if (v == null) return "—";
   const sign = v > 0 ? "+" : "";
-  if (u === "hc")  return `${sign}${v.toFixed(1)} ${hcLabel}`;
+  if (u === "hc")  return `${sign}${v.toFixed(1)}`;
   if (u === "pct") return `${sign}${v.toFixed(1)}%`;
   if (u === "hrs") return `${sign}${v.toFixed(1)} hrs`;
   return `${sign}${v.toFixed(0)} min`;
