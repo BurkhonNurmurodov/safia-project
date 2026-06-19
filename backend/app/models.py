@@ -365,3 +365,79 @@ class ExchangeTask(Base):
     active                 = Column(Boolean, nullable=False, server_default="true")
     created_at             = Column(DateTime(timezone=True), server_default=func.now())
     created_by_telegram_id = Column(BigInteger, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Production planning (ABC form) — replicates the SAP-driven Excel dashboard
+# ("Sheet1 ..." per brigadir). All pp_* tables key on managers.id, since a
+# brigadir is the supervisor of a Manager (unit). New tables only — created by
+# Base.metadata.create_all, no ALTERs needed.
+# ---------------------------------------------------------------------------
+
+class PPProduct(Base):
+    """Catalog line. One row per (brigadir, SAP code, work center, operation):
+    the same SAP code at one work center may appear several times, each a
+    distinct operation with its own labor_time (seconds per unit)."""
+    __tablename__ = "pp_products"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    sap_code    = Column(String, nullable=False, index=True)
+    name        = Column(String, nullable=False, default="")
+    work_center = Column(String, nullable=False, index=True)
+    labor_time  = Column(Numeric(12, 4), nullable=True)   # seconds/unit; NULL → warn
+    sort_order  = Column(Integer, default=0)
+    active      = Column(Boolean, nullable=False, server_default="true")
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PPWorkCenter(Base):
+    """Per-brigadir work-center config: штатка (establishment headcount, W)."""
+    __tablename__ = "pp_work_centers"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    code       = Column(String, nullable=False)
+    shtatka    = Column(Integer, nullable=False, default=0)
+    sort_order = Column(Integer, default=0)
+    active     = Column(Boolean, nullable=False, server_default="true")
+
+    __table_args__ = (UniqueConstraint("manager_id", "code", name="uq_pp_wc_manager_code"),)
+
+
+class PPDaily(Base):
+    """Daily snapshot of plan/actual quantities per (brigadir, date, SAP code,
+    work center). Grain matches the фаза SUMIFS (SKU + work center + date), so
+    all operations of one SKU+WC share the same quantity. *_override holds a
+    brigadir's manual value and is cleared on the next SAP upload of that field."""
+    __tablename__ = "pp_daily"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id      = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date            = Column(Date, nullable=False, index=True)
+    sap_code        = Column(String, nullable=False)
+    work_center     = Column(String, nullable=False)
+    plan_qty        = Column(Numeric(14, 4), default=0)   # фаза col F
+    actual_qty      = Column(Numeric(14, 4), default=0)   # фаза col M
+    plan_override   = Column(Numeric(14, 4), nullable=True)
+    actual_override = Column(Numeric(14, 4), nullable=True)
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "sap_code", "work_center", name="uq_pp_daily_key"),
+    )
+
+
+class PPReconciliation(Base):
+    """Manual reconciliation block per (brigadir, date): По штатке / Бригадир /
+    Лидер / Мицу / Отдихает and people-present figures. Stored as a JSONB blob
+    while the block stabilises (attendance auto-wiring is a later phase)."""
+    __tablename__ = "pp_reconciliation"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date       = Column(Date, nullable=False, index=True)
+    data       = Column(JSONB, nullable=False, default=dict)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_pp_recon_manager_date"),)
