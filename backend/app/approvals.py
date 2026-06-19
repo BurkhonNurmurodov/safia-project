@@ -21,7 +21,7 @@ from datetime import date
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import ApprovalNotice, Attendance, Manager
+from app.models import ApprovalNotice, Attendance, Manager, TelegramUserRole
 
 logger = logging.getLogger(__name__)
 
