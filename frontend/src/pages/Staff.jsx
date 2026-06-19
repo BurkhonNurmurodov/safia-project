@@ -807,9 +807,9 @@ export function CreateMenu({ onSelect, disabled, disabledHint, onDeleteSelected,
         <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 rounded-xl overflow-hidden"
+        <div className="absolute top-full right-0 mt-1.5 z-50 rounded-xl overflow-hidden"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)",
-                   boxShadow: "0 8px 24px rgba(0,0,0,0.18)", minWidth: 230 }}>
+                   boxShadow: "0 8px 24px rgba(0,0,0,0.18)", minWidth: 230, maxWidth: "calc(100vw - 24px)" }}>
           {DOC_TYPES.map(dt => {
             const blocked = !dt.enabled || disabled;
             return (
