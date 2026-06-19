@@ -179,7 +179,7 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
             {t("staff.cancel")}
           </button>
-          <button type="button" onClick={() => onConfirm(`${pad2(hour)}:${pad2(minute)}`)}
+          <button type="button" onClick={() => onConfirm(`${pad2(hour % 24)}:${pad2(minute)}`)}
             className="flex-1 text-xs font-semibold py-2.5 rounded-lg"
             style={{ background: "var(--brand)", color: "#fff" }}>
             {t("staff.done")}
