@@ -1347,7 +1347,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           </span>
         </div>
 
-        {/* transfer-time split (admin-only, → supervisor) */}
+        {/* transfer-time split (admin + supervisor, → supervisor or task) */}
         {canUseTime && (
           <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3" style={{ borderColor: "var(--border)" }}>
             <label className="flex items-center gap-2 cursor-pointer select-none">
