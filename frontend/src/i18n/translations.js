@@ -3010,6 +3010,7 @@ const t = {
     "overview.finalWorkload":   "Final Workload",
     "overview.planned":         "Planned %",
     "overview.diff":            "Diff",
+    "overview.diffUnitHc":      "HC",
     "overview.headcount":       "Headcount",
     "overview.status":          "Status",
     "overview.workers":         "Workers",
