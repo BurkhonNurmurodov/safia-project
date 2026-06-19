@@ -679,16 +679,21 @@ def _caller_name(call: types.CallbackQuery) -> str:
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ap:"))
 def _approval_callback(call: types.CallbackQuery):
-    """Admin-only inline approve/reject for every request kind.
-    callback_data: ``ap:<kind>:<a|r>:<ref>`` where kind ∈ reg|er|eb|hr."""
-    if call.from_user.id not in _admin_ids():
-        bot.answer_callback_query(call.id, "⛔️ Ruxsat yo'q", show_alert=True)
-        return
+    """Inline approve/reject. callback_data: ``ap:<kind>:<a|r>:<ref>`` where kind
+    ∈ reg|er|eb|hr. Admins may act on every kind; a non-admin (the receiving
+    supervisor of a people-exchange) may act only on a request we explicitly
+    sent them a confirm button for. reg/er/eb are never sent to supervisors, so
+    the notice check keeps those admin-only."""
     try:
         _, code, act, ref = call.data.split(":", 3)
     except ValueError:
         bot.answer_callback_query(call.id)
         return
+    if call.from_user.id not in _admin_ids():
+        from app.approvals import recipient_has_notice_for_code
+        if not recipient_has_notice_for_code(code, ref, call.from_user.id):
+            bot.answer_callback_query(call.id, "⛔️ Ruxsat yo'q", show_alert=True)
+            return
     status = "approved" if act == "a" else "rejected"
 
     if code == "reg":
