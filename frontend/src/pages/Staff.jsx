@@ -1218,7 +1218,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   // load first, so a hydrated edit-mode time isn't cleared during the fetch.
   useEffect(() => {
     if (!transferTime || !employees.length) return;
-    const m = parseHHMM(transferTime);
+    let m = parseHHMM(transferTime);
+    // A post-midnight pick (e.g. "00:38") sits below the window's start → carry it
+    // into the next day so it's matched against the overnight upper bound.
+    if (m != null && timeWindow && m < timeWindow.lo) m += 1440;
     if (!timeWindow || m == null || m < timeWindow.lo || m > timeWindow.hi) setTransferTime("");
   }, [timeWindow, transferTime, employees.length]);
 
