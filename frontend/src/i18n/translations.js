@@ -1816,6 +1816,7 @@ const t = {
     "nav.admin":           "Админ",
     "nav.staff":           "Verifix правка",
     "nav.daily":           "Ежедневно",
+    "nav.production":      "Производство",
     "shiftDaily.title":        "Ежедневно — Смена",
     "shiftDaily.prevDay":      "пред. день",
     "shiftDaily.vsPrev":       "к пред. дню",
