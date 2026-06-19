@@ -1175,6 +1175,10 @@ const t = {
 
     // ── Filters ───────────────────────────────────────────────────────────────
     "filter.filters":      "Фильтрлар",
+    "menu.title":          "Меню",
+    "menu.appearance":     "Кўриниш",
+    "menu.theme":          "Мавзу",
+    "menu.account":        "Ҳисоб",
     "filter.all":          "Барчаси",
     "filter.shift":        "Смена",
     "filter.unit":         "Бирлик",
