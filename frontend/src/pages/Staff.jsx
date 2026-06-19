@@ -3332,8 +3332,10 @@ export default function Staff() {
   const role = auth?.role;
 
   const [tab, setTab] = useState(role === "shift-manager" ? "requests" : "workers");
-  const [selectedDate, setSelectedDate] = useState("");
-  const [selectedManagerId, setSelectedManagerId] = useState(null);
+  // Persisted so the date + supervisor stay selected after navigating away and
+  // back (separate keys from the Daily page — each page remembers its own).
+  const [selectedDate, setSelectedDate] = usePersistentState("staff_selected_date", "");
+  const [selectedManagerId, setSelectedManagerId] = usePersistentState("staff_selected_manager_id", null);
   const [docCreate, setDocCreate] = useState(null);   // {mode:"create"} | {mode:"edit", doc}
 
   // ── Delete modal state ────────────────────────────────────────────────────
