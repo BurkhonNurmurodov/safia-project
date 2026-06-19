@@ -2076,6 +2076,10 @@ const t = {
 
     // ── Filters ───────────────────────────────────────────────────────────────
     "filter.filters":      "Фильтры",
+    "menu.title":          "Меню",
+    "menu.appearance":     "Оформление",
+    "menu.theme":          "Тема",
+    "menu.account":        "Аккаунт",
     "filter.all":          "Все",
     "filter.shift":        "Смена",
     "filter.unit":         "Единица",
