@@ -145,6 +145,18 @@ function UserProfile() {
         );
       })}
 
+          {/* Settings — language, theme, ghost */}
+          <button
+            onClick={() => { setOpen(false); setSettingsOpen(true); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+            onMouseLeave={e => e.currentTarget.style.background = ""}
+          >
+            <Settings size={14} />
+            <span>{t("menu.settings") || "Settings"}</span>
+          </button>
+
           {/* Sign out from current profile */}
           <button
             onClick={() => { setOpen(false); setConfirmLogout(true); }}
@@ -156,6 +168,119 @@ function UserProfile() {
             <LogOut size={14} />
             <span>{t("nav.signOut")}</span>
           </button>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="rounded-2xl flex flex-col overflow-hidden"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 12px 40px rgba(0,0,0,.25)",
+              minWidth: 300,
+              maxWidth: 360,
+              width: "100%",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div
+              className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
+              style={{ borderBottom: "1px solid var(--border)" }}
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-1)" }}>
+                <Settings size={15} />
+                {t("menu.settings") || "Settings"}
+              </span>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="p-0.5 rounded transition-colors hover:bg-white/10"
+                style={{ color: "var(--text-3)" }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Language */}
+            <div className="px-5 py-4">
+              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+                {t("filter.language") || "Language"}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {languages.map(({ code }) => (
+                  <button
+                    key={code}
+                    onClick={() => setLang(code)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors"
+                    style={lang === code
+                      ? { background: "var(--brand)", color: "#fff", fontWeight: 600, border: "1px solid var(--brand)" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                  >
+                    {LANG_FLAGS[code] || "🌐"} {langLabel(code)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Appearance — theme + ghost (admin) */}
+            <div className="px-5 py-4" style={{ borderTop: "1px solid var(--border)" }}>
+              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+                {t("menu.appearance") || "Appearance"}
+              </span>
+
+              {/* Theme switch */}
+              <div className="flex items-center justify-between py-1">
+                <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
+                <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+                  <button
+                    onClick={() => { if (theme !== "light") toggle(); }}
+                    className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
+                    style={theme === "light"
+                      ? { background: "var(--brand)", color: "#fff" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                    title={t("theme.light")}
+                  >
+                    <Sun size={13} />
+                  </button>
+                  <button
+                    onClick={() => { if (theme !== "dark") toggle(); }}
+                    className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
+                    style={theme === "dark"
+                      ? { background: "var(--brand)", color: "#fff" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                    title={t("theme.dark")}
+                  >
+                    <Moon size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Ghost mode — admin only */}
+              {auth?.role === "admin" && (
+                <div className="flex items-center justify-between py-1 mt-1">
+                  <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
+                    <Ghost size={13} /> {t("ghost.label")}
+                  </span>
+                  <button
+                    onClick={toggleGhost}
+                    className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                    style={ghost
+                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                    title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
+                  >
+                    {ghost ? "ON" : "OFF"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
