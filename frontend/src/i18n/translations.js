@@ -913,6 +913,7 @@ const t = {
     "nav.admin":           "Админ",
     "nav.staff":           "Verifix тўғрилаш",
     "nav.daily":           "Кунлик",
+    "nav.production":      "Ишлаб чиқариш",
     "shiftDaily.title":        "Кунлик — Смена",
     "shiftDaily.prevDay":      "олдинги кун",
     "shiftDaily.vsPrev":       "олдинги кунга нисбатан",
