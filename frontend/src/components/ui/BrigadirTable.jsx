@@ -208,7 +208,7 @@ export default function BrigadirTable({
               ? { background: "var(--brand)", color: "#fff" }
               : { background: "var(--bg-inner)", color: "var(--text-3)" }}
           >
-            {label}
+            {m === "hc" ? hcLabel : label}
           </button>
         ))}
       </div>
