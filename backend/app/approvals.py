@@ -126,6 +126,7 @@ _LABELS = {
         "workers":       "Workers",
         "new_role":      "New role",
         "target":        "Target",
+        "time":          "Time",
         "count":         "Count",
         "delete_marker": "❗️ Record will be deleted. Current data:",
         "changes":       "Changes",
