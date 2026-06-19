@@ -1043,7 +1043,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
         </div>
 
         {/* employee list */}
-        <div className="max-h-[42vh] overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {!date || !mgrId ? (
             <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>
               {isAdmin ? t("staff.selectDateSupFirstDot") : t("staff.selectDateFirstDot")}
@@ -1420,7 +1420,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
         </div>
 
         {/* employee list */}
-        <div className="max-h-[42vh] overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {!date || !mgrId ? (
             <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>
               {isAdmin ? t("staff.selectDateSupFirstDot") : t("staff.selectDateFirstDot")}
