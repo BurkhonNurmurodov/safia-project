@@ -118,6 +118,7 @@ function Section({ icon: Icon, title, action, children }) {
 function SupervisorDaily() {
   const { auth } = useAuth();
   const { t } = useLang();
+  const { unit, setUnit } = useFilters();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
