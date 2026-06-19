@@ -3,10 +3,12 @@ Telegram-native approval for staff/HR admin requests.
 
 Every staff edit/delete request, bulk-delete batch and HR document is sent to
 each admin as a Telegram message carrying inline ✅/❌ buttons plus the full
-request detail in the body. When ANY approval path runs — a Telegram tap here,
-or an admin/shift-manager deciding in the web app — the shared decision core
-calls :func:`edit_admin_notices`, which edits every admin's message with the
-outcome and drops its buttons, so the buttons can never go stale.
+request detail in the body. A people-exchange addressed to a unit is also sent
+to its RECEIVING supervisor — they confirm the incoming transfer inline exactly
+like an admin. When ANY approval path runs — a Telegram tap here, or an
+admin/shift-manager/supervisor deciding in the web app — the shared decision
+core calls :func:`edit_admin_notices`, which edits every recipient's message
+with the outcome and drops its buttons, so the buttons can never go stale.
 
 Registrations keep their own machinery in ``telegram_bot`` (RegistrationNotice
 + notify_admins_of_decision); this module covers the kinds that previously had
