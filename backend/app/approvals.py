@@ -62,6 +62,7 @@ _LABELS = {
         "workers":       "Xodimlar",
         "new_role":      "Yangi lavozim",
         "target":        "Manzil",
+        "time":          "Vaqt",
         "count":         "Soni",
         "delete_marker": "❗️ Yozuv o'chiriladi. Joriy ma'lumotlar:",
         "changes":       "O'zgarishlar",
