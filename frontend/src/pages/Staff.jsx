@@ -2199,8 +2199,8 @@ function FilterBottomSheet({
             <SheetOpts opts={distinctApprovers} sel={approverFilter} onChange={setApproverFilter} render={v => tl(v)} />
           </SheetSection>
 
-          <SheetSection label={t("staff.selectDate")}>
-            <MobileSheetDatePicker value={dateFilter} onChange={setDateFilter} t={t} />
+          <SheetSection label={t("staff.selectCreatedDate")}>
+            <MobileSheetDatePicker value={createdFilter} onChange={setCreatedFilter} t={t} />
           </SheetSection>
         </div>
       </div>
