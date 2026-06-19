@@ -67,6 +67,8 @@ uploads/
 
 # Service account / credentials
 *.json
+# ...but the production-planning seed data must ship to prod
+!app/data/pp_seed_manager5.json
 
 # Alembic
 alembic/versions/*.pyc

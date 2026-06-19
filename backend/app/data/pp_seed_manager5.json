@@ -1,0 +1,850 @@
+{
+  "manager_id": 5,
+  "manager_name": "Абдугамитов Мухаммад",
+  "source_sheet": "Sheet1 Торт",
+  "work_centers": [
+    {
+      "code": "A1431",
+      "shtatka": 12,
+      "capacity": 4890.0,
+      "sort_order": 0
+    },
+    {
+      "code": "A1433",
+      "shtatka": 11,
+      "capacity": 4485.0,
+      "sort_order": 1
+    },
+    {
+      "code": "A1434",
+      "shtatka": 11,
+      "capacity": 4485.0,
+      "sort_order": 2
+    },
+    {
+      "code": "A1436",
+      "shtatka": 6,
+      "capacity": 2445.0,
+      "sort_order": 3
+    },
+    {
+      "code": "A1432",
+      "shtatka": 10,
+      "capacity": 4075.0,
+      "sort_order": 4
+    },
+    {
+      "code": "A1435",
+      "shtatka": 15,
+      "capacity": 6110.0,
+      "sort_order": 5
+    }
+  ],
+  "products": [
+    {
+      "sap_code": "F00000082",
+      "name": "Песочно-Малиновый",
+      "work_center": "A1431",
+      "labor_time": 75.0,
+      "sort_order": 0
+    },
+    {
+      "sap_code": "F00000033",
+      "name": "Денъ Рождения",
+      "work_center": "A1431",
+      "labor_time": 142.3,
+      "sort_order": 1
+    },
+    {
+      "sap_code": "F00000102",
+      "name": "Сафия офор беж",
+      "work_center": "A1431",
+      "labor_time": 217.0,
+      "sort_order": 2
+    },
+    {
+      "sap_code": "F00001121",
+      "name": "Шок банан круг",
+      "work_center": "A1431",
+      "labor_time": 185.1,
+      "sort_order": 3
+    },
+    {
+      "sap_code": "F00001139",
+      "name": "Сафия белая",
+      "work_center": "A1431",
+      "labor_time": 185.5,
+      "sort_order": 4
+    },
+    {
+      "sap_code": "F00000007",
+      "name": "Шок банан мини",
+      "work_center": "A1431",
+      "labor_time": 165.5,
+      "sort_order": 5
+    },
+    {
+      "sap_code": "F00000077",
+      "name": "Мороженко",
+      "work_center": "A1431",
+      "labor_time": 213.0,
+      "sort_order": 6
+    },
+    {
+      "sap_code": "F00000012",
+      "name": "Смородина",
+      "work_center": "A1431",
+      "labor_time": 180.7,
+      "sort_order": 7
+    },
+    {
+      "sap_code": "F00000103",
+      "name": "Сафия розовая",
+      "work_center": "A1431",
+      "labor_time": 185.5,
+      "sort_order": 8
+    },
+    {
+      "sap_code": "F00000825",
+      "name": "Торт Молочная девочка",
+      "work_center": "A1431",
+      "labor_time": 180.7,
+      "sort_order": 9
+    },
+    {
+      "sap_code": "F00000098",
+      "name": "Роше",
+      "work_center": "A1431",
+      "labor_time": 202.8,
+      "sort_order": 10
+    },
+    {
+      "sap_code": "F00000814",
+      "name": "Баунти торт круг",
+      "work_center": "A1431",
+      "labor_time": 157.8,
+      "sort_order": 11
+    },
+    {
+      "sap_code": "F00001143",
+      "name": "Торт ''Джулетта'' оформленный",
+      "work_center": "A1431",
+      "labor_time": 165.2,
+      "sort_order": 12
+    },
+    {
+      "sap_code": "F00001398",
+      "name": "Торт Радуга шоколадная 1 - этап",
+      "work_center": "A1431",
+      "labor_time": 124.7,
+      "sort_order": 13
+    },
+    {
+      "sap_code": "F00001909",
+      "name": "Торт Барби",
+      "work_center": "A1431",
+      "labor_time": 146.5,
+      "sort_order": 14
+    },
+    {
+      "sap_code": "F00001900",
+      "name": "Торт Динозаврик",
+      "work_center": "A1431",
+      "labor_time": 127.5,
+      "sort_order": 15
+    },
+    {
+      "sap_code": "F00001566",
+      "name": "Торт Браво",
+      "work_center": "A1431",
+      "labor_time": 161.5,
+      "sort_order": 16
+    },
+    {
+      "sap_code": "F00000122",
+      "name": "Фруктовый 1 - этап",
+      "work_center": "A1432",
+      "labor_time": 230.0,
+      "sort_order": 17
+    },
+    {
+      "sap_code": "F00000038",
+      "name": "Киев Бантик",
+      "work_center": "A1432",
+      "labor_time": 273.0,
+      "sort_order": 18
+    },
+    {
+      "sap_code": "F00002812",
+      "name": "Торт Волк Бек",
+      "work_center": "A1432",
+      "labor_time": 273.0,
+      "sort_order": 19
+    },
+    {
+      "sap_code": "F00000063",
+      "name": "Милк Слайс",
+      "work_center": "A1432",
+      "labor_time": 65.0,
+      "sort_order": 20
+    },
+    {
+      "sap_code": "F00000045",
+      "name": "Тоффи миндал",
+      "work_center": "A1432",
+      "labor_time": 95.0,
+      "sort_order": 21
+    },
+    {
+      "sap_code": "F00000041",
+      "name": "Клубничный торт Корзинка",
+      "work_center": "A1432",
+      "labor_time": 370.0,
+      "sort_order": 22
+    },
+    {
+      "sap_code": "F00000816",
+      "name": "Торт Карамельный медовый",
+      "work_center": "A1432",
+      "labor_time": 197.0,
+      "sort_order": 23
+    },
+    {
+      "sap_code": "F00000815",
+      "name": "Виктория торт круг",
+      "work_center": "A1432",
+      "labor_time": 176.0,
+      "sort_order": 24
+    },
+    {
+      "sap_code": "F00000821",
+      "name": "Орео new торт 1 - этап",
+      "work_center": "A1432",
+      "labor_time": 176.0,
+      "sort_order": 25
+    },
+    {
+      "sap_code": "F00001565",
+      "name": "Париж торт 1 - этап",
+      "work_center": "A1432",
+      "labor_time": 240.0,
+      "sort_order": 26
+    },
+    {
+      "sap_code": "F00000014",
+      "name": "Киев Ражок",
+      "work_center": "A1432",
+      "labor_time": 210.0,
+      "sort_order": 27
+    },
+    {
+      "sap_code": "F00002561",
+      "name": "Торт Стич",
+      "work_center": "A1432",
+      "labor_time": 150.0,
+      "sort_order": 28
+    },
+    {
+      "sap_code": "F00002562",
+      "name": "Торт Мишка",
+      "work_center": "A1432",
+      "labor_time": 150.0,
+      "sort_order": 29
+    },
+    {
+      "sap_code": "F00002587",
+      "name": "Меренгoвий",
+      "work_center": "A1432",
+      "labor_time": 260.0,
+      "sort_order": 30
+    },
+    {
+      "sap_code": "F00000097",
+      "name": "Торт Рафаэлло",
+      "work_center": "A1432",
+      "labor_time": 250.0,
+      "sort_order": 31
+    },
+    {
+      "sap_code": "F00000069",
+      "name": "Торт мини Рафаэлло",
+      "work_center": "A1432",
+      "labor_time": 240.0,
+      "sort_order": 32
+    },
+    {
+      "sap_code": "F00000041",
+      "name": "Клубничный торт Корзинка",
+      "work_center": "A1435",
+      "labor_time": 80.0,
+      "sort_order": 33
+    },
+    {
+      "sap_code": "F00001139",
+      "name": "Торт Сафия бежевый",
+      "work_center": "A1435",
+      "labor_time": 99.0,
+      "sort_order": 34
+    },
+    {
+      "sap_code": "F00000103",
+      "name": "Торт Сафия розовый",
+      "work_center": "A1435",
+      "labor_time": 99.0,
+      "sort_order": 35
+    },
+    {
+      "sap_code": "F00000102",
+      "name": "Торт Сафия Оформление",
+      "work_center": "A1435",
+      "labor_time": 99.0,
+      "sort_order": 36
+    },
+    {
+      "sap_code": "F00000098",
+      "name": "Торт Роше",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 37
+    },
+    {
+      "sap_code": "F00000012",
+      "name": "Смородина торт смазка",
+      "work_center": "A1435",
+      "labor_time": 100.0,
+      "sort_order": 38
+    },
+    {
+      "sap_code": "F00000007",
+      "name": "Шок банан мини торт смазка",
+      "work_center": "A1435",
+      "labor_time": 75.0,
+      "sort_order": 39
+    },
+    {
+      "sap_code": "0",
+      "name": "Радуга торт круглый смазка",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 40
+    },
+    {
+      "sap_code": "F00000034",
+      "name": "Джулетта торт NEW смазка",
+      "work_center": "A1435",
+      "labor_time": 82.0,
+      "sort_order": 41
+    },
+    {
+      "sap_code": "F00000028",
+      "name": "Верона стандартный торт смазка",
+      "work_center": "A1435",
+      "labor_time": 125.0,
+      "sort_order": 42
+    },
+    {
+      "sap_code": "F00000077",
+      "name": "Морорженко торт смазка",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 43
+    },
+    {
+      "sap_code": "F00001121",
+      "name": "Шок банановый торт круглый смазка",
+      "work_center": "A1435",
+      "labor_time": 95.0,
+      "sort_order": 44
+    },
+    {
+      "sap_code": "F00001909",
+      "name": "Торт Барби смазка",
+      "work_center": "A1435",
+      "labor_time": 110.0,
+      "sort_order": 45
+    },
+    {
+      "sap_code": "F00001909",
+      "name": "Торт Барби предзаг",
+      "work_center": "A1436",
+      "labor_time": 94.0,
+      "sort_order": 46
+    },
+    {
+      "sap_code": "F00000825",
+      "name": "Торт Молочная девочка смазка",
+      "work_center": "A1435",
+      "labor_time": 94.0,
+      "sort_order": 47
+    },
+    {
+      "sap_code": "F00002561",
+      "name": "Торт Стич",
+      "work_center": "A1435",
+      "labor_time": 94.0,
+      "sort_order": 48
+    },
+    {
+      "sap_code": "F00002562",
+      "name": "Торт Мишка",
+      "work_center": "A1435",
+      "labor_time": 94.0,
+      "sort_order": 49
+    },
+    {
+      "sap_code": "F00002586",
+      "name": "Торт Блэк Форест",
+      "work_center": "A1435",
+      "labor_time": 94.0,
+      "sort_order": 50
+    },
+    {
+      "sap_code": "F00001143",
+      "name": "Торт \"Джулетта\" оформленный",
+      "work_center": "A1435",
+      "labor_time": 114.0,
+      "sort_order": 51
+    },
+    {
+      "sap_code": "F00001398",
+      "name": "Торт Радуга шоколадная",
+      "work_center": "A1435",
+      "labor_time": 90.0,
+      "sort_order": 52
+    },
+    {
+      "sap_code": "F00000033",
+      "name": "Денрождения",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 53
+    },
+    {
+      "sap_code": "F00000063",
+      "name": "Медовый милк слайс крем 1 этап",
+      "work_center": "A1436",
+      "labor_time": 85.0,
+      "sort_order": 54
+    },
+    {
+      "sap_code": "F00000063",
+      "name": "Медовый милк слайс ганаж 1 этап",
+      "work_center": "A1436",
+      "labor_time": 100.0,
+      "sort_order": 55
+    },
+    {
+      "sap_code": "F00000045",
+      "name": "Кофе тоффи 1 этап",
+      "work_center": "A1436",
+      "labor_time": 75.0,
+      "sort_order": 56
+    },
+    {
+      "sap_code": "F00000024",
+      "name": "Берри кейк 1 этап",
+      "work_center": "A1436",
+      "labor_time": 85.0,
+      "sort_order": 57
+    },
+    {
+      "sap_code": "0",
+      "name": "Тирамису 1 этап",
+      "work_center": "A1436",
+      "labor_time": 82.0,
+      "sort_order": 58
+    },
+    {
+      "sap_code": "F00000098",
+      "name": "Роше торт шарики",
+      "work_center": "A1436",
+      "labor_time": 5.0,
+      "sort_order": 59
+    },
+    {
+      "sap_code": "F00001121",
+      "name": "Макаронс на оформ Шок банан NEW 3 шт",
+      "work_center": "A1436",
+      "labor_time": 85.0,
+      "sort_order": 60
+    },
+    {
+      "sap_code": "F00000007",
+      "name": "Макаронс на оформ Шок банан мини 2 шт",
+      "work_center": "A1436",
+      "labor_time": 95.0,
+      "sort_order": 61
+    },
+    {
+      "sap_code": "F00002654",
+      "name": "Птичье молоко пирожное",
+      "work_center": "A1436",
+      "labor_time": 96.0,
+      "sort_order": 62
+    },
+    {
+      "sap_code": "F00000092",
+      "name": "Птичка торт 1 этап",
+      "work_center": "A1436",
+      "labor_time": 96.0,
+      "sort_order": 63
+    },
+    {
+      "sap_code": "F00000011",
+      "name": "Праг смазка",
+      "work_center": "A1436",
+      "labor_time": 110.0,
+      "sort_order": 64
+    },
+    {
+      "sap_code": "F00000011",
+      "name": "Прага ганаж",
+      "work_center": "A1436",
+      "labor_time": 115.0,
+      "sort_order": 65
+    },
+    {
+      "sap_code": "0",
+      "name": "Джулетта",
+      "work_center": "A1436",
+      "labor_time": 94.0,
+      "sort_order": 66
+    },
+    {
+      "sap_code": "F00002561",
+      "name": "Торт Стич",
+      "work_center": "A1436",
+      "labor_time": 50.0,
+      "sort_order": 67
+    },
+    {
+      "sap_code": "F00002562",
+      "name": "Торт Мишка",
+      "work_center": "A1436",
+      "labor_time": 50.0,
+      "sort_order": 68
+    },
+    {
+      "sap_code": "F00000082",
+      "name": "Песочно - Малиновый 1 этап",
+      "work_center": "A1436",
+      "labor_time": 85.0,
+      "sort_order": 69
+    },
+    {
+      "sap_code": "F00000032",
+      "name": "Дари Торт",
+      "work_center": "A1433",
+      "labor_time": 258.0,
+      "sort_order": 70
+    },
+    {
+      "sap_code": "F00000113",
+      "name": "Шок малиновый торт прямоугольный",
+      "work_center": "A1433",
+      "labor_time": 332.0,
+      "sort_order": 71
+    },
+    {
+      "sap_code": "F00000107",
+      "name": "Творожно бисквитный торт",
+      "work_center": "A1433",
+      "labor_time": 258.0,
+      "sort_order": 72
+    },
+    {
+      "sap_code": "F00000830",
+      "name": "Ягода малинка прям торт",
+      "work_center": "A1433",
+      "labor_time": 257.0,
+      "sort_order": 73
+    },
+    {
+      "sap_code": "F00000080",
+      "name": "Ореховый медовый New Торт",
+      "work_center": "A1433",
+      "labor_time": 169.0,
+      "sort_order": 74
+    },
+    {
+      "sap_code": "F00000057",
+      "name": "Малинка Торт",
+      "work_center": "A1434",
+      "labor_time": 191.0,
+      "sort_order": 75
+    },
+    {
+      "sap_code": "F00000068",
+      "name": "Милано  Торт",
+      "work_center": "A1434",
+      "labor_time": 239.0,
+      "sort_order": 76
+    },
+    {
+      "sap_code": "F00000099",
+      "name": "Саксония торт",
+      "work_center": "A1434",
+      "labor_time": 185.0,
+      "sort_order": 77
+    },
+    {
+      "sap_code": "F00000106",
+      "name": "Сникерс new прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 170.0,
+      "sort_order": 78
+    },
+    {
+      "sap_code": "F00000123",
+      "name": "Фруктовый торт прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 164.0,
+      "sort_order": 79
+    },
+    {
+      "sap_code": "F00000111",
+      "name": "Фруктовый New торт прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 196.0,
+      "sort_order": 80
+    },
+    {
+      "sap_code": "F00000112",
+      "name": "Черный принц торт прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 161.0,
+      "sort_order": 81
+    },
+    {
+      "sap_code": "F00000091",
+      "name": "Шок банановый торт прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 124.0,
+      "sort_order": 82
+    },
+    {
+      "sap_code": "F00002587",
+      "name": "Торт Махровые",
+      "work_center": "A1434",
+      "labor_time": 245.0,
+      "sort_order": 83
+    },
+    {
+      "sap_code": "F00000121",
+      "name": "Якобс торт",
+      "work_center": "A1434",
+      "labor_time": 207.0,
+      "sort_order": 84
+    },
+    {
+      "sap_code": "F00001402",
+      "name": "Меренговый Прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 109.0,
+      "sort_order": 85
+    },
+    {
+      "sap_code": "F00000036",
+      "name": "Итальяно торт",
+      "work_center": "A1434",
+      "labor_time": 94.0,
+      "sort_order": 86
+    },
+    {
+      "sap_code": "F00000090",
+      "name": "Карамельный медовый прямоуг торт",
+      "work_center": "A1434",
+      "labor_time": 99.0,
+      "sort_order": 87
+    },
+    {
+      "sap_code": "F00000114",
+      "name": "Шок медовый торт",
+      "work_center": "A1434",
+      "labor_time": 124.0,
+      "sort_order": 88
+    },
+    {
+      "sap_code": "F00000020",
+      "name": "Афганка New торт",
+      "work_center": "A1434",
+      "labor_time": 99.0,
+      "sort_order": 89
+    },
+    {
+      "sap_code": "F00000061",
+      "name": "Маркиза торт",
+      "work_center": "A1434",
+      "labor_time": 99.0,
+      "sort_order": 90
+    },
+    {
+      "sap_code": "F00000819",
+      "name": "Микадо торт прямоугольный",
+      "work_center": "A1434",
+      "labor_time": 124.0,
+      "sort_order": 91
+    },
+    {
+      "sap_code": "F00002753",
+      "name": "Спартак прямоугольный торт",
+      "work_center": "A1434",
+      "labor_time": 242.0,
+      "sort_order": 92
+    },
+    {
+      "sap_code": "F00001139",
+      "name": "Торт Сафия бежевый",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 93
+    },
+    {
+      "sap_code": "F00000103",
+      "name": "Торт Сафия розовый",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 94
+    },
+    {
+      "sap_code": "F00000102",
+      "name": "Торт Сафия Оформление",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 95
+    },
+    {
+      "sap_code": "F00001300",
+      "name": "Торт Джулетта оформленный m/n",
+      "work_center": "A1431",
+      "labor_time": 165.2,
+      "sort_order": 96
+    },
+    {
+      "sap_code": "F00001300",
+      "name": "Торт Джулетта оформленный m/n",
+      "work_center": "A1435",
+      "labor_time": 114.0,
+      "sort_order": 97
+    },
+    {
+      "sap_code": "F00002788",
+      "name": "Торт Джулетта m/n",
+      "work_center": "A1435",
+      "labor_time": 82.0,
+      "sort_order": 98
+    },
+    {
+      "sap_code": "F00002788",
+      "name": "Торт Джулетта m/n",
+      "work_center": "A1436",
+      "labor_time": 94.0,
+      "sort_order": 99
+    },
+    {
+      "sap_code": "F00001307",
+      "name": "Торт Молочная Девочка m/n",
+      "work_center": "A1431",
+      "labor_time": 180.7,
+      "sort_order": 100
+    },
+    {
+      "sap_code": "F00001307",
+      "name": "Торт Молочная Девочка m/n",
+      "work_center": "A1435",
+      "labor_time": 94.0,
+      "sort_order": 101
+    },
+    {
+      "sap_code": "F00001308",
+      "name": "Торт Орео m/n",
+      "work_center": "A1432",
+      "labor_time": 176.0,
+      "sort_order": 102
+    },
+    {
+      "sap_code": "F00001314",
+      "name": "Торт Сафия бежевый m/n",
+      "work_center": "A1431",
+      "labor_time": 185.0,
+      "sort_order": 103
+    },
+    {
+      "sap_code": "F00001314",
+      "name": "Торт Сафия бежевый m/n",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 104
+    },
+    {
+      "sap_code": "F00001314",
+      "name": "Торт Сафия бежевый m/n",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 105
+    },
+    {
+      "sap_code": "F00001315",
+      "name": "Торт Сафия розовый m/n",
+      "work_center": "A1431",
+      "labor_time": 185.0,
+      "sort_order": 106
+    },
+    {
+      "sap_code": "F00001315",
+      "name": "Торт Сафия розовый m/n",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 107
+    },
+    {
+      "sap_code": "F00001315",
+      "name": "Торт Сафия розовый m/n",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 108
+    },
+    {
+      "sap_code": "F00002786",
+      "name": "Торт Сафия оформленный m/n",
+      "work_center": "A1431",
+      "labor_time": 185.0,
+      "sort_order": 109
+    },
+    {
+      "sap_code": "F00002786",
+      "name": "Торт Сафия оформленный m/n",
+      "work_center": "A1435",
+      "labor_time": 85.0,
+      "sort_order": 110
+    },
+    {
+      "sap_code": "F00002786",
+      "name": "Торт Сафия оформленный m/n",
+      "work_center": "A1436",
+      "labor_time": 41.0,
+      "sort_order": 111
+    },
+    {
+      "sap_code": "F00002789",
+      "name": "Торт Птичка m/n",
+      "work_center": "A1436",
+      "labor_time": 96.0,
+      "sort_order": 112
+    },
+    {
+      "sap_code": "F00002790",
+      "name": "Торт Смородина m/n",
+      "work_center": "A1432",
+      "labor_time": 100.0,
+      "sort_order": 113
+    },
+    {
+      "sap_code": "F00002790",
+      "name": "Торт Смородина m/n",
+      "work_center": "A1435",
+      "labor_time": 100.0,
+      "sort_order": 114
+    }
+  ]
+}
