@@ -354,7 +354,7 @@ function SupervisorDaily() {
       {/* Performance metrics — speedometers, workload bars, funnel, trend */}
       <div className="mb-4">
         <Section icon={BarChart2} title={isSupervisor ? t("daily.performanceTitle") : (selectedSupName || t("daily.performanceTitle"))}>
-          <SupervisorPerformance managerId={managerId} date={date} />
+          <SupervisorPerformance managerId={managerId} date={date} unit={unit} />
         </Section>
       </div>
 
