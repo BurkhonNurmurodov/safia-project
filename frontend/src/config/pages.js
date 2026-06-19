@@ -46,7 +46,7 @@ export const DEFAULT_PAGE_ACCESS = {
   downtime: ["shift-manager"],
   staff:    ["shift-manager", "supervisor"],
   daily:    ["shift-manager", "supervisor"],
-  production: ["supervisor"],
+  production: [], // pilot: admin-only until enabled from the Access tab
 };
 
 export function canAccessPage(role, pageKey, access) {
