@@ -2501,8 +2501,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             clearAllFilters={clearAllFilters}
             activeCount={[createdFilter, supervisorFilter.length > 0, typeFilter.length > 0, statusFilter !== "all", approverFilter.length > 0, dateFilter].filter(Boolean).length}
           >
-            <DatePicker value={createdFilter} onChange={setCreatedFilter}
-              availableDates={availableCreatedDates} placeholder={t("staff.selectCreatedDate")} />
+            <DatePicker value={dateFilter} onChange={setDateFilter} availableDates={availableDates} />
             {isManager && (
               <FilterDropdown icon={Users} label={t("staff.colSupervisor")}
                 active={supervisorFilter.length > 0}
