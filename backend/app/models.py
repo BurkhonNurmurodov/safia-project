@@ -392,13 +392,20 @@ class PPProduct(Base):
 
 
 class PPWorkCenter(Base):
-    """Per-brigadir work-center config: штатка (establishment headcount, W)."""
+    """Per-brigadir work-center config.
+
+    shtatka (W)  — establishment headcount for the work center.
+    capacity (S) — planned productive minutes the roster can deliver ("Для 85%
+                   труд", ≈ W × 0.85 × 480). Hand-tuned per work center; when
+                   NULL the engine falls back to W × productive_min (default 425).
+    People needed (N) = ROUND(W × Σlabor / S); see services/pp_calc.py."""
     __tablename__ = "pp_work_centers"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
     code       = Column(String, nullable=False)
     shtatka    = Column(Integer, nullable=False, default=0)
+    capacity   = Column(Numeric(12, 2), nullable=True)
     sort_order = Column(Integer, default=0)
     active     = Column(Boolean, nullable=False, server_default="true")
 
