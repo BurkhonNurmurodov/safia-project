@@ -33,14 +33,21 @@ function nameToColor(name = "") {
 const LANG_FLAGS = { uz: "🇺🇿", uz_cyrl: "🇺🇿", ru: "🇷🇺", en: "🇬🇧" };
 const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 
-// ─── AccountSection ─────────────────────────────────────────────────────────
-// Inline profile / role-switch / sign-out, rendered as a section inside the menu
-// dropdown (replaces the former standalone avatar popover in the header).
+// ─── UserProfile ──────────────────────────────────────────────────────────────
+// Avatar in the header that opens a popover for role-switch / sign-out.
 
-function AccountSection() {
+function UserProfile() {
   const { auth, leaveRole, switchRole } = useAuth();
   const { t } = useLang();
+  const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
 
   if (!auth || auth.status !== "approved") return null;
 
@@ -52,28 +59,47 @@ function AccountSection() {
   const others   = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
 
   return (
-    <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
-        {t("menu.account")}
-      </span>
-
-      {/* Active profile */}
-      <div className="flex items-center gap-3 py-1.5">
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
+        <div className="hidden md:block leading-tight text-right">
+          <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{name}</div>
+          <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{role}</div>
+        </div>
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
           style={{ background: color }}
         >
           {initials}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
-          <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
-        </div>
-        <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
-      </div>
+      </button>
 
-      {/* Other profiles */}
-      {others.map(r => {
+      {open && (
+        <div
+          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 8px 24px rgba(0,0,0,.15)",
+            minWidth: 220,
+          }}
+        >
+          {/* Active profile at top */}
+          <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
+              style={{ background: color }}
+            >
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
+              <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
+            </div>
+            <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+          </div>
+
+          {/* Other profiles */}
+          {others.map(r => {
         const rName     = r.full_name || "";
         const rTkey     = ROLE_TKEYS[r.role];
         const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
@@ -82,9 +108,13 @@ function AccountSection() {
           <button
             key={r.id}
             disabled={isPending}
-            onClick={() => switchRole(r.id)}
-            className="w-full flex items-center gap-3 py-1.5 text-left rounded-lg"
-            style={{ opacity: isPending ? 0.55 : 1, cursor: isPending ? "default" : "pointer" }}
+            onClick={() => { switchRole(r.id); setOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left"
+            style={{
+              borderBottom: "1px solid var(--border)",
+              opacity: isPending ? 0.55 : 1,
+              cursor: isPending ? "default" : "pointer",
+            }}
             onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
             onMouseLeave={e => { e.currentTarget.style.background = ""; }}
           >
@@ -112,17 +142,19 @@ function AccountSection() {
         );
       })}
 
-      {/* Sign out */}
-      <button
-        onClick={() => setConfirmLogout(true)}
-        className="w-full flex items-center gap-2 mt-1 py-2 text-xs rounded-lg"
-        style={{ color: "var(--text-3)" }}
-        onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-        onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
-      >
-        <LogOut size={14} />
-        <span>{t("nav.signOut")}</span>
-      </button>
+          {/* Sign out from current profile */}
+          <button
+            onClick={() => { setOpen(false); setConfirmLogout(true); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-3)" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
+          >
+            <LogOut size={14} />
+            <span>{t("nav.signOut")}</span>
+          </button>
+        </div>
+      )}
 
       {confirmLogout && (
         <div
