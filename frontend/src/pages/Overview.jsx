@@ -275,7 +275,7 @@ export default function Overview() {
   // "How it's calculated" popup for a Difference cell, tailored to the active unit.
   function diffModal(b) {
     const title = `${t("overview.fm.diffTitle")}${avgSuffix}`;
-    const value = fmtDiff(b, diffUnit);
+    const value = fmtDiff(b, diffUnit, hcLabel);
     if (diffUnit === "hc") {
       return {
         title, value,
