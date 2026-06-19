@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck, Factory } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import TranslationsEditor from "./TranslationsEditor";
 import UsersManagement from "./UsersManagement";
 import PageAccess from "./PageAccess";
+import ProductionUpload from "./ProductionUpload";
 import { fillDescs } from "../../utils/segments";
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
