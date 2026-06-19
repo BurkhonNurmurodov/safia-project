@@ -403,7 +403,8 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
               {phase==="from" ? t("filter.clickToSetStart") : t("filter.clickToSetEnd")}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
