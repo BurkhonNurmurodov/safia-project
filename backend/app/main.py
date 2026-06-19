@@ -133,6 +133,7 @@ app.include_router(settings.router)
 app.include_router(translations.router)
 app.include_router(notifications_router.router)
 app.include_router(staff_router.router)
+app.include_router(production_router.router)
 
 
 @app.get("/health")
