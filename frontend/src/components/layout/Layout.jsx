@@ -398,6 +398,9 @@ export default function Layout({ children, title, showFilters = true, filterSlot
   // unit slot (e.g. Daily) flag a single active filter when not on minutes.
   const filterBadgeCount = showFilters ? activeCount : (filterSlot && unit !== "min" ? 1 : 0);
 
+  // The filters menu only appears on pages that actually expose filters.
+  const hasFilters = showFilters || !!filterSlot;
+
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
       <Sidebar
