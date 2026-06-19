@@ -390,7 +390,6 @@ export default function Layout({ children, title, showFilters = true, filterSlot
     if (menuOpen && menuRef.current) {
       const r = menuRef.current.getBoundingClientRect();
       setMenuPanelTop(r.bottom + 8);
-      notif.refetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuOpen]);
