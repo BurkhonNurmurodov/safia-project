@@ -14,7 +14,9 @@ Per-row (one row per catalog line = SAP code + work center + operation):
 
 Per work center w:
     Q_w   = Σ total_labor over the rows in w
-    N_w   = ROUND( Q_w / PRODUCTIVE_MIN )        people needed   (U = W*R = Q/425)
+    S_w   = capacity (productive minutes for the roster), hand-set per WC;
+            falls back to W_w × PRODUCTIVE_MIN when not configured
+    N_w   = ROUND( W_w × Q_w / S_w )             people needed   (U = W*R, R = Q/S)
     load  (Загруженность, col O)             = Q_w / (SHIFT_MIN * N_w)   [IFERROR→0]
 
 Totals (header row):
