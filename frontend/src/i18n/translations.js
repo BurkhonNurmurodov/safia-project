@@ -2113,7 +2113,7 @@ const t = {
     "overview.finalWorkload":   "Итог. нагрузка",
     "overview.planned":         "План %",
     "overview.diff":            "Разница",
-    "overview.diffUnitHc":      "HC",
+    "overview.diffUnitHc":      "Численность",
     "overview.headcount":       "Численность",
     "overview.status":          "Статус",
     "overview.workers":         "Сотрудники",
