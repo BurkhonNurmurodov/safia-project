@@ -1313,11 +1313,11 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.45)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
       onClick={onClose}>
-      <div className="w-full max-w-3xl my-6 rounded-2xl overflow-y-auto max-h-[90vh]"
+      <div className="w-full max-w-3xl rounded-2xl flex flex-col overflow-hidden max-h-[90dvh]"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
         onClick={(e) => e.stopPropagation()}>
         {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <div>
             <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
               {isEdit ? t("staff.editPeopleExchange") : `${t("staff.peopleExchange")} — ${t("staff.newDocument")}`}
