@@ -164,7 +164,7 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
             background: "linear-gradient(transparent, var(--bg-card))" }} />
 
           <div className="relative flex items-stretch justify-center gap-1">
-            <Wheel values={hours.map(pad2)} valueIndex={hourIdx} resetKey="h"
+            <Wheel values={hours.map(h => pad2(h % 24))} valueIndex={hourIdx} resetKey="h"
               onChange={(i) => setHour(hours[i])} ariaLabel="hours" />
             <div className="flex items-center text-2xl font-bold" style={{ color: "var(--text-1)" }}>:</div>
             <Wheel values={minutes.map(pad2)} valueIndex={minIdx} resetKey={`m-${hour}`}
