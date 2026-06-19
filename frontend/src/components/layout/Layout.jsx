@@ -350,12 +350,13 @@ export default function Layout({ children, title, showFilters = true, filterSlot
                     {/* Scrollable body */}
                     <div className="flex-1 min-h-0 overflow-y-auto">
                       {/* Filters */}
-                      {showFilters && (
+                      {(showFilters || filterSlot) && (
                         <div className="p-4">
                           <span className="text-[10px] font-semibold uppercase tracking-wider block mb-3" style={{ color: "var(--text-4)" }}>
                             {t("filter.filters") || "Filters"}
                           </span>
-                          <GlobalFilters />
+                          {showFilters && <GlobalFilters />}
+                          {filterSlot && <div className={showFilters ? "mt-3" : ""}>{filterSlot}</div>}
                         </div>
                       )}
 
