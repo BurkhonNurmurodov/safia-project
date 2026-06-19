@@ -64,6 +64,58 @@ app.add_middleware(
 from app.notify_ctx import GhostModeMiddleware  # noqa: E402
 app.add_middleware(GhostModeMiddleware)
 
+
+class NoStoreAPIMiddleware:
+    """Mark every API/auth response as non-cacheable.
+
+    Production runs behind LiteSpeed (cPanel). LSCache keys cached responses by
+    URL and will, by default, store and replay a response for a shared URL —
+    ignoring the per-user ``Authorization`` header. That means one supervisor's
+    authenticated response to ``/api/auth/webapp`` (their token + profile) or to
+    a ``/api/staff/*`` data URL can be served back to a *different* supervisor,
+    which shows up as profiles/data randomly swapping between users.
+
+    Setting ``Cache-Control: no-store`` (plus the LiteSpeed-specific opt-out)
+    tells every cache in the chain — LSCache, any CDN, the Telegram in-app
+    proxy, the browser — never to store these responses. Hashed static assets
+    are left untouched so the SPA stays cacheable.
+
+    Pure ASGI (not BaseHTTPMiddleware) so it composes cleanly with the a2wsgi
+    bridge and the Ghost Mode ContextVar, same as GhostModeMiddleware.
+    """
+
+    _API_PREFIXES = ("/api", "/admin", "/bot", "/health")
+    _DROP = (b"cache-control", b"pragma", b"expires", b"x-litespeed-cache-control")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or not scope.get("path", "").startswith(self._API_PREFIXES):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for (k, v) in message.get("headers", [])
+                           if k.lower() not in self._DROP]
+                headers += [
+                    (b"cache-control", b"no-store, no-cache, must-revalidate, private"),
+                    (b"pragma", b"no-cache"),
+                    (b"expires", b"0"),
+                    (b"x-litespeed-cache-control", b"no-cache"),  # LSWS/cPanel opt-out
+                    (b"vary", b"Authorization"),
+                ]
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+# Outermost middleware: it must have the final say on cache headers, after CORS
+# and the route handlers have run.
+app.add_middleware(NoStoreAPIMiddleware)
+
 app.include_router(auth_router.router)
 app.include_router(webhook_router.router)
 app.include_router(admin.router)
