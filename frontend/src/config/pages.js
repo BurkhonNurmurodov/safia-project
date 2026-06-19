@@ -46,6 +46,7 @@ export const DEFAULT_PAGE_ACCESS = {
   downtime: ["shift-manager"],
   staff:    ["shift-manager", "supervisor"],
   daily:    ["shift-manager", "supervisor"],
+  production: ["supervisor"],
 };
 
 export function canAccessPage(role, pageKey, access) {
