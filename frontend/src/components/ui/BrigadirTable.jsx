@@ -297,7 +297,7 @@ export default function BrigadirTable({
                     style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
                     onClick={() => setFormulaModal(diffModal(b))}
                   >
-                    {fmtDiff(b, diffUnit)}
+                    {fmtDiff(b, diffUnit, hcLabel)}
                   </button>
                 </td>
                 <td className="px-2 py-2.5 text-right hidden md:table-cell" onClick={e => e.stopPropagation()}>
