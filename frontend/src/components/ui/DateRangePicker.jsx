@@ -222,6 +222,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
     <div className="relative flex-shrink-0" ref={wrapRef}>
       {/* Trigger */}
       <button
+        ref={triggerRef}
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
         style={{
