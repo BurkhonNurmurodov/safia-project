@@ -1559,9 +1559,9 @@ def _clock_bounds_min(clock_in_out):
 
 
 def _normalize_transfer_time(caller: dict, ttype: Optional[str], raw) -> Optional[str]:
-    """Honour a transfer time only for admins (feature is admin-only for now),
-    moving to a supervisor OR a task. Returns a canonical 'HH:MM' string or None."""
-    if not raw or ttype not in ("supervisor", "task") or (caller or {}).get("role") != "admin":
+    """Honour a transfer time for admins and supervisors, moving to a supervisor
+    OR a task. Returns a canonical 'HH:MM' string or None."""
+    if not raw or ttype not in ("supervisor", "task"):
         return None
     mins = _parse_hhmm(raw)
     return _fmt_hhmm(mins) if mins is not None else None
