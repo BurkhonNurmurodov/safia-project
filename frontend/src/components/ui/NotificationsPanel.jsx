@@ -65,43 +65,13 @@ export function useNotifications() {
 }
 
 /**
- * Notifications rendered as a collapsible button inside the menu dropdown.
- * Collapsed by default — the row shows the unread count; clicking it expands
- * the list (mark-all-read + scrollable items) below.
+ * The notification list body — header (mark-all-read) + scrollable items.
+ * Shared by the popover so the markup stays in one place.
  */
-export default function NotificationsSection({ notifications, readIds, unread, handleRead, handleReadAll }) {
+function NotificationsList({ notifications, readIds, unread, handleRead, handleReadAll }) {
   const { t } = useLang();
-  const [open, setOpen] = useState(false);
-
   return (
-    <div style={{ borderTop: "1px solid var(--border)" }}>
-      {/* Toggle button */}
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
-        onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
-        onMouseLeave={e => e.currentTarget.style.background = ""}
-      >
-        <span className="flex items-center gap-2 text-xs font-medium" style={{ color: "var(--text-2)" }}>
-          <Bell size={14} />
-          {t("notif.title")}
-          {unread > 0 && (
-            <span
-              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-              style={{ background: "#ef4444", color: "#fff" }}
-            >
-              {unread > 99 ? "99+" : unread}
-            </span>
-          )}
-        </span>
-        <ChevronDown
-          size={14}
-          style={{ color: "var(--text-3)", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
-        />
-      </button>
-
-      {!open ? null : (
-      <div className="px-4 pb-3">
+    <div className="px-4 pb-3 pt-2">
       {unread > 0 && (
         <div className="flex justify-end mb-2">
           <button
@@ -114,12 +84,9 @@ export default function NotificationsSection({ notifications, readIds, unread, h
         </div>
       )}
 
-      <div
-        className="overflow-y-auto -mx-1"
-        style={{ maxHeight: 240 }}
-      >
+      <div className="overflow-y-auto -mx-1" style={{ maxHeight: 320 }}>
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-6 gap-2">
+          <div className="flex flex-col items-center justify-center py-8 gap-2">
             <Inbox size={26} style={{ color: "var(--text-4)" }} />
             <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("notif.empty")}</span>
           </div>
@@ -165,7 +132,121 @@ export default function NotificationsSection({ notifications, readIds, unread, h
           })
         )}
       </div>
-      </div>
+    </div>
+  );
+}
+
+/**
+ * Standalone notifications entry point for the header: a bell button carrying
+ * the unread badge that opens a self-contained popover with the list. Shares a
+ * single read-state source of truth with the Layout via the useNotifications hook.
+ */
+export default function NotificationsBell({ refetch, ...list }) {
+  const { t } = useLang();
+  const { unread } = list;
+  const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  const [panelTop, setPanelTop] = useState(56);
+  const ref = useRef(null);
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      if (btnRef.current) setPanelTop(btnRef.current.getBoundingClientRect().bottom + 8);
+      refetch?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(v => !v)}
+        className="relative flex items-center justify-center p-1.5 rounded-lg transition-colors"
+        style={{
+          background: open ? "var(--brand)" : "var(--bg-inner)",
+          border: `1px solid ${open ? "var(--brand)" : "var(--border)"}`,
+          color: open ? "#fff" : "var(--text-2)",
+        }}
+        title={t("notif.title")}
+        aria-label={t("notif.title")}
+      >
+        <Bell size={15} />
+        {unread > 0 && (
+          <span
+            className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+            style={{ background: "#ef4444", color: "#fff", border: "2px solid var(--bg-base)" }}
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="z-50 rounded-xl shadow-2xl flex flex-col"
+          style={isMobile ? {
+            position: "fixed",
+            top: panelTop,
+            left: 8,
+            right: 8,
+            maxHeight: `calc(100vh - ${panelTop}px - 12px)`,
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-md)",
+          } : {
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            width: 320,
+            maxHeight: "80vh",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-md)",
+          }}
+        >
+          {/* Panel header */}
+          <div
+            className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
+            style={{ borderBottom: "1px solid var(--border)" }}
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--text-1)" }}>
+              <Bell size={14} />
+              {t("notif.title")}
+              {unread > 0 && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: "#ef4444", color: "#fff" }}
+                >
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </span>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-0.5 rounded transition-colors hover:bg-white/10"
+              style={{ color: "var(--text-3)" }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          {/* Scrollable body */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <NotificationsList {...list} />
+          </div>
+        </div>
       )}
     </div>
   );
