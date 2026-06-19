@@ -112,27 +112,38 @@ def compute_dashboard(
     for w in work_centers:
         code = w.get("code")
         if code and code not in wc_meta:
-            wc_meta[code] = {"shtatka": int(_f(w.get("shtatka"))), "sort_order": w.get("sort_order", 999)}
+            cap = w.get("capacity")
+            wc_meta[code] = {
+                "shtatka": int(_f(w.get("shtatka"))),
+                "capacity": (_f(cap) if cap is not None else None),
+                "sort_order": w.get("sort_order", 999),
+            }
             wc_codes.append(code)
     for code in q_by_wc:
         if code and code not in wc_meta:
-            wc_meta[code] = {"shtatka": 0, "sort_order": 999}
+            wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
             wc_codes.append(code)
 
     people_by_wc: dict[str, int] = {}
     wc_panel: list[dict] = []
     for code in wc_codes:
+        meta = wc_meta[code]
         q = q_by_wc.get(code, 0.0)
-        people = _round_half_up(q / productive_min) if productive_min else 0
+        shtatka = meta["shtatka"]
+        cap = meta["capacity"]
+        # S (productive minutes for the roster): hand-set per WC, else W × 425.
+        s_eff = cap if (cap and cap > 0) else (shtatka * productive_min)
+        people = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
         people_by_wc[code] = people
         load = (q / (shift_min * people)) if people > 0 else 0.0
         wc_panel.append({
             "work_center": code,
-            "shtatka": wc_meta[code]["shtatka"],
+            "shtatka": shtatka,           # штатка (W)
+            "capacity": s_eff,            # S — productive minutes for the roster
             "people": people,             # O. SONI (N)
             "total_labor": q,             # Σ Общ.трудоёмкость for this WC
             "load": load,                 # Загруженность (O)
-            "sort_order": wc_meta[code]["sort_order"],
+            "sort_order": meta["sort_order"],
         })
     wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
 
