@@ -346,7 +346,7 @@ export default function Layout({ children, title, showFilters = true }) {
                     </div>
 
                     {/* Scrollable body */}
-                    <div className="overflow-y-auto">
+                    <div className="flex-1 min-h-0 overflow-y-auto">
                       {/* Filters */}
                       {showFilters && (
                         <div className="p-4">
