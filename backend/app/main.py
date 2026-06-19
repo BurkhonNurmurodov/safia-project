@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
         backfill_day_approvals, backfill_day_closures, backfill_deletion_batch_ids,
         seed_admins, seed_languages, seed_managers_and_sources, seed_exchange_tasks,
         add_edit_requests_batch_id, add_last_seen_column, migrate_multi_roles,
+        seed_production_pilot,
     )
     add_last_seen_column()
     add_edit_requests_batch_id()
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     seed_languages()
     seed_managers_and_sources()
     seed_exchange_tasks()
+    seed_production_pilot()
     backfill_day_approvals()
     backfill_day_closures()
     backfill_deletion_batch_ids()
