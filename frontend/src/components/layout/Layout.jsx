@@ -268,6 +268,18 @@ function UserProfile() {
                 </div>
               )}
             </div>
+
+            {/* Sign out from current profile */}
+            <button
+              onClick={() => { setSettingsOpen(false); setConfirmLogout(true); }}
+              className="w-full flex items-center gap-3 px-5 py-3.5 text-xs"
+              style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
+              onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
+            >
+              <LogOut size={14} />
+              <span>{t("nav.signOut")}</span>
+            </button>
           </div>
         </div>
       )}
