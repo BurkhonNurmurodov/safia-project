@@ -141,7 +141,7 @@ export default function Production() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/dashboard", { params: { date, ...managerParam } }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const override = useMutation({
