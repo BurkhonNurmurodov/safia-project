@@ -74,6 +74,7 @@ export default function ShiftDaily() {
   // Initial date can be restored from the URL (e.g. returning from a drill-down).
   const [date, setDate] = useState(() => searchParams.get("date") || isoDaysAgo(1));
   const [loadDiff, setLoadDiff] = useState(false);
+  const [rankMode, setRankMode] = useState("actual"); // "planned" | "actual" | "diff"
 
   const winFrom = addDaysISO(date, -(WINDOW_DAYS - 1));
 
