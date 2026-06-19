@@ -525,13 +525,19 @@ def _decide_edit_batch(batch_token: str, status: str, caller: dict) -> None:
             raise
 
 
-def _decide_hr_document(doc_id: int, status: str, caller: dict) -> None:
+def _decide_hr_document(doc_id: int, status: str, call) -> None:
     from fastapi import HTTPException
     from app.models import HrDocument
     from app.routers import staff
     with SessionLocal() as db:
         doc = db.query(HrDocument).filter_by(id=doc_id).first()
         if not doc:
+            raise AlreadyHandled()
+        caller = _caller_for_doc(call, doc, db)
+        # No caller, or a non-admin who is no longer the receiving supervisor of
+        # this document → they may not decide it (role changed, or a stale tap).
+        if caller is None or (caller["role"] != "admin"
+                              and not staff._can_approve_doc(doc, caller, db)):
             raise AlreadyHandled()
         try:
             if status == "approved":
