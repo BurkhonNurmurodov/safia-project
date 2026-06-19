@@ -64,14 +64,26 @@ export function useNotifications() {
   return { notifications, readIds, unread, refetch, handleRead, handleReadAll };
 }
 
-/** Inline notifications list rendered as a section inside the menu dropdown. */
+/**
+ * Notifications rendered as a collapsible button inside the menu dropdown.
+ * Collapsed by default — the row shows the unread count; clicking it expands
+ * the list (mark-all-read + scrollable items) below.
+ */
 export default function NotificationsSection({ notifications, readIds, unread, handleRead, handleReadAll }) {
   const { t } = useLang();
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "var(--text-4)" }}>
+    <div style={{ borderTop: "1px solid var(--border)" }}>
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
+        onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+        onMouseLeave={e => e.currentTarget.style.background = ""}
+      >
+        <span className="flex items-center gap-2 text-xs font-medium" style={{ color: "var(--text-2)" }}>
+          <Bell size={14} />
           {t("notif.title")}
           {unread > 0 && (
             <span
@@ -82,7 +94,16 @@ export default function NotificationsSection({ notifications, readIds, unread, h
             </span>
           )}
         </span>
-        {unread > 0 && (
+        <ChevronDown
+          size={14}
+          style={{ color: "var(--text-3)", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+        />
+      </button>
+
+      {!open ? null : (
+      <div className="px-4 pb-3">
+      {unread > 0 && (
+        <div className="flex justify-end mb-2">
           <button
             onClick={handleReadAll}
             className="text-[10px] transition-colors"
@@ -90,12 +111,12 @@ export default function NotificationsSection({ notifications, readIds, unread, h
           >
             {t("notif.markAllRead")}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         className="overflow-y-auto -mx-1"
-        style={{ maxHeight: 200 }}
+        style={{ maxHeight: 240 }}
       >
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 gap-2">
@@ -144,6 +165,8 @@ export default function NotificationsSection({ notifications, readIds, unread, h
           })
         )}
       </div>
+      </div>
+      )}
     </div>
   );
 }
