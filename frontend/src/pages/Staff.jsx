@@ -83,7 +83,9 @@ function sumHours(rows) {
 // ── Transfer-time helpers (people-exchange split) ──────────────────────────────
 function parseHHMM(s) {
   if (!s) return null;
-  const parts = String(s).trim().replace(/\./g, ":").replace(/-/g, ":").split(":");
+  // Tolerate the verifix clock format's trailing worked-hours suffix, e.g.
+  // " 00:38 (7.08)" → "00:38", before splitting into H:M.
+  const parts = String(s).split("(")[0].trim().replace(/\./g, ":").replace(/-/g, ":").split(":");
   const h = parseInt(parts[0], 10);
   const m = parts.length > 1 && parts[1] !== "" ? parseInt(parts[1], 10) : 0;
   return Number.isNaN(h) || Number.isNaN(m) ? null : h * 60 + m;
