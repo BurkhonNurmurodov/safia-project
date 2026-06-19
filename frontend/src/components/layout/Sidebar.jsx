@@ -22,6 +22,7 @@ const ALL_LINKS = [
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock },
   { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint },
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck },
+  { to: "/production", page: "production", key: "nav.production",    icon: Factory },
 ];
 
 function fmtDate(iso) {
