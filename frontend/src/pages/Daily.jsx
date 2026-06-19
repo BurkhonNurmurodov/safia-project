@@ -140,6 +140,10 @@ function SupervisorDaily() {
   const managerId = isSupervisor ? auth?.role_id : selectedManagerId;
   const [date, setDate] = usePersistentState("daily_selected_date", () => drillDate || isoDaysAgo(1));
 
+  // A drill-down navigation (new URL params) overrides any persisted selection.
+  useEffect(() => { if (drillId)   setSelectedManagerId(Number(drillId)); }, [drillId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (drillDate) setDate(drillDate); }, [drillDate]);                     // eslint-disable-line react-hooks/exhaustive-deps
+
   const enabled = !!managerId && !!date;
 
   const { data: supervisors = [] } = useQuery({
