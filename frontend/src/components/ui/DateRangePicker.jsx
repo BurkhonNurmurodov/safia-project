@@ -124,8 +124,28 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
   const [leftM, setLeftM] = useState(()=>{ const s=dateFrom||todayISO(); return parseInt(s.split("-")[1])-1; });
   const [rightY, rightM]  = navMo(leftY, leftM, 1);
 
-  const wrapRef   = useRef(null);
+  const wrapRef    = useRef(null);
+  const triggerRef = useRef(null);
+  const popRef     = useRef(null);
+  const [pos, setPos] = useState(null);
   const isMobile  = window.innerWidth < 640;
+
+  // Desktop dropdown is portaled to <body> so it escapes the Filters panel's
+  // overflow clipping; position is computed from the trigger's bounding rect.
+  function computePos() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const width = Math.min(660, vw - 16);
+    let left = rect.right - width;                 // right-align to trigger
+    left = Math.min(left, vw - width - 8);
+    left = Math.max(8, left);
+    const h = popRef.current?.offsetHeight || 380;
+    const spaceBelow = vh - rect.bottom - 8;
+    const openUp = spaceBelow < h && rect.top - 8 > spaceBelow;
+    const top = openUp ? Math.max(8, rect.top - 8 - h) : rect.bottom + 8;
+    return { top, left, width };
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -134,8 +154,30 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
     if (dateFrom) { setLeftY(parseInt(dateFrom.split("-")[0])); setLeftM(parseInt(dateFrom.split("-")[1])-1); }
   }, [open]); // eslint-disable-line
 
+  // Position the portaled dropdown (runs before paint so there's no flicker).
+  useLayoutEffect(() => {
+    if (open && !isMobile) setPos(computePos());
+    else setPos(null);
+  }, [open]); // eslint-disable-line
+
+  // Keep it anchored to the trigger while scrolling / resizing.
   useEffect(() => {
-    const h = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    if (!open || isMobile) return;
+    const update = () => setPos(computePos());
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]); // eslint-disable-line
+
+  useEffect(() => {
+    const h = e => {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
