@@ -107,7 +107,12 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
     const a = []; for (let h = loH; h <= hiH; h++) a.push(h); return a;
   }, [loH, hiH]);
 
-  const init = (() => { let m = parseHHMM(value); if (m == null || m < lo || m > hi) m = lo; return m; })();
+  const init = (() => {
+    let m = parseHHMM(value);
+    if (m != null && m < lo) m += 1440;          // post-midnight wall-clock → next day
+    if (m == null || m < lo || m > hi) m = lo;
+    return m;
+  })();
   const [hour, setHour]     = useState(Math.floor(init / 60));
   const [minute, setMinute] = useState(init % 60);
 
