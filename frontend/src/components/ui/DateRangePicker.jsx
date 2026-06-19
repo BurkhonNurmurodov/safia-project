@@ -319,10 +319,18 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
         </div>
       )}
 
-      {/* ── Desktop: absolute dropdown ── */}
-      {open && !isMobile && (
-        <div className="absolute top-full mt-2 right-0 z-[200] rounded-xl shadow-2xl flex overflow-hidden"
-          style={{ background:"var(--bg-card)", border:"1px solid var(--border-md)", width:660 }}>
+      {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
+      {open && !isMobile && createPortal(
+        <div ref={popRef} className="rounded-xl shadow-2xl flex overflow-hidden"
+          style={{
+            position:"fixed",
+            top: pos?.top ?? 0,
+            left: pos?.left ?? 0,
+            width: pos?.width ?? 660,
+            visibility: pos ? "visible" : "hidden",
+            zIndex:200,
+            background:"var(--bg-card)", border:"1px solid var(--border-md)",
+          }}>
 
           {/* Presets panel */}
           <div className="flex flex-col w-40 flex-shrink-0" style={{ borderRight:"1px solid var(--border)" }}>
