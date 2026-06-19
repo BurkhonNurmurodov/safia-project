@@ -1,0 +1,161 @@
+"""
+Production-planning calculation engine.
+
+Replicates the math of the "Sheet1 ..." brigadir dashboards in the ABC Excel
+form. All inputs are plain Python values (the router pulls them from the pp_*
+tables); the engine has no DB dependency so it is trivially testable.
+
+Per-row (one row per catalog line = SAP code + work center + operation):
+    total_labor  (Общ.трудоёмкость, col I) = labor_time * plan_qty   / 60   [minutes]
+    actual_labor (col F)                    = labor_time * actual_qty / 60   [minutes]
+    people       (ЛЮДИ, col E)              = N for the row's work center
+    minutes      (Минут, col J)             = total_labor / people
+    pareto       (Парето, col K)            = total_labor / Σ total_labor
+
+Per work center w:
+    Q_w   = Σ total_labor over the rows in w
+    N_w   = ROUND( Q_w / PRODUCTIVE_MIN )        people needed   (U = W*R = Q/425)
+    load  (Загруженность, col O)             = Q_w / (SHIFT_MIN * N_w)   [IFERROR→0]
+
+Totals (header row):
+    total_plan_labor   (I1) = Σ total_labor
+    total_actual_labor (F1) = Σ actual_labor
+    completion         (E1) = F1 / I1
+
+The two constants come from the Excel and are configurable (app_settings):
+    SHIFT_MIN      = 480  full clock minutes per person per shift
+    PRODUCTIVE_MIN = 425  planned *productive* minutes per person ("Для 85% труд")
+"""
+from __future__ import annotations
+
+import math
+from typing import Optional
+
+DEFAULT_SHIFT_MIN = 480.0
+DEFAULT_PRODUCTIVE_MIN = 425.0
+
+
+def _round_half_up(x: float) -> int:
+    """Excel ROUND(x, 0): half away from zero. Inputs here are non-negative."""
+    return int(math.floor(x + 0.5))
+
+
+def _f(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def compute_dashboard(
+    products: list[dict],
+    quantities: dict[tuple[str, str], dict],
+    work_centers: list[dict],
+    shift_min: float = DEFAULT_SHIFT_MIN,
+    productive_min: float = DEFAULT_PRODUCTIVE_MIN,
+) -> dict:
+    """
+    products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
+    quantities:  {(sap_code, work_center): {plan_qty, actual_qty}}  (already
+                 override-resolved by the caller)
+    work_centers:[{code, shtatka, sort_order}, ...]
+    Returns a dict with `rows`, `work_centers` (staffing panel) and `totals`.
+    """
+    productive_min = productive_min or DEFAULT_PRODUCTIVE_MIN
+    shift_min = shift_min or DEFAULT_SHIFT_MIN
+
+    # --- pass 1: per-row labor, and accumulate Q per work center -----------
+    rows: list[dict] = []
+    q_by_wc: dict[str, float] = {}
+
+    for p in products:
+        wc = p.get("work_center") or ""
+        q = quantities.get((p.get("sap_code"), wc), {})
+        plan_qty = _f(q.get("plan_qty"))
+        actual_qty = _f(q.get("actual_qty"))
+
+        labor = p.get("labor_time")
+        has_labor = labor is not None
+        labor_f = _f(labor)
+
+        total_labor = (labor_f * plan_qty / 60.0) if has_labor else None
+        actual_labor = (labor_f * actual_qty / 60.0) if has_labor else None
+
+        if total_labor:
+            q_by_wc[wc] = q_by_wc.get(wc, 0.0) + total_labor
+
+        rows.append({
+            "sap_code": p.get("sap_code"),
+            "name": p.get("name") or "",
+            "work_center": wc,
+            "labor_time": labor_f if has_labor else None,
+            "has_labor": has_labor,
+            "plan_qty": plan_qty,
+            "actual_qty": actual_qty,
+            "total_labor": total_labor,
+            "actual_labor": actual_labor,
+            "plan_overridden": bool(q.get("plan_overridden")),
+            "actual_overridden": bool(q.get("actual_overridden")),
+            "sort_order": p.get("sort_order", 0),
+        })
+
+    total_plan_labor = sum(r["total_labor"] or 0.0 for r in rows)
+    total_actual_labor = sum(r["actual_labor"] or 0.0 for r in rows)
+
+    # --- per work center: people (N) + load (Загруженность) ----------------
+    # Include every configured work center, plus any that appear in products
+    # but lack config (so nothing silently disappears).
+    wc_codes: list[str] = []
+    wc_meta: dict[str, dict] = {}
+    for w in work_centers:
+        code = w.get("code")
+        if code and code not in wc_meta:
+            wc_meta[code] = {"shtatka": int(_f(w.get("shtatka"))), "sort_order": w.get("sort_order", 999)}
+            wc_codes.append(code)
+    for code in q_by_wc:
+        if code and code not in wc_meta:
+            wc_meta[code] = {"shtatka": 0, "sort_order": 999}
+            wc_codes.append(code)
+
+    people_by_wc: dict[str, int] = {}
+    wc_panel: list[dict] = []
+    for code in wc_codes:
+        q = q_by_wc.get(code, 0.0)
+        people = _round_half_up(q / productive_min) if productive_min else 0
+        people_by_wc[code] = people
+        load = (q / (shift_min * people)) if people > 0 else 0.0
+        wc_panel.append({
+            "work_center": code,
+            "shtatka": wc_meta[code]["shtatka"],
+            "people": people,             # O. SONI (N)
+            "total_labor": q,             # Σ Общ.трудоёмкость for this WC
+            "load": load,                 # Загруженность (O)
+            "sort_order": wc_meta[code]["sort_order"],
+        })
+    wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
+
+    # --- pass 2: per-row people / minutes / pareto -------------------------
+    for r in rows:
+        people = people_by_wc.get(r["work_center"], 0)
+        r["people"] = people
+        tl = r["total_labor"]
+        r["minutes"] = (tl / people) if (tl is not None and people > 0) else None
+        r["pareto"] = (tl / total_plan_labor) if (tl and total_plan_labor > 0) else 0.0
+
+    total_people = sum(w["people"] for w in wc_panel)
+    completion = (total_actual_labor / total_plan_labor) if total_plan_labor > 0 else 0.0
+    avg_load = (total_plan_labor / (total_people * shift_min)) if total_people > 0 else 0.0
+
+    return {
+        "rows": rows,
+        "work_centers": wc_panel,
+        "totals": {
+            "total_plan_labor": total_plan_labor,        # I1
+            "total_actual_labor": total_actual_labor,    # F1
+            "completion": completion,                    # E1 = F1/I1
+            "total_people": total_people,                # ΣN
+            "total_shtatka": sum(w["shtatka"] for w in wc_panel),
+            "avg_load": avg_load,                        # I1 / (ΣN * 480)
+        },
+        "constants": {"shift_min": shift_min, "productive_min": productive_min},
+    }
