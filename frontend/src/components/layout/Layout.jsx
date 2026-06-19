@@ -7,7 +7,7 @@ import { useFilters } from "../../context/FilterContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost } from "lucide-react";
-import NotificationsPanel from "../ui/NotificationsPanel";
+import NotificationsSection, { useNotifications } from "../ui/NotificationsPanel";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,20 +30,17 @@ function nameToColor(name = "") {
   return `hsl(${Math.abs(hash) % 360}, 50%, 42%)`;
 }
 
-// ─── UserProfile ──────────────────────────────────────────────────────────────
+const LANG_FLAGS = { uz: "🇺🇿", uz_cyrl: "🇺🇿", ru: "🇷🇺", en: "🇬🇧" };
+const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 
-function UserProfile() {
+// ─── AccountSection ─────────────────────────────────────────────────────────
+// Inline profile / role-switch / sign-out, rendered as a section inside the menu
+// dropdown (replaces the former standalone avatar popover in the header).
+
+function AccountSection() {
   const { auth, leaveRole, switchRole } = useAuth();
   const { t } = useLang();
-  const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
 
   if (!auth || auth.status !== "approved") return null;
 
@@ -55,102 +52,77 @@ function UserProfile() {
   const others   = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
 
   return (
-    <div className="relative flex-shrink-0" ref={ref}>
-      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
-        <div className="hidden md:block leading-tight text-right">
-          <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{name}</div>
-          <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{role}</div>
-        </div>
+    <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+      <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+        {t("menu.account")}
+      </span>
+
+      {/* Active profile */}
+      <div className="flex items-center gap-3 py-1.5">
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
           style={{ background: color }}
         >
           {initials}
         </div>
-      </button>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
+          <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
+        </div>
+        <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+      </div>
 
-      {open && (
-        <div
-          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 8px 24px rgba(0,0,0,.15)",
-            minWidth: 220,
-          }}
-        >
-          {/* Active profile at top */}
-          <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* Other profiles */}
+      {others.map(r => {
+        const rName     = r.full_name || "";
+        const rTkey     = ROLE_TKEYS[r.role];
+        const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
+        const isPending = r.status === "pending";
+        return (
+          <button
+            key={r.id}
+            disabled={isPending}
+            onClick={() => switchRole(r.id)}
+            className="w-full flex items-center gap-3 py-1.5 text-left rounded-lg"
+            style={{ opacity: isPending ? 0.55 : 1, cursor: isPending ? "default" : "pointer" }}
+            onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = ""; }}
+          >
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-              style={{ background: color }}
+              style={{ background: nameToColor(rName) }}
             >
-              {initials}
+              {nameInitials(rName)}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
-              <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
+              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
+              <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+                {rRole}
+                {isPending && (
+                  <span
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
+                  >
+                    {t("roles.pending")}
+                  </span>
+                )}
+              </div>
             </div>
-            <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
-          </div>
-
-          {/* Other profiles */}
-          {others.map(r => {
-            const rName     = r.full_name || "";
-            const rTkey     = ROLE_TKEYS[r.role];
-            const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
-            const isPending = r.status === "pending";
-            return (
-              <button
-                key={r.id}
-                disabled={isPending}
-                onClick={() => { switchRole(r.id); setOpen(false); }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                style={{
-                  borderBottom: "1px solid var(--border)",
-                  opacity: isPending ? 0.55 : 1,
-                  cursor: isPending ? "default" : "pointer",
-                }}
-                onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = ""; }}
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-                  style={{ background: nameToColor(rName) }}
-                >
-                  {nameInitials(rName)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
-                  <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                    {rRole}
-                    {isPending && (
-                      <span
-                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                        style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
-                      >
-                        {t("roles.pending")}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-
-          {/* Sign out from current profile */}
-          <button
-            onClick={() => { setOpen(false); setConfirmLogout(true); }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
-            style={{ color: "var(--text-3)" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-            onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
-          >
-            <LogOut size={14} />
-            <span>{t("nav.signOut")}</span>
           </button>
-        </div>
-      )}
+        );
+      })}
+
+      {/* Sign out */}
+      <button
+        onClick={() => setConfirmLogout(true)}
+        className="w-full flex items-center gap-2 mt-1 py-2 text-xs rounded-lg"
+        style={{ color: "var(--text-3)" }}
+        onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+        onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
+      >
+        <LogOut size={14} />
+        <span>{t("nav.signOut")}</span>
+      </button>
 
       {confirmLogout && (
         <div
@@ -204,57 +176,6 @@ function UserProfile() {
   );
 }
 
-const LANG_FLAGS = { uz: "🇺🇿", uz_cyrl: "🇺🇿", ru: "🇷🇺", en: "🇬🇧" };
-const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
-
-function LangDropdown({ lang, setLang, languages }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-  return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-        style={{
-          background: open ? "var(--brand)" : "var(--bg-inner)",
-          border: "1px solid var(--border-md)",
-          color: open ? "#fff" : "var(--text-2)",
-        }}
-      >
-        {LANG_FLAGS[lang] || "🌐"} {langLabel(lang)}
-      </button>
-      {open && (
-        <div
-          className="absolute right-0 mt-1.5 rounded-xl overflow-hidden z-50"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", minWidth: 110 }}
-        >
-          {languages.map(({ code }) => (
-            <button
-              key={code}
-              onClick={() => { setLang(code); setOpen(false); }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-xs transition-colors"
-              style={{
-                background: lang === code ? "var(--brand-bg)" : "transparent",
-                color: lang === code ? "var(--brand-text)" : "var(--text-2)",
-                fontWeight: lang === code ? 600 : 400,
-              }}
-              onMouseEnter={e => { if (lang !== code) e.currentTarget.style.background = "var(--bg-inner)"; }}
-              onMouseLeave={e => { if (lang !== code) e.currentTarget.style.background = "transparent"; }}
-            >
-              {LANG_FLAGS[code] || "🌐"} {langLabel(code)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Telegram Desktop on Windows/Linux floats its window-control buttons (−□×)
 // over the top-right corner of the WebApp. Detect and compensate.
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
@@ -266,14 +187,15 @@ export default function Layout({ children, title, showFilters = true }) {
   const { auth } = useAuth();
   const { ghost, toggleGhost } = useGhost();
   const { dateFrom, dateTo, shift, unit, brigadirIds } = useFilters();
+  const notif = useNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
   );
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filterRef = useRef(null);
-  const [filterPanelTop, setFilterPanelTop] = useState(56);
-  const [isMobileFilter, setIsMobileFilter] = useState(() => window.innerWidth < 640);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  const [menuPanelTop, setMenuPanelTop] = useState(56);
+  const [isMobileMenu, setIsMobileMenu] = useState(() => window.innerWidth < 640);
 
   function toggleSidebarPin() {
     setSidebarPinned(v => {
@@ -283,6 +205,7 @@ export default function Layout({ children, title, showFilters = true }) {
     });
   }
 
+  // Active global-filter count — only meaningful where the Filters section shows.
   const activeCount = [
     !!(dateFrom || dateTo),
     shift !== null,
@@ -292,8 +215,8 @@ export default function Layout({ children, title, showFilters = true }) {
 
   useEffect(() => {
     function handleClickOutside(e) {
-      if (filterRef.current && !filterRef.current.contains(e.target)) {
-        setFilterOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -301,17 +224,21 @@ export default function Layout({ children, title, showFilters = true }) {
   }, []);
 
   useEffect(() => {
-    const update = () => setIsMobileFilter(window.innerWidth < 640);
+    const update = () => setIsMobileMenu(window.innerWidth < 640);
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
 
   useEffect(() => {
-    if (filterOpen && filterRef.current) {
-      const r = filterRef.current.getBoundingClientRect();
-      setFilterPanelTop(r.bottom + 8);
+    if (menuOpen && menuRef.current) {
+      const r = menuRef.current.getBoundingClientRect();
+      setMenuPanelTop(r.bottom + 8);
+      notif.refetch();
     }
-  }, [filterOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen]);
+
+  const showFilterBadge = showFilters && activeCount > 0;
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
@@ -347,80 +274,94 @@ export default function Layout({ children, title, showFilters = true }) {
               </h1>
             </div>
 
-            {/* Right: filter button + lang + theme */}
+            {/* Right: single menu button — filters, notifications, language, theme, account */}
             <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(v => !v)}
+                  className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  style={{
+                    background: menuOpen ? "var(--brand)" : "var(--bg-inner)",
+                    border: `1px solid ${menuOpen ? "var(--brand)" : "var(--border)"}`,
+                    color: menuOpen ? "#fff" : "var(--text-2)",
+                  }}
+                >
+                  <SlidersHorizontal size={14} />
+                  <span>{t("filter.filters") || "Filters"}</span>
+                  {/* Active-filter count */}
+                  {showFilterBadge && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
+                      style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
+                    >
+                      {activeCount}
+                    </span>
+                  )}
+                  {/* Unread-notifications indicator */}
+                  {notif.unread > 0 && (
+                    <span
+                      className="absolute -top-1.5 -left-1.5 w-2.5 h-2.5 rounded-full"
+                      style={{ background: "#ef4444", border: "2px solid var(--bg-base)" }}
+                    />
+                  )}
+                </button>
 
-              {/* Filter button + dropdown */}
-              {showFilters && (
-                <div className="relative" ref={filterRef}>
-                  <button
-                    onClick={() => setFilterOpen(v => !v)}
-                    className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    style={{
-                      background: filterOpen ? "var(--brand)" : "var(--bg-inner)",
-                      border: `1px solid ${filterOpen ? "var(--brand)" : "var(--border)"}`,
-                      color: filterOpen ? "#fff" : "var(--text-2)",
+                {/* Dropdown panel */}
+                {menuOpen && (
+                  <div
+                    className="z-50 rounded-xl shadow-2xl flex flex-col"
+                    style={isMobileMenu ? {
+                      position: "fixed",
+                      top: menuPanelTop,
+                      left: 8,
+                      right: 8,
+                      maxHeight: `calc(100vh - ${menuPanelTop}px - 12px)`,
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-md)",
+                    } : {
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      width: 288,
+                      maxHeight: "80vh",
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-md)",
                     }}
                   >
-                    <SlidersHorizontal size={14} />
-                    <span>{t("filter.filters") || "Filters"}</span>
-                    {activeCount > 0 && (
-                      <span
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
-                        style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
-                      >
-                        {activeCount}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Dropdown panel */}
-                  {filterOpen && (
+                    {/* Panel header */}
                     <div
-                      className="z-50 rounded-xl shadow-2xl"
-                      style={isMobileFilter ? {
-                        position: "fixed",
-                        top: filterPanelTop,
-                        left: 8,
-                        right: 8,
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border-md)",
-                      } : {
-                        position: "absolute",
-                        top: "calc(100% + 8px)",
-                        right: 0,
-                        width: 248,
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border-md)",
-                      }}
+                      className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
+                      style={{ borderBottom: "1px solid var(--border)" }}
                     >
-                      {/* Panel header */}
-                      <div
-                        className="flex items-center justify-between px-4 py-2.5"
-                        style={{ borderBottom: "1px solid var(--border)" }}
+                      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                        {t("menu.title") || "Menu"}
+                      </span>
+                      <button
+                        onClick={() => setMenuOpen(false)}
+                        className="p-0.5 rounded transition-colors hover:bg-white/10"
+                        style={{ color: "var(--text-3)" }}
                       >
-                        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                          {t("filter.filters") || "Filters"}
-                        </span>
-                        <button
-                          onClick={() => setFilterOpen(false)}
-                          className="p-0.5 rounded transition-colors hover:bg-white/10"
-                          style={{ color: "var(--text-3)" }}
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
+                        <X size={13} />
+                      </button>
+                    </div>
 
-                      {/* Filter content */}
-                      <div className="p-4">
-                        <GlobalFilters />
-                      </div>
+                    {/* Scrollable body */}
+                    <div className="overflow-y-auto">
+                      {/* Filters */}
+                      {showFilters && (
+                        <div className="p-4">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider block mb-3" style={{ color: "var(--text-4)" }}>
+                            {t("filter.filters") || "Filters"}
+                          </span>
+                          <GlobalFilters />
+                        </div>
+                      )}
 
-                      {/* Language section */}
-                      <div
-                        className="px-4 py-3"
-                        style={{ borderTop: "1px solid var(--border)" }}
-                      >
+                      {/* Notifications */}
+                      <NotificationsSection {...notif} />
+
+                      {/* Language */}
+                      <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
                         <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
                           {t("filter.language") || "Language"}
                         </span>
@@ -439,46 +380,66 @@ export default function Layout({ children, title, showFilters = true }) {
                           ))}
                         </div>
                       </div>
+
+                      {/* Appearance — theme + ghost (admin) */}
+                      <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+                          {t("menu.appearance") || "Appearance"}
+                        </span>
+
+                        {/* Theme switch */}
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
+                          <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+                            <button
+                              onClick={() => { if (theme !== "light") toggle(); }}
+                              className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
+                              style={theme === "light"
+                                ? { background: "var(--brand)", color: "#fff" }
+                                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                              title={t("theme.light")}
+                            >
+                              <Sun size={13} />
+                            </button>
+                            <button
+                              onClick={() => { if (theme !== "dark") toggle(); }}
+                              className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
+                              style={theme === "dark"
+                                ? { background: "var(--brand)", color: "#fff" }
+                                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                              title={t("theme.dark")}
+                            >
+                              <Moon size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Ghost mode — admin only */}
+                        {auth?.role === "admin" && (
+                          <div className="flex items-center justify-between py-1 mt-1">
+                            <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
+                              <Ghost size={13} /> {t("ghost.label")}
+                            </span>
+                            <button
+                              onClick={toggleGhost}
+                              className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                              style={ghost
+                                ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
+                                : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                              title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
+                            >
+                              {ghost ? "ON" : "OFF"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Account */}
+                      <AccountSection />
                     </div>
-                  )}
-                </div>
-              )}
-
-              {/* Language switcher — always visible when filters panel is hidden */}
-              {!showFilters && (
-                <LangDropdown lang={lang} setLang={setLang} languages={languages} />
-              )}
-
-              {/* Notifications */}
-              <NotificationsPanel />
-
-              {/* Ghost mode — admin-only: silence notifications for own changes */}
-              {auth?.role === "admin" && (
-                <button
-                  onClick={toggleGhost}
-                  className="flex items-center gap-1.5 h-8 px-2 rounded-lg flex-shrink-0 transition-colors text-xs font-medium"
-                  style={ghost
-                    ? { background: "#7c3aed", border: "1px solid #7c3aed", color: "#fff" }
-                    : { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
-                  title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
-                >
-                  <Ghost size={14} />
-                  <span className="hidden md:inline">{t("ghost.label")}</span>
-                </button>
-              )}
-
-              {/* Theme toggle */}
-              <button
-                onClick={toggle}
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
-                title={theme === "dark" ? t("theme.dark") : t("theme.light")}
-              >
-                {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-              </button>
-
-              {/* User profile */}
-              <UserProfile />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
