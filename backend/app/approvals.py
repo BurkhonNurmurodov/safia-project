@@ -223,6 +223,7 @@ def _hr_document_data(db, doc) -> dict:
         "creator":   doc.created_by_name or "",
         "new_role":  payload.get("new_role"),
         "target":    target or "—",
+        "transfer_time": payload.get("transfer_time"),
         "employees": payload.get("employees", []),
     }
 
