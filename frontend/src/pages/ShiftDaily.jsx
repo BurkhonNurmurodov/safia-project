@@ -319,8 +319,26 @@ export default function ShiftDaily() {
         {/* Ranking — Final Actual */}
         <div className="w-full lg:w-80 flex-shrink-0">
           <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
-            <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider mb-3">
-              {t("overview.ranking").split("—")[0].trim()} — {t("overview.rankActual")}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+                {t("overview.ranking").split("—")[0].trim()} — {RANK_LABELS[rankMode]}
+              </div>
+              {/* P / A / P−A toggle */}
+              <div className="flex rounded-lg overflow-hidden text-[10px] flex-shrink-0"
+                style={{ border: "1px solid var(--border-md)" }}>
+                {[["planned", "P"], ["actual", "A"], ["diff", "P−A"]].map(([m, label]) => (
+                  <button
+                    key={m}
+                    onClick={() => setRankMode(m)}
+                    className="px-2 py-1 font-medium"
+                    style={rankMode === m
+                      ? { background: "var(--brand)", color: "#fff" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             {isLoading ? (
               <SkeletonChart className="h-64" />
@@ -328,7 +346,10 @@ export default function ShiftDaily() {
               <BarRankingChart
                 names={rankNames}
                 values={rankVals}
-                seriesName={t("overview.rankActual")}
+                colors={rankColors}
+                xMin={rankXMin}
+                xMax={rankXMax}
+                seriesName={RANK_LABELS[rankMode]}
                 height={Math.max(260, brigadirs.length * 32 + 60)}
               />
             ) : (
