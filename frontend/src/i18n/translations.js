@@ -2977,6 +2977,10 @@ const t = {
 
     // ── Filters ───────────────────────────────────────────────────────────────
     "filter.filters":      "Filters",
+    "menu.title":          "Menu",
+    "menu.appearance":     "Appearance",
+    "menu.theme":          "Theme",
+    "menu.account":        "Account",
     "filter.all":          "All",
     "filter.shift":        "Shift",
     "filter.unit":         "Unit",
