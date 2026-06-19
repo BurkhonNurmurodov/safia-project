@@ -297,7 +297,7 @@ export default function Production() {
       </div>
 
       {/* reconciliation */}
-      <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isLoading} />
+      <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
     </Layout>
   );
 }
