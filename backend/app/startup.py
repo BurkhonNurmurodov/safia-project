@@ -369,6 +369,57 @@ def seed_admins() -> None:
         db.close()
 
 
+PP_SEED_FLAG = "pp_seed_manager5"
+
+
+def seed_production_pilot() -> None:
+    """Seed the pilot brigadir's (manager 5, Абдугамитов Мухаммад) production
+    catalog + work centers from the ABC Excel 'Sheet1 Торт'. Flag-guarded so it
+    runs exactly once; new pp_* tables are created by create_all beforehand."""
+    import json
+    import os
+    from app.models import PPProduct, PPWorkCenter
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_SEED_FLAG).first():
+            return
+        path = os.path.join(os.path.dirname(__file__), "data", "pp_seed_manager5.json")
+        if not os.path.isfile(path):
+            print(f"[startup] production seed file missing: {path}")
+            return
+        with open(path, encoding="utf-8") as fh:
+            seed = json.load(fh)
+        mid = seed["manager_id"]
+
+        existing_wc = {w.code for w in db.query(PPWorkCenter).filter_by(manager_id=mid).all()}
+        for w in seed.get("work_centers", []):
+            if w["code"] in existing_wc:
+                continue
+            db.add(PPWorkCenter(
+                manager_id=mid, code=w["code"], shtatka=w.get("shtatka") or 0,
+                capacity=w.get("capacity"), sort_order=w.get("sort_order", 0),
+            ))
+
+        if db.query(PPProduct).filter_by(manager_id=mid).count() == 0:
+            for p in seed.get("products", []):
+                db.add(PPProduct(
+                    manager_id=mid, sap_code=p["sap_code"], name=p.get("name") or "",
+                    work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
+                    sort_order=p.get("sort_order", 0),
+                ))
+
+        db.add(AppSetting(key=PP_SEED_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] seeded production pilot for manager {mid}: "
+              f"{len(seed.get('products', []))} products, {len(seed.get('work_centers', []))} WCs")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] production pilot seed skipped: {exc}")
+    finally:
+        db.close()
+
+
 def seed_managers_and_sources() -> None:
     """Ensure supervisors (managers) and sheet sources exist (idempotent)."""
     db = SessionLocal()
