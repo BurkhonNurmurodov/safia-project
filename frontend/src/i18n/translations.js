@@ -2984,6 +2984,7 @@ const t = {
     "menu.appearance":     "Appearance",
     "menu.theme":          "Theme",
     "menu.account":        "Account",
+    "menu.settings":       "Settings",
     "filter.all":          "All",
     "filter.shift":        "Shift",
     "filter.unit":         "Unit",
