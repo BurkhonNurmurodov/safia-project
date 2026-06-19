@@ -1182,14 +1182,14 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     return opts;
   }, [supTargets, taskData, tl, t, isAdmin]);
 
-  // Transfer-time split: admin-only, for a → supervisor or → task move.
-  // Selectable times run from the earliest start (schedule-start, falling back to
-  // clock-in) to the latest clock-out across the selected workers, in 5-minute
-  // steps. The clock-in fallback ensures a worker with worked hours but no
-  // schedule still produces options.
+  // Transfer-time split: available to admins and supervisors, for a → supervisor
+  // or → task move. Selectable times run from the earliest start (schedule-start,
+  // falling back to clock-in) to the latest clock-out across the selected workers,
+  // in 5-minute steps. The clock-in fallback ensures a worker with worked hours but
+  // no schedule still produces options.
   const targetIsSup  = target.startsWith("sup:");
   const targetIsTask = target.startsWith("task:") || target === "__new__";
-  const canUseTime   = isAdmin && (targetIsSup || targetIsTask);
+  const canUseTime   = targetIsSup || targetIsTask;
   // Valid transfer-time window (minutes from midnight) = earliest start →
   // latest clock-out across the selected workers. The wheel picker is bounded to
   // this; null when no worker has a clock-out yet.
