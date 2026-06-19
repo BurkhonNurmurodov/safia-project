@@ -374,7 +374,8 @@ def send_edit_batch_to_admins(db, batch_id, manager_id, attend_date, supervisor_
 
 
 def send_hr_document_to_admins(db, doc) -> None:
-    _broadcast(db, "hr_document", doc.id, _hr_document_data(db, doc), _render_hr_document)
+    _broadcast(db, "hr_document", doc.id, _hr_document_data(db, doc), _render_hr_document,
+               extra_recipients=_exchange_supervisor_recipients(db, doc))
 
 
 # ── Cross-edit primitive — the single source of "decision happened" ───────────
