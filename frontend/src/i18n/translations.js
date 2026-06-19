@@ -278,6 +278,7 @@ const t = {
     "menu.appearance":     "Ko'rinish",
     "menu.theme":          "Mavzu",
     "menu.account":        "Hisob",
+    "menu.settings":       "Sozlamalar",
     "filter.all":          "Barchasi",
     "filter.shift":        "Smena",
     "filter.unit":         "Birlik",
