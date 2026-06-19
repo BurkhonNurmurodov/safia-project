@@ -419,29 +419,68 @@ def forget_notices(kind: str, ref) -> None:
 
 # ── Callback handling (Telegram tap → shared staff core) ──────────────────────
 
-def _caller_from_call(call) -> dict:
-    """Synthetic admin caller for the staff cores, built from the tapping admin.
-    Admins satisfy every authority check, so this flows through unchanged."""
-    u = call.from_user
+def _display_name(u) -> str:
     name = " ".join(p for p in (u.first_name, u.last_name) if p).strip()
     if not name:
         name = f"@{u.username}" if u.username else "Admin"
-    return {"sub": str(u.id), "role": "admin", "full_name": name}
+    return name
+
+
+def _caller_from_call(call) -> dict:
+    """Synthetic admin caller for the staff cores, built from the tapping admin.
+    Admins satisfy every authority check, so this flows through unchanged. Used
+    for the admin-only er/eb kinds."""
+    return {"sub": str(call.from_user.id), "role": "admin", "full_name": _display_name(call.from_user)}
+
+
+def _caller_for_doc(call, doc, db) -> dict | None:
+    """Build the staff caller for whoever tapped an hr_document button. Admins
+    get an admin caller; a non-admin is treated as the receiving supervisor and
+    must hold the approved supervisor role for the document's target unit —
+    otherwise ``None`` (no authority). The supervisor's role-scoped name is used
+    so the audit trail / outcome line reads like a web-app decision."""
+    from app.telegram_bot import _admin_ids
+    u = call.from_user
+    if u.id in _admin_ids():
+        return {"sub": str(u.id), "role": "admin", "full_name": _display_name(u)}
+    target_mid = (doc.payload or {}).get("target_manager_id")
+    if not target_mid:
+        return None
+    role_row = db.query(TelegramUserRole).filter_by(
+        telegram_id=u.id, role="supervisor", role_id=target_mid, status="approved",
+    ).first()
+    if not role_row:
+        return None
+    return {"sub": str(u.id), "role": "supervisor", "role_id": target_mid,
+            "full_name": role_row.full_name}
+
+
+def recipient_has_notice_for_code(code: str, ref, telegram_id: int) -> bool:
+    """True when ``telegram_id`` has a tracked confirm button (an ApprovalNotice
+    addressed to them) for this request. The callback gate uses this to let the
+    receiving supervisor act while keeping every kind we never send them out of
+    reach — we only ever create a non-admin notice for a legitimate confirmer."""
+    kind = _CODE_KIND.get(code)
+    if not kind:
+        return False
+    with SessionLocal() as db:
+        return db.query(ApprovalNotice).filter_by(
+            kind=kind, ref=str(ref), admin_telegram_id=telegram_id,
+        ).first() is not None
 
 
 def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
     """Dispatch a staff/HR approval tap. ``code`` ∈ er|eb|hr, ``status`` ∈
     approved|rejected. Answers the callback with a toast in every outcome."""
     from app.telegram_bot import bot
-    caller = _caller_from_call(call)
     lang = _get_caller_lang(call)
     try:
         if code == "er":
-            _decide_edit_request(int(ref), status, caller)
+            _decide_edit_request(int(ref), status, _caller_from_call(call))
         elif code == "eb":
-            _decide_edit_batch(ref, status, caller)
+            _decide_edit_batch(ref, status, _caller_from_call(call))
         elif code == "hr":
-            _decide_hr_document(int(ref), status, caller)
+            _decide_hr_document(int(ref), status, call)
         else:
             bot.answer_callback_query(call.id)
             return
