@@ -130,10 +130,15 @@ function SupervisorDaily() {
   const drillId   = searchParams.get("manager_id");
   const drillDate = searchParams.get("date");
   const isDrill   = role === "shift-manager" && !!drillId;
-  // Admins and shift-managers pick a supervisor (like the Staff page); supervisors see their own day
-  const [selectedManagerId, setSelectedManagerId] = useState(() => (drillId ? Number(drillId) : null));
+  // Admins and shift-managers pick a supervisor (like the Staff page); supervisors see their own day.
+  // Persisted so the selection survives navigating away and back. A URL drill-down
+  // (shift-manager opening a specific supervisor/day) takes precedence on first load.
+  const [selectedManagerId, setSelectedManagerId] = usePersistentState(
+    "daily_selected_manager_id",
+    () => (drillId ? Number(drillId) : null),
+  );
   const managerId = isSupervisor ? auth?.role_id : selectedManagerId;
-  const [date, setDate] = useState(() => drillDate || isoDaysAgo(1));
+  const [date, setDate] = usePersistentState("daily_selected_date", () => drillDate || isoDaysAgo(1));
 
   const enabled = !!managerId && !!date;
 
