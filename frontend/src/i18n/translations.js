@@ -10,6 +10,7 @@ const t = {
     "nav.admin":           "Admin",
     "nav.staff":           "Verifix to'g'irlash",
     "nav.daily":           "Kunlik",
+    "nav.production":      "Ishlab chiqarish",
     "shiftDaily.title":        "Kunlik — Smena",
     "shiftDaily.prevDay":      "oldingi kun",
     "shiftDaily.vsPrev":       "oldingi kunga nisbatan",
