@@ -45,6 +45,7 @@ DEFAULT_PAGE_ACCESS = {
     "downtime": ["shift-manager"],
     "staff":    ["shift-manager", "supervisor"],
     "daily":    ["shift-manager", "supervisor"],
+    "production": ["supervisor"],
 }
 
 
