@@ -307,7 +307,8 @@ def _approve_reject_kb(code: str, ref, lang: str):
 
 # ── Send to admins (records one ApprovalNotice per message) ───────────────────
 
-def _broadcast(db, kind: str, ref, data: dict, render_fn) -> None:
+def _broadcast(db, kind: str, ref, data: dict, render_fn,
+               extra_recipients: set[int] | None = None) -> None:
     # Ghost Mode (admin header toggle): an admin testing functions must not blast
     # approve/reject button-messages at every other admin. The record is still
     # created; nobody is pinged. See app.notify_ctx.
@@ -316,19 +317,44 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn) -> None:
         return
     from app.telegram_bot import bot, _admin_ids, _get_lang
     code = _KIND_CODE[kind]
-    for admin_id in sorted(_admin_ids()):
-        lang = _get_lang(admin_id)
+    # Admins always receive the message; ``extra_recipients`` are the non-admin
+    # confirmers (e.g. a people-exchange's receiving supervisor). The set dedups
+    # anyone who is both. ApprovalNotice.admin_telegram_id holds the recipient id
+    # for either kind, so the shared cross-edit reaches all of them.
+    recipients = set(_admin_ids()) | set(extra_recipients or ())
+    for recipient_id in sorted(recipients):
+        lang = _get_lang(recipient_id)
         text = render_fn(data, lang)
         try:
-            sent = bot.send_message(admin_id, text, reply_markup=_approve_reject_kb(code, ref, lang))
+            sent = bot.send_message(recipient_id, text, reply_markup=_approve_reject_kb(code, ref, lang))
         except Exception:
-            logger.exception("Failed to send %s notice to admin %s (ref=%s)", kind, admin_id, ref)
+            logger.exception("Failed to send %s notice to %s (ref=%s)", kind, recipient_id, ref)
             continue
         db.add(ApprovalNotice(
-            kind=kind, ref=str(ref), admin_telegram_id=admin_id,
+            kind=kind, ref=str(ref), admin_telegram_id=recipient_id,
             message_id=sent.message_id, text=text,
         ))
     db.commit()
+
+
+def _exchange_supervisor_recipients(db, doc) -> set[int]:
+    """Telegram id of the receiving supervisor for a people-exchange addressed to
+    a unit — they confirm the incoming transfer inline just like an admin. Empty
+    for every other document kind/target. The creator (e.g. an admin who also
+    supervises the target unit) is never re-pinged for their own document."""
+    if doc.doc_type != "people_exchange":
+        return set()
+    payload = doc.payload or {}
+    if payload.get("target_type") != "supervisor":
+        return set()
+    target_mid = payload.get("target_manager_id")
+    if not target_mid:
+        return set()
+    from app.routers.staff import _find_supervisor
+    sup = _find_supervisor(db, target_mid)
+    if not sup or sup.telegram_id == doc.created_by_telegram_id:
+        return set()
+    return {sup.telegram_id}
 
 
 def send_edit_request_to_admins(db, req) -> None:
