@@ -468,13 +468,13 @@ export default function Layout({ children, title, showFilters = true, filterSlot
                           </div>
                         )}
                       </div>
-
-                      {/* Account */}
-                      <AccountSection />
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* User profile */}
+              <UserProfile />
             </div>
           </div>
         </header>
