@@ -177,7 +177,7 @@ export default function BrigadirTable({
     if (diffUnit === "hc") {
       return {
         title, value,
-        formula: `${hcEquivNumbers(b, approx) || "HC = Difference (hrs) ÷ 8"}\n${t("fm.hcEquivNote")}${avgNote}`,
+        formula: `${hcEquivNumbers(b, approx, hcLabel) || `${hcLabel} = Difference (hrs) ÷ 8`}\n${t("fm.hcEquivNote")}${avgNote}`,
         inputs: hcEquivInputs(b, t),
       };
     }

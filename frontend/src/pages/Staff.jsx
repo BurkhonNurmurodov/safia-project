@@ -2172,8 +2172,8 @@ function FilterBottomSheet({
 
         {/* Scrollable body */}
         <div style={{ overflowY: "auto", flex: 1 }}>
-          <SheetSection label={t("staff.selectCreatedDate")}>
-            <MobileSheetDatePicker value={createdFilter} onChange={setCreatedFilter} t={t} />
+          <SheetSection label={t("staff.selectDate")}>
+            <MobileSheetDatePicker value={dateFilter} onChange={setDateFilter} t={t} />
           </SheetSection>
 
           {isManager && (
