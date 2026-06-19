@@ -284,6 +284,8 @@ def _render_hr_document(data, lang) -> str:
         lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
         lines.append(f"👤 {_L(lang, 'creator')}: {data['creator']}")
         lines.append(f"🎯 {_L(lang, 'target')}: {data['target']}")
+        if data.get("transfer_time"):
+            lines.append(f"🕐 {_L(lang, 'time')}: {data['transfer_time']}")
         lines.append("")
         lines.append(f"{_L(lang, 'workers')} ({len(emps)}):")
         rows = [str(e.get("worker_name")) for e in emps]
