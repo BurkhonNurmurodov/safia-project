@@ -45,7 +45,10 @@ DEFAULT_PAGE_ACCESS = {
     "downtime": ["shift-manager"],
     "staff":    ["shift-manager", "supervisor"],
     "daily":    ["shift-manager", "supervisor"],
-    "production": ["supervisor"],
+    # Pilot: admin-only by default. Admin previews the brigadir's exact dashboard
+    # (manager 5). Flip on "supervisor" from the Access tab to let brigadirs in —
+    # note that enables it for ALL supervisors (per-user gating is a later phase).
+    "production": [],
 }
 
 
