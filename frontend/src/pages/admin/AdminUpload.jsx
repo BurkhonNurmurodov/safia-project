@@ -642,6 +642,8 @@ export default function AdminUpload() {
         </div>
       )}
 
+      {adminTab === "production" && <ProductionUpload />}
+
       {adminTab === "users" && <UsersManagement />}
 
       {adminTab === "access" && <PageAccess />}
