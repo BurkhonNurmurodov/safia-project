@@ -6,8 +6,8 @@ import { useLang } from "../../context/LangContext";
 import { useFilters } from "../../context/FilterContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost } from "lucide-react";
-import NotificationsSection, { useNotifications } from "../ui/NotificationsPanel";
+import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings } from "lucide-react";
+import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
