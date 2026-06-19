@@ -2168,7 +2168,7 @@ class DocCreateBody(BaseModel):
     target_type:       Optional[str] = None   # "supervisor" | "task"
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
-    transfer_time:     Optional[str] = None   # "HH:MM" — admin-only split (→ supervisor)
+    transfer_time:     Optional[str] = None   # "HH:MM" — split (→ supervisor or task)
 
 
 def _build_role_payload(db: Session, manager_id: int, d: date, new_role: str, employees: List[str]):
