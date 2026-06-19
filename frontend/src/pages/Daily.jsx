@@ -197,8 +197,29 @@ function SupervisorDaily() {
   const isWaiting   = dayState === "closed";
   const isConfirmed = dayState === "confirmed";
 
+  // min / hrs unit switch — injected into the header filter dropdown.
+  const unitToggle = (
+    <div>
+      <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+        {t("filter.unit")}
+      </span>
+      <div className="flex rounded-lg overflow-hidden text-xs" style={{ border: "1px solid var(--border-md)", width: "fit-content" }}>
+        {["min", "hrs"].map(u => (
+          <button
+            key={u}
+            onClick={() => setUnit(u)}
+            className="px-3 py-1.5 font-medium"
+            style={unit === u ? { background: "var(--brand)", color: "#fff" } : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+          >
+            {u === "min" ? t("general.min") : t("general.hrs")}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    <Layout title={t("daily.title")} showFilters={false}>
+    <Layout title={t("daily.title")} showFilters={false} filterSlot={unitToggle}>
       {/* Header: supervisor picker (admin/shift-manager) + day picker + approval status */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
         {isDrill ? (
