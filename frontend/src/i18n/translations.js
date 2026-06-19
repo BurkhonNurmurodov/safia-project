@@ -2719,6 +2719,7 @@ const t = {
     "nav.admin":           "Admin",
     "nav.staff":           "Verifix edit",
     "nav.daily":           "Daily",
+    "nav.production":      "Production",
     "shiftDaily.title":        "Daily — Shift",
     "shiftDaily.prevDay":      "prev. day",
     "shiftDaily.vsPrev":       "vs prev. day",
