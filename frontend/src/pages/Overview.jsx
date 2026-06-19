@@ -110,6 +110,7 @@ export default function Overview() {
   const { params, unit, ready, dateFrom, dateTo } = useFilters();
   const { t } = useLang();
   const { tl } = useTranslit();
+  const hcLabel = t("overview.diffUnitHc"); // localized name for the HC (headcount) diff unit
   const navigate = useNavigate();
   const [filters, setFilters] = useState(INIT_FILTERS);
   const [sort, setSort] = useState({ key: null, dir: "asc" }); // key=null → original order
