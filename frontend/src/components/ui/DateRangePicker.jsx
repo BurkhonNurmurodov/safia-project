@@ -321,7 +321,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
 
       {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
       {open && !isMobile && createPortal(
-        <div ref={popRef} className="rounded-xl shadow-2xl flex overflow-hidden"
+        <div ref={popRef} data-popover-portal className="rounded-xl shadow-2xl flex overflow-hidden"
           style={{
             position:"fixed",
             top: pos?.top ?? 0,
