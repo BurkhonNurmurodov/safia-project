@@ -1540,7 +1540,9 @@ def _parse_hhmm(s) -> Optional[int]:
 
 
 def _fmt_hhmm(mins) -> str:
-    mins = int(round(mins))
+    # Wrap to a wall-clock time so an overnight-normalised minute (e.g. 1478 for a
+    # 00:38 clock-out carried past midnight) formats as "00:38", not "24:38".
+    mins = int(round(mins)) % 1440
     return f"{mins // 60:02d}:{mins % 60:02d}"
 
 
