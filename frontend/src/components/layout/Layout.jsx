@@ -372,6 +372,9 @@ export default function Layout({ children, title, showFilters = true, filterSlot
 
   useEffect(() => {
     function handleClickOutside(e) {
+      // Popovers portaled to <body> from inside the panel (e.g. the date
+      // picker calendar) live outside menuRef — don't treat them as outside.
+      if (e.target.closest?.("[data-popover-portal]")) return;
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setMenuOpen(false);
       }
