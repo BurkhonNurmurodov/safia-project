@@ -106,6 +106,7 @@ export default function BrigadirTable({
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
+  const hcLabel = t("overview.diffUnitHc"); // localized name for the HC (headcount) diff unit
   const [filters, setFilters] = useState(INIT_FILTERS);
   const [sort, setSort] = useState({ key: null, dir: "asc" });
   const [modal, setModal] = useState(null);
