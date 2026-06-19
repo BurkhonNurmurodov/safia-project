@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Info, CheckCircle, AlertTriangle, AlertCircle, Inbox } from "lucide-react";
+import { Info, CheckCircle, AlertTriangle, AlertCircle, Inbox, Bell, ChevronDown } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 
