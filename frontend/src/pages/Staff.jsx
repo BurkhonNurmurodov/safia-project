@@ -1085,7 +1085,8 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
         </div>
 
         {/* footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-between gap-3" style={{ borderColor: "var(--border)" }}>
+        <div className="px-5 py-3 border-t flex items-center justify-between gap-3 flex-shrink-0"
+          style={{ borderColor: "var(--border)", paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}>
           <span className="text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
             {error || `${selected.size} ${t("staff.employeesWord")} → ${newRole || "…"}`}
           </span>
@@ -1462,7 +1463,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
         </div>
 
         {/* footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-between gap-3" style={{ borderColor: "var(--border)" }}>
+        <div className="px-5 py-3 border-t flex items-center justify-between gap-3 flex-shrink-0"
+          style={{ borderColor: "var(--border)", paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}>
           <span className="text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
             {error || `${selected.size} ${t("staff.employeesWord")} → ${targetLabel()}`}
           </span>
