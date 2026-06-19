@@ -432,170 +432,86 @@ export default function Layout({ children, title, showFilters = true, filterSlot
               </h1>
             </div>
 
-            {/* Right: single menu button — filters, notifications, language, theme, account */}
+            {/* Right: notifications bell + filters menu (hidden when no filters) + account */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setMenuOpen(v => !v)}
-                  className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                  style={{
-                    background: menuOpen ? "var(--brand)" : "var(--bg-inner)",
-                    border: `1px solid ${menuOpen ? "var(--brand)" : "var(--border)"}`,
-                    color: menuOpen ? "#fff" : "var(--text-2)",
-                  }}
-                >
-                  <SlidersHorizontal size={14} />
-                  <span>{t("filter.filters") || "Filters"}</span>
-                  {/* Active-filter count */}
-                  {filterBadgeCount > 0 && (
-                    <span
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
-                      style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
-                    >
-                      {filterBadgeCount}
-                    </span>
-                  )}
-                  {/* Unread-notifications indicator */}
-                  {notif.unread > 0 && (
-                    <span
-                      className="absolute -top-1.5 -left-1.5 w-2.5 h-2.5 rounded-full"
-                      style={{ background: "#ef4444", border: "2px solid var(--bg-base)" }}
-                    />
-                  )}
-                </button>
+              {/* Notifications — standalone bell in the header */}
+              <NotificationsBell {...notif} />
 
-                {/* Dropdown panel */}
-                {menuOpen && (
-                  <div
-                    className="z-50 rounded-xl shadow-2xl flex flex-col"
-                    style={isMobileMenu ? {
-                      position: "fixed",
-                      top: menuPanelTop,
-                      left: 8,
-                      right: 8,
-                      maxHeight: `calc(100vh - ${menuPanelTop}px - 12px)`,
-                      background: "var(--bg-card)",
-                      border: "1px solid var(--border-md)",
-                    } : {
-                      position: "absolute",
-                      top: "calc(100% + 8px)",
-                      right: 0,
-                      width: 288,
-                      maxHeight: "80vh",
-                      background: "var(--bg-card)",
-                      border: "1px solid var(--border-md)",
+              {/* Filters menu — only on pages that actually have filters */}
+              {hasFilters && (
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setMenuOpen(v => !v)}
+                    className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{
+                      background: menuOpen ? "var(--brand)" : "var(--bg-inner)",
+                      border: `1px solid ${menuOpen ? "var(--brand)" : "var(--border)"}`,
+                      color: menuOpen ? "#fff" : "var(--text-2)",
                     }}
                   >
-                    {/* Panel header */}
-                    <div
-                      className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-                      style={{ borderBottom: "1px solid var(--border)" }}
-                    >
-                      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                        {t("menu.title") || "Menu"}
-                      </span>
-                      <button
-                        onClick={() => setMenuOpen(false)}
-                        className="p-0.5 rounded transition-colors hover:bg-white/10"
-                        style={{ color: "var(--text-3)" }}
+                    <SlidersHorizontal size={14} />
+                    <span>{t("filter.filters") || "Filters"}</span>
+                    {/* Active-filter count */}
+                    {filterBadgeCount > 0 && (
+                      <span
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
+                        style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
                       >
-                        <X size={13} />
-                      </button>
-                    </div>
+                        {filterBadgeCount}
+                      </span>
+                    )}
+                  </button>
 
-                    {/* Scrollable body */}
-                    <div className="flex-1 min-h-0 overflow-y-auto">
-                      {/* Filters */}
-                      {(showFilters || filterSlot) && (
+                  {/* Dropdown panel */}
+                  {menuOpen && (
+                    <div
+                      className="z-50 rounded-xl shadow-2xl flex flex-col"
+                      style={isMobileMenu ? {
+                        position: "fixed",
+                        top: menuPanelTop,
+                        left: 8,
+                        right: 8,
+                        maxHeight: `calc(100vh - ${menuPanelTop}px - 12px)`,
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border-md)",
+                      } : {
+                        position: "absolute",
+                        top: "calc(100% + 8px)",
+                        right: 0,
+                        width: 288,
+                        maxHeight: "80vh",
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border-md)",
+                      }}
+                    >
+                      {/* Panel header */}
+                      <div
+                        className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
+                        style={{ borderBottom: "1px solid var(--border)" }}
+                      >
+                        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                          {t("filter.filters") || "Filters"}
+                        </span>
+                        <button
+                          onClick={() => setMenuOpen(false)}
+                          className="p-0.5 rounded transition-colors hover:bg-white/10"
+                          style={{ color: "var(--text-3)" }}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+
+                      {/* Scrollable body */}
+                      <div className="flex-1 min-h-0 overflow-y-auto">
                         <div className="p-4">
-                          <span className="text-[10px] font-semibold uppercase tracking-wider block mb-3" style={{ color: "var(--text-4)" }}>
-                            {t("filter.filters") || "Filters"}
-                          </span>
                           {showFilters && <GlobalFilters />}
                           {filterSlot && <div className={showFilters ? "mt-3" : ""}>{filterSlot}</div>}
                         </div>
-                      )}
-
-                      {/* Notifications */}
-                      <NotificationsSection {...notif} />
-
-                      {/* Language */}
-                      <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
-                          {t("filter.language") || "Language"}
-                        </span>
-                        <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)", width: "fit-content" }}>
-                          {languages.map(({ code }) => (
-                            <button
-                              key={code}
-                              onClick={() => setLang(code)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors"
-                              style={lang === code
-                                ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
-                                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                            >
-                              {LANG_FLAGS[code] || "🌐"} {langLabel(code)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Appearance — theme + ghost (admin) */}
-                      <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
-                          {t("menu.appearance") || "Appearance"}
-                        </span>
-
-                        {/* Theme switch */}
-                        <div className="flex items-center justify-between py-1">
-                          <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
-                          <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
-                            <button
-                              onClick={() => { if (theme !== "light") toggle(); }}
-                              className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
-                              style={theme === "light"
-                                ? { background: "var(--brand)", color: "#fff" }
-                                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                              title={t("theme.light")}
-                            >
-                              <Sun size={13} />
-                            </button>
-                            <button
-                              onClick={() => { if (theme !== "dark") toggle(); }}
-                              className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
-                              style={theme === "dark"
-                                ? { background: "var(--brand)", color: "#fff" }
-                                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                              title={t("theme.dark")}
-                            >
-                              <Moon size={13} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Ghost mode — admin only */}
-                        {auth?.role === "admin" && (
-                          <div className="flex items-center justify-between py-1 mt-1">
-                            <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
-                              <Ghost size={13} /> {t("ghost.label")}
-                            </span>
-                            <button
-                              onClick={toggleGhost}
-                              className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-                              style={ghost
-                                ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
-                                : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                              title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
-                            >
-                              {ghost ? "ON" : "OFF"}
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* User profile */}
               <UserProfile />
