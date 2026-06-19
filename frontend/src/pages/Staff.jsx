@@ -1193,15 +1193,18 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const targetIsSup  = target.startsWith("sup:");
   const targetIsTask = target.startsWith("task:") || target === "__new__";
   const canUseTime   = targetIsSup || targetIsTask;
-  // Valid transfer-time window (minutes from midnight) = earliest start →
-  // latest clock-out across the selected workers. The wheel picker is bounded to
-  // this; null when no worker has a clock-out yet.
+  // Valid transfer-time window (minutes from the earliest start) = earliest start →
+  // latest clock-out across the selected workers. Overnight shifts whose clock-out
+  // lands past midnight (out < start) are carried into the next day (+1440) so the
+  // window stays a real span; the picker renders these as wall-clock (mod 24h). The
+  // wheel picker is bounded to this; null when no worker has a clock-out yet.
   const timeWindow = useMemo(() => {
     const sels = employees.filter(w => selected.has(w.worker_name));
     const starts = [], outs = [];
     sels.forEach(w => {
       const s = scheduleStartMin(w.schedule) ?? clockInMin(w.clock_in_out);
-      const o = clockOutMin(w.clock_in_out);
+      let o = clockOutMin(w.clock_in_out);
+      if (s != null && o != null && o < s) o += 1440;   // clock-out crossed midnight
       if (s != null) starts.push(s);
       if (o != null) outs.push(o);
     });
