@@ -173,7 +173,7 @@ export default function BrigadirTable({
 
   function diffModal(b) {
     const title = `${t("overview.fm.diffTitle")}${avgSuffix}`;
-    const value = fmtDiff(b, diffUnit);
+    const value = fmtDiff(b, diffUnit, hcLabel);
     if (diffUnit === "hc") {
       return {
         title, value,
