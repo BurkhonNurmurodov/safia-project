@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, CheckCircle2, XCircle, Loader2, Factory, Save } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, Loader2, Factory, Save, BookOpen } from "lucide-react";
 import api from "../../utils/api";
 
 // Pilot phase: only the one brigadir (manager 5). Extend this list as the
