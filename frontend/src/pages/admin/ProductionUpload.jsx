@@ -7,7 +7,11 @@ import api from "../../utils/api";
 // rollout grows, or replace with a managers fetch.
 const BRIGADIRS = [{ id: 5, name: "Абдугамитов Мухаммад (Sheet1 Торт)" }];
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Timezone-safe (toISOString() drops a day east of UTC, e.g. Tashkent +5).
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const card = "bg-[#1a1d27] border border-white/5 rounded-xl p-5";
 const label = "text-[11px] font-semibold text-gray-500 uppercase tracking-wider";
