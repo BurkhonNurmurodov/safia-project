@@ -271,6 +271,22 @@ export default function Production() {
         )}
       </div>
 
+      {/* view switcher: computed dashboard / raw фаза / raw заголовок */}
+      <div className="flex gap-1 mb-4 p-1 rounded-lg w-fit" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+        {[["zagruzka", "Загрузка"], ["faza", "Фаза"], ["zaga", "Заголовок"]].map(([id, label]) => (
+          <button key={id} onClick={() => setView(id)}
+            className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+            style={view === id ? { background: "var(--brand)", color: "#fff" } : { background: "transparent", color: "var(--text-3)" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view !== "zagruzka" && (
+        <RawView fileType={view} date={date} managerParam={managerParam} />
+      )}
+
+      {view === "zagruzka" && (<>
       {isError && (
         <div className="rounded-xl p-4 text-sm" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
           {error?.response?.data?.detail || "Ошибка загрузки"}
@@ -392,6 +408,7 @@ export default function Production() {
 
       {/* reconciliation */}
       <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
+      </>)}
     </Layout>
   );
 }
