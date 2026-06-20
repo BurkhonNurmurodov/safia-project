@@ -201,6 +201,8 @@ function SupervisorDaily() {
   // ── Delete modal & toast state ─────────────────────────────────────────────
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteToast, setDeleteToast] = useState(null);
+  // Change-document view modal (same modal as the Staff "Requests" tab).
+  const [viewDocId, setViewDocId] = useState(null);
 
   function handleDeleted(toastKey) {
     setDeleteToast(toastKey);
