@@ -267,11 +267,13 @@ async def upload_phase(
     manager_id: int = Form(...),
     date: str = Form(...),
     mode: str = Form("both"),           # 'plan' | 'actual' | 'both'
+    file_type: Optional[str] = Form(None),  # 'faza' | 'zaga' | None (auto-detect)
     _: dict = Depends(_verify_admin),
     db: Session = Depends(get_db),
 ):
     if mode not in ("plan", "actual", "both"):
         raise HTTPException(status_code=400, detail="mode must be plan|actual|both")
+    force_type = file_type if file_type in ("faza", "zaga") else None
     day = _parse_date(date)
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
