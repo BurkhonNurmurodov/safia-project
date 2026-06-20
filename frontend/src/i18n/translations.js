@@ -799,7 +799,7 @@ const t = {
     "fm.srcVerifixAttFile":"Verifix davomat fayli",
     "fm.verifixHcTitle":   "Verifix xodimlar soni",
     "fm.verifixHcNote":    "Umumiy Verifix mehnat soatlaridan olingan samarali xodimlar soni.",
-    "fm.verifixHcDerived": "Verifix XS (hisoblangan)",
+    "fm.verifixHcDerived": "Verifix Xodimlar soni (hisoblangan)",
     "fm.srcVerifixLaborShift": "Verifix mehnati ÷ smena soatlari",
     "fm.reportedHcOfficial":"Hisobotdagi XS (rasmiy)",
     "fm.hcDiffTitle":      "XS farqi",
