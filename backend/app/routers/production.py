@@ -408,6 +408,58 @@ def get_raw(
     }
 
 
+@router.post("/admin/production/catalog/import")
+async def import_catalog(
+    file: UploadFile = File(...),
+    manager_id: int = Form(...),
+    sheet_name: Optional[str] = Form(None),
+    _: dict = Depends(_verify_admin),
+    db: Session = Depends(get_db),
+):
+    """Replace a brigadir's catalog from an uploaded 'Sheet1 …' sheet: products
+    (SKU, name, labor, work center) + work-center штатка/capacity. Junk '0' rows
+    are dropped. Overrides/snapshots (pp_daily) are untouched — they key on
+    (sap_code, work_center)."""
+    if not db.query(Manager).filter(Manager.id == manager_id).first():
+        raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
+    parsed = parse_catalog_workbook(await file.read(), sheet_name)
+    if not parsed["products"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Каталог не найден. Укажите имя листа (напр. «Sheet1 Торт») с колонками Трудоёмкость/Команда.",
+        )
+
+    db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
+    for i, p in enumerate(parsed["products"]):
+        db.add(PPProduct(
+            manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
+            work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
+            sort_order=i,
+        ))
+
+    existing = {w.code: w for w in db.query(PPWorkCenter).filter(
+        PPWorkCenter.manager_id == manager_id).all()}
+    wc_added = wc_updated = 0
+    for w in parsed["work_centers"]:
+        wc = existing.get(w["code"])
+        if wc:
+            wc.shtatka = w.get("shtatka") or 0
+            if w.get("capacity") is not None:
+                wc.capacity = w["capacity"]
+            wc_updated += 1
+        else:
+            db.add(PPWorkCenter(
+                manager_id=manager_id, code=w["code"], shtatka=w.get("shtatka") or 0,
+                capacity=w.get("capacity"), sort_order=w.get("sort_order", 0)))
+            wc_added += 1
+    db.commit()
+    return {
+        "status": "ok", "manager_id": manager_id, "sheet": parsed["sheet"],
+        "products": len(parsed["products"]),
+        "work_centers_added": wc_added, "work_centers_updated": wc_updated,
+    }
+
+
 @router.get("/admin/production/work-centers")
 def admin_work_centers(manager_id: int = Query(...), _: dict = Depends(_verify_admin),
                        db: Session = Depends(get_db)):
