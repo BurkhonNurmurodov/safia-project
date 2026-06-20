@@ -293,7 +293,7 @@ async def upload_phase(
     file_reports = []
 
     for f in files:
-        slices = read_workbook_slices(await f.read(), day, own_wcs, catalog_skus)
+        slices = read_workbook_slices(await f.read(), day, own_wcs, catalog_skus, force_type=force_type)
         rep = {"file": f.filename, "faza": None, "zaga": None}
         fz = slices.get("faza")
         if fz is not None:
