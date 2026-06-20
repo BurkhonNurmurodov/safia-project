@@ -857,7 +857,7 @@ const t = {
     "error.reload":  "Qayta yuklash",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
-    "workers.officialVsVerifix": "Rasmiy XS va Verifix XS",
+    "workers.officialVsVerifix": "Rasmiy Xodimlar soni va Verifix Xodimlar soni",
     "workers.diffWarn":          "⚠ farq 2 kishidan ortiq bo'lganda ko'rsatiladi",
     "workers.byRolePerBrigadir": "Brigadir bo'yicha lavozimlar kesimida xodimlar soni",
     "workers.attendanceTrend":   "Lavozim bo'yicha davomat tendentsiyasi",
