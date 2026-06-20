@@ -147,7 +147,9 @@ export default function ProductionUpload() {
           onChange={(e) => setFiles(Array.from(e.target.files || []))}
           className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
         />
-        <div className="text-[11px] text-gray-600 mt-1">Файл «План … фаза». Колонка F → План, M → Факт, J → дата.</div>
+        <div className="text-[11px] text-gray-600 mt-1">
+          Выберите оба файла: «фаза» (операции) и «заголовок» (заказы→SKU). Тип определяется автоматически; соединяются по номеру заказа.
+        </div>
 
         <button
           onClick={doUpload}
