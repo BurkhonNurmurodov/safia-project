@@ -79,6 +79,68 @@ function WorkCenters({ managerId }) {
   );
 }
 
+// ── catalog import (Sheet1 …) ────────────────────────────────────────────────
+function CatalogImport({ managerId }) {
+  const qc = useQueryClient();
+  const [sheet, setSheet] = useState("Sheet1 Торт");
+  const [file, setFile] = useState(null);
+  const [state, setState] = useState({ status: "idle" });
+
+  async function doImport() {
+    if (!file) return;
+    setState({ status: "uploading" });
+    const form = new FormData();
+    form.append("file", file);
+    form.append("manager_id", managerId);
+    if (sheet.trim()) form.append("sheet_name", sheet.trim());
+    try {
+      const { data } = await api.post("/admin/production/catalog/import", form);
+      setState({ status: "ok", data });
+      qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
+    } catch (e) {
+      setState({ status: "error", detail: e?.response?.data?.detail || "Ошибка импорта" });
+    }
+  }
+
+  return (
+    <div className={card}>
+      <div className="flex items-center gap-2 mb-4">
+        <BookOpen size={15} className="text-[var(--brand-text)]" />
+        <div className={label}>Импорт каталога (лист «Sheet1 …»)</div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Имя листа</span>
+          <input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="Sheet1 Торт" className={input} />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Файл (.xlsx)</span>
+          <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold" />
+        </label>
+      </div>
+      <div className="text-[11px] text-gray-600 mb-3">
+        Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Снимки данных не затрагиваются.
+      </div>
+      <button onClick={doImport} disabled={!file || state.status === "uploading"}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50">
+        {state.status === "uploading" ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />}
+        Импортировать
+      </button>
+      {state.status === "ok" && (
+        <div className="mt-3 flex items-center gap-2 text-green-400 text-sm">
+          <CheckCircle2 size={14} /> Лист «{state.data.sheet}»: {state.data.products} товаров, команд +{state.data.work_centers_added}/~{state.data.work_centers_updated}
+        </div>
+      )}
+      {state.status === "error" && (
+        <div className="mt-3 flex items-center gap-2 text-red-400 text-sm">
+          <XCircle size={14} /> {state.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── фаза upload ───────────────────────────────────────────────────────────────
 export default function ProductionUpload() {
   const [managerId, setManagerId] = useState(BRIGADIRS[0].id);
