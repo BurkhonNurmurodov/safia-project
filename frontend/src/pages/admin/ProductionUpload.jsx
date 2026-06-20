@@ -96,6 +96,7 @@ export default function ProductionUpload() {
     form.append("manager_id", managerId);
     form.append("date", date);
     form.append("mode", mode);
+    if (fileType !== "auto") form.append("file_type", fileType);
     try {
       const { data } = await api.post("/admin/production/upload", form);
       setState({ status: "ok", data });
