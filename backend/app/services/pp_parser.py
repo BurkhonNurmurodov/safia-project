@@ -34,6 +34,17 @@ ZAGA_COLUMNS = ["Заказ", "SKU", "Завод", "План (E)", "Подтв. 
 
 _SAP_RE = re.compile(r"^[A-Za-z]\d{5,}$")   # S00000101, F00002772
 _WC_RE = re.compile(r"^[A-Za-z]\d{3,4}$")    # A1431, A2682
+_WC4_RE = re.compile(r"^[A-Za-z]\d{4}$")     # work-center codes are letter+4 digits
+                                             # (plant code W001 is 3 digits → excluded)
+
+
+def _str(v) -> str:
+    """A cell's string form, robust to SAP exports that store numbers as text."""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
 
 
 def _to_date(v) -> date | None:
