@@ -388,7 +388,7 @@ function SupervisorDaily() {
 
       {/* Idle by category — always visible */}
       <div className="mb-4">
-        <Section icon={Clock} title={t("daily.idleTitle")}
+        <Section icon={Clock} title={t("daily.idleTitle")} tip={t("daily.idleTip")}
           action={idleRow ? <span className="text-xs" style={{ color: "var(--text-3)" }}>{fmtMin(idleRow.total)} {t("daily.total")}</span> : null}>
           <IdleDonut byCategory={idleRow?.by_category} />
         </Section>
