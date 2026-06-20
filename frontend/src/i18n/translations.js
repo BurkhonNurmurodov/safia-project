@@ -594,7 +594,7 @@ const t = {
     "profile.diff.total":         "Jami farq",
     "profile.diff.planned":       "Plan",
     "profile.diff.final":         "Fakt",
-    "profile.hcMismatch":         "XS mos emas",
+    "profile.hcMismatch":         "Xodimlar soni mos emas",
 
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Yukli",
