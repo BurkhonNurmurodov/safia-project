@@ -1762,7 +1762,7 @@ const t = {
     "error.reload":  "Қайта юклаш",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
-    "workers.officialVsVerifix": "Расмий ХС ва Verifix ХС",
+    "workers.officialVsVerifix": "Расмий Ходимлар сони ва Verifix Ходимлар сони",
     "workers.diffWarn":          "⚠ фарқ 2 кишидан ортиқ бўлганда кўрсатилади",
     "workers.byRolePerBrigadir": "Бригадир бўйича лавозимлар кесимида ходимлар сони",
     "workers.attendanceTrend":   "Лавозим бўйича давомат тенденцияси",
