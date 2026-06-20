@@ -84,6 +84,7 @@ export default function ProductionUpload() {
   const [managerId, setManagerId] = useState(BRIGADIRS[0].id);
   const [date, setDate] = useState(todayISO());
   const [mode, setMode] = useState("both");
+  const [fileType, setFileType] = useState("auto"); // auto | faza | zaga
   const [files, setFiles] = useState([]);
   const [state, setState] = useState({ status: "idle" });
 
