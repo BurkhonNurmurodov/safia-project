@@ -448,6 +448,18 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const totalWorkers = allWorkers.length;
   const cameWorkers = useMemo(() => allWorkers.filter(hasWorked), [allWorkers]);
   const cameToWorkCount = cameWorkers.length;
+  // Count of workers who came to work, broken down by exact job_title,
+  // sorted by count desc then title. Blank titles are skipped so each entry
+  // maps cleanly onto the job_titles column filter.
+  const roleCounts = useMemo(() => {
+    const map = new Map();
+    for (const w of cameWorkers) {
+      const title = w.job_title || "";
+      if (!title) continue;
+      map.set(title, (map.get(title) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [cameWorkers]);
   const cameRatio = totalWorkers > 0 ? cameToWorkCount / totalWorkers : null;
   const zagruzkaWorkers = useMemo(
     () => allWorkers.filter(isZagruzkaCalcWorker),
