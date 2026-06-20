@@ -113,6 +113,7 @@ const t = {
     "staff.noData":          "Bu sana uchun davomat ma'lumotlari yo'q",
     "staff.colWorker":       "Xodim",
     "staff.colRole":         "Lavozim",
+    "staff.byRole":          "Lavozimlar bo'yicha kelganlar",
     "staff.colSchedule":     "Jadval",
     "staff.colClock":        "Keldi/Ketdi",
     "staff.colHours":        "Soat",
