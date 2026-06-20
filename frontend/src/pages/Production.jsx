@@ -164,6 +164,9 @@ export default function Production() {
   const totals = data?.totals ?? {};
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
+  // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
+  const noSapData = !isLoading && rows.length > 0 &&
+    (totals.total_plan_labor || 0) === 0 && (totals.total_actual_labor || 0) === 0;
 
   const saveOverride = (row, field) => (value) =>
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
