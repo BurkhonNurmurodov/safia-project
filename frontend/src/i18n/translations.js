@@ -1923,6 +1923,7 @@ const t = {
     "staff.noData":          "Нет данных о посещаемости за эту дату",
     "staff.colWorker":       "Сотрудник",
     "staff.colRole":         "Должность",
+    "staff.byRole":          "Пришли по должностям",
     "staff.colSchedule":     "График",
     "staff.colClock":        "Приход/Уход",
     "staff.colHours":        "Часы",
