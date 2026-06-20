@@ -1704,7 +1704,7 @@ const t = {
     "fm.srcVerifixAttFile":"Verifix давомат файли",
     "fm.verifixHcTitle":   "Verifix ходимлар сони",
     "fm.verifixHcNote":    "Умумий Verifix меҳнат соатларидан олинган самарали ходимлар сони.",
-    "fm.verifixHcDerived": "Verifix ХС (ҳисобланган)",
+    "fm.verifixHcDerived": "Verifix Ходимлар сони (ҳисобланган)",
     "fm.srcVerifixLaborShift": "Verifix меҳнати ÷ смена соатлари",
     "fm.reportedHcOfficial":"Ҳисоботдаги ХС (расмий)",
     "fm.hcDiffTitle":      "ХС фарқи",
