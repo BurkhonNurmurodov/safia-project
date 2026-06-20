@@ -110,7 +110,7 @@ export default function ProductionUpload() {
       <div className={card}>
         <div className="flex items-center gap-2 mb-4">
           <Upload size={15} className="text-[var(--brand-text)]" />
-          <div className={label}>Загрузка SAP «фаза»</div>
+          <div className={label}>Загрузка SAP файлов (фаза + заголовок)</div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
