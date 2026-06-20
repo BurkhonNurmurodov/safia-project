@@ -190,6 +190,7 @@ export default function Production() {
   const { t } = useLang();
   const qc = useQueryClient();
   const [date, setDate] = useState(todayISO());
+  const [view, setView] = useState("zagruzka"); // zagruzka | faza | zaga
 
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
