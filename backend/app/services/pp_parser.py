@@ -169,17 +169,28 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
 
 
 def read_workbook_slices(content: bytes, target_date: date | None,
-                         own_wcs: set[str], catalog_skus: set[str]) -> dict:
-    """Read an uploaded workbook once; return recognised faza/zaga slices."""
+                         own_wcs: set[str], catalog_skus: set[str],
+                         force_type: str | None = None) -> dict:
+    """Read an uploaded workbook once; return recognised faza/zaga slices.
+
+    force_type ('faza'|'zaga') skips auto-detection and reads the best sheet as
+    that type — the escape hatch when an export's layout defeats the classifier."""
     import openpyxl  # lazy — heavy import
 
     wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
     out: dict = {"faza": None, "zaga": None}
-    for ws in wb.worksheets:
-        kind = _classify(ws)
-        if kind == "faza" and out["faza"] is None:
-            out["faza"] = _extract_faza(ws, target_date, own_wcs)
-        elif kind == "zaga" and out["zaga"] is None:
-            out["zaga"] = _extract_zaga(ws, catalog_skus)
-    wb.close()
+    try:
+        if force_type == "faza":
+            out["faza"] = _extract_faza(_best_sheet(wb, "faza"), target_date, own_wcs)
+        elif force_type == "zaga":
+            out["zaga"] = _extract_zaga(_best_sheet(wb, "zaga"), catalog_skus)
+        else:
+            for ws in wb.worksheets:
+                kind = _classify(ws, own_wcs)
+                if kind == "faza" and out["faza"] is None:
+                    out["faza"] = _extract_faza(ws, target_date, own_wcs)
+                elif kind == "zaga" and out["zaga"] is None:
+                    out["zaga"] = _extract_zaga(ws, catalog_skus)
+    finally:
+        wb.close()
     return out
