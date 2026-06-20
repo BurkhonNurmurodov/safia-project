@@ -153,7 +153,10 @@ export default function Production() {
 
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      qc.invalidateQueries({ queryKey: ["production-dates"] });
+    },
   });
   const recon = useMutation({
     mutationFn: (payload) => api.post("/api/production/reconciliation", { date, data: payload }, { params: managerParam }),
