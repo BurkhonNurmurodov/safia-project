@@ -801,8 +801,8 @@ const t = {
     "fm.verifixHcNote":    "Umumiy Verifix mehnat soatlaridan olingan samarali xodimlar soni.",
     "fm.verifixHcDerived": "Verifix Xodimlar soni (hisoblangan)",
     "fm.srcVerifixLaborShift": "Verifix mehnati ÷ smena soatlari",
-    "fm.reportedHcOfficial":"Hisobotdagi XS (rasmiy)",
-    "fm.hcDiffTitle":      "XS farqi",
+    "fm.reportedHcOfficial":"Hisobotdagi Xodimlar soni (rasmiy)",
+    "fm.hcDiffTitle":      "Xodimlar soni farqi",
     "fm.hcDiffWarn":       "⚠ |farq| > 2 kishi bo'lganda ogohlantirish ko'rsatiladi.",
     "fm.diffOver2":        "farq > 2 kishi",
 
