@@ -316,7 +316,10 @@ async def upload_phase(
         file_reports.append(rep)
 
     if not faza_present and not zaga_present:
-        raise HTTPException(status_code=400, detail="Не распознан ни «фаза», ни «заголовок» лист")
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось распознать тип файла автоматически. Выберите «Тип файла» (Фаза или Заголовок) и загрузите снова.",
+        )
 
     updated = 0
     if faza_present:
