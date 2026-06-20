@@ -772,7 +772,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 // HR Documents — document-driven change workflow
 // ════════════════════════════════════════════════════════════════════════════
 
-const DOC_TYPE_TKEY = {
+export const DOC_TYPE_TKEY = {
   role_change: "staff.roleChange",
   people_exchange: "staff.peopleExchange",
   graphic_change: "staff.graphicChange",
