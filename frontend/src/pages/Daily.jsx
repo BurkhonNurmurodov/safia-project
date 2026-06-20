@@ -465,6 +465,9 @@ function SupervisorDaily() {
       </>
       )}
 
+      {/* Change-document view modal */}
+      {viewDocId && <DocumentViewModal docId={viewDocId} onClose={() => setViewDocId(null)} />}
+
       {/* Delete workers modal */}
       {showDeleteModal && (
         <DeleteWorkersModal
