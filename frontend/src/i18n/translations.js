@@ -1706,8 +1706,8 @@ const t = {
     "fm.verifixHcNote":    "Умумий Verifix меҳнат соатларидан олинган самарали ходимлар сони.",
     "fm.verifixHcDerived": "Verifix Ходимлар сони (ҳисобланган)",
     "fm.srcVerifixLaborShift": "Verifix меҳнати ÷ смена соатлари",
-    "fm.reportedHcOfficial":"Ҳисоботдаги ХС (расмий)",
-    "fm.hcDiffTitle":      "ХС фарқи",
+    "fm.reportedHcOfficial":"Ҳисоботдаги Ходимлар сони (расмий)",
+    "fm.hcDiffTitle":      "Ходимлар сони фарқи",
     "fm.hcDiffWarn":       "⚠ |фарқ| > 2 киши бўлганда огоҳлантириш кўрсатилади.",
     "fm.diffOver2":        "фарқ > 2 киши",
 
