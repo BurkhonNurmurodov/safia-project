@@ -872,7 +872,7 @@ function YesNoBadge({ approved }) {
 
 // ── 3-state badge for deletion request batches ────────────────────────────────
 
-function DeletionStatusBadge({ status }) {
+export function DeletionStatusBadge({ status }) {
   const { t } = useLang();
   if (status === "approved") {
     return (
