@@ -85,25 +85,41 @@ def _get(row, idx):
     return row[idx - 1] if len(row) >= idx else None
 
 
-def _classify(ws) -> str | None:
-    """Return 'faza' | 'zaga' | None for a worksheet (name first, then shape)."""
+def _classify(ws, own_wcs: set[str]) -> str | None:
+    """Return 'faza' | 'zaga' | None for a worksheet.
+
+    Content-based and type/position-independent: only «фаза» carries work-center
+    codes (the brigadir's own codes, or any letter+4-digit code), so seeing one
+    means фаза. A sheet with SAP codes but no work centers is заголовок. Scans a
+    bounded window — both files populate their distinguishing column from row 1."""
     title = (ws.title or "").lower()
     if "фаза" in title:
         return "faza"
     if "заголов" in title:
         return "zaga"
-    faza = zaga = 0
+    sap_seen = False
     for i, row in enumerate(ws.iter_rows(values_only=True)):
-        if i > 25:
+        if i > 200:
             break
-        a, b, d = _get(row, F_SAP), _get(row, Z_SKU), _get(row, F_WC)
-        if isinstance(a, str) and _SAP_RE.match(a.strip()) and isinstance(d, str) and _WC_RE.match(d.strip()):
-            faza += 1
-        elif isinstance(a, (int, float)) and isinstance(b, str) and _SAP_RE.match(b.strip()):
-            zaga += 1
-    if faza or zaga:
-        return "faza" if faza >= zaga else "zaga"
-    return None
+        for cell in row:
+            s = _str(cell)
+            if not s:
+                continue
+            if s in own_wcs or _WC4_RE.match(s):
+                return "faza"
+            if _SAP_RE.match(s):
+                sap_seen = True
+    return "zaga" if sap_seen else None
+
+
+def _best_sheet(wb, kind: str):
+    """For a forced file type, pick the sheet to read: a name match if any, else
+    the first worksheet (single-purpose exports have just one)."""
+    key = "фаза" if kind == "faza" else "заголов"
+    for ws in wb.worksheets:
+        if key in (ws.title or "").lower():
+            return ws
+    return wb.worksheets[0]
 
 
 def _extract_faza(ws, target_date: date | None, own_wcs: set[str]) -> dict:
