@@ -1499,7 +1499,7 @@ const t = {
     "profile.diff.total":         "Жами фарқ",
     "profile.diff.planned":       "План",
     "profile.diff.final":         "Факт",
-    "profile.hcMismatch":         "ХС мос эмас",
+    "profile.hcMismatch":         "Ходимлар сони мос эмас",
 
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Юкли",
