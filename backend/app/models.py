@@ -448,3 +448,28 @@ class PPReconciliation(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_pp_recon_manager_date"),)
+
+
+class PPUpload(Base):
+    """Raw slice of an uploaded SAP file, kept so the dashboard's view switcher
+    can show the source rows behind the numbers.
+
+    file_type: 'faza' (План … фаза — operations detail, drives the dashboard)
+               'zaga' (План заголовок — order headers, reference only).
+    columns/rows store a render-ready table scoped to this brigadir+date
+    (faza → the brigadir's work centers on that date; zaga → catalog SKUs)."""
+    __tablename__ = "pp_uploads"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    file_type   = Column(String, nullable=False)   # 'faza' | 'zaga'
+    filename    = Column(String, nullable=True)
+    columns     = Column(JSONB, nullable=False, default=list)  # [header, ...]
+    rows        = Column(JSONB, nullable=False, default=list)  # [[cell, ...], ...]
+    row_count   = Column(Integer, default=0)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "file_type", name="uq_pp_upload_key"),
+    )
