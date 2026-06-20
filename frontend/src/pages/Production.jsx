@@ -7,16 +7,22 @@ import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 
 // ── helpers ────────────────────────────────────────────────────────────────
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Timezone-safe: build/shift dates from calendar parts, never via toISOString()
+// (which converts through UTC and drops a day east of Greenwich, e.g. Tashkent).
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const fmt = (v, d = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d });
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(1)}%`);
 
 function shiftDate(iso, days) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
 // Russian column labels, exactly as the ABC Excel ("Sheet1 ...")
