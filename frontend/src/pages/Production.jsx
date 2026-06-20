@@ -200,6 +200,22 @@ export default function Production() {
             Сегодня
           </button>
         )}
+
+        {/* switcher — jump to a date that has uploaded data */}
+        {availableDates.length > 0 && (
+          <select
+            value={availableDates.includes(date) ? date : ""}
+            onChange={(e) => { if (e.target.value) setDate(e.target.value); }}
+            className="ml-auto px-3 py-1.5 rounded-lg text-sm"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: availableDates.includes(date) ? "var(--text-1)" : "var(--text-3)" }}
+            title="Даты с загруженными данными"
+          >
+            <option value="">📅 Загруженные даты ({availableDates.length})</option>
+            {availableDates.map((d) => (
+              <option key={d} value={d}>{ddmmyyyy(d)}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {isError && (
