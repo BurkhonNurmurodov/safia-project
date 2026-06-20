@@ -2755,7 +2755,7 @@ function SortBtn({ col, sortCol, sortDir, onSort }) {
   );
 }
 
-function ActionBtn({ icon: Icon, label, color, onClick, loading, disabled }) {
+export function ActionBtn({ icon: Icon, label, color, onClick, loading, disabled }) {
   return (
     <button onClick={onClick} disabled={loading || disabled}
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
