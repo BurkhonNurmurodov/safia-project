@@ -248,6 +248,19 @@ def save_reconciliation(
 # --------------------------------------------------------------------------- #
 # admin
 # --------------------------------------------------------------------------- #
+def _upsert_upload(db, manager_id, day, file_type, columns, rows, filename):
+    up = db.query(PPUpload).filter(
+        PPUpload.manager_id == manager_id, PPUpload.date == day,
+        PPUpload.file_type == file_type).first()
+    if not up:
+        up = PPUpload(manager_id=manager_id, date=day, file_type=file_type)
+        db.add(up)
+    up.columns = columns
+    up.rows = rows
+    up.row_count = len(rows)
+    up.filename = filename
+
+
 @router.post("/admin/production/upload")
 async def upload_phase(
     files: list[UploadFile] = File(...),
@@ -263,51 +276,100 @@ async def upload_phase(
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
 
-    # restrict to the work centers this brigadir owns (catalog-defined)
+    # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
+    products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
-        PPWorkCenter.manager_id == manager_id).all()}
-    own_keys = {(p.sap_code, p.work_center) for p in db.query(PPProduct).filter(
-        PPProduct.manager_id == manager_id).all()}
+        PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
+    catalog_skus = {p.sap_code for p in products}
 
-    merged: dict[tuple[str, str], dict] = {}
+    faza_agg: dict[tuple[str, str], dict] = {}
+    faza_rows: list[list] = []
+    zaga_rows: list[list] = []
+    faza_cols = zaga_cols = None
+    faza_present = zaga_present = False
+    faza_file = zaga_file = None
     file_reports = []
-    dates_seen: set[str] = set()
+
     for f in files:
-        parsed = parse_phase_file(await f.read())
-        dates_seen.update(d.isoformat() for d in parsed["dates"])
-        bucket = parsed["by_date"].get(day, {})
-        for key, agg in bucket.items():
-            m = merged.setdefault(key, {"plan_qty": 0.0, "actual_qty": 0.0})
-            m["plan_qty"] += agg["plan_qty"]
-            m["actual_qty"] += agg["actual_qty"]
-        file_reports.append({"file": f.filename, "rows": parsed["rows"],
-                             "matched_keys_for_date": len(bucket)})
+        slices = read_workbook_slices(await f.read(), day, own_wcs, catalog_skus)
+        rep = {"file": f.filename, "faza": None, "zaga": None}
+        fz = slices.get("faza")
+        if fz is not None:
+            faza_present = True
+            faza_cols = fz["columns"]
+            faza_rows += fz["rows"]
+            faza_file = f.filename
+            for key, agg in fz["agg"].items():
+                m = faza_agg.setdefault(key, {"plan_qty": 0.0, "actual_qty": 0.0})
+                m["plan_qty"] += agg["plan_qty"]
+                m["actual_qty"] += agg["actual_qty"]
+            rep["faza"] = {"matched": len(fz["rows"]), "dates": [d.isoformat() for d in fz["dates"]]}
+        zg = slices.get("zaga")
+        if zg is not None:
+            zaga_present = True
+            zaga_cols = zg["columns"]
+            zaga_rows += zg["rows"]
+            zaga_file = f.filename
+            rep["zaga"] = {"matched": len(zg["rows"])}
+        file_reports.append(rep)
+
+    if not faza_present and not zaga_present:
+        raise HTTPException(status_code=400, detail="Не распознан ни «фаза», ни «заголовок» лист")
 
     updated = 0
-    for (sap, wc), agg in merged.items():
-        # only this brigadir's rows (by work center, or known catalog key)
-        if own_wcs and wc not in own_wcs and (sap, wc) not in own_keys:
-            continue
-        row = db.query(PPDaily).filter(
-            PPDaily.manager_id == manager_id, PPDaily.date == day,
-            PPDaily.sap_code == sap, PPDaily.work_center == wc).first()
-        if not row:
-            row = PPDaily(manager_id=manager_id, date=day, sap_code=sap, work_center=wc,
-                          plan_qty=0, actual_qty=0)
-            db.add(row)
-        if mode in ("plan", "both"):
-            row.plan_qty = agg["plan_qty"]
-            row.plan_override = None      # SAP upload resets the manual override
-        if mode in ("actual", "both"):
-            row.actual_qty = agg["actual_qty"]
-            row.actual_override = None
-        updated += 1
-    db.commit()
+    if faza_present:
+        for (sap, wc), agg in faza_agg.items():
+            row = db.query(PPDaily).filter(
+                PPDaily.manager_id == manager_id, PPDaily.date == day,
+                PPDaily.sap_code == sap, PPDaily.work_center == wc).first()
+            if not row:
+                row = PPDaily(manager_id=manager_id, date=day, sap_code=sap, work_center=wc,
+                              plan_qty=0, actual_qty=0)
+                db.add(row)
+            if mode in ("plan", "both"):
+                row.plan_qty = agg["plan_qty"]
+                row.plan_override = None      # SAP upload resets the manual override
+            if mode in ("actual", "both"):
+                row.actual_qty = agg["actual_qty"]
+                row.actual_override = None
+            updated += 1
+        _upsert_upload(db, manager_id, day, "faza", faza_cols, faza_rows, faza_file)
 
+    if zaga_present:
+        _upsert_upload(db, manager_id, day, "zaga", zaga_cols, zaga_rows, zaga_file)
+
+    db.commit()
     return {
-        "status": "ok", "manager_id": manager_id, "date": day.isoformat(),
-        "mode": mode, "rows_written": updated, "dates_in_file": sorted(dates_seen),
+        "status": "ok", "manager_id": manager_id, "date": day.isoformat(), "mode": mode,
+        "rows_written": updated,
+        "faza_rows": len(faza_rows) if faza_present else 0,
+        "zaga_rows": len(zaga_rows) if zaga_present else 0,
         "files": file_reports,
+    }
+
+
+@router.get("/api/production/raw")
+def get_raw(
+    file_type: str = Query(...),       # 'faza' | 'zaga'
+    date: Optional[str] = Query(None),
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    if file_type not in ("faza", "zaga"):
+        raise HTTPException(status_code=400, detail="file_type must be faza|zaga")
+    mid = _resolve_manager_id(payload, manager_id)
+    day = _parse_date(date)
+    up = db.query(PPUpload).filter(
+        PPUpload.manager_id == mid, PPUpload.date == day,
+        PPUpload.file_type == file_type).first()
+    if not up:
+        return {"present": False, "columns": [], "rows": [], "file_type": file_type, "date": day.isoformat()}
+    return {
+        "present": True, "file_type": file_type, "date": day.isoformat(),
+        "columns": up.columns, "rows": up.rows, "row_count": up.row_count,
+        "filename": up.filename,
+        "uploaded_at": up.uploaded_at.isoformat() if up.uploaded_at else None,
     }
 
 
