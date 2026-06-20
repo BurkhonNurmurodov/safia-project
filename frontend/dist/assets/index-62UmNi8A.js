@@ -32,7 +32,7 @@ import(${JSON.stringify(t.entry.module)});`:" ";return M.createElement(M.Fragmen
 Manba: uskuna monitoringi tizimi.`,"fm.over100Formula":`net_util ≥ 100% bo'lgan brigadirlar soni
 (jamoa rejadagi quvvatdan ko'proq ishlab chiqardi).`,"fm.under90Formula":`net_util < 90% bo'lgan brigadirlar soni
 (jamoa rejadagi quvvatga nisbatan kam ishladi).`,"fm.netAdjustments":"Tuzatishlar: ortiqcha mehnat, ojidaniya, erta kelish, 10 daqiqalik kaizen bufer.","fm.headcountFormula":`Smena uchun Verifix davomat faylida qayd etilgan rasmiy xodimlar soni.
-⚠ Verifix XS 2 kishidan ko'proq farq qilganda ogohlantirish ko'rsatiladi.`,"fm.idleTotalFormula":`Tanlangan davrdagi uskunalar to'xtab turishining umumiy vaqti.
+⚠ Verifix Xodimlar soni 2 kishidan ko'proq farq qilganda ogohlantirish ko'rsatiladi.`,"fm.idleTotalFormula":`Tanlangan davrdagi uskunalar to'xtab turishining umumiy vaqti.
 Manba: uskuna monitoringi tizimi.`,"fm.prodPlanTitle":"Ishlab chiqarish plani","fm.prodPlanNote":"Jamoa uchun daqiqalardagi umumiy rejalashtirilgan quvvat.","fm.shiftDuration":"Smena davomiyligi","fm.prodPlanResult":"Ishlab chiqarish plani (natija)","fm.prodPlanShort":"Ishlab chiq. plani","fm.srcVerifixAtt":"Verifix davomat","fm.srcSchedule":"Ishlab chiqarish jadvali","fm.equipIdleTitle":"Uskunalar to'xtab turish vaqti","fm.equipIdleFormula":`Tanlangan davrda jamoa uchun uskunalarning umumiy to'xtab turish vaqti.
 Manba: uskuna monitoringi tizimi.`,"fm.downtimeMin":"To'xtab turish (daqiqalar)","fm.srcEquipMon":"Uskuna monitoringi tizimi","fm.trudoTitle":"Trudoyomkost (mehnat sig'imi)","fm.trudoFormula":`Haqiqiy ishlab chiqarish mehnati — jamoa bajargan haqiqiy ish.
 Manba: ishlab chiqarishni rejalashtirish tizimi (SAP/ERP).`,"fm.trudoFormulaShort":`Haqiqiy ishlab chiqarish mehnati.
