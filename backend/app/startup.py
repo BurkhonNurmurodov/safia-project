@@ -478,6 +478,10 @@ def seed_production_pilot() -> None:
                 ))
 
         db.add(AppSetting(key=PP_SEED_FLAG, value="1"))
+        # Fresh install already has the current catalog → stamp version so the
+        # resync step is a no-op here.
+        if not db.query(AppSetting).filter_by(key=PP_CATALOG_FLAG).first():
+            db.add(AppSetting(key=PP_CATALOG_FLAG, value=PP_CATALOG_VERSION))
         db.commit()
         print(f"[startup] seeded production pilot for manager {mid}: "
               f"{len(seed.get('products', []))} products, {len(seed.get('work_centers', []))} WCs")
