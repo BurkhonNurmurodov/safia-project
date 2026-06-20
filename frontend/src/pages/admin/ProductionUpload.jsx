@@ -163,12 +163,17 @@ export default function ProductionUpload() {
         {state.status === "ok" && (
           <div className="mt-4 bg-[#12151f] rounded-lg p-4 text-sm">
             <div className="flex items-center gap-2 text-green-400 font-semibold mb-2">
-              <CheckCircle2 size={14} /> Записано строк: {state.data.rows_written}
+              <CheckCircle2 size={14} /> Записано строк (SKU×команда): {state.data.rows_written}
             </div>
-            <div className="text-xs text-gray-400">Даты в файле: {state.data.dates_in_file?.join(", ") || "—"}</div>
-            {state.data.files?.map((f) => (
-              <div key={f.file} className="text-xs text-gray-500 mt-1 font-mono">
-                {f.file}: {f.rows} строк, совпадений на дату: {f.matched_keys_for_date}
+            <div className="text-xs text-gray-400">
+              Операций «фаза»: {state.data.faza_operations} · Заказов в карте: {state.data.zaga_orders}
+              {state.data.unmapped_operations > 0 && (
+                <span className="text-yellow-500"> · без SKU: {state.data.unmapped_operations} (загрузите «заголовок»)</span>
+              )}
+            </div>
+            {state.data.files?.map((f, i) => (
+              <div key={i} className="text-xs text-gray-500 mt-1 font-mono">
+                {f.file}: {f.faza ? `фаза — ${f.faza.operations} опер.` : f.zaga ? `заголовок — ${f.zaga.orders} заказов` : "не распознан"}
               </div>
             ))}
           </div>
