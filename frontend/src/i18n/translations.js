@@ -2828,6 +2828,7 @@ const t = {
     "staff.noData":          "No attendance data for this date",
     "staff.colWorker":       "Worker",
     "staff.colRole":         "Role",
+    "staff.byRole":          "Came by role",
     "staff.colSchedule":     "Schedule",
     "staff.colClock":        "Clock In/Out",
     "staff.colHours":        "Hours",
