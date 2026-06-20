@@ -1232,7 +1232,7 @@ const t = {
     "overview.finalWorkload":   "Якуний Юк",
     "overview.planned":         "План %",
     "overview.diff":            "Фарқ",
-    "overview.diffUnitHc":      "Одам сони",
+    "overview.diffUnitHc":      "Ходимлар сони",
     "overview.headcount":       "Ходимлар",
     "overview.status":          "Ҳолат",
     "overview.workers":         "Ишчилар",
