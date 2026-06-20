@@ -370,6 +370,74 @@ def seed_admins() -> None:
 
 
 PP_SEED_FLAG = "pp_seed_manager5"
+# Bump when backend/app/data/pp_seed_manager5.json changes so prod re-syncs the
+# catalog. v2: fixed 3 junk SKU='0' rows → real product F00002812 (18.06 data).
+PP_CATALOG_VERSION = "2"
+PP_CATALOG_FLAG = "pp_catalog_version"
+
+
+def _load_pp_seed():
+    import json
+    import os
+    path = os.path.join(os.path.dirname(__file__), "data", "pp_seed_manager5.json")
+    if not os.path.isfile(path):
+        print(f"[startup] production seed file missing: {path}")
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def resync_production_catalog() -> None:
+    """Re-sync manager 5's product catalog + work-center config from the bundled
+    seed JSON whenever PP_CATALOG_VERSION advances past what's recorded. Replaces
+    products (so stale/junk rows are dropped) and upserts work centers. pp_daily
+    keys on (sap_code, work_center), not product ids, so re-inserting is safe.
+    NOTE: this overwrites admin labor-time edits — acceptable in the pilot; a
+    self-service catalog import will supersede it."""
+    from app.models import PPProduct, PPWorkCenter
+
+    db = SessionLocal()
+    try:
+        row = db.query(AppSetting).filter_by(key=PP_CATALOG_FLAG).first()
+        if row and row.value == PP_CATALOG_VERSION:
+            return
+        seed = _load_pp_seed()
+        if not seed:
+            return
+        mid = seed["manager_id"]
+
+        db.query(PPProduct).filter_by(manager_id=mid).delete()
+        for p in seed.get("products", []):
+            db.add(PPProduct(
+                manager_id=mid, sap_code=p["sap_code"], name=p.get("name") or "",
+                work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
+                sort_order=p.get("sort_order", 0),
+            ))
+
+        existing = {w.code: w for w in db.query(PPWorkCenter).filter_by(manager_id=mid).all()}
+        for w in seed.get("work_centers", []):
+            wc = existing.get(w["code"])
+            if wc:
+                wc.shtatka = w.get("shtatka") or 0
+                wc.capacity = w.get("capacity")
+            else:
+                db.add(PPWorkCenter(
+                    manager_id=mid, code=w["code"], shtatka=w.get("shtatka") or 0,
+                    capacity=w.get("capacity"), sort_order=w.get("sort_order", 0),
+                ))
+
+        if row:
+            row.value = PP_CATALOG_VERSION
+        else:
+            db.add(AppSetting(key=PP_CATALOG_FLAG, value=PP_CATALOG_VERSION))
+        db.commit()
+        print(f"[startup] re-synced production catalog to v{PP_CATALOG_VERSION} "
+              f"({len(seed.get('products', []))} products)")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] production catalog resync skipped: {exc}")
+    finally:
+        db.close()
 
 
 def seed_production_pilot() -> None:
