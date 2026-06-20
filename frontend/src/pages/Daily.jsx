@@ -15,6 +15,7 @@ import { useFilters } from "../context/FilterContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 import SupervisorPerformance from "../components/ui/SupervisorPerformance";
+import Tooltip from "../components/ui/Tooltip";
 import api from "../utils/api";
 import {
   AttendanceTable,
