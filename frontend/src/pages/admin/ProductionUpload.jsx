@@ -132,6 +132,14 @@ export default function ProductionUpload() {
               <option value="actual">Только Факт (вечер)</option>
             </select>
           </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={label}>Тип файла</span>
+            <select value={fileType} onChange={(e) => setFileType(e.target.value)} className={input}>
+              <option value="auto">Авто-определение</option>
+              <option value="faza">Фаза (операции)</option>
+              <option value="zaga">Заголовок (заказы)</option>
+            </select>
+          </label>
         </div>
 
         <input
