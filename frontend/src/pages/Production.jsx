@@ -200,6 +200,14 @@ export default function Production() {
         </div>
       )}
 
+      {noSapData && (
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 mb-4 text-xs"
+          style={{ background: "var(--brand-bg, rgba(200,151,63,0.1))", border: "1px solid var(--brand-border, rgba(200,151,63,0.3))", color: "var(--brand-text)" }}>
+          <AlertTriangle size={14} />
+          За эту дату нет загрузки SAP «фаза». Загрузите файл через Админ → Производство, затем выберите ту же дату.
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="flex flex-wrap gap-3 mb-4">
         <Kpi label="Вып %" value={pct(totals.completion)} accent="var(--brand-text)" />
