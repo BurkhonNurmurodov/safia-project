@@ -50,6 +50,7 @@ const t = {
     "daily.colRole":       "Lavozim",
     "daily.colHours":      "Soat",
     "daily.idleTitle":     "Ojidaniya toifalar bo'yicha",
+    "daily.idleTip":       "Tanlangan kun uchun ojidaniya vaqtining toifalar bo'yicha taqsimoti. Foizlar jami ojidaniyaga nisbatan hisoblanadi.",
     "daily.total":         "jami",
     "daily.noIdle":        "Bu kun uchun ojidaniya qayd etilmagan.",
     "daily.donutTotal":    "Jami",
