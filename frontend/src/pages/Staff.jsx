@@ -500,6 +500,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
   const activeFilter = isFilterActive(filters);
   function setF(key, val) { setFilters(f => ({ ...f, [key]: val })); }
+  function toggleRole(title) {
+    setFilters(f => {
+      const has = f.job_titles.includes(title);
+      return { ...f, job_titles: has ? f.job_titles.filter(x => x !== title) : [...f.job_titles, title] };
+    });
+  }
 
   const sortedWorkers = nameAsc !== null
     ? [...workers].sort((a, b) => nameAsc
