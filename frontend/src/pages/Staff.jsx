@@ -1535,7 +1535,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
 // ── View modal ────────────────────────────────────────────────────────────────
 
-function DocumentViewModal({ docId, onClose }) {
+export function DocumentViewModal({ docId, onClose }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const { data: doc, isLoading } = useQuery({
