@@ -126,7 +126,8 @@ function Section({ icon: Icon, title, tip, action, children }) {
 // supervisor + date in the URL).
 function SupervisorDaily() {
   const { auth } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
   const { unit, setUnit } = useFilters();
   const qc = useQueryClient();
   const navigate = useNavigate();
