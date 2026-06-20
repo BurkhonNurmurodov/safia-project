@@ -17,6 +17,7 @@ const todayISO = () => {
 const fmt = (v, d = 1) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d });
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(1)}%`);
+const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 
 function shiftDate(iso, days) {
   const [y, m, d] = iso.split("-").map(Number);
