@@ -1018,6 +1018,7 @@ const t = {
     "staff.noData":          "Бу сана учун давомат маълумотлари йўқ",
     "staff.colWorker":       "Ходим",
     "staff.colRole":         "Лавозим",
+    "staff.byRole":          "Лавозимлар бўйича келганлар",
     "staff.colSchedule":     "Жадвал",
     "staff.colClock":        "Келди/Кетди",
     "staff.colHours":        "Соат",
