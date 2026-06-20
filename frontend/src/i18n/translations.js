@@ -795,7 +795,7 @@ const t = {
     "fm.diffPositiveShort":"Musbat = Verifix ishlab chiqarish ishlatganidan ko'proq qayd etgan (ortiqcha hisobot ehtimoli).",
     "fm.reportedHcTitle":  "Hisobotdagi xodimlar soni",
     "fm.reportedHcFormula":"Smena uchun Verifix davomat faylida qayd etilgan rasmiy xodimlar soni.",
-    "fm.officialHc":       "Rasmiy XS",
+    "fm.officialHc":       "Rasmiy Xodimlar soni",
     "fm.srcVerifixAttFile":"Verifix davomat fayli",
     "fm.verifixHcTitle":   "Verifix xodimlar soni",
     "fm.verifixHcNote":    "Umumiy Verifix mehnat soatlaridan olingan samarali xodimlar soni.",
