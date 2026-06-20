@@ -159,6 +159,13 @@ export default function Production() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
   });
 
+  // Dates that actually have an uploaded snapshot — drives the switcher.
+  const { data: datesData } = useQuery({
+    queryKey: ["production-dates", managerParam.manager_id ?? "self"],
+    queryFn: () => api.get("/api/production/dates", { params: managerParam }).then((r) => r.data),
+  });
+  const availableDates = datesData?.dates ?? [];
+
   const rows = data?.rows ?? [];
   const wcs = data?.work_centers ?? [];
   const totals = data?.totals ?? {};
