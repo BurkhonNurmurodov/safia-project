@@ -766,7 +766,7 @@ const t = {
     "fm.wfEarlyNote":      "Erta kelish vaqti + har bir kishi uchun 10 daqiqalik kaizen bufer ham ayriladi.",
     "fm.wfNetTitle":       "Yakuniy yuk (sof foydalanish)",
     "fm.wfNetNote":        "Barcha tuzatishlardan keyingi yakuniy qiymat: ortiqcha mehnat, ojidaniya, erta kelish, 10 daqiqalik kaizen bufer.",
-    "fm.hcEquivNote":      "Vaqt farqi to'liq 8 soatlik kishi-smenalarda ifodalangan (1 XS = bitta smena).",
+    "fm.hcEquivNote":      "Vaqt farqi to'liq 8 soatlik kishi-smenalarda ifodalangan (1 Xodimlar soni = bitta smena).",
     "fm.diffPctNote":      "Vaqt farqi Verifix hisobotidagi vaqtning ulushi sifatida.",
     "fm.diffNote":         "Musbat = Verifix ishlab chiqarish ishlatganidan ko'proq vaqt qayd etgan (ortiqcha hisobot ehtimoli).",
     "fm.idleSumFormula":   "Tanlangan davrda barcha brigadirlar bo'yicha uskunalar to'xtab turish vaqti yig'indisi.\nManba: uskuna monitoringi tizimi.",
