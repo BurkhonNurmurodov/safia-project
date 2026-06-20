@@ -21,14 +21,14 @@ import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/Co
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function fmtDateLabel(isoDate) {
+export function fmtDateLabel(isoDate) {
   if (!isoDate) return "—";
   const [y, m, d] = isoDate.split("-");
   return `${d}.${m}.${y}`;
 }
 
 // "1st June, 2026 · 14:32" (en) / "1-iyun, 2026" (uz) / "1 июня, 2026" (ru)
-function fmtCreatedAt(iso, t, lang) {
+export function fmtCreatedAt(iso, t, lang) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "—";
