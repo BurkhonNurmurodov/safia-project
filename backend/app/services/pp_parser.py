@@ -164,6 +164,91 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
     return {"order_sku": order_sku, "columns": ZAGA_COLUMNS, "rows": rows, "seen": seen}
 
 
+# catalog sheet ("Sheet1 …"): main table A=SKU B=name C=labor D=WC; staffing
+# block M=work center, S=capacity, W=штатка (columns 13 / 19 / 23).
+CAT_SKU, CAT_NAME, CAT_LABOR, CAT_WC = 1, 2, 3, 4
+CAT_WCM, CAT_CAP, CAT_SHT = 13, 19, 23
+
+
+def _pick_catalog_sheet(wb, sheet_name: str | None):
+    if sheet_name:
+        for ws in wb.worksheets:
+            if ws.title.strip().lower() == sheet_name.strip().lower():
+                return ws
+    # else: first sheet that looks like a dashboard (header row mentions Трудоёмкость)
+    for ws in wb.worksheets:
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i > 4:
+                break
+            if any("трудо" in _str(c).lower() for c in row):
+                return ws
+    return None
+
+
+def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dict:
+    """Parse a brigadir's catalog from a 'Sheet1 …' dashboard sheet:
+    products (SKU, name, labor, work center) + work centers (штатка, capacity).
+    Junk rows (blank / '0' SAP code) are dropped."""
+    import openpyxl
+
+    wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    try:
+        ws = _pick_catalog_sheet(wb, sheet_name)
+        if ws is None:
+            return {"products": [], "work_centers": [], "sheet": None}
+
+        # header row = the one mentioning Трудоёмкость; data starts after it
+        header_i = 0
+        rows = list(ws.iter_rows(values_only=True))
+        for i, row in enumerate(rows[:6]):
+            if any("трудо" in _str(c).lower() for c in row):
+                header_i = i
+                break
+
+        products = []
+        order = 0
+        blanks = 0
+        for row in rows[header_i + 1:]:
+            sku = _str(_get(row, CAT_SKU))
+            if not sku:
+                blanks += 1
+                if blanks > 4:
+                    break
+                continue
+            blanks = 0
+            if sku == "0":          # junk row with no real SAP code
+                continue
+            labor = _get(row, CAT_LABOR)
+            products.append({
+                "sap_code": sku,
+                "name": _str(_get(row, CAT_NAME)),
+                "work_center": _str(_get(row, CAT_WC)),
+                "labor_time": (_num(labor) if isinstance(labor, (int, float)) else None),
+                "sort_order": order,
+            })
+            order += 1
+
+        work_centers = []
+        so = 0
+        for row in rows:
+            code = _str(_get(row, CAT_WCM))
+            if not _WC4_RE.match(code):
+                continue
+            cap = _get(row, CAT_CAP)
+            sht = _get(row, CAT_SHT)
+            work_centers.append({
+                "code": code,
+                "shtatka": int(_num(sht)) if isinstance(sht, (int, float)) else 0,
+                "capacity": (_num(cap) if isinstance(cap, (int, float)) else None),
+                "sort_order": so,
+            })
+            so += 1
+
+        return {"products": products, "work_centers": work_centers, "sheet": ws.title}
+    finally:
+        wb.close()
+
+
 def read_workbook_slices(content: bytes, target_date: date | None,
                          own_wcs: set[str], catalog_skus: set[str],
                          force_type: str | None = None) -> dict:
