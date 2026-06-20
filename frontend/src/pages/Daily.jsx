@@ -403,30 +403,53 @@ function SupervisorDaily() {
         </Section>
       </div>
 
-      {/* Documents of changes */}
+      {/* Documents of changes — same table layout as the Staff "Requests" tab */}
       <div className="mb-4">
         <Section icon={FileText} title={t("daily.docsTitle")}>
           {dayDocs.length === 0 ? (
             <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("daily.noDocs")}</div>
           ) : (
-            <div className="space-y-2">
-              {dayDocs.map(d => (
-                <div key={d.id} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-                  <span className="font-medium" style={{ color: "var(--text-1)" }}>
-                    {d.doc_type === "role_change" ? t("daily.roleChange") : d.doc_type}
-                  </span>
-                  <span className="text-xs" style={{ color: "var(--text-3)" }}>
-                    {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` → ${d.new_role}` : ""}
-                  </span>
-                  <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full"
-                    style={d.approved
-                      ? { background: "#22c55e22", color: "#16a34a" }
-                      : { background: "var(--bg-card)", color: "var(--text-4)", border: "1px solid var(--border)" }}>
-                    {d.approved ? t("daily.yes") : t("daily.no")}
-                  </span>
-                </div>
-              ))}
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}>
+                      <th className="text-left px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]" style={{ color: "var(--text-3)" }}>{t("staff.fDate")}</th>
+                      <th className="text-left px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]" style={{ color: "var(--text-3)" }}>{t("staff.colDocType")}</th>
+                      <th className="text-center px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]" style={{ color: "var(--text-3)" }}>{t("staff.colPosted")}</th>
+                      <th className="text-left px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]" style={{ color: "var(--text-3)" }}>{t("staff.colApprovedBy")}</th>
+                      <th className="text-left px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]" style={{ color: "var(--text-3)" }}>{t("staff.colCreatedAt")}</th>
+                      <th className="px-3 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayDocs.map(d => {
+                      const isExchange = d.doc_type === "people_exchange";
+                      return (
+                        <tr key={d.id} className="border-b" style={{ borderColor: "var(--border)" }}>
+                          <td className="px-3 py-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtDateLabel(d.date)}</td>
+                          <td className="px-3 py-3" style={{ color: "var(--text-1)" }}>
+                            <span className="font-medium">
+                              {DOC_TYPE_TKEY[d.doc_type] ? t(DOC_TYPE_TKEY[d.doc_type]) : (d.doc_type_label || d.doc_type)}
+                            </span>
+                            {isExchange
+                              ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")} · → {d.target_type === "supervisor" ? tl(d.target_manager_name) : d.task_name}</span>
+                              : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {d.employee_count ?? 0} {t("daily.emp")}{d.new_role ? ` · ${tl(d.new_role)}` : ""}</span>}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <DeletionStatusBadge status={d.approved ? "approved" : (d.status === "rejected" ? "rejected" : "pending")} />
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>{tl(d.approved_by_name) || "—"}</td>
+                          <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtCreatedAt(d.created_at, t, lang)}</td>
+                          <td className="px-3 py-3 text-right whitespace-nowrap">
+                            <ActionBtn icon={Eye} label={t("staff.view")} onClick={() => setViewDocId(d.id)} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </Section>
