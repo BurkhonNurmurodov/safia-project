@@ -135,6 +135,55 @@ function Kpi({ label, value, accent }) {
   );
 }
 
+// ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
+function RawView({ fileType, date, managerParam }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
+    queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
+  });
+  if (isLoading) return <div className="text-center py-10 text-sm" style={{ color: "var(--text-4)" }}>Загрузка…</div>;
+  if (!data?.present) {
+    return (
+      <div className="rounded-xl p-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
+        Файл «{fileType === "faza" ? "фаза" : "заголовок"}» не загружен за эту дату.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between px-4 py-2 text-xs" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-3)" }}>
+        <span className="font-semibold truncate">{data.filename || "—"}</span>
+        <span className="flex-shrink-0">{data.row_count} строк{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+          <thead>
+            <tr style={{ color: "var(--text-3)" }}>
+              {data.columns.map((c, i) => (
+                <th key={i} className="px-3 py-2 font-medium text-left" style={{ borderBottom: "1px solid var(--border)" }}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r, ri) => (
+              <tr key={ri} style={{ borderTop: "1px solid var(--border)" }}>
+                {r.map((cell, ci) => {
+                  const num = typeof cell === "number";
+                  return (
+                    <td key={ci} className={`px-3 py-1.5 ${num ? "text-right" : "text-left"}`} style={ci === 0 ? { color: "var(--text-3)" } : undefined}>
+                      {cell === null || cell === undefined || cell === "" ? "—" : String(cell)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
