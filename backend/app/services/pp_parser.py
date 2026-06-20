@@ -228,7 +228,9 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
             })
             order += 1
 
-        work_centers = []
+        # staffing block — work centers may be listed more than once; keep the
+        # first occurrence that carries a real штатка.
+        wc_by_code: dict[str, dict] = {}
         so = 0
         for row in rows:
             code = _str(_get(row, CAT_WCM))
@@ -236,14 +238,21 @@ def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dic
                 continue
             cap = _get(row, CAT_CAP)
             sht = _get(row, CAT_SHT)
-            work_centers.append({
+            entry = {
                 "code": code,
                 "shtatka": int(_num(sht)) if isinstance(sht, (int, float)) else 0,
                 "capacity": (_num(cap) if isinstance(cap, (int, float)) else None),
                 "sort_order": so,
-            })
-            so += 1
+            }
+            prev = wc_by_code.get(code)
+            if prev is None or (prev["shtatka"] == 0 and entry["shtatka"] > 0):
+                if prev is None:
+                    so += 1
+                else:
+                    entry["sort_order"] = prev["sort_order"]
+                wc_by_code[code] = entry
 
+        work_centers = sorted(wc_by_code.values(), key=lambda x: x["sort_order"])
         return {"products": products, "work_centers": work_centers, "sheet": ws.title}
     finally:
         wb.close()
