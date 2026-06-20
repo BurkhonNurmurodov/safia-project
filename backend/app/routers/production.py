@@ -284,10 +284,11 @@ async def upload_phase(
         PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
     catalog_skus = {p.sap_code for p in products}
 
-    faza_agg: dict[tuple[str, str], dict] = {}
-    faza_rows: list[list] = []
+    faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
+    faza_dates: set = set()
+    order_sku: dict[str, str] = {}     # order → SKU, from заголовок
     zaga_rows: list[list] = []
-    faza_cols = zaga_cols = None
+    zaga_cols = None
     faza_present = zaga_present = False
     faza_file = zaga_file = None
     file_reports = []
@@ -298,21 +299,18 @@ async def upload_phase(
         fz = slices.get("faza")
         if fz is not None:
             faza_present = True
-            faza_cols = fz["columns"]
-            faza_rows += fz["rows"]
+            faza_ops += fz["raw"]
+            faza_dates.update(fz["dates"])
             faza_file = f.filename
-            for key, agg in fz["agg"].items():
-                m = faza_agg.setdefault(key, {"plan_qty": 0.0, "actual_qty": 0.0})
-                m["plan_qty"] += agg["plan_qty"]
-                m["actual_qty"] += agg["actual_qty"]
-            rep["faza"] = {"matched": len(fz["rows"]), "dates": [d.isoformat() for d in fz["dates"]]}
+            rep["faza"] = {"operations": len(fz["raw"]), "dates": [d.isoformat() for d in fz["dates"]]}
         zg = slices.get("zaga")
         if zg is not None:
             zaga_present = True
-            zaga_cols = zg["columns"]
+            order_sku.update(zg["order_sku"])
             zaga_rows += zg["rows"]
+            zaga_cols = zg["columns"]
             zaga_file = f.filename
-            rep["zaga"] = {"matched": len(zg["rows"])}
+            rep["zaga"] = {"orders": len(zg["order_sku"]), "rows": len(zg["rows"])}
         file_reports.append(rep)
 
     if not faza_present and not zaga_present:
@@ -321,8 +319,38 @@ async def upload_phase(
             detail="Не удалось распознать тип файла автоматически. Выберите «Тип файла» (Фаза или Заголовок) и загрузите снова.",
         )
 
-    updated = 0
+    # Supplement order→SKU with the заголовок already stored for this date, so a
+    # фаза-only upload can still resolve SKUs (stored zaga rows: [order, sku, …]).
     if faza_present:
+        stored_zaga = db.query(PPUpload).filter(
+            PPUpload.manager_id == manager_id, PPUpload.date == day,
+            PPUpload.file_type == "zaga").first()
+        if stored_zaga:
+            for r in (stored_zaga.rows or []):
+                if len(r) >= 2 and r[0] and r[1]:
+                    order_sku.setdefault(str(r[0]), str(r[1]))
+
+    # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
+    faza_agg: dict[tuple[str, str], dict] = {}
+    faza_rows: list[list] = []
+    unmapped = 0
+    for op in faza_ops:
+        sku = order_sku.get(op["order"])
+        if sku and (not catalog_skus or sku in catalog_skus):
+            a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
+            a["plan_qty"] += op["plan"]
+            a["actual_qty"] += op["conf"]
+        elif not sku:
+            unmapped += 1
+        faza_rows.append([op["order"], op["op"], op["wc"], sku or "—", op["name"],
+                          op["plan"], op["status"], op["date"], op["conf"]])
+
+    updated = 0
+    if faza_agg:
+        # mode 'both' = fresh daily snapshot → replace the date (also clears overrides).
+        if mode == "both":
+            db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).delete()
+            db.flush()
         for (sap, wc), agg in faza_agg.items():
             row = db.query(PPDaily).filter(
                 PPDaily.manager_id == manager_id, PPDaily.date == day,
@@ -338,8 +366,9 @@ async def upload_phase(
                 row.actual_qty = agg["actual_qty"]
                 row.actual_override = None
             updated += 1
-        _upsert_upload(db, manager_id, day, "faza", faza_cols, faza_rows, faza_file)
 
+    if faza_present:
+        _upsert_upload(db, manager_id, day, "faza", FAZA_COLUMNS, faza_rows, faza_file)
     if zaga_present:
         _upsert_upload(db, manager_id, day, "zaga", zaga_cols, zaga_rows, zaga_file)
 
@@ -347,8 +376,9 @@ async def upload_phase(
     return {
         "status": "ok", "manager_id": manager_id, "date": day.isoformat(), "mode": mode,
         "rows_written": updated,
-        "faza_rows": len(faza_rows) if faza_present else 0,
-        "zaga_rows": len(zaga_rows) if zaga_present else 0,
+        "faza_operations": len(faza_ops) if faza_present else 0,
+        "unmapped_operations": unmapped,
+        "zaga_orders": len(order_sku),
         "files": file_reports,
     }
 
