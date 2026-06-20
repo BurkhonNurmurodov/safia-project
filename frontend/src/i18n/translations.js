@@ -1700,7 +1700,7 @@ const t = {
     "fm.diffPositiveShort":"Мусбат = Verifix ишлаб чиқариш ишлатганидан кўпроқ қайд этган (ортиқча ҳисобот эҳтимоли).",
     "fm.reportedHcTitle":  "Ҳисоботдаги ходимлар сони",
     "fm.reportedHcFormula":"Смена учун Verifix давомат файлида қайд этилган расмий ходимлар сони.",
-    "fm.officialHc":       "Расмий ХС",
+    "fm.officialHc":       "Расмий Ходимлар сони",
     "fm.srcVerifixAttFile":"Verifix давомат файли",
     "fm.verifixHcTitle":   "Verifix ходимлар сони",
     "fm.verifixHcNote":    "Умумий Verifix меҳнат соатларидан олинган самарали ходимлар сони.",
