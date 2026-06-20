@@ -593,6 +593,44 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
             sub={t("staff.kpiCountedZagruzka")}
           />
         </div>
+
+        {/* Came-to-work breakdown by role — clickable chips toggle the job_titles filter */}
+        {roleCounts.length > 0 && (
+          <div className="mt-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+              {t("staff.byRole")}
+            </span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {roleCounts.map(([title, count]) => {
+                const active = filters.job_titles.includes(title);
+                return (
+                  <button
+                    key={title}
+                    onClick={() => toggleRole(title)}
+                    title={tl(title) || title}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
+                    style={{
+                      background: active ? "var(--brand-bg)" : "var(--bg-inner)",
+                      border: `1px solid ${active ? "var(--brand-bg)" : "var(--border-md)"}`,
+                      color: active ? "var(--brand-text)" : "var(--text-2)",
+                    }}
+                  >
+                    <span className="truncate max-w-[160px]">{tl(title) || title}</span>
+                    <span
+                      className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
+                      style={{
+                        background: active ? "var(--brand-text)" : "var(--border-md)",
+                        color: active ? "var(--brand-bg)" : "var(--text-1)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Collapsible body — toolbar + table + footer */}
