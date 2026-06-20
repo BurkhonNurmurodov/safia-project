@@ -327,7 +327,7 @@ const t = {
     "overview.finalWorkload":   "Yakuniy Yuk",
     "overview.planned":         "Plan %",
     "overview.diff":            "Farq",
-    "overview.diffUnitHc":      "Odam soni",
+    "overview.diffUnitHc":      "Xodimlar soni",
     "overview.headcount":       "Xodimlar",
     "overview.status":          "Holat",
     "overview.workers":         "Ishchilar",
