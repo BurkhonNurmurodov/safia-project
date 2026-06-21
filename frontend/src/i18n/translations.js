@@ -2411,6 +2411,7 @@ const t = {
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Перегружен",
     "status.overCap":        "Перегружен",
+    "status.good":           "Хорошо",
     "status.onTrack":        "В норме",
     "status.monitor":        "Слежение",
     "status.needsAttention": "Внимание",
