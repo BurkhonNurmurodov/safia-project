@@ -234,6 +234,8 @@ export default function BrigadirProfile() {
   if (!data) return <Layout title={t("profile.title")}><div className="text-[var(--text-2)] text-sm">{t("profile.notFound")}</div></Layout>;
 
   const { name, shift, latest, daily } = data;
+  // Status from D = P − A (План − Итог), colored live by the admin thresholds.
+  const ds = diffStatus(latest?.baseline_util, latest?.net_util, compThresholds?.diff_segments);
   const sortedDates = daily.map((d) => d.date);
 
   const latestDate = allAttendanceDates[0] || null;
