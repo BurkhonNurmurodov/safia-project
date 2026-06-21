@@ -210,6 +210,9 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
     ? latest.verifix_hc - latest.official_hc
     : null;
 
+  // Status from D = P − A (План − Итог), colored live by the admin thresholds.
+  const ds = diffStatus(latest?.baseline_util, latest?.net_util, compThresholds?.diff_segments);
+
   const trendSeries = {
     workload: [
       { name: "Trudoyomkost (Plan)", data: daily.map(d => d.prod_plan),    color: "#6b7280", dashed: true },
