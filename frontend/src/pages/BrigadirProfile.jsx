@@ -590,7 +590,7 @@ export default function BrigadirProfile() {
             {latest && (
               <div className="mt-4 rounded-lg p-3" style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
                 <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--brand-text)" }}>{t("profile.diagnosticSummary")}</div>
-                <div className="text-xs text-[var(--text-2)]">{DIAGNOSTIC[latest.status]}</div>
+                <div className="text-xs text-[var(--text-2)]">{DIAGNOSTIC[ds.status]}</div>
               </div>
             )}
           </div>
