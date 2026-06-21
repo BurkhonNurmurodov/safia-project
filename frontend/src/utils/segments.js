@@ -6,6 +6,43 @@ export function orderedSegments(segs = []) {
   return [...segs].sort((a, b) => a.from - b.from);
 }
 
+// Fallback diff bands (= backend DEFAULT_DIFF_SEGMENTS) used when the admin
+// comparison thresholds haven't loaded yet. D = P − A (P = baseline_util %,
+// A = net_util %): below −20 blue, −20→0 green, 1→5 yellow, ≥6 red.
+export const DEFAULT_DIFF_SEGMENTS = [
+  { from: -9999, color: "#3b82f6" },
+  { from: -20,   color: "#22c55e" },
+  { from: 1,     color: "#eab308" },
+  { from: 6,     color: "#ef4444" },
+];
+
+// Diff band → status label. Keyed by color family so admins can recolor within
+// a family; positional fallback keeps the order (fastest → slowest) if a band
+// gets an off-palette color.
+const DIFF_FAMILY_STATUS = { blue: "Monitor", green: "Good", yellow: "On Track", red: "Needs Attention" };
+const DIFF_INDEX_STATUS  = ["Monitor", "Good", "On Track", "Needs Attention"];
+
+/**
+ * Status badge derived from the planned-vs-final workload gap D = P − A, where
+ * P = baseline_util (План %) and A = net_util (Итог. нагрузка). The band — and
+ * therefore the color — comes from the admin comparison thresholds, so the badge
+ * stays live with the panel and matches the comparison table for the same D.
+ * Returns { status, color, d }; color is null only for "No Data".
+ */
+export function diffStatus(baselineUtil, netUtil, segments) {
+  if (baselineUtil == null || netUtil == null) return { status: "No Data", color: null, d: null };
+  const segs = orderedSegments(segments?.length ? segments : DEFAULT_DIFF_SEGMENTS);
+  const d = Math.round(baselineUtil * 100) - Math.round(netUtil * 100);
+  let idx = 0;
+  for (let i = 0; i < segs.length; i++) {
+    if (d >= segs[i].from) idx = i; else break;
+  }
+  const color = segs[idx].color;
+  const status = DIFF_FAMILY_STATUS[colorFamily(color)]
+    ?? DIFF_INDEX_STATUS[Math.min(idx, DIFF_INDEX_STATUS.length - 1)];
+  return { status, color, d };
+}
+
 /**
  * Human range for sorted `segs[i]`:
  *   first band → "< {next}%"     (everything below the next threshold)
