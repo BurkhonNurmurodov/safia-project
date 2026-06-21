@@ -396,9 +396,14 @@ export default function Production() {
           {unknown.length > 0 && (
             <div className="rounded-xl px-3 py-2 text-xs"
               style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#b91c1c" }}>
-              <div className="flex items-center gap-2 font-medium">
-                <AlertTriangle size={14} /> {unknown.length} SKU из загрузки нет в каталоге (admin):
-              </div>
+              <button type="button" onClick={() => setUnknownOpen((o) => !o)}
+                className="flex items-center gap-2 font-medium w-full text-left">
+                <AlertTriangle size={14} />
+                <span>{unknown.length} SKU из загрузки нет в каталоге (admin)</span>
+                {unknownOpen ? <ChevronDown size={14} className="ml-auto opacity-70" />
+                  : <ChevronRight size={14} className="ml-auto opacity-70" />}
+              </button>
+              {unknownOpen && (
               <div className="flex flex-col gap-1 mt-2">
                 {unknown.map((u) => {
                   const otherWcs = (catalogWcsBySku[u.sap_code] || []).filter((w) => w !== u.work_center);
@@ -418,6 +423,7 @@ export default function Production() {
                   );
                 })}
               </div>
+              )}
             </div>
           )}
         </div>
