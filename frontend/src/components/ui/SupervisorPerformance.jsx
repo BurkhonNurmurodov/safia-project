@@ -235,7 +235,7 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
           {/* Header card: speedometers + KPIs + workload bars */}
           <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              {latest && <StatusBadge status={latest.status} />}
+              {latest && <StatusBadge status={ds.status} color={ds.color} />}
               {latest?.hc_mismatch && (
                 <span className="flex items-center gap-1 text-[11px] text-orange-400">
                   <AlertTriangle size={12} /> {t("profile.hcMismatch")}
