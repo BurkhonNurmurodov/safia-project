@@ -328,9 +328,12 @@ async def upload_phase(
             PPUpload.manager_id == manager_id, PPUpload.date == day,
             PPUpload.file_type == "zaga").first()
         if stored_zaga:
+            # stored zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
             for r in (stored_zaga.rows or []):
                 if len(r) >= 2 and r[0] and r[1]:
                     order_sku.setdefault(str(r[0]), str(r[1]))
+                    if len(r) > 4:
+                        order_deliv.setdefault(str(r[0]), float(r[4] or 0))
 
     # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
     faza_agg: dict[tuple[str, str], dict] = {}
