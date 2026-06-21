@@ -620,7 +620,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                       className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
                       style={{
                         background: active ? "var(--brand-text)" : "var(--border-md)",
-                        color: active ? "var(--brand-bg)" : "var(--text-1)",
+                        color: active ? "var(--bg-card)" : "var(--text-1)",
                       }}
                     >
                       {count}
