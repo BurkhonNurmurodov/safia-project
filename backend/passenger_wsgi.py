@@ -43,6 +43,7 @@ try:
     seed_exchange_tasks()
     seed_production_pilot()
     resync_production_catalog()
+    backfill_pp_actual_from_deliv()
     backfill_day_approvals()
     backfill_day_closures()
     backfill_deletion_batch_ids()
