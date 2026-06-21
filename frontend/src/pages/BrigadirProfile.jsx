@@ -18,12 +18,15 @@ import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
 import { utilNumbers, utilInputs, verifixNumbers, verifixInputs, differenceNumbers, differenceInputs, hcDiffNumbers, hcDiffInputs } from "../utils/formulas";
 import api from "../utils/api";
+import { diffStatus } from "../utils/segments";
 
+// Keyed by the D = P − A status (P = План, A = Итог): blue Monitor → green Good
+// → yellow On Track → red Needs Attention.
 const DIAGNOSTIC = {
-  "Over Capacity":   "Team exceeded capacity. Review for over-reporting or production line efficiency gains.",
-  "On Track":        "Team performing within normal operational range.",
-  "Monitor":         "Team slightly underperforming. Monitor for recurring patterns.",
-  "Needs Attention": "Team underperformed relative to plan — investigate root cause.",
+  "Monitor":         "Final output far above plan — verify reporting or unusually high throughput.",
+  "Good":            "Final output above plan and within the healthy range.",
+  "On Track":        "Final output slightly below plan but within the normal range.",
+  "Needs Attention": "Final output well below plan — investigate root cause.",
   "No Data":         "Insufficient data for this period.",
 };
 
