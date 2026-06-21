@@ -1505,7 +1505,8 @@ const t = {
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Юкли",
     "status.overCap":        "Юкли",
-    "status.onTrack":        "Яхши",
+    "status.good":           "Яхши",
+    "status.onTrack":        "Меъёрда",
     "status.monitor":        "Кузатиш",
     "status.needsAttention": "Муаммо",
     "status.needsAttn":      "Муаммо",
