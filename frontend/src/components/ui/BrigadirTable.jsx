@@ -12,6 +12,7 @@ import { SkeletonTable } from "./Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { fmtPct, fmtTime } from "../../utils/formatters";
+import { diffStatus } from "../../utils/segments";
 import {
   utilNumbers, utilInputs, differenceNumbers, differenceInputs,
   differencePctNumbers, hcEquivNumbers, hcEquivInputs, rangeDays,
