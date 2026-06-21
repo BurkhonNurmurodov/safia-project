@@ -308,6 +308,7 @@ async def upload_phase(
         if zg is not None:
             zaga_present = True
             order_sku.update(zg["order_sku"])
+            order_deliv.update(zg.get("order_deliv", {}))
             zaga_rows += zg["rows"]
             zaga_cols = zg["columns"]
             zaga_file = f.filename
