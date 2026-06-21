@@ -104,6 +104,7 @@ export default function BrigadirTable({
   onRowClick,
   dateFrom,
   dateTo,
+  diffSegments,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
