@@ -3317,6 +3317,7 @@ const t = {
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Over Cap.",
     "status.overCap":        "Over Cap.",
+    "status.good":           "Good",
     "status.onTrack":        "On Track",
     "status.monitor":        "Monitor",
     "status.needsAttention": "Needs Attn",
