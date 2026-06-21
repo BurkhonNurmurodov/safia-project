@@ -165,7 +165,8 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
             (_to_date(_get(row, ZG_DATE)).isoformat() if _to_date(_get(row, ZG_DATE)) else ""),
             _str(_get(row, ZG_NAME)), _str(_get(row, ZG_STATUS)),
         ])
-    return {"order_sku": order_sku, "columns": ZAGA_COLUMNS, "rows": rows, "seen": seen}
+    return {"order_sku": order_sku, "order_deliv": order_deliv,
+            "columns": ZAGA_COLUMNS, "rows": rows, "seen": seen}
 
 
 # catalog sheet ("Sheet1 …"): main table A=SKU B=name C=labor D=WC; staffing
