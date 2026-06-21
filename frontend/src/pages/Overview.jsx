@@ -193,7 +193,7 @@ export default function Overview() {
     return true;
   };
 
-  const filtered = brigadirs.filter((b) => {
+  const filtered = rows.filter((b) => {
     const f = filters;
     if (f.name) {
       const q = f.name.toLowerCase();
