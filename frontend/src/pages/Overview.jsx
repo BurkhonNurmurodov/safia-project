@@ -573,7 +573,7 @@ export default function Overview() {
                       </button>
                     </td>
                     <td className="px-2 py-2.5 text-center hidden sm:table-cell">
-                      <StatusBadge status={b.status} short />
+                      <StatusBadge status={b.status} color={b.statusColor} short />
                     </td>
                     {/* View workers button */}
                     <td
