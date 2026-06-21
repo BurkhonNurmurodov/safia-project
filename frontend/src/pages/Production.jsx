@@ -393,9 +393,30 @@ export default function Production() {
             </div>
           )}
           {unknown.length > 0 && (
-            <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
+            <div className="rounded-xl px-3 py-2 text-xs"
               style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#b91c1c" }}>
-              <AlertTriangle size={14} /> {unknown.length} SKU из загрузки нет в каталоге (admin).
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle size={14} /> {unknown.length} SKU из загрузки нет в каталоге (admin):
+              </div>
+              <div className="flex flex-col gap-1 mt-2">
+                {unknown.map((u) => {
+                  const otherWcs = (catalogWcsBySku[u.sap_code] || []).filter((w) => w !== u.work_center);
+                  return (
+                    <div key={`${u.sap_code}-${u.work_center}`} className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)" }}>{u.sap_code}</span>
+                      <span style={{ opacity: 0.7 }}>участок</span>
+                      <span className="font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)" }}>{u.work_center}</span>
+                      {otherWcs.length > 0 ? (
+                        <span style={{ opacity: 0.85 }}>— в каталоге есть на участке {otherWcs.join(", ")} (не совпадает участок)</span>
+                      ) : (
+                        <span style={{ opacity: 0.85 }}>— этого SKU нет в каталоге</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
