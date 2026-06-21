@@ -281,6 +281,12 @@ export default function Production() {
   const totals = data?.totals ?? {};
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
+  // Catalog SKU → work centers it's configured on. Lets us tell a true
+  // "missing SKU" apart from a work-center mismatch (same SKU, different участок).
+  const catalogWcsBySku = rows.reduce((m, r) => {
+    (m[r.sap_code] ||= []).push(r.work_center);
+    return m;
+  }, {});
   const maxPareto = Math.max(0.0001, ...rows.map((r) => r.pareto || 0));
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
   const noSapData = !isLoading && rows.length > 0 &&
