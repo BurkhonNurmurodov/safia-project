@@ -167,13 +167,23 @@ export default function Overview() {
     retry: false,
   });
 
+  // Status is derived from D = P − A (План − Итог), colored live by the admin
+  // comparison thresholds — this overrides the backend's net_util-based status.
+  const diffSegments = compThresholds?.diff_segments;
+  const rows = useMemo(
+    () => brigadirs.map(b => {
+      const ds = diffStatus(b.baseline_util, b.net_util, diffSegments);
+      return { ...b, status: ds.status, statusColor: ds.color };
+    }),
+    [brigadirs, diffSegments]);
+
   // Distinct option lists for the dropdown filters (from all rows, ignoring filters).
   const distinctShifts = useMemo(
-    () => [...new Set(brigadirs.map(b => b.shift).filter(s => s != null))].sort((a, b) => a - b),
-    [brigadirs]);
+    () => [...new Set(rows.map(b => b.shift).filter(s => s != null))].sort((a, b) => a - b),
+    [rows]);
   const distinctStatuses = useMemo(
-    () => [...new Set(brigadirs.map(b => b.status).filter(Boolean))],
-    [brigadirs]);
+    () => [...new Set(rows.map(b => b.status).filter(Boolean))],
+    [rows]);
 
   // Range filters compare against the values as displayed: % for utilization,
   // and the active unit (min/hrs) for Diff and Idle Time.
