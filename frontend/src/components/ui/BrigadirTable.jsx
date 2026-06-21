@@ -146,7 +146,7 @@ export default function BrigadirTable({
     return true;
   };
 
-  const filtered = brigadirs.filter((b) => {
+  const filtered = rows.filter((b) => {
     const f = filters;
     if (f.name) {
       const q = f.name.toLowerCase();
@@ -348,7 +348,7 @@ export default function BrigadirTable({
                   </button>
                 </td>
                 <td className="px-2 py-2.5 text-center hidden sm:table-cell">
-                  <StatusBadge status={b.status} short />
+                  <StatusBadge status={b.status} color={b.statusColor} short />
                 </td>
                 <td
                   className="px-4 py-2.5 text-center"
