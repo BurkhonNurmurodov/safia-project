@@ -338,7 +338,7 @@ export default function BrigadirProfile() {
                     <Calendar size={12} /> {periodLabel}
                   </span>
                 )}
-                {latest && <StatusBadge status={latest.status} />}
+                {latest && <StatusBadge status={ds.status} color={ds.color} />}
                 {latest?.hc_mismatch && (
                   <span className="flex items-center gap-1 text-[11px] text-orange-400 flex-shrink-0">
                     <AlertTriangle size={12} /> {t("profile.hcMismatch")}
