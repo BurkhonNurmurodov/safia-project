@@ -308,6 +308,7 @@ export default function ShiftDaily() {
             isLoading={isLoading}
             dateFrom={date}
             dateTo={date}
+            diffSegments={diffSegments}
             onRowClick={(b) => navigate(`/daily?manager_id=${b.manager_id}&date=${date}`)}
           />
         ) : (
