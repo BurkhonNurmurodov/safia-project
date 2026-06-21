@@ -287,6 +287,7 @@ async def upload_phase(
     faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
     faza_dates: set = set()
     order_sku: dict[str, str] = {}     # order → SKU, from заголовок
+    order_deliv: dict[str, float] = {} # order → «Поставлено» (= Excel «План пост»), drives «Факт»
     zaga_rows: list[list] = []
     zaga_cols = None
     faza_present = zaga_present = False
