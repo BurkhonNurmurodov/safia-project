@@ -141,8 +141,10 @@ def _extract_faza(ws, target_date: date | None, own_wcs: set[str]) -> dict:
 
 
 def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
-    """order→SKU map (ALL orders, for the join) + display rows (catalog SKUs)."""
+    """order→SKU map (ALL orders, for the join) + order→«Поставлено» map (drives
+    «Факт», = the Excel «План пост» VLOOKUP) + display rows (catalog SKUs)."""
     order_sku: dict[str, str] = {}
+    order_deliv: dict[str, float] = {}
     rows: list[list] = []
     seen = 0
     for row in ws.iter_rows(values_only=True):
@@ -152,6 +154,8 @@ def _extract_zaga(ws, catalog_skus: set[str]) -> dict:
         order = _str(_get(row, ZG_ORDER))
         if order:
             order_sku[order] = sku
+            # «ПоставлКол-во» (col F) — what Excel's «План пост» (col M) looks up.
+            order_deliv[order] = _num(_get(row, ZG_DELIV))
         seen += 1
         if catalog_skus and sku not in catalog_skus:
             continue
