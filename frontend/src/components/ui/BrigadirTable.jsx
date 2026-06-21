@@ -127,9 +127,18 @@ export default function BrigadirTable({
       : s.dir === "asc" ? { key, dir: "desc" }
       : { key: null, dir: "asc" });
 
+  // Status derived from D = P − A (План − Итог), colored live by the admin
+  // comparison thresholds — overrides the backend's net_util-based status.
+  const rows = useMemo(
+    () => brigadirs.map(b => {
+      const ds = diffStatus(b.baseline_util, b.net_util, diffSegments);
+      return { ...b, status: ds.status, statusColor: ds.color };
+    }),
+    [brigadirs, diffSegments]);
+
   const distinctStatuses = useMemo(
-    () => [...new Set(brigadirs.map(b => b.status).filter(Boolean))],
-    [brigadirs]);
+    () => [...new Set(rows.map(b => b.status).filter(Boolean))],
+    [rows]);
 
   const inRange = (val, min, max) => {
     if (min !== "" && (val == null || val < +min)) return false;
