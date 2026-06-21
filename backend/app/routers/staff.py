@@ -325,6 +325,24 @@ def _notify_all_parties(
             _notify(db, tg_id, title, body, ntype, dm=dm)
 
 
+def notify_supervisor_verifix_upload(
+    db: Session, manager_id: int, d: date, actor_tg_id: Optional[int] = None,
+):
+    """Tell a unit's supervisor that fresh verifix attendance data was uploaded
+    for ``d``, so they can make their changes (people exchange, role change,
+    deletion) and close the day. Called by the /admin/upload handler after each
+    file is inserted — ONLY the supervisor is notified (no admins/shift-managers),
+    and the day's close-state is left untouched. No-op when the unit has no
+    registered supervisor, or the supervisor is the uploader themselves. The
+    caller must commit; the bell row is added to ``db`` and the DM sent inline."""
+    sup = _find_supervisor(db, manager_id)
+    if not sup or sup.telegram_id == actor_tg_id:
+        return
+    lang = _get_user_lang(db, sup.telegram_id)
+    title, body = _mk_notif("verifix_uploaded", {"date": d}, lang)
+    _notify(db, sup.telegram_id, title, body, "info")
+
+
 def _log_admin_action(
     db: Session,
     manager_id: int,
