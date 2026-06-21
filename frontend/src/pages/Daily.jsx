@@ -427,7 +427,15 @@ function SupervisorDaily() {
                       const isExchange = d.doc_type === "people_exchange";
                       return (
                         <tr key={d.id} className="border-b" style={{ borderColor: "var(--border)" }}>
-                          <td className="px-3 py-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtDateLabel(d.date)}</td>
+                          <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+                            <span className="font-mono">{fmtDateLabel(d.date)}</span>
+                            {isExchange && d.transfer_time && (
+                              <span className="mt-0.5 flex items-center gap-1 font-mono text-[10px]"
+                                style={{ color: "var(--text-4)" }} title={t("staff.transferTimeLabel")}>
+                                <Clock size={10} />{d.transfer_time}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-3" style={{ color: "var(--text-1)" }}>
                             <span className="font-medium">
                               {DOC_TYPE_TKEY[d.doc_type] ? t(DOC_TYPE_TKEY[d.doc_type]) : (d.doc_type_label || d.doc_type)}
