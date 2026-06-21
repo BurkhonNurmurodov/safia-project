@@ -29,11 +29,14 @@ export function statusColor(status) {
   }
 }
 
+// Fallback badge classes (used when no live segment color is supplied). Mirrors
+// the D = P − A bands: Monitor blue, Good green, On Track yellow, Needs Attention red.
 export function statusBg(status) {
   switch (status) {
+    case "Monitor": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+    case "Good": return "bg-green-500/20 text-green-400 border-green-500/30";
     case "Over Capacity": return "bg-green-500/20 text-green-400 border-green-500/30";
     case "On Track": return "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
-    case "Monitor": return "bg-orange-500/20 text-orange-400 border-orange-500/30";
     case "Needs Attention": return "bg-red-500/20 text-red-400 border-red-500/30";
     default: return "bg-gray-500/20 text-gray-400 border-gray-500/30";
   }
