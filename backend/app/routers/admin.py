@@ -33,9 +33,14 @@ def verify_admin(token: Annotated[str, Depends(oauth2_scheme)]):
 @router.post("/upload")
 async def upload_verifix(
     files: list[UploadFile] = File(...),
-    _: dict = Depends(verify_admin),
+    admin_payload: dict = Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
+    try:
+        actor_tg_id = int(admin_payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        actor_tg_id = None
+
     results = []
     for f in files:
         content = await f.read()
@@ -58,6 +63,19 @@ async def upload_verifix(
         for r in rows:
             db.add(Attendance(manager_id=mgr_id, date=date, **r))
             inserted += 1
+
+        # Tell this unit's supervisor their verifix data landed for this date so
+        # they can make their changes (exchanges, role changes, deletions) and
+        # close the day. The day's close-state is intentionally left untouched —
+        # a re-upload over an already-closed day notifies but stays closed.
+        # Best-effort: a missing supervisor or Telegram hiccup must not fail the
+        # upload, and the notification commits together with the attendance rows.
+        try:
+            from app.routers.staff import notify_supervisor_verifix_upload
+            notify_supervisor_verifix_upload(db, mgr_id, date, actor_tg_id=actor_tg_id)
+        except Exception:
+            pass
+
         db.commit()
         results.append({"file": f.filename, "status": "ok", "rows_inserted": inserted})
 
