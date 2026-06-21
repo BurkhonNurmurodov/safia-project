@@ -599,7 +599,8 @@ const t = {
     // ── Status badges ─────────────────────────────────────────────────────────
     "status.overCapacity":   "Yukli",
     "status.overCap":        "Yukli",
-    "status.onTrack":        "Yaxshi",
+    "status.good":           "Yaxshi",
+    "status.onTrack":        "Me'yorda",
     "status.monitor":        "Kuzatish",
     "status.needsAttention": "Muammo",
     "status.needsAttn":      "Muammo",
