@@ -111,6 +111,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("День переоткрыт: {reopener_name}", "Дата: {date} — день снова открыт, данные скрыты до закрытия"),
         "en": ("Day re-opened by {reopener_name}", "Date: {date} — the day is open again, data is hidden until it is closed"),
     },
+    "verifix_uploaded": {
+        "uz": ("Verifix ma'lumotlari yuklandi", "Sana: {date}. O'zgartirishlarni kiriting (xodim almashtirish, lavozim o'zgartirish, o'chirish) va kunni yoping."),
+        "uz_cyrl": ("Verifix маълумотлари юкланди", "Сана: {date}. Ўзгартиришларни киритинг (ходим алмаштириш, лавозим ўзгартириш, ўчириш) ва кунни ёпинг."),
+        "ru": ("Данные Verifix загружены", "Дата: {date}. Внесите изменения (обмен сотрудниками, смена должности, удаление) и закройте день."),
+        "en": ("Verifix data uploaded", "Date: {date}. Make your changes (people exchange, role change, deletion), then close the day."),
+    },
     "new_role_change": {
         "uz": ("{actor_name} lavozim o'zgarishi hujjati yubordi", "{count} xodim → {new_role} | Sana: {date}"),
         "uz_cyrl": ("{actor_name} лавозим ўзгариши ҳужжати юборди", "{count} ходим → {new_role} | Сана: {date}"),
