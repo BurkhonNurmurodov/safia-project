@@ -492,6 +492,82 @@ def seed_production_pilot() -> None:
         db.close()
 
 
+PP_ACTUAL_DELIV_FLAG = "pp_actual_from_deliv_v1"
+
+
+def backfill_pp_actual_from_deliv() -> None:
+    """Re-point pp_daily.actual_qty («Факт») at the order-header «Поставлено»
+    (Excel «План пост», col M) instead of the old фаза «ПодтвВыходПрод», for every
+    date whose raw faza+zaga uploads are still stored. Brings already-loaded
+    snapshots in line with the new «Факт» definition without a manual re-upload.
+
+    Replays the same join the upload now does: order → «Поставлено» from the
+    stored заголовок, summed once per matching фаза operation, grouped by
+    (SAP, work center). Flag-guarded so it runs exactly once. Dates without a
+    stored заголовок — or whose «Поставлено» sums to zero — are left untouched,
+    so we never wipe a live actual when the source is missing/misaligned."""
+    from app.models import PPDaily, PPUpload
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_ACTUAL_DELIV_FLAG).first():
+            return
+
+        # stored slices indexed by (manager, date)
+        zaga = {(u.manager_id, u.date): u for u in
+                db.query(PPUpload).filter(PPUpload.file_type == "zaga").all()}
+        faza = {(u.manager_id, u.date): u for u in
+                db.query(PPUpload).filter(PPUpload.file_type == "faza").all()}
+
+        updated_rows = updated_days = 0
+        for key, fz in faza.items():
+            zg = zaga.get(key)
+            if not zg or not zg.rows:
+                continue  # no «Поставлено» source for this date → leave as-is
+            # zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
+            order_deliv: dict[str, float] = {}
+            for r in zg.rows:
+                if r and r[0] is not None and len(r) > 4:
+                    try:
+                        order_deliv[str(r[0])] = float(r[4] or 0)
+                    except (TypeError, ValueError):
+                        pass
+            if not order_deliv:
+                continue
+            # faza row: [order, op, wc, sku, name, plan, status, date, conf]
+            agg: dict[tuple[str, str], float] = defaultdict(float)
+            for r in (fz.rows or []):
+                if not r or len(r) < 4:
+                    continue
+                sku = r[3]
+                if not sku or sku == "—":
+                    continue
+                agg[(str(sku), str(r[2]))] += order_deliv.get(str(r[0]), 0.0)
+            if sum(agg.values()) <= 0:
+                continue  # nothing delivered / misaligned source → don't zero actuals
+
+            mid, day = key
+            touched = False
+            for d in db.query(PPDaily).filter(PPDaily.manager_id == mid, PPDaily.date == day).all():
+                new_actual = agg.get((str(d.sap_code), str(d.work_center)))
+                if new_actual is None or float(d.actual_qty or 0) == new_actual:
+                    continue
+                d.actual_qty = new_actual
+                updated_rows += 1
+                touched = True
+            if touched:
+                updated_days += 1
+
+        db.add(AppSetting(key=PP_ACTUAL_DELIV_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] pp actual←Поставлено backfill: {updated_rows} row(s) across {updated_days} day(s)")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pp actual backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def seed_managers_and_sources() -> None:
     """Ensure supervisors (managers) and sheet sources exist (idempotent)."""
     db = SessionLocal()
