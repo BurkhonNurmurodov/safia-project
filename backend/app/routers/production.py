@@ -336,6 +336,10 @@ async def upload_phase(
                         order_deliv.setdefault(str(r[0]), float(r[4] or 0))
 
     # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
+    #   ПЛАН  = Σ «Кол-во операции» over the matching operations          (Excel col F)
+    #   ФАКТ  = Σ order «Поставлено» over the matching operations          (Excel «План пост», col M)
+    # «Поставлено» is order-level and repeats per operation, exactly like the
+    # Excel SUMIFS over «План пост» — so we add it once per matching фаза row.
     faza_agg: dict[tuple[str, str], dict] = {}
     faza_rows: list[list] = []
     unmapped = 0
@@ -344,7 +348,7 @@ async def upload_phase(
         if sku and (not catalog_skus or sku in catalog_skus):
             a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
             a["plan_qty"] += op["plan"]
-            a["actual_qty"] += op["conf"]
+            a["actual_qty"] += order_deliv.get(op["order"], 0.0)
         elif not sku:
             unmapped += 1
         faza_rows.append([op["order"], op["op"], op["wc"], sku or "—", op["name"],
