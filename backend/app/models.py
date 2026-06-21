@@ -424,8 +424,8 @@ class PPDaily(Base):
     date            = Column(Date, nullable=False, index=True)
     sap_code        = Column(String, nullable=False)
     work_center     = Column(String, nullable=False)
-    plan_qty        = Column(Numeric(14, 4), default=0)   # фаза col F
-    actual_qty      = Column(Numeric(14, 4), default=0)   # фаза col M
+    plan_qty        = Column(Numeric(14, 4), default=0)   # фаза «Кол-во операции» (Excel col F)
+    actual_qty      = Column(Numeric(14, 4), default=0)   # заголовок «Поставлено» (Excel «План пост», col M)
     plan_override   = Column(Numeric(14, 4), nullable=True)
     actual_override = Column(Numeric(14, 4), nullable=True)
     updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
