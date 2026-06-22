@@ -48,6 +48,7 @@ export const DEFAULT_PAGE_ACCESS = {
   staff:    ["shift-manager", "supervisor"],
   daily:    ["shift-manager", "supervisor"],
   production: [], // pilot: admin-only until enabled from the Access tab
+  trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
 };
 
 export function canAccessPage(role, pageKey, access) {
