@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef } from "react";
 // document.elementFromPoint while the pointer travels over the column.
 const KEY_ATTR = "data-ds-key";
 
+// Suppress text selection while a drag is in progress (module scope so the DOM
+// write stays out of the memoized handler closure).
+function setBodyUserSelect(value) { document.body.style.userSelect = value; }
+
 /**
  * Click-and-drag "paint" selection for a vertical column of checkboxes.
  *
