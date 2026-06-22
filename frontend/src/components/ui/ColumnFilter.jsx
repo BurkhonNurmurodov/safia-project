@@ -103,7 +103,8 @@ export function OptsFilter({ opts, sel, onChange, render }) {
   const { t } = useLang();
   // `onChange` replaces the whole array and can't compose functional updates, so
   // keep a working Set snapshotted for the duration of a drag.
-  const selRef = useRef(sel); selRef.current = sel;
+  const selRef = useRef(sel);
+  useEffect(() => { selRef.current = sel; });
   const workRef = useRef(null);
   const dragRow = useDragSelect(
     o => selRef.current.includes(o),
