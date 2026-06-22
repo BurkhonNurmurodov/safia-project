@@ -1812,13 +1812,24 @@ function DeletionBatchPanel({ doc, isManager, isCreatorRole, delReqMutation, bat
       return next;
     });
   }
+  const dragRow = useDragSelect(
+    id => checkedIds.has(Number(id)),
+    (id, value) => setCheckedIds(prev => {
+      const n = Number(id);
+      if (prev.has(n) === value) return prev;
+      const next = new Set(prev);
+      value ? next.add(n) : next.delete(n);
+      return next;
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2 py-1">
       {/* Worker list */}
       <div className="flex flex-col gap-1">
         {workers.map(w => (
-          <div key={w.id} className="flex items-center gap-2 py-0.5 px-1 rounded"
+          <div key={w.id} {...(isManager && w.status === "pending" ? dragRow(w.id) : {})}
+            className="flex items-center gap-2 py-0.5 px-1 rounded"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             {/* Admin pending checkbox */}
             {isManager && w.status === "pending" && (
