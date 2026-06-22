@@ -1311,6 +1311,27 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       return n;
     });
   }
+  // Click a row to toggle it; shift-click a second row to select every row
+  // between the last plain-clicked anchor and it (inclusive), in the order
+  // currently shown. The anchor stays put so the range can be re-extended.
+  function handleRowClick(e, name) {
+    if (e.shiftKey && rangeAnchor.current && rangeAnchor.current !== name) {
+      const names = filtered.map(w => w.worker_name);
+      const a = names.indexOf(rangeAnchor.current);
+      const b = names.indexOf(name);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected(s => {
+          const n = new Set(s);
+          for (let i = lo; i <= hi; i++) n.add(names[i]);
+          return n;
+        });
+        return;
+      }
+    }
+    toggle(name);
+    rangeAnchor.current = name;
+  }
   const dragRow = useDragSelect(
     name => selected.has(name),
     (name, value) => setSelected(s => {
