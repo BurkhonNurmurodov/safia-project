@@ -1791,8 +1791,17 @@ export function DocumentViewModal({ docId, onClose }) {
                       <Clock size={11} style={{ color: "var(--text-4)" }} />
                       {t("staff.transferTimeLabel")}: {doc.transfer_time}
                     </span>
+                    {doc.return_time && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                        style={{ background: "var(--bg-inner)", color: "var(--text-1)" }}>
+                        <Clock size={11} style={{ color: "var(--text-4)" }} />
+                        {t("staff.returnTimeLabel")}: {doc.return_time}
+                      </span>
+                    )}
                     <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
-                      {t(doc.target_type === "task" ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
+                      {doc.return_time
+                        ? t(doc.target_type === "task" ? "staff.returnTimeHintTask" : "staff.returnTimeHint")
+                        : t(doc.target_type === "task" ? "staff.transferTimeHintTask" : "staff.transferTimeHint")}
                     </span>
                   </div>
                 )}
