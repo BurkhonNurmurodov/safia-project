@@ -2520,6 +2520,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   function toggleSel(key) {
     setSelected(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
+  const dragRow = useDragSelect(
+    key => selected.has(key),
+    (key, value) => setSelected(s => {
+      if (s.has(key) === value) return s;
+      const n = new Set(s);
+      value ? n.add(key) : n.delete(key);
+      return n;
+    }),
+  );
   const allSelected = rows.length > 0 && rows.every(d => selected.has(rowKey(d)));
   function toggleAll() {
     setSelected(allSelected ? new Set() : new Set(rows.map(rowKey)));
