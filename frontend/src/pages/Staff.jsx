@@ -241,6 +241,15 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
       return next;
     });
   }
+  const dragRow = useDragSelect(
+    name => selected.has(name),
+    (name, value) => setSelected(prev => {
+      if (prev.has(name) === value) return prev;
+      const next = new Set(prev);
+      value ? next.add(name) : next.delete(name);
+      return next;
+    }),
+  );
 
   async function handleSave() {
     if (!selected.size || saving) return;
