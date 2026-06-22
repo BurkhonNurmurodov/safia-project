@@ -1441,17 +1441,20 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (!tgt)                { setError(t("staff.chooseTarget")); return; }
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
     // Transfer-time is only meaningful for a → supervisor/task move with the
-    // toggle on and a time chosen. Always send the field (empty clears it).
+    // toggle on and a time chosen. Always send the field (empty clears it). The
+    // return time only rides along when there is a transfer time (it's the away
+    // stint's end), and only when its own toggle is on with a valid pick.
     const tt = (canUseTime && useTime && transferTime) ? transferTime : "";
+    const rt = (tt && useReturn && returnTime) ? returnTime : "";
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt });
+        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt, return_time: rt });
       } else {
         await api.post("/api/staff/documents", {
           doc_type: "people_exchange", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
-          ...tgt, employees: [...selected], transfer_time: tt,
+          ...tgt, employees: [...selected], transfer_time: tt, return_time: rt,
         });
       }
       qc.invalidateQueries({ queryKey: ["staff-documents"] });
