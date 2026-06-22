@@ -1263,6 +1263,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
         setTarget(`task:${detail.task_name}`);
       setSelected(new Set((detail.employees || []).map(e => e.worker_name)));
       if (detail.transfer_time) { setUseTime(true); setTransferTime(detail.transfer_time); }
+      if (detail.return_time)   { setUseReturn(true); setReturnTime(detail.return_time); }
       initialised.current = true;
     }
   }, [isEdit, detail]);
