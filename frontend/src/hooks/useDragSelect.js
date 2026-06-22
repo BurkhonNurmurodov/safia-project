@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
-// Suppress text selection while a drag is in progress (module scope so the DOM
-// write stays out of the memoized handler closure).
+// Suppress text selection while a drag is in progress.
 function setBodyUserSelect(value) { document.body.style.userSelect = value; }
 
 /**
@@ -28,15 +27,12 @@ export function useDragSelect(isSelected, applyState, opts) {
   const instanceId = useMemo(() => Math.random().toString(36).slice(2, 9), []);
   const keyAttr = `data-ds-key-${instanceId}`;
 
-  // Latest props, read by the identity-stable pointer handlers at drag time.
   const cfg = useRef({ isSelected, applyState, opts });
   useEffect(() => { cfg.current = { isSelected, applyState, opts }; });
 
   const drag = useRef(null);
-  const lastClicked = useRef(null);
+  const lastClickedEl = useRef(null);
 
-  // Build the handler set once; function declarations are hoisted so they can
-  // reference each other (onUp removes onMove and itself) without TDZ issues.
   const api = useMemo(() => {
     function paint(x, y) {
       const d = drag.current;
@@ -84,15 +80,14 @@ export function useDragSelect(isSelected, applyState, opts) {
       
       const k = String(key);
       const isCurrentlySelected = cfg.current.isSelected(k);
+      const currentEl = e.currentTarget;
 
-      if (e.shiftKey && lastClicked.current != null) {
+      if (e.shiftKey && lastClickedEl.current != null) {
         e.preventDefault();
         
         const elements = Array.from(document.querySelectorAll(`[${keyAttr}]`));
-        const keys = elements.map(el => el.getAttribute(keyAttr));
-        
-        const startIdx = keys.indexOf(lastClicked.current);
-        const endIdx = keys.indexOf(k);
+        const startIdx = elements.indexOf(lastClickedEl.current);
+        const endIdx = elements.indexOf(currentEl);
         
         if (startIdx !== -1 && endIdx !== -1) {
           const min = Math.min(startIdx, endIdx);
@@ -102,14 +97,15 @@ export function useDragSelect(isSelected, applyState, opts) {
           
           cfg.current.opts?.onStart?.();
           for (let i = min; i <= max; i++) {
-            if (cfg.current.isSelected(keys[i]) !== targetState) {
-              cfg.current.applyState(keys[i], targetState);
+            const elKey = elements[i].getAttribute(keyAttr);
+            if (elKey && cfg.current.isSelected(elKey) !== targetState) {
+              cfg.current.applyState(elKey, targetState);
             }
           }
           cfg.current.opts?.onEnd?.();
         }
         
-        lastClicked.current = k;
+        lastClickedEl.current = currentEl;
         
         const swallow = (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); };
         document.addEventListener("click", swallow, { capture: true, once: true });
@@ -117,7 +113,7 @@ export function useDragSelect(isSelected, applyState, opts) {
         return;
       }
 
-      lastClicked.current = k;
+      lastClickedEl.current = currentEl;
       drag.current = { anchor: k, value: !isCurrentlySelected, painted: new Set([k]), moved: false };
       cfg.current.opts?.onStart?.();
       window.addEventListener("pointermove", onMove);
@@ -127,34 +123,33 @@ export function useDragSelect(isSelected, applyState, opts) {
     
     function keyDown(e, key) {
       if (e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-        e.preventDefault(); // prevent page scrolling
+        e.preventDefault(); 
         
         const elements = Array.from(document.querySelectorAll(`[${keyAttr}]`));
-        const keys = elements.map(el => el.getAttribute(keyAttr));
-        const idx = keys.indexOf(String(key));
+        const currentEl = e.currentTarget;
+        const idx = elements.indexOf(currentEl);
         if (idx === -1) return;
         
         let nextIdx = -1;
-        if (e.key === 'ArrowDown' && idx < keys.length - 1) {
+        if (e.key === 'ArrowDown' && idx < elements.length - 1) {
           nextIdx = idx + 1;
         } else if (e.key === 'ArrowUp' && idx > 0) {
           nextIdx = idx - 1;
         }
         
         if (nextIdx !== -1) {
-          const nextKey = keys[nextIdx];
           const nextEl = elements[nextIdx];
+          const nextKey = nextEl.getAttribute(keyAttr);
           const currentState = cfg.current.isSelected(String(key));
           
           cfg.current.opts?.onStart?.();
-          if (cfg.current.isSelected(nextKey) !== currentState) {
+          if (nextKey && cfg.current.isSelected(nextKey) !== currentState) {
              cfg.current.applyState(nextKey, currentState);
           }
           cfg.current.opts?.onEnd?.();
           
-          lastClicked.current = nextKey;
+          lastClickedEl.current = nextEl;
           
-          // Focus the next element (preferring a checkbox if one exists)
           const focusable = nextEl.querySelector('input[type="checkbox"]') || nextEl;
           if (focusable && typeof focusable.focus === 'function') {
              focusable.focus();
@@ -166,7 +161,6 @@ export function useDragSelect(isSelected, applyState, opts) {
     return { start, keyDown, teardown };
   }, [keyAttr]);
 
-  // Detach any stray listeners if the component unmounts mid-drag.
   useEffect(() => api.teardown, [api]);
 
   return useMemo(() => (key) => ({
