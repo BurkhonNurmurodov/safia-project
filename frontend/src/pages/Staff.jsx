@@ -1027,6 +1027,15 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
       return n;
     });
   }
+  const dragRow = useDragSelect(
+    name => selected.has(name),
+    (name, value) => setSelected(s => {
+      if (s.has(name) === value) return s;
+      const n = new Set(s);
+      value ? n.add(name) : n.delete(name);
+      return n;
+    }),
+  );
   function toggleAllShown() {
     setSelected(s => {
       const n = new Set(s);
@@ -1300,6 +1309,15 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
       return n;
     });
   }
+  const dragRow = useDragSelect(
+    name => selected.has(name),
+    (name, value) => setSelected(s => {
+      if (s.has(name) === value) return s;
+      const n = new Set(s);
+      value ? n.add(name) : n.delete(name);
+      return n;
+    }),
+  );
   function toggleAllShown() {
     setSelected(s => {
       const n = new Set(s);
