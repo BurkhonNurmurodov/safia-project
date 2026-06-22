@@ -1593,15 +1593,34 @@ def _normalize_transfer_time(caller: dict, ttype: Optional[str], raw) -> Optiona
     return _fmt_hhmm(mins) if mins is not None else None
 
 
-def _compute_split(snapshot: dict, transfer_time: str) -> Optional[dict]:
-    """Resolve how a single worker's day splits around the transfer time T.
+def _normalize_return_time(ttype: Optional[str], transfer_time: Optional[str], raw) -> Optional[str]:
+    """A return time R is the END of the away stint and is only meaningful when a
+    transfer time T is also set (→ supervisor or task). Returns a canonical
+    'HH:MM' string or None."""
+    if not raw or not transfer_time or ttype not in ("supervisor", "task"):
+        return None
+    mins = _parse_hhmm(raw)
+    return _fmt_hhmm(mins) if mins is not None else None
 
-    Conserves the total worked hours (see module comment):
+
+def _compute_split(snapshot: dict, transfer_time: str, return_time: Optional[str] = None) -> Optional[dict]:
+    """Resolve how a single worker's day splits around the transfer time T, and —
+    when a return time R is given — the moment they come back (the carve-out).
+
+    TWO-WAY (no return) — the worker leaves at T and never returns:
       part1 = (T - clock_in)/60     → before-T worked time, INCLUDES early arrival
       part2 = total_worked - part1  → after-T remainder
-    The NAME goes to the bigger of part1/part2 (tie → original unit); early arrival
-    is only ever credited to the original unit, so the receiving side's early is 0.
 
+    CARVE-OUT (return time R, C ≤ T ≤ R ≤ O) — the worker is away only for [T, R]
+    and ends the day back home, so the two home slices [C,T]+[R,O] are one side:
+      away = (R - T)/60             → the away stint, at clock duration
+      part1 = total_worked - away   → HOME side (both slices), keeps early + break
+      part2 = away                  → AWAY side
+    The home named row therefore keeps its full C–O clock (two slices can't be one
+    HH:MM range) while the away row, if the name moves, shows T–R.
+
+    Either way the NAME goes to the bigger of part1/part2 (tie → original unit), and
+    early arrival is only ever credited to the original unit (receiving side = 0).
     Returns None when the worker can't be split (missing/invalid times or hours) so
     the caller can fall back to a plain full move. Hours are in decimal hours.
     """
@@ -1621,6 +1640,30 @@ def _compute_split(snapshot: dict, transfer_time: str) -> Optional[dict]:
         return None
     total = float(total)
     T     = max(C, min(T, O))                          # clamp into the worked window
+
+    R = _parse_hhmm(return_time) if return_time else None
+    if R is not None:
+        # ── Carve-out: the away stint is [T, R]; everything else stays home. ──
+        if R < C:                                      # return crossed midnight too
+            R += 1440
+        R = max(T, min(R, O))                          # clamp into [T, O]
+        away  = max(0.0, min((R - T) / 60.0, total))   # away stint at clock duration
+        part1 = max(0.0, total - away)                 # home side (both slices), incl. break+early
+        part2 = away                                   # away side
+        return {
+            "T":          _fmt_hhmm(T),
+            "C":          _fmt_hhmm(C),
+            "O":          _fmt_hhmm(O),
+            "R":          _fmt_hhmm(R),
+            "stay":       part1 >= part2,              # tie → stays on the original unit
+            "part1":      round(part1, 4),             # home-side hours (incl. early)
+            "part2":      round(part2, 4),             # away-side hours
+            "part1_eff":  round(max(0.0, part1 - early / 60.0), 4),
+            "home_clock": f"{_fmt_hhmm(C)}-{_fmt_hhmm(O)}",  # name stays → full C–O span
+            "away_clock": f"{_fmt_hhmm(T)}-{_fmt_hhmm(R)}",  # name moves → just the [T,R] stint
+            "early_min":  early,
+        }
+
     part1 = max(0.0, min((T - C) / 60.0, total))       # before-T (incl. early), capped at total
     part2 = max(0.0, total - part1)                    # after-T remainder; total conserved
     return {
