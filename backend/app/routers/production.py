@@ -538,11 +538,11 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
 # --------------------------------------------------------------------------- #
 # Trudoyomkost analysis — cross-brigadir, by-weekday view + trend + Excel.
 #
-# Reuses the existing dashboard engine: for each (brigadir, date) we run
-# compute_dashboard and keep its planned/actual labour totals (minutes), then
-# fold each date onto its weekday. Catalog + work centres are date-independent,
-# so they're fetched once per brigadir and only the daily quantities vary.
-# Returns minutes; the client converts to norm-hours on the unit toggle.
+# Planned trudoyomkost is read straight from the synced *source* Google Sheet
+# (admin → "Manba"): production_data.prod_plan holds planned production minutes
+# per brigadir per day, for every brigadir in the sheet — not the SAP/ABC pilot.
+# We fold each date onto its weekday and aggregate. Returns minutes; the client
+# converts to norm-hours on the unit toggle.
 # --------------------------------------------------------------------------- #
 ANALYSIS_PAGE = "trudoyomkost"
 
