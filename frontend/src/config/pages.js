@@ -32,6 +32,7 @@ export const PAGES = [
   { key: "staff",    route: "/staff",    labelKey: "nav.staff" },
   { key: "daily",    route: "/daily",    labelKey: "nav.daily" },
   { key: "production", route: "/production", labelKey: "nav.production" },
+  { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
