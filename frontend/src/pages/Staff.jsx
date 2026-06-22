@@ -1144,6 +1144,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
                   const on = selected.has(w.worker_name);
                   return (
                     <tr key={w.worker_name}
+                      {...dragRow(w.worker_name)}
                       onClick={() => toggle(w.worker_name)}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
@@ -1531,6 +1532,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                   const on = selected.has(w.worker_name);
                   return (
                     <tr key={w.worker_name}
+                      {...dragRow(w.worker_name)}
                       onClick={() => toggle(w.worker_name)}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
