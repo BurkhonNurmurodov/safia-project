@@ -533,3 +533,252 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         p.active = body.active
     db.commit()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Trudoyomkost analysis — cross-brigadir, by-weekday view + trend + Excel.
+#
+# Reuses the existing dashboard engine: for each (brigadir, date) we run
+# compute_dashboard and keep its planned/actual labour totals (minutes), then
+# fold each date onto its weekday. Catalog + work centres are date-independent,
+# so they're fetched once per brigadir and only the daily quantities vary.
+# Returns minutes; the client converts to norm-hours on the unit toggle.
+# --------------------------------------------------------------------------- #
+ANALYSIS_PAGE = "trudoyomkost"
+
+WEEKDAY_LABELS = {
+    "uz":      ["Du", "Se", "Cho", "Pay", "Ju", "Sha", "Yak"],
+    "uz_cyrl": ["Ду", "Се", "Чо", "Пай", "Жу", "Ша", "Як"],
+    "ru":      ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
+    "en":      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+}
+
+
+def _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min) -> dict:
+    """{date: {'plan': minutes, 'actual': minutes}} for one brigadir over a range."""
+    products = (
+        db.query(PPProduct)
+        .filter(PPProduct.manager_id == mid, PPProduct.active.is_(True))
+        .order_by(PPProduct.sort_order, PPProduct.id).all()
+    )
+    if not products:
+        return {}
+    wcs = (
+        db.query(PPWorkCenter)
+        .filter(PPWorkCenter.manager_id == mid, PPWorkCenter.active.is_(True))
+        .order_by(PPWorkCenter.sort_order, PPWorkCenter.id).all()
+    )
+    prod_dicts = [{
+        "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
+        "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
+        "sort_order": p.sort_order,
+    } for p in products]
+    wc_dicts = [{
+        "code": w.code, "shtatka": w.shtatka,
+        "capacity": (float(w.capacity) if w.capacity is not None else None),
+        "sort_order": w.sort_order,
+    } for w in wcs]
+
+    daily = db.query(PPDaily).filter(
+        PPDaily.manager_id == mid, PPDaily.date >= d_from, PPDaily.date <= d_to).all()
+    by_date: dict = {}
+    for d in daily:
+        by_date.setdefault(d.date, []).append(d)
+
+    out: dict = {}
+    for day, rows in by_date.items():
+        quantities = {}
+        for d in rows:
+            plan_eff = d.plan_override if d.plan_override is not None else d.plan_qty
+            actual_eff = d.actual_override if d.actual_override is not None else d.actual_qty
+            quantities[(d.sap_code, d.work_center)] = {
+                "plan_qty": float(plan_eff or 0), "actual_qty": float(actual_eff or 0)}
+        res = compute_dashboard(products=prod_dicts, quantities=quantities, work_centers=wc_dicts,
+                                shift_min=shift_min, productive_min=productive_min)
+        tot = res["totals"]
+        out[day] = {"plan": tot["total_plan_labor"], "actual": tot["total_actual_labor"]}
+    return out
+
+
+def _period_plan_total(db, mids, d_from, d_to, shift_min, productive_min) -> float:
+    """Σ planned labour (minutes) across brigadirs in a window — drives the Δ KPI."""
+    total = 0.0
+    for mid in mids:
+        for v in _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min).values():
+            total += v["plan"]
+    return total
+
+
+def _resolve_analysis_managers(db, requested) -> list[int]:
+    """Brigadirs that have planning data, optionally narrowed to a requested subset."""
+    have = {r[0] for r in db.query(PPDaily.manager_id).distinct().all()}
+    have |= {r[0] for r in db.query(PPProduct.manager_id).distinct().all()}
+    if requested:
+        have &= {int(x) for x in requested}
+    return sorted(have)
+
+
+def _trudoyomkost_payload(db, manager_ids, d_from, d_to) -> dict:
+    shift_min, productive_min = _constants(db)
+    mids = _resolve_analysis_managers(db, manager_ids)
+    names = ({m.id: m.name for m in db.query(Manager).filter(Manager.id.in_(mids)).all()}
+             if mids else {})
+
+    matrix: list[dict] = []
+    profile_avgs = [[] for _ in range(7)]   # per weekday: each brigadir's weekday-avg
+    profile_tot = [0.0] * 7
+    daily_out: list[dict] = []
+    period_total = 0.0
+    distinct_dates: set = set()
+
+    for mid in mids:
+        series = _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min)
+        if not series:
+            continue
+        wd_plan = [[] for _ in range(7)]
+        for day, v in series.items():
+            wd = day.weekday()
+            wd_plan[wd].append(v["plan"])
+            period_total += v["plan"]
+            distinct_dates.add(day)
+            daily_out.append({"manager_id": mid, "date": day.isoformat(),
+                              "weekday": wd, "plan": v["plan"], "actual": v["actual"]})
+        by_weekday, row_vals = [], []
+        for wd in range(7):
+            vals = wd_plan[wd]
+            avg = (sum(vals) / len(vals)) if vals else 0.0
+            by_weekday.append({"avg": avg, "total": sum(vals), "count": len(vals)})
+            if vals:
+                profile_avgs[wd].append(avg)
+                profile_tot[wd] += sum(vals)
+                row_vals.extend(vals)
+        matrix.append({
+            "manager_id": mid, "name": names.get(mid, str(mid)),
+            "by_weekday": by_weekday,
+            "row_avg": (sum(row_vals) / len(row_vals)) if row_vals else 0.0,
+            "row_total": sum(row_vals),
+        })
+
+    matrix.sort(key=lambda r: r["name"].lower())
+
+    weekday_profile = [{
+        "weekday": wd,
+        "avg": (sum(profile_avgs[wd]) / len(profile_avgs[wd])) if profile_avgs[wd] else 0.0,
+        "total": profile_tot[wd],
+    } for wd in range(7)]
+
+    n_dates = len(distinct_dates) or 1
+    nonzero = [(wd, profile_tot[wd]) for wd in range(7) if profile_tot[wd] > 0]
+    busiest = max(nonzero, key=lambda x: x[1]) if nonzero else (None, 0.0)
+    lightest = min(nonzero, key=lambda x: x[1]) if nonzero else (None, 0.0)
+
+    span = (d_to - d_from).days + 1
+    prev_to = d_from - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=span - 1)
+    prev_total = _period_plan_total(db, mids, prev_from, prev_to, shift_min, productive_min)
+    delta_pct = ((period_total - prev_total) / prev_total * 100.0) if prev_total > 0 else None
+
+    return {
+        "range": {"from": d_from.isoformat(), "to": d_to.isoformat(), "days": span},
+        "supervisors": [{"id": m["manager_id"], "name": m["name"]} for m in matrix],
+        "matrix": matrix,
+        "weekday_profile": weekday_profile,
+        "daily": daily_out,
+        "kpis": {
+            "period_total": period_total,
+            "daily_avg": period_total / n_dates,
+            "busiest_weekday": busiest[0], "busiest_value": busiest[1],
+            "lightest_weekday": lightest[0], "lightest_value": lightest[1],
+            "prev_total": prev_total, "delta_pct": delta_pct,
+        },
+        "unit": "min",
+    }
+
+
+def _parse_range(date_from: Optional[str], date_to: Optional[str]) -> tuple[date, date]:
+    d_from, d_to = _parse_date(date_from), _parse_date(date_to)
+    if d_to < d_from:
+        raise HTTPException(status_code=400, detail="date_to must be on or after date_from")
+    if (d_to - d_from).days > 370:
+        raise HTTPException(status_code=400, detail="Range too large (max ~1 year)")
+    return d_from, d_to
+
+
+@router.get("/api/production/trudoyomkost")
+def trudoyomkost_analysis(
+    date_from: str = Query(...),
+    date_to: str = Query(...),
+    manager_id: list[int] = Query(default=[]),
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    d_from, d_to = _parse_range(date_from, date_to)
+    return _trudoyomkost_payload(db, manager_id, d_from, d_to)
+
+
+@router.get("/api/production/trudoyomkost/export.xlsx")
+def trudoyomkost_export(
+    date_from: str = Query(...),
+    date_to: str = Query(...),
+    manager_id: list[int] = Query(default=[]),
+    mode: str = Query("avg"),       # 'avg' | 'total'
+    unit: str = Query("min"),       # 'min' | 'hrs'
+    lang: str = Query("uz"),
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    d_from, d_to = _parse_range(date_from, date_to)
+    data = _trudoyomkost_payload(db, manager_id, d_from, d_to)
+
+    labels = WEEKDAY_LABELS.get(lang, WEEKDAY_LABELS["uz"])
+    div = 60.0 if unit == "hrs" else 1.0
+    key = "total" if mode == "total" else "avg"
+    rkey = "row_total" if mode == "total" else "row_avg"
+    summary_label = "Jami" if mode == "total" else "O'rtacha"
+    unit_label = "norm-soat" if unit == "hrs" else "min"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Trudoyomkost"
+
+    gold = PatternFill("solid", fgColor="C8973F")
+    head_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="D9D9D9")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+
+    ws.append([f"Trudoyomkost — {summary_label} ({unit_label})  ·  {d_from.isoformat()} → {d_to.isoformat()}"])
+    ws.append([f"Brigadir"] + labels + [summary_label])
+    for c in ws[2]:
+        c.fill, c.font, c.alignment, c.border = gold, head_font, center, border
+
+    for row in data["matrix"]:
+        vals = [(round(row["by_weekday"][wd][key] / div, 1) if row["by_weekday"][wd]["count"] else "")
+                for wd in range(7)]
+        ws.append([row["name"]] + vals + [round(row[rkey] / div, 1)])
+
+    prof = data["weekday_profile"]
+    foot_vals = [(round(prof[wd][key] / div, 1) if prof[wd]["total"] > 0 else "") for wd in range(7)]
+    present = [prof[wd][key] for wd in range(7) if prof[wd]["total"] > 0]
+    foot_summary = round(((sum(present) / len(present)) if mode != "total" else sum(present)) / div, 1) if present else 0
+    ws.append([summary_label] + foot_vals + [foot_summary])
+
+    for r in range(3, ws.max_row + 1):
+        for c in ws[r]:
+            c.border = border
+            if c.column > 1:
+                c.alignment = center
+    ws.column_dimensions["A"].width = 26
+    for col in range(2, 10):
+        ws.column_dimensions[ws.cell(row=2, column=col).column_letter].width = 9
+    ws.freeze_panes = "B3"
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    fname = f"trudoyomkost_{d_from.isoformat()}_{d_to.isoformat()}.xlsx"
+    return StreamingResponse(
+        bio,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
