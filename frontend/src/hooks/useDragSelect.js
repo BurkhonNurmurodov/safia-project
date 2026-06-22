@@ -63,7 +63,7 @@ export function useDragSelect(isSelected, applyState, opts) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
-      document.body.style.userSelect = "";
+      setBodyUserSelect("");
     }
     function onUp() {
       const d = drag.current;
