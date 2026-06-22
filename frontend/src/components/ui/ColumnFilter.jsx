@@ -101,6 +101,24 @@ export function TxtFilter({ value, onChange }) {
 
 export function OptsFilter({ opts, sel, onChange, render }) {
   const { t } = useLang();
+  // `onChange` replaces the whole array and can't compose functional updates, so
+  // keep a working Set snapshotted for the duration of a drag.
+  const selRef = useRef(sel); selRef.current = sel;
+  const workRef = useRef(null);
+  const dragRow = useDragSelect(
+    o => selRef.current.includes(o),
+    (o, value) => {
+      const work = workRef.current || new Set(selRef.current);
+      workRef.current = work;
+      if (work.has(o) === value) return;
+      value ? work.add(o) : work.delete(o);
+      onChange([...work]);
+    },
+    {
+      onStart: () => { workRef.current = new Set(selRef.current); },
+      onEnd:   () => { workRef.current = null; },
+    },
+  );
   return (
     <div>
       <div className="max-h-44 overflow-y-auto space-y-0.5 mb-1">
@@ -109,6 +127,7 @@ export function OptsFilter({ opts, sel, onChange, render }) {
         )}
         {opts.map(o => (
           <label key={o}
+            {...dragRow(o)}
             className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
             style={{ color: "var(--text-2)" }}
             onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
