@@ -2417,8 +2417,10 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
         ttype, tgt_id, tgt_name, task_name = _resolve_exchange_target(db, doc.manager_id, doc.date, ttype, tgt_in, task_in)
         ttime_in = body.transfer_time if body.transfer_time is not None else prev.get("transfer_time")
         ttime    = _normalize_transfer_time(caller, ttype, ttime_in)
+        rtime_in = body.return_time if body.return_time is not None else prev.get("return_time")
+        rtime    = _normalize_return_time(ttype, ttime, rtime_in)
         payload = _build_exchange_payload(db, doc.manager_id, doc.date, ttype, tgt_id, tgt_name, task_name,
-                                          body.employees, transfer_time=ttime)
+                                          body.employees, transfer_time=ttime, return_time=rtime)
         if not payload["employees"]:
             raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
         if ttype == "task":
