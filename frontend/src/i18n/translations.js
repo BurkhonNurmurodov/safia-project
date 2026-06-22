@@ -918,6 +918,7 @@ const t = {
     "nav.staff":           "Verifix тўғрилаш",
     "nav.daily":           "Кунлик",
     "nav.production":      "Ишлаб чиқариш",
+    "nav.trudoyomkost":    "Trudoyomkost",
     "shiftDaily.title":        "Кунлик — Смена",
     "shiftDaily.prevDay":      "олдинги кун",
     "shiftDaily.vsPrev":       "олдинги кунга нисбатан",
