@@ -364,6 +364,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
             return (
               <div
                 key={w.worker_name}
+                {...dragRow(w.worker_name)}
                 onClick={() => toggleOne(w.worker_name)}
                 className="flex items-center px-5 py-2.5 cursor-pointer transition-colors"
                 style={{
