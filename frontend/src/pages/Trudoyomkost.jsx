@@ -140,10 +140,10 @@ export default function Trudoyomkost() {
   const [exporting, setExporting] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["trudoyomkost", dateFrom, dateTo, brigadirIds],
+    queryKey: ["trudoyomkost", dateFrom, dateTo, brigadirIds, shift],
     enabled: ready && !!dateFrom && !!dateTo,
     queryFn: () => api.get("/api/production/trudoyomkost", {
-      params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds },
+      params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, shift },
     }).then((r) => r.data),
   });
 
