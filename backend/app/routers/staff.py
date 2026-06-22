@@ -2392,6 +2392,7 @@ class DocUpdateBody(BaseModel):
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
     transfer_time:     Optional[str] = None
+    return_time:       Optional[str] = None
 
 
 @router.put("/documents/{doc_id}")
