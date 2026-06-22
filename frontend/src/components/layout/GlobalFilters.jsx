@@ -230,6 +230,7 @@ export default function GlobalFilters() {
               visible.map(b => (
                 <label
                   key={b.manager_id}
+                  {...dragRow(b.manager_id)}
                   className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer select-none transition-colors hover:bg-white/5"
                   style={{ color: "var(--text-2)" }}
                 >
