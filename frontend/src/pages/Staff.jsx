@@ -1207,6 +1207,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const [removingTask, setRemovingTask]  = useState(false);
   const [removeError, setRemoveError]    = useState("");
   const initialised             = useRef(false);
+  const rangeAnchor             = useRef(null);   // last plain-clicked row, for shift-range select
 
   // Move-to options: other open-day supervisors + tasks already created today
   const { data: supTargets = [] } = useQuery({
