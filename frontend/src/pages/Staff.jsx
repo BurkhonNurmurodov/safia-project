@@ -2757,7 +2757,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                       onClick={() => setExpandedId(expanded ? null : rKey)}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: expanded ? "var(--bg-inner)" : "transparent" }}>
-                      <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-3 text-center" {...dragRow(rKey)} onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={selected.has(rKey)} onChange={() => toggleSel(rKey)} className="w-4 h-4 cursor-pointer" style={{ accentColor: "var(--brand)" }} />
                       </td>
                       <td className="px-3 py-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtDateLabel(doc.date)}</td>
