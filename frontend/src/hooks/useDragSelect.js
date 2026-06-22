@@ -51,7 +51,7 @@ export function useDragSelect(isSelected, applyState, opts) {
       if (!d.moved && key !== d.anchor) {
         d.moved = true;
         cfg.current.applyState(d.anchor, d.value);
-        document.body.style.userSelect = "none";
+        setBodyUserSelect("none");
       }
       if (d.moved && !d.painted.has(key)) {
         d.painted.add(key);
