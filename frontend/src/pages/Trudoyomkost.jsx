@@ -188,12 +188,16 @@ export default function Trudoyomkost() {
     const supDaily = (data?.daily ?? []).filter((d) => d.manager_id === trendSup);
     if (!supDaily.length || selWd.size === 0) return { cats: [], series: [] };
     const planByDate = new Map(supDaily.map((d) => [d.date, d.plan]));
+    // x-axis = weeks (so the same weekday lines up across weeks); a column is the
+    // whole week, labelled by its Mon–Sun range — never a single date, which would
+    // wrongly imply one calendar day carries seven weekday values.
     const weeks = [...new Set(supDaily.map((d) => mondayOfISO(d.date)))].sort();
-    const cats = weeks.map((w) => ddmm(w));
+    const cats = weeks.map((w) => `${ddmm(w)}–${ddmm(addDaysISO(w, 6))}`);
     const wds = [...selWd].sort((a, b) => a - b);
     const series = wds.map((wd) => ({
       name: wdLabels.f[wd],
       color: WD_COLORS[wd],
+      weekday: wd,
       data: weeks.map((w) => {
         const v = planByDate.get(addDaysISO(w, wd));
         return v == null ? null : Math.round(conv(v));
@@ -206,7 +210,7 @@ export default function Trudoyomkost() {
       color: "#9ca3af", dashed: true,
       data: weeks.map(() => avg),
     });
-    return { cats, series };
+    return { cats, series, weeks };
   }, [data, trendSup, selWd, unit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trendOptions = {
