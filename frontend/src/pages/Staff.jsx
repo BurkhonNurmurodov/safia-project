@@ -1331,6 +1331,26 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (!timeWindow || m == null || m < timeWindow.lo || m > timeWindow.hi) setTransferTime("");
   }, [timeWindow, transferTime, employees.length]);
 
+  // The return time R ends the away stint, so it must fall between the transfer
+  // time T and the latest clock-out. Window = [T, timeWindow.hi]; null when there
+  // is no T yet or no room after it. Overnight T is carried like the transfer one.
+  const returnWindow = useMemo(() => {
+    if (!transferTime || !timeWindow) return null;
+    let tMin = parseHHMM(transferTime);
+    if (tMin == null) return null;
+    if (tMin < timeWindow.lo) tMin += 1440;          // post-midnight transfer
+    return timeWindow.hi > tMin ? { lo: tMin, hi: timeWindow.hi } : null;
+  }, [transferTime, timeWindow]);
+
+  // Drop the return time if it falls outside [T, latest clock-out] as T/selection
+  // change (e.g. the transfer time was pushed past the old return).
+  useEffect(() => {
+    if (!returnTime || !employees.length) return;
+    let m = parseHHMM(returnTime);
+    if (m != null && returnWindow && m < returnWindow.lo) m += 1440;
+    if (!returnWindow || m == null || m < returnWindow.lo || m > returnWindow.hi) setReturnTime("");
+  }, [returnWindow, returnTime, employees.length]);
+
   function toggle(name) {
     setSelected(s => {
       const n = new Set(s);
