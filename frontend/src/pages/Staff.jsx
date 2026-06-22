@@ -983,6 +983,29 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
   const initialised             = useRef(false);
+  const rangeAnchor             = useRef(null);   // last plain-clicked row, for shift-range select
+
+  // Click toggles a row; shift-click selects every row between the last
+  // plain-clicked anchor and the target (inclusive), in the shown order.
+  function handleRowClick(e, name) {
+    if (e.shiftKey && rangeAnchor.current && rangeAnchor.current !== name) {
+      const names = filtered.map(w => w.worker_name);
+      const a = names.indexOf(rangeAnchor.current);
+      const b = names.indexOf(name);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected(s => {
+          const n = new Set(s);
+          for (let i = lo; i <= hi; i++) n.add(names[i]);
+          return n;
+        });
+        window.getSelection?.()?.removeAllRanges();   // drop the shift-click text highlight
+        return;
+      }
+    }
+    toggle(name);
+    rangeAnchor.current = name;
+  }
 
   const { data: roleOpts = { job_titles: [] } } = useQuery({
     queryKey: ["field-options"],
