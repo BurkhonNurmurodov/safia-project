@@ -1224,6 +1224,9 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const [useTime, setUseTime]   = useState(false);  // transfer-time split (admin + supervisor)
   const [transferTime, setTransferTime] = useState("");  // "HH:MM"
   const [pickerOpen, setPickerOpen]     = useState(false);  // wheel time-picker popup
+  const [useReturn, setUseReturn]       = useState(false);  // optional carve-out: worker returns at R
+  const [returnTime, setReturnTime]     = useState("");     // "HH:MM" (must be > transferTime)
+  const [returnPickerOpen, setReturnPickerOpen] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
   const [taskToRemove, setTaskToRemove] = useState(null);  // admin-only task removal
