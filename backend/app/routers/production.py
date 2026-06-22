@@ -696,11 +696,12 @@ def trudoyomkost_analysis(
     date_from: str = Query(...),
     date_to: str = Query(...),
     manager_id: list[int] = Query(default=[]),
+    shift: Optional[int] = Query(None),
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
-    return _trudoyomkost_payload(db, manager_id, d_from, d_to)
+    return _trudoyomkost_payload(db, manager_id, d_from, d_to, shift)
 
 
 @router.get("/api/production/trudoyomkost/export.xlsx")
