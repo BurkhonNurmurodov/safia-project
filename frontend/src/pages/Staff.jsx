@@ -1168,7 +1168,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
                   return (
                     <tr key={w.worker_name}
                       {...dragRow(w.worker_name)}
-                      onClick={() => toggle(w.worker_name)}
+                      onClick={(e) => handleRowClick(e, w.worker_name)}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
                       <td className="px-3 py-2 text-center">
@@ -1579,7 +1579,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
                   return (
                     <tr key={w.worker_name}
                       {...dragRow(w.worker_name)}
-                      onClick={() => toggle(w.worker_name)}
+                      onClick={(e) => handleRowClick(e, w.worker_name)}
                       className="border-b cursor-pointer hover:bg-white/5"
                       style={{ borderColor: "var(--border)", background: on ? "var(--brand-bg)" : "transparent" }}>
                       <td className="px-3 py-2 text-center">
