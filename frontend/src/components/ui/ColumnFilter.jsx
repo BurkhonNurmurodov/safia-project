@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
 import { useLang } from "../../context/LangContext";
+import { useDragSelect } from "../../hooks/useDragSelect";
 
 // A column header with a popover filter. Pass `label` to render it next to the
 // trigger, or omit it when the header already renders its own (sortable) label.
