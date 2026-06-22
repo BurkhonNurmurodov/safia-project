@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import ReactApexChart from "react-apexcharts";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { useLang } from "../../context/LangContext";
+import { useDragSelect } from "../../hooks/useDragSelect";
 
 const LINE_COLORS = [
   "#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6",
