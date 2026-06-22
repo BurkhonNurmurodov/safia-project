@@ -712,11 +712,12 @@ def trudoyomkost_export(
     mode: str = Query("avg"),       # 'avg' | 'total'
     unit: str = Query("min"),       # 'min' | 'hrs'
     lang: str = Query("uz"),
+    shift: Optional[int] = Query(None),
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
-    data = _trudoyomkost_payload(db, manager_id, d_from, d_to)
+    data = _trudoyomkost_payload(db, manager_id, d_from, d_to, shift)
 
     labels = WEEKDAY_LABELS.get(lang, WEEKDAY_LABELS["uz"])
     div = 60.0 if unit == "hrs" else 1.0
