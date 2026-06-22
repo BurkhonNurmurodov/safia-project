@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Manager, AppSetting, PPProduct, PPWorkCenter, PPDaily, PPReconciliation, PPUpload
+from app.models import Manager, AppSetting, ProductionData, PPProduct, PPWorkCenter, PPDaily, PPReconciliation, PPUpload
 from app.permissions import require_page
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
