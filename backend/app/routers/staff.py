@@ -1687,6 +1687,7 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
     is_task = payload.get("target_type") == "task"
     target  = payload.get("target_manager_id")
     ttime   = payload.get("transfer_time")
+    rtime   = payload.get("return_time")
     for emp in payload.get("employees", []):
         att = db.query(Attendance).filter(
             Attendance.manager_id  == doc.manager_id,
@@ -1695,7 +1696,7 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
         ).first()
         if not att:
             continue
-        plan = _compute_split(emp.get("snapshot") or {}, ttime)
+        plan = _compute_split(emp.get("snapshot") or {}, ttime, rtime)
         if not plan or (not is_task and not target):
             # Can't split → fall back to a plain full move.
             if is_task:
