@@ -601,31 +601,40 @@ def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
     return out
 
 
-def _trudoyomkost_payload(db, manager_ids, d_from, d_to) -> dict:
-    shift_min, productive_min = _constants(db)
-    mids = _resolve_analysis_managers(db, manager_ids)
-    names = ({m.id: m.name for m in db.query(Manager).filter(Manager.id.in_(mids)).all()}
-             if mids else {})
+def _trudoyomkost_payload(db, manager_ids, d_from, d_to, shift=None) -> dict:
+    # Load the current window plus the preceding equal-length window in one pass,
+    # so the Δ KPI reuses the same data.
+    span = (d_to - d_from).days + 1
+    prev_to = d_from - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=span - 1)
+    loaded = _load_plan_by_manager(db, manager_ids, shift, prev_from, d_to)
 
     matrix: list[dict] = []
     profile_avgs = [[] for _ in range(7)]   # per weekday: each brigadir's weekday-avg
     profile_tot = [0.0] * 7
     daily_out: list[dict] = []
     period_total = 0.0
+    prev_total = 0.0
     distinct_dates: set = set()
 
-    for mid in mids:
-        series = _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min)
-        if not series:
-            continue
+    for mid, entry in loaded.items():
         wd_plan = [[] for _ in range(7)]
-        for day, v in series.items():
+        in_window = False
+        for day, v in entry["days"].items():
+            if prev_from <= day <= prev_to:
+                prev_total += v["plan"]
+                continue
+            if not (d_from <= day <= d_to):
+                continue
+            in_window = True
             wd = day.weekday()
             wd_plan[wd].append(v["plan"])
             period_total += v["plan"]
             distinct_dates.add(day)
             daily_out.append({"manager_id": mid, "date": day.isoformat(),
                               "weekday": wd, "plan": v["plan"], "actual": v["actual"]})
+        if not in_window:
+            continue
         by_weekday, row_vals = [], []
         for wd in range(7):
             vals = wd_plan[wd]
@@ -636,7 +645,7 @@ def _trudoyomkost_payload(db, manager_ids, d_from, d_to) -> dict:
                 profile_tot[wd] += sum(vals)
                 row_vals.extend(vals)
         matrix.append({
-            "manager_id": mid, "name": names.get(mid, str(mid)),
+            "manager_id": mid, "name": entry["name"],
             "by_weekday": by_weekday,
             "row_avg": (sum(row_vals) / len(row_vals)) if row_vals else 0.0,
             "row_total": sum(row_vals),
@@ -654,11 +663,6 @@ def _trudoyomkost_payload(db, manager_ids, d_from, d_to) -> dict:
     nonzero = [(wd, profile_tot[wd]) for wd in range(7) if profile_tot[wd] > 0]
     busiest = max(nonzero, key=lambda x: x[1]) if nonzero else (None, 0.0)
     lightest = min(nonzero, key=lambda x: x[1]) if nonzero else (None, 0.0)
-
-    span = (d_to - d_from).days + 1
-    prev_to = d_from - timedelta(days=1)
-    prev_from = prev_to - timedelta(days=span - 1)
-    prev_total = _period_plan_total(db, mids, prev_from, prev_to, shift_min, productive_min)
     delta_pct = ((period_total - prev_total) / prev_total * 100.0) if prev_total > 0 else None
 
     return {
