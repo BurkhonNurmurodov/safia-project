@@ -99,6 +99,16 @@ export default function FleetLineChart({
 
   const clearAll = () => setSelected(new Set());
 
+  const dragRow = useDragSelect(
+    name => selected.has(name),
+    (name, value) => setSelected((prev) => {
+      if (prev.has(name) === value) return prev;
+      const next = new Set(prev);
+      value ? next.add(name) : next.delete(name);
+      return next;
+    }),
+  );
+
   // ── series ──────────────────────────────────────────────────────────────────
 
   // Fleet AVG: mean of all managers per date
