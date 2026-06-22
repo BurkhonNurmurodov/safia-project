@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import { useFilters } from "../../context/FilterContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import { useDragSelect } from "../../hooks/useDragSelect";
 import DateRangePicker from "../ui/DateRangePicker";
 import api from "../../utils/api";
 
