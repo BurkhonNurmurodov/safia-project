@@ -1569,6 +1569,55 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           </div>
         )}
 
+        {/* return-time carve-out — only once a transfer time exists. The away
+            stint is [transfer, return]; the worker comes back to the home unit. */}
+        {canUseTime && useTime && transferTime && (
+          <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={useReturn}
+                onClick={() => setUseReturn(v => !v)}
+                className="relative inline-flex items-center rounded-full transition-colors flex-shrink-0"
+                style={{ width: 36, height: 20, background: useReturn ? "var(--brand)" : "var(--border-md)" }}>
+                <span
+                  className="inline-block rounded-full transition-transform"
+                  style={{ width: 16, height: 16, background: "#fff",
+                    transform: useReturn ? "translateX(18px)" : "translateX(2px)",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.3)" }} />
+              </button>
+              <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.returnTimeToggle")}</span>
+            </label>
+            {useReturn && (returnWindow ? (
+              <button
+                type="button"
+                onClick={() => setReturnPickerOpen(true)}
+                className="w-28 text-xs px-3 py-2 rounded-lg outline-none flex items-center justify-between gap-2"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)",
+                         color: returnTime ? "var(--text-1)" : "var(--text-4)" }}>
+                <span>{returnTime || t("staff.returnTimePlaceholder")}</span>
+                <Clock size={13} style={{ color: "var(--text-4)" }} />
+              </button>
+            ) : (
+              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("staff.returnTimeNoOptions")}</span>
+            ))}
+            {useReturn && returnTime && (
+              <span className="text-[11px] flex-1 min-w-[180px]" style={{ color: "var(--text-4)" }}>
+                {t(targetIsTask ? "staff.returnTimeHintTask" : "staff.returnTimeHint")}
+              </span>
+            )}
+            <TimeWheelPicker
+              open={returnPickerOpen && !!returnWindow}
+              lo={returnWindow?.lo}
+              hi={returnWindow?.hi}
+              value={returnTime}
+              onConfirm={(v) => { setReturnTime(v); setReturnPickerOpen(false); }}
+              onClose={() => setReturnPickerOpen(false)}
+            />
+          </div>
+        )}
+
         {/* employee search */}
         <div className="px-5 py-2.5 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <div className="relative">
