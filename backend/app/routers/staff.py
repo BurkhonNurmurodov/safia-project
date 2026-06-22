@@ -2255,6 +2255,7 @@ class DocCreateBody(BaseModel):
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
     transfer_time:     Optional[str] = None   # "HH:MM" — split (→ supervisor or task)
+    return_time:       Optional[str] = None   # "HH:MM" — carve-out end (the away stint is [T,R])
 
 
 def _build_role_payload(db: Session, manager_id: int, d: date, new_role: str, employees: List[str]):
