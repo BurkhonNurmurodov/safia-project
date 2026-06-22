@@ -17,6 +17,7 @@ import AdminUpload from "./pages/admin/AdminUpload";
 import Staff from "./pages/Staff";
 import Daily from "./pages/Daily";
 import Production from "./pages/Production";
+import Trudoyomkost from "./pages/Trudoyomkost";
 import Login from "./pages/Login";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
