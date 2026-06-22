@@ -60,6 +60,14 @@ export default function GlobalFilters() {
       ? brigadirIds.filter(x => x !== id)
       : [...brigadirIds, id]);
   }
+  const dragRow = useDragSelect(
+    id => brigadirIds.includes(Number(id)),
+    (id, value) => setBrigadirIds(prev => {
+      const n = Number(id);
+      if (prev.includes(n) === value) return prev;
+      return value ? [...prev, n] : prev.filter(x => x !== n);
+    }),
+  );
 
   function handleSelectAll() {
     if (allChecked) {
