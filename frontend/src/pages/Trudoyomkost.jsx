@@ -224,11 +224,33 @@ export default function Trudoyomkost() {
       formatter: (v) => (v == null ? "" : Math.round(v).toLocaleString("ru-RU")),
       offsetY: -5, style: { fontSize: "10px", colors: ["var(--text-2)"] }, background: { enabled: false },
     },
-    xaxis: { categories: trend.cats, labels: { style: { colors: labelColor, fontSize: "11px" } }, title: { text: T.week, style: { color: labelColor, fontSize: "10px", fontWeight: 400 } } },
+    xaxis: {
+      categories: trend.cats,
+      labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: -30, rotateAlways: false, hideOverlappingLabels: true, trim: false },
+      title: { text: T.week, style: { color: labelColor, fontSize: "10px", fontWeight: 400 } },
+    },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => Math.round(v).toLocaleString("ru-RU") } },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
     legend: { labels: { colors: legendColor }, fontSize: "11px", markers: { width: 10, height: 10, radius: 3 } },
-    tooltip: { theme: "dark", y: { formatter: (v) => (v == null ? "—" : `${v.toLocaleString("ru-RU")} ${unitLabel}`) } },
+    tooltip: {
+      theme: "dark",
+      custom: ({ dataPointIndex }) => {
+        const wk = trend.weeks?.[dataPointIndex];
+        if (!wk) return "";
+        const header = `${ddmm(wk)} – ${ddmm(addDaysISO(wk, 6))}`;
+        const rows = trend.series.map((s) => {
+          const val = s.data[dataPointIndex];
+          if (val == null) return "";
+          const date = s.dashed ? "" : ` · ${ddmm(addDaysISO(wk, s.weekday))}`;
+          return `<div style="display:flex;align-items:center;gap:6px;padding:1px 0">
+            <span style="width:8px;height:8px;border-radius:2px;background:${s.color};display:inline-block;${s.dashed ? "opacity:.7" : ""}"></span>
+            <span style="color:#9ca3af">${s.name}${date}</span>
+            <b style="color:#f3f4f6;margin-left:auto">${val.toLocaleString("ru-RU")} ${unitLabel}</b></div>`;
+        }).join("");
+        return `<div style="padding:8px 10px;background:#1a1d27;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:11px;min-width:190px">
+          <div style="color:#D4A95C;font-weight:600;margin-bottom:5px">${header}</div>${rows}</div>`;
+      },
+    },
   };
 
   async function exportExcel() {
