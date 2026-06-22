@@ -49,6 +49,9 @@ DEFAULT_PAGE_ACCESS = {
     # (manager 5). Flip on "supervisor" from the Access tab to let brigadirs in —
     # note that enables it for ALL supervisors (per-user gating is a later phase).
     "production": [],
+    # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
+    # the analyst roles; supervisors can be toggled on from the Access tab.
+    "trudoyomkost": ["top-manager", "shift-manager"],
 }
 
 
