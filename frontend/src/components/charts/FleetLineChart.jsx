@@ -272,6 +272,7 @@ export default function FleetLineChart({
                   return (
                     <label
                       key={name}
+                      {...dragRow(name)}
                       className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
                       style={{ fontSize: 12, color: "var(--text-2)" }}
                     >
