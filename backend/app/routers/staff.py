@@ -1711,9 +1711,10 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
 
         leftover_id = None
         if plan["stay"]:
-            # Before-T side wins: worker keeps their name on the sending unit;
-            # clock-out trimmed to T. Early arrival stays as-is on this side.
-            att.clock_in_out    = f'{plan["C"]}-{plan["T"]}'
+            # Home side wins: worker keeps their name on the sending unit. No return
+            # → clock-out trimmed to T; carve-out (return) → full C–O span, since the
+            # home slices [C,T]+[R,O] can't be one HH:MM range. Early stays here.
+            att.clock_in_out    = plan.get("home_clock") or f'{plan["C"]}-{plan["T"]}'
             att.hours_worked    = plan["part1"]
             att.effective_hours = plan["part1_eff"]
             # early_arrival_min unchanged — early belongs to the original unit
