@@ -1750,7 +1750,8 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 # stripped): once the name has left, the original unit isn't credited
                 # for the worker clocking in before their scheduled start.
                 att.manager_id        = target
-                att.clock_in_out      = f'{plan["T"]}-{plan["O"]}'
+                # No return → away runs T–O; carve-out → just the [T,R] stint.
+                att.clock_in_out      = plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}'
                 att.hours_worked      = plan["part2"]
                 att.early_arrival_min = 0          # early stays on the original unit
                 att.effective_hours   = plan["part2"]
