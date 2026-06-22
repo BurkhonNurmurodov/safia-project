@@ -1960,6 +1960,7 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
         "target_manager_name": target_manager_name,
         "task_name":           task_name,
         "transfer_time":       transfer_time,
+        "return_time":         return_time,
         "employees":           emp_rows,
     }
 
