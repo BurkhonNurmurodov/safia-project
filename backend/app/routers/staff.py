@@ -2020,6 +2020,7 @@ def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool 
         "target_manager_name":  payload.get("target_manager_name"),
         "task_name":            payload.get("task_name"),
         "transfer_time":        payload.get("transfer_time"),
+        "return_time":          payload.get("return_time"),
         "employee_count":   len(employees),
         "created_by_telegram_id": doc.created_by_telegram_id,
         "created_by_name":  doc.created_by_name,
