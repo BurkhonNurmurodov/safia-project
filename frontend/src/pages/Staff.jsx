@@ -1326,6 +1326,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           for (let i = lo; i <= hi; i++) n.add(names[i]);
           return n;
         });
+        window.getSelection?.()?.removeAllRanges();   // drop the shift-click text highlight
         return;
       }
     }
