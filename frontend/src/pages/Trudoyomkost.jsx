@@ -232,7 +232,7 @@ export default function Trudoyomkost() {
     setExporting(true);
     try {
       const res = await api.get("/api/production/trudoyomkost/export.xlsx", {
-        params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, mode: wdMode, unit, lang },
+        params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, mode: wdMode, unit, lang, shift },
         responseType: "blob",
       });
       const url = URL.createObjectURL(res.data);
