@@ -2346,8 +2346,9 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
         db, manager_id, d, body.target_type, body.target_manager_id, body.task_name,
     )
     ttime = _normalize_transfer_time(caller, ttype, body.transfer_time)
+    rtime = _normalize_return_time(ttype, ttime, body.return_time)
     payload = _build_exchange_payload(db, manager_id, d, ttype, tgt_id, tgt_name, task_name,
-                                      body.employees, transfer_time=ttime)
+                                      body.employees, transfer_time=ttime, return_time=rtime)
     if not payload["employees"]:
         raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
     if ttype == "task":
