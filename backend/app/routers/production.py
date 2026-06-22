@@ -554,68 +554,51 @@ WEEKDAY_LABELS = {
 }
 
 
-def _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min) -> dict:
-    """{date: {'plan': minutes, 'actual': minutes}} for one brigadir over a range."""
-    products = (
-        db.query(PPProduct)
-        .filter(PPProduct.manager_id == mid, PPProduct.active.is_(True))
-        .order_by(PPProduct.sort_order, PPProduct.id).all()
-    )
-    if not products:
-        return {}
-    wcs = (
-        db.query(PPWorkCenter)
-        .filter(PPWorkCenter.manager_id == mid, PPWorkCenter.active.is_(True))
-        .order_by(PPWorkCenter.sort_order, PPWorkCenter.id).all()
-    )
-    prod_dicts = [{
-        "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
-        "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
-        "sort_order": p.sort_order,
-    } for p in products]
-    wc_dicts = [{
-        "code": w.code, "shtatka": w.shtatka,
-        "capacity": (float(w.capacity) if w.capacity is not None else None),
-        "sort_order": w.sort_order,
-    } for w in wcs]
-
-    daily = db.query(PPDaily).filter(
-        PPDaily.manager_id == mid, PPDaily.date >= d_from, PPDaily.date <= d_to).all()
-    by_date: dict = {}
-    for d in daily:
-        by_date.setdefault(d.date, []).append(d)
-
-    out: dict = {}
-    for day, rows in by_date.items():
-        quantities = {}
-        for d in rows:
-            plan_eff = d.plan_override if d.plan_override is not None else d.plan_qty
-            actual_eff = d.actual_override if d.actual_override is not None else d.actual_qty
-            quantities[(d.sap_code, d.work_center)] = {
-                "plan_qty": float(plan_eff or 0), "actual_qty": float(actual_eff or 0)}
-        res = compute_dashboard(products=prod_dicts, quantities=quantities, work_centers=wc_dicts,
-                                shift_min=shift_min, productive_min=productive_min)
-        tot = res["totals"]
-        out[day] = {"plan": tot["total_plan_labor"], "actual": tot["total_actual_labor"]}
+def _date_strings(d_from: date, d_to: date) -> list[str]:
+    """Inclusive list of 'DD.MM.YYYY' keys — production_data.date is stored as text."""
+    out, cur = [], d_from
+    while cur <= d_to:
+        out.append(cur.strftime("%d.%m.%Y"))
+        cur += timedelta(days=1)
     return out
 
 
-def _period_plan_total(db, mids, d_from, d_to, shift_min, productive_min) -> float:
-    """Σ planned labour (minutes) across brigadirs in a window — drives the Δ KPI."""
-    total = 0.0
-    for mid in mids:
-        for v in _labor_for_manager(db, mid, d_from, d_to, shift_min, productive_min).values():
-            total += v["plan"]
-    return total
+def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
+    """Planned trudoyomkost from the synced *source* sheet (admin → "Manba").
 
+    production_data.prod_plan = planned production minutes per brigadir per day,
+    for every brigadir in the sheet. Rows are keyed back to Manager.id by an exact
+    name match, so non-brigadir rows (totals/categories) are dropped. An optional
+    shift / manager_ids filter narrows the brigadir set (same as other endpoints).
 
-def _resolve_analysis_managers(db, requested) -> list[int]:
-    """Brigadirs that have planning data, optionally narrowed to a requested subset."""
-    have = {r[0] for r in db.query(PPDaily.manager_id).distinct().all()}
-    have |= {r[0] for r in db.query(PPProduct.manager_id).distinct().all()}
-    if requested:
-        have &= {int(x) for x in requested}
-    return sorted(have)
+    Returns {manager_id: {"name": str, "days": {date: {"plan": m, "actual": m}}}}.
+    """
+    managers = db.query(Manager)
+    if shift:
+        managers = managers.filter(Manager.shift == shift)
+    if manager_ids:
+        managers = managers.filter(Manager.id.in_([int(x) for x in manager_ids]))
+    by_name = {m.name: m for m in managers.all()}
+    if not by_name:
+        return {}
+
+    rows = db.query(ProductionData).filter(
+        ProductionData.manager_name.in_(list(by_name.keys())),
+        ProductionData.date.in_(_date_strings(d_from, d_to)),
+    ).all()
+
+    out: dict = {}
+    for r in rows:
+        mgr = by_name.get(r.manager_name)
+        if not mgr:
+            continue
+        try:
+            day = datetime.strptime(r.date, "%d.%m.%Y").date()
+        except ValueError:
+            continue
+        e = out.setdefault(mgr.id, {"name": mgr.name, "days": {}})
+        e["days"][day] = {"plan": float(r.prod_plan or 0), "actual": float(r.prod_actual or 0)}
+    return out
 
 
 def _trudoyomkost_payload(db, manager_ids, d_from, d_to) -> dict:
