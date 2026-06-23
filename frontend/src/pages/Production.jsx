@@ -63,6 +63,7 @@ const COLS = [
   { key: "vyp", label: "Вып %", align: "right", hint: "Факт ÷ План" },
   { key: "fact", label: "Факт", align: "right", edit: true, hint: "Поставлено (Excel «План пост»)" },
   { key: "plan", label: "ПЛАН", align: "right", edit: true, hint: "Кол-во операции" },
+  { key: "actual_labor", label: "Факт труд.", align: "right", hint: "Факт × Труд. (мин) — фактическая трудоёмкость" },
   { key: "labor_total", label: "Общ. труд.", align: "right", hint: "Общая трудоёмкость (мин)" },
   { key: "minutes", label: "Минут", align: "right" },
   { key: "pareto", label: "Парето", align: "right", hint: "Доля в общей трудоёмкости" },
