@@ -482,12 +482,12 @@ export default function Production() {
           <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{rows.length} SKU</span>
         } />
         <div className="overflow-auto max-h-[70vh]">
-          <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+          <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)]" style={{ color: "var(--text-1)" }}>
             <thead>
               <tr style={{ color: "var(--text-3)" }}>
                 {COLS.map((c) => (
                   <th key={c.key} title={c.hint}
-                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold ${c.align === "right" ? "text-right" : "text-left"}`}
+                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold ${c.align === "center" ? "text-center" : c.align === "right" ? "text-right" : "text-left"}`}
                     style={{ background: "var(--bg-inner)" }}>
                     {c.label}
                   </th>
