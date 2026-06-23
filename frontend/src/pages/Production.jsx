@@ -454,10 +454,11 @@ export default function Production() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {wcs.map((w) => {
             const c = loadColor(w.load);
+            const wc = wcColor(w.work_center);
             return (
-              <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" style={{ background: "var(--bg-card)", color: "var(--text-1)" }}>{w.work_center}</span>
+                  <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}` }}>{w.work_center}</span>
                   <span className="text-sm font-bold tabular-nums" style={{ color: c }}>{pct(w.load)}</span>
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
