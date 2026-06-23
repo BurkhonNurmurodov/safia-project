@@ -57,16 +57,16 @@ const hexToRgba = (hex, a) => {
 const COLS = [
   { key: "sap_code", label: "Сап код", align: "left" },
   { key: "name", label: "Наименование", align: "left" },
-  { key: "labor", label: "Труд.", align: "right", hint: "Трудоёмкость (сек/ед)" },
-  { key: "wc", label: "Команда", align: "left" },
-  { key: "people", label: "ЛЮДИ", align: "right" },
-  { key: "vyp", label: "Вып %", align: "right", hint: "Факт ÷ План" },
-  { key: "fact", label: "Факт", align: "right", edit: true, hint: "Поставлено (Excel «План пост»)" },
-  { key: "plan", label: "ПЛАН", align: "right", edit: true, hint: "Кол-во операции" },
-  { key: "actual_labor", label: "Факт труд.", align: "right", hint: "Факт × Труд. (мин) — фактическая трудоёмкость" },
-  { key: "labor_total", label: "Общ. труд.", align: "right", hint: "Общая трудоёмкость (мин)" },
-  { key: "minutes", label: "Минут", align: "right" },
-  { key: "pareto", label: "Парето", align: "right", hint: "Доля в общей трудоёмкости" },
+  { key: "labor", label: "Труд.", align: "center", hint: "Трудоёмкость (сек/ед)" },
+  { key: "wc", label: "Команда", align: "center" },
+  { key: "people", label: "ЛЮДИ", align: "center" },
+  { key: "vyp", label: "Вып %", align: "center", hint: "Факт ÷ План" },
+  { key: "fact", label: "Факт", align: "center", edit: true, hint: "Поставлено (Excel «План пост»)" },
+  { key: "plan", label: "ПЛАН", align: "center", edit: true, hint: "Кол-во операции" },
+  { key: "actual_labor", label: "Факт труд.", align: "center", hint: "Факт × Труд. (мин) — фактическая трудоёмкость" },
+  { key: "labor_total", label: "Общ. труд.", align: "center", hint: "Общая трудоёмкость (мин)" },
+  { key: "minutes", label: "Минут", align: "center" },
+  { key: "pareto", label: "Парето", align: "center", hint: "Доля в общей трудоёмкости" },
 ];
 
 // ── thin progress bar ────────────────────────────────────────────────────────
