@@ -36,6 +36,23 @@ const vypColor = (v) => (v == null ? "var(--text-4)" : v >= 0.95 ? GREEN : v >= 
 // load (Загруженность): >100% over-capacity, ≥80% well-loaded, else under-loaded
 const loadColor = (v) => (v == null ? "var(--text-4)" : v > 1.001 ? RED : v >= 0.8 ? GREEN : "var(--brand-text)");
 
+// per-команда identity colour — stable for a given work-center code (hash → palette),
+// so the same team keeps its colour across the cards and the table regardless of order.
+const WC_PALETTE = [
+  "#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899",
+  "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#a855f7",
+];
+const wcColor = (wc) => {
+  const s = String(wc ?? "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return WC_PALETTE[h % WC_PALETTE.length];
+};
+const hexToRgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
 // Russian column labels, exactly as the ABC Excel ("Sheet1 ...")
 const COLS = [
   { key: "sap_code", label: "Сап код", align: "left" },
