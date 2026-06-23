@@ -502,6 +502,7 @@ export default function Production() {
               )}
               {rows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
+                const wc = wcColor(r.work_center);
                 return (
                   <tr key={`${r.sap_code}-${r.work_center}-${i}`}
                     className="transition-colors hover:bg-[var(--bg-inner)]"
