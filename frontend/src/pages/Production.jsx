@@ -462,12 +462,14 @@ export default function Production() {
         <SectionHead icon={Boxes} title="Позиции" right={
           <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{rows.length} SKU</span>
         } />
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
             <thead>
-              <tr style={{ color: "var(--text-3)", background: "var(--bg-inner)" }}>
+              <tr style={{ color: "var(--text-3)" }}>
                 {COLS.map((c) => (
-                  <th key={c.key} title={c.hint} className={`px-3 py-2.5 font-semibold ${c.align === "right" ? "text-right" : "text-left"}`}>
+                  <th key={c.key} title={c.hint}
+                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold ${c.align === "right" ? "text-right" : "text-left"}`}
+                    style={{ background: "var(--bg-inner)" }}>
                     {c.label}
                   </th>
                 ))}
