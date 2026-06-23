@@ -104,7 +104,7 @@ function VypCell({ value }) {
   if (value == null) return <span style={{ color: "var(--text-4)" }}>—</span>;
   const c = vypColor(value);
   return (
-    <div className="flex items-center gap-2 justify-end">
+    <div className="flex items-center gap-2 justify-center">
       <div className="w-10 hidden sm:block"><Bar value={value} color={c} height={4} /></div>
       <span className="tabular-nums font-semibold" style={{ color: c, minWidth: 46, textAlign: "right" }}>{pct(value)}</span>
     </div>
