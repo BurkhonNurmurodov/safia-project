@@ -514,7 +514,7 @@ export default function Production() {
                         : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
                     </td>
                     <td className="px-3 py-2 text-left">
-                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>{r.work_center}</span>
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.people, 0)}</td>
                     <td className="px-3 py-2 text-right"><VypCell value={vyp} /></td>
