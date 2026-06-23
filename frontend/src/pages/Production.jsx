@@ -525,6 +525,7 @@ export default function Production() {
                     <td className="px-3 py-2 text-right">
                       <QtyCell value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
                     </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.actual_labor, 1)}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(r.total_labor, 1)}</td>
                     <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>{fmt(r.minutes, 1)}</td>
                     <td className="px-3 py-2 text-right">
