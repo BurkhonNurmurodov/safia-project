@@ -396,7 +396,7 @@ export default function Production() {
         <Kpi label="Вып %" value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
           bar={totals.completion} barColor={vypColor(totals.completion)} primary />
         <Kpi label="Людей (Σ)" value={fmt(totals.total_people, 0)} icon={Users} />
-        <Kpi label="Штатка (Σ)" value={fmt(totals.total_shtatka, 0)} icon={ClipboardList} />
+        <Kpi label="Общ. труд. Факт (мин)" value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
         <Kpi label="Общ. труд. (мин)" value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
         <Kpi label="Ср. загруженность" value={pct(totals.avg_load)} icon={Gauge} accent={loadColor(totals.avg_load)}
           bar={totals.avg_load} barColor={loadColor(totals.avg_load)} />
