@@ -283,7 +283,7 @@ function SheetSourceEditor() {
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t("admin.sheetSources")}</div>
       </div>
       <div className="space-y-4">
-        {["source", "shift_report"].map((name) => {
+        {["source", "shift_report", "leaders"].map((name) => {
           const current = sources.find((s) => s.name === name)?.sheet_id || "";
           const rs    = refreshState[name] || "idle";
           const msg   = refreshMsg[name]   || "";
@@ -291,7 +291,7 @@ function SheetSourceEditor() {
           return (
             <div key={name}>
               <div className="text-[11px] text-gray-500 mb-1 capitalize">
-                {name === "source" ? t("admin.source") : t("admin.shiftReport")}
+                {name === "source" ? t("admin.source") : name === "leaders" ? t("admin.leadersSheet") : t("admin.shiftReport")}
               </div>
               <div className="flex gap-2">
                 <input
