@@ -62,3 +62,25 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
 
     db.commit()
     return {"managers_synced": len(dt_total), "downtime_rows": count, "categories": cat_names}
+
+
+def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
+    """Fetch leader checklist submissions from the leaders sheet and persist.
+    Wipe-and-reload, mirroring the other source syncs."""
+    rows = read_leader_data(sheet_id)
+
+    db.query(LeaderChecklist).delete()
+
+    count = 0
+    for r in rows:
+        db.add(LeaderChecklist(
+            date=r["date"],
+            supervisor=r["supervisor"],
+            leader=r["leader"],
+            completion=r["completion"],
+            tasks=r["tasks"],
+        ))
+        count += 1
+
+    db.commit()
+    return {"leader_rows": count}
