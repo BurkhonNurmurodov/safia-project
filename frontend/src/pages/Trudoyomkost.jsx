@@ -326,8 +326,13 @@ export default function Trudoyomkost() {
   const pfOptions = {
     chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
     colors: pfColors,
-    stroke: { curve: "smooth", width: pfWidths },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.30, opacityTo: 0.02, stops: [0, 90, 100] } },
+    stroke: { curve: "smooth", width: pfWidths, dashArray: pfSeries.map((s) => (s._ma ? 5 : 0)) },
+    fill: { type: "gradient", gradient: {
+      shadeIntensity: 1,
+      opacityFrom: pfSeries.map((s) => (s._ma ? 0 : 0.30)),
+      opacityTo: pfSeries.map((s) => (s._ma ? 0 : 0.02)),
+      stops: [0, 90, 100],
+    } },
     dataLabels: { enabled: false },
     xaxis: {
       categories: planFakt.cats,
