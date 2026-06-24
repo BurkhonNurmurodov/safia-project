@@ -2520,6 +2520,7 @@ const t = {
     "admin.sheetSources":    "Источники Google Sheets",
     "admin.source":          "Источник",
     "admin.shiftReport":     "Отчёт смены",
+    "admin.leadersSheet":    "Таблица лидеров",
     "admin.save":            "Сохранить",
     "admin.refresh":         "Обновить",
     "admin.saved":           "Сохранено",
