@@ -69,6 +69,7 @@ const TXT = {
     week: "week", noSelection: "Pick a brigadir and weekdays for the trend", exporting: "Exporting…",
     planFaktTitle: "Plan vs Fakt", plan: "Plan", fakt: "Fakt", fulfillment: "Fulfillment",
     filter: "Filter", search: "Search", clearAll: "Clear all", noMatch: "No match",
+    ma: "Moving average", dayShort: "d",
   },
 };
 
