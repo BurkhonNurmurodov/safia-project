@@ -190,7 +190,7 @@ export default function Trudoyomkost() {
     cacheSet("pfSel", pfSel.size ? JSON.stringify([...pfSel]) : "");
     cacheSet("trendSup", trendSup != null ? String(trendSup) : "");
     cacheSet("selWd", JSON.stringify([...selWd]));
-  }, [wdMode, pfMode, pfShowAvg, pfSel, trendSup, selWd]);
+  }, [wdMode, pfMode, pfShowAvg, pfMA, pfSel, trendSup, selWd]);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["trudoyomkost", dateFrom, dateTo, brigadirIds, shift],
