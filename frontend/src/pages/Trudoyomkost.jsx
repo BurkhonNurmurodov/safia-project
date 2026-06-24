@@ -79,6 +79,14 @@ const WD_COLORS = ["#C8973F", "#E8A0B0", "#5DCAA5", "#7FB3E8", "#D4A95C", "#C088
 // stable palette for individual brigadir lines on the plan-vs-fakt chart (gold reserved for the avg)
 const BRIGADIR_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#a855f7", "#f43f5e"];
 const PF_AVG_COLOR = "#C8973F";
+const PF_MA_COLOR = "#94a3b8";   // neutral dashed overlay — reads as a smoothed reference
+const MA_WINDOW = 7;             // trailing window (data points ≈ days) for the moving average
+
+// trailing simple moving average over an array that may contain null gaps
+const movingAvg = (arr, w) => arr.map((_, i) => {
+  const slice = arr.slice(Math.max(0, i - w + 1), i + 1).filter((v) => v != null);
+  return slice.length ? Math.round(slice.reduce((a, b) => a + b, 0) / slice.length) : null;
+});
 
 const pad = (n) => String(n).padStart(2, "0");
 const addDaysISO = (iso, n) => {
