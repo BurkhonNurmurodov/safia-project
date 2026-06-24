@@ -772,3 +772,225 @@ def trudoyomkost_export(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# --------------------------------------------------------------------------- #
+# Trudoyomkost — worker prediction & statistics.
+#
+# Derives a *required worker count per brigadir per day* from the planned
+# trudoyomkost (production_data.prod_plan, minutes) and runs the full statistical
+# battery on it, folded onto weekday and month-phase, so a supervisor can predict
+# how many workers to call for an upcoming shift and how confident that prediction
+# is.
+#
+# Workers N = ROUND(prod_plan_min / (0.85 × 480)). This is the inverse of the
+# platform's baseline_util = prod_plan / (480 × headcount) at the 85% target
+# utilisation used everywhere (VERIFIX_EFFICIENCY); 0.85×480 = 408 min is the
+# productive capacity of one worker per shift, consistent with the ABC engine's
+# S ≈ W×0.85×480 (see PPWorkCenter). Because N is a constant × prod_plan, the
+# relative-dispersion stats (CV, and hence the confidence rating) measure *plan
+# stability*; layering in actual attendance is a later phase.
+# --------------------------------------------------------------------------- #
+VERIFIX_EFFICIENCY = 0.85
+SHIFT_STD_MIN = 480.0
+CAPACITY_PER_WORKER_MIN = VERIFIX_EFFICIENCY * SHIFT_STD_MIN  # 408
+MIN_SAMPLE = 3                       # below this a cell is "insufficient data"
+FULL_SAMPLE = 6                      # below this, "high" is capped to "medium"
+CV_HIGH = 0.10                       # CV < 0.10 → high · ≤ 0.20 → medium · else low
+CV_MED = 0.20
+MONTH_PHASES = (("early", 1, 10), ("mid", 11, 20), ("late", 21, 31))
+
+
+def _workers_from_plan(plan_min: float) -> int:
+    """Required workers for one shift from planned trudoyomkost minutes."""
+    return int(round((plan_min or 0.0) / CAPACITY_PER_WORKER_MIN))
+
+
+def _phase_of(day: date) -> str:
+    for name, lo, hi in MONTH_PHASES:
+        if lo <= day.day <= hi:
+            return name
+    return "late"
+
+
+def _confidence(n: int, cv: Optional[float]) -> str:
+    """High/medium/low from coefficient of variation, gated by sample size."""
+    if n < MIN_SAMPLE or cv is None:
+        return "insufficient"
+    if cv < CV_HIGH:
+        base = "high"
+    elif cv <= CV_MED:
+        base = "medium"
+    else:
+        base = "low"
+    if n < FULL_SAMPLE and base == "high":
+        base = "medium"              # small-sample penalty
+    return base
+
+
+def _cell_stats(values: list[int]) -> dict:
+    """Full stat battery for one (brigadir × weekday) or month-phase sample.
+
+    recommend = round(median) (robust 'typical day'); band = mean ± σ.
+    """
+    n = len(values)
+    if n == 0:
+        return {"n": 0, "min": None, "max": None, "range": None, "mean": None,
+                "median": None, "mode": None, "variance": None, "std": None,
+                "cv": None, "confidence": "insufficient",
+                "recommend": None, "band_lo": None, "band_hi": None}
+    mn, mx = min(values), max(values)
+    mean = statistics.mean(values)
+    median = statistics.median(values)
+    mode = statistics.multimode(values)[0]      # integer counts → mode is meaningful
+    variance = statistics.variance(values) if n >= 2 else 0.0   # sample (n−1)
+    std = statistics.stdev(values) if n >= 2 else 0.0
+    cv = (std / mean) if mean > 0 else None
+    return {
+        "n": n, "min": mn, "max": mx, "range": mx - mn,
+        "mean": round(mean, 2), "median": median, "mode": mode,
+        "variance": round(variance, 2), "std": round(std, 2),
+        "cv": (round(cv, 4) if cv is not None else None),
+        "confidence": _confidence(n, cv),
+        "recommend": int(round(median)),
+        "band_lo": max(0, int(round(mean - std))),
+        "band_hi": int(round(mean + std)),
+    }
+
+
+def _explained_fraction(all_values: list[int], groups: list[list[int]]) -> Optional[float]:
+    """η² — fraction of total variance explained by a grouping (between-group SS
+    ÷ total SS), using population variances. Higher = the grouping is the better
+    predictor of daily worker count."""
+    n = len(all_values)
+    if n < 2:
+        return None
+    total_var = statistics.pvariance(all_values)
+    if total_var == 0:
+        return None
+    within = sum(len(g) * (statistics.pvariance(g) if len(g) >= 2 else 0.0) for g in groups) / n
+    return round(max(0.0, min(1.0, 1 - within / total_var)), 3)
+
+
+def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None) -> dict:
+    span = (d_to - d_from).days + 1
+    loaded = _load_plan_by_manager(db, manager_ids, shift, d_from, d_to)
+
+    supervisors: list[dict] = []
+    cells: list[dict] = []
+    by_sup: list[dict] = []
+    wd_pool = [[] for _ in range(7)]     # per weekday: every day's worker count (all brigadirs)
+    wd_cvs = [[] for _ in range(7)]      # per weekday: each brigadir's cell CV
+    wd_predictable = [0] * 7
+    wd_total_sup = [0] * 7
+    daily_total: dict[date, int] = {}    # date → workers summed over brigadirs
+
+    for mid, entry in sorted(loaded.items(), key=lambda kv: kv[1]["name"].lower()):
+        name = entry["name"]
+        wd_vals = [[] for _ in range(7)]
+        all_vals: list[int] = []
+        for day, v in entry["days"].items():
+            if not (d_from <= day <= d_to):
+                continue
+            w = _workers_from_plan(v["plan"])
+            wd = day.weekday()
+            wd_vals[wd].append(w)
+            all_vals.append(w)
+            daily_total[day] = daily_total.get(day, 0) + w
+        if not all_vals:
+            continue
+        supervisors.append({"id": mid, "name": name})
+
+        sup_cvs, predictable_wds, rated = [], [], []
+        for wd in range(7):
+            st = _cell_stats(wd_vals[wd])
+            cells.append({"manager_id": mid, "name": name, "weekday": wd, **st})
+            if st["n"] > 0:
+                wd_pool[wd].extend(wd_vals[wd])
+                wd_total_sup[wd] += 1
+            if st["cv"] is not None:
+                sup_cvs.append(st["cv"])
+                wd_cvs[wd].append(st["cv"])
+                rated.append((wd, st["cv"]))
+            if st["confidence"] in ("high", "medium"):
+                predictable_wds.append(wd)
+                wd_predictable[wd] += 1
+        mean_cv = (sum(sup_cvs) / len(sup_cvs)) if sup_cvs else None
+        by_sup.append({
+            "manager_id": mid, "name": name,
+            "n_total": len(all_vals),
+            "mean_workers": round(statistics.mean(all_vals), 1),
+            "mean_cv": (round(mean_cv, 4) if mean_cv is not None else None),
+            "confidence": _confidence(len(all_vals), mean_cv),
+            "predictable_weekdays": predictable_wds,
+            "best_weekday": (min(rated, key=lambda x: x[1])[0] if rated else None),
+            "worst_weekday": (max(rated, key=lambda x: x[1])[0] if rated else None),
+        })
+
+    by_weekday = []
+    for wd in range(7):
+        vals, cvs = wd_pool[wd], wd_cvs[wd]
+        mcv = (sum(cvs) / len(cvs)) if cvs else None
+        by_weekday.append({
+            "weekday": wd, "n": len(vals),
+            "mean_workers": (round(statistics.mean(vals), 1) if vals else None),
+            "mean_cv": (round(mcv, 4) if mcv is not None else None),
+            "confidence": _confidence(len(vals), mcv),
+            "predictable_supervisors": wd_predictable[wd],
+            "total_supervisors": wd_total_sup[wd],
+        })
+
+    # month-phase + which grouping explains daily worker count better
+    dates_sorted = sorted(daily_total)
+    totals = [daily_total[d] for d in dates_sorted]
+    phase_groups = {name: [] for name, _, _ in MONTH_PHASES}
+    wd_groups: dict[int, list[int]] = {wd: [] for wd in range(7)}
+    for d in dates_sorted:
+        phase_groups[_phase_of(d)].append(daily_total[d])
+        wd_groups[d.weekday()].append(daily_total[d])
+    phases = [{"phase": name, **{k: _cell_stats(phase_groups[name])[k]
+                                 for k in ("n", "min", "max", "mean", "median", "std", "cv")}}
+              for name, _, _ in MONTH_PHASES]
+    exp_wd = _explained_fraction(totals, list(wd_groups.values()))
+    exp_ph = _explained_fraction(totals, list(phase_groups.values()))
+
+    rated_sup = [s for s in by_sup if s["mean_cv"] is not None]
+    rated_wd = [w for w in by_weekday if w["mean_cv"] is not None]
+    overall = {
+        "mean_daily_total_workers": (round(statistics.mean(totals), 1) if totals else None),
+        "total_supervisors": len(supervisors),
+        "distinct_days": len(dates_sorted),
+        "most_predictable_supervisor": (min(rated_sup, key=lambda s: s["mean_cv"])["name"] if rated_sup else None),
+        "least_predictable_supervisor": (max(rated_sup, key=lambda s: s["mean_cv"])["name"] if rated_sup else None),
+        "most_predictable_weekday": (min(rated_wd, key=lambda w: w["mean_cv"])["weekday"] if rated_wd else None),
+        "least_predictable_weekday": (max(rated_wd, key=lambda w: w["mean_cv"])["weekday"] if rated_wd else None),
+    }
+
+    return {
+        "range": {"from": d_from.isoformat(), "to": d_to.isoformat(), "days": span},
+        "capacity_per_worker_min": CAPACITY_PER_WORKER_MIN,
+        "supervisors": supervisors,
+        "cells": cells,
+        "by_supervisor": by_sup,
+        "by_weekday": by_weekday,
+        "month_phase": {
+            "phases": phases,
+            "explained": {"weekday": exp_wd, "month_phase": exp_ph,
+                          "winner": ("weekday" if (exp_wd or 0) >= (exp_ph or 0) else "month_phase")},
+        },
+        "overall": overall,
+        "unit": "workers",
+    }
+
+
+@router.get("/api/production/trudoyomkost/worker-stats")
+def trudoyomkost_worker_stats(
+    date_from: str = Query(...),
+    date_to: str = Query(...),
+    manager_id: list[int] = Query(default=[]),
+    shift: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    d_from, d_to = _parse_range(date_from, date_to)
+    return _worker_stats_payload(db, manager_id, d_from, d_to, shift)
