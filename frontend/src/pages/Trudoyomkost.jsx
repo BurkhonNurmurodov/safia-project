@@ -433,6 +433,9 @@ export default function Trudoyomkost() {
             )}
           </div>
         </div>
+
+        {/* worker prediction & statistics (derived-from-plan headcount) */}
+        <WorkerStats />
       </>)}
     </Layout>
   );
