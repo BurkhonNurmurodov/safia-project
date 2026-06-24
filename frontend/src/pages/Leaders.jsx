@@ -1,0 +1,494 @@
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import ReactApexChart from "react-apexcharts";
+import {
+  Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
+  X, CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
+} from "lucide-react";
+import Layout from "../components/layout/Layout";
+import api from "../utils/api";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { useChartTheme } from "../hooks/useChartTheme";
+
+// ── score colours (tuned for the dark dashboard, not the Bootstrap brand set) ──
+const C_BAD = "#ef4444", C_MID = "#C8973F", C_GOOD = "#22c55e";
+const scoreColor = (v) => (v < 50 ? C_BAD : v < 85 ? C_MID : C_GOOD);
+
+// ── UI copy, all 4 platform languages ─────────────────────────────────────────
+const TXT = {
+  uz: {
+    title: "Lider nazorati", avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr",
+    periodAll: "Barcha vaqt", periodToday: "Bugun", periodYesterday: "Kecha",
+    periodWeek: "Oxirgi 7 kun", periodCustom: "Boshqa oraliq…", to: "—",
+    supervisor: "Brigadir", allSups: "Barcha brigadirlar", leader: "Lider", allLeaders: "Barcha liderlar",
+    trend: "Bajarilish dinamikasi", taskTitle: "Vazifalar kesimida muvaffaqiyat",
+    standing: "Liderlar reytingi", supStanding: "Brigadirlar reytingi",
+    toggleLeader: "Lider", toggleSup: "Brigadir",
+    tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
+    thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
+    details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
+    noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
+    task: "Vazifa", noData: "Ma'lumot yo'q", taskInfoTitle: "Vazifalar mazmuni va talablari",
+    taskDesc: "Vazifa tavsifi", taskWeight: "Vazni", taskNote: "Eslatma / Talablar",
+  },
+  uz_cyrl: {
+    title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
+    periodAll: "Барча вақт", periodToday: "Бугун", periodYesterday: "Кеча",
+    periodWeek: "Охирги 7 кун", periodCustom: "Бошқа оралиқ…", to: "—",
+    supervisor: "Бригадир", allSups: "Барча бригадирлар", leader: "Лидер", allLeaders: "Барча лидерлар",
+    trend: "Бажарилиш динамикаси", taskTitle: "Вазифалар кесимида муваффақият",
+    standing: "Лидерлар рейтинги", supStanding: "Бригадирлар рейтинги",
+    toggleLeader: "Лидер", toggleSup: "Бригадир",
+    tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
+    thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
+    details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
+    noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
+    task: "Вазифа", noData: "Маълумот йўқ", taskInfoTitle: "Вазифалар мазмуни ва талаблари",
+    taskDesc: "Вазифа тавсифи", taskWeight: "Вазни", taskNote: "Эслатма / Талаблар",
+  },
+  ru: {
+    title: "Контроль лидеров", avgSuccess: "Средний успех", timePeriod: "Период",
+    periodAll: "За всё время", periodToday: "Сегодня", periodYesterday: "Вчера",
+    periodWeek: "Последние 7 дней", periodCustom: "Свой диапазон…", to: "—",
+    supervisor: "Бригадир", allSups: "Все бригадиры", leader: "Лидер", allLeaders: "Все лидеры",
+    trend: "Тренд выполнения", taskTitle: "Успех по задачам",
+    standing: "Рейтинг лидеров", supStanding: "Рейтинг бригадиров",
+    toggleLeader: "Лидер", toggleSup: "Бригадир",
+    tableTitle: "Последние отчёты (сначала низкий балл)",
+    thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
+    details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
+    noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
+    task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
+    taskDesc: "Описание задачи", taskWeight: "Вес", taskNote: "Примечания / Требования",
+  },
+  en: {
+    title: "Leader Monitoring", avgSuccess: "Average Success", timePeriod: "Period",
+    periodAll: "All Time", periodToday: "Today", periodYesterday: "Yesterday",
+    periodWeek: "Last 7 Days", periodCustom: "Custom Range…", to: "—",
+    supervisor: "Supervisor", allSups: "All Supervisors", leader: "Leader", allLeaders: "All Leaders",
+    trend: "Completion Trend", taskTitle: "Success per Task",
+    standing: "Leader Standings", supStanding: "Supervisor Standings",
+    toggleLeader: "Leader", toggleSup: "Supervisor",
+    tableTitle: "Recent Submissions (Low Score First)",
+    thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
+    details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
+    noIssues: "No issues reported.", noReason: "No reason provided for failure.",
+    task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
+    taskDesc: "Task Description", taskWeight: "Weight", taskNote: "Notes / Requirements",
+  },
+};
+
+// 12 task descriptions, carried over verbatim from apps-script/JavaScript.html.
+// The original only had Russian + English (its "uz" was Russian); uz/uz_cyrl
+// reuse the Russian text. Weights are language-independent.
+const TASK_DETAILS = [
+  { w: "10%", ru: { n: "Фиксация ежедневной загрузки ячейки (план)", note: "фотоотчет" }, en: { n: "Daily cell load fixation (plan)", note: "photo report" } },
+  { w: "5%",  ru: { n: "Каскадная встреча (открытие - планерка)", note: "Фотоотчет Распределение зон" }, en: { n: "Cascade meeting (briefing)", note: "Photo report Zone distribution" } },
+  { w: "10%", ru: { n: "СОП стандарт", note: "Фотоотчет Фиксация смежных ячеек" }, en: { n: "SOP Standard", note: "Photo report adjacent cell fixation" } },
+  { w: "15%", ru: { n: "КРУ обход цеха (3 раза в день) (9:00 - 11:00 - 15:00)", note: "Чек лист обхода" }, en: { n: "Workshop inspection (3x/day 9:00-11:00-15:00)", note: "Inspection checklist" } },
+  { w: "5%",  ru: { n: "Прием сырья (холодильник, склад)", note: "Контрольный лист" }, en: { n: "Receiving raw materials", note: "Control sheet" } },
+  { w: "5%",  ru: { n: "Контроль своевременных поставок (внутреняя логистика)", note: "Фиксация Тайминга захода" }, en: { n: "Internal logistics timing control", note: "Arrival timing fixation" } },
+  { w: "5%",  ru: { n: "Заполнение контрольного стенда (САП)", note: "фотоотчет" }, en: { n: "Control board filling (SAP)", note: "photo report" } },
+  { w: "5%",  ru: { n: "Заполнение обеспокоенности", note: "фотоотчет" }, en: { n: "Concern reporting", note: "photo report" } },
+  { w: "10%", ru: { n: "Фиксация 50% плана в течении смены", note: "Отчет бригадиру" }, en: { n: "50% plan fixation during shift", note: "Report to supervisor" } },
+  { w: "10%", ru: { n: "Закрытие плана САП", note: "Подтверждение бригадира" }, en: { n: "SAP plan closure", note: "Supervisor confirmation" } },
+  { w: "10%", ru: { n: "Составление графика", note: "Фотоотчет" }, en: { n: "Scheduling", note: "Photo report" } },
+  { w: "10%", ru: { n: "Контроль работы зам лидера", note: "Фотоотчет чек листа" }, en: { n: "Assistant leader work control", note: "Checklist photo report" } },
+];
+const taskDetail = (i, lang) => {
+  const td = TASK_DETAILS[i];
+  return { weight: td.w, ...(lang === "en" ? td.en : td.ru) };
+};
+
+const DAY = 86400000;
+const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
+
+// ── small atoms (mirror Trudoyomkost / Production idioms) ───────────────────────
+function SectionHead({ icon: Icon, title, right }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
+        {title}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function Select({ value, onChange, children }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="w-full text-sm rounded-lg px-2.5 py-2 outline-none cursor-pointer"
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}>
+      {children}
+    </select>
+  );
+}
+
+function Toggle({ value, onChange, options }) {
+  return (
+    <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+      {options.map(([id, label]) => (
+        <button key={id} onClick={() => onChange(id)}
+          className="px-3 py-1.5 text-xs font-medium transition-colors"
+          style={value === id ? { background: "var(--brand)", color: "#fff" } : { background: "var(--bg-inner)", color: "var(--text-3)" }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+      <div className="rounded-2xl flex flex-col overflow-hidden w-full"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,.35)", maxWidth: wide ? 860 : 560, maxHeight: "88vh" }}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)", background: "var(--brand)" }}>
+          <span className="text-sm font-semibold text-white truncate">{title}</span>
+          <button onClick={onClose} className="p-0.5 rounded text-white/80 hover:text-white"><X size={16} /></button>
+        </div>
+        <div className="overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── main page ──────────────────────────────────────────────────────────────────
+export default function Leaders() {
+  const { lang } = useLang();
+  const { tl } = useTranslit();
+  const { gridColor, labelColor, legendColor } = useChartTheme();
+  const T = TXT[lang] || TXT.uz;
+
+  const [period, setPeriod] = useState("last-week");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [fSup, setFSup] = useState("All");
+  const [fLeader, setFLeader] = useState("All");
+  const [standMode, setStandMode] = useState("leader");
+  const [standDir, setStandDir] = useState("desc");
+  const [detail, setDetail] = useState(null);
+  const [taskInfo, setTaskInfo] = useState(false);
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["leaders"],
+    queryFn: () => api.get("/api/leaders").then((r) => r.data),
+  });
+  const rows = data?.data ?? [];
+
+  // supervisor → leaders cascade
+  const supLeaderMap = useMemo(() => {
+    const map = { All: new Set() };
+    for (const r of rows) {
+      if (!r.supervisor || r.supervisor === "N/A") continue;
+      if (!map[r.supervisor]) map[r.supervisor] = new Set();
+      if (r.leader && r.leader !== "N/A") {
+        map[r.supervisor].add(r.leader);
+        map.All.add(r.leader);
+      }
+    }
+    return map;
+  }, [rows]);
+  const supervisors = useMemo(() => Object.keys(supLeaderMap).filter((s) => s !== "All").sort(), [supLeaderMap]);
+  const leaderOptions = useMemo(() => [...(supLeaderMap[fSup] || [])].sort(), [supLeaderMap, fSup]);
+
+  // date-period bounds (mirrors updateDashboard in JavaScript.html)
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const todayTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    let lo = 0, hi = Infinity;
+    if (period === "today") { lo = todayTs; hi = todayTs + DAY - 1; }
+    else if (period === "yesterday") { lo = todayTs - DAY; hi = todayTs - 1; }
+    else if (period === "last-week") { lo = todayTs - 7 * DAY; hi = now.getTime(); }
+    else if (period === "custom") {
+      if (startDate) lo = new Date(startDate).getTime();
+      if (endDate) hi = new Date(endDate).getTime() + DAY - 1;
+    }
+    return rows.filter((r) => {
+      const ts = new Date(r.date).getTime();
+      const dm = period === "all" || (ts >= lo && ts <= hi);
+      const sm = fSup === "All" || r.supervisor === fSup;
+      const lm = fLeader === "All" || r.leader === fLeader;
+      return dm && sm && lm;
+    });
+  }, [rows, period, startDate, endDate, fSup, fLeader]);
+
+  const hasData = filtered.length > 0;
+
+  // aggregates
+  const { avg, trendCats, trendVals, taskRates } = useMemo(() => {
+    if (!filtered.length) return { avg: 0, trendCats: [], trendVals: [], taskRates: [] };
+    const trendMap = {}; const taskCounts = new Array(12).fill(0); let total = 0;
+    for (const r of filtered) {
+      total += r.completion;
+      (trendMap[r.date] ||= { sum: 0, n: 0 });
+      trendMap[r.date].sum += r.completion; trendMap[r.date].n++;
+      (r.tasks || []).forEach((tk, i) => { if (tk.done) taskCounts[i]++; });
+    }
+    const keys = Object.keys(trendMap).sort();
+    return {
+      avg: Math.round(total / filtered.length),
+      trendCats: keys.map(ddmm),
+      trendVals: keys.map((k) => Math.round(trendMap[k].sum / trendMap[k].n)),
+      taskRates: taskCounts.map((c) => Math.round((c / filtered.length) * 100)),
+    };
+  }, [filtered]);
+
+  const standings = useMemo(() => {
+    const map = {};
+    for (const r of filtered) {
+      const key = standMode === "leader" ? r.leader : r.supervisor;
+      if (!key || key === "N/A") continue;
+      (map[key] ||= { sum: 0, n: 0 });
+      map[key].sum += r.completion; map[key].n++;
+    }
+    const entries = Object.entries(map).map(([name, v]) => ({ name, val: Math.round(v.sum / v.n) }));
+    entries.sort((a, b) => (standDir === "desc" ? b.val - a.val : a.val - b.val));
+    return entries;
+  }, [filtered, standMode, standDir]);
+
+  const tableRows = useMemo(
+    () => [...filtered].sort((a, b) => a.completion - b.completion),
+    [filtered]
+  );
+
+  // ── chart options ────────────────────────────────────────────────────────────
+  const baseAxis = {
+    grid: { borderColor: gridColor, strokeDashArray: 3 },
+    chart: { background: "transparent", toolbar: { show: false }, animations: { enabled: false } },
+  };
+
+  const trendOptions = {
+    ...baseAxis,
+    chart: { ...baseAxis.chart, type: "line", zoom: { enabled: false } },
+    colors: [C_MID], stroke: { curve: "smooth", width: 3 },
+    markers: { size: 4, strokeWidth: 0 },
+    dataLabels: { enabled: false },
+    xaxis: { categories: trendCats, labels: { style: { colors: labelColor, fontSize: "10px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { min: 0, max: 100, labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => Math.round(v) } },
+    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` } },
+  };
+
+  const taskOptions = {
+    ...baseAxis,
+    chart: { ...baseAxis.chart, type: "bar" },
+    plotOptions: { bar: { distributed: true, borderRadius: 3, columnWidth: "62%" } },
+    colors: taskRates.map(scoreColor),
+    dataLabels: { enabled: true, formatter: (v) => `${v}`, style: { fontSize: "9px", colors: ["#1a1208"] } },
+    legend: { show: false },
+    xaxis: { categories: taskRates.map((_, i) => `T${i + 1}`), labels: { style: { colors: labelColor, fontSize: "10px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { min: 0, max: 100, labels: { style: { colors: labelColor, fontSize: "10px" } } },
+    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` }, x: { formatter: (_, { dataPointIndex }) => `${T.task} ${dataPointIndex + 1}` } },
+  };
+
+  const standHeight = Math.max(240, standings.length * 34 + 40);
+  const standOptions = {
+    ...baseAxis,
+    chart: { ...baseAxis.chart, type: "bar" },
+    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 3, barHeight: "68%" } },
+    colors: standings.map((e) => scoreColor(e.val)),
+    dataLabels: { enabled: true, formatter: (v) => `${v}%`, style: { fontSize: "10px", colors: ["#fff"] }, offsetX: 0 },
+    legend: { show: false },
+    xaxis: { min: 0, max: 100, categories: standings.map((e) => tl(e.name)), labels: { style: { colors: labelColor, fontSize: "10px" } } },
+    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" } } },
+    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` } },
+  };
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  return (
+    <Layout title={T.title} showFilters={false}>
+      {/* Filter bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 mb-4">
+        {/* Average KPI */}
+        <div className="lg:col-span-3 rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.avgSuccess}</span>
+            <Gauge size={15} style={{ color: "var(--brand-text)" }} />
+          </div>
+          <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: hasData ? scoreColor(avg) : "var(--text-4)" }}>
+            {hasData ? `${avg}%` : "—"}
+          </div>
+        </div>
+
+        {/* Period */}
+        <div className="lg:col-span-3">
+          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
+          <Select value={period} onChange={setPeriod}>
+            <option value="all">{T.periodAll}</option>
+            <option value="today">{T.periodToday}</option>
+            <option value="yesterday">{T.periodYesterday}</option>
+            <option value="last-week">{T.periodWeek}</option>
+            <option value="custom">{T.periodCustom}</option>
+          </Select>
+          {period === "custom" && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+              <span style={{ color: "var(--text-4)" }}>{T.to}</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+            </div>
+          )}
+        </div>
+
+        {/* Supervisor */}
+        <div className="lg:col-span-3">
+          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
+          <Select value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}>
+            <option value="All">{T.allSups}</option>
+            {supervisors.map((s) => <option key={s} value={s}>{tl(s)}</option>)}
+          </Select>
+        </div>
+
+        {/* Leader */}
+        <div className="lg:col-span-3">
+          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
+          <Select value={fLeader} onChange={setFLeader}>
+            <option value="All">{T.allLeaders}</option>
+            {leaderOptions.map((l) => <option key={l} value={l}>{tl(l)}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      {isError && (
+        <div className="rounded-2xl p-4 text-sm mb-4" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
+          {error?.response?.data?.detail || "Error"}
+        </div>
+      )}
+      {isLoading && (
+        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>…</div>
+      )}
+      {!isLoading && !isError && !hasData && (
+        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>{T.noData}</div>
+      )}
+
+      {hasData && (<>
+        {/* Trend + Task */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SectionHead icon={TrendingUp} title={T.trend} />
+            <div className="px-2 py-2"><ReactApexChart type="line" series={[{ name: "%", data: trendVals }]} options={trendOptions} height={260} /></div>
+          </div>
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SectionHead icon={BarChart3} title={T.taskTitle}
+              right={<button onClick={() => setTaskInfo(true)} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
+            <div className="px-2 py-2"><ReactApexChart type="bar" series={[{ name: "%", data: taskRates }]} options={taskOptions} height={260} /></div>
+          </div>
+        </div>
+
+        {/* Standings */}
+        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={Trophy} title={standMode === "leader" ? T.standing : T.supStanding}
+            right={
+              <div className="flex items-center gap-2">
+                <Toggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
+                <Toggle value={standDir} onChange={setStandDir}
+                  options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
+              </div>
+            } />
+          <div className="px-2 py-2"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
+        </div>
+
+        {/* Recent submissions */}
+        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={ListChecks} title={T.tableTitle} />
+          <div className="overflow-x-auto" style={{ maxHeight: 460 }}>
+            <table className="w-full text-sm border-collapse" style={{ minWidth: 560 }}>
+              <thead className="sticky top-0" style={{ background: "var(--bg-inner)" }}>
+                <tr style={{ color: "var(--text-3)" }}>
+                  <th className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thDate}</th>
+                  <th className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thLeader}</th>
+                  <th className="text-center px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thScore}</th>
+                  <th className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thFailed}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thAction}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map((r) => {
+                  const failed = (r.tasks || []).filter((tk) => !tk.done).length;
+                  return (
+                    <tr key={r.uid} style={{ borderTop: "1px solid var(--border)" }}>
+                      <td className="px-4 py-2 text-xs whitespace-nowrap" style={{ color: "var(--text-4)" }}>{r.date}</td>
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(r.leader)}</td>
+                      <td className="px-4 py-2 text-center">
+                        <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
+                          {Math.round(r.completion)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-xs" style={{ color: failed ? "#ef4444" : "var(--text-4)" }}>{failed} {T.missed}</td>
+                      <td className="px-4 py-2 text-right">
+                        <button onClick={() => setDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
+                          {T.details}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>)}
+
+      {/* Detail modal */}
+      {detail && (
+        <Modal wide title={`${T.modalTitle}: ${tl(detail.leader)} (${detail.date})`} onClose={() => setDetail(null)}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {(detail.tasks || []).map((tk, i) => {
+              const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
+              return (
+                <div key={i} className="rounded-xl p-3" style={{ background: tk.done ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${tk.done ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}` }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
+                    {tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
+                  </div>
+                  <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>
+                  {photos.map((p, pi) => (
+                    <img key={pi} src={p} alt="" onClick={() => window.open(p, "_blank")} loading="lazy"
+                      className="mt-2 w-full rounded-lg border cursor-zoom-in" style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+
+      {/* Task-info modal */}
+      {taskInfo && (
+        <Modal wide title={T.taskInfoTitle} onClose={() => setTaskInfo(false)}>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr style={{ background: "var(--brand)", color: "#fff" }}>
+                <th className="text-left px-3 py-2 text-xs font-semibold" style={{ width: 50 }}>ID</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold">{T.taskDesc}</th>
+                <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: 70 }}>{T.taskWeight}</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold">{T.taskNote}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TASK_DETAILS.map((_, i) => {
+                const d = taskDetail(i, lang);
+                return (
+                  <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td className="px-3 py-2 font-bold text-xs" style={{ color: "var(--text-4)" }}>T{i + 1}</td>
+                    <td className="px-3 py-2 text-xs font-medium" style={{ color: "var(--text-1)" }}>{d.n}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>{d.weight}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs" style={{ color: "var(--text-3)" }}>{d.note}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Modal>
+      )}
+    </Layout>
+  );
+}
