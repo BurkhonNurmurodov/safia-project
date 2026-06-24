@@ -29,6 +29,29 @@ def _reset_client():
     _gc = None
 
 
+def get_service_account_email() -> Optional[str]:
+    """The service account address that must be granted access to every source
+    sheet. Derived from the same credentials file used to authorize gspread, so
+    it always matches the account actually doing the reading."""
+    try:
+        creds = Credentials.from_service_account_file(
+            settings.google_credentials_file,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        email = getattr(creds, "service_account_email", None)
+        if email:
+            return email
+    except Exception:
+        pass
+    # Fallback: read client_email straight from the JSON.
+    try:
+        import json
+        with open(settings.google_credentials_file) as f:
+            return json.load(f).get("client_email")
+    except Exception:
+        return None
+
+
 def serial_to_date(val) -> Optional[str]:
     try:
         n = int(float(val))
