@@ -414,20 +414,23 @@ export default function Trudoyomkost() {
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Activity} title={`${T.planFaktTitle} · ${unitLabel}`}
             right={
-              <span className="flex items-center gap-2.5 text-[11px] tabular-nums">
-                <span style={{ color: "#C8973F" }}>{T.plan} {fmt(planFakt.totalPlan)}</span>
-                <span style={{ color: "#5DCAA5" }}>{T.fakt} {fmt(planFakt.totalFakt)}</span>
-                {planFakt.totalPlan > 0 && (
-                  <span className="font-semibold px-1.5 py-0.5 rounded-md"
-                    style={{ color: pfColor(planFakt.overallPct), background: pfColor(planFakt.overallPct) + "1f" }}>
-                    {planFakt.overallPct}%
-                  </span>
-                )}
-              </span>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="flex items-center gap-2.5 text-[11px] tabular-nums">
+                  <span style={{ color: "#C8973F" }}>{T.plan} {fmt(planFakt.totalPlan)}</span>
+                  <span style={{ color: "#5DCAA5" }}>{T.fakt} {fmt(planFakt.totalFakt)}</span>
+                  {planFakt.totalPlan > 0 && (
+                    <span className="font-semibold px-1.5 py-0.5 rounded-md"
+                      style={{ color: pfColor(planFakt.overallPct), background: pfColor(planFakt.overallPct) + "1f" }}>
+                      {planFakt.overallPct}%
+                    </span>
+                  )}
+                </span>
+                <Toggle value={pfMode} onChange={setPfMode} options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]} />
+              </div>
             } />
           <div className="px-2 py-2">
             {planFakt.cats.length > 0 ? (
-              <ReactApexChart type="area" series={pfSeries} options={pfOptions} height={280} />
+              <ReactApexChart key={pfMode} type="area" series={pfSeries} options={pfOptions} height={280} />
             ) : (
               <div className="py-16 text-center text-sm" style={{ color: "var(--text-4)" }}>{T.noData}</div>
             )}
