@@ -150,6 +150,11 @@ export default function Trudoyomkost() {
 
   const [wdMode, setWdMode] = useState("avg");          // avg | total — drives profile + matrix
   const [pfMode, setPfMode] = useState("diff");         // planned | actual | diff — plan vs fakt lens
+  const [pfShowAvg, setPfShowAvg] = useState(true);     // average line visible on plan-vs-fakt
+  const [pfSel, setPfSel] = useState(() => new Set());  // brigadir ids shown as their own lines
+  const [pfDropOpen, setPfDropOpen] = useState(false);
+  const [pfSearch, setPfSearch] = useState("");
+  const pfDropRef = useRef(null);
   const [trendSup, setTrendSup] = useState(null);       // single brigadir id
   const [selWd, setSelWd] = useState(() => new Set([0, 1, 2, 3, 4])); // Mon–Fri default
   const [exporting, setExporting] = useState(false);
