@@ -141,6 +141,122 @@ def read_headcount_data(sheet_id: str, min_date: Optional[datetime] = None):
     return hc_data, [d for d, _ in date_cols]
 
 
+def _leader_parse_date(val) -> Optional[str]:
+    """Normalize a leaders-sheet date cell to ISO 'YYYY-MM-DD'. Handles the
+    common display formats plus a raw serial-number fallback."""
+    s = str(val).strip()
+    if not s:
+        return None
+    # Already ISO-ish (Apps Script sliced the first 10 chars of an ISO string).
+    head = s[:10]
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(head, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    # Raw Google Sheets serial number.
+    try:
+        n = float(s)
+        if n > 30000:  # ~ year 1982+, i.e. a plausible date serial, not a count
+            return (datetime(1899, 12, 30) + timedelta(days=int(n))).strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+    return None
+
+
+def _leader_parse_pct(val) -> float:
+    """Parse a completion cell to a 0–100 number. A 0–1 fraction is scaled ×100,
+    matching getDashboardData() in apps-script/Code.gs."""
+    s = str(val).replace("%", "").replace("\xa0", "").replace(" ", "").replace(",", ".").strip()
+    try:
+        v = float(s)
+    except ValueError:
+        return 0.0
+    if 0 < v <= 1:
+        v *= 100
+    return round(v, 2)
+
+
+_LEADER_DONE_TOKENS = {"ҳа", "ha", "yes", "true", "1", "да", "✓", "✔"}
+
+
+def read_leader_data(sheet_id: str, tab: str = "Data") -> list[dict]:
+    """Read the leaders checklist sheet using the fixed layout from
+    apps-script/Code.gs (0-indexed, header row dropped):
+
+        col 2  (C)      = date
+        col 3  (D)      = brigadir / supervisor
+        cols 4–15 (E–P) = leader name (first non-empty wins)
+        cols 16–51      = 12 tasks × 3  (done, photo, reason)
+        col 52 (BA)     = completion %
+
+    Returns one dict per submission row: {date, supervisor, leader,
+    completion, tasks:[{id, done, photo, reason}]}.
+    """
+    try:
+        gc = get_client()
+        sh = gc.open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(tab)
+        except Exception:
+            ws = sh.get_worksheet(0)  # fall back to the first sheet, like the script
+        rows = ws.get_all_values()
+    except Exception:
+        _reset_client()
+        raise
+
+    if rows:
+        rows = rows[1:]  # drop the header row
+
+    DATE_COL, SUP_COL = 2, 3
+    LEADER_COLS = range(4, 16)
+    TASK_START, TASK_COUNT = 16, 12
+    COMPLETION_COL = 52
+
+    def cell(row, i):
+        return str(row[i]).strip() if i < len(row) else ""
+
+    out: list[dict] = []
+    for row in rows:
+        # Skip blank rows (Code.gs: skip when col 0 and date are both empty).
+        if not (cell(row, 0) or cell(row, DATE_COL)):
+            continue
+        date_str = _leader_parse_date(cell(row, DATE_COL))
+        if not date_str:
+            continue
+
+        supervisor = cell(row, SUP_COL) or "N/A"
+        leader = "N/A"
+        for c in LEADER_COLS:
+            v = cell(row, c)
+            if v:
+                leader = v
+                break
+
+        completion = _leader_parse_pct(cell(row, COMPLETION_COL))
+
+        tasks = []
+        for i in range(TASK_COUNT):
+            base = TASK_START + i * 3
+            done_raw = cell(row, base)
+            tasks.append({
+                "id": i + 1,
+                "done": done_raw.lower() in _LEADER_DONE_TOKENS,
+                "photo": cell(row, base + 1),
+                "reason": cell(row, base + 2),
+            })
+
+        out.append({
+            "date": date_str,
+            "supervisor": supervisor,
+            "leader": leader,
+            "completion": completion,
+            "tasks": tasks,
+        })
+
+    return out
+
+
 def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optional[datetime] = None):
     """Read equipment downtime from shift report Sheet1."""
     rows = _fetch_sheet_rows(sheet_id, "Sheet1", unformatted=False)
