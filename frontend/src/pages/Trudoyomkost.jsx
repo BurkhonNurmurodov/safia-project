@@ -157,16 +157,26 @@ export default function Trudoyomkost() {
   const conv = (m) => (isHrs ? m / 60 : m);
   const fmt = (m) => Math.round(conv(m || 0)).toLocaleString("ru-RU");
 
-  const [wdMode, setWdMode] = useState("avg");          // avg | total — drives profile + matrix
-  const [pfMode, setPfMode] = useState("diff");         // planned | actual | diff — plan vs fakt lens
-  const [pfShowAvg, setPfShowAvg] = useState(true);     // average line visible on plan-vs-fakt
-  const [pfSel, setPfSel] = useState(() => new Set());  // brigadir ids shown as their own lines
+  const [wdMode, setWdMode] = useState(() => initStr("wdMode", "avg"));   // avg | total — drives profile + matrix
+  const [pfMode, setPfMode] = useState(() => initStr("pfMode", "diff"));  // planned | actual | diff — plan vs fakt lens
+  const [pfShowAvg, setPfShowAvg] = useState(() => initBool("pfShowAvg", true)); // average line visible on plan-vs-fakt
+  const [pfSel, setPfSel] = useState(() => initSet("pfSel", new Set()));  // brigadir ids shown as their own lines
   const [pfDropOpen, setPfDropOpen] = useState(false);
   const [pfSearch, setPfSearch] = useState("");
   const pfDropRef = useRef(null);
-  const [trendSup, setTrendSup] = useState(null);       // single brigadir id
-  const [selWd, setSelWd] = useState(() => new Set([0, 1, 2, 3, 4])); // Mon–Fri default
+  const [trendSup, setTrendSup] = useState(() => initNum("trendSup", null)); // single brigadir id
+  const [selWd, setSelWd] = useState(() => initSet("selWd", new Set([0, 1, 2, 3, 4]))); // Mon–Fri default
   const [exporting, setExporting] = useState(false);
+
+  // Persist page-local filters to cache so the view restores on reload/return.
+  useEffect(() => {
+    cacheSet("wdMode", wdMode);
+    cacheSet("pfMode", pfMode);
+    cacheSet("pfShowAvg", pfShowAvg ? "1" : "0");
+    cacheSet("pfSel", pfSel.size ? JSON.stringify([...pfSel]) : "");
+    cacheSet("trendSup", trendSup != null ? String(trendSup) : "");
+    cacheSet("selWd", JSON.stringify([...selWd]));
+  }, [wdMode, pfMode, pfShowAvg, pfSel, trendSup, selWd]);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["trudoyomkost", dateFrom, dateTo, brigadirIds, shift],
