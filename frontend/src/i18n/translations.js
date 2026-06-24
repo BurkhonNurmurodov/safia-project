@@ -926,6 +926,7 @@ const t = {
     "nav.daily":           "Кунлик",
     "nav.production":      "Ишлаб чиқариш",
     "nav.trudoyomkost":    "Trudoyomkost",
+    "nav.leaders":         "Лидер назорати",
     "shiftDaily.title":        "Кунлик — Смена",
     "shiftDaily.prevDay":      "олдинги кун",
     "shiftDaily.vsPrev":       "олдинги кунга нисбатан",
