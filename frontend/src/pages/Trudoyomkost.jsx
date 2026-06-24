@@ -518,6 +518,13 @@ export default function Trudoyomkost() {
                   )}
                 </span>
                 <Toggle value={pfMode} onChange={setPfMode} options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]} />
+                <button onClick={() => setPfMA((v) => !v)} title={`${T.ma} · ${MA_WINDOW} ${T.dayShort}`}
+                  className="px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+                  style={pfMA
+                    ? { background: PF_MA_COLOR, color: "#1a1208", border: `1px solid ${PF_MA_COLOR}` }
+                    : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
+                  MA
+                </button>
               </div>
             } />
 
