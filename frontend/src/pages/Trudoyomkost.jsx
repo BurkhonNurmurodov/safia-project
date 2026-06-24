@@ -140,6 +140,7 @@ export default function Trudoyomkost() {
   const fmt = (m) => Math.round(conv(m || 0)).toLocaleString("ru-RU");
 
   const [wdMode, setWdMode] = useState("avg");          // avg | total — drives profile + matrix
+  const [pfMode, setPfMode] = useState("diff");         // planned | actual | diff — plan vs fakt lens
   const [trendSup, setTrendSup] = useState(null);       // single brigadir id
   const [selWd, setSelWd] = useState(() => new Set([0, 1, 2, 3, 4])); // Mon–Fri default
   const [exporting, setExporting] = useState(false);
