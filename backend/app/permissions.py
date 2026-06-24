@@ -52,6 +52,9 @@ DEFAULT_PAGE_ACCESS = {
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
     "trudoyomkost": ["top-manager", "shift-manager"],
+    # Leader checklist monitoring (parsed from the leaders Google Sheet). Pilot:
+    # admin-only by default; open up roles from the Access tab.
+    "leaders": [],
 }
 
 
