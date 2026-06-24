@@ -783,17 +783,13 @@ def trudoyomkost_export(
 # how many workers to call for an upcoming shift and how confident that prediction
 # is.
 #
-# Workers N = ROUND(prod_plan_min / (0.85 × 480)). This is the inverse of the
-# platform's baseline_util = prod_plan / (480 × headcount) at the 85% target
-# utilisation used everywhere (VERIFIX_EFFICIENCY); 0.85×480 = 408 min is the
-# productive capacity of one worker per shift, consistent with the ABC engine's
-# S ≈ W×0.85×480 (see PPWorkCenter). Because N is a constant × prod_plan, the
-# relative-dispersion stats (CV, and hence the confidence rating) measure *plan
-# stability*; layering in actual attendance is a later phase.
+# Workers N = ROUND(prod_plan_min / 480) — total planned trudoyomkost divided by
+# one worker's full standard shift (480 min). Because N is a constant × prod_plan,
+# the relative-dispersion stats (CV, and hence the confidence rating) measure
+# *plan stability*; layering in actual attendance is a later phase.
 # --------------------------------------------------------------------------- #
-VERIFIX_EFFICIENCY = 0.85
 SHIFT_STD_MIN = 480.0
-CAPACITY_PER_WORKER_MIN = VERIFIX_EFFICIENCY * SHIFT_STD_MIN  # 408
+CAPACITY_PER_WORKER_MIN = SHIFT_STD_MIN  # 480 — one worker = one full standard shift
 MIN_SAMPLE = 3                       # below this a cell is "insufficient data"
 FULL_SAMPLE = 6                      # below this, "high" is capped to "medium"
 CV_HIGH = 0.10                       # CV < 0.10 → high · ≤ 0.20 → medium · else low
