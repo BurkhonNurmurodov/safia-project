@@ -12,6 +12,7 @@ const t = {
     "nav.daily":           "Kunlik",
     "nav.production":      "Ishlab chiqarish",
     "nav.trudoyomkost":    "Trudoyomkost",
+    "nav.leaders":         "Lider nazorati",
     "shiftDaily.title":        "Kunlik — Smena",
     "shiftDaily.prevDay":      "oldingi kun",
     "shiftDaily.vsPrev":       "oldingi kunga nisbatan",
