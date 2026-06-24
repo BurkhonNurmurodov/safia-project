@@ -32,6 +32,7 @@ const TXT = {
     brigadirsN: "brigadir", normHour: "norm-soat", min: "min", rise: "o'sish", fall: "pasayish",
     week: "hafta", noSelection: "Trend uchun brigadir va hafta kunlarini tanlang", exporting: "Yuklanmoqda…",
     planFaktTitle: "Plan va Fakt", plan: "Plan", fakt: "Fakt", fulfillment: "Bajarilish",
+    filter: "Filtr", search: "Qidirish", clearAll: "Tozalash", noMatch: "Mos kelmadi",
   },
   uz_cyrl: {
     title: "Trudoyomkost — таҳлил", kpiPeriod: "Давр Σ", kpiDaily: "Кунлик ўртача",
