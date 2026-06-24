@@ -1605,6 +1605,7 @@ const t = {
     "admin.sheetSources":    "Google Sheet Манбалари",
     "admin.source":          "Манба",
     "admin.shiftReport":     "Смена Ҳисоботи",
+    "admin.leadersSheet":    "Лидерлар жадвали",
     "admin.save":            "Сақлаш",
     "admin.refresh":         "Янгилаш",
     "admin.saved":           "Сақланди",
