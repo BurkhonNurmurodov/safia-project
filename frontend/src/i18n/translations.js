@@ -3435,6 +3435,7 @@ const t = {
     "admin.sheetSources":    "Google Sheet Sources",
     "admin.source":          "Source",
     "admin.shiftReport":     "Shift Report",
+    "admin.leadersSheet":    "Leaders Sheet",
     "admin.save":            "Save",
     "admin.refresh":         "Refresh",
     "admin.saved":           "Saved",
