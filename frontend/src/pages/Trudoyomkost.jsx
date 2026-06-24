@@ -43,6 +43,7 @@ const TXT = {
     brigadirsN: "бригадир", normHour: "норм-соат", min: "мин", rise: "ўсиш", fall: "пасайиш",
     week: "ҳафта", noSelection: "Тренд учун бригадир ва ҳафта кунларини танланг", exporting: "Юкланмоқда…",
     planFaktTitle: "План ва Факт", plan: "План", fakt: "Факт", fulfillment: "Бажарилиш",
+    filter: "Фильтр", search: "Қидириш", clearAll: "Тозалаш", noMatch: "Мос келмади",
   },
   ru: {
     title: "Трудоёмкость — анализ", kpiPeriod: "Σ за период", kpiDaily: "Средне в день",
