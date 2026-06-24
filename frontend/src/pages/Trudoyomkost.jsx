@@ -68,6 +68,10 @@ const TXT = {
 // one on-brand colour per weekday for the trend's multi-line view
 const WD_COLORS = ["#C8973F", "#E8A0B0", "#5DCAA5", "#7FB3E8", "#D4A95C", "#C088D8", "#E0A458"];
 
+// stable palette for individual brigadir lines on the plan-vs-fakt chart (gold reserved for the avg)
+const BRIGADIR_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#a855f7", "#f43f5e"];
+const PF_AVG_COLOR = "#C8973F";
+
 const pad = (n) => String(n).padStart(2, "0");
 const addDaysISO = (iso, n) => {
   const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n);
