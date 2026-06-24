@@ -188,6 +188,69 @@ export default function Trudoyomkost() {
     tooltip: { theme: "dark", y: { formatter: (v) => `${(v || 0).toLocaleString("ru-RU")} ${unitLabel}` } },
   };
 
+  // ── plan vs fakt over time: Σ across the filtered brigadirs, per date ─────────
+  const pfColor = (pct) => (pct >= 100 ? "#22c55e" : pct >= 85 ? "#D4A95C" : "#ef4444");
+
+  const planFakt = useMemo(() => {
+    const rows = data?.daily ?? [];
+    if (!rows.length) return { cats: [], plan: [], fakt: [], totalPlan: 0, totalFakt: 0, overallPct: 0 };
+    const byDate = new Map();
+    let totalPlan = 0, totalFakt = 0;
+    for (const r of rows) {
+      const e = byDate.get(r.date) || { plan: 0, fakt: 0 };
+      e.plan += r.plan || 0;
+      e.fakt += r.actual || 0;
+      byDate.set(r.date, e);
+      totalPlan += r.plan || 0;
+      totalFakt += r.actual || 0;
+    }
+    const dates = [...byDate.keys()].sort();
+    return {
+      cats: dates.map(ddmm),
+      plan: dates.map((d) => Math.round(conv(byDate.get(d).plan))),
+      fakt: dates.map((d) => Math.round(conv(byDate.get(d).fakt))),
+      totalPlan, totalFakt,
+      overallPct: totalPlan > 0 ? Math.round((totalFakt / totalPlan) * 100) : 0,
+    };
+  }, [data, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pfSeries = [
+    { name: T.plan, data: planFakt.plan },
+    { name: T.fakt, data: planFakt.fakt },
+  ];
+
+  const pfOptions = {
+    chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+    colors: ["#C8973F", "#5DCAA5"],
+    stroke: { curve: "smooth", width: 2.5 },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90, 100] } },
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: planFakt.cats,
+      labels: { style: { colors: labelColor, fontSize: "10px" } },
+      axisBorder: { show: false }, axisTicks: { show: false },
+    },
+    yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => Math.round(v).toLocaleString("ru-RU") } },
+    grid: { borderColor: gridColor, strokeDashArray: 3 },
+    legend: { labels: { colors: legendColor }, fontSize: "11px", markers: { width: 10, height: 10, radius: 3 } },
+    markers: { size: planFakt.cats.length <= 14 ? 3 : 0, hover: { size: 5 } },
+    tooltip: {
+      theme: "dark",
+      shared: true,
+      custom: ({ dataPointIndex }) => {
+        const plan = planFakt.plan[dataPointIndex] ?? 0;
+        const fakt = planFakt.fakt[dataPointIndex] ?? 0;
+        const pct = plan > 0 ? Math.round((fakt / plan) * 100) : null;
+        return `<div style="padding:8px 10px;background:#1a1d27;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:11px;min-width:175px">
+          <div style="color:#D4A95C;font-weight:600;margin-bottom:5px">${planFakt.cats[dataPointIndex] ?? ""}</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:1px 0"><span style="width:8px;height:8px;border-radius:2px;background:#C8973F;display:inline-block"></span><span style="color:#9ca3af">${T.plan}</span><b style="color:#f3f4f6;margin-left:auto">${plan.toLocaleString("ru-RU")} ${unitLabel}</b></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:1px 0"><span style="width:8px;height:8px;border-radius:2px;background:#5DCAA5;display:inline-block"></span><span style="color:#9ca3af">${T.fakt}</span><b style="color:#f3f4f6;margin-left:auto">${fakt.toLocaleString("ru-RU")} ${unitLabel}</b></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 0 0;margin-top:3px;border-top:1px solid rgba(255,255,255,.1)"><span style="color:#9ca3af">${T.fulfillment}</span><b style="color:${pct == null ? "#9ca3af" : pfColor(pct)};margin-left:auto">${pct == null ? "—" : pct + "%"}</b></div>
+        </div>`;
+      },
+    },
+  };
+
   // ── trend: one line per selected weekday across weeks + flat avg reference ────
   const trend = useMemo(() => {
     const supDaily = (data?.daily ?? []).filter((d) => d.manager_id === trendSup);
