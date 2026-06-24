@@ -45,6 +45,7 @@ const TXT = {
     week: "ҳафта", noSelection: "Тренд учун бригадир ва ҳафта кунларини танланг", exporting: "Юкланмоқда…",
     planFaktTitle: "План ва Факт", plan: "План", fakt: "Факт", fulfillment: "Бажарилиш",
     filter: "Фильтр", search: "Қидириш", clearAll: "Тозалаш", noMatch: "Мос келмади",
+    ma: "Силжувчи ўртача", dayShort: "кун",
   },
   ru: {
     title: "Трудоёмкость — анализ", kpiPeriod: "Σ за период", kpiDaily: "Средне в день",
