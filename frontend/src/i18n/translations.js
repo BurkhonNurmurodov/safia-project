@@ -1840,6 +1840,7 @@ const t = {
     "nav.daily":           "Ежедневно",
     "nav.production":      "Производство",
     "nav.trudoyomkost":    "Трудоёмкость",
+    "nav.leaders":         "Контроль лидеров",
     "shiftDaily.title":        "Ежедневно — Смена",
     "shiftDaily.prevDay":      "пред. день",
     "shiftDaily.vsPrev":       "к пред. дню",
