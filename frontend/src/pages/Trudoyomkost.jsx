@@ -172,6 +172,7 @@ export default function Trudoyomkost() {
   const [wdMode, setWdMode] = useState(() => initStr("wdMode", "avg"));   // avg | total — drives profile + matrix
   const [pfMode, setPfMode] = useState(() => initStr("pfMode", "diff"));  // planned | actual | diff — plan vs fakt lens
   const [pfShowAvg, setPfShowAvg] = useState(() => initBool("pfShowAvg", true)); // average line visible on plan-vs-fakt
+  const [pfMA, setPfMA] = useState(() => initBool("pfMA", false)); // moving-average overlay on plan-vs-fakt
   const [pfSel, setPfSel] = useState(() => initSet("pfSel", new Set()));  // brigadir ids shown as their own lines
   const [pfDropOpen, setPfDropOpen] = useState(false);
   const [pfSearch, setPfSearch] = useState("");
