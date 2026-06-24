@@ -57,6 +57,7 @@ const TXT = {
     week: "неделя", noSelection: "Выберите бригадира и дни недели для тренда", exporting: "Загрузка…",
     planFaktTitle: "План и Факт", plan: "План", fakt: "Факт", fulfillment: "Выполнение",
     filter: "Фильтр", search: "Поиск", clearAll: "Очистить", noMatch: "Нет совпадений",
+    ma: "Скользящее среднее", dayShort: "дн",
   },
   en: {
     title: "Trudoyomkost — analysis", kpiPeriod: "Period Σ", kpiDaily: "Daily average",
