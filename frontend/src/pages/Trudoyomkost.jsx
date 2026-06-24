@@ -33,6 +33,7 @@ const TXT = {
     week: "hafta", noSelection: "Trend uchun brigadir va hafta kunlarini tanlang", exporting: "Yuklanmoqda…",
     planFaktTitle: "Plan va Fakt", plan: "Plan", fakt: "Fakt", fulfillment: "Bajarilish",
     filter: "Filtr", search: "Qidirish", clearAll: "Tozalash", noMatch: "Mos kelmadi",
+    ma: "Siljuvchi o'rtacha", dayShort: "kun",
   },
   uz_cyrl: {
     title: "Trudoyomkost — таҳлил", kpiPeriod: "Давр Σ", kpiDaily: "Кунлик ўртача",
