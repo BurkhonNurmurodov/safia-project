@@ -308,6 +308,37 @@ function SheetSourceEditor() {
         <Database size={15} className="text-[var(--brand-text)]" />
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t("admin.sheetSources")}</div>
       </div>
+
+      {/* Service account — every source sheet must be shared with this email */}
+      {svc?.email && (
+        <div className="mb-5 rounded-lg p-3" style={{ background: "#12151f", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="flex items-center gap-1.5 mb-2">
+            <AtSign size={13} className="text-[var(--brand-text)]" />
+            <span className="text-[11px] text-gray-400">{t("admin.serviceAccountHint")}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <code
+              onClick={copyEmail}
+              title={t("admin.copy")}
+              className="min-w-0 flex-1 truncate text-xs font-mono cursor-pointer text-[var(--brand-text)] bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2"
+            >
+              {svc.email}
+            </code>
+            <button
+              onClick={copyEmail}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                copied
+                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                  : "bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10"
+              }`}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? t("admin.copied") : t("admin.copy")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
         {["source", "shift_report", "leaders"].map((name) => {
           const current = sources.find((s) => s.name === name)?.sheet_id || "";
