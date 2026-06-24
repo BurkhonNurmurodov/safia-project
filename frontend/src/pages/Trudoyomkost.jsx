@@ -89,6 +89,15 @@ const mondayOfISO = (iso) => {
 };
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}.${m}`; };
 
+// ── page-local filter cache (mirrors FilterContext's zf_ localStorage convention)
+const CK = (k) => `zf_tk_${k}`;
+const cacheGet = (k) => { try { return localStorage.getItem(CK(k)); } catch { return null; } };
+const cacheSet = (k, v) => { try { (v == null || v === "") ? localStorage.removeItem(CK(k)) : localStorage.setItem(CK(k), v); } catch { /* ignore quota/private-mode */ } };
+const initStr  = (k, fb) => { const v = cacheGet(k); return v == null ? fb : v; };
+const initBool = (k, fb) => { const v = cacheGet(k); return v == null ? fb : v === "1"; };
+const initNum  = (k, fb) => { const v = cacheGet(k); return v == null || v === "" ? fb : Number(v); };
+const initSet  = (k, fb) => { try { const v = cacheGet(k); return v == null ? fb : new Set(JSON.parse(v)); } catch { return fb; } };
+
 // ── small UI atoms (mirror Production.jsx idioms) ──────────────────────────────
 function SectionHead({ icon: Icon, title, right }) {
   return (
