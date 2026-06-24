@@ -24,6 +24,7 @@ const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
+  { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
 ];
 
 function fmtDate(iso) {
