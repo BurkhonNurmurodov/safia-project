@@ -203,47 +203,97 @@ export default function Trudoyomkost() {
     tooltip: { theme: "dark", y: { formatter: (v) => `${(v || 0).toLocaleString("ru-RU")} ${unitLabel}` } },
   };
 
-  // ── plan vs fakt over time: Σ across the filtered brigadirs, per date ─────────
+  // ── plan vs fakt over time — average line + per-brigadir lines (Overview-style)
   const pfColor = (pct) => (pct >= 100 ? "#22c55e" : pct >= 85 ? "#D4A95C" : "#ef4444");
+  const pfIsDiff = pfMode === "diff";
 
+  // close the brigadir filter dropdown on an outside click
+  useEffect(() => {
+    function onDown(e) { if (pfDropRef.current && !pfDropRef.current.contains(e.target)) setPfDropOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const brigadirColor = (id) => {
+    const idx = supervisors.findIndex((s) => s.id === id);
+    return BRIGADIR_COLORS[(idx < 0 ? 0 : idx) % BRIGADIR_COLORS.length];
+  };
+  const nameOf = (id) => supervisors.find((s) => s.id === id)?.name ?? "";
+  const toggleBrig = (id) => setPfSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const pfDragRow = useDragSelect(
+    (id) => pfSel.has(Number(id)),
+    (id, value) => setPfSel((prev) => {
+      const n = Number(id);
+      if (prev.has(n) === value) return prev;
+      const next = new Set(prev);
+      value ? next.add(n) : next.delete(n);
+      return next;
+    }),
+  );
+
+  // raw plan/fakt folded per brigadir per date (minutes) + period totals for the header
   const planFakt = useMemo(() => {
     const rows = data?.daily ?? [];
-    if (!rows.length) return { cats: [], plan: [], fakt: [], totalPlan: 0, totalFakt: 0, overallPct: 0 };
-    const byDate = new Map();
+    const dateSet = new Set();
+    const byMgr = new Map();   // mid -> Map(isoDate -> {plan, fakt})
     let totalPlan = 0, totalFakt = 0;
     for (const r of rows) {
-      const e = byDate.get(r.date) || { plan: 0, fakt: 0 };
+      dateSet.add(r.date);
+      let m = byMgr.get(r.manager_id);
+      if (!m) { m = new Map(); byMgr.set(r.manager_id, m); }
+      const e = m.get(r.date) || { plan: 0, fakt: 0 };
       e.plan += r.plan || 0;
       e.fakt += r.actual || 0;
-      byDate.set(r.date, e);
+      m.set(r.date, e);
       totalPlan += r.plan || 0;
       totalFakt += r.actual || 0;
     }
-    const dates = [...byDate.keys()].sort();
-    const plan = dates.map((d) => Math.round(conv(byDate.get(d).plan)));
-    const fakt = dates.map((d) => Math.round(conv(byDate.get(d).fakt)));
+    const isoDates = [...dateSet].sort();
     return {
-      cats: dates.map(ddmm),
-      plan, fakt,
-      diff: plan.map((p, i) => p - fakt[i]),   // P−A: plan minus fakt (shortfall when > 0)
+      isoDates, cats: isoDates.map(ddmm), byMgr,
       totalPlan, totalFakt,
       overallPct: totalPlan > 0 ? Math.round((totalFakt / totalPlan) * 100) : 0,
     };
-  }, [data, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data]);
 
-  // P / A / P−A lens — single series per mode, mirroring the Overview fleet trend
-  const pfIsDiff = pfMode === "diff";
-  const pfSeries =
-    pfMode === "planned" ? [{ name: T.plan, data: planFakt.plan }]
-    : pfMode === "actual" ? [{ name: T.fakt, data: planFakt.fakt }]
-    : [{ name: `${T.plan} − ${T.fakt}`, data: planFakt.diff }];
-  const pfStroke = pfMode === "actual" ? "#5DCAA5" : "#C8973F";
+  // series in the current P / A / P−A lens: the average over all brigadirs, plus one line per selected brigadir
+  const pfSeries = useMemo(() => {
+    const metric = (cell) => {
+      if (!cell) return null;
+      if (pfMode === "planned") return cell.plan;
+      if (pfMode === "actual") return cell.fakt;
+      return cell.plan - cell.fakt;            // P−A
+    };
+    const out = [];
+    if (pfShowAvg) {
+      out.push({
+        name: T.avgWord, _avg: true,
+        data: planFakt.isoDates.map((d) => {
+          const vals = [];
+          planFakt.byMgr.forEach((m) => { const v = metric(m.get(d)); if (v != null) vals.push(v); });
+          return vals.length ? Math.round(conv(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
+        }),
+      });
+    }
+    [...pfSel].forEach((id) => {
+      const m = planFakt.byMgr.get(id);
+      out.push({
+        name: tl(nameOf(id)), _id: id,
+        data: planFakt.isoDates.map((d) => { const v = metric(m?.get(d)); return v == null ? null : Math.round(conv(v)); }),
+      });
+    });
+    return out;
+  }, [planFakt, pfShowAvg, pfSel, pfMode, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pfColors = pfSeries.map((s) => (s._avg ? PF_AVG_COLOR : brigadirColor(s._id)));
+  const pfWidths = pfSeries.map((s) => (s._avg ? 3 : 1.75));
 
   const pfOptions = {
     chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
-    colors: [pfStroke],
-    stroke: { curve: "smooth", width: 2.5 },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90, 100] } },
+    colors: pfColors,
+    stroke: { curve: "smooth", width: pfWidths },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.30, opacityTo: 0.02, stops: [0, 90, 100] } },
     dataLabels: { enabled: false },
     xaxis: {
       categories: planFakt.cats,
@@ -253,24 +303,13 @@ export default function Trudoyomkost() {
     yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => `${pfIsDiff && v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ru-RU")}` } },
     annotations: { yaxis: pfIsDiff ? [{ y: 0, borderColor: "rgba(128,128,128,.45)", strokeDashArray: 4, borderWidth: 1.5, label: { text: "" } }] : [] },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
-    legend: { show: false },
+    legend: { show: true, labels: { colors: legendColor }, fontSize: "11px", markers: { width: 10, height: 10, radius: 3 }, itemMargin: { horizontal: 8, vertical: 3 } },
     markers: { size: planFakt.cats.length <= 14 ? 3 : 0, hover: { size: 5 } },
-    tooltip: {
-      theme: "dark",
-      shared: true,
-      custom: ({ dataPointIndex }) => {
-        const plan = planFakt.plan[dataPointIndex] ?? 0;
-        const fakt = planFakt.fakt[dataPointIndex] ?? 0;
-        const pct = plan > 0 ? Math.round((fakt / plan) * 100) : null;
-        return `<div style="padding:8px 10px;background:#1a1d27;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:11px;min-width:175px">
-          <div style="color:#D4A95C;font-weight:600;margin-bottom:5px">${planFakt.cats[dataPointIndex] ?? ""}</div>
-          <div style="display:flex;align-items:center;gap:6px;padding:1px 0"><span style="width:8px;height:8px;border-radius:2px;background:#C8973F;display:inline-block"></span><span style="color:#9ca3af">${T.plan}</span><b style="color:#f3f4f6;margin-left:auto">${plan.toLocaleString("ru-RU")} ${unitLabel}</b></div>
-          <div style="display:flex;align-items:center;gap:6px;padding:1px 0"><span style="width:8px;height:8px;border-radius:2px;background:#5DCAA5;display:inline-block"></span><span style="color:#9ca3af">${T.fakt}</span><b style="color:#f3f4f6;margin-left:auto">${fakt.toLocaleString("ru-RU")} ${unitLabel}</b></div>
-          <div style="display:flex;align-items:center;gap:6px;padding:4px 0 0;margin-top:3px;border-top:1px solid rgba(255,255,255,.1)"><span style="color:#9ca3af">${T.fulfillment}</span><b style="color:${pct == null ? "#9ca3af" : pfColor(pct)};margin-left:auto">${pct == null ? "—" : pct + "%"}</b></div>
-        </div>`;
-      },
-    },
+    tooltip: { theme: "dark", shared: true, y: { formatter: (v) => (v == null ? "—" : `${pfIsDiff && v > 0 ? "+" : ""}${v.toLocaleString("ru-RU")} ${unitLabel}`) } },
   };
+
+  const pfFiltered = supervisors.filter((s) =>
+    !pfSearch || tl(s.name).toLowerCase().includes(pfSearch.toLowerCase()) || s.name.toLowerCase().includes(pfSearch.toLowerCase()));
 
   // ── trend: one line per selected weekday across weeks + flat avg reference ────
   const trend = useMemo(() => {
