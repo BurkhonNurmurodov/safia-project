@@ -186,6 +186,7 @@ export default function Trudoyomkost() {
     cacheSet("wdMode", wdMode);
     cacheSet("pfMode", pfMode);
     cacheSet("pfShowAvg", pfShowAvg ? "1" : "0");
+    cacheSet("pfMA", pfMA ? "1" : "0");
     cacheSet("pfSel", pfSel.size ? JSON.stringify([...pfSel]) : "");
     cacheSet("trendSup", trendSup != null ? String(trendSup) : "");
     cacheSet("selWd", JSON.stringify([...selWd]));
