@@ -87,6 +87,13 @@ def get_sheet_sources(db: Session = Depends(get_db), _: dict = Depends(verify_ad
     return db.query(SheetSource).all()
 
 
+@router.get("/service-account")
+def get_service_account(_: dict = Depends(verify_admin)):
+    """The Google service account email that source sheets must be shared with."""
+    from app.services.sheets_reader import get_service_account_email
+    return {"email": get_service_account_email()}
+
+
 @router.put("/sheet-sources/{name}")
 def update_sheet_source(
     name: str,
