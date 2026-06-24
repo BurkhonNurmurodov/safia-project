@@ -54,6 +54,7 @@ const TXT = {
     brigadirsN: "бригадиров", normHour: "норм-час", min: "мин", rise: "рост", fall: "спад",
     week: "неделя", noSelection: "Выберите бригадира и дни недели для тренда", exporting: "Загрузка…",
     planFaktTitle: "План и Факт", plan: "План", fakt: "Факт", fulfillment: "Выполнение",
+    filter: "Фильтр", search: "Поиск", clearAll: "Очистить", noMatch: "Нет совпадений",
   },
   en: {
     title: "Trudoyomkost — analysis", kpiPeriod: "Period Σ", kpiDaily: "Daily average",
