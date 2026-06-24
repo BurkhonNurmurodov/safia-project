@@ -243,7 +243,33 @@ function SheetSourceEditor() {
     queryKey: ["sheet-sources"],
     queryFn: () => api.get("/admin/sheet-sources").then((r) => r.data),
   });
+  const { data: svc } = useQuery({
+    queryKey: ["service-account"],
+    queryFn: () => api.get("/admin/service-account").then((r) => r.data),
+    staleTime: Infinity,
+  });
+  const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState({});
+
+  async function copyEmail() {
+    const email = svc?.email;
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+    } catch {
+      // Fallback for non-secure contexts / older webviews
+      const ta = document.createElement("textarea");
+      ta.value = email;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* ignore */ }
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
   const [refreshState, setRefreshState] = useState({});
   const [refreshMsg,   setRefreshMsg]   = useState({});
   const [refreshMsgOk, setRefreshMsgOk] = useState({});
