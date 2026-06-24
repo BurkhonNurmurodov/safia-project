@@ -343,7 +343,7 @@ export default function Trudoyomkost() {
     annotations: { yaxis: pfIsDiff ? [{ y: 0, borderColor: "rgba(128,128,128,.45)", strokeDashArray: 4, borderWidth: 1.5, label: { text: "" } }] : [] },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
     legend: { show: true, labels: { colors: legendColor }, fontSize: "11px", markers: { width: 10, height: 10, radius: 3 }, itemMargin: { horizontal: 8, vertical: 3 } },
-    markers: { size: planFakt.cats.length <= 14 ? 3 : 0, hover: { size: 5 } },
+    markers: { size: pfSeries.map((s) => (s._ma ? 0 : (planFakt.cats.length <= 14 ? 3 : 0))), hover: { size: 5 } },
     tooltip: { theme: "dark", shared: true, y: { formatter: (v) => (v == null ? "—" : `${pfIsDiff && v > 0 ? "+" : ""}${v.toLocaleString("ru-RU")} ${unitLabel}`) } },
   };
 
