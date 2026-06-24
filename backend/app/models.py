@@ -89,6 +89,20 @@ class DowntimeData(Base):
     __table_args__ = (UniqueConstraint("manager_name", "date", name="uq_downtime_manager_date"),)
 
 
+class LeaderChecklist(Base):
+    """One leader's daily checklist submission, parsed from the leaders Google
+    Sheet ("Data" tab) using the fixed layout from apps-script/Code.gs. The whole
+    table is wiped and reloaded on each admin refresh, so no unique constraint."""
+    __tablename__ = "leader_checklists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False, index=True)   # ISO "YYYY-MM-DD"
+    supervisor = Column(String, nullable=False, index=True)  # brigadir (col D)
+    leader = Column(String, nullable=False, index=True)      # first non-empty of cols E–P
+    completion = Column(Numeric(6, 2), default=0.0)          # 0–100 (col BA)
+    tasks = Column(JSONB, default=list)                      # [{id, done, photo, reason}] ×12
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
