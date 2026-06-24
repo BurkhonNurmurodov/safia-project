@@ -206,23 +206,28 @@ export default function Trudoyomkost() {
       totalFakt += r.actual || 0;
     }
     const dates = [...byDate.keys()].sort();
+    const plan = dates.map((d) => Math.round(conv(byDate.get(d).plan)));
+    const fakt = dates.map((d) => Math.round(conv(byDate.get(d).fakt)));
     return {
       cats: dates.map(ddmm),
-      plan: dates.map((d) => Math.round(conv(byDate.get(d).plan))),
-      fakt: dates.map((d) => Math.round(conv(byDate.get(d).fakt))),
+      plan, fakt,
+      diff: plan.map((p, i) => p - fakt[i]),   // P−A: plan minus fakt (shortfall when > 0)
       totalPlan, totalFakt,
       overallPct: totalPlan > 0 ? Math.round((totalFakt / totalPlan) * 100) : 0,
     };
   }, [data, unit]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pfSeries = [
-    { name: T.plan, data: planFakt.plan },
-    { name: T.fakt, data: planFakt.fakt },
-  ];
+  // P / A / P−A lens — single series per mode, mirroring the Overview fleet trend
+  const pfIsDiff = pfMode === "diff";
+  const pfSeries =
+    pfMode === "planned" ? [{ name: T.plan, data: planFakt.plan }]
+    : pfMode === "actual" ? [{ name: T.fakt, data: planFakt.fakt }]
+    : [{ name: `${T.plan} − ${T.fakt}`, data: planFakt.diff }];
+  const pfStroke = pfMode === "actual" ? "#5DCAA5" : "#C8973F";
 
   const pfOptions = {
     chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
-    colors: ["#C8973F", "#5DCAA5"],
+    colors: [pfStroke],
     stroke: { curve: "smooth", width: 2.5 },
     fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90, 100] } },
     dataLabels: { enabled: false },
@@ -231,9 +236,10 @@ export default function Trudoyomkost() {
       labels: { style: { colors: labelColor, fontSize: "10px" } },
       axisBorder: { show: false }, axisTicks: { show: false },
     },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => Math.round(v).toLocaleString("ru-RU") } },
+    yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => `${pfIsDiff && v > 0 ? "+" : ""}${Math.round(v).toLocaleString("ru-RU")}` } },
+    annotations: { yaxis: pfIsDiff ? [{ y: 0, borderColor: "rgba(128,128,128,.45)", strokeDashArray: 4, borderWidth: 1.5, label: { text: "" } }] : [] },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
-    legend: { labels: { colors: legendColor }, fontSize: "11px", markers: { width: 10, height: 10, radius: 3 } },
+    legend: { show: false },
     markers: { size: planFakt.cats.length <= 14 ? 3 : 0, hover: { size: 5 } },
     tooltip: {
       theme: "dark",
