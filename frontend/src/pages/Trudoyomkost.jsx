@@ -298,17 +298,16 @@ export default function Trudoyomkost() {
       if (pfMode === "actual") return cell.fakt;
       return cell.plan - cell.fakt;            // P−A
     };
+    // per-date average across brigadirs in the current lens — drives both the
+    // avg line and the moving-average overlay (so MA works even if avg is hidden)
+    const avgData = planFakt.isoDates.map((d) => {
+      const vals = [];
+      planFakt.byMgr.forEach((m) => { const v = metric(m.get(d)); if (v != null) vals.push(v); });
+      return vals.length ? Math.round(conv(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
+    });
+
     const out = [];
-    if (pfShowAvg) {
-      out.push({
-        name: T.avgWord, _avg: true,
-        data: planFakt.isoDates.map((d) => {
-          const vals = [];
-          planFakt.byMgr.forEach((m) => { const v = metric(m.get(d)); if (v != null) vals.push(v); });
-          return vals.length ? Math.round(conv(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
-        }),
-      });
-    }
+    if (pfShowAvg) out.push({ name: T.avgWord, _avg: true, data: avgData });
     [...pfSel].forEach((id) => {
       const m = planFakt.byMgr.get(id);
       out.push({
@@ -316,11 +315,13 @@ export default function Trudoyomkost() {
         data: planFakt.isoDates.map((d) => { const v = metric(m?.get(d)); return v == null ? null : Math.round(conv(v)); }),
       });
     });
+    // moving-average overlay drawn last so its dashed line sits on top
+    if (pfMA) out.push({ name: `${T.ma} · ${MA_WINDOW}${T.dayShort}`, _ma: true, data: movingAvg(avgData, MA_WINDOW) });
     return out;
-  }, [planFakt, pfShowAvg, pfSel, pfMode, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [planFakt, pfShowAvg, pfMA, pfSel, pfMode, unit]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pfColors = pfSeries.map((s) => (s._avg ? PF_AVG_COLOR : brigadirColor(s._id)));
-  const pfWidths = pfSeries.map((s) => (s._avg ? 3 : 1.75));
+  const pfColors = pfSeries.map((s) => (s._ma ? PF_MA_COLOR : s._avg ? PF_AVG_COLOR : brigadirColor(s._id)));
+  const pfWidths = pfSeries.map((s) => (s._ma ? 2.5 : s._avg ? 3 : 1.75));
 
   const pfOptions = {
     chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
