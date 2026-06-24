@@ -481,8 +481,76 @@ export default function Trudoyomkost() {
                 <Toggle value={pfMode} onChange={setPfMode} options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]} />
               </div>
             } />
+
+          {/* brigadir filter toolbar (mirrors the Overview fleet-trend filter) */}
+          <div className="flex items-center gap-2 px-3 pt-2.5 flex-wrap">
+            <div className="relative" ref={pfDropRef}>
+              <button onClick={() => { setPfDropOpen((o) => !o); setPfSearch(""); }}
+                className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg transition-colors"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
+                {T.filter}<span style={{ opacity: 0.4, fontSize: 9 }}>▾</span>
+              </button>
+
+              {pfDropOpen && (
+                <div className="absolute top-full left-0 mt-1 z-30 rounded-xl overflow-hidden"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 8px 24px rgba(0,0,0,.18)", width: 220, maxHeight: 300, display: "flex", flexDirection: "column" }}>
+                  <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid var(--border)" }}>
+                    <input autoFocus value={pfSearch} onChange={(e) => setPfSearch(e.target.value)} placeholder={T.search}
+                      className="w-full text-xs outline-none rounded-md px-2 py-1"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+                  </div>
+
+                  {!pfSearch && (
+                    <label className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
+                      style={{ fontSize: 12, color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}>
+                      <input type="checkbox" checked={pfShowAvg} onChange={() => setPfShowAvg((v) => !v)} className="accent-amber-500" style={{ width: 13, height: 13 }} />
+                      <span style={{ color: PF_AVG_COLOR, fontWeight: 600 }}>{T.avgWord}</span>
+                    </label>
+                  )}
+
+                  <div style={{ overflowY: "auto", flex: 1 }}>
+                    {pfFiltered.map((s) => {
+                      const c = brigadirColor(s.id);
+                      return (
+                        <label key={s.id} {...pfDragRow(s.id)}
+                          className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
+                          style={{ fontSize: 12, color: "var(--text-2)" }}>
+                          <input type="checkbox" checked={pfSel.has(s.id)} onChange={() => toggleBrig(s.id)} style={{ width: 13, height: 13, accentColor: c }} />
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                          {tl(s.name)}
+                        </label>
+                      );
+                    })}
+                    {pfFiltered.length === 0 && <div className="px-3 py-3 text-[11px]" style={{ color: "var(--text-4)" }}>{T.noMatch}</div>}
+                  </div>
+
+                  {pfSel.size > 0 && (
+                    <div style={{ padding: "6px 10px", borderTop: "1px solid var(--border)" }}>
+                      <button onClick={() => setPfSel(new Set())}
+                        className="w-full text-[11px] py-1 rounded-lg font-medium transition-colors"
+                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+                        {T.clearAll}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {[...pfSel].map((id) => {
+              const c = brigadirColor(id);
+              return (
+                <span key={id} className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
+                  style={{ background: c + "33", color: c, border: `1px solid ${c}55` }}>
+                  {tl(nameOf(id)).split(" ")[0]}
+                  <button onClick={() => toggleBrig(id)} className="ml-0.5 opacity-70 hover:opacity-100" style={{ fontSize: 11, lineHeight: 1 }}>×</button>
+                </span>
+              );
+            })}
+          </div>
+
           <div className="px-2 py-2">
-            {planFakt.cats.length > 0 ? (
+            {planFakt.cats.length > 0 && pfSeries.length > 0 ? (
               <ReactApexChart key={pfMode} type="area" series={pfSeries} options={pfOptions} height={280} />
             ) : (
               <div className="py-16 text-center text-sm" style={{ color: "var(--text-4)" }}>{T.noData}</div>
