@@ -2754,6 +2754,7 @@ const t = {
     "nav.daily":           "Daily",
     "nav.production":      "Production",
     "nav.trudoyomkost":    "Trudoyomkost",
+    "nav.leaders":         "Leader Monitoring",
     "shiftDaily.title":        "Daily — Shift",
     "shiftDaily.prevDay":      "prev. day",
     "shiftDaily.vsPrev":       "vs prev. day",
