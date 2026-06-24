@@ -690,6 +690,7 @@ const t = {
     "admin.sheetSources":    "Google Sheet Manbalari",
     "admin.source":          "Manba",
     "admin.shiftReport":     "Smena Hisoboti",
+    "admin.leadersSheet":    "Liderlar jadvali",
     "admin.save":            "Saqlash",
     "admin.refresh":         "Yangilash",
     "admin.saved":           "Saqlandi",
