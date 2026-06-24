@@ -260,6 +260,8 @@ function SheetSourceEditor() {
       const { data } = await api.post(`/admin/refresh-sheet/${name}`);
       const detail = name === "source"
         ? `${data.production_rows ?? 0} production rows, ${data.headcount_rows ?? 0} headcount rows saved`
+        : name === "leaders"
+        ? `${data.leader_rows ?? 0} leader rows saved`
         : `${data.downtime_rows ?? 0} downtime rows saved (${data.managers_synced ?? 0} managers)`;
       setRefreshState ((p) => ({ ...p, [name]: "ok" }));
       setRefreshMsg   ((p) => ({ ...p, [name]: detail }));
