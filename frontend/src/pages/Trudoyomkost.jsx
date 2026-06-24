@@ -50,6 +50,7 @@ const TXT = {
     supervisor: "Бригадир", weekday: "День недели", avgLine: "Среднее", noData: "Нет данных",
     brigadirsN: "бригадиров", normHour: "норм-час", min: "мин", rise: "рост", fall: "спад",
     week: "неделя", noSelection: "Выберите бригадира и дни недели для тренда", exporting: "Загрузка…",
+    planFaktTitle: "План и Факт", plan: "План", fakt: "Факт", fulfillment: "Выполнение",
   },
   en: {
     title: "Trudoyomkost — analysis", kpiPeriod: "Period Σ", kpiDaily: "Daily average",
