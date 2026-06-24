@@ -60,6 +60,7 @@ const TXT = {
     supervisor: "Brigadir", weekday: "Weekday", avgLine: "Average", noData: "No data",
     brigadirsN: "brigadirs", normHour: "norm-h", min: "min", rise: "up", fall: "down",
     week: "week", noSelection: "Pick a brigadir and weekdays for the trend", exporting: "Exporting…",
+    planFaktTitle: "Plan vs Fakt", plan: "Plan", fakt: "Fakt", fulfillment: "Fulfillment",
   },
 };
 
