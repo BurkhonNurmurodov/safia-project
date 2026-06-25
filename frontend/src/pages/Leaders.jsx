@@ -158,6 +158,22 @@ function Toggle({ value, onChange, options }) {
   );
 }
 
+// Compact insight card with an info-icon tooltip (mirrors the Average KPI box).
+function KpiCard({ label, value, sub, color, tip }) {
+  return (
+    <div className="rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-1 gap-1">
+        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-4)" }}>{label}</span>
+        <span title={tip} className="cursor-help flex-shrink-0"><Info size={13} style={{ color: "var(--brand-text)" }} /></span>
+      </div>
+      <div className="flex items-baseline gap-1.5 min-w-0">
+        <span className="text-xl font-bold tabular-nums leading-none truncate" style={{ color: color || "var(--text-1)" }}>{value}</span>
+        {sub != null && <span className="text-sm font-semibold tabular-nums flex-shrink-0" style={{ color: color || "var(--text-3)" }}>{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
 function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
