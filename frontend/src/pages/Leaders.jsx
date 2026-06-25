@@ -96,6 +96,7 @@ const TXT = {
     tipLowTask: "Least-completed task over the period",
     tipLowSup: "Supervisor with the lowest average score",
     tipLowLeader: "Leader with the lowest average score",
+    searchPh: "Search leader…", bandAll: "All", noMatch: "No submissions match the filters",
   },
 };
 
