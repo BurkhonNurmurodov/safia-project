@@ -341,10 +341,36 @@ export default function Leaders() {
     return { lowTask, lowSup: worst((r) => r.supervisor), lowLeader: worst((r) => r.leader) };
   }, [filtered, taskRates]);
 
-  const tableRows = useMemo(
-    () => [...filtered].sort((a, b) => a.completion - b.completion),
-    [filtered]
-  );
+  // table rows: search + score-band filter, then sortable columns
+  const displayRows = useMemo(() => {
+    const q = tSearch.trim().toLowerCase();
+    let arr = filtered.map((r) => ({ ...r, _failed: (r.tasks || []).filter((tk) => !tk.done).length }));
+    if (q) arr = arr.filter((r) => `${tl(r.leader)} ${r.leader}`.toLowerCase().includes(q));
+    if (tBand !== "all") arr = arr.filter((r) => {
+      const v = r.completion;
+      return tBand === "good" ? v >= 85 : tBand === "mid" ? (v >= 50 && v < 85) : v < 50;
+    });
+    const dir = tSort.dir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      if (tSort.key === "date") return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
+      if (tSort.key === "leader") return tl(a.leader).localeCompare(tl(b.leader)) * dir;
+      if (tSort.key === "failed") return (a._failed - b._failed) * dir;
+      return (a.completion - b.completion) * dir;          // score
+    });
+    return arr;
+  }, [filtered, tSearch, tBand, tSort, tl]);
+
+  const toggleSort = (key) => setTSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
+  const sortArrow = (key) => tSort.key !== key ? null
+    : tSort.dir === "asc" ? <ArrowUpNarrowWide size={12} /> : <ArrowDownNarrowWide size={12} />;
+
+  // colored score-band chips, matching the badge palette
+  const BANDS = [
+    { id: "all",  label: T.bandAll, color: "var(--brand)" },
+    { id: "good", label: "≥85%",    color: C_GOOD },
+    { id: "mid",  label: "50–84%",  color: C_MID },
+    { id: "bad",  label: "<50%",    color: C_BAD },
+  ];
 
   // ── chart options ────────────────────────────────────────────────────────────
   const baseAxis = {
