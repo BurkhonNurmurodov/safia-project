@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import api from "../utils/api";
+import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
