@@ -121,6 +121,24 @@ const taskDetail = (i, lang) => {
 const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 
+// ── localized long-date formatter ("19th June, 2026" and its translations) ──────
+const MONTHS = {
+  en:      ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  ru:      ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"],
+  uz:      ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
+  uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
+};
+const enOrd = (d) => { const t = d % 100; if (t >= 11 && t <= 13) return "th"; return ["th", "st", "nd", "rd"][d % 10] || "th"; };
+const fmtDate = (iso, lang) => {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
+  if (lang === "en") return `${d}${enOrd(d)} ${mn}, ${y}`;   // 19th June, 2026
+  if (lang === "ru") return `${d} ${mn} ${y}`;               // 19 июня 2026
+  return `${d}-${mn}, ${y}`;                                 // 19-iyun, 2026 / 19-июн, 2026
+};
+
 // ── small atoms (mirror Trudoyomkost / Production idioms) ───────────────────────
 function SectionHead({ icon: Icon, title, right }) {
   return (
