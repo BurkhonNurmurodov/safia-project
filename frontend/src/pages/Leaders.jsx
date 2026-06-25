@@ -32,6 +32,10 @@ const TXT = {
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
     task: "Vazifa", noData: "Ma'lumot yo'q", taskInfoTitle: "Vazifalar mazmuni va talablari",
     taskDesc: "Vazifa tavsifi", taskWeight: "Vazni", taskNote: "Eslatma / Talablar",
+    lowTask: "Eng past vazifa", lowSup: "Eng past brigadir", lowLeader: "Eng past lider",
+    tipLowTask: "Davr ichida eng kam bajarilgan vazifa",
+    tipLowSup: "Eng past o'rtacha ko'rsatkichli brigadir",
+    tipLowLeader: "Eng past o'rtacha ko'rsatkichli lider",
   },
   uz_cyrl: {
     title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
