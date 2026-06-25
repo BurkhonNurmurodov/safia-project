@@ -89,6 +89,10 @@ const TXT = {
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
     task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
     taskDesc: "Task Description", taskWeight: "Weight", taskNote: "Notes / Requirements",
+    lowTask: "Lowest Task", lowSup: "Lowest Supervisor", lowLeader: "Lowest Leader",
+    tipLowTask: "Least-completed task over the period",
+    tipLowSup: "Supervisor with the lowest average score",
+    tipLowLeader: "Leader with the lowest average score",
   },
 };
 
