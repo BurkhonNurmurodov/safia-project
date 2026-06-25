@@ -70,6 +70,10 @@ const TXT = {
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
     task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
     taskDesc: "Описание задачи", taskWeight: "Вес", taskNote: "Примечания / Требования",
+    lowTask: "Худшая задача", lowSup: "Худший бригадир", lowLeader: "Худший лидер",
+    tipLowTask: "Наименее выполняемая задача за период",
+    tipLowSup: "Бригадир с наименьшим средним баллом",
+    tipLowLeader: "Лидер с наименьшим средним баллом",
   },
   en: {
     title: "Leader Monitoring", avgSuccess: "Average Success", timePeriod: "Period",
