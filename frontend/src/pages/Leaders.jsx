@@ -546,7 +546,7 @@ export default function Leaders() {
 
       {/* Detail modal */}
       {detail && (
-        <Modal wide title={`${T.modalTitle}: ${tl(detail.leader)} (${detail.date})`} onClose={() => setDetail(null)}>
+        <Modal wide title={`${T.modalTitle}: ${tl(detail.leader)} (${fmtDate(detail.date, lang)})`} onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
