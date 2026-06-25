@@ -36,6 +36,7 @@ const TXT = {
     tipLowTask: "Davr ichida eng kam bajarilgan vazifa",
     tipLowSup: "Eng past o'rtacha ko'rsatkichli brigadir",
     tipLowLeader: "Eng past o'rtacha ko'rsatkichli lider",
+    searchPh: "Lider qidirish…", bandAll: "Barchasi", noMatch: "Filtrlarga mos hisobot yo'q",
   },
   uz_cyrl: {
     title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
