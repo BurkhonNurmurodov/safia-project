@@ -192,10 +192,15 @@ function Modal({ title, onClose, children, wide }) {
 
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function Leaders() {
+  const { auth } = useAuth();
   const { lang } = useLang();
   const { tl } = useTranslit();
   const { gridColor, labelColor, legendColor } = useChartTheme();
   const T = TXT[lang] || TXT.uz;
+
+  // Supervisors are locked to their own unit: the backend returns only their
+  // rows, so they get no supervisor filter and no supervisor standings toggle.
+  const isSupervisor = auth?.role === "supervisor";
 
   const [period, setPeriod] = useState("last-week");
   const [startDate, setStartDate] = useState("");
