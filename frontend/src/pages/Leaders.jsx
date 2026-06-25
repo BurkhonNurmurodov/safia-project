@@ -364,21 +364,10 @@ export default function Leaders() {
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <Layout title={T.title} showFilters={false}>
-      {/* Filter bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 mb-4">
-        {/* Average KPI */}
-        <div className="lg:col-span-3 rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.avgSuccess}</span>
-            <Gauge size={15} style={{ color: "var(--brand-text)" }} />
-          </div>
-          <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: hasData ? scoreColor(avg) : "var(--text-4)" }}>
-            {hasData ? `${avg}%` : "—"}
-          </div>
-        </div>
-
+      {/* Filters */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 mb-3`}>
         {/* Period */}
-        <div className="lg:col-span-3">
+        <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
           <Select value={period} onChange={setPeriod}>
             <option value="all">{T.periodAll}</option>
@@ -398,23 +387,60 @@ export default function Leaders() {
           )}
         </div>
 
-        {/* Supervisor */}
-        <div className="lg:col-span-3">
-          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
-          <Select value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}>
-            <option value="All">{T.allSups}</option>
-            {supervisors.map((s) => <option key={s} value={s}>{tl(s)}</option>)}
-          </Select>
-        </div>
+        {/* Supervisor — shift-managers / admins only; supervisors are locked to their own unit */}
+        {!isSupervisor && (
+          <div>
+            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
+            <Select value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}>
+              <option value="All">{T.allSups}</option>
+              {supervisors.map((s) => <option key={s} value={s}>{tl(s)}</option>)}
+            </Select>
+          </div>
+        )}
 
         {/* Leader */}
-        <div className="lg:col-span-3">
+        <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
           <Select value={fLeader} onChange={setFLeader}>
             <option value="All">{T.allLeaders}</option>
             {leaderOptions.map((l) => <option key={l} value={l}>{tl(l)}</option>)}
           </Select>
         </div>
+      </div>
+
+      {/* KPI / insight cards */}
+      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-3 mb-4`}>
+        {/* Average success */}
+        <div className="rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.avgSuccess}</span>
+            <Gauge size={15} style={{ color: "var(--brand-text)" }} />
+          </div>
+          <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: hasData ? scoreColor(avg) : "var(--text-4)" }}>
+            {hasData ? `${avg}%` : "—"}
+          </div>
+        </div>
+
+        {/* Lowest-success task */}
+        <KpiCard label={T.lowTask}
+          tip={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}: ${taskDetail(insights.lowTask.idx, lang).n}` : T.tipLowTask}
+          value={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}` : "—"}
+          sub={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
+          color={hasData && insights.lowTask ? scoreColor(insights.lowTask.val) : "var(--text-4)"} />
+
+        {/* Lowest-performing supervisor — shift-managers / admins only */}
+        {!isSupervisor && (
+          <KpiCard label={T.lowSup} tip={T.tipLowSup}
+            value={hasData && insights.lowSup ? tl(insights.lowSup.name) : "—"}
+            sub={hasData && insights.lowSup ? `${insights.lowSup.val}%` : null}
+            color={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
+        )}
+
+        {/* Lowest-performing leader */}
+        <KpiCard label={T.lowLeader} tip={T.tipLowLeader}
+          value={hasData && insights.lowLeader ? tl(insights.lowLeader.name) : "—"}
+          sub={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
+          color={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
       </div>
 
       {isError && (
