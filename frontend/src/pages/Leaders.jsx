@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
-  X, CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
+  X, CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide, Search,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import api from "../utils/api";
