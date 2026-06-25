@@ -234,6 +234,11 @@ export default function Leaders() {
   const [detail, setDetail] = useState(null);
   const [taskInfo, setTaskInfo] = useState(false);
 
+  // table-level filters (independent of the page filters above)
+  const [tSearch, setTSearch] = useState("");
+  const [tBand, setTBand] = useState("all");                 // all | good | mid | bad
+  const [tSort, setTSort] = useState({ key: "score", dir: "asc" });
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["leaders"],
     queryFn: () => api.get("/api/leaders").then((r) => r.data),
