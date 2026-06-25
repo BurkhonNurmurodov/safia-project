@@ -532,12 +532,16 @@ export default function Leaders() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
+              // map the task back to its description (tk.id is "1".."12"; fall back to row order)
+              const ti = Number.isFinite(Number(tk.id)) ? Number(tk.id) - 1 : i;
+              const desc = TASK_DETAILS[ti] ? taskDetail(ti, lang).n : null;
               return (
                 <div key={i} className="rounded-xl p-3" style={{ background: tk.done ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${tk.done ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}` }}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
                     {tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
                   </div>
+                  {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
                   <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>
                   {photos.map((p, pi) => (
                     <img key={pi} src={p} alt="" onClick={() => window.open(p, "_blank")} loading="lazy"
