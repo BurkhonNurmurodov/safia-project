@@ -445,10 +445,12 @@ export default function Leaders() {
 
         {/* Standings */}
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={Trophy} title={standMode === "leader" ? T.standing : T.supStanding}
+          <SectionHead icon={Trophy} title={effStandMode === "leader" ? T.standing : T.supStanding}
             right={
               <div className="flex items-center gap-2">
-                <Toggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
+                {!isSupervisor && (
+                  <Toggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
+                )}
                 <Toggle value={standDir} onChange={setStandDir}
                   options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
               </div>
