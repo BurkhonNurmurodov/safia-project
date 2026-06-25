@@ -276,10 +276,12 @@ export default function Leaders() {
     };
   }, [filtered]);
 
+  const effStandMode = isSupervisor ? "leader" : standMode;
+
   const standings = useMemo(() => {
     const map = {};
     for (const r of filtered) {
-      const key = standMode === "leader" ? r.leader : r.supervisor;
+      const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
       (map[key] ||= { sum: 0, n: 0 });
       map[key].sum += r.completion; map[key].n++;
@@ -287,7 +289,30 @@ export default function Leaders() {
     const entries = Object.entries(map).map(([name, v]) => ({ name, val: Math.round(v.sum / v.n) }));
     entries.sort((a, b) => (standDir === "desc" ? b.val - a.val : a.val - b.val));
     return entries;
-  }, [filtered, standMode, standDir]);
+  }, [filtered, effStandMode, standDir]);
+
+  // Insight cards: the worst task plus the worst-performing supervisor / leader.
+  const insights = useMemo(() => {
+    let lowTask = null;
+    taskRates.forEach((v, i) => { if (lowTask == null || v < lowTask.val) lowTask = { idx: i, val: v }; });
+
+    const worst = (keyFn) => {
+      const map = {};
+      for (const r of filtered) {
+        const k = keyFn(r);
+        if (!k || k === "N/A") continue;
+        (map[k] ||= { sum: 0, n: 0 });
+        map[k].sum += r.completion; map[k].n++;
+      }
+      let lo = null;
+      for (const [name, v] of Object.entries(map)) {
+        const val = Math.round(v.sum / v.n);
+        if (lo == null || val < lo.val) lo = { name, val };
+      }
+      return lo;
+    };
+    return { lowTask, lowSup: worst((r) => r.supervisor), lowLeader: worst((r) => r.leader) };
+  }, [filtered, taskRates]);
 
   const tableRows = useMemo(
     () => [...filtered].sort((a, b) => a.completion - b.completion),
