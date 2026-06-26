@@ -188,7 +188,7 @@ function ReconciliationCard({ data, onSave, saving }) {
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity"
           style={{ background: "var(--brand)", color: "#fff", opacity: saving ? 0.6 : 1 }}
         >
-          <Save size={12} /> Сохранить
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Сохранить
         </button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
