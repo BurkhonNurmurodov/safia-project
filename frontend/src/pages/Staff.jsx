@@ -156,7 +156,7 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
               <button onClick={() => onExport(true)} disabled={exporting}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold"
                 style={{ background: "var(--brand)", color: "#fff" }}>
-                {exporting ? "Sending…" : `Filtered rows (${filteredCount})`}
+                {exporting ? <span className="inline-flex items-center justify-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Sending…</span> : `Filtered rows (${filteredCount})`}
               </button>
               <button onClick={() => onExport(false)} disabled={exporting}
                 className="w-full py-2.5 rounded-xl text-sm"
