@@ -702,7 +702,7 @@ export default function Leaders() {
                   {displayRows.map((r) => (
                     <tr key={r.uid} style={{ borderTop: "1px solid var(--border)" }}>
                       <td className="px-4 py-2 text-xs whitespace-nowrap" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</td>
-                      <td className="px-4 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(r.leader)}</td>
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</td>
                       <td className="px-4 py-2 text-center">
                         <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
                           {Math.round(r.completion)}%
