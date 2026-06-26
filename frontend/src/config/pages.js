@@ -34,6 +34,7 @@ export const PAGES = [
   { key: "production", route: "/production", labelKey: "nav.production" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
+  { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
