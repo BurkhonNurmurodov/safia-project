@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.config import settings
+
 NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
 
