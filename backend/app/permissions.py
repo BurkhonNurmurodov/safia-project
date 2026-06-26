@@ -55,6 +55,9 @@ DEFAULT_PAGE_ACCESS = {
     # Leader checklist monitoring (parsed from the leaders Google Sheet). Pilot:
     # admin-only by default; open up roles from the Access tab.
     "leaders": [],
+    # Kaizen-session project analytics (synced from Notion). Admin-only by
+    # default; open up roles from the Access tab.
+    "kaizen": [],
 }
 
 
