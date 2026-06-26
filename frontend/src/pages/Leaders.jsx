@@ -545,7 +545,18 @@ export default function Leaders() {
         </div>
       )}
       {isLoading && (
-        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>…</div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[0, 1].map((i) => (
+              <div key={i} className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                <SkeletonBlock className="h-3 w-36 mb-4" /><SkeletonChart className="h-60" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SkeletonBlock className="h-3 w-44 mb-4" /><SkeletonChart className="h-56" />
+          </div>
+        </div>
       )}
       {!isLoading && !isError && !hasData && (
         <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>{T.noData}</div>
