@@ -14,6 +14,15 @@ Then in your Passenger / cPanel config, point the WSGI app file to this file.
 import sys
 import os
 
+# Cap native BLAS/OpenMP thread pools to 1 BEFORE numpy/pandas get imported
+# (app.main → production router → openpyxl → numpy). On this shared host the
+# default of one thread per core (64) exhausts RLIMIT_NPROC and aborts startup
+# with "OpenBLAS blas_thread_init: pthread_create failed ... Resource
+# temporarily unavailable". setdefault so an explicit env override still wins.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 # Make sure `app/` is importable regardless of the working directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
