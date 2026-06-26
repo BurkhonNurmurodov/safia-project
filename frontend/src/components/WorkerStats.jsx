@@ -182,7 +182,15 @@ export default function WorkerStats() {
   const tomorrowWd = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return (d.getDay() + 6) % 7; }, []);
 
   if (!ready) return null;
-  if (isLoading) return <div className="rounded-2xl p-8 text-center text-sm mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>…</div>;
+  if (isLoading) return (
+    <div className="rounded-2xl p-5 mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SkeletonBlock className="h-4 w-48 mb-4" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-16 w-full" />)}
+      </div>
+      <SkeletonBlock className="h-32 w-full" />
+    </div>
+  );
   if (isError || !supervisors.length) return null;
 
   const driver = phase.explained || {};
