@@ -549,10 +549,8 @@ export default function Leaders() {
         {!isSupervisor && (
           <div>
             <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
-            <Select value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}>
-              <option value="All">{T.allSups}</option>
-              {supervisors.map((s) => <option key={s} value={s}>{tl(s)}</option>)}
-            </Select>
+            <StyledSelect value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}
+              options={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: tl(s) }))]} />
           </div>
         )}
 
