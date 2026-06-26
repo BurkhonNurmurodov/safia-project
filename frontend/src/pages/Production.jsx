@@ -317,7 +317,7 @@ export default function Production() {
   }, {});
   const maxPareto = Math.max(0.0001, ...rows.map((r) => r.pareto || 0));
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
-  const noSapData = !isLoading && rows.length > 0 &&
+  const noSapData = !loading && rows.length > 0 &&
     (totals.total_plan_labor || 0) === 0 && (totals.total_actual_labor || 0) === 0;
 
   const saveOverride = (row, field) => (value) =>
