@@ -561,7 +561,7 @@ export default function Leaders() {
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
           <StyledSelect value={fLeader} onChange={setFLeader}
-            options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: tl(l) }))]} />
+            options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
         </div>
       </div>
 
