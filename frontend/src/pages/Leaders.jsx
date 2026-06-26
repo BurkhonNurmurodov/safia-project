@@ -700,7 +700,7 @@ export default function Leaders() {
               const ti = Number.isFinite(Number(tk.id)) ? Number(tk.id) - 1 : i;
               const desc = TASK_DETAILS[ti] ? taskDetail(ti, lang).n : null;
               return (
-                <div key={i} className="rounded-xl p-3" style={{ background: tk.done ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${tk.done ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}` }}>
+                <div key={i} className="rounded-xl p-3" style={{ background: hexA(tk.done ? C_GOOD : C_BAD, 0.08), border: `1px solid ${hexA(tk.done ? C_GOOD : C_BAD, 0.25)}` }}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
                     {tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
