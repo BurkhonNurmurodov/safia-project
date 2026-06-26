@@ -205,17 +205,27 @@ function Toggle({ value, onChange, options }) {
   );
 }
 
-// Compact insight card with an info-icon tooltip (mirrors the Average KPI box).
-function KpiCard({ label, value, sub, color, tip }) {
+// Unified insight card. Every KPI shares one container (no per-card border
+// quirks): muted label + iconed chip on top, big value below, and the score %
+// as a soft-tinted pill so colour stays an *indicator* — never a slab of neon.
+// `accent` lights a hairline glow across the top and tints the chip (hero card).
+function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent }) {
   return (
-    <div className="rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between mb-1 gap-1">
-        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-4)" }}>{label}</span>
-        <span title={tip} className="cursor-help flex-shrink-0"><Info size={13} style={{ color: "var(--brand-text)" }} /></span>
+    <div className="relative rounded-2xl p-4 overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      {accent && <div className="absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />}
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-3)" }}>{label}</span>
+        <span title={tip} className="grid place-items-center w-6 h-6 rounded-lg flex-shrink-0 cursor-help"
+          style={{ background: accent ? hexA(accent, 0.14) : "var(--bg-inner)", color: accent || "var(--brand-text)" }}>
+          {Icon && <Icon size={13} />}
+        </span>
       </div>
-      <div className="flex items-baseline gap-1.5 min-w-0">
-        <span className="text-xl font-bold tabular-nums leading-none truncate" style={{ color: color || "var(--text-1)" }}>{value}</span>
-        {sub != null && <span className="text-sm font-semibold tabular-nums flex-shrink-0" style={{ color: color || "var(--text-3)" }}>{sub}</span>}
+      <div className="flex items-end justify-between gap-2 min-w-0">
+        <span className="text-2xl font-bold tabular-nums leading-none truncate" style={{ color: valueColor || "var(--text-1)" }}>{value}</span>
+        {badge != null && (
+          <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded-md flex-shrink-0 leading-none"
+            style={{ background: hexA(badgeColor, 0.15), color: badgeColor }}>{badge}</span>
+        )}
       </div>
     </div>
   );
