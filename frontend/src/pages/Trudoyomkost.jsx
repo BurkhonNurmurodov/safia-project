@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Gauge, FileSpreadsheet, CalendarDays, Users, Grid3x3,
-  BarChart3, LineChart, TrendingUp, TrendingDown, Activity,
+  BarChart3, LineChart, TrendingUp, TrendingDown, Activity, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import WorkerStats from "../components/WorkerStats";
