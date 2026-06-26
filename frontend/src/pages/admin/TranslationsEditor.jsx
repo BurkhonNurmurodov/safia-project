@@ -252,10 +252,18 @@ export default function TranslationsEditor() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && (
+                {initLoading && Array.from({ length: 10 }).map((_, i) => (
+                  <tr key={`sk-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <td className="px-3 py-2 sticky left-0 bg-[#1a1d27]"><SkeletonBlock className="h-4 w-32" /></td>
+                    {languages.map((l) => (
+                      <td key={l.code} className="px-2 py-2"><SkeletonBlock className="h-7 w-full" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {!initLoading && rows.length === 0 && (
                   <tr><td colSpan={1 + languages.length} className="px-3 py-8 text-center text-gray-500">{t("admin.tr.noKeys")}</td></tr>
                 )}
-                {rows.slice(0, MAX_ROWS).map(({ key, label, rawName }) => (
+                {!initLoading && rows.slice(0, MAX_ROWS).map(({ key, label, rawName }) => (
                   <tr key={key} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                     <td className="px-3 py-1.5 font-mono text-[11px] text-gray-400 sticky left-0 bg-[#1a1d27] align-top">{label}</td>
                     {languages.map((l) => {
