@@ -308,6 +308,9 @@ export default function Leaders() {
   const { auth } = useAuth();
   const { lang } = useLang();
   const { tl } = useTranslit();
+  // Person names everywhere on the page: transliterate, then soften SHOUTED
+  // all-caps source entries to capital-case ("TURDIMURODOV NODIR" → "Turdimurodov Nodir").
+  const nm = (s) => titleCaseShout(tl(s));
   const { gridColor, labelColor, legendColor } = useChartTheme();
   const T = TXT[lang] || TXT.uz;
 
