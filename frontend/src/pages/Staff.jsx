@@ -555,7 +555,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   // Guard covers: (a) query fetching, (b) the one render where enabled just
   // became true but React Query hasn't set isLoading yet (data still undefined)
   if (isLoading || !data) return (
-    <div className="py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>
+    <div className="rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SkeletonTable rows={8} cols={6} />
+    </div>
   );
 
   const thCls = "text-left px-3 py-2.5 border-b";
