@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Pencil, Save,
-  Target, Users, ClipboardList, Clock, Gauge, Boxes, CalendarDays,
+  Target, Users, ClipboardList, Clock, Gauge, Boxes, CalendarDays, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
