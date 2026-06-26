@@ -932,6 +932,7 @@ const t = {
     "nav.production":      "Ишлаб чиқариш",
     "nav.trudoyomkost":    "Trudoyomkost",
     "nav.leaders":         "Лидер назорати",
+    "nav.kaizen":          "Kaizen лойиҳалари",
     "shiftDaily.title":        "Кунлик — Смена",
     "shiftDaily.prevDay":      "олдинги кун",
     "shiftDaily.vsPrev":       "олдинги кунга нисбатан",
