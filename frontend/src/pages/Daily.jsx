@@ -538,7 +538,7 @@ function SupervisorDaily() {
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold"
                 style={{ background: "var(--brand)", color: "#fff", opacity: closeMut.isPending ? 0.6 : 1 }}
               >
-                <Lock size={13} /> {closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
+                {closeMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />} {closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
               </button>
             </div>
           </div>
