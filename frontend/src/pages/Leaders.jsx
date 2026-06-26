@@ -572,7 +572,7 @@ export default function Leaders() {
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
               right={<button onClick={() => setTaskInfo(true)} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
-            <div className="px-2 py-2"><ReactApexChart type="bar" series={[{ name: "%", data: taskRates }]} options={taskOptions} height={260} /></div>
+            <div className="px-3 pb-3 pt-1"><ReactApexChart type="bar" series={[{ name: "%", data: taskRates }]} options={taskOptions} height={260} /></div>
           </div>
         </div>
 
