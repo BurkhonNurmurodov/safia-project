@@ -408,45 +408,58 @@ export default function Leaders() {
   ];
 
   // ── chart options ────────────────────────────────────────────────────────────
-  const baseAxis = {
-    grid: { borderColor: gridColor, strokeDashArray: 3 },
-    chart: { background: "transparent", toolbar: { show: false }, animations: { enabled: false } },
-  };
+  const chartBase = { background: "transparent", toolbar: { show: false }, animations: { enabled: false }, parentHeightOffset: 0, fontFamily: "inherit" };
+  // faint dashed grid so the eye can track values without the lines shouting
+  const grid = (axis) => ({ borderColor: gridColor, strokeDashArray: 4, xaxis: { lines: { show: axis === "x" } }, yaxis: { lines: { show: axis !== "x" } }, padding: { top: 0, right: 10, bottom: 0, left: 8 } });
+  const axisLabel = { style: { colors: labelColor, fontSize: "10px" } };
 
+  // Trend — smooth spline grounded by a soft gradient wash fading to transparent.
   const trendOptions = {
-    ...baseAxis,
-    chart: { ...baseAxis.chart, type: "line", zoom: { enabled: false } },
-    colors: [C_MID], stroke: { curve: "smooth", width: 3 },
-    markers: { size: 4, strokeWidth: 0 },
+    chart: { ...chartBase, type: "area", zoom: { enabled: false } },
+    colors: [C_TREND],
+    stroke: { curve: "smooth", width: 3, lineCap: "round" },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.02, stops: [0, 90, 100] } },
+    markers: { size: trendVals.length <= 16 ? 4 : 0, colors: ["#fff"], strokeColors: C_TREND, strokeWidth: 2, hover: { size: 6 } },
     dataLabels: { enabled: false },
-    xaxis: { categories: trendCats, labels: { style: { colors: labelColor, fontSize: "10px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { min: 0, max: 100, labels: { style: { colors: labelColor, fontSize: "10px" }, formatter: (v) => Math.round(v) } },
-    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` } },
+    grid: grid("y"),
+    xaxis: { categories: trendCats, labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
+    yaxis: { min: 0, max: 100, tickAmount: 4, labels: { ...axisLabel, formatter: (v) => Math.round(v) } },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(trendCats[dataPointIndex] ?? "", `${trendVals[dataPointIndex]}%`, C_TREND) },
   };
 
+  // Per-task bars — rounded tops, vertical gradient (lighter top → darker base),
+  // no in-bar numbers; the styled tooltip carries the value on hover.
   const taskOptions = {
-    ...baseAxis,
-    chart: { ...baseAxis.chart, type: "bar" },
-    plotOptions: { bar: { distributed: true, borderRadius: 3, columnWidth: "62%" } },
+    chart: { ...chartBase, type: "bar" },
+    plotOptions: { bar: { distributed: true, borderRadius: 6, borderRadiusApplication: "end", columnWidth: "56%" } },
     colors: taskRates.map(scoreColor),
-    dataLabels: { enabled: true, formatter: (v) => `${v}`, style: { fontSize: "9px", colors: ["#1a1208"] } },
+    fill: { type: "gradient", gradient: { type: "vertical", gradientToColors: taskRates.map((v) => mix(scoreColor(v), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    states: { hover: { filter: { type: "lighten", value: 0.08 } } },
+    dataLabels: { enabled: false },
     legend: { show: false },
-    xaxis: { categories: taskRates.map((_, i) => `T${i + 1}`), labels: { style: { colors: labelColor, fontSize: "10px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { min: 0, max: 100, labels: { style: { colors: labelColor, fontSize: "10px" } } },
-    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` }, x: { formatter: (_, { dataPointIndex }) => `${T.task} ${dataPointIndex + 1}` } },
+    grid: grid("y"),
+    xaxis: { categories: taskRates.map((_, i) => `T${i + 1}`), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { min: 0, max: 100, tickAmount: 4, labels: axisLabel },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(`${T.task} ${dataPointIndex + 1}`, `${taskRates[dataPointIndex]}%`, scoreColor(taskRates[dataPointIndex])) },
   };
 
-  const standHeight = Math.max(240, standings.length * 34 + 40);
+  const standHeight = Math.max(220, standings.length * 30 + 36);
+  // Standings — slim pill bars, horizontal gradient, % set just inside the end in
+  // white with a soft shadow so it stays legible on any bar length.
   const standOptions = {
-    ...baseAxis,
-    chart: { ...baseAxis.chart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 3, barHeight: "68%" } },
+    chart: { ...chartBase, type: "bar" },
+    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 5, borderRadiusApplication: "end", barHeight: "44%" } },
     colors: standings.map((e) => scoreColor(e.val)),
-    dataLabels: { enabled: true, formatter: (v) => `${v}%`, style: { fontSize: "10px", colors: ["#fff"] }, offsetX: 0 },
+    fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: standings.map((e) => mix(scoreColor(e.val), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    states: { hover: { filter: { type: "lighten", value: 0.08 } } },
+    dataLabels: { enabled: true, textAnchor: "end", offsetX: -4, formatter: (v) => `${v}%`,
+      style: { fontSize: "11px", fontWeight: 700, colors: ["#fff"] },
+      dropShadow: { enabled: true, top: 0, left: 0, blur: 2, opacity: 0.5 } },
     legend: { show: false },
-    xaxis: { min: 0, max: 100, categories: standings.map((e) => tl(e.name)), labels: { style: { colors: labelColor, fontSize: "10px" } } },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" } } },
-    tooltip: { theme: "dark", y: { formatter: (v) => `${v}%` } },
+    grid: { ...grid("x"), padding: { top: 0, right: 14, bottom: 0, left: 10 } },
+    xaxis: { min: 0, max: 100, categories: standings.map((e) => tl(e.name)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { ...axisLabel, offsetX: -4, style: { colors: labelColor, fontSize: "11px" } } },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(tl(standings[dataPointIndex].name), `${standings[dataPointIndex].val}%`, scoreColor(standings[dataPointIndex].val)) },
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
