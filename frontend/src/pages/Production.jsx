@@ -506,7 +506,7 @@ export default function Production() {
       {/* main table */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Boxes} title="Позиции" right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{rows.length} SKU</span>
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${rows.length} SKU`}</span>
         } />
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)]" style={{ color: "var(--text-1)" }}>
