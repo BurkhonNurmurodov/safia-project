@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
+import { SkeletonTable, SkeletonBlock } from "../components/ui/Skeleton";
 import StyledSelect from "../components/ui/StyledSelect";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
 import { useAuth } from "../context/AuthContext";
