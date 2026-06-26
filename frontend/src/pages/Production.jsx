@@ -216,7 +216,11 @@ function RawView({ fileType, date, managerParam }) {
     queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
   });
-  if (isLoading) return <div className="text-center py-10 text-sm" style={{ color: "var(--text-4)" }}>Загрузка…</div>;
+  if (isLoading) return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <SkeletonTable rows={8} cols={6} />
+    </div>
+  );
   if (!data?.present) {
     return (
       <div className="rounded-2xl p-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
