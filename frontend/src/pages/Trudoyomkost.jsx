@@ -466,7 +466,7 @@ export default function Trudoyomkost() {
           <button onClick={exportExcel} disabled={exporting || !hasData}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-opacity"
             style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: exporting || !hasData ? 0.5 : 1 }}>
-            <FileSpreadsheet size={14} /> {exporting ? T.exporting : T.export}
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />} {exporting ? T.exporting : T.export}
           </button>
         </div>
       </div>
