@@ -182,13 +182,60 @@ function SectionHead({ icon: Icon, title, right }) {
   );
 }
 
-function Select({ value, onChange, children }) {
+// ── person-name display helpers (for the insight cards) ─────────────────────────
+// Source names come from a free-text sheet in "Surname Given [Patronymic]" order,
+// sometimes SHOUTED in all-caps. Soften the casing and, when a name is too long
+// to fit a card, keep the surname full and abbreviate the rest → "Surname G.".
+const titleCaseShout = (s) => {
+  const str = String(s ?? "");
+  if (str && str === str.toUpperCase() && str !== str.toLowerCase())
+    return str.toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+  return str;
+};
+const abbrevName = (s) => {
+  const parts = String(s ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || String(s ?? "");
+  return `${parts[0]} ${parts.slice(1).map((w) => w[0].toUpperCase() + ".").join(" ")}`;
+};
+
+// Shrinks a single-line label to fit its container between `max` and `min` px.
+// If even `min` overflows, it swaps in the shorter `short` text and re-fits — so
+// the full name shows whenever it can, and only the worst cases get abbreviated.
+function FitText({ full, short, max = 24, min = 13, className = "", style = {} }) {
+  const boxRef = useRef(null);
+  const txtRef = useRef(null);
+  const [text, setText] = useState(full);
+  const [size, setSize] = useState(max);
+
+  useLayoutEffect(() => {
+    const box = boxRef.current, txt = txtRef.current;
+    if (!box || !txt) return;
+    const fit = () => {
+      const w = box.clientWidth;
+      if (!w) return;
+      const tryFit = (candidate) => {
+        txt.textContent = candidate;
+        let s = max;
+        txt.style.fontSize = `${s}px`;
+        while (txt.scrollWidth > w && s > min) { s -= 1; txt.style.fontSize = `${s}px`; }
+        return { fits: txt.scrollWidth <= w, s };
+      };
+      let chosen = full, r = tryFit(full);
+      if (!r.fits && short && short !== full) { chosen = short; r = tryFit(short); }
+      setText(chosen);
+      setSize(r.s);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [full, short, max, min]);
+
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="w-full text-sm rounded-lg px-2.5 py-2 outline-none cursor-pointer"
-      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}>
-      {children}
-    </select>
+    <div ref={boxRef} className={`min-w-0 ${className}`}>
+      <span ref={txtRef} className="block whitespace-nowrap font-bold leading-none"
+        style={{ fontSize: size, ...style }}>{text}</span>
+    </div>
   );
 }
 
