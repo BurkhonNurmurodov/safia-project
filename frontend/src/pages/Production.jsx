@@ -532,7 +532,7 @@ export default function Production() {
               {!loading && rows.length === 0 && (
                 <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>Нет данных за эту дату</td></tr>
               )}
-              {rows.map((r, i) => {
+              {!loading && rows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
                 const wc = wcColor(r.work_center);
                 return (
