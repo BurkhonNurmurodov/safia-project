@@ -52,6 +52,7 @@ export const DEFAULT_PAGE_ACCESS = {
   production: [], // pilot: admin-only until enabled from the Access tab
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
   leaders: [], // pilot: admin-only until enabled from the Access tab
+  kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
 };
 
 export function canAccessPage(role, pageKey, access) {
