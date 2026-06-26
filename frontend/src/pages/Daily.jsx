@@ -322,6 +322,20 @@ function SupervisorDaily() {
         </div>
       )}
 
+      {/* Loading — a supervisor is selected but the day's approval state hasn't arrived yet */}
+      {managerId && !approval && (
+        <div className="space-y-4">
+          <div className="rounded-xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SkeletonBlock className="h-3 w-40 mb-4" />
+            <SkeletonChart className="h-48" />
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SkeletonBlock className="h-3 w-32 mb-4" />
+            <SkeletonChart className="h-64" />
+          </div>
+        </div>
+      )}
+
       {/* OPEN day — nothing is calculated or shown until the supervisor closes it */}
       {managerId && approval && isOpen && (
         <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-xl mb-4"
