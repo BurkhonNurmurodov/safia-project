@@ -275,11 +275,15 @@ export default function Production() {
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/dashboard", { params: { date, ...managerParam } }).then((r) => r.data),
     placeholderData: keepPreviousData,
   });
+  // True on first load AND while a freshly-picked date is still fetching (its data
+  // isn't cached yet, so keepPreviousData hands back the old date's snapshot). Drives
+  // skeletons so stale numbers don't linger after the user switches dates.
+  const loading = isLoading || isPlaceholderData;
 
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
