@@ -467,10 +467,20 @@ export default function Production() {
       {/* staffing panel — work-center cards with load bars */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Users} title="Команды" right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{wcs.length} участк.</span>
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} участк.`}</span>
         } />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
-          {wcs.map((w) => {
+          {loading && Array.from({ length: 6 }).map((_, i) => (
+            <div key={`wc-sk-${i}`} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <SkeletonBlock className="h-5 w-14" />
+                <SkeletonBlock className="h-5 w-10" />
+              </div>
+              <SkeletonBlock className="h-1.5 w-full" />
+              <SkeletonBlock className="h-3 w-3/4 mt-2.5" />
+            </div>
+          ))}
+          {!loading && wcs.map((w) => {
             const c = loadColor(w.load);
             const wc = wcColor(w.work_center);
             return (
