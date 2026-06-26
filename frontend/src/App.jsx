@@ -19,6 +19,7 @@ import Daily from "./pages/Daily";
 import Production from "./pages/Production";
 import Trudoyomkost from "./pages/Trudoyomkost";
 import Leaders from "./pages/Leaders";
+import Kaizen from "./pages/Kaizen";
 import Login from "./pages/Login";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
