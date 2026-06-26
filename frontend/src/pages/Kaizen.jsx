@@ -6,6 +6,8 @@ import {
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import StyledSelect from "../components/ui/StyledSelect";
+import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -13,20 +15,39 @@ import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
 // ── palette ────────────────────────────────────────────────────────────────
-const C_DONE = "#22c55e", C_PROG = "#3b82f6", C_TODO = "#94a3b8", C_OVERDUE = "#ef4444";
+// On-brand status hues: desaturated to glow rather than glare against charcoal,
+// matching the emerald/amber/rose set used across Leaders & Trudoyomkost.
+const C_DONE = "#10b981", C_PROG = "#7FB3E8", C_TODO = "#94a3b8", C_OVERDUE = "#f43f5e";
+const BRAND = "#C8973F";          // brand gold — the page accent (mirrors --brand)
 
-// Per-project visual identity (emoji + accent hue), keyed by the stable slug.
-const PROJECT_META = {
-  zakreplenie: { emoji: "📌", color: "#6366f1" },
-  shadzinka:   { emoji: "🧩", color: "#06b6d4" },
-  nastavnich:  { emoji: "🤝", color: "#f59e0b" },
-  kachestvo:   { emoji: "🎯", color: "#ec4899" },
-  pokazateli:  { emoji: "📊", color: "#10b981" },
-  standarty:   { emoji: "📐", color: "#8b5cf6" },
-  hansei:      { emoji: "🪞", color: "#0ea5e9" },
-  kormery:     { emoji: "🛠️", color: "#ef8a3c" },
+// rgba tint + lighten/darken toward white/black (chart gradients & soft fills)
+const hexA = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
-const metaFor = (key) => PROJECT_META[key] || { emoji: "📁", color: "#64748b" };
+const mix = (hex, amt) => {                          // amt > 0 → lighter, < 0 → darker
+  const n = parseInt(hex.slice(1), 16);
+  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
+  const ch = (s) => Math.round(((n >> s) & 255) + (t - ((n >> s) & 255)) * p);
+  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
+};
+
+// premium glassy tooltip shared by the page's bar charts (padding · blur · shadow)
+const tipHTML = (label, val, color) => `
+  <div style="padding:8px 12px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
+    <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;margin-bottom:3px;">${label}</div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#f5f6f8;line-height:1;">
+      <span style="width:9px;height:9px;border-radius:9px;background:${color};box-shadow:0 0 8px ${color}88;"></span>${val}
+    </div>
+  </div>`;
+
+// Per-project identity emoji, keyed by the stable slug. Colour is unified to the
+// brand accent so the project grid reads as one family — not eight loud hues.
+const PROJECT_EMOJI = {
+  zakreplenie: "📌", shadzinka: "🧩", nastavnich: "🤝", kachestvo: "🎯",
+  pokazateli: "📊", standarty: "📐", hansei: "🪞", kormery: "🛠️",
+};
+const emojiFor = (key) => PROJECT_EMOJI[key] || "📁";
 
 // ── UI copy, 4 platform languages ────────────────────────────────────────────
 const TXT = {
@@ -125,18 +146,41 @@ function statusInfo(status, T) {
   return { label: T.sTodo, color: C_TODO, Icon: Circle };
 }
 
-// ── small presentational helpers ─────────────────────────────────────────────
-function Kpi({ icon: Icon, label, value, sub, color }) {
+// ── small presentational helpers (mirror Leaders / Trudoyomkost / Production) ──
+
+// Card section header band: uppercase tracked label + brand icon + bottom rule.
+function SectionHead({ icon: Icon, title, right }) {
   return (
-    <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${color}1a`, color }}>
-        <Icon size={20} />
+    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
+        {title}
       </div>
-      <div className="min-w-0">
-        <div className="text-2xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{value}</div>
-        <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>{label}</div>
-        {sub != null && <div className="text-[10px]" style={{ color }}>{sub}</div>}
+      {right}
+    </div>
+  );
+}
+
+// KPI tile: muted uppercase label + soft-tinted iconed chip on top, big value
+// below. Colour stays an indicator (the chip) — the number reads neutral unless
+// it carries an alarm (overdue).
+function Kpi({ icon: Icon, label, value, sub, accent, valueColor, subColor, primary }) {
+  return (
+    <div className="rounded-2xl px-4 py-3.5" style={{
+      background: primary ? "var(--brand-bg)" : "var(--bg-card)",
+      border: `1px solid ${primary ? "var(--brand-border)" : "var(--border)"}`,
+    }}>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-4)" }}>{label}</span>
+        {Icon && (
+          <span className="grid place-items-center w-6 h-6 rounded-lg flex-shrink-0"
+            style={{ background: accent ? hexA(accent, 0.14) : "var(--bg-inner)", color: accent || "var(--brand-text)" }}>
+            <Icon size={13} />
+          </span>
+        )}
       </div>
+      <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: valueColor || "var(--text-1)" }}>{value}</div>
+      {sub != null && <div className="text-[11px] mt-1.5" style={{ color: subColor || "var(--text-3)" }}>{sub}</div>}
     </div>
   );
 }
@@ -145,7 +189,7 @@ function StatusPill({ status, T }) {
   const { label, color } = statusInfo(status, T);
   return (
     <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-      style={{ background: `${color}1f`, color }}>
+      style={{ background: hexA(color, 0.14), color }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{label}
     </span>
   );
@@ -162,11 +206,20 @@ function MiniBar({ done, prog, todo }) {
   );
 }
 
+// Compact dot + count, used as the project-card mini-legend (replaces ✅ ◔ ○ glyphs)
+function Tally({ color, n }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{n}
+    </span>
+  );
+}
+
 export default function Kaizen() {
   const { auth } = useAuth();
   const { lang } = useLang();
   const { tl } = useTranslit();
-  const { chartTheme, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
 
@@ -252,7 +305,7 @@ export default function Kaizen() {
 
   // ── charts ───────────────────────────────────────────────────────────────────
   const gaugeOpts = {
-    chart: { type: "radialBar", sparkline: { enabled: true } },
+    chart: { type: "radialBar", sparkline: { enabled: true }, fontFamily: "inherit" },
     plotOptions: { radialBar: {
       hollow: { size: "60%" },
       track: { background: "var(--bg-inner)" },
@@ -261,20 +314,20 @@ export default function Kaizen() {
         value: { offsetY: -16, fontSize: "26px", fontWeight: 700, color: "var(--text-1)", formatter: (v) => `${Math.round(v)}%` },
       },
     } },
-    fill: { colors: [C_DONE] },
+    fill: { type: "gradient", gradient: { shade: "dark", type: "horizontal", gradientToColors: [mix(BRAND, 0.18)], stops: [0, 100] }, colors: [BRAND] },
     stroke: { lineCap: "round" },
     labels: [T.kDonePct],
   };
 
   const donutOpts = {
-    chart: { type: "donut" },
+    chart: { type: "donut", fontFamily: "inherit" },
     labels: [T.sDone, T.sProg, T.sTodo],
     colors: [C_DONE, C_PROG, C_TODO],
-    legend: { position: "bottom", labels: { colors: legendColor }, fontSize: "12px" },
-    dataLabels: { enabled: true, formatter: (v) => `${Math.round(v)}%`, style: { fontSize: "11px" } },
+    legend: { position: "bottom", labels: { colors: legendColor }, fontSize: "12px", markers: { width: 10, height: 10, radius: 3 } },
+    dataLabels: { enabled: true, formatter: (v) => `${Math.round(v)}%`, style: { fontSize: "11px", fontWeight: 600 } },
     stroke: { width: 0 },
     tooltip: { theme: tooltipTheme },
-    plotOptions: { pie: { donut: { size: "62%" } } },
+    plotOptions: { pie: { donut: { size: "64%" } } },
   };
 
   const topPeople = A.people.slice(0, 10);
@@ -283,11 +336,11 @@ export default function Kaizen() {
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "62%", borderRadius: 3 } },
     colors: [C_DONE, C_PROG, C_TODO],
-    xaxis: { categories: topPeople.map((p) => tl(p.name === "—" ? T.unassigned : p.name)), labels: { style: { colors: labelColor, fontSize: "11px" } } },
+    xaxis: { categories: topPeople.map((p) => tl(p.name === "—" ? T.unassigned : p.name)), labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" } } },
-    legend: { position: "top", labels: { colors: legendColor } },
+    legend: { position: "top", labels: { colors: legendColor }, markers: { width: 10, height: 10, radius: 3 } },
     dataLabels: { enabled: false },
-    grid: { borderColor: "var(--border)" },
+    grid: { borderColor: gridColor, strokeDashArray: 3 },
     tooltip: { theme: tooltipTheme },
     stroke: { width: 0 },
   };
@@ -298,17 +351,20 @@ export default function Kaizen() {
   ];
 
   const topTypes = A.types.slice(0, 8);
+  const typeCats = topTypes.map((t) => tl(t.type === "—" ? "—" : t.type));
   const typeOpts = {
     chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit" },
     theme: chartTheme,
-    plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 4, distributed: true } },
-    colors: ["#6366f1", "#06b6d4", "#f59e0b", "#ec4899", "#10b981", "#8b5cf6", "#0ea5e9", "#ef8a3c"],
-    xaxis: { categories: topTypes.map((t) => tl(t.type === "—" ? "—" : t.type)), labels: { style: { colors: labelColor, fontSize: "11px" } } },
+    plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 4, borderRadiusApplication: "end" } },
+    colors: [BRAND],
+    fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: [mix(BRAND, -0.22)], inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    states: { hover: { filter: { type: "lighten", value: 0.08 } } },
+    xaxis: { categories: typeCats, labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 220 } },
     legend: { show: false },
-    dataLabels: { enabled: true, style: { colors: ["#fff"], fontSize: "11px" } },
-    grid: { borderColor: "var(--border)" },
-    tooltip: { theme: tooltipTheme },
+    dataLabels: { enabled: true, style: { colors: ["#1a1208"], fontSize: "11px", fontWeight: 600 } },
+    grid: { borderColor: gridColor, strokeDashArray: 3 },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(typeCats[dataPointIndex] ?? "", `${topTypes[dataPointIndex].total} ${T.tasksWord}`, BRAND) },
   };
   const typeSeries = [{ name: T.tasksWord, data: topTypes.map((t) => t.total) }];
 
@@ -316,183 +372,185 @@ export default function Kaizen() {
   const canRefresh = data?.can_refresh;
   const medals = ["🥇", "🥈", "🥉", "🏅", "🏅"];
 
+  const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+
   const refreshBtn = canRefresh && (
     <button
       onClick={() => refresh.mutate()}
       disabled={refresh.isPending}
-      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
-      style={{ background: "var(--brand)", color: "#fff" }}
+      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-opacity"
+      style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refresh.isPending ? 0.6 : 1 }}
     >
-      <RefreshCw size={15} className={refresh.isPending ? "animate-spin" : ""} />
+      <RefreshCw size={14} className={refresh.isPending ? "animate-spin" : ""} />
       {refresh.isPending ? T.refreshing : T.refresh}
     </button>
   );
 
   // ── render ───────────────────────────────────────────────────────────────────
   return (
-    <Layout>
-      <div className="max-w-7xl mx-auto px-3 sm:px-5 py-5 space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}>
-              <Sparkles size={22} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{T.title}</h1>
-              <p className="text-xs" style={{ color: "var(--text-3)" }}>{T.subtitle}</p>
-            </div>
+    <Layout title={T.title} showFilters={false}>
+      {/* Top controls: last-synced context chip + refresh (mirrors Trudoyomkost) */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
+          <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
+          {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+        </span>
+        <div className="ml-auto">{refreshBtn}</div>
+      </div>
+
+      {refresh.isError && (
+        <div className="rounded-2xl px-4 py-3 text-xs mb-4" style={{ background: hexA(C_OVERDUE, 0.1), color: C_OVERDUE, border: `1px solid ${hexA(C_OVERDUE, 0.33)}` }}>
+          {refresh.error?.response?.data?.detail || String(refresh.error)}
+        </div>
+      )}
+
+      {isLoading ? (
+        // ── skeleton scaffold (shape-of-content, per the loader convention) ──
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-2xl px-4 py-3.5" style={cardStyle}>
+                <SkeletonBlock className="h-3 w-16 mb-3" /><SkeletonBlock className="h-6 w-12" />
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-[11px] text-right" style={{ color: "var(--text-4)" }}>
-              {T.lastSynced}<br /><span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
-            </div>
-            {refreshBtn}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="rounded-2xl p-4" style={cardStyle}><SkeletonBlock className="h-3 w-24 mb-4" /><SkeletonChart className="h-56" /></div>
+            <div className="lg:col-span-2 rounded-2xl p-4" style={cardStyle}><SkeletonBlock className="h-3 w-24 mb-4" /><SkeletonChart className="h-56" /></div>
           </div>
         </div>
-
-        {refresh.isError && (
-          <div className="rounded-xl px-4 py-2.5 text-xs" style={{ background: "#ef44441a", color: "#ef4444", border: "1px solid #ef444455" }}>
-            {refresh.error?.response?.data?.detail || String(refresh.error)}
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-24" style={{ color: "var(--text-3)" }}>
-            <Loader2 className="animate-spin" size={24} />
-          </div>
-        ) : data && data.configured === false ? (
-          // ── Not connected ──
-          <div className="rounded-2xl p-6 max-w-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <div className="flex items-center gap-2 mb-2" style={{ color: "var(--text-1)" }}>
-              <Plug size={18} /><span className="font-semibold">{T.connectTitle}</span>
-            </div>
+      ) : data && data.configured === false ? (
+        // ── Not connected ──
+        <div className="rounded-2xl overflow-hidden max-w-xl" style={cardStyle}>
+          <SectionHead icon={Plug} title={T.connectTitle} />
+          <div className="p-4">
             <p className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{T.connectNote}</p>
             <ol className="text-xs space-y-1.5 list-decimal list-inside" style={{ color: "var(--text-2)" }}>
               <li>{T.step1}</li><li>{T.step2}</li><li>{T.step3}</li>
             </ol>
           </div>
-        ) : tasks.length === 0 ? (
-          // ── Connected but empty ──
-          <div className="rounded-2xl p-8 text-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <div className="text-4xl mb-2">🌱</div>
-            <div className="font-semibold mb-1" style={{ color: "var(--text-1)" }}>{T.emptyTitle}</div>
-            <p className="text-xs mb-4" style={{ color: "var(--text-3)" }}>{T.emptyNote}</p>
-            <div className="flex justify-center">{refreshBtn}</div>
+        </div>
+      ) : tasks.length === 0 ? (
+        // ── Connected but empty ──
+        <div className="rounded-2xl p-10 text-center" style={cardStyle}>
+          <span className="grid place-items-center w-12 h-12 rounded-2xl mx-auto mb-3" style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}>
+            <Sparkles size={22} />
+          </span>
+          <div className="font-semibold mb-1" style={{ color: "var(--text-1)" }}>{T.emptyTitle}</div>
+          <p className="text-xs mb-4" style={{ color: "var(--text-4)" }}>{T.emptyNote}</p>
+          <div className="flex justify-center">{refreshBtn}</div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* KPI row */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <Kpi icon={ListChecks}   label={T.kTotal}   value={A.totals.total}   accent={BRAND} primary />
+            <Kpi icon={CheckCircle2} label={T.kDone}     value={A.totals.done}    accent={C_DONE} sub={`${A.donePct}% ${T.completion}`} subColor={C_DONE} />
+            <Kpi icon={Loader2}      label={T.kProg}     value={A.totals.prog}    accent={C_PROG} />
+            <Kpi icon={Circle}       label={T.kTodo}     value={A.totals.todo}    accent={C_TODO} />
+            <Kpi icon={AlarmClock}   label={T.kOverdue}  value={A.totals.overdue} accent={C_OVERDUE} valueColor={A.totals.overdue > 0 ? C_OVERDUE : undefined} />
+            <Kpi icon={Users}        label={T.secPeople} value={A.peopleCount}    accent={C_PROG} sub={T.people} />
           </div>
-        ) : (
-          <>
-            {/* KPI row */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              <Kpi icon={ListChecks}   label={T.kTotal}   value={A.totals.total}      color="#6366f1" />
-              <Kpi icon={CheckCircle2} label={T.kDone}     value={A.totals.done}       color={C_DONE} sub={`${A.donePct}% ${T.completion}`} />
-              <Kpi icon={Loader2}      label={T.kProg}     value={A.totals.prog}       color={C_PROG} />
-              <Kpi icon={Circle}       label={T.kTodo}     value={A.totals.todo}       color={C_TODO} />
-              <Kpi icon={AlarmClock}   label={T.kOverdue}  value={A.totals.overdue}    color={C_OVERDUE} />
-              <Kpi icon={Users}        label={T.secPeople} value={A.peopleCount}       color="#0ea5e9" sub={T.people} />
+
+          {/* Status overview: gauge + donut */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={Trophy} title={T.kDonePct} />
+              <div className="px-3 pb-3 pt-1"><ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={230} /></div>
             </div>
-
-            {/* Status overview: gauge + donut */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-1)" }}>{T.kDonePct}</div>
-                <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={230} />
-              </div>
-              <div className="lg:col-span-2 rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-1)" }}>{T.secStatus}</div>
-                <ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={230} />
-              </div>
+            <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={ListChecks} title={T.secStatus} />
+              <div className="px-3 pb-3 pt-1"><ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={230} /></div>
             </div>
+          </div>
 
-            {/* By project */}
-            <section>
-              <h2 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                <ListChecks size={16} /> {T.secProjects}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {A.byProject.map((p) => {
-                  const m = metaFor(p.key);
-                  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-                  const active = project === p.key;
-                  return (
-                    <button
-                      key={p.key}
-                      onClick={() => setProject(active ? "all" : p.key)}
-                      className="text-left rounded-2xl p-4 transition-all"
-                      style={{ background: "var(--bg-card)", border: `1px solid ${active ? m.color : "var(--border)"}`, boxShadow: active ? `0 0 0 1px ${m.color}` : "none" }}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-lg leading-none">{m.emoji}</span>
-                          <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={tl(p.name)}>{tl(p.name)}</span>
-                        </div>
-                        {p.overdue > 0 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: `${C_OVERDUE}1f`, color: C_OVERDUE }}>
-                            {p.overdue} {T.overdue.toLowerCase()}
-                          </span>
-                        )}
+          {/* By project */}
+          <section>
+            <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>
+              <ListChecks size={14} style={{ color: "var(--brand-text)" }} /> {T.secProjects}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {A.byProject.map((p) => {
+                const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+                const active = project === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => setProject(active ? "all" : p.key)}
+                    className="text-left rounded-2xl p-4 transition-all"
+                    style={{ background: "var(--bg-card)", border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`, boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-lg leading-none">{emojiFor(p.key)}</span>
+                        <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={tl(p.name)}>{tl(p.name)}</span>
                       </div>
-                      <div className="flex items-end justify-between mb-1.5">
-                        <span className="text-2xl font-bold" style={{ color: m.color }}>{pct}%</span>
-                        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{p.total} {T.tasksWord}</span>
-                      </div>
-                      <MiniBar done={p.done} prog={p.prog} todo={p.todo} />
-                      <div className="flex items-center justify-between text-[10px] mt-1.5" style={{ color: "var(--text-4)" }}>
-                        <span>✅ {p.done} · ◔ {p.prog} · ○ {p.todo}</span>
-                        <span>{p.nextDue ? `${T.nextDue}: ${p.nextDue}` : T.noDeadline}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                      {p.overdue > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: hexA(C_OVERDUE, 0.14), color: C_OVERDUE }}>
+                          {p.overdue} {T.overdue.toLowerCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-end justify-between mb-1.5">
+                      <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--brand-text)" }}>{pct}%</span>
+                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{p.total} {T.tasksWord}</span>
+                    </div>
+                    <MiniBar done={p.done} prog={p.prog} todo={p.todo} />
+                    <div className="flex items-center justify-between text-[10px] mt-2" style={{ color: "var(--text-3)" }}>
+                      <span className="flex items-center gap-2">
+                        <Tally color={C_DONE} n={p.done} /><Tally color={C_PROG} n={p.prog} /><Tally color={C_TODO} n={p.todo} />
+                      </span>
+                      <span style={{ color: "var(--text-4)" }}>{p.nextDue ? `${T.nextDue}: ${p.nextDue}` : T.noDeadline}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
-            {/* People + leaderboard */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <h2 className="text-sm font-semibold mb-1 flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                  <Users size={16} /> {T.secPeople}
-                </h2>
+          {/* People + leaderboard */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={Users} title={T.secPeople} />
+              <div className="px-3 pb-3 pt-1">
                 {topPeople.length > 0 && (
                   <ReactApexChart options={peopleOpts} series={peopleSeries} type="bar" height={Math.max(220, topPeople.length * 34)} />
                 )}
               </div>
-              <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <h2 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                  <Trophy size={16} /> {T.secLeaders}
-                </h2>
-                <div className="space-y-2">
-                  {A.leaders.map((p, i) => (
-                    <div key={p.name} className="flex items-center gap-3">
-                      <span className="text-lg w-6 text-center">{medals[i]}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }}>{tl(p.name)}</div>
-                        <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-                          <div className="h-full rounded-full" style={{ width: `${(p.done / (A.leaders[0]?.done || 1)) * 100}%`, background: C_DONE }} />
-                        </div>
+            </div>
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={Trophy} title={T.secLeaders} />
+              <div className="p-4 space-y-2.5">
+                {A.leaders.map((p, i) => (
+                  <div key={p.name} className="flex items-center gap-3">
+                    <span className="text-lg w-6 text-center">{medals[i]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }}>{tl(p.name)}</div>
+                      <div className="h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+                        <div className="h-full rounded-full" style={{ width: `${(p.done / (A.leaders[0]?.done || 1)) * 100}%`, background: BRAND }} />
                       </div>
-                      <span className="text-xs font-bold flex-shrink-0" style={{ color: C_DONE }}>{p.done}</span>
                     </div>
-                  ))}
-                  {A.leaders.length === 0 && <div className="text-xs" style={{ color: "var(--text-4)" }}>—</div>}
-                </div>
+                    <span className="text-xs font-bold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>{p.done}</span>
+                  </div>
+                ))}
+                {A.leaders.length === 0 && <div className="text-xs" style={{ color: "var(--text-4)" }}>—</div>}
               </div>
             </div>
+          </div>
 
-            {/* Task types + deadlines */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <h2 className="text-sm font-semibold mb-1 flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                  <ListChecks size={16} /> {T.secTypes}
-                </h2>
+          {/* Task types + deadlines */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={ListChecks} title={T.secTypes} />
+              <div className="px-3 pb-3 pt-1">
                 {topTypes.length > 0 && (
                   <ReactApexChart options={typeOpts} series={typeSeries} type="bar" height={Math.max(200, topTypes.length * 36)} />
                 )}
               </div>
-              <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-                <h2 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                  <CalendarClock size={16} /> {T.secDeadlines}
-                </h2>
+            </div>
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={CalendarClock} title={T.secDeadlines} />
+              <div className="p-4">
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   {[
                     { label: T.dueOverdue, value: A.totals.overdue, color: C_OVERDUE },
@@ -501,7 +559,7 @@ export default function Kaizen() {
                     { label: T.dueNoDate, value: A.noDate, color: C_TODO },
                   ].map((b) => (
                     <div key={b.label} className="rounded-xl p-2.5" style={{ background: "var(--bg-inner)" }}>
-                      <div className="text-xl font-bold" style={{ color: b.color }}>{b.value}</div>
+                      <div className="text-xl font-bold tabular-nums" style={{ color: b.color }}>{b.value}</div>
                       <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{b.label}</div>
                     </div>
                   ))}
@@ -511,87 +569,81 @@ export default function Kaizen() {
                     <div key={t.id} className="flex items-center gap-2 text-[11px]">
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: C_OVERDUE }} />
                       <span className="flex-1 truncate" style={{ color: "var(--text-2)" }} title={tl(t.title)}>{tl(t.title)}</span>
-                      <span className="flex-shrink-0 font-semibold" style={{ color: C_OVERDUE }}>{t.late} {T.daysOverdue}</span>
+                      <span className="flex-shrink-0 font-semibold tabular-nums" style={{ color: C_OVERDUE }}>{t.late} {T.daysOverdue}</span>
                     </div>
                   ))}
-                  {A.overdueTasks.length === 0 && <div className="text-[11px]" style={{ color: "var(--text-4)" }}>✅ —</div>}
+                  {A.overdueTasks.length === 0 && <div className="text-[11px]" style={{ color: "var(--text-4)" }}>—</div>}
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Task table */}
-            <section className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-              <div className="p-4 flex flex-wrap items-center gap-2 justify-between">
-                <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--text-1)" }}>
-                  <ListChecks size={16} /> {T.secTasks}
-                  <span className="text-[11px] font-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span>
-                </h2>
+          {/* Task table */}
+          <section className="rounded-2xl overflow-hidden" style={cardStyle}>
+            <SectionHead icon={ListChecks}
+              title={<span className="flex items-center gap-2">{T.secTasks}<span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span></span>}
+              right={
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
                     <input
                       value={search} onChange={(e) => setSearch(e.target.value)} placeholder={T.searchPh}
-                      className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-44"
-                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                      className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-44 outline-none"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
                     />
                   </div>
-                  <select value={project} onChange={(e) => setProject(e.target.value)}
-                    className="py-1.5 px-2 rounded-lg text-xs" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}>
-                    <option value="all">{T.allProjects}</option>
-                    {projects.map((p) => <option key={p.key} value={p.key}>{metaFor(p.key).emoji} {tl(p.name)}</option>)}
-                  </select>
-                  <select value={status} onChange={(e) => setStatus(e.target.value)}
-                    className="py-1.5 px-2 rounded-lg text-xs" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}>
-                    <option value="all">{T.allStatuses}</option>
-                    <option value="Done">{T.sDone}</option>
-                    <option value="In progress">{T.sProg}</option>
-                    <option value="Not started">{T.sTodo}</option>
-                  </select>
+                  <StyledSelect value={project} onChange={setProject} className="w-44"
+                    options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => ({ value: p.key, label: `${emojiFor(p.key)} ${tl(p.name)}` }))]} />
+                  <StyledSelect value={status} onChange={setStatus} className="w-36"
+                    options={[
+                      { value: "all", label: T.allStatuses },
+                      { value: "Done", label: T.sDone },
+                      { value: "In progress", label: T.sProg },
+                      { value: "Not started", label: T.sTodo },
+                    ]} />
                 </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                      <th className="text-left font-medium px-4 py-2">{T.colProject}</th>
-                      <th className="text-left font-medium px-4 py-2">{T.colTask}</th>
-                      <th className="text-left font-medium px-4 py-2 hidden md:table-cell">{T.colType}</th>
-                      <th className="text-left font-medium px-4 py-2 hidden sm:table-cell">{T.colResp}</th>
-                      <th className="text-left font-medium px-4 py-2">{T.colDeadline}</th>
-                      <th className="text-left font-medium px-4 py-2">{T.colStatus}</th>
-                      <th className="px-2 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((t) => {
-                      const m = metaFor(t.project_key);
-                      const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
-                      return (
-                        <tr key={t.id} style={{ borderTop: "1px solid var(--border)" }}>
-                          <td className="px-4 py-2 whitespace-nowrap"><span title={tl(t.project)}>{m.emoji}</span></td>
-                          <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{tl(t.title)}</span></td>
-                          <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
-                          <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
-                            {t.responsible?.length ? t.responsible.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap" style={{ color: overdue ? C_OVERDUE : "var(--text-3)" }}>{t.deadline || "—"}</td>
-                          <td className="px-4 py-2"><StatusPill status={t.status} T={T} /></td>
-                          <td className="px-2 py-2">
-                            {t.url && <a href={t.url} target="_blank" rel="noreferrer" title={T.openNotion} style={{ color: "var(--text-4)" }}><ExternalLink size={13} /></a>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filtered.length === 0 && (
-                      <tr><td colSpan={7} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
-      </div>
+              } />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                    <th className="text-left font-medium px-4 py-2">{T.colProject}</th>
+                    <th className="text-left font-medium px-4 py-2">{T.colTask}</th>
+                    <th className="text-left font-medium px-4 py-2 hidden md:table-cell">{T.colType}</th>
+                    <th className="text-left font-medium px-4 py-2 hidden sm:table-cell">{T.colResp}</th>
+                    <th className="text-left font-medium px-4 py-2">{T.colDeadline}</th>
+                    <th className="text-left font-medium px-4 py-2">{T.colStatus}</th>
+                    <th className="px-2 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t) => {
+                    const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
+                    return (
+                      <tr key={t.id} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td className="px-4 py-2 whitespace-nowrap"><span title={tl(t.project)}>{emojiFor(t.project_key)}</span></td>
+                        <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{tl(t.title)}</span></td>
+                        <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
+                        <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
+                          {t.responsible?.length ? t.responsible.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ color: overdue ? C_OVERDUE : "var(--text-3)" }}>{t.deadline || "—"}</td>
+                        <td className="px-4 py-2"><StatusPill status={t.status} T={T} /></td>
+                        <td className="px-2 py-2">
+                          {t.url && <a href={t.url} target="_blank" rel="noreferrer" title={T.openNotion} style={{ color: "var(--text-4)" }}><ExternalLink size={13} /></a>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
     </Layout>
   );
 }
