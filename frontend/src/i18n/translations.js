@@ -13,6 +13,7 @@ const t = {
     "nav.production":      "Ishlab chiqarish",
     "nav.trudoyomkost":    "Trudoyomkost",
     "nav.leaders":         "Lider nazorati",
+    "nav.kaizen":          "Kaizen loyihalari",
     "shiftDaily.title":        "Kunlik — Smena",
     "shiftDaily.prevDay":      "oldingi kun",
     "shiftDaily.vsPrev":       "oldingi kunga nisbatan",
