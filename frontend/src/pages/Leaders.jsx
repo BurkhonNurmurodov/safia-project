@@ -567,7 +567,7 @@ export default function Leaders() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={TrendingUp} title={T.trend} />
-            <div className="px-2 py-2"><ReactApexChart type="line" series={[{ name: "%", data: trendVals }]} options={trendOptions} height={260} /></div>
+            <div className="px-3 pb-3 pt-1"><ReactApexChart type="area" series={[{ name: "%", data: trendVals }]} options={trendOptions} height={260} /></div>
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
