@@ -500,9 +500,13 @@ export default function Production() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && (
-                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>Загрузка…</td></tr>
-              )}
+              {isLoading && Array.from({ length: 8 }).map((_, i) => (
+                <tr key={`sk-${i}`} style={{ borderTop: "1px solid var(--border)" }}>
+                  {COLS.map((c, j) => (
+                    <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                  ))}
+                </tr>
+              ))}
               {!isLoading && rows.length === 0 && (
                 <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>Нет данных за эту дату</td></tr>
               )}
