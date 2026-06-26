@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     admin_telegram_id: str = ""
     webapp_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
+    # Notion internal-integration token for the Kaizen project analytics page.
+    # Loaded from backend/.env; blank disables the integration.
+    notion_token: str = ""
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
