@@ -1900,7 +1900,9 @@ function DocumentHistoryModal({ docId, onClose }) {
           <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
         </div>
         {isLoading ? (
-          <div className="py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>
+          <div className="p-4 space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-10 w-full" />)}
+          </div>
         ) : rows.length === 0 ? (
           <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("staff.noHistory")}</div>
         ) : (
