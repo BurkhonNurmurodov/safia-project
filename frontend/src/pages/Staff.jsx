@@ -353,8 +353,8 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
         {/* Worker list */}
         <div className="overflow-y-auto flex-1">
           {isLoading ? (
-            <div className="py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>
-              {t("staff.loading")}
+            <div className="p-3 space-y-2">
+              {Array.from({ length: 8 }).map((_, i) => <SkeletonBlock key={i} className="h-9 w-full" />)}
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>
