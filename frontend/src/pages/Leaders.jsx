@@ -590,7 +590,7 @@ export default function Leaders() {
 
         {/* Lowest-performing leader */}
         <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit
-          value={hasData && insights.lowLeader ? tl(insights.lowLeader.name) : "—"}
+          value={hasData && insights.lowLeader ? nm(insights.lowLeader.name) : "—"}
           badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
           badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
       </div>
