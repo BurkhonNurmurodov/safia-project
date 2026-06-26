@@ -25,6 +25,7 @@ const ALL_LINKS = [
   { to: "/production", page: "production", key: "nav.production",    icon: Factory },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
+  { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
 ];
 
 function fmtDate(iso) {
