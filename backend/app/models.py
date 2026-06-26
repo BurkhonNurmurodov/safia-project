@@ -487,3 +487,37 @@ class PPUpload(Base):
     __table_args__ = (
         UniqueConstraint("manager_id", "date", "file_type", name="uq_pp_upload_key"),
     )
+
+
+class KaizenTask(Base):
+    """One row (task) from any of the eight Kaizen-session Notion databases.
+
+    Stored as a flat, source-agnostic snapshot (see services/notion_kaizen.py).
+    The whole table is replaced on each refresh, so there is no incremental
+    diffing — ``notion_id`` is kept only for stable per-row React keys / links."""
+    __tablename__ = "kaizen_tasks"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    project      = Column(String, index=True)   # Notion heading, e.g. "Хансей"
+    project_key  = Column(String, index=True)   # stable slug, e.g. "hansei"
+    notion_id    = Column(String, unique=True)
+    url          = Column(String, nullable=True)
+    title        = Column(Text)
+    status       = Column(String, index=True)   # Done | In progress | Not started
+    task_type    = Column(String, nullable=True)
+    responsible  = Column(JSONB, default=list)   # [name, ...]
+    customer     = Column(JSONB, default=list)   # [name, ...]
+    deadline     = Column(String, nullable=True)  # ISO date 'YYYY-MM-DD'
+    created_time = Column(String, nullable=True)  # ISO datetime from Notion
+    synced_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class KaizenSyncMeta(Base):
+    """Singleton row (id=1) tracking the last Kaizen → Notion sync."""
+    __tablename__ = "kaizen_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    task_count  = Column(Integer, default=0)
