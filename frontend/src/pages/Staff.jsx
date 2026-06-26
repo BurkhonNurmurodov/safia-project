@@ -183,7 +183,7 @@ function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, 
               <button onClick={() => onExport(false)} disabled={exporting}
                 className="flex-1 py-2 rounded-xl text-sm font-semibold"
                 style={{ background: "var(--brand)", color: "#fff" }}>
-                {exporting ? "Sending…" : "Export & Send"}
+                {exporting ? <span className="inline-flex items-center justify-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Sending…</span> : "Export & Send"}
               </button>
             </div>
           </>
