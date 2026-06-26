@@ -1,4 +1,13 @@
 import os
+
+# Cap native BLAS/OpenMP thread pools to 1 BEFORE numpy/pandas are imported
+# (via the production router → openpyxl → numpy). The default of one thread per
+# core overruns RLIMIT_NPROC on the shared host and aborts startup. setdefault
+# so an explicit env override (or passenger_wsgi) still wins.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 import traceback
 from contextlib import asynccontextmanager
 
