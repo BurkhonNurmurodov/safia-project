@@ -526,13 +526,14 @@ export default function Leaders() {
         {/* Period */}
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
-          <Select value={period} onChange={setPeriod}>
-            <option value="all">{T.periodAll}</option>
-            <option value="today">{T.periodToday}</option>
-            <option value="yesterday">{T.periodYesterday}</option>
-            <option value="last-week">{T.periodWeek}</option>
-            <option value="custom">{T.periodCustom}</option>
-          </Select>
+          <StyledSelect value={period} onChange={setPeriod}
+            options={[
+              { value: "all", label: T.periodAll },
+              { value: "today", label: T.periodToday },
+              { value: "yesterday", label: T.periodYesterday },
+              { value: "last-week", label: T.periodWeek },
+              { value: "custom", label: T.periodCustom },
+            ]} />
           {period === "custom" && (
             <div className="flex items-center gap-1.5 mt-2">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
