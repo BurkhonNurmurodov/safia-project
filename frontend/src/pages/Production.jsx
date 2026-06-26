@@ -497,7 +497,7 @@ export default function Production() {
               </div>
             );
           })}
-          {wcs.length === 0 && (
+          {!loading && wcs.length === 0 && (
             <div className="col-span-full text-center py-6 text-sm" style={{ color: "var(--text-4)" }}>Нет участков</div>
           )}
         </div>
