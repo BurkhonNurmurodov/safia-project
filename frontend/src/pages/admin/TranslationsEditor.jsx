@@ -63,18 +63,21 @@ export default function TranslationsEditor() {
   function load() {
     // UI-string overrides + language list (public) and name.* overrides (auth)
     // arrive separately — merge both into the same overrides map.
-    api.get("/api/translations").then((r) => {
-      setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
-      if (r.data?.languages?.length) {
-        setLanguages(r.data.languages.map((l) => ({ code: l.code, name: l.name })));
-      }
-    }).catch(() => {});
-    api.get("/api/translations/names").then((r) => {
-      setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
-    }).catch(() => {});
-    api.get("/api/admin/translations/names").then((r) => {
-      setDbNames({ brigadirs: [], job_titles: [], workers: [], ...(r.data || {}) });
-    }).catch(() => {});
+    setInitLoading(true);
+    Promise.allSettled([
+      api.get("/api/translations").then((r) => {
+        setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
+        if (r.data?.languages?.length) {
+          setLanguages(r.data.languages.map((l) => ({ code: l.code, name: l.name })));
+        }
+      }),
+      api.get("/api/translations/names").then((r) => {
+        setOverrides((prev) => mergeOverrides(prev, r.data?.overrides || {}));
+      }),
+      api.get("/api/admin/translations/names").then((r) => {
+        setDbNames({ brigadirs: [], job_titles: [], workers: [], ...(r.data || {}) });
+      }),
+    ]).finally(() => setInitLoading(false));
   }
   useEffect(() => { load(); }, []);
 
