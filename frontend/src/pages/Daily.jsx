@@ -278,9 +278,9 @@ function SupervisorDaily() {
                   onClick={() => { if (window.confirm(t("staff.apprReopenConfirm"))) reopenMut.mutate(); }}
                   disabled={reopenMut.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{ background: "var(--bg-card)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}
+                  style={{ background: "var(--bg-card)", color: "var(--text-2)", border: "1px solid var(--border-md)", opacity: reopenMut.isPending ? 0.6 : 1 }}
                 >
-                  <Unlock size={13} /> {t("daily.reopenDay")}
+                  {reopenMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Unlock size={13} />} {t("daily.reopenDay")}
                 </button>
               )}
             </>
