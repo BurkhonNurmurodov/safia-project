@@ -402,13 +402,21 @@ export default function Production() {
 
       {/* KPI row */}
       <div className="flex flex-wrap gap-3 mb-4">
-        <Kpi label="Вып %" value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
-          bar={totals.completion} barColor={vypColor(totals.completion)} primary />
-        <Kpi label="Людей (Σ)" value={fmt(totals.total_people, 0)} icon={Users} />
-        <Kpi label="Общ. труд. (мин)" value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
-        <Kpi label="Общ. труд. Факт (мин)" value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
-        <Kpi label="Ср. загруженность" value={pct(totals.avg_load)} icon={Gauge} accent={loadColor(totals.avg_load)}
-          bar={totals.avg_load} barColor={loadColor(totals.avg_load)} />
+        {loading ? Array.from({ length: 5 }).map((_, i) => (
+          <div key={`kpi-sk-${i}`} className="rounded-2xl px-4 py-3.5 flex-1 min-w-[150px]"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SkeletonBlock className="h-3 w-20 mb-3" />
+            <SkeletonBlock className="h-7 w-24" />
+          </div>
+        )) : (<>
+          <Kpi label="Вып %" value={pct(totals.completion)} icon={Target} accent={vypColor(totals.completion)}
+            bar={totals.completion} barColor={vypColor(totals.completion)} primary />
+          <Kpi label="Людей (Σ)" value={fmt(totals.total_people, 0)} icon={Users} />
+          <Kpi label="Общ. труд. (мин)" value={fmt(totals.total_plan_labor, 0)} icon={Clock} />
+          <Kpi label="Общ. труд. Факт (мин)" value={fmt(totals.total_actual_labor, 0)} icon={ClipboardList} />
+          <Kpi label="Ср. загруженность" value={pct(totals.avg_load)} icon={Gauge} accent={loadColor(totals.avg_load)}
+            bar={totals.avg_load} barColor={loadColor(totals.avg_load)} />
+        </>)}
       </div>
 
       {/* warnings */}
