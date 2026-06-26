@@ -50,6 +50,7 @@ export default function TranslationsEditor() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [initLoading, setInitLoading] = useState(true);
 
   const mergeOverrides = (prev, incoming) => {
     const next = { ...prev };
