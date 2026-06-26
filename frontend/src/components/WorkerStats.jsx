@@ -5,6 +5,7 @@ import {
   TableProperties, CalendarRange, Sparkles,
 } from "lucide-react";
 import api from "../utils/api";
+import { SkeletonBlock } from "./ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
