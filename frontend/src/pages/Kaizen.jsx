@@ -9,7 +9,6 @@ import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
-import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
