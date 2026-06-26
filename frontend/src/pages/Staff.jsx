@@ -1151,7 +1151,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
               {isAdmin ? t("staff.selectDateSupFirstDot") : t("staff.selectDateFirstDot")}
             </div>
           ) : isLoading ? (
-            <div className="py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>
+            <SkeletonTable rows={8} cols={5} />
           ) : employees.length === 0 ? (
             <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("staff.noEmployees")}</div>
           ) : (
@@ -1638,7 +1638,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
               {isAdmin ? t("staff.selectDateSupFirstDot") : t("staff.selectDateFirstDot")}
             </div>
           ) : isLoading ? (
-            <div className="py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>
+            <SkeletonTable rows={8} cols={5} />
           ) : employees.length === 0 ? (
             <div className="py-10 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("staff.noEmployees")}</div>
           ) : (
