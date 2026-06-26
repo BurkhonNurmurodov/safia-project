@@ -498,37 +498,32 @@ export default function Leaders() {
 
       {/* KPI / insight cards */}
       <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-3 mb-4`}>
-        {/* Average success */}
-        <div className="rounded-2xl px-4 py-3 flex flex-col justify-center" style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.avgSuccess}</span>
-            <Gauge size={15} style={{ color: "var(--brand-text)" }} />
-          </div>
-          <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: hasData ? scoreColor(avg) : "var(--text-4)" }}>
-            {hasData ? `${avg}%` : "—"}
-          </div>
-        </div>
+        {/* Average success — hero: the only card with an accent glow */}
+        <StatCard label={T.avgSuccess} icon={Gauge} tip={T.avgSuccess}
+          value={hasData ? `${avg}%` : "—"}
+          valueColor={hasData ? scoreColor(avg) : "var(--text-4)"}
+          accent={hasData ? scoreColor(avg) : undefined} />
 
         {/* Lowest-success task */}
-        <KpiCard label={T.lowTask}
+        <StatCard label={T.lowTask} icon={AlertTriangle}
           tip={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}: ${taskDetail(insights.lowTask.idx, lang).n}` : T.tipLowTask}
           value={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}` : "—"}
-          sub={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
-          color={hasData && insights.lowTask ? scoreColor(insights.lowTask.val) : "var(--text-4)"} />
+          badge={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
+          badgeColor={hasData && insights.lowTask ? scoreColor(insights.lowTask.val) : "var(--text-4)"} />
 
         {/* Lowest-performing supervisor — shift-managers / admins only */}
         {!isSupervisor && (
-          <KpiCard label={T.lowSup} tip={T.tipLowSup}
+          <StatCard label={T.lowSup} icon={Users} tip={T.tipLowSup}
             value={hasData && insights.lowSup ? tl(insights.lowSup.name) : "—"}
-            sub={hasData && insights.lowSup ? `${insights.lowSup.val}%` : null}
-            color={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
+            badge={hasData && insights.lowSup ? `${insights.lowSup.val}%` : null}
+            badgeColor={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
         )}
 
         {/* Lowest-performing leader */}
-        <KpiCard label={T.lowLeader} tip={T.tipLowLeader}
+        <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader}
           value={hasData && insights.lowLeader ? tl(insights.lowLeader.name) : "—"}
-          sub={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
-          color={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
+          badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
+          badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
       </div>
 
       {isError && (
