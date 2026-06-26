@@ -1766,7 +1766,9 @@ export function DocumentViewModal({ docId, onClose }) {
           <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
         </div>
         {isLoading || !doc ? (
-          <div className="py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>
+          <div className="p-5 space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-5 w-full" />)}
+          </div>
         ) : (
           <div className="p-5 space-y-3">
             <div className="grid grid-cols-2 gap-3 text-xs">
