@@ -2672,7 +2672,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
     setSelected(allSelected ? new Set() : new Set(rows.map(rowKey)));
   }
 
-  if (isLoading) return <div className="py-8 text-center text-sm" style={{ color: "var(--text-3)" }}>{t("staff.loading")}</div>;
+  if (isLoading) return <div className="rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}><SkeletonTable rows={6} cols={6} /></div>;
   if (documents.length === 0) return <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("staff.noDocuments")}</div>;
 
   const thCls = "px-3 py-2.5 font-semibold uppercase tracking-wide text-[10px]";
