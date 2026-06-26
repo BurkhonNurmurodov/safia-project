@@ -3,6 +3,7 @@ import { Search, Plus, Save, Globe, Check, Loader2 } from "lucide-react";
 import dict from "../../i18n/translations";
 import { useLang } from "../../context/LangContext";
 import { transliterate } from "../../utils/transliterate";
+import { SkeletonBlock } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
 
 const BASE_LANGS = ["uz", "uz_cyrl", "ru", "en"];
