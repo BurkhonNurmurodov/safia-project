@@ -583,7 +583,7 @@ export default function Leaders() {
         {/* Lowest-performing supervisor — shift-managers / admins only */}
         {!isSupervisor && (
           <StatCard label={T.lowSup} icon={Users} tip={T.tipLowSup} fit
-            value={hasData && insights.lowSup ? tl(insights.lowSup.name) : "—"}
+            value={hasData && insights.lowSup ? nm(insights.lowSup.name) : "—"}
             badge={hasData && insights.lowSup ? `${insights.lowSup.val}%` : null}
             badgeColor={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
         )}
