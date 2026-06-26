@@ -588,7 +588,7 @@ export default function Leaders() {
                   options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
               </div>
             } />
-          <div className="px-2 py-2"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
+          <div className="px-3 pb-3 pt-1"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
         </div>
 
         {/* Recent submissions */}
