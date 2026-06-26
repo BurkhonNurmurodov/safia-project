@@ -14,9 +14,32 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
-// ── score colours (tuned for the dark dashboard, not the Bootstrap brand set) ──
-const C_BAD = "#ef4444", C_MID = "#C8973F", C_GOOD = "#22c55e";
+// ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
+//    deliberately desaturated so they glow rather than glare against charcoal) ──
+const C_BAD = "#F43F5E", C_MID = "#F59E0B", C_GOOD = "#10B981";
+const C_TREND = "#D4A95C";                          // brand gold — the completion line
 const scoreColor = (v) => (v < 50 ? C_BAD : v < 85 ? C_MID : C_GOOD);
+
+// hex helpers: rgba tint + lighten/darken toward white/black (for chart gradients)
+const hexA = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+const mix = (hex, amt) => {                          // amt > 0 → lighter, < 0 → darker
+  const n = parseInt(hex.slice(1), 16);
+  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
+  const ch = (s) => Math.round(((n >> s) & 255) + (t - ((n >> s) & 255)) * p);
+  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
+};
+
+// premium glassy tooltip shared by every chart on the page (padding · blur · shadow)
+const tipHTML = (label, val, color) => `
+  <div style="padding:8px 12px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
+    <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;margin-bottom:3px;">${label}</div>
+    <div style="display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#f5f6f8;line-height:1;">
+      <span style="width:9px;height:9px;border-radius:9px;background:${color};box-shadow:0 0 8px ${color}88;"></span>${val}
+    </div>
+  </div>`;
 
 // ── UI copy, all 4 platform languages ─────────────────────────────────────────
 const TXT = {
