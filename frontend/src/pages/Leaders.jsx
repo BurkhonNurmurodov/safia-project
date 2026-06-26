@@ -4,8 +4,10 @@ import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
   X, CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide, Search,
+  AlertTriangle, Users, User,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
