@@ -3570,7 +3570,9 @@ function ApprovalsCalendar({ role, supervisors }) {
               );
             })}
           </div>
-          {isLoading && <div className="text-center text-xs mt-3" style={{ color: "var(--text-4)" }}>{t("staff.loading")}</div>}
+          {(isLoading || closeMut.isPending || reopenMut.isPending) && (
+            <div className="flex justify-center mt-3"><Loader2 size={16} className="animate-spin" style={{ color: "var(--text-4)" }} /></div>
+          )}
         </div>
       )}
       <div className="pb-16" />
