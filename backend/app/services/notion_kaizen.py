@@ -59,12 +59,18 @@ STATUS_IN_PROGRESS = "In progress"
 STATUS_NOT_STARTED = "Not started"
 
 
+def _token() -> str:
+    # pydantic-settings loads .env into the Settings object (not os.environ),
+    # so prefer settings.notion_token; fall back to a real env var for local runs.
+    return settings.notion_token or os.getenv("NOTION_TOKEN", "")
+
+
 def token_configured() -> bool:
-    return bool(os.getenv("NOTION_TOKEN"))
+    return bool(_token())
 
 
 def _headers() -> dict:
-    token = os.getenv("NOTION_TOKEN")
+    token = _token()
     if not token:
         raise RuntimeError(
             "NOTION_TOKEN is not configured. Add it to the backend environment "
