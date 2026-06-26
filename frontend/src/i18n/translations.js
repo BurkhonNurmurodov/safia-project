@@ -2770,6 +2770,7 @@ const t = {
     "nav.production":      "Production",
     "nav.trudoyomkost":    "Trudoyomkost",
     "nav.leaders":         "Leader Monitoring",
+    "nav.kaizen":          "Kaizen Projects",
     "shiftDaily.title":        "Daily — Shift",
     "shiftDaily.prevDay":      "prev. day",
     "shiftDaily.vsPrev":       "vs prev. day",
