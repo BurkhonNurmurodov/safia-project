@@ -257,7 +257,10 @@ function Toggle({ value, onChange, options }) {
 // quirks): muted label + iconed chip on top, big value below, and the score %
 // as a soft-tinted pill so colour stays an *indicator* — never a slab of neon.
 // `accent` lights a hairline glow across the top and tints the chip (hero card).
-function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent }) {
+function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit }) {
+  // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
+  // the card width (abbreviating to "Surname G." only if it still won't fit).
+  const fitFull = fit ? titleCaseShout(value) : value;
   return (
     <div className="relative rounded-2xl p-4 overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {accent && <div className="absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />}
@@ -269,7 +272,12 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
         </span>
       </div>
       <div className="flex items-end justify-between gap-2 min-w-0">
-        <span className="text-2xl font-bold tabular-nums leading-none truncate" style={{ color: valueColor || "var(--text-1)" }}>{value}</span>
+        {fit ? (
+          <FitText full={fitFull} short={abbrevName(fitFull)} className="flex-1"
+            style={{ color: valueColor || "var(--text-1)" }} />
+        ) : (
+          <span className="text-2xl font-bold tabular-nums leading-none truncate" style={{ color: valueColor || "var(--text-1)" }}>{value}</span>
+        )}
         {badge != null && (
           <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded-md flex-shrink-0 leading-none"
             style={{ background: hexA(badgeColor, 0.15), color: badgeColor }}>{badge}</span>
