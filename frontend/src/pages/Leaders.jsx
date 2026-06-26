@@ -516,9 +516,9 @@ export default function Leaders() {
       dropShadow: { enabled: true, top: 0, left: 0, blur: 2, opacity: 0.5 } },
     legend: { show: false },
     grid: { ...grid("x"), padding: { top: 0, right: 14, bottom: 0, left: 10 } },
-    xaxis: { min: 0, max: 100, categories: standings.map((e) => tl(e.name)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    xaxis: { min: 0, max: 100, categories: standings.map((e) => nm(e.name)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { labels: { ...axisLabel, offsetX: -4, style: { colors: labelColor, fontSize: "11px" } } },
-    tooltip: { custom: ({ dataPointIndex }) => tipHTML(tl(standings[dataPointIndex].name), `${standings[dataPointIndex].val}%`, scoreColor(standings[dataPointIndex].val)) },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(nm(standings[dataPointIndex].name), `${standings[dataPointIndex].val}%`, scoreColor(standings[dataPointIndex].val)) },
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
