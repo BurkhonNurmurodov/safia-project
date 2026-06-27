@@ -206,6 +206,12 @@ class Notification(Base):
 
     id                    = Column(Integer, primary_key=True, autoincrement=True)
     recipient_telegram_id = Column(BigInteger, nullable=True)   # null = broadcast; set = user-specific
+    # Template-based, view-time-localizable text: nkey + params let the bell render
+    # each row in the *viewer's* current language (and re-render on switch). title/
+    # body still hold the text rendered in the recipient's language at creation —
+    # used for the Telegram DM and as a fallback for legacy/free-form rows (nkey null).
+    nkey                  = Column(String, nullable=True)        # template key (see _NOTIF_STRINGS); null = free-form
+    params                = Column(JSONB, nullable=True)         # JSON params for the template
     title                 = Column(String, nullable=False)
     body                  = Column(Text, nullable=False)
     type                  = Column(String, default="info")      # info | success | warning | error
