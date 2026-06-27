@@ -37,6 +37,7 @@ try:
         seed_admins, seed_languages, backfill_day_approvals, backfill_day_closures,
         backfill_deletion_batch_ids, seed_managers_and_sources, seed_exchange_tasks,
         add_edit_requests_batch_id, add_last_seen_column, migrate_multi_roles,
+        add_notification_template_columns,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
     )
     from app.telegram_bot import setup_webhook
@@ -45,6 +46,7 @@ try:
     Base.metadata.create_all(bind=engine)
     add_last_seen_column()
     add_edit_requests_batch_id()
+    add_notification_template_columns()
     migrate_multi_roles()
     seed_admins()
     seed_languages()
