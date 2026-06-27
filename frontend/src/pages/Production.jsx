@@ -401,7 +401,7 @@ export default function Production() {
         <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 mb-4 text-xs"
           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
           <AlertTriangle size={14} />
-          За эту дату нет загрузки SAP «фаза». Загрузите файл через Админ → Производство, затем выберите ту же дату.
+          {t("production.noSapData")}
         </div>
       )}
 
