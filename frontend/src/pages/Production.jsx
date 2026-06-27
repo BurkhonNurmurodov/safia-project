@@ -72,6 +72,34 @@ const COLS = [
   { key: "pareto", labelKey: "production.col.pareto", align: "center", hintKey: "production.col.paretoHint" },
 ];
 
+// Sort accessor per column — mirrors how each cell derives its value, so a header
+// click sorts on exactly what the row shows. Returns null for "missing" cells
+// (no labour / no plan) so they sink to the bottom regardless of direction.
+const sortVal = (r, key) => {
+  switch (key) {
+    case "sap_code":     return r.sap_code;
+    case "name":         return r.name;
+    case "labor":        return r.has_labor ? r.labor_time : null;
+    case "wc":           return r.work_center;
+    case "people":       return r.people;
+    case "vyp":          return r.total_labor ? r.actual_labor / r.total_labor : null;
+    case "fact":         return r.actual_qty;
+    case "plan":         return r.plan_qty;
+    case "actual_labor": return r.actual_labor;
+    case "labor_total":  return r.total_labor;
+    case "minutes":      return r.minutes;
+    case "pareto":       return r.pareto;
+    default:             return null;
+  }
+};
+
+// ── sortable-header indicator ─────────────────────────────────────────────────
+function SortIcon({ active, dir }) {
+  if (!active) return <ChevronsUpDown size={12} style={{ opacity: 0.3 }} />;
+  const Icon = dir === "asc" ? ChevronUp : ChevronDown;
+  return <Icon size={12} style={{ color: "var(--brand-text)" }} />;
+}
+
 // ── thin progress bar ────────────────────────────────────────────────────────
 function Bar({ value, color, height = 6, track = "var(--bg-inner)" }) {
   const w = Math.max(0, Math.min(1, value ?? 0)) * 100;
