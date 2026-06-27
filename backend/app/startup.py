@@ -188,6 +188,22 @@ def add_last_seen_column() -> None:
         db.close()
 
 
+def add_notification_template_columns() -> None:
+    """Add nkey + params columns to notifications (idempotent). They let each row
+    store its template key + params so the bell can render it in the viewer's
+    current language; legacy rows have NULL and fall back to the stored text."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS nkey VARCHAR"))
+        db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS params JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] notification template columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_edit_requests_batch_id() -> None:
     """Add batch_id column to edit_requests if it does not exist yet (idempotent)."""
     db = SessionLocal()
