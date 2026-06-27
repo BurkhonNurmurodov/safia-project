@@ -393,7 +393,7 @@ export default function Production() {
       {view === "zagruzka" && (<>
       {isError && (
         <div className="rounded-2xl p-4 text-sm" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
-          {error?.response?.data?.detail || "Ошибка загрузки"}
+          {error?.response?.data?.detail || t("production.loadError")}
         </div>
       )}
 
