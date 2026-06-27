@@ -236,7 +236,7 @@ function RawView({ fileType, date, managerParam }) {
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-center justify-between px-4 py-2.5 text-xs" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-3)" }}>
         <span className="font-semibold truncate" style={{ color: "var(--text-2)" }}>{data.filename || "—"}</span>
-        <span className="flex-shrink-0">{data.row_count} строк{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
+        <span className="flex-shrink-0">{data.row_count} {t("production.rows")}{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
