@@ -598,16 +598,13 @@ export default function Production() {
               <tr style={{ color: "var(--text-3)" }}>
                 {COLS.map((c) => (
                   <th key={c.key} title={c.hintKey ? t(c.hintKey) : undefined}
+                    onClick={() => toggleSort(c.key)}
                     aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold ${c.align === "center" ? "text-center" : c.align === "right" ? "text-right" : "text-left"}`}
+                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold cursor-pointer select-none transition-colors hover:bg-[var(--bg-accent)] ${c.align === "center" ? "text-center" : c.align === "right" ? "text-right" : "text-left"}`}
                     style={{ background: "var(--bg-inner)" }}>
                     <span className={`inline-flex items-center gap-1 ${c.align === "center" ? "justify-center" : c.align === "right" ? "justify-end" : ""}`}>
-                      <button type="button" onClick={() => toggleSort(c.key)}
-                        className="inline-flex items-center gap-1 cursor-pointer select-none rounded transition-colors hover:text-[var(--text-1)]">
-                        {t(c.labelKey)}
-                        <SortIcon active={sort.key === c.key} dir={sort.dir} />
-                      </button>
-                      {colFilter[c.key]}
+                      {t(c.labelKey)}
+                      <SortIcon active={sort.key === c.key} dir={sort.dir} />
                     </span>
                   </th>
                 ))}
