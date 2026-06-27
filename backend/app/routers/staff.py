@@ -224,8 +224,15 @@ def _fmt_date(d, lang: str) -> str:
 
 
 def _get_user_lang(db: Session, telegram_id: int) -> str:
+    """The recipient's saved language, used to render their Telegram DM. Seeded
+    admins have no telegram_users row, so fall back to the admins table."""
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
-    return (user.language or "uz") if user else "uz"
+    if user and user.language:
+        return user.language
+    admin = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+    if admin and admin.language:
+        return admin.language
+    return "uz"
 
 
 def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
