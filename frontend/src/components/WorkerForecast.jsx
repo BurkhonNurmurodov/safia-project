@@ -317,7 +317,7 @@ export default function WorkerForecast() {
                           {hasVal ? val : <span style={{ opacity: 0.4 }}>{t.na}</span>}
                           {isActual && (
                             <span style={{ position: "absolute", top: 2, right: 3, width: 5, height: 5, borderRadius: "50%",
-                              background: "var(--text-3)", opacity: 0.85 }} />
+                              background: dotColor, opacity: within == null ? 0.85 : 1 }} />
                           )}
                         </td>
                       );
