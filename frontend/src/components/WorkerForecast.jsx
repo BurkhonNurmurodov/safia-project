@@ -297,7 +297,6 @@ export default function WorkerForecast() {
                       // days stay neutral (the value is known, not a prediction).
                       const fill = isActual ? null : CONF_BG[conf];
                       const clickable = c && (c.forecast != null || c.actual != null);
-                      const isToday = weekDates[w] === today;
                       return (
                         <td key={w} onClick={() => clickable && setModalCell({ ...c, supName: sup.name, wdFull: (WD[lang] || WD.uz).f[w] })}
                           title={isActual ? t.actual : (hasVal ? t.forecastTag : t.noData)}
