@@ -968,7 +968,6 @@ const t = {
     "production.col.pareto":       "Pareto",
     "production.col.paretoHint":   "Umumiy mehnatdagi ulush",
     "production.filterPlaceholder": "SAP kod / Nomi",
-    "production.allTeams":         "Barcha jamoalar",
     "production.noMatch":          "Filtrga mos pozitsiya yo'q",
     "production.editManually":     "Qo'lda o'zgartirish",
     "production.reconTitle":       "Shtatda qancha bo'lishi kerak",
