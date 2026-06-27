@@ -439,7 +439,7 @@ export default function Production() {
               <button type="button" onClick={() => setUnknownOpen((o) => !o)}
                 className="flex items-center gap-2 font-medium w-full text-left">
                 <AlertTriangle size={14} />
-                <span>{unknown.length} SKU из загрузки нет в каталоге (admin)</span>
+                <span>{unknown.length} {t("production.unknownSkusSuffix")}</span>
                 {unknownOpen ? <ChevronDown size={14} className="ml-auto opacity-70" />
                   : <ChevronRight size={14} className="ml-auto opacity-70" />}
               </button>
