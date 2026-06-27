@@ -96,7 +96,7 @@ def list_notifications(
         q = q.filter(Notification.recipient_telegram_id == None)  # noqa: E711
 
     rows = q.limit(50).all()
-    return [_row(r) for r in rows]
+    return [_row(r, view_lang) for r in rows]
 
 
 @router.post("", status_code=201)
