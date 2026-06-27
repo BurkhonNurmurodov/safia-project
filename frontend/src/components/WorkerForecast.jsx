@@ -58,7 +58,8 @@ const T = {
 };
 
 // confidence → solid fill (mirrors the fleet heatmap: saturated bg + auto-contrast text)
-const CONF_BG = { high: "#22c55e", medium: "#C8973F", low: "#ef4444" };
+// traffic-light red/yellow/green — deliberately NOT the brand gold
+const CONF_BG = { high: "#22c55e", medium: "#eab308", low: "#ef4444" };
 
 /** Pick black or white text so it's legible on any solid hex background. */
 function contrastText(hex) {
