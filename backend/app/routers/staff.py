@@ -229,6 +229,10 @@ def _get_user_lang(db: Session, telegram_id: int) -> str:
 
 
 def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
+    """Render a notification template (title, body) in ``lang``. Pure — given the
+    same key + raw params it produces the same output, so the bell can call it at
+    *view time* in each viewer's current language (see routers/notifications.py)."""
+    params = params or {}
     strings = _NOTIF_STRINGS.get(nkey, {})
     title_tmpl, body_tmpl = strings.get(lang) or strings.get("en") or (nkey, "")
     # Latinise embedded DB values (names, job titles) for uz/en so notifications
@@ -237,15 +241,45 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     localized = {k: transliterate(v, lang) for k, v in params.items()}
     if "date" in params:
         localized["date"] = _fmt_date(params["date"], lang)
+    # Language-derived params: resolve from the raw value so the label localises
+    # to the *viewer's* language, not the creator's (doc_type → doc_label).
+    if "doc_type" in params:
+        localized["doc_label"] = _doc_label(params["doc_type"], lang)
     return title_tmpl.format(**localized), body_tmpl.format(**localized)
 
 
-def _notify(db: Session, telegram_id: int, title: str, body: str, type: str = "info", dm: bool = True):
+def _jsonify_params(params: dict) -> dict:
+    """Make a template params dict JSON-storable: dates → ISO strings; everything
+    else (names, counts, slugs) is already JSON-safe."""
+    return {
+        k: (v.isoformat() if isinstance(v, (date, datetime)) else v)
+        for k, v in (params or {}).items()
+    }
+
+
+def _notify(
+    db: Session, telegram_id: int, title: str | None = None, body: str | None = None,
+    type: str = "info", dm: bool = True, *,
+    nkey: str | None = None, params: dict | None = None, lang: str | None = None,
+):
     # Ghost Mode (admin header toggle): the change still applies and is recorded
     # in the audit trail, but no bell/Telegram notification is pushed to anyone.
     if notifications_suppressed():
         return
-    db.add(Notification(recipient_telegram_id=telegram_id, title=title, body=body, type=type))
+    if nkey is not None:
+        # Template row: store the key + raw params so the bell renders it in each
+        # viewer's current language. title/body are also stored, rendered in the
+        # recipient's language, for the Telegram DM and as a legacy fallback.
+        if lang is None:
+            lang = _get_user_lang(db, telegram_id)
+        title, body = _mk_notif(nkey, params or {}, lang)
+        db.add(Notification(
+            recipient_telegram_id=telegram_id, nkey=nkey,
+            params=_jsonify_params(params or {}), title=title, body=body, type=type,
+        ))
+    else:
+        title, body = title or "", body or ""
+        db.add(Notification(recipient_telegram_id=telegram_id, title=title, body=body, type=type))
     if dm:
         try:
             from app.telegram_bot import send_tg_notification
