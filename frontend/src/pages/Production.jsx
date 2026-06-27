@@ -336,7 +336,7 @@ export default function Production() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="inline-flex items-center rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
           <button onClick={() => setDate((d) => shiftDate(d, -1))} className="p-2 transition-colors hover:bg-[var(--bg-inner)]"
-            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label="Предыдущий день">
+            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label={t("production.prevDay")}>
             <ChevronLeft size={16} />
           </button>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
