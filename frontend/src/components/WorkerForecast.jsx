@@ -341,9 +341,14 @@ export default function WorkerForecast() {
               <span style={{ width: 11, height: 11, borderRadius: 3, background: "var(--bg-inner)", border: "1px solid var(--border)", display: "inline-block" }} />
               {t.insufficient}
             </span>
-            <span className="inline-flex items-center gap-1 ml-2">
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-3)", display: "inline-block" }} />
-              {t.actual}
+            <span className="inline-flex items-center gap-1 ml-2 font-medium">{t.actual}:</span>
+            <span className="inline-flex items-center gap-1">
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+              {t.withinBand}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+              {t.outOfBand}
             </span>
             <span className="ml-auto italic">{t.tapHint}</span>
           </div>
