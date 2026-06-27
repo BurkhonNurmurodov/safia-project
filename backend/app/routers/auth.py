@@ -114,7 +114,8 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     if not telegram_id:
         raise HTTPException(status_code=400, detail="No user ID in initData")
 
-    is_admin = db.query(Admin).filter_by(telegram_id=telegram_id).first() is not None
+    admin_row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+    is_admin = admin_row is not None
     _log.warning("AUTH: telegram_id=%s  is_admin=%s", telegram_id, is_admin)
 
     # Admin check — no telegram_users record needed
