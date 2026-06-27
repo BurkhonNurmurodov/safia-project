@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Pencil, Save,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search,
+  AlertTriangle, Pencil, Save,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, CalendarDays, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -182,7 +183,7 @@ function ReconciliationCard({ data, onSave, saving }) {
     <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-          Сколько должна на штатке
+          {t("production.reconTitle")}
         </span>
         <button
           onClick={() => onSave(draft)}
@@ -190,7 +191,7 @@ function ReconciliationCard({ data, onSave, saving }) {
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity"
           style={{ background: "var(--brand)", color: "#fff", opacity: saving ? 0.6 : 1 }}
         >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Сохранить
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {t("production.save")}
         </button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
