@@ -2520,13 +2520,13 @@ def _reject_document(doc: HrDocument, caller: dict, db: Session):
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft documents can be rejected")
     if doc.created_by_telegram_id and doc.created_by_telegram_id != int(caller["sub"]):
-        lang = _get_user_lang(db, doc.created_by_telegram_id)
-        title, body = _mk_notif("document_rejected", {
-            "actor_name": caller.get("full_name", ""),
-            "doc_label":  _doc_label(doc.doc_type, lang),
-            "date":       doc.date,
-        }, lang)
-        _notify(db, doc.created_by_telegram_id, title, body, "error")
+        _notify(db, doc.created_by_telegram_id, type="error",
+                nkey="document_rejected",
+                params={
+                    "actor_name": caller.get("full_name", ""),
+                    "doc_type":   doc.doc_type,
+                    "date":       doc.date,
+                })
     db.delete(doc)
 
 
