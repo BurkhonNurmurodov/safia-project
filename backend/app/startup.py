@@ -204,6 +204,21 @@ def add_notification_template_columns() -> None:
         db.close()
 
 
+def add_admin_language_column() -> None:
+    """Add a language column to admins (idempotent). Seeded admins have no
+    telegram_users row, so this is where their bot-DM language is stored, kept in
+    sync with the dashboard via POST /api/auth/language (see staff._get_user_lang)."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE admins ADD COLUMN IF NOT EXISTS language VARCHAR DEFAULT 'uz'"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] admin language column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_edit_requests_batch_id() -> None:
     """Add batch_id column to edit_requests if it does not exist yet (idempotent)."""
     db = SessionLocal()
