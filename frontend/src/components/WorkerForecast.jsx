@@ -290,9 +290,11 @@ export default function WorkerForecast() {
                       const c = bySup[sup.id]?.[w];
                       const val = c ? (c.actual != null ? c.actual : c.forecast) : null;
                       const conf = c?.confidence;
-                      const bg = CONF_BG[conf];           // undefined → insufficient / no data
                       const hasVal = val != null;
                       const isActual = c?.actual != null;
+                      // Only forecast cells carry the confidence fill — loaded/actual
+                      // days stay neutral (the value is known, not a prediction).
+                      const fill = isActual ? null : CONF_BG[conf];
                       const clickable = c && (c.forecast != null || c.actual != null);
                       const isToday = weekDates[w] === today;
                       return (
@@ -302,8 +304,8 @@ export default function WorkerForecast() {
                             textAlign: "center", padding: 0, height: 34,
                             border: "1px solid var(--border)",
                             outline: isToday ? "2px solid var(--brand-text)" : "none", outlineOffset: -2,
-                            background: bg || "var(--bg-inner)",
-                            color: bg ? contrastText(bg) : "var(--text-4)",
+                            background: fill || (isActual ? "var(--bg-card)" : "var(--bg-inner)"),
+                            color: fill ? contrastText(fill) : isActual ? "var(--text-1)" : "var(--text-4)",
                             fontWeight: hasVal ? 700 : 400,
                             cursor: clickable ? "pointer" : "default",
                             position: "relative",
@@ -311,7 +313,7 @@ export default function WorkerForecast() {
                           {hasVal ? val : <span style={{ opacity: 0.4 }}>{t.na}</span>}
                           {isActual && (
                             <span style={{ position: "absolute", top: 2, right: 3, width: 5, height: 5, borderRadius: "50%",
-                              background: bg ? contrastText(bg) : "var(--text-3)", opacity: 0.85 }} />
+                              background: "var(--text-3)", opacity: 0.85 }} />
                           )}
                         </td>
                       );
