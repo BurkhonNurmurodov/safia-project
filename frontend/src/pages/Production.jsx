@@ -331,7 +331,7 @@ export default function Production() {
   const isToday = date === todayISO();
 
   return (
-    <Layout title={`Производство${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
+    <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
       {/* date navigation */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="inline-flex items-center rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
