@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zagruzka Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet" />
+    <!-- Self-hosted copy of https://telegram.org/js/telegram-web-app.js —
+         some Windows machines block/intercept telegram.org (antivirus HTTPS
+         inspection), which broke the app with a masked "Script error.".
+         Re-sync the copy occasionally. -->
+    <script src="/telegram-web-app.js"></script>
+    <script type="module" crossorigin src="/assets/index-CgLhTP71.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BKngSPCo.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // ES5-only boot diagnostics: expands the WebApp even if the bundle fails,
+      // and surfaces startup errors + engine version on machines where React
+      // never mounts (old WebView2 on some Windows laptops).
+      (function () {
+        try {
+          if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+          }
+        } catch (e) {}
+
+        var errors = [];
+        function envInfo() {
+          var info = [];
+          info.push('stage: ' + (window.__bootStage || 'inline only - bundle never started'));
+          info.push('Telegram object: ' + (window.Telegram ? 'present' : 'MISSING'));
+          try {
+            var wa = window.Telegram && window.Telegram.WebApp;
+            info.push('WebApp: ' + (wa
+              ? 'present, initData length ' + ((wa.initData || '').length) +
+                ', version ' + (wa.version || '?') + ', platform ' + (wa.platform || '?')
+              : 'MISSING'));
+          } catch (e) { info.push('WebApp probe failed: ' + e.message); }
+          return info.join('\n');
+        }
+        function report() {
+          var el = document.getElementById('boot-debug');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'boot-debug';
+            el.setAttribute('style',
+              'position:fixed;left:0;right:0;bottom:0;z-index:99999;' +
+              'background:#7f1d1d;color:#fff;font:12px/1.5 monospace;' +
+              'padding:10px 12px;white-space:pre-wrap;word-break:break-word;' +
+              'max-height:45%;overflow:auto');
+            document.body.appendChild(el);
+          }
+          el.textContent = 'App failed to start.\n\n' + errors.join('\n') +
+            '\n\n' + envInfo() + '\n\nEngine: ' + navigator.userAgent;
+        }
+        window.addEventListener('error', function (e) {
+          if (e.target && e.target.tagName) {
+            errors.push('Failed to load: ' +
+              (e.target.src || e.target.href || e.target.tagName));
+          } else {
+            errors.push((e.message || 'script error') +
+              (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
+          }
+          report();
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          errors.push('unhandled rejection: ' + (r && (r.message || String(r))));
+          report();
+        });
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.childNodes.length === 0) {
+            if (!errors.length) {
+              errors.push('No JS error captured - bundle did not load or did not run.');
+            }
+            report();
+          }
+        }, 10000);
+      })();
+    </script>
+  </body>
+</html>
