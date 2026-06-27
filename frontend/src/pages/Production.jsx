@@ -631,10 +631,12 @@ export default function Production() {
                   ))}
                 </tr>
               ))}
-              {!loading && rows.length === 0 && (
-                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{t("production.noDataForDate")}</td></tr>
+              {!loading && viewRows.length === 0 && (
+                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  {rows.length === 0 ? t("production.noDataForDate") : t("production.noMatch")}
+                </td></tr>
               )}
-              {!loading && rows.map((r, i) => {
+              {!loading && viewRows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
                 const wc = wcColor(r.work_center);
                 return (
