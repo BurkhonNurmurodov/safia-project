@@ -79,13 +79,13 @@ export function ColFilter({ label, active, children }) {
   );
 }
 
-export function TxtFilter({ value, onChange }) {
+export function TxtFilter({ value, onChange, placeholder }) {
   const { t } = useLang();
   return (
     <div className="relative">
       <input
         value={value} onChange={e => onChange(e.target.value)}
-        placeholder={t("staff.filter")} autoFocus
+        placeholder={placeholder || t("staff.filter")} autoFocus
         className="w-full text-xs pl-2.5 py-1.5 pr-6 rounded-lg outline-none"
         style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
       />
