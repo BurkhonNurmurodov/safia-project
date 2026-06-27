@@ -364,9 +364,9 @@ export default function Production() {
               onChange={(e) => { if (e.target.value) setDate(e.target.value); }}
               className="text-sm bg-transparent outline-none cursor-pointer"
               style={{ color: availableDates.includes(date) ? "var(--text-1)" : "var(--text-3)" }}
-              title="Даты с загруженными данными"
+              title={t("production.loadedDatesTitle")}
             >
-              <option value="">Загруженные даты ({availableDates.length})</option>
+              <option value="">{t("production.loadedDates")} ({availableDates.length})</option>
               {availableDates.map((d) => (
                 <option key={d} value={d}>{ddmmyyyy(d)}</option>
               ))}
