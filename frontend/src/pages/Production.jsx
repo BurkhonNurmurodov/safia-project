@@ -144,7 +144,7 @@ function QtyCell({ value, overridden, onSave }) {
     <button
       onClick={start}
       className="inline-flex items-center gap-1 group tabular-nums"
-      title="Изменить вручную"
+      title={t("production.editManually")}
       style={{ color: overridden ? "var(--brand-text)" : "var(--text-1)", fontWeight: overridden ? 700 : 400 }}
     >
       {fmt(value, 0)}
