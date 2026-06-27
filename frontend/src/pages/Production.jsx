@@ -167,14 +167,15 @@ function SectionHead({ icon: Icon, title, right }) {
 
 // ── reconciliation panel (manual) ───────────────────────────────────────────
 const RECON_FIELDS = [
-  { key: "po_shtatke_fact", label: "По штатке Факт" },
-  { key: "brigadir", label: "Бригадир" },
-  { key: "lider", label: "Лидер" },
-  { key: "mitsu", label: "Мицу" },
-  { key: "otdihaet", label: "Отдихает" },
+  { key: "po_shtatke_fact", labelKey: "production.recon.poShtatkeFact" },
+  { key: "brigadir", labelKey: "production.recon.brigadir" },
+  { key: "lider", labelKey: "production.recon.lider" },
+  { key: "mitsu", labelKey: "production.recon.mitsu" },
+  { key: "otdihaet", labelKey: "production.recon.otdihaet" },
 ];
 
 function ReconciliationCard({ data, onSave, saving }) {
+  const { t } = useLang();
   const [draft, setDraft] = useState(() => ({ ...data }));
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v === "" ? null : Number(v) }));
   return (
