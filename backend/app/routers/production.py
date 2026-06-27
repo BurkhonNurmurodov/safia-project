@@ -797,9 +797,21 @@ CV_MED = 0.20
 MONTH_PHASES = (("early", 1, 10), ("mid", 11, 20), ("late", 21, 31))
 
 
-def _workers_from_plan(plan_min: float) -> int:
+def _capacity_min(capacity_pct: float | None) -> float:
+    """Productive minutes one worker covers = capacity_pct% of the 480-min shift.
+    100% → 480, 85% → 408. Falls back to the full shift for bad/empty input."""
+    try:
+        pct = float(capacity_pct)
+    except (TypeError, ValueError):
+        pct = 100.0
+    pct = max(1.0, min(100.0, pct))
+    return SHIFT_STD_MIN * pct / 100.0
+
+
+def _workers_from_plan(plan_min: float, cap_min: float = CAPACITY_PER_WORKER_MIN) -> int:
     """Required workers for one shift from planned trudoyomkost minutes."""
-    return int(round((plan_min or 0.0) / CAPACITY_PER_WORKER_MIN))
+    cap = cap_min if (cap_min and cap_min > 0) else CAPACITY_PER_WORKER_MIN
+    return int(round((plan_min or 0.0) / cap))
 
 
 def _phase_of(day: date) -> str:
@@ -868,8 +880,9 @@ def _explained_fraction(all_values: list[int], groups: list[list[int]]) -> Optio
     return round(max(0.0, min(1.0, 1 - within / total_var)), 3)
 
 
-def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None) -> dict:
+def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None, capacity_pct=100.0) -> dict:
     span = (d_to - d_from).days + 1
+    cap_min = _capacity_min(capacity_pct)
     loaded = _load_plan_by_manager(db, manager_ids, shift, d_from, d_to)
 
     supervisors: list[dict] = []
@@ -888,7 +901,7 @@ def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None) -> dict:
         for day, v in entry["days"].items():
             if not (d_from <= day <= d_to):
                 continue
-            w = _workers_from_plan(v["plan"])
+            w = _workers_from_plan(v["plan"], cap_min)
             wd = day.weekday()
             wd_vals[wd].append(w)
             all_vals.append(w)
@@ -964,7 +977,8 @@ def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None) -> dict:
 
     return {
         "range": {"from": d_from.isoformat(), "to": d_to.isoformat(), "days": span},
-        "capacity_per_worker_min": CAPACITY_PER_WORKER_MIN,
+        "capacity_per_worker_min": cap_min,
+        "capacity_pct": round(_capacity_min(capacity_pct) / SHIFT_STD_MIN * 100.0, 1),
         "supervisors": supervisors,
         "cells": cells,
         "by_supervisor": by_sup,
@@ -985,8 +999,9 @@ def trudoyomkost_worker_stats(
     date_to: str = Query(...),
     manager_id: list[int] = Query(default=[]),
     shift: Optional[int] = Query(None),
+    capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
     d_from, d_to = _parse_range(date_from, date_to)
-    return _worker_stats_payload(db, manager_id, d_from, d_to, shift)
+    return _worker_stats_payload(db, manager_id, d_from, d_to, shift, capacity_pct)

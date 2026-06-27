@@ -36,6 +36,7 @@ const T = {
     verdict: (w, ew, ep) => `Kunlik ishchilar soni ${w === "month_phase" ? "oy fazasi" : "hafta kuni"} bilan ko'proq tushuntiriladi (η²: faza ${ep ?? "—"} vs kun ${ew ?? "—"}).`,
     nextLabel: "Keyingi", callWord: "chaqiring", noData: "Ma'lumot yo'q",
     capNote: (m) => `1 ishchi ≈ ${m} daqiqa quvvat`, na: "—",
+    effLabel: "Smena unumi",
   },
   uz_cyrl: {
     title: "Ишчилар башорати ва статистикаси", workers: "ишчи",
@@ -54,6 +55,7 @@ const T = {
     verdict: (w, ew, ep) => `Кунлик ишчилар сони ${w === "month_phase" ? "ой фазаси" : "ҳафта куни"} билан кўпроқ тушунтирилади (η²: фаза ${ep ?? "—"} vs кун ${ew ?? "—"}).`,
     nextLabel: "Кейинги", callWord: "чақиринг", noData: "Маълумот йўқ",
     capNote: (m) => `1 ишчи ≈ ${m} дақиқа қувват`, na: "—",
+    effLabel: "Смена унуми",
   },
   ru: {
     title: "Прогноз и статистика по рабочим", workers: "раб.",
@@ -72,6 +74,7 @@ const T = {
     verdict: (w, ew, ep) => `Число рабочих в день лучше объясняется ${w === "month_phase" ? "фазой месяца" : "днём недели"} (η²: фаза ${ep ?? "—"} vs день ${ew ?? "—"}).`,
     nextLabel: "Следующий", callWord: "вызвать", noData: "Нет данных",
     capNote: (m) => `1 рабочий ≈ ${m} мин мощности`, na: "—",
+    effLabel: "КПД смены",
   },
   en: {
     title: "Worker prediction & statistics", workers: "workers",
@@ -90,6 +93,7 @@ const T = {
     verdict: (w, ew, ep) => `Daily worker count is better explained by ${w === "month_phase" ? "month-phase" : "weekday"} (η²: phase ${ep ?? "—"} vs weekday ${ew ?? "—"}).`,
     nextLabel: "Next", callWord: "call", noData: "No data",
     capNote: (m) => `1 worker ≈ ${m} min capacity`, na: "—",
+    effLabel: "Shift efficiency",
   },
 };
 
@@ -144,12 +148,13 @@ export default function WorkerStats() {
   const t = T[lang] || T.uz;
   const wd = WD[lang] || WD.uz;
   const [selSup, setSelSup] = useState(null);
+  const [effPct, setEffPct] = useState(100);   // productive % of the 480-min shift one worker covers
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["trud-worker-stats", dateFrom, dateTo, brigadirIds, shift],
+    queryKey: ["trud-worker-stats", dateFrom, dateTo, brigadirIds, shift, effPct],
     enabled: ready && !!dateFrom && !!dateTo,
     queryFn: () => api.get("/api/production/trudoyomkost/worker-stats", {
-      params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, shift },
+      params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, shift, capacity_pct: effPct },
     }).then((r) => r.data),
   });
 
@@ -199,10 +204,25 @@ export default function WorkerStats() {
 
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 mb-3 mt-2">
+      <div className="flex items-center gap-2 mb-3 mt-2 flex-wrap">
         <Sparkles size={16} style={{ color: "var(--brand-text)" }} />
         <h3 className="text-sm font-bold" style={{ color: "var(--text-1)" }}>{t.title}</h3>
-        {cap != null && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>· {t.capNote(Math.round(cap))}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-[11px] font-medium" style={{ color: "var(--text-3)" }}>{t.effLabel}</label>
+          <div className="inline-flex items-center rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+            <input
+              type="number" min={1} max={100} step={5} value={effPct}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setEffPct(Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 100);
+              }}
+              className="w-14 text-xs px-2 py-1.5 outline-none tabular-nums text-right"
+              style={{ background: "var(--bg-inner)", color: "var(--text-1)" }}
+            />
+            <span className="text-xs px-1.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>%</span>
+          </div>
+          {cap != null && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t.capNote(Math.round(cap))}</span>}
+        </div>
       </div>
 
       {/* KPI strip */}
