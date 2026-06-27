@@ -272,6 +272,35 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
     }
 
 
+class SetLanguageBody(BaseModel):
+    language: str
+
+
+@router.post("/language")
+def set_language(body: SetLanguageBody, token: str = Depends(_oauth2), db: Session = Depends(get_db)):
+    """Persist the caller's UI-selected language to their profile so the Telegram
+    bot DMs them in the same language as the dashboard. The in-app bell is rendered
+    at view time per request, but DMs are rendered once at send time from this
+    stored value (see staff._get_user_lang)."""
+    payload = _decode_token(token)
+    telegram_id = int(payload["sub"])
+
+    lang = (body.language or "").strip()
+    valid = {row.code for row in db.query(Language.code).all()} or {"uz", "uz_cyrl", "ru", "en"}
+    if lang not in valid:
+        raise HTTPException(status_code=400, detail="Unknown language")
+
+    user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
+    if not user:
+        # Pure admins may have no telegram_users row — nothing to persist; the
+        # dashboard still tracks the choice locally. Treat as a no-op success.
+        return {"ok": True, "language": lang, "persisted": False}
+
+    user.language = lang
+    db.commit()
+    return {"ok": True, "language": lang, "persisted": True}
+
+
 @router.delete("/roles/{role_ref}")
 def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depends(get_db)):
     """Drop one of the caller's own roles. Removing the last role deletes the
