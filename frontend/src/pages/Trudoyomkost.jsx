@@ -703,6 +703,9 @@ export default function Trudoyomkost() {
           </div>
         </div>
 
+        {/* workers-to-call forecast — moving-average prediction per brigadir × weekday */}
+        <WorkerForecast />
+
         {/* worker prediction & statistics (derived-from-plan headcount) */}
         <WorkerStats />
       </>)}
