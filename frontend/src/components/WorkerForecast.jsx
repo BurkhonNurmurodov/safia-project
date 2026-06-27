@@ -304,8 +304,6 @@ export default function WorkerForecast() {
                           style={{
                             textAlign: "center", padding: 0, height: 34,
                             border: "1px solid var(--border)",
-                            // highlight today's column with a soft translucent wash — no border (overlays the cell color)
-                            boxShadow: isToday ? "inset 0 0 0 999px rgba(255,255,255,0.14)" : "none",
                             background: fill || (isActual ? "var(--bg-card)" : "var(--bg-inner)"),
                             color: fill ? contrastText(fill) : isActual ? "var(--text-1)" : "var(--text-4)",
                             fontWeight: hasVal ? 700 : 400,
