@@ -356,6 +356,36 @@ export default function Production() {
     return m;
   }, {});
   const maxPareto = Math.max(0.0001, ...rows.map((r) => r.pareto || 0));
+
+  // Команда options for the select — distinct work centers in the current snapshot.
+  const wcOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.work_center).filter(Boolean))].sort(),
+    [rows]
+  );
+  // Filtered + sorted view of rows. Search matches Сап код OR Наименование;
+  // sort is applied only when a column is active (otherwise original SAP order).
+  const viewRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let out = rows.filter((r) =>
+      (!q || String(r.sap_code).toLowerCase().includes(q) || String(r.name ?? "").toLowerCase().includes(q)) &&
+      (!wcFilter || r.work_center === wcFilter)
+    );
+    if (sort.key) {
+      const dir = sort.dir === "asc" ? 1 : -1;
+      out = [...out].sort((a, b) => {
+        const av = sortVal(a, sort.key), bv = sortVal(b, sort.key);
+        const aNull = av == null || (typeof av === "number" && Number.isNaN(av));
+        const bNull = bv == null || (typeof bv === "number" && Number.isNaN(bv));
+        if (aNull && bNull) return 0;
+        if (aNull) return 1;            // missing values always last
+        if (bNull) return -1;
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv), "ru", { numeric: true }) * dir;
+      });
+    }
+    return out;
+  }, [rows, search, wcFilter, sort]);
+
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
   const noSapData = !loading && rows.length > 0 &&
     (totals.total_plan_labor || 0) === 0 && (totals.total_actual_labor || 0) === 0;
