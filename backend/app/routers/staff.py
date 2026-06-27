@@ -2022,13 +2022,12 @@ def _notify_exchange(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
     if payload.get("target_type") == "supervisor" and payload.get("target_manager_id"):
         sup = _find_supervisor(db, payload["target_manager_id"])
         if sup and sup.telegram_id != actor_tg_id:
-            lang = _get_user_lang(db, sup.telegram_id)
-            title, body = _mk_notif(nkey, params, lang)
             # On creation the receiving supervisor also gets a rich inline
             # approve/reject message (app.approvals.send_hr_document_to_admins),
             # so skip the duplicate plain DM here — keep only the in-app bell.
             # approved/cancelled events carry no inline message, so DM as usual.
-            _notify(db, sup.telegram_id, title, body, "info", dm=event != "created")
+            _notify(db, sup.telegram_id, type="info", dm=event != "created",
+                    nkey=nkey, params=params)
 
 
 def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool = False):
