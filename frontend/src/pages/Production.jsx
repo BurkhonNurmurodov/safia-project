@@ -198,7 +198,7 @@ function ReconciliationCard({ data, onSave, saving }) {
         {RECON_FIELDS.map((f) => (
           <label key={f.key} className="flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 rounded-lg"
             style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
-            <span>{f.label}</span>
+            <span>{t(f.labelKey)}</span>
             <input
               type="number"
               value={draft[f.key] ?? ""}
