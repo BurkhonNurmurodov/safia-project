@@ -164,7 +164,7 @@ export default function WorkerStats() {
   const byWd = data?.by_weekday ?? [];
   const overall = data?.overall ?? {};
   const phase = data?.month_phase ?? {};
-  const cap = data?.capacity_per_worker_min;
+  const cap = 480 * effPct / 100;   // 100% → 480, 50% → 240; computed locally for instant feedback
 
   useEffect(() => {
     if (supervisors.length && (selSup == null || !supervisors.some((s) => s.id === selSup))) {
