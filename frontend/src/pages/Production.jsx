@@ -215,6 +215,7 @@ function ReconciliationCard({ data, onSave, saving }) {
 
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
 function RawView({ fileType, date, managerParam }) {
+  const { t } = useLang();
   const { data, isLoading } = useQuery({
     queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
