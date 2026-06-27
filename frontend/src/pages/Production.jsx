@@ -350,7 +350,7 @@ export default function Production() {
         {!isToday && (
           <button onClick={() => setDate(todayISO())} className="px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--bg-accent)]"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
-            Сегодня
+            {t("production.today")}
           </button>
         )}
 
