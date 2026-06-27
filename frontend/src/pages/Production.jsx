@@ -385,7 +385,23 @@ export default function Production() {
       });
     }
     return out;
-  }, [rows, search, wcFilter, sort]);
+  }, [rows, search, wcSel, sort]);
+
+  // Per-column header filters (rendered inside the sortable <th>): a universal
+  // text search shared by the Сап код + Наименование headers, and a Команда
+  // multi-select. Uses the shared popover primitives from other tables — never
+  // a native <select>.
+  const colFilter = {
+    sap_code: <ColFilter active={!!search.trim()}>
+      <TxtFilter value={search} onChange={setSearch} placeholder={t("production.filterPlaceholder")} />
+    </ColFilter>,
+    name: <ColFilter active={!!search.trim()}>
+      <TxtFilter value={search} onChange={setSearch} placeholder={t("production.filterPlaceholder")} />
+    </ColFilter>,
+    wc: <ColFilter active={wcSel.length > 0}>
+      <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel} />
+    </ColFilter>,
+  };
 
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
   const noSapData = !loading && rows.length > 0 &&
