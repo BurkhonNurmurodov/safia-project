@@ -10,6 +10,11 @@ from jwt import PyJWTError as JWTError
 from app.config import settings
 from app.database import get_db
 from app.models import Notification
+from app.translit import transliterate
+# Notification text is template-based: rows store a template key + raw params and
+# the renderer lives with the templates in routers.staff. Importing it here lets
+# us render each row in the *viewer's* current language at request time.
+from app.routers.staff import _mk_notif, _get_user_lang
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
