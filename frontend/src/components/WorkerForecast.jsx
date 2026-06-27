@@ -272,9 +272,10 @@ export default function WorkerForecast() {
                   {wd.s.map((s, i) => {
                     const isToday = weekDates[i] === today;
                     return (
-                      <th key={i} className="px-2 py-1.5 font-semibold text-center" style={isToday ? { background: "rgba(255,255,255,.18)" } : undefined}>
+                      <th key={i} className="px-2 py-1.5 font-semibold text-center" style={isToday ? { background: "rgba(255,255,255,.16)" } : undefined}>
                         <div>{s}</div>
                         <div className="text-[9px] font-normal opacity-75 tabular-nums">{weekDates[i] ? ddmm(weekDates[i]) : ""}</div>
+                        {isToday && <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3 }} />}
                       </th>
                     );
                   })}
