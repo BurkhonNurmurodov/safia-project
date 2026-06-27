@@ -1005,3 +1005,85 @@ def trudoyomkost_worker_stats(
 ):
     d_from, d_to = _parse_range(date_from, date_to)
     return _worker_stats_payload(db, manager_id, d_from, d_to, shift, capacity_pct)
+
+
+# --------------------------------------------------------------------------- #
+# Workers-to-call forecast — per brigadir × weekday, for one chosen week.
+#
+# For each (brigadir, weekday) of the selected week we forecast how many workers
+# to call via a moving average over the SAME weekday in the FORECAST_WEEKS
+# immediately-preceding weeks (default 3). The band is mean ± σ of those samples
+# and the confidence reuses _confidence's CV rule (so a 3-sample MA tops out at
+# "medium"). When the shown week's day already has loaded plan data we also
+# return the actual worker count, letting the client compare forecast vs actual.
+# --------------------------------------------------------------------------- #
+FORECAST_WEEKS = 3   # moving-average window: same weekday over the last N weeks
+
+
+def _monday_of(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def _forecast_payload(db, manager_ids, week_start, weeks=FORECAST_WEEKS,
+                      shift=None, capacity_pct=100.0) -> dict:
+    week_start = _monday_of(week_start)
+    week_end = week_start + timedelta(days=6)
+    cap_min = _capacity_min(capacity_pct)
+    # Pull the same-weekday history from the `weeks` preceding weeks together with
+    # the shown week's own actuals, in one query.
+    hist_start = week_start - timedelta(days=7 * weeks)
+    loaded = _load_plan_by_manager(db, manager_ids, shift, hist_start, week_end)
+
+    week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    supervisors: list[dict] = []
+    cells: list[dict] = []
+
+    for mid, entry in sorted(loaded.items(), key=lambda kv: kv[1]["name"].lower()):
+        name = entry["name"]
+        days = entry["days"]               # {date: {"plan", "actual"}}
+        supervisors.append({"id": mid, "name": name})
+        for day in week_dates:
+            wd = day.weekday()
+            # same-weekday samples from the `weeks` preceding weeks (oldest→newest)
+            samples = []
+            for k in range(weeks, 0, -1):
+                sd = day - timedelta(days=7 * k)
+                v = days.get(sd)
+                if v is not None:
+                    samples.append({"date": sd.isoformat(),
+                                    "workers": _workers_from_plan(v["plan"], cap_min)})
+            st = _cell_stats([s["workers"] for s in samples])
+            forecast = int(round(st["mean"])) if st["mean"] is not None else None
+            av = days.get(day)
+            actual = _workers_from_plan(av["plan"], cap_min) if av is not None else None
+            cells.append({
+                "manager_id": mid, "weekday": wd, "date": day.isoformat(),
+                "forecast": forecast,
+                "band_lo": st["band_lo"], "band_hi": st["band_hi"],
+                "confidence": st["confidence"], "n": st["n"],
+                "mean": st["mean"], "std": st["std"], "cv": st["cv"],
+                "samples": samples, "actual": actual,
+            })
+
+    return {
+        "week": {"start": week_start.isoformat(), "end": week_end.isoformat(),
+                 "dates": [d.isoformat() for d in week_dates]},
+        "weeks": weeks,
+        "capacity_per_worker_min": cap_min,
+        "supervisors": supervisors,
+        "cells": cells,
+        "unit": "workers",
+    }
+
+
+@router.get("/api/production/trudoyomkost/forecast")
+def trudoyomkost_forecast(
+    week_start: str = Query(..., description="Any date in the target week (ISO); snapped to Monday"),
+    weeks: int = Query(FORECAST_WEEKS, ge=1, le=12, description="Moving-average window in weeks"),
+    manager_id: list[int] = Query(default=[]),
+    shift: Optional[int] = Query(None),
+    capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    return _forecast_payload(db, manager_id, _parse_date(week_start), weeks, shift, capacity_pct)
