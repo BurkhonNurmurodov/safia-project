@@ -499,8 +499,8 @@ export default function Production() {
 
       {/* staffing panel — work-center cards with load bars */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Users} title="Команды" right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} участк.`}</span>
+        <SectionHead icon={Users} title={t("production.teams")} right={
+          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} ${t("production.unitsCount")}`}</span>
         } />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
           {loading && Array.from({ length: 6 }).map((_, i) => (
