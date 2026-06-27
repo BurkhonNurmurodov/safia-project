@@ -93,7 +93,7 @@ const T = {
     verdict: (w, ew, ep) => `Daily worker count is better explained by ${w === "month_phase" ? "month-phase" : "weekday"} (η²: phase ${ep ?? "—"} vs weekday ${ew ?? "—"}).`,
     nextLabel: "Next", callWord: "call", noData: "No data",
     capNote: (m) => `1 worker ≈ ${m} min capacity`, na: "—",
-    effLabel: "Shift efficiency",
+    effLabel: "Shift efficiency", apply: "Apply",
   },
 };
 
