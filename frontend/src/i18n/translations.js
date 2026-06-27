@@ -1951,7 +1951,6 @@ const t = {
     "production.col.pareto":       "Парето",
     "production.col.paretoHint":   "Умумий меҳнатдаги улуш",
     "production.filterPlaceholder": "SAP код / Номи",
-    "production.allTeams":         "Барча жамоалар",
     "production.noMatch":          "Филтрга мос позиция йўқ",
     "production.editManually":     "Қўлда ўзгартириш",
     "production.reconTitle":       "Штатда қанча бўлиши керак",
