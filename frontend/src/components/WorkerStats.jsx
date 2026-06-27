@@ -148,7 +148,15 @@ export default function WorkerStats() {
   const t = T[lang] || T.uz;
   const wd = WD[lang] || WD.uz;
   const [selSup, setSelSup] = useState(null);
-  const [effPct, setEffPct] = useState(100);   // productive % of the 480-min shift one worker covers
+  const [effPct, setEffPct] = useState(100);   // applied productive % — drives the query
+  const [effDraft, setEffDraft] = useState("100");  // input draft; committed to effPct on Apply / Enter
+
+  const applyEff = () => {
+    const v = Math.max(1, Math.min(100, Math.round(Number(effDraft) || 0)));
+    setEffDraft(String(v));
+    setEffPct(v);
+  };
+  const effDirty = Number(effDraft) !== effPct;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["trud-worker-stats", dateFrom, dateTo, brigadirIds, shift, effPct],
