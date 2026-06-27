@@ -387,21 +387,16 @@ export default function Production() {
     return out;
   }, [rows, search, wcSel, sort]);
 
-  // Per-column header filters (rendered inside the sortable <th>): a universal
-  // text search shared by the Сап код + Наименование headers, and a Команда
-  // multi-select. Uses the shared popover primitives from other tables — never
-  // a native <select>.
-  const colFilter = {
-    sap_code: <ColFilter active={!!search.trim()}>
-      <TxtFilter value={search} onChange={setSearch} placeholder={t("production.filterPlaceholder")} />
-    </ColFilter>,
-    name: <ColFilter active={!!search.trim()}>
-      <TxtFilter value={search} onChange={setSearch} placeholder={t("production.filterPlaceholder")} />
-    </ColFilter>,
-    wc: <ColFilter active={wcSel.length > 0}>
-      <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel} />
-    </ColFilter>,
-  };
+  // Consolidated filter button (the shared <FilterPanel> used on other tables):
+  // a single Команда multi-select section. The free-text search lives in its own
+  // always-visible bar next to it. Never a native <select>.
+  const filterSections = [{
+    key: "wc", icon: Users, label: t("production.col.wc"),
+    active: wcSel.length > 0,
+    display: `${wcSel.length} ${t("filter.selected2")}`,
+    render: () => <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel} />,
+  }];
+  const filterActiveCount = wcSel.length > 0 ? 1 : 0;
 
   // Catalog is present but no SAP «фаза» upload exists for this date → all zeros.
   const noSapData = !loading && rows.length > 0 &&
