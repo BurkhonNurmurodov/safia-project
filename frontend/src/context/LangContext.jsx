@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import dict from "../i18n/translations";
 import api from "../utils/api";
 import { useAuth } from "./AuthContext";
