@@ -369,7 +369,7 @@ export default function Production() {
     const q = search.trim().toLowerCase();
     let out = rows.filter((r) =>
       (!q || String(r.sap_code).toLowerCase().includes(q) || String(r.name ?? "").toLowerCase().includes(q)) &&
-      (!wcFilter || r.work_center === wcFilter)
+      (!wcSel.length || wcSel.includes(r.work_center))
     );
     if (sort.key) {
       const dir = sort.dir === "asc" ? 1 : -1;
