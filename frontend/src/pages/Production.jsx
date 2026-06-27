@@ -1,13 +1,13 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, X,
   AlertTriangle, Pencil, Save,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, CalendarDays, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
-import { ColFilter, TxtFilter, OptsFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
