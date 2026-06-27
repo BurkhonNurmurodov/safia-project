@@ -304,6 +304,13 @@ export default function Production() {
   const [date, setDate] = useState(todayISO());
   const [view, setView] = useState("zagruzka"); // zagruzka | faza | zaga
   const [unknownOpen, setUnknownOpen] = useState(false);
+  // table controls: free-text search (Сап код + Наименование), Команда select, sort
+  const [search, setSearch] = useState("");
+  const [wcFilter, setWcFilter] = useState("");
+  const [sort, setSort] = useState({ key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
+  const toggleSort = (key) =>
+    setSort((s) => (s.key !== key ? { key, dir: "asc" }
+      : s.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" }));
 
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
@@ -524,8 +531,8 @@ export default function Production() {
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
                 <div className="flex items-center justify-between mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                  <span>O.SONI <b style={{ color: "var(--text-2)" }}>{fmt(w.people, 0)}</b> · Штатка <b style={{ color: "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b></span>
-                  <span className="tabular-nums">{fmt(w.total_labor, 0)} мин</span>
+                  <span>{t("production.oSoni")} <b style={{ color: "var(--text-2)" }}>{fmt(w.people, 0)}</b> · {t("production.shtatka")} <b style={{ color: "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b></span>
+                  <span className="tabular-nums">{fmt(w.total_labor, 0)} {t("production.minUnit")}</span>
                 </div>
               </div>
             );
