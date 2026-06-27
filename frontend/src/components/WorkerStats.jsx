@@ -97,7 +97,7 @@ const T = {
   },
 };
 
-const CONF_COLOR = { high: "#22c55e", medium: "#C8973F", low: "#ef4444", insufficient: "var(--text-4)" };
+const CONF_COLOR = { high: "#22c55e", medium: "#eab308", low: "#ef4444", insufficient: "var(--text-4)" };
 const fmtCV = (cv) => (cv == null ? "—" : `${(cv * 100).toFixed(1)}%`);
 const intl = (v) => (v == null ? "—" : Number(v).toLocaleString("ru-RU"));
 
