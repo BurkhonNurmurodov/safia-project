@@ -430,7 +430,7 @@ export default function Production() {
           {missingLabor > 0 && (
             <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
               style={{ background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.3)", color: "#a16207" }}>
-              <AlertTriangle size={14} /> {missingLabor} позиций без трудоёмкости — строки помечены.
+              <AlertTriangle size={14} /> {missingLabor} {t("production.missingLaborSuffix")}
             </div>
           )}
           {unknown.length > 0 && (
