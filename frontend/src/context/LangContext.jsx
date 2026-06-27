@@ -36,14 +36,24 @@ export function LangProvider({ children, defaultLang = "uz" }) {
     }
   }, []);
 
-  // First run on this device: adopt the language saved on the profile (e.g. chosen
-  // during bot registration) so the dashboard matches it. Never overrides an
-  // explicit choice already made on this device — the DB stays the source of truth.
+  // On login, keep the profile language (used for bot DMs) in lock-step with the app:
+  //  • First run on this device (no prior choice): adopt the profile's saved
+  //    language (e.g. chosen at bot registration) so the dashboard matches it.
+  //  • Otherwise the app is the source of truth — if the profile differs (e.g. a
+  //    choice made before this sync existed, or on another device), push the app's
+  //    language so the bot DMs the user in the same language. They never diverge.
   useEffect(() => {
-    if (!hadStoredLang.current && auth?.status === "approved" && auth.language) {
-      setLangState(auth.language);
+    if (auth?.status !== "approved") return;
+    if (!localStorage.getItem("tg_token")) return;
+    if (!hadStoredLang.current) {
+      if (auth.language) setLangState(auth.language);
       hadStoredLang.current = true;
+      return;
     }
+    if (auth.language !== lang) {
+      api.post("/api/auth/language", { language: lang }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth?.status, auth?.language]);
 
   // Load DB overrides + dynamic language list (open endpoint — no auth needed).
