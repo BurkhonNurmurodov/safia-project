@@ -15,13 +15,36 @@ const STATIC_LANGS = [
 
 export function LangProvider({ children, defaultLang = "uz" }) {
   const { auth } = useAuth() || {};
-  const [lang, setLang] = useState(() => localStorage.getItem("lang") || defaultLang);
+  const [lang, setLangState] = useState(() => localStorage.getItem("lang") || defaultLang);
   const [overrides, setOverrides] = useState({});      // { lang: { key: value } } from DB
   const [nameOverrides, setNameOverrides] = useState({}); // { lang: { "name.<raw>": value } }
   const [languages, setLanguages] = useState(STATIC_LANGS);
+  // Whether this device already had an explicit choice before this session —
+  // captured once, before the sync effect below writes the default.
+  const hadStoredLang = useRef(localStorage.getItem("lang") != null);
 
   // Keep localStorage in sync
   useEffect(() => { localStorage.setItem("lang", lang); }, [lang]);
+
+  // Changing the language persists it to the user's profile so the Telegram bot
+  // DMs them in the same language as the dashboard (the bell already renders per
+  // request). Fire-and-forget; the api interceptor attaches the bearer token.
+  const setLang = useCallback((code) => {
+    setLangState(code);
+    if (localStorage.getItem("tg_token")) {
+      api.post("/api/auth/language", { language: code }).catch(() => {});
+    }
+  }, []);
+
+  // First run on this device: adopt the language saved on the profile (e.g. chosen
+  // during bot registration) so the dashboard matches it. Never overrides an
+  // explicit choice already made on this device — the DB stays the source of truth.
+  useEffect(() => {
+    if (!hadStoredLang.current && auth?.status === "approved" && auth.language) {
+      setLangState(auth.language);
+      hadStoredLang.current = true;
+    }
+  }, [auth?.status, auth?.language]);
 
   // Load DB overrides + dynamic language list (open endpoint — no auth needed).
   // Name overrides (worker/brigadir names) live behind auth and may 401 before
