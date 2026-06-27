@@ -36,7 +36,7 @@ const T = {
     verdict: (w, ew, ep) => `Kunlik ishchilar soni ${w === "month_phase" ? "oy fazasi" : "hafta kuni"} bilan ko'proq tushuntiriladi (η²: faza ${ep ?? "—"} vs kun ${ew ?? "—"}).`,
     nextLabel: "Keyingi", callWord: "chaqiring", noData: "Ma'lumot yo'q",
     capNote: (m) => `1 ishchi ≈ ${m} daqiqa quvvat`, na: "—",
-    effLabel: "Smena unumi",
+    effLabel: "Smena unumi", apply: "Qo'llash",
   },
   uz_cyrl: {
     title: "Ишчилар башорати ва статистикаси", workers: "ишчи",
