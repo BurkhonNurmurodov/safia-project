@@ -576,7 +576,34 @@ export default function Production() {
       {/* main table */}
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <SectionHead icon={Boxes} title={t("production.positions")} right={
-          <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${rows.length} SKU`}</span>
+          loading ? null : (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {/* universal filter — Сап код + Наименование */}
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-4)" }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t("production.filterPlaceholder")}
+                  className="w-44 sm:w-56 text-xs pl-7 pr-2 py-1.5 rounded-lg outline-none"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                />
+              </div>
+              {/* Команда select */}
+              <select
+                value={wcFilter}
+                onChange={(e) => setWcFilter(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-lg outline-none cursor-pointer"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: wcFilter ? "var(--text-1)" : "var(--text-3)" }}
+              >
+                <option value="">{t("production.allTeams")}</option>
+                {wcOptions.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select>
+              <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                {viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
+              </span>
+            </div>
+          )
         } />
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)]" style={{ color: "var(--text-1)" }}>
