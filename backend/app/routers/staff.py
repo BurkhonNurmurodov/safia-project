@@ -353,10 +353,8 @@ def _notify_all_parties(
 
     for tg_id in recipients:
         if tg_id != actor_tg_id:
-            lang = _get_user_lang(db, tg_id)
-            title, body = _mk_notif(nkey, params, lang)
             dm = admin_dm or tg_id not in admin_ids
-            _notify(db, tg_id, title, body, ntype, dm=dm)
+            _notify(db, tg_id, type=ntype, dm=dm, nkey=nkey, params=params)
 
 
 def notify_supervisor_verifix_upload(
