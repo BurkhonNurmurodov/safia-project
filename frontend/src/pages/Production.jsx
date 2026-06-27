@@ -343,7 +343,7 @@ export default function Production() {
             className="px-3 py-2 text-sm tabular-nums outline-none"
             style={{ background: "var(--bg-card)", color: "var(--text-1)", borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)" }} />
           <button onClick={() => setDate((d) => shiftDate(d, 1))} className="p-2 transition-colors hover:bg-[var(--bg-inner)]"
-            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label="Следующий день">
+            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label={t("production.nextDay")}>
             <ChevronRight size={16} />
           </button>
         </div>
