@@ -119,6 +119,9 @@ class Admin(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    # Seeded admins have no telegram_users row, so their bot-DM language lives here
+    # (kept in sync with the dashboard via POST /api/auth/language). See _get_user_lang.
+    language = Column(String, default="uz")  # uz | uz_cyrl | ru | en
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
