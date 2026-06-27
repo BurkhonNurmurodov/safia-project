@@ -74,7 +74,7 @@ const T = {
     verdict: (w, ew, ep) => `Число рабочих в день лучше объясняется ${w === "month_phase" ? "фазой месяца" : "днём недели"} (η²: фаза ${ep ?? "—"} vs день ${ew ?? "—"}).`,
     nextLabel: "Следующий", callWord: "вызвать", noData: "Нет данных",
     capNote: (m) => `1 рабочий ≈ ${m} мин мощности`, na: "—",
-    effLabel: "КПД смены",
+    effLabel: "КПД смены", apply: "Применить",
   },
   en: {
     title: "Worker prediction & statistics", workers: "workers",
