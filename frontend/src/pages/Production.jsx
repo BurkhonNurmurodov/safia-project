@@ -583,10 +583,10 @@ export default function Production() {
             <thead>
               <tr style={{ color: "var(--text-3)" }}>
                 {COLS.map((c) => (
-                  <th key={c.key} title={c.hint}
+                  <th key={c.key} title={c.hintKey ? t(c.hintKey) : undefined}
                     className={`sticky top-0 z-10 px-3 py-2.5 font-semibold ${c.align === "center" ? "text-center" : c.align === "right" ? "text-right" : "text-left"}`}
                     style={{ background: "var(--bg-inner)" }}>
-                    {c.label}
+                    {t(c.labelKey)}
                   </th>
                 ))}
               </tr>
