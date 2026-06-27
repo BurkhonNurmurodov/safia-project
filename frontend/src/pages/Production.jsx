@@ -600,7 +600,7 @@ export default function Production() {
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>Нет данных за эту дату</td></tr>
+                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>{t("production.noDataForDate")}</td></tr>
               )}
               {!loading && rows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
