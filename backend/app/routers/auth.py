@@ -139,7 +139,8 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
         if not visible:
             token = create_jwt(telegram_id, "admin", full_name)
             return {"status": "approved", "role": "admin", "full_name": full_name,
-                    "token": token, "telegram_id": telegram_id}
+                    "token": token, "telegram_id": telegram_id,
+                    "language": (user.language if user else None) or admin_row.language or "uz"}
 
         admin_profile = {"id": ADMIN_ROLE_REF, "role": "admin", "role_id": None,
                          "full_name": full_name, "status": "approved"}
