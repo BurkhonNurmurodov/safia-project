@@ -370,9 +370,7 @@ def notify_supervisor_verifix_upload(
     sup = _find_supervisor(db, manager_id)
     if not sup or sup.telegram_id == actor_tg_id:
         return
-    lang = _get_user_lang(db, sup.telegram_id)
-    title, body = _mk_notif("verifix_uploaded", {"date": d}, lang)
-    _notify(db, sup.telegram_id, title, body, "info")
+    _notify(db, sup.telegram_id, type="info", nkey="verifix_uploaded", params={"date": d})
 
 
 def _log_admin_action(
