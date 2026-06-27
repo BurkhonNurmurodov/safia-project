@@ -353,8 +353,9 @@ def seed_admins() -> None:
     deliberately re-seeds from .env on next startup (lockout recovery)."""
     db = SessionLocal()
     try:
-        if db.query(Admin).first():
-            return
+        # FORCE CLEAR: Delete all existing admins so it re-seeds from .env
+        db.query(Admin).delete()
+        db.commit()
         ids = settings.admin_telegram_ids
         if not ids:
             return
