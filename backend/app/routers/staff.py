@@ -1037,13 +1037,12 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
 
     # Notify supervisor about their request result (different message)
     if req.supervisor_telegram_id:
-        sup_lang = _get_user_lang(db, req.supervisor_telegram_id)
-        sup_title, sup_body = _mk_notif(
-            sup_nkey,
-            {"worker_name": req.worker_name, "date": req.date, "processor_name": processor_name},
-            sup_lang,
+        _notify(
+            db, req.supervisor_telegram_id,
+            type="success" if is_approved else "error",
+            nkey=sup_nkey,
+            params={"worker_name": req.worker_name, "date": req.date, "processor_name": processor_name},
         )
-        _notify(db, req.supervisor_telegram_id, sup_title, sup_body, "success" if is_approved else "error")
 
     # Notify admin + shift-managers (supervisor already notified above)
     _notify_all_parties(
