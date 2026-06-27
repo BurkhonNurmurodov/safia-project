@@ -296,6 +296,11 @@ export default function WorkerForecast() {
                       // Only forecast cells carry the confidence fill — loaded/actual
                       // days stay neutral (the value is known, not a prediction).
                       const fill = isActual ? null : CONF_BG[conf];
+                      // actual vs predicted band → dot color: green inside, red outside,
+                      // grey when there's no band to compare against.
+                      const within = (isActual && c.band_lo != null && c.band_hi != null)
+                        ? c.actual >= c.band_lo && c.actual <= c.band_hi : null;
+                      const dotColor = within == null ? "var(--text-3)" : within ? "#22c55e" : "#ef4444";
                       const clickable = c && (c.forecast != null || c.actual != null);
                       return (
                         <td key={w} onClick={() => clickable && setModalCell({ ...c, supName: sup.name, wdFull: (WD[lang] || WD.uz).f[w] })}
