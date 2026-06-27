@@ -41,11 +41,14 @@ const TYPE_META = {
  * the dropdown while sharing a single source of truth for read state.
  */
 export function useNotifications() {
+  const { lang } = useLang();
   const [readIds, setReadIds] = useState(getReadIds);
 
+  // lang is in the queryKey so switching languages refetches and the backend
+  // re-renders every (template) notification in the newly selected language.
   const { data: notifications = [], refetch } = useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => api.get("/api/notifications").then(r => r.data),
+    queryKey: ["notifications", lang],
+    queryFn: () => api.get("/api/notifications", { params: { lang } }).then(r => r.data),
     refetchInterval: 30_000,   // poll every 30 s
     staleTime: 20_000,
   });
