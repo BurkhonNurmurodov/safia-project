@@ -228,7 +228,7 @@ function RawView({ fileType, date, managerParam }) {
   if (!data?.present) {
     return (
       <div className="rounded-2xl p-8 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
-        Файл «{fileType === "faza" ? "фаза" : "заголовок"}» не загружен за эту дату.
+        {t("production.file")} «{fileType === "faza" ? t("production.viewFaza") : t("production.viewZaga")}» {t("production.notLoadedForDate")}
       </div>
     );
   }
