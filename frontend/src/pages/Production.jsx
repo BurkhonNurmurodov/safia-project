@@ -54,20 +54,21 @@ const hexToRgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
-// Russian column labels, exactly as the ABC Excel ("Sheet1 ...")
+// Column definitions — labels/hints resolved via t() at render (see COLS map below).
+// Order matches the ABC Excel ("Sheet1 ...").
 const COLS = [
-  { key: "sap_code", label: "Сап код", align: "left" },
-  { key: "name", label: "Наименование", align: "left" },
-  { key: "labor", label: "Труд.", align: "center", hint: "Трудоёмкость (сек/ед)" },
-  { key: "wc", label: "Команда", align: "center" },
-  { key: "people", label: "ЛЮДИ", align: "center" },
-  { key: "vyp", label: "Вып %", align: "center", hint: "Факт ÷ План" },
-  { key: "fact", label: "Факт", align: "center", edit: true, hint: "Поставлено (Excel «План пост»)" },
-  { key: "plan", label: "ПЛАН", align: "center", edit: true, hint: "Кол-во операции" },
-  { key: "actual_labor", label: "Факт труд.", align: "center", hint: "Факт × Труд. (мин) — фактическая трудоёмкость" },
-  { key: "labor_total", label: "Общ. труд.", align: "center", hint: "Общая трудоёмкость (мин)" },
-  { key: "minutes", label: "Минут", align: "center" },
-  { key: "pareto", label: "Парето", align: "center", hint: "Доля в общей трудоёмкости" },
+  { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
+  { key: "name", labelKey: "production.col.name", align: "left" },
+  { key: "labor", labelKey: "production.col.labor", align: "center", hintKey: "production.col.laborHint" },
+  { key: "wc", labelKey: "production.col.wc", align: "center" },
+  { key: "people", labelKey: "production.col.people", align: "center" },
+  { key: "vyp", labelKey: "production.col.vyp", align: "center", hintKey: "production.col.vypHint" },
+  { key: "fact", labelKey: "production.col.fact", align: "center", edit: true, hintKey: "production.col.factHint" },
+  { key: "plan", labelKey: "production.col.plan", align: "center", edit: true, hintKey: "production.col.planHint" },
+  { key: "actual_labor", labelKey: "production.col.actualLabor", align: "center", hintKey: "production.col.actualLaborHint" },
+  { key: "labor_total", labelKey: "production.col.totalLabor", align: "center", hintKey: "production.col.totalLaborHint" },
+  { key: "minutes", labelKey: "production.col.minutes", align: "center" },
+  { key: "pareto", labelKey: "production.col.pareto", align: "center", hintKey: "production.col.paretoHint" },
 ];
 
 // ── thin progress bar ────────────────────────────────────────────────────────
