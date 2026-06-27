@@ -219,16 +219,25 @@ export default function WorkerStats() {
           <label className="text-[11px] font-medium" style={{ color: "var(--text-3)" }}>{t.effLabel}</label>
           <div className="inline-flex items-center rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
             <input
-              type="number" min={1} max={100} step={5} value={effPct}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setEffPct(Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 100);
-              }}
+              type="number" min={1} max={100} step={5} value={effDraft}
+              onChange={(e) => setEffDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") applyEff(); }}
+              onBlur={() => { if (effDraft === "") setEffDraft(String(effPct)); }}
               className="w-14 text-xs px-2 py-1.5 outline-none tabular-nums text-right"
               style={{ background: "var(--bg-inner)", color: "var(--text-1)" }}
             />
             <span className="text-xs px-1.5 py-1.5" style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>%</span>
           </div>
+          <button
+            type="button" onClick={applyEff} disabled={!effDirty}
+            className="text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-opacity"
+            style={{
+              background: effDirty ? "var(--brand)" : "var(--bg-inner)",
+              color: effDirty ? "var(--brand-contrast, #fff)" : "var(--text-4)",
+              border: "1px solid var(--border-md)",
+              cursor: effDirty ? "pointer" : "default", opacity: effDirty ? 1 : 0.6,
+            }}
+          >{t.apply}</button>
           {cap != null && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t.capNote(Math.round(cap))}</span>}
         </div>
       </div>
