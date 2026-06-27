@@ -538,7 +538,7 @@ export default function Production() {
             );
           })}
           {!loading && wcs.length === 0 && (
-            <div className="col-span-full text-center py-6 text-sm" style={{ color: "var(--text-4)" }}>Нет участков</div>
+            <div className="col-span-full text-center py-6 text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</div>
           )}
         </div>
       </div>
