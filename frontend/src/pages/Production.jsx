@@ -305,9 +305,9 @@ export default function Production() {
   const [date, setDate] = useState(todayISO());
   const [view, setView] = useState("zagruzka"); // zagruzka | faza | zaga
   const [unknownOpen, setUnknownOpen] = useState(false);
-  // table controls: free-text search (Сап код + Наименование), Команда select, sort
+  // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
   const [search, setSearch] = useState("");
-  const [wcFilter, setWcFilter] = useState("");
+  const [wcSel, setWcSel] = useState([]); // [] = all teams
   const [sort, setSort] = useState({ key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
   const toggleSort = (key) =>
     setSort((s) => (s.key !== key ? { key, dir: "asc" }
