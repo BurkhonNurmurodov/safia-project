@@ -3917,7 +3917,6 @@ const t = {
     "production.col.pareto":       "Pareto",
     "production.col.paretoHint":   "Share of total labor",
     "production.filterPlaceholder": "SAP code / Name",
-    "production.allTeams":         "All teams",
     "production.noMatch":          "No matching items",
     "production.editManually":     "Edit manually",
     "production.reconTitle":       "Required on staffing",
