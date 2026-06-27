@@ -44,11 +44,23 @@ class NotificationCreate(BaseModel):
     recipient_telegram_id: Optional[int] = None
 
 
-def _row(r):
+def _row(r, lang: str):
+    """Serialise a row, rendering its template in ``lang`` at view time. Template
+    rows (nkey set) re-render in any language from their stored params; free-form
+    rows (admin broadcast / legacy) keep their stored text but are transliterated
+    to match the viewer's script (Cyrillic→Latin for uz/en), like the dashboard."""
+    if r.nkey:
+        try:
+            title, body = _mk_notif(r.nkey, r.params or {}, lang)
+        except Exception:
+            title, body = r.title or r.nkey, r.body or ""
+    else:
+        title = transliterate(r.title or "", lang)
+        body  = transliterate(r.body or "", lang)
     return {
         "id":         r.id,
-        "title":      r.title,
-        "body":       r.body,
+        "title":      title,
+        "body":       body,
         "type":       r.type,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }
@@ -56,15 +68,20 @@ def _row(r):
 
 @router.get("")
 def list_notifications(
+    lang: Optional[str] = None,
     token: Annotated[str | None, Depends(_oauth2)] = None,
     db: Session = Depends(get_db),
 ):
     """Returns notifications relevant to the caller:
     - broadcast (recipient_telegram_id IS NULL)
     - addressed specifically to them
+
+    Each row is rendered in ``lang`` (the viewer's current UI language). When it
+    is omitted, the caller's saved language is used; otherwise Uzbek.
     """
     payload = _decode_token(token)
     telegram_id = int(payload["sub"]) if payload else None
+    view_lang = lang or (_get_user_lang(db, telegram_id) if telegram_id else None) or "uz"
 
     q = db.query(Notification).order_by(Notification.created_at.desc())
 
