@@ -290,15 +290,21 @@ def set_language(body: SetLanguageBody, token: str = Depends(_oauth2), db: Sessi
     if lang not in valid:
         raise HTTPException(status_code=400, detail="Unknown language")
 
+    # Persist to whichever profile(s) the caller has. Seeded admins have no
+    # telegram_users row, so their language lives on the admins row instead —
+    # _get_user_lang reads both, so the bot DMs them in this language too.
+    persisted = False
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
-    if not user:
-        # Pure admins may have no telegram_users row — nothing to persist; the
-        # dashboard still tracks the choice locally. Treat as a no-op success.
-        return {"ok": True, "language": lang, "persisted": False}
-
-    user.language = lang
-    db.commit()
-    return {"ok": True, "language": lang, "persisted": True}
+    if user:
+        user.language = lang
+        persisted = True
+    admin = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+    if admin:
+        admin.language = lang
+        persisted = True
+    if persisted:
+        db.commit()
+    return {"ok": True, "language": lang, "persisted": persisted}
 
 
 @router.delete("/roles/{role_ref}")
