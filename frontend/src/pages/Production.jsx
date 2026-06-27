@@ -116,6 +116,7 @@ function VypCell({ value }) {
 
 // ── editable qty cell (Факт / ПЛАН) ─────────────────────────────────────────
 function QtyCell({ value, overridden, onSave }) {
+  const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const start = () => { setDraft(value === null || value === undefined ? "" : String(value)); setEditing(true); };
