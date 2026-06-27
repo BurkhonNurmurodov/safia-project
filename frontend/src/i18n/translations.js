@@ -2934,7 +2934,6 @@ const t = {
     "production.col.pareto":       "Парето",
     "production.col.paretoHint":   "Доля в общей трудоёмкости",
     "production.filterPlaceholder": "Сап код / Наименование",
-    "production.allTeams":         "Все команды",
     "production.noMatch":          "Ничего не найдено",
     "production.editManually":     "Изменить вручную",
     "production.reconTitle":       "Сколько должна на штатке",
