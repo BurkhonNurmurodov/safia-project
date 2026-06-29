@@ -4,12 +4,14 @@ import ReactApexChart from "react-apexcharts";
 import {
   Sparkles, RefreshCw, CheckCircle2, Loader2, Circle, AlarmClock,
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
+  Clock, TrendingUp,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
@@ -68,6 +70,13 @@ const TXT = {
     colProject: "Loyiha", colTask: "Vazifa", colType: "Turi", colResp: "Mas'ul", colDeadline: "Muddat", colStatus: "Holat",
     unassigned: "Belgilanmagan", daysOverdue: "kun kechikdi", people: "ijrochi", openNotion: "Notion'da ochish",
     tasksDone: "bajarildi", completion: "bajarilish",
+    hi: "Xush kelibsiz", welcomeSub: "Kaizen loyihalaringizdagi bugungi holat",
+    secOverview: "Vazifalar dinamikasi", overviewSub: "Vaqt bo'yicha taqsimot",
+    pAll: "Butun davr", p12: "12 oy", p6: "6 oy",
+    avgPerProject: "Loyihaga o'rtacha",
+    secRecent: "So'nggi vazifalar", recentSub: "Eng yangi qo'shilganlar",
+    viewAll: "Barchasi", statusSub: "Holatlar bo'yicha taqsimot",
+    completionRate: "Bajarilish darajasi", ofTotal: "umumiydan",
   },
   uz_cyrl: {
     title: "Kaizen лойиҳалари", subtitle: "Notion'даги кайзен-сессия лойиҳалари таҳлили",
@@ -87,6 +96,13 @@ const TXT = {
     colProject: "Лойиҳа", colTask: "Вазифа", colType: "Тури", colResp: "Масъул", colDeadline: "Муддат", colStatus: "Ҳолат",
     unassigned: "Белгиланмаган", daysOverdue: "кун кечикди", people: "ижрочи", openNotion: "Notion'да очиш",
     tasksDone: "бажарилди", completion: "бажарилиш",
+    hi: "Хуш келибсиз", welcomeSub: "Kaizen лойиҳаларингиздаги бугунги ҳолат",
+    secOverview: "Вазифалар динамикаси", overviewSub: "Вақт бўйича тақсимот",
+    pAll: "Бутун давр", p12: "12 ой", p6: "6 ой",
+    avgPerProject: "Лойиҳага ўртача",
+    secRecent: "Сўнгги вазифалар", recentSub: "Энг янги қўшилганлар",
+    viewAll: "Барчаси", statusSub: "Ҳолатлар бўйича тақсимот",
+    completionRate: "Бажарилиш даражаси", ofTotal: "умумийдан",
   },
   ru: {
     title: "Кайзен-проекты", subtitle: "Аналитика проектов кайзен-сессии из Notion",
@@ -106,6 +122,13 @@ const TXT = {
     colProject: "Проект", colTask: "Задача", colType: "Тип", colResp: "Ответственный", colDeadline: "Срок", colStatus: "Статус",
     unassigned: "Не назначен", daysOverdue: "дн. просрочки", people: "исполн.", openNotion: "Открыть в Notion",
     tasksDone: "выполнено", completion: "выполнение",
+    hi: "С возвращением", welcomeSub: "Что происходит с вашими Кайзен-проектами сегодня",
+    secOverview: "Динамика задач", overviewSub: "Распределение задач по времени",
+    pAll: "Весь период", p12: "12 мес.", p6: "6 мес.",
+    avgPerProject: "В среднем на проект",
+    secRecent: "Недавние задачи", recentSub: "Последние добавленные",
+    viewAll: "Все", statusSub: "Распределение по статусам",
+    completionRate: "Уровень выполнения", ofTotal: "от общего",
   },
   en: {
     title: "Kaizen Projects", subtitle: "Analytics for the Kaizen-session projects in Notion",
@@ -125,6 +148,13 @@ const TXT = {
     colProject: "Project", colTask: "Task", colType: "Type", colResp: "Responsible", colDeadline: "Deadline", colStatus: "Status",
     unassigned: "Unassigned", daysOverdue: "days overdue", people: "people", openNotion: "Open in Notion",
     tasksDone: "done", completion: "completion",
+    hi: "Welcome back", welcomeSub: "Here's what's happening with your Kaizen projects today",
+    secOverview: "Task dynamics", overviewSub: "Task distribution over time",
+    pAll: "All time", p12: "12 mo", p6: "6 mo",
+    avgPerProject: "Avg per project",
+    secRecent: "Recent tasks", recentSub: "Latest added",
+    viewAll: "View all", statusSub: "Breakdown by status",
+    completionRate: "Completion rate", ofTotal: "of total",
   },
 };
 
@@ -137,6 +167,13 @@ function fmtDateTime(iso) {
   if (isNaN(d)) return null;
   return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+
+// 'YYYY-MM' → short month label (for the activity area chart x-axis)
+const monthLabel = (key, opts) => {
+  const d = new Date(`${key}-01T00:00:00`);
+  if (isNaN(d)) return key;
+  return d.toLocaleString(undefined, opts);
+};
 
 // status → {label, color, Icon}
 function statusInfo(status, T) {
@@ -156,30 +193,6 @@ function SectionHead({ icon: Icon, title, right }) {
         {title}
       </div>
       {right}
-    </div>
-  );
-}
-
-// KPI tile: muted uppercase label + soft-tinted iconed chip on top, big value
-// below. Colour stays an indicator (the chip) — the number reads neutral unless
-// it carries an alarm (overdue).
-function Kpi({ icon: Icon, label, value, sub, accent, valueColor, subColor, primary }) {
-  return (
-    <div className="rounded-2xl px-4 py-3.5" style={{
-      background: primary ? "var(--brand-bg)" : "var(--bg-card)",
-      border: `1px solid ${primary ? "var(--brand-border)" : "var(--border)"}`,
-    }}>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-[10px] uppercase tracking-wider font-semibold truncate" style={{ color: "var(--text-4)" }}>{label}</span>
-        {Icon && (
-          <span className="grid place-items-center w-6 h-6 rounded-lg flex-shrink-0"
-            style={{ background: accent ? hexA(accent, 0.14) : "var(--bg-inner)", color: accent || "var(--brand-text)" }}>
-            <Icon size={13} />
-          </span>
-        )}
-      </div>
-      <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: valueColor || "var(--text-1)" }}>{value}</div>
-      {sub != null && <div className="text-[11px] mt-1.5" style={{ color: subColor || "var(--text-3)" }}>{sub}</div>}
     </div>
   );
 }
@@ -216,6 +229,7 @@ function Tally({ color, n }) {
 
 export default function Kaizen() {
   const { lang } = useLang();
+  const { auth } = useAuth();
   const { tl } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
@@ -224,6 +238,7 @@ export default function Kaizen() {
   const [project, setProject] = useState("all");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState("12");   // activity-chart window: 6 · 12 · all
 
   const { data, isLoading } = useQuery({
     queryKey: ["kaizen"],
@@ -284,7 +299,28 @@ export default function Kaizen() {
     const noDate = tasks.filter((t) => !t.deadline && t.status !== "Done").length;
     const donePct = totals.total ? Math.round((totals.done / totals.total) * 100) : 0;
 
-    return { totals, donePct, byProject, people, types, leaders, overdueTasks, dueWeek, dueUpcoming, noDate, peopleCount: Object.keys(byPerson).filter((n) => n !== "—").length };
+    // Activity timeline — tasks bucketed by month (deadline, else created date).
+    // Feeds the headline area chart (the "Revenue Overview" analog).
+    const monthMap = {};
+    for (const t of tasks) {
+      const ref = t.deadline || (t.created_time ? t.created_time.slice(0, 10) : null);
+      if (!ref || ref.length < 7) continue;
+      const key = ref.slice(0, 7);
+      const m = monthMap[key] || (monthMap[key] = { key, count: 0, done: 0 });
+      m.count++;
+      if (t.status === "Done") m.done++;
+    }
+    const months = Object.values(monthMap).sort((a, b) => a.key.localeCompare(b.key));
+
+    // Most recently added tasks (the "Recent Bookings" analog).
+    const recent = [...tasks]
+      .sort((a, b) => (b.created_time || "").localeCompare(a.created_time || ""))
+      .slice(0, 7);
+
+    const projectCount = byProject.length || projects.length || 0;
+    const avgPerProject = projectCount ? Math.round(totals.total / projectCount) : 0;
+
+    return { totals, donePct, byProject, people, types, leaders, overdueTasks, dueWeek, dueUpcoming, noDate, months, recent, avgPerProject, peopleCount: Object.keys(byPerson).filter((n) => n !== "—").length };
   }, [tasks, projects]);
 
   // ── filtered table ───────────────────────────────────────────────────────────
@@ -317,16 +353,49 @@ export default function Kaizen() {
     labels: [T.kDonePct],
   };
 
+  // Status donut with a hollow centre total + side legend (the
+  // "Technician Availability" analog). Per-slice labels are off; the legend
+  // beside the ring carries the colour → label → count mapping.
   const donutOpts = {
-    chart: { type: "donut", fontFamily: "inherit" },
+    chart: { type: "donut", fontFamily: "inherit", background: "transparent" },
     labels: [T.sDone, T.sProg, T.sTodo],
     colors: [C_DONE, C_PROG, C_TODO],
-    legend: { position: "bottom", labels: { colors: legendColor }, fontSize: "12px", markers: { width: 10, height: 10, radius: 3 } },
-    dataLabels: { enabled: true, formatter: (v) => `${Math.round(v)}%`, style: { fontSize: "11px", fontWeight: 600 } },
+    legend: { show: false },
+    dataLabels: { enabled: false },
     stroke: { width: 0 },
-    tooltip: { theme: tooltipTheme },
-    plotOptions: { pie: { donut: { size: "64%" } } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${T.tasksWord}` } },
+    plotOptions: { pie: { donut: {
+      size: "72%",
+      labels: {
+        show: true,
+        name: { offsetY: 20, color: legendColor, fontSize: "11px" },
+        value: { offsetY: -16, color: "var(--text-1)", fontSize: "28px", fontWeight: 700 },
+        total: { show: true, label: T.kTotal, color: legendColor, fontSize: "11px", formatter: () => String(A.totals.total) },
+      },
+    } } },
   };
+
+  // Headline activity area chart (the "Revenue Overview" analog), windowed by
+  // the period selector. Smooth gold gradient over the monthly task buckets.
+  const shownMonths = period === "all" ? A.months : A.months.slice(-Number(period));
+  const areaOpts = {
+    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: true } },
+    theme: chartTheme,
+    colors: [BRAND],
+    stroke: { curve: "smooth", width: 2.5 },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 95, 100] } },
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: shownMonths.map((m) => monthLabel(m.key, { month: "short" })),
+      labels: { style: { colors: labelColor, fontSize: "11px" } },
+      axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+    },
+    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) } },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } },
+    markers: { size: 0, hover: { size: 5 } },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(monthLabel(shownMonths[dataPointIndex]?.key, { month: "long", year: "numeric" }) ?? "", `${shownMonths[dataPointIndex]?.count ?? 0} ${T.tasksWord}`, BRAND) },
+  };
+  const areaSeries = [{ name: T.tasksWord, data: shownMonths.map((m) => m.count) }];
 
   const topPeople = A.people.slice(0, 10);
   const peopleOpts = {
@@ -384,16 +453,43 @@ export default function Kaizen() {
     </button>
   );
 
+  // First name for the personalised greeting banner.
+  const firstName = (auth?.full_name || "").trim().split(/\s+/)[0] || "";
+
+  // "View all" jumps to the full task table at the bottom of the page.
+  const scrollToTable = () => document.getElementById("kaizen-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const viewAllBtn = (
+    <button onClick={scrollToTable}
+      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+      style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>
+      {T.viewAll}
+    </button>
+  );
+
+  const periodOpts = [
+    { value: "6", label: T.p6 },
+    { value: "12", label: T.p12 },
+    { value: "all", label: T.pAll },
+  ];
+
   // ── render ───────────────────────────────────────────────────────────────────
   return (
     <Layout title={T.title} showFilters={false}>
-      {/* Top controls: last-synced context chip + refresh (mirrors Trudoyomkost) */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
-          <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
-          {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
-        </span>
-        <div className="ml-auto">{refreshBtn}</div>
+      {/* Welcome banner: personalised greeting + last-synced chip + refresh */}
+      <div className="flex items-end justify-between gap-3 mb-5 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>
+            {T.hi}{firstName && <>, <span style={{ color: "var(--brand-text)" }}>{tl(firstName)}</span></>} 👋
+          </h2>
+          <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{T.welcomeSub}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
+            <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
+            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+          </span>
+          {refreshBtn}
+        </div>
       </div>
 
       {refresh.isError && (
@@ -440,25 +536,140 @@ export default function Kaizen() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* KPI row */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Kpi icon={ListChecks}   label={T.kTotal}   value={A.totals.total}   accent={BRAND} primary />
-            <Kpi icon={CheckCircle2} label={T.kDone}     value={A.totals.done}    accent={C_DONE} sub={`${A.donePct}% ${T.completion}`} subColor={C_DONE} />
-            <Kpi icon={Loader2}      label={T.kProg}     value={A.totals.prog}    accent={C_PROG} />
-            <Kpi icon={Circle}       label={T.kTodo}     value={A.totals.todo}    accent={C_TODO} />
-            <Kpi icon={AlarmClock}   label={T.kOverdue}  value={A.totals.overdue} accent={C_OVERDUE} valueColor={A.totals.overdue > 0 ? C_OVERDUE : undefined} />
-            <Kpi icon={Users}        label={T.secPeople} value={A.peopleCount}    accent={C_PROG} sub={T.people} />
+          {/* ── Hero: activity overview (area) + status donut with side legend ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Activity overview — the "Revenue Overview" analog */}
+            <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+              <div className="flex items-start justify-between gap-3 px-4 py-3 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{T.secOverview}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{T.overviewSub}</div>
+                </div>
+                <StyledSelect value={period} onChange={setPeriod} options={periodOpts} className="w-32" />
+              </div>
+              <div className="px-4 pt-3">
+                <div className="flex items-end gap-2.5 flex-wrap">
+                  <span className="text-3xl font-bold tabular-nums leading-none" style={{ color: "var(--text-1)" }}>{A.totals.total}</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full mb-0.5" style={{ background: hexA(C_DONE, 0.14), color: C_DONE }}>
+                    <TrendingUp size={12} /> {A.donePct}% {T.completion}
+                  </span>
+                </div>
+              </div>
+              <div className="px-1">
+                {shownMonths.length > 0
+                  ? <ReactApexChart options={areaOpts} series={areaSeries} type="area" height={206} />
+                  : <div className="h-[206px] grid place-items-center text-xs" style={{ color: "var(--text-4)" }}>—</div>}
+              </div>
+              {/* Two inline sub-stat cells (mirrors Total Revenue · Avg Booking Value) */}
+              <div className="grid grid-cols-2 gap-3 px-4 pb-4 pt-1 mt-auto">
+                <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.kDone}</div>
+                  <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{A.totals.done}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: C_DONE }}>{A.donePct}% {T.completion}</div>
+                </div>
+                <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inner)" }}>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.avgPerProject}</div>
+                  <div className="text-lg font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{A.avgPerProject}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>{A.byProject.length} · {T.tasksWord}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Status donut + side legend — the "Technician Availability" analog */}
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={ListChecks} title={T.secStatus} right={viewAllBtn} />
+              <div className="p-4 flex flex-col items-center gap-3">
+                <ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={200} />
+                <div className="w-full space-y-2.5">
+                  {[
+                    { label: T.sDone, color: C_DONE, n: A.totals.done },
+                    { label: T.sProg, color: C_PROG, n: A.totals.prog },
+                    { label: T.sTodo, color: C_TODO, n: A.totals.todo },
+                    { label: T.overdue, color: C_OVERDUE, n: A.totals.overdue },
+                  ].map((r) => (
+                    <div key={r.label} className="flex items-center gap-2 text-xs">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                      <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
+                      <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Status overview: gauge + donut */}
+          {/* ── Four KPI stat cards (the bookings-stats row) ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { icon: Loader2,      label: T.kProg,    value: A.totals.prog,    accent: C_PROG },
+              { icon: Circle,       label: T.kTodo,    value: A.totals.todo,    accent: C_TODO },
+              { icon: CheckCircle2, label: T.kDone,    value: A.totals.done,    accent: C_DONE },
+              { icon: AlarmClock,   label: T.kOverdue, value: A.totals.overdue, accent: C_OVERDUE },
+            ].map(({ icon: Icon, label, value, accent }) => {
+              const pct = A.totals.total ? Math.round((value / A.totals.total) * 100) : 0;
+              return (
+                <div key={label} className="rounded-2xl p-4" style={cardStyle}>
+                  <div className="flex items-center gap-2.5 mb-3">
+                    <span className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0" style={{ background: hexA(accent, 0.14), color: accent }}>
+                      <Icon size={17} />
+                    </span>
+                    <span className="text-xs font-medium truncate" style={{ color: "var(--text-2)" }}>{label}</span>
+                  </div>
+                  <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: "var(--text-1)" }}>{value}</div>
+                  <div className="text-[11px] mt-2 flex items-center gap-1" style={{ color: accent }}>
+                    <TrendingUp size={12} /> {pct}% {T.ofTotal}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Completion gauge + recent tasks (lead-conversion / recent-bookings) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Completion card — the "Lead Conversion" analog */}
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={Trophy} title={T.kDonePct} />
-              <div className="px-3 pb-3 pt-1"><ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={230} /></div>
+              <div className="p-4 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: "var(--brand-text)" }}>{A.totals.total}</div>
+                  <div className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{T.kTotal}</div>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.completionRate}</div>
+                  <div className="text-xl font-bold tabular-nums flex items-center gap-1.5" style={{ color: C_DONE }}>
+                    {A.donePct}%
+                    <span className="text-[11px] font-normal" style={{ color: "var(--text-4)" }}>{A.totals.done}/{A.totals.total}</span>
+                  </div>
+                </div>
+                <div className="w-28 flex-shrink-0">
+                  <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={150} />
+                </div>
+              </div>
             </div>
+
+            {/* Recent tasks — the "Recent Bookings" analog */}
             <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={cardStyle}>
-              <SectionHead icon={ListChecks} title={T.secStatus} />
-              <div className="px-3 pb-3 pt-1"><ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={230} /></div>
+              <SectionHead icon={Clock} title={T.secRecent} right={viewAllBtn} />
+              <div className="px-2 py-1">
+                {A.recent.map((t, i) => {
+                  const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
+                  return (
+                    <div key={t.id} className="flex items-center gap-3 px-2 py-2.5" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+                      <span className="grid place-items-center w-9 h-9 rounded-full text-base flex-shrink-0" style={{ background: "var(--brand-bg)" }} title={tl(t.project)}>
+                        {emojiFor(t.project_key)}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={tl(t.title)}>{tl(t.title)}</div>
+                        <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
+                          {t.task_type ? tl(t.task_type) : tl(t.project)}
+                          {t.responsible?.length ? ` · ${t.responsible.map(tl).join(", ")}` : ""}
+                        </div>
+                      </div>
+                      <span className="text-[11px] tabular-nums hidden sm:block flex-shrink-0" style={{ color: overdue ? C_OVERDUE : "var(--text-4)" }}>{t.deadline || "—"}</span>
+                      <StatusPill status={t.status} T={T} />
+                    </div>
+                  );
+                })}
+                {A.recent.length === 0 && <div className="px-2 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>—</div>}
+              </div>
             </div>
           </div>
 
@@ -577,7 +788,7 @@ export default function Kaizen() {
           </div>
 
           {/* Task table */}
-          <section className="rounded-2xl overflow-hidden" style={cardStyle}>
+          <section id="kaizen-tasks" className="rounded-2xl overflow-hidden" style={cardStyle}>
             <SectionHead icon={ListChecks}
               title={<span className="flex items-center gap-2">{T.secTasks}<span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span></span>}
               right={
