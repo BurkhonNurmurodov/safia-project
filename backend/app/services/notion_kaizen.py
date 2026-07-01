@@ -98,13 +98,30 @@ def _canonical_status(raw: str | None) -> str:
     return STATUS_NOT_STARTED
 
 
-def normalize_page(page: dict, project: dict) -> dict:
+def _people_names(value: list | None, users: dict[str, str]) -> list[str]:
+    """Resolve a people-property value to display names.
+
+    Notion only embeds ``name`` in a people value when the integration has the
+    *Read user information* capability — otherwise every entry but the owning
+    user comes back nameless. We therefore resolve each entry's id against the
+    workspace user map first, falling back to any embedded name.
+    """
+    names: list[str] = []
+    for p in value or []:
+        name = (users.get(p.get("id")) or p.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def normalize_page(page: dict, project: dict, users: dict[str, str] | None = None) -> dict:
     """Flatten one Notion page (database row) into our common task shape.
 
     Classifies each property by its Notion *type* and *name* so the eight
     differently-labelled schemas all collapse to: title / status / responsible
     people / customer people / deadline / task-type.
     """
+    users = users or {}
     props = page.get("properties", {})
     title = ""
     status_raw: str | None = None
@@ -122,8 +139,7 @@ def normalize_page(page: dict, project: dict) -> dict:
         elif ptype == "select" and name in ("Status", "Статус"):
             status_raw = (val.get("select") or {}).get("name")
         elif ptype == "people":
-            names = [p.get("name") or "" for p in val.get("people", [])]
-            names = [n.strip() for n in names if n and n.strip()]
+            names = _people_names(val.get("people"), users)
             if name in _CUSTOMER_NAMES:
                 customer.extend(names)
             else:  # "Ответственный", "Person", or any other person field
@@ -179,13 +195,47 @@ def _query_database(client: httpx.Client, database_id: str) -> list[dict]:
     return pages
 
 
+def _fetch_users(client: httpx.Client) -> dict[str, str]:
+    """Map every workspace user id → display name.
+
+    Requires the integration's *Read user information* capability. If that
+    capability is missing the endpoint 403s (or any other error occurs); we
+    swallow it and return an empty map so people resolution simply falls back
+    to whatever names Notion embedded in the query response.
+    """
+    users: dict[str, str] = {}
+    cursor: str | None = None
+    try:
+        while True:
+            params: dict = {"page_size": 100}
+            if cursor:
+                params["start_cursor"] = cursor
+            resp = client.get(f"{NOTION_API}/users", headers=_headers(), params=params)
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            for u in data.get("results", []):
+                uid, name = u.get("id"), (u.get("name") or "").strip()
+                if uid and name:
+                    users[uid] = name
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+            if not cursor:
+                break
+    except Exception:
+        pass
+    return users
+
+
 def fetch_all_tasks() -> list[dict]:
     """Pull and normalize every task across all eight Kaizen databases."""
     tasks: list[dict] = []
     with httpx.Client(timeout=30.0) as client:
+        users = _fetch_users(client)  # id → name, so every assignee resolves (not just the owner)
         for project in KAIZEN_DATABASES:
             for page in _query_database(client, project["database_id"]):
-                tasks.append(normalize_page(page, project))
+                tasks.append(normalize_page(page, project, users))
     return tasks
 
 

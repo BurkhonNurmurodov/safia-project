@@ -5,7 +5,7 @@ import {
   Sparkles, RefreshCw, CheckCircle2, Loader2, Circle, AlarmClock,
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
   Clock, TrendingUp, FolderKanban, FileText, Tag, UserCheck, UserRound,
-  CircleDot, ArrowUp, ArrowDown, ChevronsUpDown,
+  CircleDot, ChevronUp, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -225,13 +225,12 @@ function StatusPill({ status, T }) {
   );
 }
 
-// Sort affordance for the task-table headers: neutral chevrons until active,
-// then a solid arrow pointing in the current direction.
+// Sort affordance for the task-table headers — matches the Overview table:
+// clicking a header cycles asc → desc → off, with neutral chevrons until active.
 function SortIcon({ active, dir }) {
-  if (!active) return <ChevronsUpDown size={11} className="opacity-40 group-hover:opacity-80 transition-opacity" />;
-  return dir === "asc"
-    ? <ArrowUp size={11} style={{ color: "var(--brand-text)" }} />
-    : <ArrowDown size={11} style={{ color: "var(--brand-text)" }} />;
+  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
+  return <Icon size={11} className={active ? "" : "group-hover:opacity-80 transition-opacity"}
+    style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />;
 }
 
 // Sortable, icon-led column header — brand-tinted glyph + label + sort state.
@@ -285,7 +284,11 @@ export default function Kaizen() {
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("12");   // activity-chart window: 6 · 12 · all
   const [sort, setSort] = useState({ key: null, dir: "asc" });  // task-table column sort
-  const onSort = (k) => setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
+  // Click cycles asc → desc → off (original order), mirroring the Overview table.
+  const onSort = (k) => setSort((s) =>
+    s.key !== k ? { key: k, dir: "asc" }
+      : s.dir === "asc" ? { key: k, dir: "desc" }
+      : { key: null, dir: "asc" });
 
   const { data, isLoading } = useQuery({
     queryKey: ["kaizen"],
