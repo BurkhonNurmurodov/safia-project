@@ -29,6 +29,9 @@ from app.config import settings
 
 NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
+# Data-source API — required for databases upgraded to Notion's multi-source
+# model, where the legacy /databases/{id}/query endpoint returns object_not_found.
+NOTION_VERSION_DS = "2025-09-03"
 
 # Hub page that contains all eight inline databases (for reference / docs).
 HUB_PAGE_ID = "e416ee89-a36c-82ba-b89b-01007491b2db"
@@ -69,7 +72,7 @@ def token_configured() -> bool:
     return bool(_token())
 
 
-def _headers() -> dict:
+def _headers(version: str = NOTION_VERSION) -> dict:
     token = _token()
     if not token:
         raise RuntimeError(
@@ -78,7 +81,7 @@ def _headers() -> dict:
         )
     return {
         "Authorization": f"Bearer {token}",
-        "Notion-Version": NOTION_VERSION,
+        "Notion-Version": version,
         "Content-Type": "application/json",
     }
 
@@ -167,23 +170,18 @@ def normalize_page(page: dict, project: dict, users: dict[str, str] | None = Non
     }
 
 
-def _query_database(client: httpx.Client, database_id: str) -> list[dict]:
-    """Return every page in a database, following pagination."""
+def _paginate(client: httpx.Client, url: str, version: str, label: str) -> list[dict]:
+    """POST a Notion query endpoint and follow pagination into a flat page list."""
     pages: list[dict] = []
     cursor: str | None = None
     while True:
         body: dict = {"page_size": 100}
         if cursor:
             body["start_cursor"] = cursor
-        resp = client.post(
-            f"{NOTION_API}/databases/{database_id}/query",
-            headers=_headers(),
-            json=body,
-        )
+        resp = client.post(url, headers=_headers(version), json=body)
         if resp.status_code != 200:
             raise RuntimeError(
-                f"Notion query failed for {database_id}: "
-                f"{resp.status_code} {resp.text[:300]}"
+                f"Notion query failed for {label}: {resp.status_code} {resp.text[:300]}"
             )
         data = resp.json()
         pages.extend(data.get("results", []))
@@ -193,6 +191,52 @@ def _query_database(client: httpx.Client, database_id: str) -> list[dict]:
         if not cursor:
             break
     return pages
+
+
+def _query_database(client: httpx.Client, database_id: str) -> list[dict]:
+    """Legacy single-source query — /databases/{id}/query (API 2022-06-28)."""
+    return _paginate(
+        client, f"{NOTION_API}/databases/{database_id}/query", NOTION_VERSION, database_id
+    )
+
+
+def _primary_data_source(client: httpx.Client, database_id: str) -> str | None:
+    """Return the id of a database's primary (first) data source, or None.
+
+    Databases migrated to Notion's multi-source model expose their rows through
+    data sources; the legacy database-query endpoint returns object_not_found
+    for them. Requires the 2025-09-03 API. Best-effort: returns None on any
+    error so the caller can fall back to the legacy query.
+    """
+    try:
+        resp = client.get(
+            f"{NOTION_API}/databases/{database_id}", headers=_headers(NOTION_VERSION_DS)
+        )
+        if resp.status_code != 200:
+            return None
+        sources = resp.json().get("data_sources") or []
+        return sources[0].get("id") if sources else None
+    except Exception:
+        return None
+
+
+def _query_data_source(client: httpx.Client, data_source_id: str) -> list[dict]:
+    """Query a single data source — /data_sources/{id}/query (API 2025-09-03)."""
+    return _paginate(
+        client, f"{NOTION_API}/data_sources/{data_source_id}/query", NOTION_VERSION_DS,
+        f"data source {data_source_id}",
+    )
+
+
+def _fetch_pages(client: httpx.Client, database_id: str) -> list[dict]:
+    """Return every page for a configured database, handling both the legacy
+    single-source model and the newer multi-source model. Prefers the primary
+    data source (equivalent to the legacy primary view) and falls back to the
+    legacy endpoint for workspaces still on the old model."""
+    ds_id = _primary_data_source(client, database_id)
+    if ds_id:
+        return _query_data_source(client, ds_id)
+    return _query_database(client, database_id)
 
 
 def _fetch_users(client: httpx.Client) -> dict[str, str]:
@@ -229,13 +273,25 @@ def _fetch_users(client: httpx.Client) -> dict[str, str]:
 
 
 def fetch_all_tasks() -> list[dict]:
-    """Pull and normalize every task across all eight Kaizen databases."""
+    """Pull and normalize every task across all eight Kaizen databases.
+
+    One database failing (e.g. not shared with the integration) no longer nukes
+    the whole sync — its error is collected and the rest still load. If *every*
+    database fails, the aggregated error is raised so the admin sees why.
+    """
     tasks: list[dict] = []
+    errors: list[str] = []
     with httpx.Client(timeout=30.0) as client:
         users = _fetch_users(client)  # id → name, so every assignee resolves (not just the owner)
         for project in KAIZEN_DATABASES:
-            for page in _query_database(client, project["database_id"]):
-                tasks.append(normalize_page(page, project, users))
+            try:
+                for page in _fetch_pages(client, project["database_id"]):
+                    tasks.append(normalize_page(page, project, users))
+            except Exception as exc:
+                errors.append(f"{project['name']}: {exc}")
+
+    if errors and not tasks:
+        raise RuntimeError("; ".join(errors))
     return tasks
 
 
