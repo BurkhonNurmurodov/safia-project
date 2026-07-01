@@ -1,26 +1,30 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import logoSrc from "./assets/logo.png";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GhostProvider } from "./context/GhostContext";
 import { LangProvider, useLang } from "./context/LangContext";
-import Overview from "./pages/Overview";
-import Zagruzka from "./pages/Zagruzka";
-import Leaderboard from "./pages/Leaderboard";
-import BrigadirProfile from "./pages/BrigadirProfile";
-import Workers from "./pages/Workers";
-import PlanFulfillment from "./pages/PlanFulfillment";
-import Downtime from "./pages/Downtime";
-import AdminUpload from "./pages/admin/AdminUpload";
-import Staff from "./pages/Staff";
-import Daily from "./pages/Daily";
-import Production from "./pages/Production";
-import Trudoyomkost from "./pages/Trudoyomkost";
-import Leaders from "./pages/Leaders";
-import Kaizen from "./pages/Kaizen";
-import Login from "./pages/Login";
+// Pages are lazy-loaded so each ships as its own chunk and downloads only when
+// first visited — this keeps the initial bundle small and speeds up loading.
+// A branded <PageLoader/> is shown (via Suspense) while a page's chunk loads.
+const Overview = lazy(() => import("./pages/Overview"));
+const Zagruzka = lazy(() => import("./pages/Zagruzka"));
+const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const BrigadirProfile = lazy(() => import("./pages/BrigadirProfile"));
+const Workers = lazy(() => import("./pages/Workers"));
+const PlanFulfillment = lazy(() => import("./pages/PlanFulfillment"));
+const Downtime = lazy(() => import("./pages/Downtime"));
+const AdminUpload = lazy(() => import("./pages/admin/AdminUpload"));
+const Staff = lazy(() => import("./pages/Staff"));
+const Daily = lazy(() => import("./pages/Daily"));
+const Production = lazy(() => import("./pages/Production"));
+const Trudoyomkost = lazy(() => import("./pages/Trudoyomkost"));
+const Leaders = lazy(() => import("./pages/Leaders"));
+const Kaizen = lazy(() => import("./pages/Kaizen"));
+const Login = lazy(() => import("./pages/Login"));
+import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { canAccessPage, firstAccessibleRoute } from "./config/pages";
@@ -34,12 +38,7 @@ function AuthGate({ children }) {
   const { t } = useLang();
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-5" style={{ background: "var(--bg-base)" }}>
-        <img src={logoSrc} alt="Safia" className="w-24 h-24 rounded-full object-cover" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }} />
-        <div className="w-6 h-6 border-[3px] border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--brand) transparent var(--brand) var(--brand)" }} />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (auth?.status === "outdated_telegram") {
@@ -249,6 +248,7 @@ function AppWithLang() {
       <BrowserRouter>
         <FilterProvider>
           <LogoutOverlay />
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<AuthGate><RequirePage page="overview"><Overview /></RequirePage></AuthGate>} />
@@ -270,6 +270,7 @@ function AppWithLang() {
             />
             <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
           </Routes>
+          </Suspense>
         </FilterProvider>
       </BrowserRouter>
     </LangProvider>
