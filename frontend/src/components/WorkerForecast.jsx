@@ -351,10 +351,10 @@ export default function WorkerForecast() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <InfoCard
-          primary icon={Target} accent="var(--brand-text)" label={t.cardDelta}
-          value={dayStats.count ? dayStats.sumAbs : t.na}
-          unit={dayStats.count ? t.workers : null}
-          badge={dayStats.count ? `${sign(dayStats.net)} ${t.netW}` : null} badgeColor={netColor}
+          primary icon={Target} accent={dayStats.count ? netColor : "var(--brand-text)"} label={t.cardDelta}
+          value={dayStats.count ? sign(dayStats.net) : t.na}
+          unit={dayStats.count ? t.netW : null}
+          badge={dayStats.count ? `${dayStats.sumAbs} |Δ|` : null} badgeColor="#C8973F"
           sub={dayStats.count ? `${t.forecast} ${dayStats.sumF} → ${t.actual} ${dayStats.sumA}` : t.noCompare}
         />
         <InfoCard
