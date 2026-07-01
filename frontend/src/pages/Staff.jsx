@@ -1290,7 +1290,8 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     const opts = [];
     supTargets.forEach(s => opts.push({ value: `sup:${s.manager_id}`, label: `👤 ${tl(s.full_name)}` }));
     (taskData.tasks || []).forEach(name => opts.push({ value: `task:${name}`, label: `🗂 ${name}`, removable: isAdmin, taskName: name }));
-    opts.push({ value: "__new__", label: `＋ ${t("staff.newTask")}` });
+    // Creating a brand-new task is admin-only; supervisors may only pick existing ones.
+    if (isAdmin) opts.push({ value: "__new__", label: `＋ ${t("staff.newTask")}` });
     return opts;
   }, [supTargets, taskData, tl, t, isAdmin]);
 

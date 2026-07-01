@@ -2109,15 +2109,23 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
 def _ensure_exchange_task(db: Session, name: Optional[str], caller: dict) -> None:
     """Persist a task name to the permanent shared list (create, or reactivate a
     previously removed one). Called whenever a people-exchange targets a task, so
-    the '＋ Yangi vazifa' name an admin or supervisor types sticks around for
-    everyone on every date. No-op for blank names. Caller commits."""
+    the '＋ Yangi vazifa' name an admin types sticks around for everyone on every
+    date. No-op for blank names. Caller commits.
+
+    Adding a task to the shared list is admin-only: supervisors may target an
+    existing, active task but cannot introduce a new one (nor revive a removed
+    one). Referencing an already-active task is a no-op, so it stays open to all."""
     n = (name or "").strip()
     if not n:
         return
     t = db.query(ExchangeTask).filter(ExchangeTask.name == n).first()
+    if t is not None and t.active:
+        return
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can add a new task")
     if t is None:
         db.add(ExchangeTask(name=n, active=True, created_by_telegram_id=int(caller["sub"])))
-    elif not t.active:
+    else:
         t.active = True
 
 
