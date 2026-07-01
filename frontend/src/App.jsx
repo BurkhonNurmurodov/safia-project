@@ -23,6 +23,7 @@ const Production = lazy(() => import("./pages/Production"));
 const Trudoyomkost = lazy(() => import("./pages/Trudoyomkost"));
 const Leaders = lazy(() => import("./pages/Leaders"));
 const Kaizen = lazy(() => import("./pages/Kaizen"));
+const UsersActivity = lazy(() => import("./pages/UsersActivity"));
 const Login = lazy(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
@@ -264,6 +265,7 @@ function AppWithLang() {
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
+            <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route
               path="/admin/upload"
               element={<AuthGate><RequireAdmin><AdminUpload /></RequireAdmin></AuthGate>}

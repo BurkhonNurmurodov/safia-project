@@ -32,7 +32,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor"]
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "kaizen"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "kaizen", "activity"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -58,6 +58,9 @@ DEFAULT_PAGE_ACCESS = {
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
+    # Users-activity & usage statistics (who's active, time-in-app, contribution
+    # calendar). Admin-only by default; open up roles from the Access tab.
+    "activity": [],
 }
 
 

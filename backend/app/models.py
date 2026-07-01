@@ -530,3 +530,41 @@ class KaizenSyncMeta(Base):
     ok          = Column(Boolean, default=True)
     message     = Column(Text, nullable=True)
     task_count  = Column(Integer, default=0)
+
+
+class UserActivity(Base):
+    """One row per (Telegram account, calendar day) — a rolling daily usage
+    aggregate that powers the Users-Activity dashboard (active users, average
+    time-in-app, GitHub-style contribution grid).
+
+    Filled by the heartbeat endpoint (POST /api/activity/ping): while the web app
+    is open and visible it pings every ~60 s. Each ping folds into that person's
+    row for the current UTC day:
+
+      • ``active_seconds`` accumulates the gap since the previous ping *only* when
+        that gap is short enough to count as continuous engagement (≤ PING_MAX_GAP
+        in services-less router logic) — long gaps start a fresh segment and add
+        nothing, so idle/backgrounded time is never counted.
+      • ``event_count`` counts pings (a rough interaction volume).
+      • ``full_name`` / ``role`` snapshot the active JWT identity so the dashboard
+        can name the account even for seeded admins (who have no telegram_users
+        row).
+
+    A per-day grain keeps the table tiny (≈ users × days) while giving exact
+    daily/monthly rollups and a natural contribution calendar. Data only exists
+    from the day tracking ships forward — there is no historical backfill."""
+    __tablename__ = "user_activity"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id    = Column(BigInteger, nullable=False, index=True)
+    day            = Column(Date, nullable=False, index=True)   # UTC calendar day
+    full_name      = Column(String, nullable=True)              # snapshot from JWT
+    role           = Column(String, nullable=True)              # snapshot from JWT
+    first_seen     = Column(DateTime(timezone=True), nullable=True)
+    last_seen      = Column(DateTime(timezone=True), nullable=True)
+    active_seconds = Column(Integer, nullable=False, default=0)
+    event_count    = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("telegram_id", "day", name="uq_user_activity_tid_day"),
+    )

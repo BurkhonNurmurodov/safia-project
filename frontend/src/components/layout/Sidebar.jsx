@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
-  ChevronDown, Check, Factory, Gauge, ClipboardCheck, Sparkles,
+  ChevronDown, Check, Factory, Gauge, ClipboardCheck, Sparkles, Activity,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -26,6 +26,7 @@ const ALL_LINKS = [
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
+  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
 ];
 
 function fmtDate(iso) {

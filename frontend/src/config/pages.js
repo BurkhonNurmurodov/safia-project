@@ -35,6 +35,7 @@ export const PAGES = [
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
+  { key: "activity", route: "/activity", labelKey: "nav.activity" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -53,6 +54,7 @@ export const DEFAULT_PAGE_ACCESS = {
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
   leaders: [], // pilot: admin-only until enabled from the Access tab
   kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
+  activity: [], // Users activity & usage stats — admin-only until enabled
 };
 
 export function canAccessPage(role, pageKey, access) {

@@ -8,6 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings } from "lucide-react";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
+import useActivityPing from "../../hooks/useActivityPing";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -345,6 +346,7 @@ export default function Layout({ children, title, showFilters = true, filterSlot
   const { t } = useLang();
   const { dateFrom, dateTo, shift, unit, brigadirIds } = useFilters();
   const notif = useNotifications();
+  useActivityPing(); // heartbeat for the Users-Activity dashboard
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
