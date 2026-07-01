@@ -183,6 +183,17 @@ const fmtDeadline = (iso, lang) => {
   return `${d} ${(MONTHS_SHORT[lang] || MONTHS_SHORT.en)[m - 1]} ${y}`;
 };
 
+// People names → compact "surname-initial + full first name", e.g. "Azimjon Xusanov" → "X. Azimjon".
+// Last token is treated as the surname (the majority convention in the Notion data);
+// single-word names are returned untouched.
+const shortName = (full) => {
+  const parts = String(full || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return String(full || "");
+  const surname = parts[parts.length - 1];
+  const first = parts.slice(0, -1).join(" ");
+  return `${surname[0].toUpperCase()}. ${first}`;
+};
+
 // Notion-style grid rule shared by every table cell (vertical + horizontal lines)
 const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
 
@@ -912,10 +923,10 @@ export default function Kaizen() {
                         <td className="px-4 py-2 max-w-xs" style={cellB}><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
                         <td className="px-4 py-2 hidden md:table-cell" style={{ ...cellB, color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
                         <td className="px-4 py-2 hidden sm:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
-                          {t.responsible?.length ? t.responsible.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
+                          {t.responsible?.length ? <span title={t.responsible.map(tl).join(", ")}>{t.responsible.map((n) => shortName(tl(n))).join(", ")}</span> : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>
                         <td className="px-4 py-2 hidden lg:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
-                          {t.customer?.length ? t.customer.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
+                          {t.customer?.length ? <span title={t.customer.map(tl).join(", ")}>{t.customer.map((n) => shortName(tl(n))).join(", ")}</span> : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ ...cellB, color: overdue ? C_OVERDUE : "var(--text-3)" }}>{fmtDeadline(t.deadline, lang) || "—"}</td>
                         <td className="px-4 py-2" style={cellB}><StatusPill status={t.status} T={T} /></td>
