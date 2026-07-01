@@ -4,7 +4,8 @@ import ReactApexChart from "react-apexcharts";
 import {
   Sparkles, RefreshCw, CheckCircle2, Loader2, Circle, AlarmClock,
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
-  Clock, TrendingUp,
+  Clock, TrendingUp, FolderKanban, FileText, Tag, UserCheck, UserRound,
+  CircleDot, ArrowUp, ArrowDown, ChevronsUpDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -67,7 +68,7 @@ const TXT = {
     allProjects: "Barcha loyihalar", allStatuses: "Barcha holatlar", searchPh: "Vazifa qidirish…",
     noMatch: "Filtrlarga mos vazifa yo'q", tasksWord: "vazifa", nextDue: "Keyingi muddat", noDeadline: "Muddatsiz",
     dueOverdue: "Muddati o'tgan", dueWeek: "Shu hafta", dueUpcoming: "Yaqin 14 kun", dueNoDate: "Muddatsiz",
-    colProject: "Loyiha", colTask: "Vazifa", colType: "Turi", colResp: "Mas'ul", colDeadline: "Muddat", colStatus: "Holat",
+    colProject: "Loyiha", colTask: "Vazifa", colType: "Turi", colResp: "Mas'ul", colCustomer: "Buyurtmachi", colDeadline: "Muddat", colStatus: "Holat",
     unassigned: "Belgilanmagan", daysOverdue: "kun kechikdi", people: "ijrochi", openNotion: "Notion'da ochish",
     tasksDone: "bajarildi", completion: "bajarilish",
     hi: "Xush kelibsiz", welcomeSub: "Kaizen loyihalaringizdagi bugungi holat",
@@ -93,7 +94,7 @@ const TXT = {
     allProjects: "Барча лойиҳалар", allStatuses: "Барча ҳолатлар", searchPh: "Вазифа қидириш…",
     noMatch: "Филтрларга мос вазифа йўқ", tasksWord: "вазифа", nextDue: "Кейинги муддат", noDeadline: "Муддатсиз",
     dueOverdue: "Муддати ўтган", dueWeek: "Шу ҳафта", dueUpcoming: "Яқин 14 кун", dueNoDate: "Муддатсиз",
-    colProject: "Лойиҳа", colTask: "Вазифа", colType: "Тури", colResp: "Масъул", colDeadline: "Муддат", colStatus: "Ҳолат",
+    colProject: "Лойиҳа", colTask: "Вазифа", colType: "Тури", colResp: "Масъул", colCustomer: "Буюртмачи", colDeadline: "Муддат", colStatus: "Ҳолат",
     unassigned: "Белгиланмаган", daysOverdue: "кун кечикди", people: "ижрочи", openNotion: "Notion'да очиш",
     tasksDone: "бажарилди", completion: "бажарилиш",
     hi: "Хуш келибсиз", welcomeSub: "Kaizen лойиҳаларингиздаги бугунги ҳолат",
@@ -119,7 +120,7 @@ const TXT = {
     allProjects: "Все проекты", allStatuses: "Все статусы", searchPh: "Поиск задачи…",
     noMatch: "Нет задач под фильтры", tasksWord: "задач", nextDue: "Ближайший срок", noDeadline: "Без срока",
     dueOverdue: "Просрочено", dueWeek: "На этой неделе", dueUpcoming: "Ближайшие 14 дней", dueNoDate: "Без срока",
-    colProject: "Проект", colTask: "Задача", colType: "Тип", colResp: "Ответственный", colDeadline: "Срок", colStatus: "Статус",
+    colProject: "Проект", colTask: "Задача", colType: "Тип", colResp: "Ответственный", colCustomer: "Заказчик", colDeadline: "Срок", colStatus: "Статус",
     unassigned: "Не назначен", daysOverdue: "дн. просрочки", people: "исполн.", openNotion: "Открыть в Notion",
     tasksDone: "выполнено", completion: "выполнение",
     hi: "С возвращением", welcomeSub: "Что происходит с вашими Кайзен-проектами сегодня",
@@ -145,7 +146,7 @@ const TXT = {
     allProjects: "All projects", allStatuses: "All statuses", searchPh: "Search task…",
     noMatch: "No tasks match the filters", tasksWord: "tasks", nextDue: "Next due", noDeadline: "No deadline",
     dueOverdue: "Overdue", dueWeek: "This week", dueUpcoming: "Next 14 days", dueNoDate: "No date",
-    colProject: "Project", colTask: "Task", colType: "Type", colResp: "Responsible", colDeadline: "Deadline", colStatus: "Status",
+    colProject: "Project", colTask: "Task", colType: "Type", colResp: "Responsible", colCustomer: "Customer", colDeadline: "Deadline", colStatus: "Status",
     unassigned: "Unassigned", daysOverdue: "days overdue", people: "people", openNotion: "Open in Notion",
     tasksDone: "done", completion: "completion",
     hi: "Welcome back", welcomeSub: "Here's what's happening with your Kaizen projects today",
@@ -167,6 +168,23 @@ function fmtDateTime(iso) {
   if (isNaN(d)) return null;
   return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+
+// Localised short month names → deadlines read as "12 May 2026" (day · month · year)
+const MONTHS_SHORT = {
+  uz:      ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"],
+  uz_cyrl: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"],
+  ru:      ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"],
+  en:      ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+};
+const fmtDeadline = (iso, lang) => {
+  if (!iso) return null;
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${(MONTHS_SHORT[lang] || MONTHS_SHORT.en)[m - 1]} ${y}`;
+};
+
+// Notion-style grid rule shared by every table cell (vertical + horizontal lines)
+const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
 
 // 'YYYY-MM' → short month label (for the activity area chart x-axis)
 const monthLabel = (key, opts) => {
@@ -207,6 +225,33 @@ function StatusPill({ status, T }) {
   );
 }
 
+// Sort affordance for the task-table headers: neutral chevrons until active,
+// then a solid arrow pointing in the current direction.
+function SortIcon({ active, dir }) {
+  if (!active) return <ChevronsUpDown size={11} className="opacity-40 group-hover:opacity-80 transition-opacity" />;
+  return dir === "asc"
+    ? <ArrowUp size={11} style={{ color: "var(--brand-text)" }} />
+    : <ArrowDown size={11} style={{ color: "var(--brand-text)" }} />;
+}
+
+// Sortable, icon-led column header — brand-tinted glyph + label + sort state.
+function Th({ icon: Icon, label, k, sort, onSort, cls = "" }) {
+  const active = sort.key === k;
+  return (
+    <th className={`text-left font-medium px-4 py-2 select-none ${cls}`} style={cellB}>
+      <button
+        type="button" onClick={() => onSort(k)}
+        className="group inline-flex items-center gap-1.5 transition-colors"
+        style={{ color: active ? "var(--text-1)" : "inherit" }}
+      >
+        {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
+        <span>{label}</span>
+        <SortIcon active={active} dir={sort.dir} />
+      </button>
+    </th>
+  );
+}
+
 // Thin done/progress/todo stacked bar
 function MiniBar({ done, prog, todo }) {
   const total = Math.max(done + prog + todo, 1);
@@ -239,6 +284,8 @@ export default function Kaizen() {
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("12");   // activity-chart window: 6 · 12 · all
+  const [sort, setSort] = useState({ key: null, dir: "asc" });  // task-table column sort
+  const onSort = (k) => setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
   const { data, isLoading } = useQuery({
     queryKey: ["kaizen"],
@@ -330,12 +377,39 @@ export default function Kaizen() {
       if (project !== "all" && t.project_key !== project) return false;
       if (status !== "all" && t.status !== status) return false;
       if (q) {
-        const hay = `${tl(t.title)} ${t.title} ${(t.responsible || []).map(tl).join(" ")} ${tl(t.task_type || "")}`.toLowerCase();
+        const hay = `${tl(t.title)} ${t.title} ${(t.responsible || []).map(tl).join(" ")} ${(t.customer || []).map(tl).join(" ")} ${tl(t.task_type || "")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
   }, [tasks, project, status, search, tl]);
+
+  // Sorted view of the task table — string-compared per column, deadlines last.
+  const sorted = useMemo(() => {
+    if (!sort.key) return filtered;
+    const val = (t) => {
+      switch (sort.key) {
+        case "project":  return tl(t.project || "");
+        case "task":     return t.title || "";
+        case "type":     return tl(t.task_type || "");
+        case "resp":     return (t.responsible || []).map(tl).join(", ");
+        case "customer": return (t.customer || []).map(tl).join(", ");
+        case "deadline": return t.deadline || "";
+        case "status":   return statusInfo(t.status, T).label;
+        default:         return "";
+      }
+    };
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (sort.key === "deadline") {          // undated tasks always sink to the bottom
+        if (!va && !vb) return 0;
+        if (!va) return 1;
+        if (!vb) return -1;
+      }
+      return va.localeCompare(vb, undefined, { numeric: true }) * dir;
+    });
+  }, [filtered, sort, tl, T]);
 
   // ── charts ───────────────────────────────────────────────────────────────────
   const gaugeOpts = {
@@ -663,7 +737,7 @@ export default function Kaizen() {
                           {t.responsible?.length ? ` · ${t.responsible.map(tl).join(", ")}` : ""}
                         </div>
                       </div>
-                      <span className="text-[11px] tabular-nums hidden sm:block flex-shrink-0" style={{ color: overdue ? C_OVERDUE : "var(--text-4)" }}>{t.deadline || "—"}</span>
+                      <span className="text-[11px] tabular-nums hidden sm:block flex-shrink-0" style={{ color: overdue ? C_OVERDUE : "var(--text-4)" }}>{fmtDeadline(t.deadline, lang) || "—"}</span>
                       <StatusPill status={t.status} T={T} />
                     </div>
                   );
@@ -709,7 +783,7 @@ export default function Kaizen() {
                       <span className="flex items-center gap-2">
                         <Tally color={C_DONE} n={p.done} /><Tally color={C_PROG} n={p.prog} /><Tally color={C_TODO} n={p.todo} />
                       </span>
-                      <span style={{ color: "var(--text-4)" }}>{p.nextDue ? `${T.nextDue}: ${p.nextDue}` : T.noDeadline}</span>
+                      <span style={{ color: "var(--text-4)" }}>{p.nextDue ? `${T.nextDue}: ${fmtDeadline(p.nextDue, lang)}` : T.noDeadline}</span>
                     </div>
                   </button>
                 );
@@ -813,39 +887,43 @@ export default function Kaizen() {
                 </div>
               } />
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
-                    <th className="text-left font-medium px-4 py-2">{T.colProject}</th>
-                    <th className="text-left font-medium px-4 py-2">{T.colTask}</th>
-                    <th className="text-left font-medium px-4 py-2 hidden md:table-cell">{T.colType}</th>
-                    <th className="text-left font-medium px-4 py-2 hidden sm:table-cell">{T.colResp}</th>
-                    <th className="text-left font-medium px-4 py-2">{T.colDeadline}</th>
-                    <th className="text-left font-medium px-4 py-2">{T.colStatus}</th>
-                    <th className="px-2 py-2"></th>
+                    <Th icon={FolderKanban} label={T.colProject}  k="project"  sort={sort} onSort={onSort} />
+                    <Th icon={FileText}     label={T.colTask}     k="task"     sort={sort} onSort={onSort} />
+                    <Th icon={Tag}          label={T.colType}     k="type"     sort={sort} onSort={onSort} cls="hidden md:table-cell" />
+                    <Th icon={UserCheck}    label={T.colResp}     k="resp"     sort={sort} onSort={onSort} cls="hidden sm:table-cell" />
+                    <Th icon={UserRound}    label={T.colCustomer} k="customer" sort={sort} onSort={onSort} cls="hidden lg:table-cell" />
+                    <Th icon={CalendarClock} label={T.colDeadline} k="deadline" sort={sort} onSort={onSort} />
+                    <Th icon={CircleDot}    label={T.colStatus}   k="status"   sort={sort} onSort={onSort} />
+                    <th className="px-2 py-2" style={{ borderBottom: "1px solid var(--border)" }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((t) => {
+                  {sorted.map((t) => {
                     const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                     return (
-                      <tr key={t.id} style={{ borderTop: "1px solid var(--border)" }}>
-                        <td className="px-4 py-2 whitespace-nowrap"><span title={tl(t.project)}>{emojiFor(t.project_key)}</span></td>
-                        <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
-                        <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
-                        <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
+                      <tr key={t.id}>
+                        <td className="px-4 py-2 whitespace-nowrap" style={cellB}><span title={tl(t.project)}>{emojiFor(t.project_key)}</span></td>
+                        <td className="px-4 py-2 max-w-xs" style={cellB}><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
+                        <td className="px-4 py-2 hidden md:table-cell" style={{ ...cellB, color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
+                        <td className="px-4 py-2 hidden sm:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
                           {t.responsible?.length ? t.responsible.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ color: overdue ? C_OVERDUE : "var(--text-3)" }}>{t.deadline || "—"}</td>
-                        <td className="px-4 py-2"><StatusPill status={t.status} T={T} /></td>
-                        <td className="px-2 py-2">
-                          {t.url && <a href={t.url} target="_blank" rel="noreferrer" title={T.openNotion} style={{ color: "var(--text-4)" }}><ExternalLink size={13} /></a>}
+                        <td className="px-4 py-2 hidden lg:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
+                          {t.customer?.length ? t.customer.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ ...cellB, color: overdue ? C_OVERDUE : "var(--text-3)" }}>{fmtDeadline(t.deadline, lang) || "—"}</td>
+                        <td className="px-4 py-2" style={cellB}><StatusPill status={t.status} T={T} /></td>
+                        <td className="px-2 py-2 text-center" style={{ borderBottom: "1px solid var(--border)" }}>
+                          {t.url && <a href={t.url} target="_blank" rel="noreferrer" title={T.openNotion} className="inline-flex transition-colors hover:text-[var(--brand-text)]" style={{ color: "var(--text-4)" }}><ExternalLink size={13} /></a>}
                         </td>
                       </tr>
                     );
                   })}
-                  {filtered.length === 0 && (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
+                  {sorted.length === 0 && (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
                   )}
                 </tbody>
               </table>
