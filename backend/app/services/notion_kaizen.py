@@ -33,27 +33,34 @@ NOTION_VERSION = "2022-06-28"
 # model, where the legacy /databases/{id}/query endpoint returns object_not_found.
 NOTION_VERSION_DS = "2025-09-03"
 
-# Hub page that contains all eight inline databases (for reference / docs).
-HUB_PAGE_ID = "e416ee89-a36c-82ba-b89b-01007491b2db"
+# Hub page that contains the tasks database (for reference / docs).
+HUB_PAGE_ID = "e706ee89-a36c-83cd-b06c-010413454b41"
 
-# The eight projects, in the order they appear on the hub page. ``key`` is a
-# stable slug used by the frontend; ``name`` mirrors the Notion heading.
-KAIZEN_DATABASES: list[dict] = [
-    {"key": "zakreplenie",  "name": "Проект Закрепление",                         "database_id": "4b56ee89-a36c-821e-a150-816b3bef27b6"},
-    {"key": "shadzinka",    "name": "Проект Шадзинка",                            "database_id": "7196ee89-a36c-8344-bad3-81e2070b173d"},
-    {"key": "nastavnich",   "name": "Проект наставничества",                      "database_id": "0d06ee89-a36c-8247-80c5-019c34429713"},
-    {"key": "kachestvo",    "name": "Проект по качеству",                         "database_id": "a136ee89-a36c-83fa-9dcb-81e8a4881c78"},
-    {"key": "pokazateli",   "name": "Показатели производства",                    "database_id": "a3d6ee89-a36c-83e6-baf7-8109ef62cb18"},
-    {"key": "standarty",    "name": "Создание среды для стандартов",              "database_id": "be06ee89-a36c-82b9-a306-010180280c5f"},
-    {"key": "hansei",       "name": "Хансей",                                     "database_id": "4e26ee89-a36c-82a4-89a7-0145e9279c8c"},
-    {"key": "kormery",      "name": "Назначить ответственного за разработку кор.мер", "database_id": "fca6ee89-a36c-834f-87e0-818c132bdedb"},
+# All tasks now live in a single "Проекты" database; each row's project is a
+# "Project" select option rather than a separate per-project database.
+KAIZEN_DATABASE_ID = "2fa6ee89-a36c-83c4-a903-81b981d72cff"
+
+# The eight projects. ``key`` is a stable slug used by the frontend (and mapped
+# to an emoji there); ``option`` is the exact "Project" select value in Notion.
+KAIZEN_PROJECTS: list[dict] = [
+    {"key": "zakreplenie", "name": "Проект Закрепление",                          "option": "Проект Закрепление"},
+    {"key": "shadzinka",   "name": "Проект Шадзинка",                             "option": "Шадзинка"},
+    {"key": "nastavnich",  "name": "Проект наставничества",                       "option": "Наставничества"},
+    {"key": "kachestvo",   "name": "Проект по качеству",                          "option": "Проект по качеству"},
+    {"key": "pokazateli",  "name": "Показатели производства",                     "option": "Показатели производства"},
+    {"key": "standarty",   "name": "Создание среды для стандартов",               "option": "Создание среды для стандартов"},
+    {"key": "hansei",      "name": "Хансей",                                      "option": "Хансей"},
+    {"key": "kormery",     "name": "Назначить ответственного за разработку кор.мер", "option": "Назначить ответственного за разработку кор.мер"},
 ]
+_OPTION_TO_PROJECT = {p["option"]: p for p in KAIZEN_PROJECTS}
+_UNKNOWN_PROJECT = {"key": "other", "name": "Прочее"}
 
-# Column-name variants seen across the eight databases (they were built
-# independently, so the same concept has different labels).
+# Column-name variants. The same concept is labelled differently across the
+# older per-project databases, so we match by a set of known names.
 _CUSTOMER_NAMES = {"Заказчик", "Person 1"}
 _DEADLINE_NAMES = {"Срок", "Date", "Дедлайн", "Deadline"}
 _TYPE_NAMES = {"Тип задачи", "Тип Задачи", "Text", "Описание", "Type"}
+_PROJECT_NAMES = {"Project", "Проект"}
 
 # Canonical status buckets. Notion stores the localized option name; everything
 # that is not explicitly "Done"/"In progress" counts as not-started.
@@ -117,17 +124,20 @@ def _people_names(value: list | None, users: dict[str, str]) -> list[str]:
     return names
 
 
-def normalize_page(page: dict, project: dict, users: dict[str, str] | None = None) -> dict:
-    """Flatten one Notion page (database row) into our common task shape.
+def normalize_page(page: dict, users: dict[str, str] | None = None) -> dict:
+    """Flatten one Notion page (row of the "Проекты" database) into our task shape.
 
-    Classifies each property by its Notion *type* and *name* so the eight
-    differently-labelled schemas all collapse to: title / status / responsible
-    people / customer people / deadline / task-type.
+    Classifies each property by its Notion *type* and *name*, collapsing to:
+    project / title / status / responsible people / customer people / deadline /
+    task-type. Property-type strings are matched leniently so the same code
+    parses both the classic REST shape ("people"/"rich_text") and the newer
+    data-source shape ("person"/"text").
     """
     users = users or {}
     props = page.get("properties", {})
     title = ""
     status_raw: str | None = None
+    project_option: str | None = None
     responsible: list[str] = []
     customer: list[str] = []
     deadline: str | None = None
@@ -139,21 +149,27 @@ def normalize_page(page: dict, project: dict, users: dict[str, str] | None = Non
             title = _rich_text(val.get("title"))
         elif ptype == "status":
             status_raw = (val.get("status") or {}).get("name")
-        elif ptype == "select" and name in ("Status", "Статус"):
-            status_raw = (val.get("select") or {}).get("name")
-        elif ptype == "people":
-            names = _people_names(val.get("people"), users)
+        elif ptype == "select":
+            option = (val.get("select") or {}).get("name")
+            if name in _PROJECT_NAMES:
+                project_option = option
+            elif name in ("Status", "Статус"):
+                status_raw = option
+        elif ptype in ("people", "person"):
+            names = _people_names(val.get("people") or val.get("person"), users)
             if name in _CUSTOMER_NAMES:
                 customer.extend(names)
             else:  # "Ответственный", "Person", or any other person field
                 responsible.extend(names)
         elif ptype == "date" and name in _DEADLINE_NAMES:
             deadline = (val.get("date") or {}).get("start")
-        elif ptype == "rich_text" and name in _TYPE_NAMES:
-            task_type = _rich_text(val.get("rich_text"))
+        elif ptype in ("rich_text", "text") and name in _TYPE_NAMES:
+            task_type = _rich_text(val.get("rich_text") or val.get("text"))
 
     if deadline:
         deadline = deadline[:10]  # keep the date part; drop any time component
+
+    project = _OPTION_TO_PROJECT.get(project_option, _UNKNOWN_PROJECT)
 
     return {
         "project": project["name"],
@@ -273,25 +289,16 @@ def _fetch_users(client: httpx.Client) -> dict[str, str]:
 
 
 def fetch_all_tasks() -> list[dict]:
-    """Pull and normalize every task across all eight Kaizen databases.
+    """Pull and normalize every task from the single "Проекты" database.
 
-    One database failing (e.g. not shared with the integration) no longer nukes
-    the whole sync — its error is collected and the rest still load. If *every*
-    database fails, the aggregated error is raised so the admin sees why.
+    Each row carries its own "Project" select, so a task's project is derived
+    per-row rather than per-database.
     """
     tasks: list[dict] = []
-    errors: list[str] = []
     with httpx.Client(timeout=30.0) as client:
         users = _fetch_users(client)  # id → name, so every assignee resolves (not just the owner)
-        for project in KAIZEN_DATABASES:
-            try:
-                for page in _fetch_pages(client, project["database_id"]):
-                    tasks.append(normalize_page(page, project, users))
-            except Exception as exc:
-                errors.append(f"{project['name']}: {exc}")
-
-    if errors and not tasks:
-        raise RuntimeError("; ".join(errors))
+        for page in _fetch_pages(client, KAIZEN_DATABASE_ID):
+            tasks.append(normalize_page(page, users))
     return tasks
 
 

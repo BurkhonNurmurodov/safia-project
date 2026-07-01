@@ -52,7 +52,7 @@ def get_kaizen(
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "ok": meta.ok if meta else None,
         "message": meta.message if meta else None,
-        "projects": [{"key": p["key"], "name": p["name"]} for p in nk.KAIZEN_DATABASES],
+        "projects": [{"key": p["key"], "name": p["name"]} for p in nk.KAIZEN_PROJECTS],
         "tasks": [_serialize(t) for t in rows],
     }
 
