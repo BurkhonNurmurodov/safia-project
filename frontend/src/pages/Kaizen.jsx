@@ -657,7 +657,7 @@ export default function Kaizen() {
                         {emojiFor(t.project_key)}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={tl(t.title)}>{tl(t.title)}</div>
+                        <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={t.title}>{t.title}</div>
                         <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
                           {t.task_type ? tl(t.task_type) : tl(t.project)}
                           {t.responsible?.length ? ` · ${t.responsible.map(tl).join(", ")}` : ""}
@@ -777,7 +777,7 @@ export default function Kaizen() {
                   {A.overdueTasks.slice(0, 12).map((t) => (
                     <div key={t.id} className="flex items-center gap-2 text-[11px]">
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: C_OVERDUE }} />
-                      <span className="flex-1 truncate" style={{ color: "var(--text-2)" }} title={tl(t.title)}>{tl(t.title)}</span>
+                      <span className="flex-1 truncate" style={{ color: "var(--text-2)" }} title={t.title}>{t.title}</span>
                       <span className="flex-shrink-0 font-semibold tabular-nums" style={{ color: C_OVERDUE }}>{t.late} {T.daysOverdue}</span>
                     </div>
                   ))}
@@ -831,7 +831,7 @@ export default function Kaizen() {
                     return (
                       <tr key={t.id} style={{ borderTop: "1px solid var(--border)" }}>
                         <td className="px-4 py-2 whitespace-nowrap"><span title={tl(t.project)}>{emojiFor(t.project_key)}</span></td>
-                        <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{tl(t.title)}</span></td>
+                        <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
                         <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
                         <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
                           {t.responsible?.length ? t.responsible.map(tl).join(", ") : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
