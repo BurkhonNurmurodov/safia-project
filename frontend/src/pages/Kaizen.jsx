@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -311,6 +311,18 @@ export default function Kaizen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kaizen"] }),
   });
 
+  // ApexCharts measures its container width at render time. Inside the responsive
+  // grid the charts can render before the grid cell has its final width, which
+  // collapses the y-axis label gutter (names overlap the bars) and shifts the
+  // bar baseline. Nudge every chart to re-measure once layout has settled after
+  // data loads or language changes.
+  useEffect(() => {
+    if (isLoading) return;
+    const raf = requestAnimationFrame(() =>
+      window.dispatchEvent(new Event("resize")));
+    return () => cancelAnimationFrame(raf);
+  }, [isLoading, lang]);
+
   const tasks = data?.tasks || [];
   const projects = data?.projects || [];
 
@@ -491,8 +503,8 @@ export default function Kaizen() {
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "62%", borderRadius: 3 } },
     colors: [C_DONE, C_PROG, C_TODO],
-    xaxis: { categories: topPeople.map((p) => tl(p.name === "—" ? T.unassigned : p.name)), labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" } } },
+    xaxis: { categories: topPeople.map((p) => tl(p.name === "—" ? T.unassigned : p.name)), min: 0, labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { minWidth: 90, maxWidth: 160, align: "right", style: { colors: labelColor, fontSize: "11px" } } },
     legend: { position: "top", labels: { colors: legendColor }, markers: { width: 10, height: 10, radius: 3 } },
     dataLabels: { enabled: false },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
@@ -515,7 +527,7 @@ export default function Kaizen() {
     fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: [mix(BRAND, -0.22)], inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
     states: { hover: { filter: { type: "lighten", value: 0.08 } } },
     xaxis: { categories: typeCats, labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 220 } },
+    yaxis: { labels: { minWidth: 90, maxWidth: 220, align: "right", style: { colors: labelColor, fontSize: "11px" } } },
     legend: { show: false },
     dataLabels: { enabled: true, style: { colors: ["#1a1208"], fontSize: "11px", fontWeight: 600 } },
     grid: { borderColor: gridColor, strokeDashArray: 3 },

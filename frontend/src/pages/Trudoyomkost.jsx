@@ -703,11 +703,12 @@ export default function Trudoyomkost() {
           </div>
         </div>
 
-        {/* workers-to-call forecast — moving-average prediction per brigadir × weekday */}
-        <WorkerForecast />
-
-        {/* worker prediction & statistics (derived-from-plan headcount) */}
+        {/* worker prediction & statistics (derived-from-plan headcount) — carries the shift-efficiency control */}
         <WorkerStats />
+
+        {/* workers-to-call forecast — moving-average prediction per brigadir × weekday.
+            Sits at the very bottom, following the shift-efficiency section. */}
+        <WorkerForecast />
       </>)}
     </Layout>
   );
