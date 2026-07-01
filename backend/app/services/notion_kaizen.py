@@ -33,12 +33,13 @@ NOTION_VERSION = "2022-06-28"
 # model, where the legacy /databases/{id}/query endpoint returns object_not_found.
 NOTION_VERSION_DS = "2025-09-03"
 
-# Hub page that contains the tasks database (for reference / docs).
-HUB_PAGE_ID = "e706ee89-a36c-83cd-b06c-010413454b41"
+# Hub page that contains the tasks database (for reference / docs). Lives in the
+# "cicon" workspace — the same workspace as the NOTION_TOKEN integration.
+HUB_PAGE_ID = "c8bf94a4-688c-4336-8339-206e0d786042"
 
-# All tasks now live in a single "Проекты" database; each row's project is a
+# All tasks live in a single "Проекты" database; each row's project is a
 # "Project" select option rather than a separate per-project database.
-KAIZEN_DATABASE_ID = "2fa6ee89-a36c-83c4-a903-81b981d72cff"
+KAIZEN_DATABASE_ID = "a5d14331-5ee6-8209-9fea-017c4b8b15a3"
 
 # The eight projects. ``key`` is a stable slug used by the frontend (and mapped
 # to an emoji there); ``option`` is the exact "Project" select value in Notion.
