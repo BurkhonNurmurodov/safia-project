@@ -3632,6 +3632,8 @@ const t = {
     "login.chooseRole.topRu":       "Top Manager",
     "login.chooseRole.shiftRu":     "Shift Manager",
     "login.chooseRole.supRu":       "Supervisor",
+    "login.chooseRole.leader":      "Leader",
+    "login.chooseRole.leaderRu":    "Leader",
     "login.chooseRole.shiftAdminRu":"Shift Admin",
     "login.chooseSlot":             "Select your slot:",
     "login.chooseName":             "Select your name:",
