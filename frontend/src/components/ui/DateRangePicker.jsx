@@ -111,7 +111,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t }) {
 
 // ── DateRangePicker ───────────────────────────────────────────────────────────
 
-export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo }) {
+export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo, single = false }) {
   const { t } = useLang();
   const [open,     setOpen]     = useState(false);
   const [tempFrom, setTempFrom] = useState(dateFrom||"");
