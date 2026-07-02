@@ -2720,6 +2720,7 @@ const t = {
     "admin.users.fieldUser":       "Пользователь",
     "admin.users.fieldRole":       "Роль",
     "admin.users.fieldUnit":       "Подразделение",
+    "admin.users.fieldSupervisor": "Бригадир",
     "admin.users.fieldSlot":       "Слот смены",
     "admin.users.selectPlaceholder": "— выберите —",
     "admin.users.add":             "Добавить",
