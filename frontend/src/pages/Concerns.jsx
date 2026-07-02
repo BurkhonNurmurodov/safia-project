@@ -236,16 +236,60 @@ export default function Concerns() {
   });
   const rows = listResp?.data || [];
 
-  // ── analytics (basic KPIs) ──────────────────────────────────────────────
-  const kpi = useMemo(() => {
-    const total = rows.length;
-    const done = rows.filter((r) => r.status === "done").length;
-    const open = total - done;
-    const resolved = rows.filter((r) => r.status === "done" && r.resolution_days != null);
-    const avg = resolved.length
-      ? Math.round(resolved.reduce((s, r) => s + r.resolution_days, 0) / resolved.length)
-      : null;
-    return { total, done, open, avg };
+  // ── analytics (the three headline KPIs) ─────────────────────────────────────
+  //  1) longest-running unresolved problem  2) slowest-resolving brigadir
+  //  3) the date carrying the most still-open concerns.
+  const insights = useMemo(() => {
+    // days elapsed between an ISO date and `to` (default: now), floored, never < 0.
+    const daysSince = (iso, to = Date.now()) => {
+      if (!iso) return null;
+      const from = new Date(iso + "T00:00:00").getTime();
+      return Math.max(0, Math.floor((to - from) / 86400000));
+    };
+    const open = rows.filter((r) => r.status !== "done");
+
+    // 1 ─ the open concern that has been waiting the longest.
+    let longest = null;
+    for (const r of open) {
+      const age = daysSince(r.entry_date);
+      if (age == null) continue;
+      if (!longest || age > longest.age) longest = { row: r, age };
+    }
+
+    // 2 ─ slowest brigadir: average time a concern spends with them, counting the
+    //     resolution span for done rows and the current wait for still-open ones.
+    const byBrig = new Map();
+    for (const r of rows) {
+      const name = r.brigadir_name;
+      if (!name) continue;
+      const span = r.status === "done"
+        ? (r.resolution_days != null ? r.resolution_days : daysSince(r.entry_date, r.completion_date ? new Date(r.completion_date + "T00:00:00").getTime() : Date.now()))
+        : daysSince(r.entry_date);
+      if (span == null) continue;
+      const g = byBrig.get(name) || { sum: 0, n: 0, open: 0 };
+      g.sum += span; g.n += 1;
+      if (r.status !== "done") g.open += 1;
+      byBrig.set(name, g);
+    }
+    let slowest = null;
+    for (const [name, g] of byBrig) {
+      const avg = g.sum / g.n;
+      if (!slowest || avg > slowest.avg) slowest = { name, avg: Math.round(avg), n: g.n, open: g.open };
+    }
+
+    // 3 ─ the entry date that carries the most still-open concerns (ties → oldest).
+    const byDate = new Map();
+    for (const r of open) {
+      if (!r.entry_date) continue;
+      byDate.set(r.entry_date, (byDate.get(r.entry_date) || 0) + 1);
+    }
+    let peak = null;
+    for (const [date, count] of byDate) {
+      if (!peak || count > peak.count || (count === peak.count && date < peak.date)) peak = { date, count };
+    }
+    const peakShare = peak && open.length ? Math.round((peak.count / open.length) * 100) : 0;
+
+    return { longest, slowest, peak, peakShare, openTotal: open.length };
   }, [rows]);
 
   const filtered = useMemo(() => {
