@@ -254,7 +254,7 @@ export default function Concerns() {
       (r) =>
         (r.concern_text || "").toLowerCase().includes(q) ||
         (r.concern_owner || "").toLowerCase().includes(q) ||
-        (r.cell_code || "").toLowerCase().includes(q) ||
+        (r.brigadir_name || "").toLowerCase().includes(q) ||
         (r.leader_name || "").toLowerCase().includes(q)
     );
   }, [rows, search]);
