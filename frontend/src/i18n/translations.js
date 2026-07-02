@@ -2643,6 +2643,8 @@ const t = {
     "login.chooseRole.topRu":       "Топ-менеджер",
     "login.chooseRole.shiftRu":     "Сменный менеджер",
     "login.chooseRole.supRu":       "Бригадир",
+    "login.chooseRole.leader":      "Лидер",
+    "login.chooseRole.leaderRu":    "Лидер",
     "login.chooseRole.shiftAdminRu":"Сменный администратор",
     "login.chooseSlot":             "Выберите слот:",
     "login.chooseName":             "Выберите ваше имя:",
