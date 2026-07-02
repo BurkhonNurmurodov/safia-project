@@ -3709,6 +3709,7 @@ const t = {
     "admin.users.fieldUser":       "User",
     "admin.users.fieldRole":       "Role",
     "admin.users.fieldUnit":       "Unit",
+    "admin.users.fieldSupervisor": "Supervisor",
     "admin.users.fieldSlot":       "Shift slot",
     "admin.users.selectPlaceholder": "— select —",
     "admin.users.add":             "Add",
