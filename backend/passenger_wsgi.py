@@ -163,6 +163,9 @@ def static_middleware(wsgi_app):
                         ('Content-Type', content_type),
                         ('Content-Length', str(size)),
                     ]
+                    cc = cache_control_for(file_path)
+                    if cc:
+                        headers.append(('Cache-Control', cc))
                     start_response('200 OK', headers)
                     return [b'']
                 except Exception:
