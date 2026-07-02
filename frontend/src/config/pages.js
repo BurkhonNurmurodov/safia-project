@@ -44,7 +44,7 @@ export const PAGES = [
 // behavior, so nav/guards behave correctly while the real matrix loads).
 export const DEFAULT_PAGE_ACCESS = {
   overview: ["shift-manager"],
-  zagruzka: ["top-manager", "shift-manager", "supervisor"],
+  zagruzka: ["top-manager", "shift-manager", "supervisor", "leader"],
   leaderboard: [], // admin-only by default
 
   workers:  ["shift-manager"],
