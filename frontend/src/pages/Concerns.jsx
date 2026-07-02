@@ -259,9 +259,7 @@ export default function Concerns() {
         <div className="ml-auto">
           <button
             onClick={openCreate}
-            disabled={!canAdd}
-            title={!canAdd ? t("concerns.pickLeaderFirst") : ""}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 transition-colors"
           >
             <Plus size={15} /> {t("concerns.add")}
           </button>
