@@ -136,7 +136,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const width = Math.min(660, vw - 16);
+    const width = Math.min(single ? 440 : 660, vw - 16);
     let left = rect.right - width;                 // right-align to trigger
     left = Math.min(left, vw - width - 8);
     left = Math.max(8, left);
