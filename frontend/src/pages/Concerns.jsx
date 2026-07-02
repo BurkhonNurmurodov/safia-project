@@ -508,7 +508,6 @@ export default function Concerns() {
                   <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
                   <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
                   <Th icon={Clock}         label={t("concerns.colDeadline")} k="deadline" sort={sort} onSort={onSort} align="center" />
-                  <th className="px-2 py-2" style={{ borderBottom: "1px solid var(--border)" }}></th>
                 </tr>
               </thead>
               <tbody>
