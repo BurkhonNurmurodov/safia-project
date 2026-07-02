@@ -285,6 +285,12 @@ def add_user_role(
         if not mgr:
             raise HTTPException(status_code=400, detail="Unit not found")
         role_id, full_name = mgr.id, mgr.name
+    elif payload.role == "leader":
+        # A leader keeps their own name; role_id points at their supervisor's unit.
+        mgr = db.query(Manager).filter(Manager.id == payload.role_id).first()
+        if not mgr:
+            raise HTTPException(status_code=400, detail="Unit not found")
+        role_id, full_name = mgr.id, user.full_name
     elif payload.role == "shift-manager":
         if payload.role_id not in (1, 2, 3, 4):
             raise HTTPException(status_code=400, detail="Invalid shift slot")
