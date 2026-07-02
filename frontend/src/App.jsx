@@ -23,6 +23,7 @@ const Production = lazy(() => import("./pages/Production"));
 const Trudoyomkost = lazy(() => import("./pages/Trudoyomkost"));
 const Leaders = lazy(() => import("./pages/Leaders"));
 const Kaizen = lazy(() => import("./pages/Kaizen"));
+const Concerns = lazy(() => import("./pages/Concerns"));
 const UsersActivity = lazy(() => import("./pages/UsersActivity"));
 const Login = lazy(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
