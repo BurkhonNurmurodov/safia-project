@@ -359,14 +359,15 @@ export default function WorkerForecast({ effPct = 100 }) {
           className="p-1.5 rounded-lg transition-colors hover:bg-white/10" style={{ border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
           <ChevronRight size={15} />
         </button>
-        {/* single-day picker — native date input, mirrors the Daily page's DayPicker */}
-        <label title={t.pickDay}
-          className="flex items-center justify-center p-1.5 rounded-lg cursor-pointer transition-colors hover:bg-white/10"
-          style={{ border: `1px solid ${pickedDate ? "var(--brand)" : "var(--border-md)"}`, color: pickedDate ? "var(--brand-text)" : "var(--text-2)" }}>
-          <CalendarDays size={15} />
-          <input type="date" value={pickedDate || activeDate || ""} onChange={(e) => e.target.value && setPickedDate(e.target.value)}
-            className="sr-only" />
-        </label>
+        {/* single-day picker — the app's custom calendar popover (no native date
+            input, which misbehaves in the Telegram webview); a picked day drives
+            the single-column view. Collapse any range to its start date. */}
+        <DateRangePicker
+          dateFrom={pickedDate || ""}
+          dateTo={pickedDate || ""}
+          setDateFrom={(d) => setPickedDate(d || null)}
+          setDateTo={() => {}}
+        />
       </div>
     </div>
   );
