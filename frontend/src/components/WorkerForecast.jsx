@@ -292,7 +292,10 @@ export default function WorkerForecast({ effPct = 100 }) {
     return 0;
   }, [supervisors, bySup]);
 
-  const activeWd = selWd ?? defaultWd;
+  // when a single date is picked, the table collapses to just that weekday's column
+  const singleWd = pickedDate ? (new Date(pickedDate + "T00:00:00").getDay() + 6) % 7 : null;
+  const wdCols = singleWd != null ? [singleWd] : [0, 1, 2, 3, 4, 5, 6];
+  const activeWd = singleWd ?? selWd ?? defaultWd;
   const activeDate = weekDates[activeWd] || addDaysISO(weekStart, activeWd);
 
   // aggregate the selected column across brigadirs: total gap, biggest gap-maker,
