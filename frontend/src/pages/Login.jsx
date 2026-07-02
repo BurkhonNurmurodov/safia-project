@@ -53,6 +53,7 @@ export default function Login() {
   function selectRole(r) {
     setRole(r);
     setFullName("");
+    setSupervisor("");
     setSearch("");
     setStep("name");
   }
@@ -61,11 +62,18 @@ export default function Login() {
     setFullName(name);
   }
 
+  // Leaders must both type their name and pick a supervisor before submitting.
+  const canSubmit = fullName.trim() && role && (role !== "leader" || supervisor);
+
   function handleSubmit(e) {
     e.preventDefault();
-    if (!fullName.trim() || !role) return;
+    if (!canSubmit) return;
 
-    const payload = JSON.stringify({ full_name: fullName.trim(), role });
+    const payload = JSON.stringify({
+      full_name: fullName.trim(),
+      role,
+      ...(role === "leader" ? { supervisor } : {}),
+    });
 
     if (tg) {
       try { tg.sendData(payload); } catch (err) { console.error(err); }
