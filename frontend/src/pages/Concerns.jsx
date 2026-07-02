@@ -761,15 +761,11 @@ export default function Concerns() {
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
               />
             </div>
-            <StyledSelect
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "all", label: t("concerns.allStatuses") },
-                ...STATUSES.map((s) => ({ value: s, label: statusLabel(s) })),
-              ]}
-              className="w-36"
-              triggerClassName="px-3 py-1.5 text-xs"
+            <FilterPanel
+              sections={filterSections}
+              activeCount={filterActiveCount}
+              anyActive={anyFilterActive}
+              onClearAll={clearAllFilters}
             />
             <button
               onClick={openCreate}
