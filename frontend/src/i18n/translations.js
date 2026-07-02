@@ -3144,6 +3144,7 @@ const t = {
     "concerns.pickLeader":     "Select a leader",
     "concerns.pickLeaderFirst":"Select a leader first",
     "concerns.fieldLeader":    "Leader",
+    "concerns.listTitle":      "Concerns list",
     "concerns.allStatuses":    "All statuses",
     "concerns.search":         "Search…",
     "concerns.kpiTotal":       "Total",
