@@ -29,6 +29,7 @@ export default function StyledSelect({
   options = [],
   placeholder,
   className = "",
+  triggerClassName = "px-3 py-2 text-sm",
   style = {},
   disabled = false,
   onRemove,
