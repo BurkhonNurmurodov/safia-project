@@ -233,6 +233,25 @@ function Empty({ icon: Icon, color, text }) {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+// Local calendar helpers for the period filter. String comparison over ISO dates
+// avoids the UTC-vs-local midnight drift that Date-based range math is prone to.
+const pad2 = (n) => String(n).padStart(2, "0");
+const localTodayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const isoMinusDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+// Period → [lo, hi] inclusive ISO bounds (null = unbounded on that side).
+function periodBounds(period, startDate, endDate) {
+  const today = localTodayIso();
+  if (period === "today") return [today, today];
+  if (period === "yesterday") { const y = isoMinusDays(today, 1); return [y, y]; }
+  if (period === "last-week") return [isoMinusDays(today, 6), today];
+  if (period === "custom") return [startDate || null, endDate || null];
+  return [null, null];   // all time
+}
+
 const emptyForm = () => ({
   id: null,
   leader_ref: null,   // admin only: which leader this concern belongs to
