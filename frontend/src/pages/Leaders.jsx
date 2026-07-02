@@ -63,6 +63,7 @@ const TXT = {
     tipLowSup: "Eng past o'rtacha ko'rsatkichli brigadir",
     tipLowLeader: "Eng past o'rtacha ko'rsatkichli lider",
     searchPh: "Lider qidirish…", bandAll: "Barchasi", noMatch: "Filtrlarga mos hisobot yo'q",
+    refresh: "Yangilash", refreshing: "Yangilanmoqda…", refreshed: "Yangilandi",
   },
   uz_cyrl: {
     title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
