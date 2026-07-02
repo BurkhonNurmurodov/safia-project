@@ -207,6 +207,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} отклонил(а) ваш документ", "{doc_label} | Дата: {date}"),
         "en": ("{actor_name} rejected your document", "{doc_label} | Date: {date}"),
     },
+    "concern_created": {
+        "uz": ("Yangi xavotir qo'shildi", "Lider: {leader_name} | Xavotir egasi: {owner} | Sana: {date}\n{concern}"),
+        "uz_cyrl": ("Янги хавотир қўшилди", "Лидер: {leader_name} | Хавотир эгаси: {owner} | Сана: {date}\n{concern}"),
+        "ru": ("Добавлено новое опасение", "Лидер: {leader_name} | Владелец: {owner} | Дата: {date}\n{concern}"),
+        "en": ("New concern added", "Leader: {leader_name} | Owner: {owner} | Date: {date}\n{concern}"),
+    },
 }
 
 
