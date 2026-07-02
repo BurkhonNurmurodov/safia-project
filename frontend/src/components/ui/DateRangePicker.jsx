@@ -190,6 +190,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
   }, [open, tempFrom, tempTo]); // eslint-disable-line
 
   function handlePick(iso) {
+    if (single) { setTempFrom(iso); setTempTo(iso); setActiveP(null); return; }
     if (phase==="from"||(tempFrom&&tempTo)) {
       setTempFrom(iso); setTempTo(""); setPhase("to"); setActiveP(null);
     } else {
