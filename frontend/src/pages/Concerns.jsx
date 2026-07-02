@@ -555,6 +555,59 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
+      {/* Filters — period + brigadir + leader (mirrors the Leaders page). Brigadir
+          and leader are admin-only; a leader only ever sees their own concerns. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+        {/* Period */}
+        <div>
+          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
+          <StyledSelect
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { value: "all", label: t("concerns.periodAll") },
+              { value: "today", label: t("concerns.periodToday") },
+              { value: "yesterday", label: t("concerns.periodYesterday") },
+              { value: "last-week", label: t("concerns.periodWeek") },
+              { value: "custom", label: t("concerns.periodCustom") },
+            ]}
+          />
+          {period === "custom" && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+              <span style={{ color: "var(--text-4)" }}>—</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+            </div>
+          )}
+        </div>
+
+        {/* Brigadir — admin only */}
+        {isAdmin && (
+          <div>
+            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.colSupervisor")}</label>
+            <StyledSelect
+              value={fBrig}
+              onChange={(v) => { setFBrig(v); setFLeader("All"); }}
+              options={[{ value: "All", label: t("concerns.allBrigadirs") }, ...brigOptions]}
+            />
+          </div>
+        )}
+
+        {/* Leader — admin only */}
+        {isAdmin && (
+          <div>
+            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.fieldLeader")}</label>
+            <StyledSelect
+              value={fLeader}
+              onChange={setFLeader}
+              options={[{ value: "All", label: t("concerns.allLeaders") }, ...leaderFilterOptions]}
+            />
+          </div>
+        )}
+      </div>
+
       {/* KPIs — three headline insights (rich, colour-coded cards) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         {/* 1 ─ longest-running unresolved problem */}
