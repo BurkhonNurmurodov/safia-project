@@ -13,7 +13,9 @@ import { ChevronDown, Check, Trash2 } from "lucide-react";
  *   onChange     – (value: string) => void
  *   options      – string[] | { value: string, label: string }[]
  *   placeholder  – text shown when nothing is selected (optional)
- *   className    – extra classes on the trigger button (optional)
+ *   className    – extra classes on the wrapper element (optional)
+ *   triggerClassName – size/spacing classes for the trigger button; override to
+ *                  match a compact toolbar (default "px-3 py-2 text-sm")
  *   style        – extra inline styles on the trigger button (optional)
  *   disabled     – boolean (optional)
  *   onRemove     – (option) => void; when set, options flagged `removable: true`
