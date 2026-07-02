@@ -32,6 +32,7 @@ const T = {
     cardBiggest: "Eng katta farq · brigadir", cardOut: "Oraliqdan tashqarida",
     netW: "sof", cardOutSub: "brigadir oraliqdan tashqarida",
     pickDateHint: "Sana ustunini bosing", noCompare: "Bu kun uchun hali haqiqiy yo'q",
+    allDays: "Butun hafta", pickDay: "Kun tanlash",
   },
   uz_cyrl: {
     title: "Башорат — сменага чақириш", thisWeek: "Шу ҳафта", supervisor: "Бригадир",
