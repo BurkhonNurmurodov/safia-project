@@ -252,11 +252,16 @@ def _admin_ids() -> set[int]:
 
 
 def _registration_text(full_name: str, role: str, phone: str | None,
-                       target_id: int, username: str | None) -> str:
+                       target_id: int, username: str | None,
+                       supervisor: str | None = None) -> str:
     text = (
         f"🆕 Yangi ro'yxatdan o'tish:\n\n"
         f"👤 Ism: {full_name}\n"
         f"💼 Lavozim: {_role('uz', role)}\n"
+    )
+    if supervisor:
+        text += f"👥 Brigadir: {supervisor}\n"
+    text += (
         f"📱 Telefon: {phone or '—'}\n"
         f"🆔 Telegram ID: {target_id}"
     )
