@@ -1659,6 +1659,7 @@ const t = {
     "login.chooseRole.shiftAdminRu":"Смена админи",
     "login.chooseSlot":             "Слотни танланг:",
     "login.chooseName":             "Исмингизни танланг:",
+    "login.chooseSupervisor":       "Бригадирингизни танланг:",
     "login.fullName":        "Тўлиқ исм:",
     "login.namePlaceholder": "Исм Фамилия",
     "login.search":          "Қидириш...",
