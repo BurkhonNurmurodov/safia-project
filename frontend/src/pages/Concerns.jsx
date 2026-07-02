@@ -8,7 +8,6 @@ import {
   Hourglass, Gauge, Layers,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
-import KPICard from "../components/ui/KPICard";
 import StyledSelect from "../components/ui/StyledSelect";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
