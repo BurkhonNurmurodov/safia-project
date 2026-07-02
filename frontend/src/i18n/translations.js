@@ -1064,6 +1064,7 @@ const t = {
     "concerns.pickLeader":     "Лидерни танланг",
     "concerns.pickLeaderFirst":"Аввал лидерни танланг",
     "concerns.fieldLeader":    "Лидер",
+    "concerns.listTitle":      "Хавотирлар рўйхати",
     "concerns.allStatuses":    "Барча ҳолатлар",
     "concerns.search":         "Қидириш…",
     "concerns.kpiTotal":       "Жами",
