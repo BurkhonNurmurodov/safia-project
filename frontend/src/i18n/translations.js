@@ -3637,6 +3637,7 @@ const t = {
     "login.chooseRole.shiftAdminRu":"Shift Admin",
     "login.chooseSlot":             "Select your slot:",
     "login.chooseName":             "Select your name:",
+    "login.chooseSupervisor":       "Select your supervisor:",
     "login.fullName":        "Full name:",
     "login.namePlaceholder": "First Last",
     "login.search":          "Search...",
