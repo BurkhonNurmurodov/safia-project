@@ -472,7 +472,7 @@ export default function Concerns() {
                 <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
                   <Th icon={CalendarClock} label={t("concerns.colDate")}     k="date"     sort={sort} onSort={onSort} />
                   {showLeaderCol && <Th icon={UserCheck} label={t("concerns.colLeader")} k="leader" sort={sort} onSort={onSort} />}
-                  <Th icon={Hash}          label={t("concerns.colCell")}     k="cell"     sort={sort} onSort={onSort} />
+                  <Th icon={ShieldCheck}   label={t("concerns.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} />
                   <Th icon={UserRound}     label={t("concerns.colOwner")}    k="owner"    sort={sort} onSort={onSort} />
                   <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
                   <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
