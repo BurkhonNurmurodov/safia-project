@@ -403,12 +403,12 @@ export default function Concerns() {
     const peakShare = peak && open.length ? Math.round((peak.count / open.length) * 100) : 0;
 
     return { longest, slowest, peak, peakShare, openTotal: open.length };
-  }, [rows]);
+  }, [scoped]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q) return scoped;
+    return scoped.filter(
       (r) =>
         (r.concern_text || "").toLowerCase().includes(q) ||
         (r.concern_owner || "").toLowerCase().includes(q) ||
