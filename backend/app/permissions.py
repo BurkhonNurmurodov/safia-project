@@ -58,6 +58,9 @@ DEFAULT_PAGE_ACCESS = {
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
+    # Leader concerns ("Xavotirlar") log. Leaders manage their own concerns by
+    # default; admins always have full access and act for any leader.
+    "concerns": ["leader"],
     # Users-activity & usage statistics (who's active, time-in-app, contribution
     # calendar). Admin-only by default; open up roles from the Access tab.
     "activity": [],
