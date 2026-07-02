@@ -440,7 +440,15 @@ export default function Concerns() {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5"><StatusBadge status={r.status} label={statusLabel(r.status)} /></td>
+                    <td className="px-3 py-2.5">
+                      <StatusSelect
+                        status={r.status}
+                        label={statusLabel(r.status)}
+                        statusLabel={statusLabel}
+                        saving={savingStatusId === r.id}
+                        onChange={(s) => statusMutation.mutate({ row: r, status: s })}
+                      />
+                    </td>
                     <td className="px-3 py-2.5 text-center font-mono text-xs" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-2">
