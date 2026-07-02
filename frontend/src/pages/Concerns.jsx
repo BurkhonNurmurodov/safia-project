@@ -436,6 +436,7 @@ export default function Concerns() {
                 options={[{ value: "", label: t("concerns.allLeaders") }, ...leaderOptions]}
                 placeholder={t("concerns.pickLeader")}
                 className="w-48"
+                triggerClassName="px-3 py-1.5 text-xs"
               />
             )}
             <StyledSelect
