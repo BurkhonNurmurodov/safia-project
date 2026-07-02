@@ -342,6 +342,15 @@ export default function Concerns() {
   });
   const rows = listResp?.data || [];
 
+  // ApexCharts measures its container width at render time; inside the responsive
+  // grid that can happen before the cell has its final width. Nudge a re-measure
+  // once layout settles after load / language switches (same fix as Kaizen).
+  useEffect(() => {
+    if (isLoading) return;
+    const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    return () => cancelAnimationFrame(raf);
+  }, [isLoading, lang]);
+
   // ── brigadir → leader cascade, built from the fetched rows (admin only) ──────
   const brigOptions = useMemo(() => {
     const m = new Map();
