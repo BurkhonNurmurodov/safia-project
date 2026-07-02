@@ -230,7 +230,7 @@ export default function StyledSelect({
         type="button"
         disabled={disabled}
         onClick={toggle}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left outline-none transition-colors"
+        className={`w-full flex items-center justify-between gap-2 rounded-lg text-left outline-none transition-colors ${triggerClassName}`}
         style={{
           background: "var(--bg-inner)",
           border:     `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,
