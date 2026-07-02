@@ -9,7 +9,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 
-const ROLES = ["top-manager", "shift-manager", "supervisor"];
+const ROLES = ["top-manager", "shift-manager", "supervisor", "leader"];
 
 function fmtDate(iso) {
   if (!iso) return "—";
