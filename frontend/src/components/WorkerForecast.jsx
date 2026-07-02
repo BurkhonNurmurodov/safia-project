@@ -321,6 +321,10 @@ export default function WorkerForecast({ effPct = 100 }) {
 
   if (!ready) return null;
 
+  // when a single date is active, the arrows step day-by-day; otherwise week-by-week
+  const goPrev = () => pickedDate ? setPickedDate((d) => addDaysISO(d, -1)) : setWeekStart((w) => addDaysISO(w, -7));
+  const goNext = () => pickedDate ? setPickedDate((d) => addDaysISO(d, 1)) : setWeekStart((w) => addDaysISO(w, 7));
+
   const Header = (
     <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
@@ -328,24 +332,40 @@ export default function WorkerForecast({ effPct = 100 }) {
         <span className="normal-case font-normal" style={{ color: "var(--text-4)" }}>· {t.maNote(weeks)}</span>
       </div>
       <div className="flex items-center gap-1.5">
-        {weekStart !== curWeek && (
+        {pickedDate ? (
+          <button onClick={() => setPickedDate(null)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
+            style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
+            <X size={12} /> {t.allDays}
+          </button>
+        ) : weekStart !== curWeek ? (
           <button onClick={() => setWeekStart(curWeek)}
             className="text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
             style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
             {t.thisWeek}
           </button>
-        )}
-        <button onClick={() => setWeekStart((w) => addDaysISO(w, -7))}
+        ) : null}
+        <button onClick={goPrev}
           className="p-1.5 rounded-lg transition-colors hover:bg-white/10" style={{ border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
           <ChevronLeft size={15} />
         </button>
         <span className="text-xs font-semibold tabular-nums px-1.5 min-w-[96px] text-center" style={{ color: "var(--text-1)" }}>
-          {weekDates.length ? `${ddmm(weekDates[0])} – ${ddmm(weekDates[6])}` : `${ddmm(weekStart)} – ${ddmm(addDaysISO(weekStart, 6))}`}
+          {pickedDate
+            ? `${wd.s[singleWd]} ${ddmm(pickedDate)}`
+            : weekDates.length ? `${ddmm(weekDates[0])} – ${ddmm(weekDates[6])}` : `${ddmm(weekStart)} – ${ddmm(addDaysISO(weekStart, 6))}`}
         </span>
-        <button onClick={() => setWeekStart((w) => addDaysISO(w, 7))}
+        <button onClick={goNext}
           className="p-1.5 rounded-lg transition-colors hover:bg-white/10" style={{ border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
           <ChevronRight size={15} />
         </button>
+        {/* single-day picker — native date input, mirrors the Daily page's DayPicker */}
+        <label title={t.pickDay}
+          className="flex items-center justify-center p-1.5 rounded-lg cursor-pointer transition-colors hover:bg-white/10"
+          style={{ border: `1px solid ${pickedDate ? "var(--brand)" : "var(--border-md)"}`, color: pickedDate ? "var(--brand-text)" : "var(--text-2)" }}>
+          <CalendarDays size={15} />
+          <input type="date" value={pickedDate || activeDate || ""} onChange={(e) => e.target.value && setPickedDate(e.target.value)}
+            className="sr-only" />
+        </label>
       </div>
     </div>
   );
