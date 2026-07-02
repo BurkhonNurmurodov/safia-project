@@ -1731,6 +1731,7 @@ const t = {
     "admin.users.fieldUser":       "Фойдаланувчи",
     "admin.users.fieldRole":       "Рол",
     "admin.users.fieldUnit":       "Бўлим",
+    "admin.users.fieldSupervisor": "Бригадир",
     "admin.users.fieldSlot":       "Смена слоти",
     "admin.users.selectPlaceholder": "— танланг —",
     "admin.users.add":             "Қўшиш",
