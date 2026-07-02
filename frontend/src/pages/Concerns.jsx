@@ -442,16 +442,62 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <KPICard label={t("concerns.kpiTotal")} value={kpi.total} />
-        <KPICard label={t("concerns.kpiOpen")} value={kpi.open} danger={kpi.open > 0} />
-        <KPICard label={t("concerns.kpiDone")} value={kpi.done} accent />
-        <KPICard
-          label={t("concerns.kpiAvgDays")}
-          value={kpi.avg == null ? "—" : kpi.avg}
-          sub={kpi.avg == null ? undefined : t("concerns.days")}
-        />
+      {/* KPIs — three headline insights (rich, colour-coded cards) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        {/* 1 ─ longest-running unresolved problem */}
+        <InsightCard icon={Hourglass} tint="#ef4444" label={t("concerns.kpiLongestOpen")}>
+          {insights.longest ? (
+            <>
+              <Metric value={insights.longest.age} unit={t("concerns.days")} color="#ef4444" />
+              <div className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_text}>
+                {tl(insights.longest.row.concern_text)}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                <Chip icon={UserRound}>{tl(insights.longest.row.concern_owner)}</Chip>
+                <Chip icon={CalendarClock}><span className="font-mono">{insights.longest.row.entry_date}</span></Chip>
+              </div>
+            </>
+          ) : (
+            <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
+          )}
+        </InsightCard>
+
+        {/* 2 ─ slowest-resolving brigadir */}
+        <InsightCard icon={Gauge} tint="#f59e0b" label={t("concerns.kpiSlowestBrigadir")}>
+          {insights.slowest ? (
+            <>
+              <Metric value={insights.slowest.avg} unit={t("concerns.days")} color="#f59e0b" suffix={t("concerns.avgShort")} />
+              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.slowest.name}>
+                {tl(insights.slowest.name)}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                <Chip icon={Layers}>{insights.slowest.n} {t("concerns.itemsUnit")}</Chip>
+                {insights.slowest.open > 0 && (
+                  <Chip color="#f59e0b"><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#f59e0b" }} />{insights.slowest.open} {t("concerns.openLower")}</Chip>
+                )}
+              </div>
+            </>
+          ) : (
+            <Empty icon={Gauge} color="var(--text-4)" text={t("concerns.noData")} />
+          )}
+        </InsightCard>
+
+        {/* 3 ─ date carrying the most still-open concerns */}
+        <InsightCard icon={CalendarClock} tint="#3b82f6" label={t("concerns.kpiPeakDate")}>
+          {insights.peak ? (
+            <>
+              <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="#3b82f6" />
+              <div className="text-[15px] font-bold font-mono leading-snug" style={{ color: "var(--text-1)" }}>
+                {insights.peak.date}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                <Chip icon={Layers}>{insights.peakShare}% {t("concerns.ofOpen")}</Chip>
+              </div>
+            </>
+          ) : (
+            <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
+          )}
+        </InsightCard>
       </div>
 
       {/* Task table — header band (title · count · search · filters · add) over a
