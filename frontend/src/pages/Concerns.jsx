@@ -21,6 +21,25 @@ const STATUSES = ["todo", "doing", "done"];
 // done = emerald — deliberately soft so they glow on the dark dashboard).
 const STATUS_COLOR = { todo: "#F43F5E", doing: "#F59E0B", done: "#10B981" };
 
+// Localized ISO-date formatter (mirrors the Leaders page) — turns 2026-07-02
+// into "2-iyul, 2026" / "2 июля 2026" / "2nd July, 2026" per the active lang.
+const MONTHS = {
+  en:      ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  ru:      ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"],
+  uz:      ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
+  uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
+};
+const enOrd = (d) => { const t = d % 100; if (t >= 11 && t <= 13) return "th"; return ["th", "st", "nd", "rd"][d % 10] || "th"; };
+const fmtDate = (iso, lang) => {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
+  if (lang === "en") return `${d}${enOrd(d)} ${mn}, ${y}`;   // 2nd July, 2026
+  if (lang === "ru") return `${d} ${mn} ${y}`;               // 2 июля 2026
+  return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
+};
+
 // Card chrome + the Notion-style grid rule shared by every cell (mirrors Kaizen).
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
@@ -267,7 +286,7 @@ const emptyForm = () => ({
 
 export default function Concerns() {
   const { auth } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const isAdmin = auth?.role === "admin";
