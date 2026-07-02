@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  CalendarRange, CalendarDays, ChevronLeft, ChevronRight, X, Sparkles,
+  CalendarRange, ChevronLeft, ChevronRight, X, Sparkles,
   TrendingUp, TrendingDown, Check, AlertTriangle, History,
   Target, Award,
 } from "lucide-react";
 import api from "../utils/api";
 import { SkeletonBlock } from "./ui/Skeleton";
+import DateRangePicker from "./ui/DateRangePicker";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
