@@ -571,39 +571,16 @@ export default function Concerns() {
                 </Field>
               )}
 
-              {/* Date + cell code */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t("concerns.fieldDate")}>
-                  <input
-                    type="date"
-                    value={form.entry_date}
-                    onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
-                    className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                  />
-                </Field>
-                <Field label={t("concerns.fieldCell")}>
-                  <StyledSelect
-                    value={addingCode ? "__new__" : form.cell_code}
-                    onChange={(v) => {
-                      if (v === "__new__") { setAddingCode(true); setForm((f) => ({ ...f, cell_code: "" })); }
-                      else { setAddingCode(false); setForm((f) => ({ ...f, cell_code: v })); }
-                    }}
-                    options={codeOptions}
-                    placeholder={t("concerns.selectCode")}
-                  />
-                  {addingCode && (
-                    <input
-                      autoFocus
-                      value={form.cell_code}
-                      onChange={(e) => setForm((f) => ({ ...f, cell_code: e.target.value }))}
-                      placeholder={t("concerns.newCode")}
-                      className="w-full rounded-lg px-3 py-2 text-sm outline-none mt-2"
-                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                    />
-                  )}
-                </Field>
-              </div>
+              {/* Date */}
+              <Field label={t("concerns.fieldDate")}>
+                <input
+                  type="date"
+                  value={form.entry_date}
+                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                />
+              </Field>
 
               {/* Concern owner */}
               <Field label={t("concerns.fieldOwner")} required>
