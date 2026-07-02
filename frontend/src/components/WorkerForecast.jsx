@@ -421,11 +421,11 @@ export default function WorkerForecast({ effPct = 100 }) {
       ) : (
         <>
           <div className="overflow-x-auto p-3">
-            <table className="w-full text-[11px] border-collapse" style={{ minWidth: 640 }}>
+            <table className={`text-[11px] border-collapse ${singleWd == null ? "w-full" : ""}`} style={{ minWidth: singleWd == null ? 640 : 320 }}>
               <thead>
                 <tr style={{ background: "var(--brand)", color: "#fff" }}>
                   <th className="text-left px-3 py-1.5 font-semibold sticky left-0" style={{ background: "var(--brand)", zIndex: 1 }}>{t.supervisor}</th>
-                  {wd.s.map((s, i) => {
+                  {wdCols.map((i) => {
                     const isToday = weekDates[i] === today;
                     const active = i === activeWd;
                     return (
