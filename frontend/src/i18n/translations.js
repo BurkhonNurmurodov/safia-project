@@ -35,7 +35,7 @@ const t = {
     "concerns.empty":          "Xavotirlar yo'q",
     "concerns.colDate":        "Sana",
     "concerns.colLeader":      "Lider",
-    "concerns.colCell":        "Yacheyka",
+    "concerns.colSupervisor":  "Brigadir",
     "concerns.colOwner":       "Xavotir egasi",
     "concerns.colConcern":     "Xavotir",
     "concerns.colStatus":      "Holat",
