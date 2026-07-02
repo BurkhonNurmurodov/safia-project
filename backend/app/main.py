@@ -175,7 +175,22 @@ for d in possible_dirs:
         break
 
 if STATIC_DIR:
-    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+    class ImmutableStaticFiles(StaticFiles):
+        """Build assets carry a content hash in their filename, so a given URL
+        never changes contents — cache them for a year so clients don't refetch
+        and can't end up with a stale/mismatched copy."""
+
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", ImmutableStaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    # index.html must never be cached: it references content-hashed asset names
+    # that change on every deploy. A stale copy points at chunk filenames that no
+    # longer exist → "App failed to start" when a lazy page 404s.
+    NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
 
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
@@ -185,4 +200,4 @@ if STATIC_DIR:
         if clean_path and file_path.startswith(STATIC_DIR) and os.path.isfile(file_path):
             return FileResponse(file_path)
         # Otherwise serve index.html for SPA frontend routing
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers=NO_STORE)
