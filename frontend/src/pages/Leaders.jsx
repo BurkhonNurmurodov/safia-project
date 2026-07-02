@@ -105,6 +105,7 @@ const TXT = {
     tipLowSup: "Бригадир с наименьшим средним баллом",
     tipLowLeader: "Лидер с наименьшим средним баллом",
     searchPh: "Поиск лидера…", bandAll: "Все", noMatch: "Нет отчётов под фильтры",
+    refresh: "Обновить", refreshing: "Обновление…", refreshed: "Обновлено",
   },
   en: {
     title: "Leader Monitoring", avgSuccess: "Average Success", timePeriod: "Period",
