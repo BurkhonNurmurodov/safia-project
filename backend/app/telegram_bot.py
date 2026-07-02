@@ -563,8 +563,14 @@ def _contact(message: types.Message):
         if not role_row:
             return
 
+        # For leaders, resolve the chosen supervisor's unit name so admins see it.
+        supervisor = None
+        if role_row.role == "leader" and role_row.role_id:
+            mgr = db.query(Manager).filter(Manager.id == role_row.role_id).first()
+            supervisor = mgr.name if mgr else None
+
         admin_text = _registration_text(role_row.full_name, role_row.role, phone, tid,
-                                        message.from_user.username)
+                                        message.from_user.username, supervisor=supervisor)
 
         bot.send_message(tid, _msg(lang, "waiting_approval"), reply_markup=types.ReplyKeyboardRemove())
         # Resilient admin notification — a failure here must NOT swallow the
