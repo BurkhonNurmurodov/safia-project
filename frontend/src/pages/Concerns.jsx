@@ -884,10 +884,10 @@ export default function Concerns() {
         </InsightCard>
       </div>
 
-      {/* Charts — daily created-vs-resolved trend + status donut, both computed from
+      {/* Charts — daily still-open trend + status donut, both computed from
           the fully filtered rows so every filter reshapes them live. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
-        {/* Trend line */}
+        {/* Trend line + end-of-day status strip */}
         <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
           <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
@@ -899,7 +899,20 @@ export default function Concerns() {
           {isLoading ? (
             <div className="p-4"><SkeletonChart className="h-52" /></div>
           ) : charts.trend.length ? (
-            <div className="px-1 pt-1"><ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} /></div>
+            <>
+              <div className="px-1 pt-1"><ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} /></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 mt-auto">
+                {openCards.map((c) => (
+                  <div key={c.label} className="px-4 py-3 flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                      <span className="truncate">{c.label}</span>
+                    </div>
+                    <div className="text-xl font-bold font-mono leading-none" style={{ color: c.color }}>{c.n}</div>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="grid place-items-center text-xs" style={{ color: "var(--text-4)", height: 232 }}>{t("concerns.noData")}</div>
           )}
