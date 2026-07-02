@@ -220,12 +220,6 @@ export default function Concerns() {
     label: l.brigadir_name ? `${tl(l.name)} · ${tl(l.brigadir_name)}` : tl(l.name),
   }));
 
-  // Close the modal automatically if an admin clears the leader while adding.
-  useEffect(() => {
-    if (modalOpen && !form.id && isAdmin && !leaderRef) closeModal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaderRef]);
-
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
       {/* Toolbar */}
