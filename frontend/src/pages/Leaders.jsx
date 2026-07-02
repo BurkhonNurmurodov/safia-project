@@ -542,8 +542,9 @@ export default function Leaders() {
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <Layout title={T.title} showFilters={false}>
-      {/* Filters */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 mb-3`}>
+      {/* Filters + admin refresh */}
+      <div className="flex flex-wrap items-start gap-3 mb-3">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 flex-1 min-w-[260px]`}>
         {/* Period */}
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
@@ -582,6 +583,30 @@ export default function Leaders() {
             options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
         </div>
       </div>
+
+      {/* Re-sync the leaders sheet without leaving the page (admins only) */}
+      {isAdmin && (
+        <div className="flex-shrink-0">
+          <div className="text-[10px] font-semibold block mb-1 select-none" aria-hidden="true">&nbsp;</div>
+          <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+            style={justSynced
+              ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
+              : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
+            {refreshMut.isPending ? <Loader2 size={14} className="animate-spin" />
+              : justSynced ? <CheckCircle2 size={14} />
+              : <RefreshCw size={14} />}
+            {refreshMut.isPending ? T.refreshing : justSynced ? T.refreshed : T.refresh}
+          </button>
+        </div>
+      )}
+      </div>
+
+      {refreshMut.isError && (
+        <div className="rounded-2xl p-3 text-xs mb-3" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
+          {refreshMut.error?.response?.data?.detail || String(refreshMut.error)}
+        </div>
+      )}
 
       {/* KPI / insight cards */}
       <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-3 mb-4`}>
