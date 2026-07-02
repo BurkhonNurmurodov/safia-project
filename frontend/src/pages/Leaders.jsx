@@ -321,6 +321,8 @@ export default function Leaders() {
   // Supervisors are locked to their own unit: the backend returns only their
   // rows, so they get no supervisor filter and no supervisor standings toggle.
   const isSupervisor = auth?.role === "supervisor";
+  // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
+  const isAdmin = auth?.role === "admin";
 
   const [period, setPeriod] = useState("last-week");
   const [startDate, setStartDate] = useState("");
