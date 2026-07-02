@@ -424,17 +424,40 @@ export default function Concerns() {
     return { longest, slowest, peak, peakShare, openTotal: open.length };
   }, [scoped]);
 
+  // Distinct concern owners in the current (period/brigadir/leader) scope — feeds
+  // the owner multi-select in the table filter button.
+  const ownerOptions = useMemo(() => {
+    const s = new Set();
+    for (const r of scoped) if (r.concern_owner) s.add(r.concern_owner);
+    return [...s].sort((a, b) => tl(a).localeCompare(tl(b)));
+  }, [scoped, tl]);
+
+  // Table-level filters (status/owner/deadline) + free-text search, over the
+  // period/brigadir/leader-scoped rows.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return scoped;
-    return scoped.filter(
-      (r) =>
-        (r.concern_text || "").toLowerCase().includes(q) ||
-        (r.concern_owner || "").toLowerCase().includes(q) ||
-        (r.brigadir_name || "").toLowerCase().includes(q) ||
-        (r.leader_name || "").toLowerCase().includes(q)
-    );
-  }, [rows, search]);
+    const dMin = deadlineMin === "" ? null : Number(deadlineMin);
+    const dMax = deadlineMax === "" ? null : Number(deadlineMax);
+    return scoped.filter((r) => {
+      if (statusSel.length && !statusSel.includes(r.status)) return false;
+      if (ownerSel.length && !ownerSel.includes(r.concern_owner)) return false;
+      if (dMin != null || dMax != null) {
+        const d = r.deadline_days;
+        if (d == null) return false;
+        if (dMin != null && d < dMin) return false;
+        if (dMax != null && d > dMax) return false;
+      }
+      if (q) {
+        const hit =
+          (r.concern_text || "").toLowerCase().includes(q) ||
+          (r.concern_owner || "").toLowerCase().includes(q) ||
+          (r.brigadir_name || "").toLowerCase().includes(q) ||
+          (r.leader_name || "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [scoped, search, statusSel, ownerSel, deadlineMin, deadlineMax]);
 
   // Admins always see the leader column (even when filtered to one leader).
   const showLeaderCol = isAdmin;
