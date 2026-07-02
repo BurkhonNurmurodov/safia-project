@@ -1,20 +1,22 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import ReactApexChart from "react-apexcharts";
 import {
   Plus, Pencil, Trash2, X, Search, AlertTriangle, Loader2, ClipboardList,
   ChevronDown, ChevronUp, ChevronsUpDown, Check,
   CalendarClock, UserCheck, UserRound, ShieldCheck, FileText, CircleDot, Clock,
-  Hourglass, Gauge, Layers,
+  Hourglass, Gauge, Layers, TrendingUp, PieChart,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
-import { SkeletonTable } from "../components/ui/Skeleton";
+import { SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import { useChartTheme } from "../hooks/useChartTheme";
 
 const STATUSES = ["todo", "doing", "done"];
 
