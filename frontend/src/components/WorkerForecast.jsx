@@ -252,10 +252,10 @@ export default function WorkerForecast({ effPct = 100 }) {
   useEffect(() => { setSelWd(null); }, [weekStart]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["trud-forecast", weekStart, brigadirIds, shift],
+    queryKey: ["trud-forecast", weekStart, brigadirIds, shift, effPct],
     enabled: ready && !!weekStart,
     queryFn: () => api.get("/api/production/trudoyomkost/forecast", {
-      params: { week_start: weekStart, manager_id: brigadirIds, shift },
+      params: { week_start: weekStart, manager_id: brigadirIds, shift, capacity_pct: effPct },
     }).then((r) => r.data),
   });
 
