@@ -262,6 +262,41 @@ export default function Concerns() {
   // Show the leader column only when an admin is looking at everyone at once.
   const showLeaderCol = isAdmin && !leaderRef;
 
+  // ── column sort (asc → desc → off), applied over the filtered rows ──────────
+  const onSort = (k) => setSort((s) =>
+    s.key !== k ? { key: k, dir: "asc" }
+      : s.dir === "asc" ? { key: k, dir: "desc" }
+      : { key: null, dir: "asc" });
+
+  const sorted = useMemo(() => {
+    if (!sort.key) return filtered;
+    const val = (r) => {
+      switch (sort.key) {
+        case "date":     return r.entry_date || "";
+        case "leader":   return tl(r.leader_name || "");
+        case "cell":     return r.cell_code || "";
+        case "owner":    return tl(r.concern_owner || "");
+        case "concern":  return tl(r.concern_text || "");
+        case "deadline": return r.deadline_days;
+        case "status":   return STATUSES.indexOf(r.status);
+        default:         return "";
+      }
+    };
+    const dir = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (sort.key === "deadline") {                 // blank deadlines always sink
+        const an = va == null, bn = vb == null;
+        if (an && bn) return 0;
+        if (an) return 1;
+        if (bn) return -1;
+        return (Number(va) - Number(vb)) * dir;
+      }
+      if (sort.key === "status") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
+    });
+  }, [filtered, sort, tl]);
+
   // ── mutations ───────────────────────────────────────────────────────────
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["concerns"] });
