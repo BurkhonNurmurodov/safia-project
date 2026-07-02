@@ -1075,7 +1075,7 @@ const t = {
     "concerns.empty":          "Хавотирлар йўқ",
     "concerns.colDate":        "Сана",
     "concerns.colLeader":      "Лидер",
-    "concerns.colCell":        "Ячейка",
+    "concerns.colSupervisor":  "Бригадир",
     "concerns.colOwner":       "Хавотир эгаси",
     "concerns.colConcern":     "Хавотир",
     "concerns.colStatus":      "Ҳолат",
