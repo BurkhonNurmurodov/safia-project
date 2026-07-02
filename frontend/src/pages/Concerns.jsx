@@ -478,6 +478,42 @@ export default function Concerns() {
     });
   }, [scoped, search, statusSel, ownerSel, deadlineMin, deadlineMax]);
 
+  // ── chart data — built over the fully filtered rows, so every filter (period /
+  // brigadir / leader, status / owner / deadline, search) reshapes both charts.
+  const charts = useMemo(() => {
+    const today = localTodayIso();
+    // overdue = still open and older than its deadline_days (ISO string math,
+    // same convention as the period-filter helpers).
+    const isOverdue = (r) =>
+      r.status !== "done" && r.deadline_days != null && r.entry_date &&
+      r.entry_date < isoMinusDays(today, r.deadline_days);
+
+    // Donut buckets stay disjoint: an overdue row leaves its todo/doing bucket.
+    let done = 0, doing = 0, todo = 0, overdue = 0;
+    const created = new Map(), resolved = new Map();
+    for (const r of filtered) {
+      if (r.status === "done") done += 1;
+      else if (isOverdue(r)) overdue += 1;
+      else if (r.status === "doing") doing += 1;
+      else todo += 1;
+      if (r.entry_date) created.set(r.entry_date, (created.get(r.entry_date) || 0) + 1);
+      if (r.completion_date) resolved.set(r.completion_date, (resolved.get(r.completion_date) || 0) + 1);
+    }
+
+    // Continuous day axis from the first to the last event, so quiet days plot as
+    // zeros instead of the lines jumping across gaps.
+    const dates = [...new Set([...created.keys(), ...resolved.keys()])].sort();
+    const trend = [];
+    if (dates.length) {
+      const end = new Date(dates[dates.length - 1] + "T00:00:00");
+      for (const d = new Date(dates[0] + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
+        const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        trend.push({ day: iso, created: created.get(iso) || 0, resolved: resolved.get(iso) || 0 });
+      }
+    }
+    return { done, doing, todo, overdue, total: filtered.length, trend };
+  }, [filtered]);
+
   // Admins always see the leader column (even when filtered to one leader).
   const showLeaderCol = isAdmin;
 
