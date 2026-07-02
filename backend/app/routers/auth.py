@@ -17,7 +17,7 @@ from app.models import Admin, Language, RegistrationNotice, TelegramUser, Telegr
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-VALID_ROLES = {"top-manager", "shift-manager", "supervisor"}
+VALID_ROLES = {"top-manager", "shift-manager", "supervisor", "leader"}
 
 # Sentinel role_ref for the admin's own "admin" profile in the role switcher.
 # Real telegram_user_roles ids autoincrement from 1, so 0 never collides.
