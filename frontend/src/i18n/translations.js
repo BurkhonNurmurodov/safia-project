@@ -3155,7 +3155,7 @@ const t = {
     "concerns.empty":          "No concerns yet",
     "concerns.colDate":        "Date",
     "concerns.colLeader":      "Leader",
-    "concerns.colCell":        "Cell",
+    "concerns.colSupervisor":  "Supervisor",
     "concerns.colOwner":       "Owner",
     "concerns.colConcern":     "Concern",
     "concerns.colStatus":      "Status",
