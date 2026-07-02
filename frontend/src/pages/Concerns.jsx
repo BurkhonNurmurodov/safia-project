@@ -298,6 +298,7 @@ export default function Concerns() {
   const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
+  const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const isAdmin = auth?.role === "admin";
 
