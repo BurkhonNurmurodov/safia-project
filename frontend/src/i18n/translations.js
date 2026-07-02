@@ -23,6 +23,7 @@ const t = {
     "concerns.allLeaders":     "Barcha liderlar",
     "concerns.pickLeader":     "Liderni tanlang",
     "concerns.pickLeaderFirst":"Avval liderni tanlang",
+    "concerns.fieldLeader":    "Lider",
     "concerns.allStatuses":    "Barcha holatlar",
     "concerns.search":         "Qidirish…",
     "concerns.kpiTotal":       "Jami",
