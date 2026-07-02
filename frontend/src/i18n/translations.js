@@ -670,6 +670,7 @@ const t = {
     "login.chooseRole.shiftAdminRu":"Smena admini",
     "login.chooseSlot":             "Slotni tanlang:",
     "login.chooseName":             "Ismingizni tanlang:",
+    "login.chooseSupervisor":       "Brigadiringizni tanlang:",
     "login.fullName":        "To'liq ism:",
     "login.namePlaceholder": "Ism Familiya",
     "login.search":          "Qidirish...",
