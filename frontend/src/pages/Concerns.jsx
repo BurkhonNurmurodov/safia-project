@@ -259,7 +259,7 @@ export default function Concerns() {
         <div className="ml-auto">
           <button
             onClick={openCreate}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
           >
             <Plus size={15} /> {t("concerns.add")}
           </button>
@@ -491,7 +491,7 @@ export default function Concerns() {
               <button
                 onClick={submit}
                 disabled={saveMutation.isPending}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 disabled:opacity-40 transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white disabled:opacity-40 transition-colors"
               >
                 {saveMutation.isPending && <Loader2 size={14} className="animate-spin" />}
                 {t("concerns.save")}
