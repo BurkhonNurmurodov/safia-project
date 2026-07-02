@@ -274,7 +274,12 @@ export default function Concerns() {
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
 
-  const [leaderRef, setLeaderRef] = useState(null);   // admin: which leader to act for
+  // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
+  const [period, setPeriod] = useState("all");        // all | today | yesterday | last-week | custom
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [fBrig, setFBrig] = useState("All");          // admin: brigadir_manager_id (string) | "All"
+  const [fLeader, setFLeader] = useState("All");      // admin: leader_role_ref (string) | "All"
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
