@@ -359,7 +359,7 @@ export default function Concerns() {
       const from = new Date(iso + "T00:00:00").getTime();
       return Math.max(0, Math.floor((to - from) / 86400000));
     };
-    const open = rows.filter((r) => r.status !== "done");
+    const open = scoped.filter((r) => r.status !== "done");
 
     // 1 ─ the open concern that has been waiting the longest.
     let longest = null;
