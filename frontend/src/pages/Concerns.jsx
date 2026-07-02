@@ -417,8 +417,8 @@ export default function Concerns() {
     );
   }, [rows, search]);
 
-  // Show the leader column only when an admin is looking at everyone at once.
-  const showLeaderCol = isAdmin && fLeader === "All";
+  // Admins always see the leader column (even when filtered to one leader).
+  const showLeaderCol = isAdmin;
 
   // ── column sort (asc → desc → off), applied over the filtered rows ──────────
   const onSort = (k) => setSort((s) =>
