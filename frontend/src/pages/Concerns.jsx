@@ -511,42 +511,54 @@ export default function Concerns() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((r) => (
-                  <tr key={r.id} className="align-top">
-                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.entry_date}</td>
-                    {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
-                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.cell_code || "—"}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
-                    <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ ...cellB, color: "var(--text-1)" }}>
-                      <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
-                      {r.solution && (
-                        <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
-                          ✓ {tl(r.solution)}
-                        </div>
+                {sorted.map((r) => {
+                  const expanded = expandedId === r.id;
+                  const colSpan = showLeaderCol ? 7 : 6;
+                  return (
+                    <Fragment key={r.id}>
+                      {/* Click a row to reveal its Edit/Delete action bar (Staff-style) */}
+                      <tr
+                        onClick={() => setExpandedId(expanded ? null : r.id)}
+                        className="align-top cursor-pointer hover:bg-white/5"
+                        style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
+                      >
+                        <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.entry_date}</td>
+                        {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
+                        <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.cell_code || "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
+                        <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ ...cellB, color: "var(--text-1)" }}>
+                          <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
+                          {r.solution && (
+                            <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
+                              ✓ {tl(r.solution)}
+                            </div>
+                          )}
+                        </td>
+                        {/* Status stays inline-editable → swallow the click so it doesn't toggle the row */}
+                        <td className="px-3 py-2.5" style={cellB} onClick={(e) => e.stopPropagation()}>
+                          <StatusSelect
+                            status={r.status}
+                            label={statusLabel(r.status)}
+                            statusLabel={statusLabel}
+                            saving={savingStatusId === r.id}
+                            onChange={(s) => statusMutation.mutate({ row: r, status: s })}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
+                      </tr>
+                      {expanded && (
+                        <tr style={{ background: "var(--bg-inner)" }}>
+                          <td colSpan={colSpan} className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ActionBtn icon={Pencil} label={t("concerns.edit")} onClick={() => openEdit(r)} />
+                              <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-3 py-2.5" style={cellB}>
-                      <StatusSelect
-                        status={r.status}
-                        label={statusLabel(r.status)}
-                        statusLabel={statusLabel}
-                        saving={savingStatusId === r.id}
-                        onChange={(s) => statusMutation.mutate({ row: r, status: s })}
-                      />
-                    </td>
-                    <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
-                    <td className="px-2 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEdit(r)} style={{ color: "var(--text-4)" }} className="hover:text-[var(--brand-text)] transition-colors" title={t("concerns.edit")}>
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => setConfirmDelete(r)} style={{ color: "var(--text-4)" }} className="hover:text-red-400 transition-colors" title={t("concerns.delete")}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
