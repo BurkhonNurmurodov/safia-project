@@ -115,10 +115,10 @@ const TXT = {
 
 const ROLE_TKEYS = {
   admin: "role.admin", "top-manager": "role.topManager",
-  "shift-manager": "role.manager", supervisor: "role.supervisor",
+  "shift-manager": "role.manager", supervisor: "role.supervisor", leader: "role.leader",
 };
 const ROLE_COLOR = {
-  admin: BRAND, "top-manager": C_USERS, "shift-manager": C_ONLINE, supervisor: C_NEW,
+  admin: BRAND, "top-manager": C_USERS, "shift-manager": C_ONLINE, supervisor: C_NEW, leader: C_TIME,
 };
 
 // ── formatting helpers ───────────────────────────────────────────────────────
