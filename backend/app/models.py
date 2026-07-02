@@ -568,3 +568,35 @@ class UserActivity(Base):
     __table_args__ = (
         UniqueConstraint("telegram_id", "day", name="uq_user_activity_tid_day"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Leader concerns ("Xavotirlar") — replicates the per-brigadir concern log
+# (Sanjar.xlsx). A leader logs concerns raised on the floor; each row is owned
+# by the leader's role instance (telegram_user_roles.id) and carries a snapshot
+# of the leader + their brigadir (the supervisor of the leader's unit). Admins
+# manage any leader's rows by picking the leader; leaders see only their own.
+# New table only — created by Base.metadata.create_all, no ALTERs needed.
+# ---------------------------------------------------------------------------
+
+class LeaderConcern(Base):
+    __tablename__ = "leader_concerns"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    # Ownership key: the owning leader's telegram_user_roles.id (stable across
+    # name changes and unique per leader-role instance).
+    leader_role_ref     = Column(Integer, nullable=False, index=True)
+    leader_name         = Column(String, nullable=False)          # snapshot of the leader's name
+    brigadir_manager_id = Column(Integer, nullable=True)          # managers.id (leader's unit/brigadir)
+    brigadir_name       = Column(String, nullable=True)           # snapshot of the brigadir's name
+    cell_code           = Column(String, nullable=True)           # Код ячейки
+    concern_owner       = Column(String, nullable=False)          # Хавотир эгаси (worker who raised it)
+    concern_text        = Column(Text, nullable=False)            # Хавотир
+    status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
+    deadline_days       = Column(Integer, nullable=True)          # Срок (days)
+    entry_date          = Column(Date, nullable=False)            # Дата заполнения
+    completion_date     = Column(Date, nullable=True)             # Дата завершения (set when done)
+    solution            = Column(Text, nullable=True)             # Решение
+    created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
