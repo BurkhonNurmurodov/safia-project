@@ -141,15 +141,16 @@ function Chip({ conf, t }) {
   );
 }
 
-export default function WorkerStats() {
+export default function WorkerStats({ effPct = 100, setEffPct }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const { dateFrom, dateTo, brigadirIds, shift, ready } = useFilters();
   const t = T[lang] || T.uz;
   const wd = WD[lang] || WD.uz;
   const [selSup, setSelSup] = useState(null);
-  const [effPct, setEffPct] = useState(100);   // applied productive % — drives the query
-  const [effDraft, setEffDraft] = useState("100");  // input draft; committed to effPct on Apply / Enter
+  // applied productive % is owned by the parent (Trudoyomkost) so the forecast
+  // table shares it; the draft is committed to it on Apply / Enter.
+  const [effDraft, setEffDraft] = useState(String(effPct));
 
   const applyEff = () => {
     const v = Math.max(1, Math.min(100, Math.round(Number(effDraft) || 0)));
