@@ -193,6 +193,7 @@ export default function Concerns() {
   const [leaderRef, setLeaderRef] = useState(null);   // admin: which leader to act for
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
