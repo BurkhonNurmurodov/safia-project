@@ -210,7 +210,6 @@ export default function Concerns() {
   const [expandedId, setExpandedId] = useState(null);   // row whose action bar is open
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
-  const [addingCode, setAddingCode] = useState(false);
   const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
