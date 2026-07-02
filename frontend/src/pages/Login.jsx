@@ -31,9 +31,10 @@ export default function Login() {
   const [loading,      setLoading]      = useState(false);
   const [submitted,    setSubmitted]    = useState(false);
 
-  // Fetch manager names when supervisor is selected
+  // Fetch manager/unit names — supervisors pick their own unit, leaders pick
+  // the unit of the supervisor they report to.
   useEffect(() => {
-    if (role === "supervisor") {
+    if (role === "supervisor" || role === "leader") {
       setLoading(true);
       api.get("/api/managers")
         .then(r => setManagers(r.data))
