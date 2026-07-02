@@ -199,6 +199,7 @@ export default function Concerns() {
     setFormError("");
   }
   function submit() {
+    if (isAdmin && !form.id && !form.leader_ref) return setFormError(t("concerns.pickLeaderFirst"));
     if (!form.concern_owner.trim()) return setFormError(t("concerns.ownerRequired"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
