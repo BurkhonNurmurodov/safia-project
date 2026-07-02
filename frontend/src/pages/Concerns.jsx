@@ -266,6 +266,27 @@ export default function Concerns() {
     },
   });
 
+  // Inline status change from the table — PUTs the whole row (the endpoint
+  // requires the concern fields) with just the status swapped. Completion date is
+  // left to the backend, which stamps today when a row flips to "done".
+  const statusMutation = useMutation({
+    mutationFn: ({ row, status }) =>
+      api
+        .put(`/api/concerns/${row.id}`, {
+          cell_code: row.cell_code || null,
+          concern_owner: row.concern_owner,
+          concern_text: row.concern_text,
+          status,
+          deadline_days: row.deadline_days ?? null,
+          entry_date: row.entry_date || null,
+          completion_date: status === "done" ? row.completion_date || null : null,
+          solution: row.solution || null,
+        })
+        .then((r) => r.data),
+    onSuccess: () => invalidate(),
+  });
+  const savingStatusId = statusMutation.isPending ? statusMutation.variables?.row?.id : null;
+
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
     // Pre-select the leader the admin is currently filtering by, if any.
