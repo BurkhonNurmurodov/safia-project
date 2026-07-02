@@ -90,19 +90,33 @@ for d in possible_dirs:
 
 print(f"WSGI Static Directory resolved to: {STATIC_DIR}", flush=True)
 
+def cache_control_for(filepath):
+    """index.html must never be cached: it references content-hashed asset names
+    that change every deploy, so a stale copy 404s when a lazy page chunk loads.
+    Assets under /assets are content-hashed and immutable — cache them for a year."""
+    name = os.path.basename(filepath)
+    if name == 'index.html':
+        return 'no-store, must-revalidate'
+    if '/assets/' in filepath.replace(os.sep, '/'):
+        return 'public, max-age=31536000, immutable'
+    return None
+
 def serve_file(filepath, start_response):
     try:
         content_type, _ = mimetypes.guess_type(filepath)
         if not content_type:
             content_type = 'application/octet-stream'
-        
+
         with open(filepath, 'rb') as f:
             content = f.read()
-            
+
         headers = [
             ('Content-Type', content_type),
             ('Content-Length', str(len(content))),
         ]
+        cc = cache_control_for(filepath)
+        if cc:
+            headers.append(('Cache-Control', cc))
         start_response('200 OK', headers)
         return [content]
     except Exception as e:
