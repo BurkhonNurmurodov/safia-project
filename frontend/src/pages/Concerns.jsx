@@ -355,6 +355,30 @@ export default function Concerns() {
             </div>
 
             <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ flex: "1 1 auto", minHeight: 0 }}>
+              {/* Leader — admin picks who the concern belongs to (fixed on edit) */}
+              {isAdmin && (
+                <Field label={t("concerns.fieldLeader")} required={!form.id}>
+                  {form.id ? (
+                    <div
+                      className="w-full rounded-lg px-3 py-2 text-sm"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+                    >
+                      {tl(form.leader_name) || "—"}
+                    </div>
+                  ) : (
+                    <StyledSelect
+                      value={form.leader_ref ? String(form.leader_ref) : ""}
+                      onChange={(v) => {
+                        setAddingCode(false);
+                        setForm((f) => ({ ...f, leader_ref: v ? Number(v) : null, cell_code: "" }));
+                      }}
+                      options={leaderOptions}
+                      placeholder={t("concerns.pickLeader")}
+                    />
+                  )}
+                </Field>
+              )}
+
               {/* Date + cell code */}
               <div className="grid grid-cols-2 gap-3">
                 <Field label={t("concerns.fieldDate")}>
