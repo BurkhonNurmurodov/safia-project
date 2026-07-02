@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  CalendarRange, ChevronLeft, ChevronRight, X, Sparkles,
+  CalendarRange, CalendarDays, ChevronLeft, ChevronRight, X, Sparkles,
   TrendingUp, TrendingDown, Check, AlertTriangle, History,
   Target, Award,
 } from "lucide-react";
