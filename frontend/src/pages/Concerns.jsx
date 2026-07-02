@@ -390,16 +390,6 @@ export default function Concerns() {
     saveMutation.mutate();
   }
 
-  // Code dropdown options: the leader's known codes (+ the row's own code when
-  // editing) plus an "add new" sentinel.
-  const codeOptions = useMemo(() => {
-    const set = new Set(cellCodes);
-    if (form.cell_code) set.add(form.cell_code);
-    const opts = [...set].sort().map((c) => ({ value: c, label: c }));
-    opts.push({ value: "__new__", label: t("concerns.addNewCode") });
-    return opts;
-  }, [cellCodes, form.cell_code, t]);
-
   const leaderOptions = leaders.map((l) => ({
     value: String(l.role_ref),
     label: l.brigadir_name ? `${tl(l.name)} · ${tl(l.brigadir_name)}` : tl(l.name),
