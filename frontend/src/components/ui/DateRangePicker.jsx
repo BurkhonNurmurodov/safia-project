@@ -265,22 +265,32 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
                 ))}
               </div>
 
-              {/* Date inputs */}
-              <div className="flex items-center gap-2 mb-3">
-                <button onClick={() => setPhase("from")}
-                  className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
-                  style={{ background:"var(--bg-inner)", border:inputBorder(phase==="from"), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
-                  <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
-                  {tempFrom ? fmtInput(tempFrom) : t("filter.startDate")}
-                </button>
-                <span className="text-xs" style={{ color:"var(--text-4)" }}>→</span>
-                <button onClick={() => { if (tempFrom) setPhase("to"); }}
-                  className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
-                  style={{ background:"var(--bg-inner)", border:inputBorder(phase==="to"), color:tempTo?"var(--text-1)":"var(--text-3)" }}>
-                  <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
-                  {tempTo ? fmtInput(tempTo) : t("filter.endDate")}
-                </button>
-              </div>
+              {/* Date input(s) */}
+              {single ? (
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                    style={{ background:"var(--bg-inner)", border:inputBorder(true), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
+                    <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                    {tempFrom ? fmtInput(tempFrom) : t("filter.selectDates")}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mb-3">
+                  <button onClick={() => setPhase("from")}
+                    className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
+                    style={{ background:"var(--bg-inner)", border:inputBorder(phase==="from"), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
+                    <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                    {tempFrom ? fmtInput(tempFrom) : t("filter.startDate")}
+                  </button>
+                  <span className="text-xs" style={{ color:"var(--text-4)" }}>→</span>
+                  <button onClick={() => { if (tempFrom) setPhase("to"); }}
+                    className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
+                    style={{ background:"var(--bg-inner)", border:inputBorder(phase==="to"), color:tempTo?"var(--text-1)":"var(--text-3)" }}>
+                    <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                    {tempTo ? fmtInput(tempTo) : t("filter.endDate")}
+                  </button>
+                </div>
+              )}
 
               {/* Single month calendar */}
               <div className="flex items-center mb-3">
