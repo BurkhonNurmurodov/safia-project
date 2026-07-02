@@ -404,11 +404,11 @@ export default function UsersManagement() {
                 </select>
               </label>
 
-              {/* Unit (supervisor) */}
-              {form.role === "supervisor" && (
+              {/* Unit (supervisor) — leaders pick their supervisor's unit too */}
+              {(form.role === "supervisor" || form.role === "leader") && (
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldUnit")}
+                    {t(form.role === "leader" ? "admin.users.fieldSupervisor" : "admin.users.fieldUnit")}
                   </span>
                   <select
                     value={form.roleId}
