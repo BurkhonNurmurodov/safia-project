@@ -145,6 +145,19 @@ function SortIcon({ active, dir }) {
   );
 }
 
+// Revealed-row action button (matches the Staff requests table's ActionBtn).
+function ActionBtn({ icon: Icon, label, color, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-opacity"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: color || "var(--text-2)" }}
+    >
+      <Icon size={12} /> {label}
+    </button>
+  );
+}
+
 // Sortable, icon-led column header — brand-tinted glyph + label + sort state.
 function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
   const active = sort.key === k;
