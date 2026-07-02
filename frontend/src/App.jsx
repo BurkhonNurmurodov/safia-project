@@ -9,23 +9,48 @@ import { LangProvider, useLang } from "./context/LangContext";
 // Pages are lazy-loaded so each ships as its own chunk and downloads only when
 // first visited — this keeps the initial bundle small and speeds up loading.
 // A branded <PageLoader/> is shown (via Suspense) while a page's chunk loads.
-const Overview = lazy(() => import("./pages/Overview"));
-const Zagruzka = lazy(() => import("./pages/Zagruzka"));
-const Leaderboard = lazy(() => import("./pages/Leaderboard"));
-const BrigadirProfile = lazy(() => import("./pages/BrigadirProfile"));
-const Workers = lazy(() => import("./pages/Workers"));
-const PlanFulfillment = lazy(() => import("./pages/PlanFulfillment"));
-const Downtime = lazy(() => import("./pages/Downtime"));
-const AdminUpload = lazy(() => import("./pages/admin/AdminUpload"));
-const Staff = lazy(() => import("./pages/Staff"));
-const Daily = lazy(() => import("./pages/Daily"));
-const Production = lazy(() => import("./pages/Production"));
-const Trudoyomkost = lazy(() => import("./pages/Trudoyomkost"));
-const Leaders = lazy(() => import("./pages/Leaders"));
-const Kaizen = lazy(() => import("./pages/Kaizen"));
-const Concerns = lazy(() => import("./pages/Concerns"));
-const UsersActivity = lazy(() => import("./pages/UsersActivity"));
-const Login = lazy(() => import("./pages/Login"));
+//
+// A page chunk's filename is content-hashed (e.g. Kaizen-<hash>.js). After a
+// redeploy the old hash no longer exists on the server, so a client that still
+// holds the previous index.html/main bundle 404s when it tries to import that
+// page — surfacing as the "App failed to start" crash screen. lazyWithReload
+// catches that failure and does a single full reload to pull a fresh index.html
+// pointing at the current hashes, so the user silently recovers instead of
+// crashing. A 10s timestamp guard reloads at most once per window, so a chunk
+// that is genuinely broken (still failing right after the reload) falls through
+// to the ErrorBoundary rather than looping forever.
+function lazyWithReload(importer) {
+  return lazy(() =>
+    importer().catch((err) => {
+      const KEY = "chunkReloadAt";
+      let last = 0;
+      try { last = Number(sessionStorage.getItem(KEY) || 0); } catch { /* storage blocked */ }
+      if (Date.now() - last > 10_000) {
+        try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* storage blocked */ }
+        window.location.reload();
+        return new Promise(() => {}); // never resolves — nothing renders before reload
+      }
+      throw err;
+    })
+  );
+}
+const Overview = lazyWithReload(() => import("./pages/Overview"));
+const Zagruzka = lazyWithReload(() => import("./pages/Zagruzka"));
+const Leaderboard = lazyWithReload(() => import("./pages/Leaderboard"));
+const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
+const Workers = lazyWithReload(() => import("./pages/Workers"));
+const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
+const Downtime = lazyWithReload(() => import("./pages/Downtime"));
+const AdminUpload = lazyWithReload(() => import("./pages/admin/AdminUpload"));
+const Staff = lazyWithReload(() => import("./pages/Staff"));
+const Daily = lazyWithReload(() => import("./pages/Daily"));
+const Production = lazyWithReload(() => import("./pages/Production"));
+const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
+const Leaders = lazyWithReload(() => import("./pages/Leaders"));
+const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
+const Concerns = lazyWithReload(() => import("./pages/Concerns"));
+const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
+const Login = lazyWithReload(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
