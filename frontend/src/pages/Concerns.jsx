@@ -372,7 +372,7 @@ export default function Concerns() {
     // 2 ─ slowest brigadir: average time a concern spends with them, counting the
     //     resolution span for done rows and the current wait for still-open ones.
     const byBrig = new Map();
-    for (const r of rows) {
+    for (const r of scoped) {
       const name = r.brigadir_name;
       if (!name) continue;
       const span = r.status === "done"
