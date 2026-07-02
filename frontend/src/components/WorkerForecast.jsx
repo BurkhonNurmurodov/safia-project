@@ -432,7 +432,7 @@ export default function WorkerForecast({ effPct = 100 }) {
                       <th key={i} onClick={() => setSelWd(i)} title={t.pickDateHint}
                         className="px-2 py-1.5 font-semibold text-center select-none"
                         style={{ cursor: "pointer", background: active ? "rgba(255,255,255,.28)" : isToday ? "rgba(255,255,255,.16)" : undefined }}>
-                        <div>{s}</div>
+                        <div>{wd.s[i]}</div>
                         <div className="text-[9px] font-normal opacity-75 tabular-nums">{weekDates[i] ? ddmm(weekDates[i]) : ""}</div>
                         {(active || isToday) && <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3, opacity: active ? 1 : 0.7 }} />}
                       </th>
