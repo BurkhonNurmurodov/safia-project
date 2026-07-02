@@ -21,6 +21,10 @@ const STATUSES = ["todo", "doing", "done"];
 // done = emerald — deliberately soft so they glow on the dark dashboard).
 const STATUS_COLOR = { todo: "#F43F5E", doing: "#F59E0B", done: "#10B981" };
 
+// Card chrome + the Notion-style grid rule shared by every cell (mirrors Kaizen).
+const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
+
 // Inline, editable status pill. Renders the traffic-light badge as a trigger and
 // opens a compact portal dropdown (portal ⇒ never clipped by the table's
 // overflow) so the status can be changed straight from the column.
