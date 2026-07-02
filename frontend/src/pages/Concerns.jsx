@@ -842,6 +842,54 @@ export default function Concerns() {
         </InsightCard>
       </div>
 
+      {/* Charts — daily created-vs-resolved trend + status donut, both computed from
+          the fully filtered rows so every filter reshapes them live. */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+        {/* Trend line */}
+        <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+          <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              <TrendingUp size={14} style={{ color: "var(--brand-text)" }} />
+              {t("concerns.chartTrend")}
+            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t("concerns.chartTrendSub")}</div>
+          </div>
+          {isLoading ? (
+            <div className="p-4"><SkeletonChart className="h-52" /></div>
+          ) : charts.trend.length ? (
+            <div className="px-1 pt-1"><ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} /></div>
+          ) : (
+            <div className="grid place-items-center text-xs" style={{ color: "var(--text-4)", height: 232 }}>{t("concerns.noData")}</div>
+          )}
+        </div>
+
+        {/* Status donut + side legend */}
+        <div className="rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+          <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+            <PieChart size={14} style={{ color: "var(--brand-text)" }} />
+            {t("concerns.chartStatusTitle")}
+          </div>
+          {isLoading ? (
+            <div className="p-4"><SkeletonChart className="h-52" /></div>
+          ) : charts.total ? (
+            <div className="p-4 flex flex-col items-center gap-3">
+              <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={180} />
+              <div className="w-full space-y-2">
+                {donutRows.map((r) => (
+                  <div key={r.label} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                    <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
+                    <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: 180 }}>{t("concerns.noData")}</div>
+          )}
+        </div>
+      </div>
+
       {/* Task table — header band (title · count · search · filters · add) over a
           grid-ruled, sortable, icon-led table (mirrors the Kaizen task list). */}
       <div className="rounded-2xl overflow-hidden" style={cardStyle}>
