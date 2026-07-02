@@ -168,7 +168,8 @@ export default function Concerns() {
 
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
-    setForm(emptyForm());
+    // Pre-select the leader the admin is currently filtering by, if any.
+    setForm({ ...emptyForm(), leader_ref: isAdmin ? leaderRef : null });
     setAddingCode(false);
     setFormError("");
     setModalOpen(true);
@@ -176,6 +177,8 @@ export default function Concerns() {
   function openEdit(r) {
     setForm({
       id: r.id,
+      leader_ref: r.leader_role_ref,
+      leader_name: r.leader_name || "",
       cell_code: r.cell_code || "",
       concern_owner: r.concern_owner || "",
       concern_text: r.concern_text || "",
