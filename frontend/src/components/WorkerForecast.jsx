@@ -60,6 +60,7 @@ const T = {
     cardBiggest: "Макс. отклонение · бригадир", cardOut: "Вне диапазона",
     netW: "нетто", cardOutSub: "бригадиров вне диапазона",
     pickDateHint: "Нажмите столбец с датой", noCompare: "За этот день ещё нет факта",
+    allDays: "Вся неделя", pickDay: "Выбрать день",
   },
   en: {
     title: "Forecast — workers to call", thisWeek: "This week", supervisor: "Brigadir",
