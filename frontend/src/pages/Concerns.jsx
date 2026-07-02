@@ -595,6 +595,39 @@ export default function Concerns() {
     label: l.brigadir_name ? `${tl(l.name)} · ${tl(l.brigadir_name)}` : tl(l.name),
   }));
 
+  // ── consolidated table filter button (shared <FilterPanel>) ─────────────────
+  const deadlineActive = deadlineMin !== "" || deadlineMax !== "";
+  const filterSections = [
+    {
+      key: "status", icon: CircleDot, label: t("concerns.colStatus"),
+      active: statusSel.length > 0,
+      display: `${statusSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={STATUSES} sel={statusSel} onChange={setStatusSel} render={(s) => statusLabel(s)} />
+      ),
+    },
+    {
+      key: "owner", icon: UserRound, label: t("concerns.colOwner"),
+      active: ownerSel.length > 0,
+      display: `${ownerSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={ownerOptions} sel={ownerSel} onChange={setOwnerSel} render={(o) => tl(o) || o} />
+      ),
+    },
+    {
+      key: "deadline", icon: Clock, label: t("concerns.colDeadline"),
+      active: deadlineActive,
+      display: `${deadlineMin || "0"}–${deadlineMax || "∞"}`,
+      render: () => (
+        <RngFilter minV={deadlineMin} maxV={deadlineMax} onMin={setDeadlineMin} onMax={setDeadlineMax} />
+      ),
+    },
+  ];
+  const filterActiveCount =
+    (statusSel.length > 0 ? 1 : 0) + (ownerSel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
+  const anyFilterActive = filterActiveCount > 0;
+  const clearAllFilters = () => { setStatusSel([]); setOwnerSel([]); setDeadlineMin(""); setDeadlineMax(""); };
+
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
       {/* Filters — period + brigadir + leader (mirrors the Leaders page). Brigadir
