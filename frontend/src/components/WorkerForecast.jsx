@@ -74,6 +74,7 @@ const T = {
     cardBiggest: "Biggest gap · brigadir", cardOut: "Outside range",
     netW: "net", cardOutSub: "brigadirs outside their band",
     pickDateHint: "Tap a date column", noCompare: "No actuals for this day yet",
+    allDays: "Full week", pickDay: "Pick a day",
   },
 };
 
