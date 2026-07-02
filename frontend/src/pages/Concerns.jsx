@@ -20,15 +20,113 @@ const STATUSES = ["todo", "doing", "done"];
 // done = emerald — deliberately soft so they glow on the dark dashboard).
 const STATUS_COLOR = { todo: "#F43F5E", doing: "#F59E0B", done: "#10B981" };
 
-function StatusBadge({ status, label }) {
+// Inline, editable status pill. Renders the traffic-light badge as a trigger and
+// opens a compact portal dropdown (portal ⇒ never clipped by the table's
+// overflow) so the status can be changed straight from the column.
+function StatusSelect({ status, label, statusLabel, saving, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [dropStyle, setDropStyle] = useState({});
+  const triggerRef = useRef(null);
+  const listRef = useRef(null);
   const color = STATUS_COLOR[status] || "var(--text-3)";
+
+  function computeDropStyle() {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return {};
+    const vh = window.innerHeight;
+    const spaceBelow = vh - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const openUp = spaceBelow < 150 && spaceAbove > spaceBelow;
+    return {
+      position: "fixed",
+      left: rect.left,
+      minWidth: Math.max(rect.width, 140),
+      zIndex: 9999,
+      ...(openUp ? { bottom: vh - rect.top + 4 } : { top: rect.bottom + 4 }),
+    };
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (!triggerRef.current?.contains(e.target) && !listRef.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onScroll = () => setDropStyle(computeDropStyle());
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggle() {
+    if (saving) return;
+    if (open) setOpen(false);
+    else { setDropStyle(computeDropStyle()); setOpen(true); }
+  }
+
+  function pick(s) {
+    setOpen(false);
+    if (s !== status) onChange(s);
+  }
+
+  const dropdown = open
+    ? createPortal(
+        <div
+          ref={listRef}
+          style={{
+            ...dropStyle,
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-md)",
+            borderRadius: 10,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+            padding: 4,
+          }}
+        >
+          {STATUSES.map((s) => {
+            const c = STATUS_COLOR[s] || "var(--text-3)";
+            const isSel = s === status;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => pick(s)}
+                className="w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors"
+                style={{ background: isSel ? `${c}1f` : "transparent", color: "var(--text-1)" }}
+                onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "var(--bg-inner)"; }}
+                onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                <span className="flex-1 whitespace-nowrap">{statusLabel(s)}</span>
+                {isSel && <Check size={12} style={{ color: c, flexShrink: 0 }} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )
+    : null;
+
   return (
-    <span
-      className="text-[10px] font-semibold px-1.5 py-0.5 rounded border whitespace-nowrap"
-      style={{ background: `${color}22`, borderColor: `${color}59`, color }}
-    >
-      {label}
-    </span>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggle}
+        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border whitespace-nowrap"
+        style={{ background: `${color}22`, borderColor: `${color}59`, color, cursor: saving ? "default" : "pointer" }}
+      >
+        {label}
+        {saving
+          ? <Loader2 size={10} className="animate-spin" />
+          : <ChevronDown size={10} style={{ opacity: 0.7 }} />}
+      </button>
+      {dropdown}
+    </>
   );
 }
 
