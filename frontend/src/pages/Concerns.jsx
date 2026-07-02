@@ -300,8 +300,14 @@ export default function Concerns() {
   const [endDate, setEndDate] = useState("");
   const [fBrig, setFBrig] = useState("All");          // admin: brigadir_manager_id (string) | "All"
   const [fLeader, setFLeader] = useState("All");      // admin: leader_role_ref (string) | "All"
-  const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
+
+  // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
+  // Production/Staff tables) — status + owner multi-selects, deadline-day range.
+  const [statusSel, setStatusSel] = useState([]);       // [] = all statuses
+  const [ownerSel, setOwnerSel] = useState([]);         // [] = all owners
+  const [deadlineMin, setDeadlineMin] = useState("");
+  const [deadlineMax, setDeadlineMax] = useState("");
   const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
 
   const [expandedId, setExpandedId] = useState(null);   // row whose action bar is open
