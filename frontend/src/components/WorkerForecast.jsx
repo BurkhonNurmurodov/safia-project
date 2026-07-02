@@ -235,7 +235,7 @@ function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
   );
 }
 
-export default function WorkerForecast() {
+export default function WorkerForecast({ effPct = 100 }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const { brigadirIds, shift, ready } = useFilters();
