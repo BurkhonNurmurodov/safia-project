@@ -446,7 +446,7 @@ export default function WorkerForecast({ effPct = 100 }) {
                     <td className="text-left px-3 py-1.5 whitespace-nowrap sticky left-0" style={{ color: "var(--text-2)", background: "var(--bg-card)", borderBottom: "1px solid var(--border)", borderRight: "2px solid var(--border-md)" }}>
                       {tl(sup.name)}
                     </td>
-                    {Array.from({ length: 7 }, (_, w) => {
+                    {wdCols.map((w) => {
                       const c = bySup[sup.id]?.[w];
                       const val = c ? (c.actual != null ? c.actual : c.forecast) : null;
                       const conf = c?.confidence;
