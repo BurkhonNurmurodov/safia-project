@@ -2101,6 +2101,7 @@ const t = {
     "concerns.allLeaders":     "Все лидеры",
     "concerns.pickLeader":     "Выберите лидера",
     "concerns.pickLeaderFirst":"Сначала выберите лидера",
+    "concerns.fieldLeader":    "Лидер",
     "concerns.allStatuses":    "Все статусы",
     "concerns.search":         "Поиск…",
     "concerns.kpiTotal":       "Всего",
