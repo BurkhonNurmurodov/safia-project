@@ -2115,7 +2115,7 @@ const t = {
     "concerns.empty":          "Опасений нет",
     "concerns.colDate":        "Дата",
     "concerns.colLeader":      "Лидер",
-    "concerns.colCell":        "Ячейка",
+    "concerns.colSupervisor":  "Бригадир",
     "concerns.colOwner":       "Владелец",
     "concerns.colConcern":     "Опасение",
     "concerns.colStatus":      "Статус",
