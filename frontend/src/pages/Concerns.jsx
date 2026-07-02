@@ -759,7 +759,7 @@ export default function Concerns() {
                         className="align-top cursor-pointer hover:bg-white/5"
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
-                        <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.entry_date}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ ...cellB, color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
                         {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
                         <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.brigadir_name) || "—"}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
