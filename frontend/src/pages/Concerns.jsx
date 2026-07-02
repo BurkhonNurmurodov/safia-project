@@ -205,8 +205,6 @@ export default function Concerns() {
     saveMutation.mutate();
   }
 
-  const canAdd = !isAdmin || !!leaderRef;
-
   // Code dropdown options: the leader's known codes (+ the row's own code when
   // editing) plus an "add new" sentinel.
   const codeOptions = useMemo(() => {
