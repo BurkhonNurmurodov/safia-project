@@ -563,10 +563,7 @@ export default function Concerns() {
                   ) : (
                     <StyledSelect
                       value={form.leader_ref ? String(form.leader_ref) : ""}
-                      onChange={(v) => {
-                        setAddingCode(false);
-                        setForm((f) => ({ ...f, leader_ref: v ? Number(v) : null, cell_code: "" }));
-                      }}
+                      onChange={(v) => setForm((f) => ({ ...f, leader_ref: v ? Number(v) : null }))}
                       options={leaderOptions}
                       placeholder={t("concerns.pickLeader")}
                     />
