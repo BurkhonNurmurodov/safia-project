@@ -15,6 +15,7 @@ const ROLES = [
   { value: "top-manager",   tKey: "login.chooseRole.top",        tKeyRu: "login.chooseRole.topRu" },
   { value: "shift-manager", tKey: "login.chooseRole.shift",      tKeyRu: "login.chooseRole.shiftRu" },
   { value: "supervisor",    tKey: "login.chooseRole.sup",        tKeyRu: "login.chooseRole.supRu" },
+  { value: "leader",        tKey: "login.chooseRole.leader",     tKeyRu: "login.chooseRole.leaderRu" },
 ];
 
 export default function Login() {
