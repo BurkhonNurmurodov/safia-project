@@ -345,6 +345,18 @@ export default function Leaders() {
   });
   const rows = data?.data ?? [];
 
+  // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
+  const qc = useQueryClient();
+  const [justSynced, setJustSynced] = useState(false);
+  const refreshMut = useMutation({
+    mutationFn: () => api.post("/admin/refresh-sheet/leaders").then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leaders"] });
+      setJustSynced(true);
+      setTimeout(() => setJustSynced(false), 2500);
+    },
+  });
+
   // supervisor → leaders cascade
   const supLeaderMap = useMemo(() => {
     const map = { All: new Set() };
