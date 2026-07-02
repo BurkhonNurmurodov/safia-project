@@ -327,15 +327,8 @@ export default function Concerns() {
   // Admins always fetch every concern and slice locally (period/brigadir/leader);
   // leaders only ever get their own rows from the backend.
   const { data: listResp, isLoading } = useQuery({
-    queryKey: ["concerns", isAdmin ? "all" : "own", statusFilter],
-    queryFn: () =>
-      api
-        .get("/api/concerns", {
-          params: {
-            ...(statusFilter !== "all" ? { status: statusFilter } : {}),
-          },
-        })
-        .then((r) => r.data),
+    queryKey: ["concerns", isAdmin ? "all" : "own"],
+    queryFn: () => api.get("/api/concerns").then((r) => r.data),
   });
   const rows = listResp?.data || [];
 
