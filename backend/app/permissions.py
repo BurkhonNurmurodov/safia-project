@@ -38,7 +38,7 @@ PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
 DEFAULT_PAGE_ACCESS = {
     "overview": ["shift-manager"],
-    "zagruzka": ["top-manager", "shift-manager", "supervisor"],
+    "zagruzka": ["top-manager", "shift-manager", "supervisor", "leader"],
     "leaderboard": [],
     "workers":  ["shift-manager"],
     "plan":     ["shift-manager"],
