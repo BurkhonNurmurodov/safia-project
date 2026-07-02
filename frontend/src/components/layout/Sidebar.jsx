@@ -26,6 +26,7 @@ const ALL_LINKS = [
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
+  { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
 ];
 
