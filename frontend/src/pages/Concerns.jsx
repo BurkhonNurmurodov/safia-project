@@ -122,9 +122,10 @@ function StatusSelect({ status, label, statusLabel, saving, onChange }) {
         ref={triggerRef}
         type="button"
         onClick={toggle}
-        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border whitespace-nowrap"
-        style={{ background: `${color}22`, borderColor: `${color}59`, color, cursor: saving ? "default" : "pointer" }}
+        className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+        style={{ background: `${color}24`, color, cursor: saving ? "default" : "pointer" }}
       >
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
         {label}
         {saving
           ? <Loader2 size={10} className="animate-spin" />
@@ -132,6 +133,35 @@ function StatusSelect({ status, label, statusLabel, saving, onChange }) {
       </button>
       {dropdown}
     </>
+  );
+}
+
+// Sort affordance for the table headers — clicking cycles asc → desc → off, with
+// neutral chevrons until a column is active (mirrors the Kaizen task table).
+function SortIcon({ active, dir }) {
+  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
+  return (
+    <Icon size={11} style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />
+  );
+}
+
+// Sortable, icon-led column header — brand-tinted glyph + label + sort state.
+function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
+  const active = sort.key === k;
+  const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
+  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
+  return (
+    <th className={`font-medium px-3 py-2 select-none whitespace-nowrap ${alignCls} ${cls}`} style={cellB}>
+      <button
+        type="button" onClick={() => onSort(k)}
+        className={`group inline-flex items-center gap-1.5 transition-colors ${justify}`}
+        style={{ color: active ? "var(--text-1)" : "inherit" }}
+      >
+        {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
+        <span>{label}</span>
+        <SortIcon active={active} dir={sort.dir} />
+      </button>
+    </th>
   );
 }
 
