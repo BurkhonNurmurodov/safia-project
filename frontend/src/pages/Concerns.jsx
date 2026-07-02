@@ -359,7 +359,6 @@ export default function Concerns() {
   function openCreate() {
     // Pre-select the leader the admin is currently filtering by, if any.
     setForm({ ...emptyForm(), leader_ref: isAdmin ? leaderRef : null });
-    setAddingCode(false);
     setFormError("");
     setModalOpen(true);
   }
@@ -368,7 +367,6 @@ export default function Concerns() {
       id: r.id,
       leader_ref: r.leader_role_ref,
       leader_name: r.leader_name || "",
-      cell_code: r.cell_code || "",
       concern_owner: r.concern_owner || "",
       concern_text: r.concern_text || "",
       status: r.status || "todo",
@@ -377,14 +375,12 @@ export default function Concerns() {
       completion_date: r.completion_date || "",
       solution: r.solution || "",
     });
-    setAddingCode(false);
     setFormError("");
     setModalOpen(true);
   }
   function closeModal() {
     setModalOpen(false);
     setForm(emptyForm());
-    setAddingCode(false);
     setFormError("");
   }
   function submit() {
