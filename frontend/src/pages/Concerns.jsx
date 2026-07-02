@@ -34,6 +34,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyForm = () => ({
   id: null,
+  leader_ref: null,   // admin only: which leader this concern belongs to
+  leader_name: "",    // display-only, used when editing an admin-owned row
   cell_code: "",
   concern_owner: "",
   concern_text: "",
