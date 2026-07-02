@@ -19,6 +19,7 @@ export const ROLE_LABEL_KEYS = {
   "top-manager":   "role.topManager",
   "shift-manager": "role.manager",
   "supervisor":    "role.supervisor",
+  "leader":        "role.leader",
   "admin":         "role.admin",
 };
 
