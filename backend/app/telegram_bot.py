@@ -461,6 +461,11 @@ def _webapp_data(message: types.Message):
         if role == "supervisor":
             mgr = db.query(Manager).filter(Manager.name == full_name).first()
             role_id = mgr.id if mgr else None
+        elif role == "leader":
+            # A leader types their own name (full_name) and picks their
+            # supervisor's unit — role_id points at that unit's manager.
+            mgr = db.query(Manager).filter(Manager.name == supervisor).first()
+            role_id = mgr.id if mgr else None
         elif role == "shift-manager":
             slot = next((s for s in SHIFT_ADMIN_SLOTS if s["name"] == full_name), None)
             role_id = SHIFT_ADMIN_SLOTS.index(slot) + 1 if slot else None
