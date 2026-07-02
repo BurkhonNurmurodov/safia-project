@@ -210,7 +210,8 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
     setDateFrom(tempFrom); setDateTo(tempTo||tempFrom); setOpen(false);
   }
 
-  const presets = getPresets(t);
+  // single-date mode only offers single-day quick picks (no ranges)
+  const presets = single ? getPresets(t).filter((p) => p.from === p.to) : getPresets(t);
 
   const btnStyle = (active) => ({
     background: active ? "var(--brand)" : "transparent",
