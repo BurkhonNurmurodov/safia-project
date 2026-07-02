@@ -1654,6 +1654,8 @@ const t = {
     "login.chooseRole.topRu":       "Топ-менежер",
     "login.chooseRole.shiftRu":     "Смена менежери",
     "login.chooseRole.supRu":       "Бригадир",
+    "login.chooseRole.leader":      "Лидер",
+    "login.chooseRole.leaderRu":    "Лидер",
     "login.chooseRole.shiftAdminRu":"Смена админи",
     "login.chooseSlot":             "Слотни танланг:",
     "login.chooseName":             "Исмингизни танланг:",
