@@ -375,30 +375,40 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
 
           {/* Calendars panel */}
           <div className="flex-1 p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <button onClick={() => setPhase("from")}
-                className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
-                style={{ background:"var(--bg-inner)", border:inputBorder(phase==="from"), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
-                <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
-                {tempFrom ? fmtInput(tempFrom) : t("filter.startDate")}
-              </button>
-              <span className="text-xs" style={{ color:"var(--text-4)" }}>→</span>
-              <button onClick={() => { if (tempFrom) setPhase("to"); }}
-                className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
-                style={{ background:"var(--bg-inner)", border:inputBorder(phase==="to"), color:tempTo?"var(--text-1)":"var(--text-3)" }}>
-                <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
-                {tempTo ? fmtInput(tempTo) : t("filter.endDate")}
-              </button>
-            </div>
+            {single ? (
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                  style={{ background:"var(--bg-inner)", border:inputBorder(true), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
+                  <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                  {tempFrom ? fmtInput(tempFrom) : t("filter.selectDates")}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-4">
+                <button onClick={() => setPhase("from")}
+                  className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
+                  style={{ background:"var(--bg-inner)", border:inputBorder(phase==="from"), color:tempFrom?"var(--text-1)":"var(--text-3)" }}>
+                  <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                  {tempFrom ? fmtInput(tempFrom) : t("filter.startDate")}
+                </button>
+                <span className="text-xs" style={{ color:"var(--text-4)" }}>→</span>
+                <button onClick={() => { if (tempFrom) setPhase("to"); }}
+                  className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-left"
+                  style={{ background:"var(--bg-inner)", border:inputBorder(phase==="to"), color:tempTo?"var(--text-1)":"var(--text-3)" }}>
+                  <CalendarDays size={12} style={{ color:"var(--text-4)" }} />
+                  {tempTo ? fmtInput(tempTo) : t("filter.endDate")}
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center mb-3">
               <button onClick={() => { const [ny,nm]=navMo(leftY,leftM,-1); setLeftY(ny); setLeftM(nm); }}
                 className="p-1 rounded-lg hover:bg-white/10 flex-shrink-0" style={{ color:"var(--text-3)" }}>
                 <ChevronLeft size={15} />
               </button>
-              <div className="flex-1 grid grid-cols-2 gap-6 px-2">
+              <div className={`flex-1 grid ${single ? "grid-cols-1" : "grid-cols-2"} gap-6 px-2`}>
                 <div className="text-xs font-semibold text-center" style={{ color:"var(--text-1)" }}>{t(`cal.m${leftM}`)} {leftY}</div>
-                <div className="text-xs font-semibold text-center" style={{ color:"var(--text-1)" }}>{t(`cal.m${rightM}`)} {rightY}</div>
+                {!single && <div className="text-xs font-semibold text-center" style={{ color:"var(--text-1)" }}>{t(`cal.m${rightM}`)} {rightY}</div>}
               </div>
               <button onClick={() => { const [ny,nm]=navMo(leftY,leftM,1); setLeftY(ny); setLeftM(nm); }}
                 className="p-1 rounded-lg hover:bg-white/10 flex-shrink-0" style={{ color:"var(--text-3)" }}>
@@ -406,14 +416,16 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-6" onMouseLeave={() => setHover(null)}>
+            <div className={`grid ${single ? "grid-cols-1" : "grid-cols-2"} gap-6`} onMouseLeave={() => setHover(null)}>
               <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} />
-              <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} />
+              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} />}
             </div>
 
-            <div className="mt-3 text-[10px] text-center" style={{ color:"var(--text-4)" }}>
-              {phase==="from" ? t("filter.clickToSetStart") : t("filter.clickToSetEnd")}
-            </div>
+            {!single && (
+              <div className="mt-3 text-[10px] text-center" style={{ color:"var(--text-4)" }}>
+                {phase==="from" ? t("filter.clickToSetStart") : t("filter.clickToSetEnd")}
+              </div>
+            )}
           </div>
         </div>,
         document.body
