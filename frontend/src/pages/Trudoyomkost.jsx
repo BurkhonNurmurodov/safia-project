@@ -181,6 +181,9 @@ export default function Trudoyomkost() {
   const [trendSup, setTrendSup] = useState(() => initNum("trendSup", null)); // single brigadir id
   const [selWd, setSelWd] = useState(() => initSet("selWd", new Set([0, 1, 2, 3, 4]))); // Mon–Fri default
   const [exporting, setExporting] = useState(false);
+  // shift efficiency (productive % of the 480-min shift) — shared by the worker
+  // prediction/statistics and the workers-to-call forecast so both react to it.
+  const [effPct, setEffPct] = useState(() => initNum("effPct", 100));
 
   // Persist page-local filters to cache so the view restores on reload/return.
   useEffect(() => {
