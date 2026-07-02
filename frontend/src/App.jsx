@@ -187,16 +187,54 @@ function RequireAdmin({ children }) {
   return children;
 }
 
-/** Shown when a role has no accessible pages at all. */
+/**
+ * Shown when the active role has no accessible pages. This screen renders
+ * OUTSIDE the Layout (no sidebar/role-switcher), so it must offer its own
+ * escape hatches — otherwise a multi-role user (e.g. an admin who switched
+ * into a page-less role) would be permanently trapped here.
+ */
 function NoAccess() {
   const { t } = useLang();
+  const { auth, switchRole, logout } = useAuth();
+  const others = (auth?.roles ?? []).filter(
+    (r) => r.id !== auth?.active_role_ref && r.status === "approved",
+  );
   return (
     <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-      <div className="text-center max-w-xs">
+      <div className="text-center max-w-xs w-full">
         <div className="text-5xl mb-4">🔒</div>
-        <p className="text-sm" style={{ color: "var(--text-3)" }}>
+        <p className="text-sm mb-6" style={{ color: "var(--text-3)" }}>
           {t("access.noPages")}
         </p>
+
+        {others.length > 0 && (
+          <div className="space-y-2 mb-5 text-left">
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+              {t("access.switchProfile")}
+            </p>
+            {others.map((r) => {
+              const rTkey = ROLE_LABEL_KEYS[r.role];
+              const rRole = rTkey ? t(rTkey) : (r.role ?? "");
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => switchRole(r.id)}
+                  className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-md)")}
+                >
+                  {r.full_name || rRole}
+                  <span className="ml-2 text-xs" style={{ color: "var(--text-3)" }}>· {rRole}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <button onClick={logout} className="text-xs underline" style={{ color: "var(--text-3)" }}>
+          {t("nav.signOut")}
+        </button>
       </div>
     </div>
   );
