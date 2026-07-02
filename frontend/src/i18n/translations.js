@@ -24,6 +24,7 @@ const t = {
     "concerns.pickLeader":     "Liderni tanlang",
     "concerns.pickLeaderFirst":"Avval liderni tanlang",
     "concerns.fieldLeader":    "Lider",
+    "concerns.listTitle":      "Xavotirlar ro'yxati",
     "concerns.allStatuses":    "Barcha holatlar",
     "concerns.search":         "Qidirish…",
     "concerns.kpiTotal":       "Jami",
