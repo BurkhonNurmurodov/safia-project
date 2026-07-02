@@ -274,7 +274,7 @@ export default function Concerns() {
       switch (sort.key) {
         case "date":     return r.entry_date || "";
         case "leader":   return tl(r.leader_name || "");
-        case "cell":     return r.cell_code || "";
+        case "supervisor": return tl(r.brigadir_name || "");
         case "owner":    return tl(r.concern_owner || "");
         case "concern":  return tl(r.concern_text || "");
         case "deadline": return r.deadline_days;
