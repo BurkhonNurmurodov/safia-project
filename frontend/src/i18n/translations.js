@@ -2648,6 +2648,7 @@ const t = {
     "login.chooseRole.shiftAdminRu":"Сменный администратор",
     "login.chooseSlot":             "Выберите слот:",
     "login.chooseName":             "Выберите ваше имя:",
+    "login.chooseSupervisor":       "Выберите вашего бригадира:",
     "login.fullName":        "Полное имя:",
     "login.namePlaceholder": "Имя Фамилия",
     "login.search":          "Поиск...",
