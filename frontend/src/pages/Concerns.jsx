@@ -697,25 +697,53 @@ export default function Concerns() {
   const anyFilterActive = filterActiveCount > 0;
   const clearAllFilters = () => { setStatusSel([]); setOwnerSel([]); setDeadlineMin(""); setDeadlineMax(""); };
 
-  // ── charts: daily created-vs-resolved trend + status donut (Kaizen styling) ──
+  // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
+  // Category axis over the pre-built day list (one point per day) keeps the
+  // ticks on whole days — a datetime axis would interpolate 12:00 ticks.
+  const trendDays = charts.trend.map((p) => p.day);
+  const dayTick = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
   const lineSeries = [
-    { name: t("concerns.seriesCreated"),  data: charts.trend.map((p) => ({ x: p.day, y: p.created })) },
-    { name: t("concerns.seriesResolved"), data: charts.trend.map((p) => ({ x: p.day, y: p.resolved })) },
+    { name: t("concerns.seriesOpen"), data: charts.trend.map((p) => p.open) },
   ];
   const lineOpts = {
     chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent" },
     theme: chartTheme,
-    colors: [CHART_BRAND, STATUS_COLOR.done],
+    colors: [CHART_BRAND],
     stroke: { curve: "smooth", width: 2.5 },
     fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.22, opacityTo: 0.02, stops: [0, 95, 100] } },
     dataLabels: { enabled: false },
-    xaxis: { type: "datetime", labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) } },
+    xaxis: {
+      type: "category",
+      categories: trendDays,
+      tickAmount: Math.min(Math.max(trendDays.length - 1, 1), 10),
+      labels: { rotate: 0, hideOverlappingLabels: true, formatter: dayTick, style: { colors: labelColor, fontSize: "11px" } },
+      axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+    },
+    // Whole-count ticks: capping tickAmount at the data max keeps every step ≥ 1,
+    // so the rounded labels never repeat (no more 2/2/2/1/1/1 axes).
+    yaxis: {
+      min: 0,
+      max: Math.max(charts.maxOpen, 1),
+      tickAmount: Math.min(Math.max(charts.maxOpen, 1), 5),
+      labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) },
+    },
     grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } },
-    markers: { size: 0, hover: { size: 5 } },
-    legend: { position: "top", horizontalAlign: "right", labels: { colors: legendColor }, markers: { width: 8, height: 8, radius: 8 } },
-    tooltip: { theme: tooltipTheme, shared: true, x: { format: "dd MMM yyyy" } },
+    markers: { size: charts.trend.length === 1 ? 4 : 0, hover: { size: 5 } },
+    legend: { show: false },
+    tooltip: {
+      theme: tooltipTheme,
+      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+    },
   };
+
+  // End-of-day cards under the trend: the unresolved pool as it stands now —
+  // total plus its per-status split (chart palette, donut-consistent buckets).
+  const openCards = [
+    { label: t("concerns.cardUnresolved"), color: CHART_BRAND,       n: charts.todo + charts.doing + charts.overdue },
+    { label: statusLabel("todo"),          color: CHART_TODO,        n: charts.todo },
+    { label: statusLabel("doing"),         color: STATUS_COLOR.doing, n: charts.doing },
+    { label: t("concerns.chartOverdue"),   color: CHART_OVERDUE,     n: charts.overdue },
+  ];
 
   const donutRows = [
     { label: statusLabel("done"),        color: STATUS_COLOR.done,  n: charts.done },
