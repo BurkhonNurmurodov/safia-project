@@ -414,50 +414,6 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {isAdmin && (
-          <StyledSelect
-            value={leaderRef ? String(leaderRef) : ""}
-            onChange={(v) => setLeaderRef(v ? Number(v) : null)}
-            options={[{ value: "", label: t("concerns.allLeaders") }, ...leaderOptions]}
-            placeholder={t("concerns.pickLeader")}
-            className="min-w-[220px]"
-          />
-        )}
-        <StyledSelect
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "all", label: t("concerns.allStatuses") },
-            ...STATUSES.map((s) => ({ value: s, label: statusLabel(s) })),
-          ]}
-          className="min-w-[150px]"
-        />
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search
-            size={14}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2"
-            style={{ color: "var(--text-4)" }}
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("concerns.search")}
-            className="w-full rounded-lg pl-8 pr-3 py-2 text-sm outline-none"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-          />
-        </div>
-        <div className="ml-auto">
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
-          >
-            <Plus size={15} /> {t("concerns.add")}
-          </button>
-        </div>
-      </div>
-
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <KPICard label={t("concerns.kpiTotal")} value={kpi.total} />
@@ -470,40 +426,85 @@ export default function Concerns() {
         />
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      {/* Task table — header band (title · count · search · filters · add) over a
+          grid-ruled, sortable, icon-led table (mirrors the Kaizen task list). */}
+      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            <ClipboardList size={14} style={{ color: "var(--brand-text)" }} />
+            {t("concerns.listTitle")}
+            <span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("concerns.search")}
+                className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-44 outline-none"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+              />
+            </div>
+            {isAdmin && (
+              <StyledSelect
+                value={leaderRef ? String(leaderRef) : ""}
+                onChange={(v) => setLeaderRef(v ? Number(v) : null)}
+                options={[{ value: "", label: t("concerns.allLeaders") }, ...leaderOptions]}
+                placeholder={t("concerns.pickLeader")}
+                className="w-48"
+              />
+            )}
+            <StyledSelect
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: t("concerns.allStatuses") },
+                ...STATUSES.map((s) => ({ value: s, label: statusLabel(s) })),
+              ]}
+              className="w-36"
+            />
+            <button
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
+            >
+              <Plus size={14} /> {t("concerns.add")}
+            </button>
+          </div>
+        </div>
+
         {isLoading ? (
           <div className="p-4">
             <SkeletonTable rows={6} cols={showLeaderCol ? 8 : 7} />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 gap-3">
             <ClipboardList size={28} style={{ color: "var(--text-4)" }} />
             <div className="text-sm" style={{ color: "var(--text-3)" }}>{t("concerns.empty")}</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
               <thead>
-                <tr className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colDate")}</th>
-                  {showLeaderCol && <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colLeader")}</th>}
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colCell")}</th>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colOwner")}</th>
-                  <th className="text-left font-semibold px-3 py-2.5">{t("concerns.colConcern")}</th>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colStatus")}</th>
-                  <th className="text-center font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colDeadline")}</th>
-                  <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{t("concerns.colActions")}</th>
+                <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                  <Th icon={CalendarClock} label={t("concerns.colDate")}     k="date"     sort={sort} onSort={onSort} />
+                  {showLeaderCol && <Th icon={UserCheck} label={t("concerns.colLeader")} k="leader" sort={sort} onSort={onSort} />}
+                  <Th icon={Hash}          label={t("concerns.colCell")}     k="cell"     sort={sort} onSort={onSort} />
+                  <Th icon={UserRound}     label={t("concerns.colOwner")}    k="owner"    sort={sort} onSort={onSort} />
+                  <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
+                  <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
+                  <Th icon={Clock}         label={t("concerns.colDeadline")} k="deadline" sort={sort} onSort={onSort} align="center" />
+                  <th className="px-2 py-2" style={{ borderBottom: "1px solid var(--border)" }}></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }} className="align-top">
-                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-xs" style={{ color: "var(--text-2)" }}>{r.entry_date}</td>
-                    {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
-                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-xs" style={{ color: "var(--text-2)" }}>{r.cell_code || "—"}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
-                    <td className="px-3 py-2.5 min-w-[240px]" style={{ color: "var(--text-1)" }}>
+                {sorted.map((r) => (
+                  <tr key={r.id} className="align-top">
+                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.entry_date}</td>
+                    {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
+                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.cell_code || "—"}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
+                    <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ ...cellB, color: "var(--text-1)" }}>
                       <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
                       {r.solution && (
                         <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
@@ -511,7 +512,7 @@ export default function Concerns() {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5" style={cellB}>
                       <StatusSelect
                         status={r.status}
                         label={statusLabel(r.status)}
@@ -520,13 +521,13 @@ export default function Concerns() {
                         onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                       />
                     </td>
-                    <td className="px-3 py-2.5 text-center font-mono text-xs" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
+                    <td className="px-2 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEdit(r)} style={{ color: "var(--text-3)" }} className="hover:text-[var(--brand-text)] transition-colors" title={t("concerns.edit")}>
+                        <button onClick={() => openEdit(r)} style={{ color: "var(--text-4)" }} className="hover:text-[var(--brand-text)] transition-colors" title={t("concerns.edit")}>
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => setConfirmDelete(r)} style={{ color: "var(--text-3)" }} className="hover:text-red-400 transition-colors" title={t("concerns.delete")}>
+                        <button onClick={() => setConfirmDelete(r)} style={{ color: "var(--text-4)" }} className="hover:text-red-400 transition-colors" title={t("concerns.delete")}>
                           <Trash2 size={14} />
                         </button>
                       </div>
