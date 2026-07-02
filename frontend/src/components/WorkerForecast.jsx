@@ -249,11 +249,17 @@ export default function WorkerForecast({ effPct = 100 }) {
   const [weekStart, setWeekStart] = useState(() => mondayOfISO(todayISO()));
   const [modalCell, setModalCell] = useState(null);
   const [selWd, setSelWd] = useState(null);   // clicked date column (weekday idx); null → use default
+  const [pickedDate, setPickedDate] = useState(null);   // ISO date → single-column view; null → full week
   const curWeek = mondayOfISO(todayISO());
   const today = todayISO();
 
   // a fresh week gets its own default selection; clearing selWd re-derives it below
   useEffect(() => { setSelWd(null); }, [weekStart]);
+
+  // a picked date pulls in the week that contains it, so its column is loaded
+  useEffect(() => {
+    if (pickedDate) setWeekStart((w) => { const mon = mondayOfISO(pickedDate); return w === mon ? w : mon; });
+  }, [pickedDate]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["trud-forecast", weekStart, brigadirIds, shift, effPct],
