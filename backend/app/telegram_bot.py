@@ -434,13 +434,17 @@ def _language(call: types.CallbackQuery):
 def _webapp_data(message: types.Message):
     tid = message.from_user.id
     try:
-        data      = json.loads(message.web_app_data.data)
-        full_name = str(data.get("full_name", "")).strip()
-        role      = str(data.get("role", ""))
+        data       = json.loads(message.web_app_data.data)
+        full_name  = str(data.get("full_name", "")).strip()
+        role       = str(data.get("role", ""))
+        supervisor = str(data.get("supervisor", "")).strip()  # leader → chosen brigadir/unit
     except Exception:
         return
 
-    if not full_name or role not in ("top-manager", "shift-manager", "supervisor"):
+    if not full_name or role not in ("top-manager", "shift-manager", "supervisor", "leader"):
+        return
+    # A leader must pick their supervisor (unit); without it we can't file the request.
+    if role == "leader" and not supervisor:
         return
 
     lang = _get_lang(tid)
