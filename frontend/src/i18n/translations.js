@@ -2010,6 +2010,7 @@ const t = {
     "role.topManager":     "Топ-менеджер",
     "role.manager":        "Менеджер",
     "role.supervisor":     "Бригадир",
+    "role.leader":         "Лидер",
     "daily.title":         "Ежедневно",
     "daily.approved":      "Утверждено",
     "daily.pending":        "Ожидает утверждения",
