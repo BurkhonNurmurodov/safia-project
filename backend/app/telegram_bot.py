@@ -156,10 +156,10 @@ _MESSAGES = {
 }
 
 _ROLE_LABELS = {
-    "uz":      {"top-manager": "Top-menejer", "shift-manager": "Smena menejeri", "supervisor": "Brigadir"},
-    "uz_cyrl": {"top-manager": "Топ-менежер", "shift-manager": "Смена менежери", "supervisor": "Бригадир"},
-    "ru":      {"top-manager": "Топ-менеджер", "shift-manager": "Сменный менеджер", "supervisor": "Бригадир"},
-    "en":      {"top-manager": "Top Manager", "shift-manager": "Shift Manager", "supervisor": "Supervisor"},
+    "uz":      {"top-manager": "Top-menejer", "shift-manager": "Smena menejeri", "supervisor": "Brigadir", "leader": "Lider"},
+    "uz_cyrl": {"top-manager": "Топ-менежер", "shift-manager": "Смена менежери", "supervisor": "Бригадир", "leader": "Лидер"},
+    "ru":      {"top-manager": "Топ-менеджер", "shift-manager": "Сменный менеджер", "supervisor": "Бригадир", "leader": "Лидер"},
+    "en":      {"top-manager": "Top Manager", "shift-manager": "Shift Manager", "supervisor": "Supervisor", "leader": "Leader"},
 }
 
 
