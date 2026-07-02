@@ -683,6 +683,52 @@ export default function Concerns() {
   const anyFilterActive = filterActiveCount > 0;
   const clearAllFilters = () => { setStatusSel([]); setOwnerSel([]); setDeadlineMin(""); setDeadlineMax(""); };
 
+  // ── charts: daily created-vs-resolved trend + status donut (Kaizen styling) ──
+  const lineSeries = [
+    { name: t("concerns.seriesCreated"),  data: charts.trend.map((p) => ({ x: p.day, y: p.created })) },
+    { name: t("concerns.seriesResolved"), data: charts.trend.map((p) => ({ x: p.day, y: p.resolved })) },
+  ];
+  const lineOpts = {
+    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent" },
+    theme: chartTheme,
+    colors: [CHART_BRAND, STATUS_COLOR.done],
+    stroke: { curve: "smooth", width: 2.5 },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.22, opacityTo: 0.02, stops: [0, 95, 100] } },
+    dataLabels: { enabled: false },
+    xaxis: { type: "datetime", labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
+    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) } },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } },
+    markers: { size: 0, hover: { size: 5 } },
+    legend: { position: "top", horizontalAlign: "right", labels: { colors: legendColor }, markers: { width: 8, height: 8, radius: 8 } },
+    tooltip: { theme: tooltipTheme, shared: true, x: { format: "dd MMM yyyy" } },
+  };
+
+  const donutRows = [
+    { label: statusLabel("done"),        color: STATUS_COLOR.done,  n: charts.done },
+    { label: statusLabel("doing"),       color: STATUS_COLOR.doing, n: charts.doing },
+    { label: statusLabel("todo"),        color: CHART_TODO,         n: charts.todo },
+    { label: t("concerns.chartOverdue"), color: CHART_OVERDUE,      n: charts.overdue },
+  ];
+  const donutSeries = donutRows.map((r) => r.n);
+  const donutOpts = {
+    chart: { type: "donut", fontFamily: "inherit", background: "transparent" },
+    labels: donutRows.map((r) => r.label),
+    colors: donutRows.map((r) => r.color),
+    legend: { show: false },
+    dataLabels: { enabled: false },
+    stroke: { width: 0 },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("concerns.itemsUnit")}` } },
+    plotOptions: { pie: { donut: {
+      size: "72%",
+      labels: {
+        show: true,
+        name: { offsetY: 20, color: legendColor, fontSize: "11px" },
+        value: { offsetY: -16, color: "var(--text-1)", fontSize: "28px", fontWeight: 700 },
+        total: { show: true, label: t("concerns.kpiTotal"), color: legendColor, fontSize: "11px", formatter: () => String(charts.total) },
+      },
+    } } },
+  };
+
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
       {/* Filters — period + brigadir + leader (mirrors the Leaders page). Brigadir
