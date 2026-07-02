@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
