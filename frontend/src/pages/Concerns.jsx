@@ -493,7 +493,7 @@ export default function Concerns() {
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.entry_date}</td>
                         {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
-                        <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.cell_code || "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.brigadir_name) || "—"}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
                         <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ ...cellB, color: "var(--text-1)" }}>
                           <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
