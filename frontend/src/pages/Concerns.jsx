@@ -24,6 +24,13 @@ const STATUSES = ["todo", "doing", "done"];
 // done = emerald — deliberately soft so they glow on the dark dashboard).
 const STATUS_COLOR = { todo: "#F43F5E", doing: "#F59E0B", done: "#10B981" };
 
+// Chart-only palette. With "overdue" pulled out as its own donut slice, rose becomes
+// the alarm hue there and the still-within-deadline "todo" drops to neutral slate —
+// same chart language as the Kaizen donut. The table pills keep STATUS_COLOR.
+const CHART_BRAND = "#C8973F";
+const CHART_TODO = "#94a3b8";
+const CHART_OVERDUE = "#f43f5e";
+
 // Localized ISO-date formatter (mirrors the Leaders page) — turns 2026-07-02
 // into "2-iyul, 2026" / "2 июля 2026" / "2nd July, 2026" per the active lang.
 const MONTHS = {
