@@ -633,16 +633,6 @@ export default function Concerns() {
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
               />
             </div>
-            {isAdmin && (
-              <StyledSelect
-                value={leaderRef ? String(leaderRef) : ""}
-                onChange={(v) => setLeaderRef(v ? Number(v) : null)}
-                options={[{ value: "", label: t("concerns.allLeaders") }, ...leaderOptions]}
-                placeholder={t("concerns.pickLeader")}
-                className="w-48"
-                triggerClassName="px-3 py-1.5 text-xs"
-              />
-            )}
             <StyledSelect
               value={statusFilter}
               onChange={setStatusFilter}
