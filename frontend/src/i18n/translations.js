@@ -665,6 +665,8 @@ const t = {
     "login.chooseRole.topRu":       "Top-menejer",
     "login.chooseRole.shiftRu":     "Smena menejeri",
     "login.chooseRole.supRu":       "Brigadir",
+    "login.chooseRole.leader":      "Lider",
+    "login.chooseRole.leaderRu":    "Lider",
     "login.chooseRole.shiftAdminRu":"Smena admini",
     "login.chooseSlot":             "Slotni tanlang:",
     "login.chooseName":             "Ismingizni tanlang:",
