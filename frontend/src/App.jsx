@@ -28,7 +28,7 @@ const Login = lazy(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
-import { canAccessPage, firstAccessibleRoute } from "./config/pages";
+import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
