@@ -84,6 +84,7 @@ const TXT = {
     tipLowSup: "Энг паст ўртача кўрсаткичли бригадир",
     tipLowLeader: "Энг паст ўртача кўрсаткичли лидер",
     searchPh: "Лидер қидириш…", bandAll: "Барчаси", noMatch: "Филтрларга мос ҳисобот йўқ",
+    refresh: "Янгилаш", refreshing: "Янгиланмоқда…", refreshed: "Янгиланди",
   },
   ru: {
     title: "Контроль лидеров", avgSuccess: "Средний успех", timePeriod: "Период",
