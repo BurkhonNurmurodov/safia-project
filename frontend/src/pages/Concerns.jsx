@@ -235,19 +235,6 @@ export default function Concerns() {
   });
   const rows = listResp?.data || [];
 
-  // Cell codes for the leader chosen in the modal (own for a leader) — powers the
-  // code dropdown. Only meaningful while the modal is open with a leader in view.
-  const { data: cellCodes = [] } = useQuery({
-    queryKey: ["concern-cell-codes", isAdmin ? (form.leader_ref ?? "none") : "own"],
-    queryFn: () =>
-      api
-        .get("/api/concerns/cell-codes", {
-          params: isAdmin && form.leader_ref ? { leader_ref: form.leader_ref } : {},
-        })
-        .then((r) => r.data),
-    enabled: modalOpen && (!isAdmin || !!form.leader_ref),
-  });
-
   // ── analytics (basic KPIs) ──────────────────────────────────────────────
   const kpi = useMemo(() => {
     const total = rows.length;
