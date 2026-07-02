@@ -195,6 +195,7 @@ export default function Concerns() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
 
+  const [expandedId, setExpandedId] = useState(null);   // row whose action bar is open
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [addingCode, setAddingCode] = useState(false);
