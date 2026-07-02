@@ -22,9 +22,10 @@ export default function Login() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const [step,      setStep]      = useState("role");   // "role" | "name"
-  const [role,      setRole]      = useState("");
-  const [fullName,  setFullName]  = useState("");
-  const [search,    setSearch]    = useState("");
+  const [role,       setRole]       = useState("");
+  const [fullName,   setFullName]   = useState("");
+  const [supervisor, setSupervisor] = useState("");   // leader → chosen brigadir/unit
+  const [search,     setSearch]     = useState("");
   const [managers,     setManagers]     = useState([]);
   const [shiftAdmins,  setShiftAdmins]  = useState([]);
   const [loading,      setLoading]      = useState(false);
