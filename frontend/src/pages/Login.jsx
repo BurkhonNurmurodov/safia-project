@@ -236,7 +236,7 @@ export default function Login() {
               </div>
             )}
 
-            {/* Top-manager — text input */}
+            {/* Top-manager / Leader — type own name */}
             {role !== "supervisor" && role !== "shift-manager" && (
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
@@ -257,14 +257,55 @@ export default function Login() {
               </div>
             )}
 
+            {/* Leader — pick the supervisor (unit) they report to */}
+            {role === "leader" && (
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
+                  {t("login.chooseSupervisor")}
+                </label>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t("login.search")}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2"
+                  style={{ background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                />
+                <div
+                  className="rounded-xl overflow-y-auto"
+                  style={{ maxHeight: 220, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
+                >
+                  {loading ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                  ) : filteredManagers.length === 0 ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
+                  ) : filteredManagers.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setSupervisor(name)}
+                      className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                      style={{
+                        color: supervisor === name ? "var(--brand-text)" : "var(--text-1)",
+                        background: supervisor === name ? "var(--brand-bg)" : "transparent",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      {tl(name)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={!fullName.trim()}
+              disabled={!canSubmit}
               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-colors"
               style={{
-                background: !fullName.trim() ? "var(--bg-accent)" : "var(--brand)",
-                color: !fullName.trim() ? "var(--text-4)" : "#fff",
-                cursor: !fullName.trim() ? "not-allowed" : "pointer",
+                background: !canSubmit ? "var(--bg-accent)" : "var(--brand)",
+                color: !canSubmit ? "var(--text-4)" : "#fff",
+                cursor: !canSubmit ? "not-allowed" : "pointer",
               }}
             >
               {t("login.confirm")}
