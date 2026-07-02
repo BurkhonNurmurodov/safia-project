@@ -742,6 +742,7 @@ const t = {
     "admin.users.fieldUser":       "Foydalanuvchi",
     "admin.users.fieldRole":       "Rol",
     "admin.users.fieldUnit":       "Bo'lim",
+    "admin.users.fieldSupervisor": "Brigadir",
     "admin.users.fieldSlot":       "Smena sloti",
     "admin.users.selectPlaceholder": "— tanlang —",
     "admin.users.add":             "Qo'shish",
