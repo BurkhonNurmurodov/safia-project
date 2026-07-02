@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Pencil, Trash2, X, Search, AlertTriangle, Loader2, ClipboardList,
-  ChevronDown, Check,
+  ChevronDown, ChevronUp, ChevronsUpDown, Check,
+  CalendarClock, UserCheck, UserRound, Hash, FileText, CircleDot, Clock,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
