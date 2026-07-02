@@ -57,6 +57,7 @@ export const DEFAULT_PAGE_ACCESS = {
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
   leaders: [], // pilot: admin-only until enabled from the Access tab
   kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
+  concerns: ["leader"], // Leader concerns ("Xavotirlar") — leaders manage their own; admin all
   activity: [], // Users activity & usage stats — admin-only until enabled
 };
 
