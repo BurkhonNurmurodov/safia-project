@@ -363,6 +363,7 @@ export default function WorkerForecast({ effPct = 100 }) {
             input, which misbehaves in the Telegram webview); a picked day drives
             the single-column view. Collapse any range to its start date. */}
         <DateRangePicker
+          single
           dateFrom={pickedDate || ""}
           dateTo={pickedDate || ""}
           setDateFrom={(d) => setPickedDate(d || null)}
