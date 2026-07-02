@@ -377,6 +377,71 @@ def migrate_multi_roles() -> None:
         db.close()
 
 
+LEADER_PAGE_ACCESS_FLAG = "leader_page_access_backfilled"
+
+
+def backfill_leader_page_access() -> None:
+    """The ``leader`` role was added to TOGGLEABLE_ROLES/DEFAULT_PAGE_ACCESS after
+    the page-access matrix (app_settings.page_access) had already been saved. Since
+    get_page_access lets the stored per-page lists shadow the code defaults
+    (``stored.get(page, DEFAULT_PAGE_ACCESS[page])``), a stored matrix that predates
+    leader leaves it with zero pages — every leader then dead-ends on the NoAccess
+    screen instead of landing on zagruzka/concerns.
+
+    This one-time, flag-guarded backfill re-adds leader to the pages
+    DEFAULT_PAGE_ACCESS grants it, but only where the stored matrix already lists
+    that page (i.e. shadows the default) and only when leader is absent from the
+    whole matrix (proof it predates the role). Pages the admin never configured
+    still fall back to defaults, so they're left untouched; once this runs, admins
+    fully own leader's access via the Access tab (a deliberate later uncheck is
+    preserved because the flag stops this from running again)."""
+    import json
+    from app.permissions import SETTING_KEY, DEFAULT_PAGE_ACCESS, PAGE_KEYS
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_PAGE_ACCESS_FLAG).first():
+            return
+
+        row = db.query(AppSetting).filter_by(key=SETTING_KEY).first()
+        # No stored matrix → code defaults already grant leader its pages; nothing
+        # to fix. A stored matrix is what shadows the defaults.
+        if row:
+            try:
+                stored = json.loads(row.value)
+            except (ValueError, TypeError):
+                stored = {}
+            if not isinstance(stored, dict):
+                stored = {}
+
+            present = {
+                r for roles in stored.values()
+                if isinstance(roles, list) for r in roles
+            }
+            if "leader" not in present:
+                changed = False
+                for page in PAGE_KEYS:
+                    if (
+                        "leader" in DEFAULT_PAGE_ACCESS.get(page, [])
+                        and isinstance(stored.get(page), list)
+                        and "leader" not in stored[page]
+                    ):
+                        stored[page] = stored[page] + ["leader"]
+                        changed = True
+                if changed:
+                    row.value = json.dumps(stored)
+                    db.commit()
+                    print("[startup] backfilled leader into stored page-access matrix")
+
+        db.add(AppSetting(key=LEADER_PAGE_ACCESS_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader page-access backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def seed_admins() -> None:
     """Seed the admins table from ADMIN_TELEGRAM_ID (comma-separated) the
     first time — i.e. only while the table is empty. Once seeded, admins are
