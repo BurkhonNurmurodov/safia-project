@@ -516,7 +516,7 @@ export default function Concerns() {
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
     // Pre-select the leader the admin is currently filtering by, if any.
-    setForm({ ...emptyForm(), leader_ref: isAdmin ? leaderRef : null });
+    setForm({ ...emptyForm(), leader_ref: isAdmin && fLeader !== "All" ? Number(fLeader) : null });
     setFormError("");
     setModalOpen(true);
   }
