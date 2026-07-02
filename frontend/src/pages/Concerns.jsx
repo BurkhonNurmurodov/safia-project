@@ -300,11 +300,9 @@ export default function Concerns() {
   // ── mutations ───────────────────────────────────────────────────────────
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["concerns"] });
-    qc.invalidateQueries({ queryKey: ["concern-cell-codes"] });
   };
 
   const buildPayload = () => ({
-    cell_code: form.cell_code.trim() || null,
     concern_owner: form.concern_owner.trim(),
     concern_text: form.concern_text.trim(),
     status: form.status,
