@@ -37,6 +37,7 @@ export const PAGES = [
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
+  { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
 ];
 
