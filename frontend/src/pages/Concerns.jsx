@@ -852,15 +852,9 @@ export default function Concerns() {
         <InsightCard icon={Gauge} tint="#f59e0b" label={t("concerns.kpiSlowestBrigadir")}>
           {insights.slowest ? (
             <>
-              <Metric value={insights.slowest.avg} unit={t("concerns.days")} color="#f59e0b" suffix={t("concerns.avgShort")} />
+              <Metric value={insights.slowest.avg} unit={t("concerns.days")} color="#f59e0b" />
               <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.slowest.name}>
                 {tl(insights.slowest.name)}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                <Chip icon={Layers}>{insights.slowest.n} {t("concerns.itemsUnit")}</Chip>
-                {insights.slowest.open > 0 && (
-                  <Chip color="#f59e0b"><span className="w-1.5 h-1.5 rounded-full" style={{ background: "#f59e0b" }} />{insights.slowest.open} {t("concerns.openLower")}</Chip>
-                )}
               </div>
             </>
           ) : (
