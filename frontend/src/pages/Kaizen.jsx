@@ -821,7 +821,7 @@ export default function Kaizen() {
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-lg leading-none">{emojiFor(p.key)}</span>
+                        <ProjectIcon pkey={p.key} />
                         <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }} title={tl(p.name)}>{tl(p.name)}</span>
                       </div>
                       {p.overdue > 0 && (
