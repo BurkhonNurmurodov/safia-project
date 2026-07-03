@@ -717,3 +717,97 @@ def seed_managers_and_sources() -> None:
         print(f"[startup] manager/source seed skipped: {exc}")
     finally:
         db.close()
+
+
+ROLE_PROFILES_FLAG = "role_profiles_backfilled_v1"
+
+
+def backfill_role_profiles() -> None:
+    """Pre-created-profiles rollout. One-time (flag-guarded): every existing
+    role registration becomes a claimed profile — the 4 hardcoded shift-admin
+    slots turn into editable shift-manager profiles (role rows re-pointed from
+    slot number to profile id), top-managers' typed names become profiles
+    (role_id set to the profile), leaders' typed names become leader profiles
+    under their unit (role rows unchanged — they keep role_id = manager id).
+    Every boot (idempotent): admins without a profile get one, named from
+    their Telegram account where known, so /adminreg-era invariants hold for
+    legacy .env-seeded admins too."""
+    db = SessionLocal()
+    try:
+        if not db.query(AppSetting).filter_by(key=ROLE_PROFILES_FLAG).first():
+            from app.routers.auth import SHIFT_ADMIN_SLOTS  # slots' last use — retired after this
+
+            # Shift managers: slots → profiles, remap role rows slot→profile id.
+            slot_to_profile: dict[int, int] = {}
+            for idx, slot in enumerate(SHIFT_ADMIN_SLOTS, start=1):
+                p = RoleProfile(role="shift-manager", name=slot["name"], shift=slot["shift"])
+                db.add(p)
+                db.flush()
+                slot_to_profile[idx] = p.id
+            for r in db.query(TelegramUserRole).filter_by(role="shift-manager").all():
+                if r.role_id in slot_to_profile:
+                    r.role_id = slot_to_profile[r.role_id]
+
+            # Top managers: typed names → profiles, role rows point at them.
+            tm_rows = (
+                db.query(TelegramUserRole)
+                .filter(TelegramUserRole.role == "top-manager",
+                        TelegramUserRole.status != "rejected")
+                .all()
+            )
+            tm_profiles: dict[str, int] = {}
+            for r in tm_rows:
+                name = (r.full_name or "").strip()
+                if not name:
+                    continue
+                if name not in tm_profiles:
+                    p = RoleProfile(role="top-manager", name=name)
+                    db.add(p)
+                    db.flush()
+                    tm_profiles[name] = p.id
+                r.role_id = tm_profiles[name]
+
+            # Leaders: typed names → profiles under their unit. Role rows keep
+            # role_id = the supervisor's manager id (JWT/Concerns contract).
+            seen: set[tuple[str, int | None]] = set()
+            for r in (
+                db.query(TelegramUserRole)
+                .filter(TelegramUserRole.role == "leader",
+                        TelegramUserRole.status != "rejected")
+                .all()
+            ):
+                name = (r.full_name or "").strip()
+                key = (name, r.role_id)
+                if not name or key in seen:
+                    continue
+                seen.add(key)
+                db.add(RoleProfile(role="leader", name=name, manager_id=r.role_id))
+
+            db.add(AppSetting(key=ROLE_PROFILES_FLAG, value="1"))
+            db.commit()
+            print(f"[startup] backfilled role profiles: {len(slot_to_profile)} shift-manager, "
+                  f"{len(tm_profiles)} top-manager, {len(seen)} leader")
+
+        # Admins → profiles (idempotent, runs every boot so .env re-seeds get one).
+        users_by_tid = {u.telegram_id: u for u in db.query(TelegramUser).all()}
+        created = 0
+        admins = db.query(Admin).order_by(Admin.id).all()
+        for n, a in enumerate(admins, start=1):
+            if a.profile_id and db.query(RoleProfile).filter_by(id=a.profile_id).first():
+                continue
+            u = users_by_tid.get(a.telegram_id)
+            name = ((u.full_name or "").strip() if u else "") or \
+                   ((f"@{u.username}" if u and u.username else "")) or f"Admin {n}"
+            p = RoleProfile(role="admin", name=name)
+            db.add(p)
+            db.flush()
+            a.profile_id = p.id
+            created += 1
+        if created:
+            db.commit()
+            print(f"[startup] linked {created} admin(s) to admin profiles")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] role-profiles backfill skipped: {exc}")
+    finally:
+        db.close()
