@@ -25,11 +25,20 @@ _CYRILLIC_TO_LATIN = {
 }
 
 
+_CYR_YE_AFTER = set("аеёиоуыэюяўъь")
+
+
 def _translit_word(word: str) -> str:
     out = []
-    for ch in word:
+    for i, ch in enumerate(word):
         low = ch.lower()
-        latin = _CYRILLIC_TO_LATIN.get(low)
+        # "е" is /ye/ only at word start or after a vowel/ъ/ь; after a
+        # consonant it is plain /e/ — "Бекзод" → "Bekzod", not "Byekzod".
+        if low == "е":
+            prev = word[i - 1].lower() if i > 0 else ""
+            latin = "ye" if not prev or prev in _CYR_YE_AFTER else "e"
+        else:
+            latin = _CYRILLIC_TO_LATIN.get(low)
         if latin is None:
             out.append(ch)            # non-Cyrillic: pass through
         elif ch != low and latin:
