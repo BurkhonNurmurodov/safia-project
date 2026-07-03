@@ -1,0 +1,1 @@
+import{c as a}from"./index-C2k81V8l.js";function t(){const{theme:r}=a(),e=r==="dark";return{chartTheme:{mode:e?"dark":"light"},gridColor:e?"#1e2235":"#e5e7eb",labelColor:e?"#6b7280":"#9ca3af",legendColor:e?"#9ca3af":"#374151",tooltipTheme:e?"dark":"light",background:"transparent"}}export{t};

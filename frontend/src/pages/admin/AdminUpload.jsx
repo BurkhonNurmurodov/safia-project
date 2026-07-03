@@ -682,7 +682,7 @@ export default function AdminUpload() {
 
       {/* Admin tabs */}
       <div className="no-scrollbar flex gap-1 px-6 pt-4 overflow-x-auto">
-        {[["data", t("admin.tabData"), Database], ["production", "Производство", Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["access", t("admin.tabAccess"), ShieldCheck]].map(([id, label, Icon]) => (
+        {[["data", t("admin.tabData"), Database], ["production", "Производство", Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck]].map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setAdminTab(id)}
