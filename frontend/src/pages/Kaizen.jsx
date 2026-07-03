@@ -728,23 +728,27 @@ export default function Kaizen() {
 
           {/* ── Completion gauge + recent tasks (lead-conversion / recent-bookings) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Completion card — the "Lead Conversion" analog */}
-            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+            {/* Completion card — the "Lead Conversion" analog. The grid stretches
+                it to the Recent-tasks height, so the body flexes and centres. */}
+            <div className="rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
               <SectionHead icon={Trophy} title={T.kDonePct} />
-              <div className="p-4 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-3xl font-bold tabular-nums leading-none" style={{ color: "var(--brand-text)" }}>{A.totals.total}</div>
-                  <div className="text-xs mb-3" style={{ color: "var(--text-3)" }}>{T.kTotal}</div>
-                  <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{T.completionRate}</div>
-                  <div className="text-xl font-bold tabular-nums flex items-center gap-1.5" style={{ color: C_DONE }}>
-                    {A.donePct}%
-                    <span className="text-[11px] font-normal" style={{ color: "var(--text-4)" }}>{A.totals.done}/{A.totals.total}</span>
-                  </div>
-                </div>
-                <div className="w-28 flex-shrink-0">
+              <div className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="w-full max-w-[240px]">
                   {chartsReady
-                    ? <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={150} />
-                    : <div style={{ height: 150 }} />}
+                    ? <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={220} />
+                    : <div style={{ height: 220 }} />}
+                </div>
+                <div className="text-sm font-semibold tabular-nums -mt-2" style={{ color: "var(--text-1)" }}>
+                  {A.totals.done}
+                  <span className="font-normal" style={{ color: "var(--text-4)" }}> / {A.totals.total} {T.tasksWord}</span>
+                </div>
+                <div className="w-full max-w-[240px] mt-4">
+                  <MiniBar done={A.totals.done} prog={A.totals.prog} todo={A.totals.todo} />
+                  <div className="flex items-center justify-center gap-3 mt-2 text-[10px]" style={{ color: "var(--text-3)" }}>
+                    <Tally color={C_DONE} n={A.totals.done} />
+                    <Tally color={C_PROG} n={A.totals.prog} />
+                    <Tally color={C_TODO} n={A.totals.todo} />
+                  </div>
                 </div>
               </div>
             </div>
