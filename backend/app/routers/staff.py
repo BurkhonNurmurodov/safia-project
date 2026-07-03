@@ -2595,6 +2595,16 @@ def _revert_doc_effects(db: Session, doc: HrDocument):
 def _approve_doc(doc: HrDocument, caller: dict, db: Session):
     if doc.status == "approved":
         return
+    # A → supervisor exchange must not land in a unit whose verifix data for the
+    # date isn't uploaded yet — that unit's eventual upload would wipe the
+    # transferred rows. Creation already enforces this; re-check here for drafts
+    # created before the guard existed (or if the target's rows were deleted).
+    payload = doc.payload or {}
+    if (doc.doc_type == "people_exchange"
+            and payload.get("target_type") == "supervisor"
+            and payload.get("target_manager_id")
+            and not _unit_has_attendance(db, payload["target_manager_id"], doc.date)):
+        raise ExchangeTargetNoData()
     _apply_doc_effects(db, doc)
     doc.status                  = "approved"
     doc.approved_by_telegram_id = int(caller["sub"])
