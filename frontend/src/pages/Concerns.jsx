@@ -434,9 +434,7 @@ export default function Concerns() {
     for (const [date, count] of byDate) {
       if (!peak || count > peak.count || (count === peak.count && date < peak.date)) peak = { date, count };
     }
-    const peakShare = peak && open.length ? Math.round((peak.count / open.length) * 100) : 0;
-
-    return { longest, slowest, peak, peakShare, openTotal: open.length };
+    return { longest, slowest, peak, openTotal: open.length };
   }, [scoped]);
 
   // Distinct concern owners in the current (period/brigadir/leader) scope — feeds
