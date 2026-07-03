@@ -2176,7 +2176,9 @@ def _resolve_manager(caller, db: Session, manager_id: Optional[int]):
 def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
                      caller=Depends(_require_staff), db: Session = Depends(get_db)):
     """Supervisors a worker exchange may move INTO for a date — every unit except
-    the sender, excluding any unit that has already closed that day."""
+    the sender, excluding any unit that has already closed that day or has no
+    attendance data uploaded for it yet (rows moved into a data-less unit would
+    be destroyed by that unit's eventual verifix upload)."""
     if caller.get("role") not in ("admin", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = date.fromisoformat(attend_date)
@@ -2184,9 +2186,16 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
     closed = {
         c.manager_id for c in db.query(DayApproval).filter(DayApproval.date == d).all()
     }
+    has_data = {
+        mid for (mid,) in db.query(Attendance.manager_id).filter(
+            Attendance.date == d,
+            Attendance.worker_name.isnot(None),
+            Attendance.worker_name.notin_(["", "nan", "NaN"]),
+        ).distinct().all()
+    }
     out = []
     for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name).all():
-        if m.id == sender_id or m.id in closed:
+        if m.id == sender_id or m.id in closed or m.id not in has_data:
             continue
         out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift})
     return out
