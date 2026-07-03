@@ -154,6 +154,7 @@ app.include_router(leaders.router)
 app.include_router(kaizen.router)
 app.include_router(activity.router)
 app.include_router(concerns.router)
+app.include_router(tasks.router)
 
 
 @app.get("/health")
