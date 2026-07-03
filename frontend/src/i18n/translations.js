@@ -2170,6 +2170,7 @@ const t = {
     "concerns.kpiPeakDate":       "Дата с макс. открытых обращений",
     "concerns.openLower":         "открыт.",
     "concerns.avgShort":          "в среднем",
+    "concerns.avgPerConcern":     "дн. в среднем на обращение",
     "concerns.itemsUnit":         "обращений",
     "concerns.ofOpen":            "от открытых",
     "concerns.allClear":          "Открытых обращений нет",
