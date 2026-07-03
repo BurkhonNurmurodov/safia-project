@@ -162,6 +162,9 @@ _MESSAGES = {
         "admin_role_added":  "✅ New role added and approved. Switch between profiles in the web app.",
         "add_role_hint":     "➕ Want to add another role? Use the button below to register for a new role.",
         "unknown_command":   "Send /start to begin.",
+        "adminreg_choose":   "👤 Select an admin profile:",
+        "adminreg_none":     "No available admin profiles.",
+        "adminreg_already":  "You are already an admin.",
     },
 }
 
