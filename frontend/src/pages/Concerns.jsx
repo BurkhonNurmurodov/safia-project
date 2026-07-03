@@ -803,12 +803,13 @@ export default function Concerns() {
             ]}
           />
           {period === "custom" && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-              <span style={{ color: "var(--text-4)" }}>—</span>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+            <div className="mt-2">
+              <DateRangePicker
+                dateFrom={startDate}
+                dateTo={endDate}
+                setDateFrom={setStartDate}
+                setDateTo={setEndDate}
+              />
             </div>
           )}
         </div>
