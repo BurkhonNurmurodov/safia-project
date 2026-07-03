@@ -41,6 +41,11 @@
   --brand-hover:   rgba(200,151,63,0.20);
   --brand-border:  rgba(200,151,63,0.25);
   --brand-ring:    rgba(200,151,63,0.45);
+
+  /* KPI accent text — lighter shades so large numerals stay legible on dark cards */
+  --kpi-red:    #f87171;
+  --kpi-amber:  #fbbf24;
+  --kpi-blue:   #60a5fa;
 }
 
 /* ── Light theme ──────────────────────────────────── */
