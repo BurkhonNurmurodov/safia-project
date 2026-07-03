@@ -706,6 +706,8 @@ export default function AdminUpload() {
 
       {adminTab === "users" && <UsersManagement />}
 
+      {adminTab === "profiles" && <ProfilesManagement />}
+
       {adminTab === "access" && <PageAccess />}
 
       {adminTab === "data" && (
