@@ -148,6 +148,15 @@ def _rename_profile(db: Session, ptype: str, pid: int, new_name: str) -> str:
         old = p.name
         if old == new_name:
             return old
+        # Registration resolves profiles by name — block ambiguous duplicates
+        # (leaders are scoped per unit, the rest per role).
+        dup = db.query(RoleProfile).filter(
+            RoleProfile.role == ptype, RoleProfile.name == new_name, RoleProfile.id != pid,
+        )
+        if ptype == "leader":
+            dup = dup.filter(RoleProfile.manager_id == p.manager_id)
+        if dup.first():
+            raise HTTPException(status_code=409, detail="Profile with this name already exists")
         for r in _bound_role_rows(db, ptype, pid):
             r.full_name = new_name
         p.name = new_name
