@@ -72,6 +72,11 @@
   --brand-hover:   rgba(176,120,40,0.15);
   --brand-border:  rgba(176,120,40,0.25);
   --brand-ring:    rgba(176,120,40,0.40);
+
+  /* KPI accent text — darker shades to hold ≥3:1 contrast on white cards */
+  --kpi-red:    #dc2626;
+  --kpi-amber:  #d97706;
+  --kpi-blue:   #2563eb;
 }
 
 * { box-sizing: border-box; }
