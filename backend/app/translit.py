@@ -40,12 +40,12 @@ def _translit_word(word: str) -> str:
 
 
 # Uzbek-Latin letters that MISREAD in English → their conventional English
-# renderings (x→kh, q→k, oʻ→u, gʻ→g, tutuq apostrophe dropped), so "Burxon"
+# renderings (x→kh, q→k, oʻ→u, gʻ→gh, tutuq apostrophe dropped), so "Burxon"
 # and its Cyrillic twin "Бурхон" both render "Burkhon" for lang="en".
 # Mirror of EN_MULTI / EN_SINGLE in transliterate.js.
 _EN_MULTI = [
-    ("oʻ", "u"), ("o'", "u"), ("o‘", "u"), ("o’", "u"), ("o`", "u"),
-    ("gʻ", "g"), ("g'", "g"), ("g‘", "g"), ("g’", "g"), ("g`", "g"),
+    ("oʻ", "u"),  ("o'", "u"),  ("o‘", "u"),  ("o’", "u"),  ("o`", "u"),
+    ("gʻ", "gh"), ("g'", "gh"), ("g‘", "gh"), ("g’", "gh"), ("g`", "gh"),
 ]
 _EN_SINGLE = {"x": "kh", "q": "k", "ʼ": "", "'": "", "’": "", "‘": "", "`": ""}
 
