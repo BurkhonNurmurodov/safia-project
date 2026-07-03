@@ -274,7 +274,7 @@ export default function Login() {
               </div>
             )}
 
-            {/* Leader — pick the supervisor (unit) they report to */}
+            {/* Leader — pick the supervisor (unit) first… */}
             {role === "leader" && (
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
@@ -290,7 +290,7 @@ export default function Login() {
                 />
                 <div
                   className="rounded-xl overflow-y-auto"
-                  style={{ maxHeight: 220, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
+                  style={{ maxHeight: 180, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
                 >
                   {loading ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
@@ -300,11 +300,49 @@ export default function Login() {
                     <button
                       key={name}
                       type="button"
-                      onClick={() => setSupervisor(name)}
+                      onClick={() => { setSupervisor(name); setFullName(""); }}
                       className="w-full text-left px-4 py-2.5 text-sm transition-colors"
                       style={{
                         color: supervisor === name ? "var(--brand-text)" : "var(--text-1)",
                         background: supervisor === name ? "var(--brand-bg)" : "transparent",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      {tl(name)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* …then one of that unit's pre-created leader profiles. Disabled
+                until a supervisor is chosen. */}
+            {role === "leader" && (
+              <div style={{ opacity: supervisor ? 1 : 0.45 }}>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
+                  {t("login.chooseLeader")}
+                </label>
+                <div
+                  className="rounded-xl overflow-y-auto"
+                  style={{ maxHeight: 180, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
+                >
+                  {!supervisor ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>
+                      {t("login.pickSupervisorFirst")}
+                    </div>
+                  ) : leadersForSupervisor.length === 0 ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>
+                      {t("login.noLeaders")}
+                    </div>
+                  ) : leadersForSupervisor.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => selectName(name)}
+                      className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                      style={{
+                        color: fullName === name ? "var(--brand-text)" : "var(--text-1)",
+                        background: fullName === name ? "var(--brand-bg)" : "transparent",
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
