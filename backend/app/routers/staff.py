@@ -2159,7 +2159,7 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
         c.manager_id for c in db.query(DayApproval).filter(DayApproval.date == d).all()
     }
     out = []
-    for m in db.query(Manager).order_by(Manager.shift, Manager.name).all():
+    for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name).all():
         if m.id == sender_id or m.id in closed:
             continue
         out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift})
