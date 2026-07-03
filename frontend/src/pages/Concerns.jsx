@@ -826,8 +826,8 @@ export default function Concerns() {
           {insights.longest ? (
             <>
               <Metric value={insights.longest.age} unit={t("concerns.days")} color="#ef4444" />
-              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_owner}>
-                {tl(insights.longest.row.concern_owner)}
+              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_text}>
+                {tl(insights.longest.row.concern_text)}
               </div>
             </>
           ) : (
