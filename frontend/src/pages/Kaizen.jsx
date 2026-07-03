@@ -17,9 +17,9 @@ import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
 // ── palette ────────────────────────────────────────────────────────────────
-// Traffic-light status hues from the admin-panel palette:
-// done green · in-progress yellow · not-started blue · overdue red.
-const C_DONE = "#22c55e", C_PROG = "#eab308", C_TODO = "#3b82f6", C_OVERDUE = "#ef4444";
+// Traffic-light status hues from the admin-panel palette. Not-started stays
+// neutral grey on purpose: there's a project but no process yet.
+const C_DONE = "#22c55e", C_PROG = "#eab308", C_TODO = "#94a3b8", C_OVERDUE = "#ef4444";
 const BRAND = "#C8973F";          // brand gold — the page accent (mirrors --brand)
 
 // rgba tint (soft chip/badge fills)
