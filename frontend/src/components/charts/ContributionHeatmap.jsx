@@ -1,9 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLang } from "../../context/LangContext";
 
 // GitHub-style contribution calendar. Renders one small square per calendar day,
-// laid out in week-columns (Sunday at top) with month labels along the top and
-// a few weekday labels down the left. Colour intensity scales with the day's
-// value relative to the busiest day in the series.
+// laid out in week-columns (Monday at top — local convention) with month labels
+// along the top and a few weekday labels down the left. Colour intensity scales
+// with the day's value relative to the busiest day in the series.
+//
+// The grid is always a clean block of whole weeks: at most MAX_WEEKS columns,
+// ending with the week that contains the last day of the series. Leading days
+// that would create a ragged partial first column are dropped; future days in
+// the current week render as blanks.
 //
 // Props:
 //   series      [{ day:'YYYY-MM-DD', minutes, count }]  — daily values
@@ -13,14 +19,37 @@ import { useMemo, useState } from "react";
 //   formatValue (v) => string for the tooltip value
 //   onDayClick  optional (dayObj) => void
 
-const CELL = 12;   // square size (px)
-const GAP = 3;     // gap between squares
-const STEP = CELL + GAP;
-const LABEL_W = 30; // left weekday-label gutter
-const MONTH_H = 16; // top month-label band
+const GAP = 3;      // gap between squares
+const LABEL_W = 32; // left weekday-label gutter
+const MONTH_H = 18; // top month-label band
+const MAX_WEEKS = 53;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const WEEKDAYS = ["", "Mon", "", "Wed", "", "Fri", ""]; // sparse, GitHub-style
+const I18N = {
+  uz: {
+    months: ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"],
+    weekdays: ["Du", "", "Cho", "", "Ju", "", ""],
+    active: (n) => `Faol kunlar: ${n}`, less: "Kam", more: "Ko'p", none: "Faollik yo'q",
+    locale: "uz-Latn-UZ",
+  },
+  uz_cyrl: {
+    months: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"],
+    weekdays: ["Ду", "", "Чо", "", "Жу", "", ""],
+    active: (n) => `Фаол кунлар: ${n}`, less: "Кам", more: "Кўп", none: "Фаоллик йўқ",
+    locale: "uz-Cyrl-UZ",
+  },
+  ru: {
+    months: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"],
+    weekdays: ["Пн", "", "Ср", "", "Пт", "", ""],
+    active: (n) => `Активных дней: ${n}`, less: "Меньше", more: "Больше", none: "Нет активности",
+    locale: "ru-RU",
+  },
+  en: {
+    months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    weekdays: ["Mon", "", "Wed", "", "Fri", "", ""],
+    active: (n) => `Active days: ${n}`, less: "Less", more: "More", none: "No activity",
+    locale: "en",
+  },
+};
 
 const hexToRgb = (hex) => {
   const n = parseInt(hex.slice(1), 16);
@@ -33,7 +62,9 @@ const lighten = (hex, amt) => {
   return `rgb(${ch(r)}, ${ch(g)}, ${ch(b)})`;
 };
 
+const parseDay = (s) => new Date(s + "T00:00:00Z");
 const iso = (d) => d.toISOString().slice(0, 10);
+const mondayIdx = (d) => (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
 
 export default function ContributionHeatmap({
   series = [],
@@ -43,9 +74,14 @@ export default function ContributionHeatmap({
   formatValue,
   onDayClick,
 }) {
-  const [hover, setHover] = useState(null); // { col, row, day, value, count }
+  const { lang } = useLang();
+  const L = I18N[lang] || I18N.ru;
 
-  const { columns, monthLabels, maxVal, totalActive } = useMemo(() => {
+  const [hover, setHover] = useState(null); // { col, row, day, value, count }
+  const scrollRef = useRef(null);
+  const [availW, setAvailW] = useState(0);
+
+  const { columns, monthLabels, maxVal, totalActive, lastDay } = useMemo(() => {
     const byDay = new Map();
     let maxVal = 0;
     let totalActive = 0;
@@ -56,51 +92,82 @@ export default function ContributionHeatmap({
       if (v > 0) totalActive++;
     }
 
-    if (!series.length) return { columns: [], monthLabels: [], maxVal: 0, totalActive: 0 };
+    if (!series.length) return { columns: [], monthLabels: [], maxVal: 0, totalActive: 0, lastDay: "" };
 
-    // Align the grid to whole weeks: start on the Sunday on/before the first day.
-    const first = new Date(series[0].day + "T00:00:00Z");
-    const last = new Date(series[series.length - 1].day + "T00:00:00Z");
-    const gridStart = new Date(first);
-    gridStart.setUTCDate(gridStart.getUTCDate() - gridStart.getUTCDay()); // back to Sunday
+    const first = parseDay(series[0].day);
+    const last = parseDay(series[series.length - 1].day);
+
+    // The grid ends with the (Mon-first) week containing the last day, and spans
+    // whole weeks back from there — capped so a leading partial week is dropped
+    // rather than rendered as a ragged one-cell column.
+    const gridEnd = new Date(last);
+    gridEnd.setUTCDate(gridEnd.getUTCDate() + (6 - mondayIdx(last)));
+    const firstWeekStart = new Date(first);
+    firstWeekStart.setUTCDate(firstWeekStart.getUTCDate() - mondayIdx(first));
+    const spanWeeks = Math.round(((gridEnd - firstWeekStart) / 86400000 + 1) / 7);
+    const weeks = Math.min(spanWeeks, MAX_WEEKS);
+    const gridStart = new Date(gridEnd);
+    gridStart.setUTCDate(gridStart.getUTCDate() - weeks * 7 + 1);
 
     const columns = [];
-    const monthLabels = [];
+    let rawLabels = [];
     let prevMonth = -1;
-    let cursor = new Date(gridStart);
-    let col = 0;
-    while (cursor <= last) {
+    const cursor = new Date(gridStart);
+    for (let col = 0; col < weeks; col++) {
+      // Month label anchored to the column whose Monday opens a new month.
+      const m = cursor.getUTCMonth();
+      if (m !== prevMonth) {
+        rawLabels.push({ col, month: m });
+        prevMonth = m;
+      }
       const cells = [];
       for (let row = 0; row < 7; row++) {
         const key = iso(cursor);
         const rec = byDay.get(key);
-        const inRange = cursor >= first && cursor <= last;
         cells.push({
           day: key,
           date: new Date(cursor),
-          inRange,
+          future: cursor > last,
           value: rec ? (rec[valueKey] || 0) : 0,
           count: rec ? (rec.count || 0) : 0,
         });
-        // Month label anchored to the row-0 cell that opens a new month.
-        if (row === 0) {
-          const m = cursor.getUTCMonth();
-          if (m !== prevMonth) {
-            monthLabels.push({ col, label: MONTHS[m] });
-            prevMonth = m;
-          }
-        }
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
       columns.push({ col, cells });
-      col++;
     }
-    return { columns, monthLabels, maxVal, totalActive };
+    // Drop a label that sits closer than 3 columns to the next one (a sliver of
+    // a month at the left edge) so labels never crowd or overlap.
+    const monthLabels = rawLabels.filter((l, i) => {
+      const next = rawLabels[i + 1];
+      return !next || next.col - l.col >= 3;
+    });
+    return { columns, monthLabels, maxVal, totalActive, lastDay: series[series.length - 1].day };
   }, [series, valueKey]);
 
+  // Cells grow to fill the card on wide screens and shrink (with horizontal
+  // scroll as the floor) on narrow ones.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setAvailW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const weeks = columns.length || MAX_WEEKS;
+  const step = availW
+    ? Math.max(13, Math.min(20, Math.floor((availW - LABEL_W - 4) / weeks)))
+    : 15;
+  const cell = step - GAP;
+
+  // Start scrolled to the most recent weeks when the grid overflows (mobile).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [columns.length, step]);
+
   // value → one of 5 levels (0 empty + 4 shades)
-  const levelColor = (value, inRange) => {
-    if (!inRange) return "transparent";
+  const levelColor = (value) => {
     if (value <= 0) return "var(--bg-inner)";
     const ratio = maxVal > 0 ? value / maxVal : 0;
     const level = ratio > 0.66 ? 4 : ratio > 0.33 ? 3 : ratio > 0.1 ? 2 : 1;
@@ -109,41 +176,40 @@ export default function ContributionHeatmap({
   };
 
   const fmt = formatValue || ((v) => `${v} ${label}`.trim());
-  const width = LABEL_W + columns.length * STEP;
-  const height = MONTH_H + 7 * STEP;
+  const width = LABEL_W + weeks * step;
 
   if (!columns.length) {
     return <div className="text-xs py-8 text-center" style={{ color: "var(--text-4)" }}>—</div>;
   }
 
   return (
-    <div style={{ overflowX: "auto", overflowY: "hidden", paddingBottom: 4 }}>
+    <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", paddingBottom: 4 }}>
       <div style={{ position: "relative", width, minWidth: width }}>
         {/* Month labels */}
         <div style={{ position: "relative", height: MONTH_H, marginLeft: LABEL_W }}>
           {monthLabels.map((m) => (
             <span
-              key={`${m.col}-${m.label}`}
+              key={`${m.col}-${m.month}`}
               style={{
-                position: "absolute", left: m.col * STEP, top: 0,
+                position: "absolute", left: m.col * step, top: 0,
                 fontSize: 10, color: "var(--text-4)", whiteSpace: "nowrap",
               }}
             >
-              {m.label}
+              {L.months[m.month]}
             </span>
           ))}
         </div>
 
         <div style={{ display: "flex" }}>
-          {/* Weekday labels */}
+          {/* Weekday labels (Mon-first rows) */}
           <div style={{ width: LABEL_W, position: "relative", flexShrink: 0 }}>
-            {WEEKDAYS.map((w, row) => (
+            {L.weekdays.map((w, row) => (
               w ? (
                 <span
                   key={row}
                   style={{
-                    position: "absolute", top: row * STEP - 1, right: 6,
-                    fontSize: 9, lineHeight: `${CELL}px`, color: "var(--text-4)",
+                    position: "absolute", top: row * step, right: 6,
+                    fontSize: 9, lineHeight: `${cell}px`, color: "var(--text-4)",
                   }}
                 >
                   {w}
@@ -156,17 +222,18 @@ export default function ContributionHeatmap({
           <div style={{ display: "flex", gap: GAP }}>
             {columns.map((c) => (
               <div key={c.col} style={{ display: "flex", flexDirection: "column", gap: GAP }}>
-                {c.cells.map((cell, row) => (
+                {c.cells.map((cellObj, row) => (
                   <div
-                    key={cell.day}
-                    onMouseEnter={() => cell.inRange && setHover({ col: c.col, row, ...cell })}
+                    key={cellObj.day}
+                    onMouseEnter={() => !cellObj.future && setHover({ col: c.col, row, ...cellObj })}
                     onMouseLeave={() => setHover(null)}
-                    onClick={() => cell.inRange && onDayClick?.(cell)}
+                    onClick={() => !cellObj.future && onDayClick?.(cellObj)}
                     style={{
-                      width: CELL, height: CELL, borderRadius: 2,
-                      background: levelColor(cell.value, cell.inRange),
-                      border: cell.inRange ? "1px solid var(--border)" : "none",
-                      cursor: cell.inRange && onDayClick ? "pointer" : "default",
+                      width: cell, height: cell, borderRadius: 3,
+                      background: cellObj.future ? "transparent" : levelColor(cellObj.value),
+                      border: cellObj.future ? "none" : "1px solid var(--border)",
+                      boxShadow: cellObj.day === lastDay ? `0 0 0 1.5px ${accent}` : "none",
+                      cursor: !cellObj.future && onDayClick ? "pointer" : "default",
                       outline: hover?.col === c.col && hover?.row === row ? "1px solid var(--brand-text)" : "none",
                       transition: "outline .08s",
                     }}
@@ -182,8 +249,8 @@ export default function ContributionHeatmap({
           <div
             style={{
               position: "absolute",
-              left: Math.min(LABEL_W + hover.col * STEP + CELL / 2, width - 120),
-              top: MONTH_H + hover.row * STEP + CELL + 6,
+              left: Math.max(70, Math.min(LABEL_W + hover.col * step + cell / 2, width - 90)),
+              top: MONTH_H + hover.row * step + cell + 6,
               transform: "translateX(-50%)",
               zIndex: 20, pointerEvents: "none",
               background: "rgba(18,21,31,0.94)", color: "#f5f6f8",
@@ -193,23 +260,23 @@ export default function ContributionHeatmap({
             }}
           >
             <div style={{ fontWeight: 700 }}>
-              {hover.value > 0 ? fmt(hover.value) : "No activity"}
+              {hover.value > 0 ? fmt(hover.value) : L.none}
             </div>
             <div style={{ opacity: 0.7, fontSize: 10, marginTop: 1 }}>
-              {hover.date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+              {hover.date.toLocaleDateString(L.locale, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
             </div>
           </div>
         )}
 
         {/* Legend */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, marginLeft: LABEL_W }}>
-          <span style={{ fontSize: 10, color: "var(--text-4)" }}>{totalActive} active days</span>
+          <span style={{ fontSize: 10, color: "var(--text-4)" }}>{L.active(totalActive)}</span>
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 10, color: "var(--text-4)" }}>Less</span>
+          <span style={{ fontSize: 10, color: "var(--text-4)" }}>{L.less}</span>
           {["var(--bg-inner)", lighten(accent, 0.62), lighten(accent, 0.4), lighten(accent, 0.18), accent].map((c, i) => (
-            <span key={i} style={{ width: CELL, height: CELL, borderRadius: 2, background: c, border: "1px solid var(--border)" }} />
+            <span key={i} style={{ width: 11, height: 11, borderRadius: 3, background: c, border: "1px solid var(--border)" }} />
           ))}
-          <span style={{ fontSize: 10, color: "var(--text-4)" }}>More</span>
+          <span style={{ fontSize: 10, color: "var(--text-4)" }}>{L.more}</span>
         </div>
       </div>
     </div>
