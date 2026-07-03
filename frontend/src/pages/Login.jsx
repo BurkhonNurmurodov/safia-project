@@ -233,24 +233,44 @@ export default function Login() {
               </div>
             )}
 
-            {/* Top-manager / Leader — type own name */}
-            {role !== "supervisor" && role !== "shift-manager" && (
+            {/* Top-manager — pick their pre-created name profile */}
+            {role === "top-manager" && (
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
-                  {t("login.fullName")}
+                  {t("login.chooseName")}
                 </label>
                 <input
                   type="text"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  placeholder={t("login.namePlaceholder")}
-                  required
-                  autoFocus
-                  className="w-full rounded-lg px-3 py-2.5 text-sm outline-none"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t("login.search")}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2"
                   style={{ background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                  onFocus={e => e.target.style.boxShadow = "0 0 0 2px var(--brand-ring)"}
-                  onBlur={e => e.target.style.boxShadow = "none"}
                 />
+                <div
+                  className="rounded-xl overflow-y-auto"
+                  style={{ maxHeight: 220, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
+                >
+                  {loading ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                  ) : topManagers.length === 0 ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
+                  ) : topManagers.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => selectName(name)}
+                      className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                      style={{
+                        color: fullName === name ? "var(--brand-text)" : "var(--text-1)",
+                        background: fullName === name ? "var(--brand-bg)" : "transparent",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      {tl(name)}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
