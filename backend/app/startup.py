@@ -220,6 +220,24 @@ def add_admin_language_column() -> None:
         db.close()
 
 
+def add_profiles_columns() -> None:
+    """Pre-created-profiles rollout columns (idempotent): managers.archived
+    (units with history are archived, not deleted) and admins.profile_id
+    (which admin RoleProfile the account claimed via /adminreg)."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE managers ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        db.execute(text("ALTER TABLE admins ADD COLUMN IF NOT EXISTS profile_id INTEGER"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] profiles columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_edit_requests_batch_id() -> None:
     """Add batch_id column to edit_requests if it does not exist yet (idempotent)."""
     db = SessionLocal()
