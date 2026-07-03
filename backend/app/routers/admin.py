@@ -282,24 +282,29 @@ def add_user_role(
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    # Derive role_id + role-scoped display name, exactly like the bot does.
+    # Derive role_id + role-scoped display name from the pre-created profile,
+    # exactly like the bot does on self-registration.
     if payload.role == "supervisor":
-        mgr = db.query(Manager).filter(Manager.id == payload.role_id).first()
+        mgr = db.query(Manager).filter(Manager.id == payload.role_id,
+                                       Manager.archived.is_(False)).first()
         if not mgr:
             raise HTTPException(status_code=400, detail="Unit not found")
         role_id, full_name = mgr.id, mgr.name
     elif payload.role == "leader":
-        # A leader keeps their own name; role_id points at their supervisor's unit.
-        mgr = db.query(Manager).filter(Manager.id == payload.role_id).first()
-        if not mgr:
-            raise HTTPException(status_code=400, detail="Unit not found")
-        role_id, full_name = mgr.id, user.full_name
+        lp = db.query(RoleProfile).filter_by(id=payload.role_id, role="leader").first()
+        if not lp:
+            raise HTTPException(status_code=400, detail="Leader profile not found")
+        role_id, full_name = lp.manager_id, lp.name
     elif payload.role == "shift-manager":
-        if payload.role_id not in (1, 2, 3, 4):
-            raise HTTPException(status_code=400, detail="Invalid shift slot")
-        role_id, full_name = payload.role_id, SHIFT_ADMIN_SLOTS[payload.role_id - 1]["name"]
+        p = db.query(RoleProfile).filter_by(id=payload.role_id, role="shift-manager").first()
+        if not p:
+            raise HTTPException(status_code=400, detail="Shift-manager profile not found")
+        role_id, full_name = p.id, p.name
     else:  # top-manager
-        role_id, full_name = None, user.full_name
+        p = db.query(RoleProfile).filter_by(id=payload.role_id, role="top-manager").first()
+        if not p:
+            raise HTTPException(status_code=400, detail="Top-manager profile not found")
+        role_id, full_name = p.id, p.name
 
     now = datetime.now(timezone.utc)
     existing = db.query(TelegramUserRole).filter_by(
