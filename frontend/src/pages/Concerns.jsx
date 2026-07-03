@@ -20,14 +20,15 @@ import { useChartTheme } from "../hooks/useChartTheme";
 
 const STATUSES = ["todo", "doing", "done"];
 
-// status → traffic-light tint from the admin-panel palette:
-// not-started blue · doing yellow · done green (overdue red lives in the charts).
-const STATUS_COLOR = { todo: "#3b82f6", doing: "#eab308", done: "#22c55e" };
+// status → traffic-light tint from the admin-panel palette. Not-started stays
+// neutral grey on purpose (a project exists but no process yet):
+// todo grey · doing yellow · done green (overdue red lives in the charts).
+const STATUS_COLOR = { todo: "#94a3b8", doing: "#eab308", done: "#22c55e" };
 
 // Chart-only palette — same status language as the Kaizen page: red is the
-// alarm hue for overdue, still-within-deadline "todo" stays the status blue.
+// alarm hue for overdue, still-within-deadline "todo" stays the neutral grey.
 const CHART_BRAND = "#C8973F";
-const CHART_TODO = "#3b82f6";
+const CHART_TODO = "#94a3b8";
 const CHART_OVERDUE = "#ef4444";
 
 // Localized ISO-date formatter (mirrors the Leaders page) — turns 2026-07-02
