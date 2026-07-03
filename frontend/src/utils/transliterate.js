@@ -136,6 +136,62 @@ function latinWordToCyrillic(word) {
   return out;
 }
 
+// ─── Uzbek Latin → English Latin ─────────────────────────────────────────────
+// Uzbek Latin letters that MISREAD in English are remapped to their
+// conventional English renderings (the Russian-mediated spellings used by
+// international press and sports federations): x→kh (Burxon→Burkhon), q→k
+// (Quvondiq→Kuvondik), oʻ→u (Oʻzbekiston→Uzbekistan), gʻ→g (Ulugʻbek→Ulugbek);
+// the tutuq apostrophe is dropped (Aʼzam→Azam). sh/ch/j/h/ng read fine as-is.
+// Keep in sync with backend/app/translit.py.
+const EN_MULTI = [
+  ["oʻ", "u"], ["o'", "u"], ["o‘", "u"], ["o’", "u"], ["o`", "u"],
+  ["gʻ", "g"], ["g'", "g"], ["g‘", "g"], ["g’", "g"], ["g`", "g"],
+];
+
+const EN_SINGLE = { x: "kh", q: "k", "ʼ": "", "'": "", "’": "", "‘": "", "`": "" };
+
+function latinWordToEnglish(word) {
+  const src = [...word];
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const ch  = src[i];
+    const low = ch.toLowerCase();
+
+    const pair = src.slice(i, i + 2).join("").toLowerCase();
+    const multi = EN_MULTI.find(([lat]) => lat === pair);
+    if (multi) {
+      out += ch === low ? multi[1] : multi[1].toUpperCase();
+      i += 2;
+      continue;
+    }
+
+    const single = EN_SINGLE[low];
+    if (single !== undefined) {
+      if (ch === low || !single) {
+        out += single;
+      } else {
+        // "XURSHID" → "KHURSHID", "Xurshid" → "Khurshid"
+        const next = src[i + 1];
+        out += next && next !== next.toLowerCase()
+          ? single.toUpperCase()
+          : single[0].toUpperCase() + single.slice(1);
+      }
+    } else {
+      out += ch;
+    }
+    i += 1;
+  }
+  return out;
+}
+
+function toEnglish(value) {
+  return value
+    .split(/(\s+)/)
+    .map(token => /\s/.test(token) ? token : latinWordToEnglish(token))
+    .join("");
+}
+
 /**
  * Derive a per-language display name from the canonical Uzbek-Latin name.
  * Pure alphabet switching — no dictionary, no external API.
@@ -143,7 +199,7 @@ function latinWordToCyrillic(word) {
  *   uz      → unchanged
  *   uz_cyrl → Uzbek Cyrillic ("Gʻulom" → "Ғулом")
  *   ru      → Russian Cyrillic ("Gʻulom" → "Гулом")
- *   en      → Latin with the Uzbek modifier letters normalised to '
+ *   en      → conventional English rendering ("Burxon" → "Burkhon")
  */
 export function convertFromUz(value, targetLang) {
   if (!value) return value;
@@ -162,7 +218,8 @@ export function convertFromUz(value, targetLang) {
     }
     return cyr;
   }
-  // en (and any other Latin-script language): normalise ʻ/‘/` to a plain '
+  if (targetLang === "en") return transliterate(value, "en");
+  // any other Latin-script language: normalise ʻ/‘/` to a plain '
   return value.replace(/[ʻ‘`]/g, "'");
 }
 
