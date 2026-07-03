@@ -522,7 +522,7 @@ export default function Kaizen() {
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 4, borderRadiusApplication: "end" } },
     colors: [BRAND],
-    fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: [mix(BRAND, -0.22)], inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    fill: { type: "solid" },
     states: { hover: { filter: { type: "lighten", value: 0.08 } } },
     xaxis: { categories: typeCats, labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 220 } },
