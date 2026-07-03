@@ -840,7 +840,7 @@ export default function Concerns() {
         <InsightCard icon={Gauge} tint="#f59e0b" label={t("concerns.kpiSlowestBrigadir")}>
           {insights.slowest ? (
             <>
-              <Metric value={insights.slowest.avg} unit={t("concerns.days")} color="#f59e0b" />
+              <Metric value={insights.slowest.avg} unit={t("concerns.avgPerConcern")} color="#f59e0b" />
               <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.slowest.name}>
                 {tl(insights.slowest.name)}
               </div>
