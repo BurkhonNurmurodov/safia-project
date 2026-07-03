@@ -237,10 +237,15 @@ export function transliterate(value, lang) {
   if (!value || lang === "ru" || lang === "uz_cyrl") return value;
 
   // Split on whitespace boundaries so each word is capitalised independently.
-  return value
+  const latin = value
     .split(/(\s+)/)                   // keep whitespace tokens to preserve spacing
     .map(token => /\s/.test(token) ? token : transliterateWord(token))
     .join("");
+
+  // English additionally remaps the Uzbek-Latin letters that misread in
+  // English (x→kh, q→k, oʻ→u, gʻ→g, tutuq dropped) — so "Burxon" and its
+  // Cyrillic twin "Бурхон" both render "Burkhon".
+  return lang === "en" ? toEnglish(latin) : latin;
 }
 
 /**
