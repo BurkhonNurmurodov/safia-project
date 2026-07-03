@@ -359,10 +359,10 @@ def leave_role(role_ref: int, token: str = Depends(_oauth2), db: Session = Depen
     }
 
 
-@router.get("/shift-admins")
-def list_shift_admins():
-    """Returns the 4 fixed shift-admin slots for the registration picker."""
-    return SHIFT_ADMIN_SLOTS
+# The old public /shift-admins endpoint is gone: shift-manager profiles are
+# admin-created now and the registration picker reads them from the
+# initData-gated /api/profiles/registration-options instead. SHIFT_ADMIN_SLOTS
+# above survives only as the source for the one-time profiles backfill.
 
 
 @router.get("/bot-info")
