@@ -17,9 +17,9 @@ import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
 // ── palette ────────────────────────────────────────────────────────────────
-// On-brand status hues: desaturated to glow rather than glare against charcoal,
-// matching the emerald/amber/rose set used across Leaders & Trudoyomkost.
-const C_DONE = "#10b981", C_PROG = "#7FB3E8", C_TODO = "#94a3b8", C_OVERDUE = "#f43f5e";
+// Traffic-light status hues from the admin-panel palette:
+// done green · in-progress yellow · not-started blue · overdue red.
+const C_DONE = "#22c55e", C_PROG = "#eab308", C_TODO = "#3b82f6", C_OVERDUE = "#ef4444";
 const BRAND = "#C8973F";          // brand gold — the page accent (mirrors --brand)
 
 // rgba tint + lighten/darken toward white/black (chart gradients & soft fills)
