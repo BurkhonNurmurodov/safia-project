@@ -2743,7 +2743,7 @@ def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
     if role == "supervisor":
         return [role_id] if role_id else []
     if role == "shift-manager":
-        shift = _shift_of_slot(role_id)
+        shift = _sm_shift(db, role_id)
         return [m.id for m in db.query(Manager).filter(Manager.shift == shift).all()]
     return []
 
