@@ -6,6 +6,8 @@ import {
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
   Clock, TrendingUp, FolderKanban, FileText, Tag, UserCheck, UserRound,
   CircleDot, ChevronUp, ChevronDown, ChevronsUpDown,
+  Pin, Puzzle, Handshake, Target, ChartColumn, DraftingCompass,
+  Lightbulb, Wrench, Folder,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
