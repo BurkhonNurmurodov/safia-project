@@ -38,6 +38,7 @@ export const PAGES = [
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
+  { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
 ];
 
