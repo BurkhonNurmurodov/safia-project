@@ -1003,7 +1003,7 @@ def pending_count(caller=Depends(_require_staff), db: Session = Depends(get_db))
         if not sm_slot:
             return {"count": 0}
         shift   = _sm_shift(db, sm_slot)
-        mgr_ids = [m.id for m in db.query(Manager).filter_by(shift=shift).all()]
+        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
 
     return {"count": q.count()}
@@ -1035,7 +1035,7 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
         if not role_id:
             return []
         shift       = 1 if role_id in [1, 2] else 2
-        mgr_ids     = [m.id for m in db.query(Manager).filter_by(shift=shift).all()]
+        mgr_ids     = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
     # admin sees all
 
@@ -1522,7 +1522,7 @@ def _scope_deletion_requests(caller, db: Session):
         if not role_id:
             return []
         shift   = 1 if role_id in [1, 2] else 2
-        mgr_ids = [m.id for m in db.query(Manager).filter_by(shift=shift).all()]
+        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
     # admin → all
     return q.order_by(EditRequest.date.desc()).all()
@@ -1549,7 +1549,7 @@ def _scope_documents(q, caller, db: Session):
         if not role_id:
             return q.filter(HrDocument.id < 0)   # always-empty
         shift   = 1 if role_id in [1, 2] else 2
-        mgr_ids = [m.id for m in db.query(Manager).filter_by(shift=shift).all()]
+        mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         return q.filter(HrDocument.manager_id.in_(mgr_ids))
     # admin → everything
     return q
