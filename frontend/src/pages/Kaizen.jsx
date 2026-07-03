@@ -481,7 +481,7 @@ export default function Kaizen() {
     theme: chartTheme,
     colors: [BRAND],
     stroke: { curve: "smooth", width: 2.5 },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 95, 100] } },
+    fill: { type: "solid", opacity: 0.15 },
     dataLabels: { enabled: false },
     xaxis: {
       categories: shownMonths.map((m) => monthLabel(m.key, { month: "short" })),
