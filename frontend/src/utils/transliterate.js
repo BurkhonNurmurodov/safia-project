@@ -138,14 +138,14 @@ function latinWordToCyrillic(word) {
 
 // ─── Uzbek Latin → English Latin ─────────────────────────────────────────────
 // Uzbek Latin letters that MISREAD in English are remapped to their
-// conventional English renderings (the Russian-mediated spellings used by
-// international press and sports federations): x→kh (Burxon→Burkhon), q→k
-// (Quvondiq→Kuvondik), oʻ→u (Oʻzbekiston→Uzbekistan), gʻ→g (Ulugʻbek→Ulugbek);
-// the tutuq apostrophe is dropped (Aʼzam→Azam). sh/ch/j/h/ng read fine as-is.
+// conventional English renderings (the spellings used by international press
+// and sports federations): x→kh (Burxon→Burkhon), q→k (Quvondiq→Kuvondik),
+// oʻ→u (Oʻzbekiston→Uzbekistan), gʻ→gh (Ulugʻbek→Ulughbek); the tutuq
+// apostrophe is dropped (Aʼzam→Azam). sh/ch/j/h/ng read fine as-is.
 // Keep in sync with backend/app/translit.py.
 const EN_MULTI = [
-  ["oʻ", "u"], ["o'", "u"], ["o‘", "u"], ["o’", "u"], ["o`", "u"],
-  ["gʻ", "g"], ["g'", "g"], ["g‘", "g"], ["g’", "g"], ["g`", "g"],
+  ["oʻ", "u"],  ["o'", "u"],  ["o‘", "u"],  ["o’", "u"],  ["o`", "u"],
+  ["gʻ", "gh"], ["g'", "gh"], ["g‘", "gh"], ["g’", "gh"], ["g`", "gh"],
 ];
 
 const EN_SINGLE = { x: "kh", q: "k", "ʼ": "", "'": "", "’": "", "‘": "", "`": "" };
