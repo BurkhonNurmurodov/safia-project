@@ -61,6 +61,9 @@ DEFAULT_PAGE_ACCESS = {
     # Leader concerns ("Xavotirlar") log. Leaders manage their own concerns by
     # default; admins always have full access and act for any leader.
     "concerns": ["leader"],
+    # Leader tasks ("DAILY протокол") board. Supervisors assign tasks to their
+    # leaders; leaders work their own queue; admins see everything.
+    "tasks": ["supervisor", "leader"],
     # Users-activity & usage statistics (who's active, time-in-app, contribution
     # calendar). Admin-only by default; open up roles from the Access tab.
     "activity": [],
