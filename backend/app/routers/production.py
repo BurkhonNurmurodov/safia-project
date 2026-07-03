@@ -896,14 +896,14 @@ def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None, capacity_pc
 
     for mid, entry in sorted(loaded.items(), key=lambda kv: kv[1]["name"].lower()):
         name = entry["name"]
-        wd_vals = [[] for _ in range(7)]
+        wd_vals = [[] for _ in range(7)]     # (date, workers) pairs per weekday
         all_vals: list[int] = []
         for day, v in entry["days"].items():
             if not (d_from <= day <= d_to):
                 continue
             w = _workers_from_plan(v["plan"], cap_min)
             wd = day.weekday()
-            wd_vals[wd].append(w)
+            wd_vals[wd].append((day, w))
             all_vals.append(w)
             daily_total[day] = daily_total.get(day, 0) + w
         if not all_vals:
@@ -912,10 +912,17 @@ def _worker_stats_payload(db, manager_ids, d_from, d_to, shift=None, capacity_pc
 
         sup_cvs, predictable_wds, rated = [], [], []
         for wd in range(7):
-            st = _cell_stats(wd_vals[wd])
+            vals = [w for _, w in wd_vals[wd]]
+            st = _cell_stats(vals)
+            # Чақириш mirrors the forecast table: moving average (mean ± σ) over
+            # the FORECAST_WEEKS most recent same-weekday values — i.e. the call
+            # for the *next* occurrence of this weekday — not the full-range median.
+            ma = _cell_stats([w for _, w in sorted(wd_vals[wd])[-FORECAST_WEEKS:]])
+            st["recommend"] = int(round(ma["mean"])) if ma["mean"] is not None else None
+            st["band_lo"], st["band_hi"] = ma["band_lo"], ma["band_hi"]
             cells.append({"manager_id": mid, "name": name, "weekday": wd, **st})
             if st["n"] > 0:
-                wd_pool[wd].extend(wd_vals[wd])
+                wd_pool[wd].extend(vals)
                 wd_total_sup[wd] += 1
             if st["cv"] is not None:
                 sup_cvs.append(st["cv"])
