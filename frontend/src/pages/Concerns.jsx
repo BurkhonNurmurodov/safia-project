@@ -20,16 +20,15 @@ import { useChartTheme } from "../hooks/useChartTheme";
 
 const STATUSES = ["todo", "doing", "done"];
 
-// status → traffic-light-ish tint for the badge (open = rose, doing = amber,
-// done = emerald — deliberately soft so they glow on the dark dashboard).
-const STATUS_COLOR = { todo: "#F43F5E", doing: "#F59E0B", done: "#10B981" };
+// status → traffic-light tint from the admin-panel palette:
+// not-started blue · doing yellow · done green (overdue red lives in the charts).
+const STATUS_COLOR = { todo: "#3b82f6", doing: "#eab308", done: "#22c55e" };
 
-// Chart-only palette. With "overdue" pulled out as its own donut slice, rose becomes
-// the alarm hue there and the still-within-deadline "todo" drops to neutral slate —
-// same chart language as the Kaizen donut. The table pills keep STATUS_COLOR.
+// Chart-only palette — same status language as the Kaizen page: red is the
+// alarm hue for overdue, still-within-deadline "todo" stays the status blue.
 const CHART_BRAND = "#C8973F";
-const CHART_TODO = "#94a3b8";
-const CHART_OVERDUE = "#f43f5e";
+const CHART_TODO = "#3b82f6";
+const CHART_OVERDUE = "#ef4444";
 
 // Localized ISO-date formatter (mirrors the Leaders page) — turns 2026-07-02
 // into "2-iyul, 2026" / "2 июля 2026" / "2nd July, 2026" per the active lang.
