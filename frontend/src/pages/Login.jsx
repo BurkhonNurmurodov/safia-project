@@ -26,29 +26,20 @@ export default function Login() {
   const [fullName,   setFullName]   = useState("");
   const [supervisor, setSupervisor] = useState("");   // leader → chosen brigadir/unit
   const [search,     setSearch]     = useState("");
-  const [managers,     setManagers]     = useState([]);
-  const [shiftAdmins,  setShiftAdmins]  = useState([]);
-  const [loading,      setLoading]      = useState(false);
-  const [submitted,    setSubmitted]    = useState(false);
+  const [options,    setOptions]    = useState(null); // pre-created profiles, all roles
+  const [loading,    setLoading]    = useState(false);
+  const [submitted,  setSubmitted]  = useState(false);
 
-  // Fetch manager/unit names — supervisors pick their own unit, leaders pick
-  // the unit of the supervisor they report to.
+  // Every role now picks a pre-created profile — nobody types a name. One
+  // gated endpoint serves all the pickers: it validates Telegram initData so
+  // the name lists are only visible inside the bot's mini-app.
   useEffect(() => {
-    if (role === "supervisor" || role === "leader") {
-      setLoading(true);
-      api.get("/api/managers")
-        .then(r => setManagers(r.data))
-        .catch(() => setManagers([]))
-        .finally(() => setLoading(false));
-    }
-    if (role === "shift-manager") {
-      setLoading(true);
-      api.get("/api/auth/shift-admins")
-        .then(r => setShiftAdmins(r.data))
-        .catch(() => setShiftAdmins([]))
-        .finally(() => setLoading(false));
-    }
-  }, [role]);
+    setLoading(true);
+    api.post("/api/profiles/registration-options", { init_data: tg?.initData || "__dev__" })
+      .then(r => setOptions(r.data))
+      .catch(() => setOptions(null))
+      .finally(() => setLoading(false));
+  }, []);
 
   function selectRole(r) {
     setRole(r);
@@ -62,7 +53,7 @@ export default function Login() {
     setFullName(name);
   }
 
-  // Leaders must both type their name and pick a supervisor before submitting.
+  // Leaders pick a supervisor first, then one of that unit's leader profiles.
   const canSubmit = fullName.trim() && role && (role !== "leader" || supervisor);
 
   function handleSubmit(e) {
