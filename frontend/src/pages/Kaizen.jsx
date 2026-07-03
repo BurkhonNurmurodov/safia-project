@@ -474,7 +474,7 @@ export default function Kaizen() {
   };
 
   // Headline activity area chart (the "Revenue Overview" analog), windowed by
-  // the period selector. Smooth gold gradient over the monthly task buckets.
+  // the period selector. Static gold line with a flat soft fill.
   const shownMonths = period === "all" ? A.months : A.months.slice(-Number(period));
   const areaOpts = {
     chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
