@@ -442,8 +442,8 @@ export default function Kaizen() {
       hollow: { size: "60%" },
       track: { background: "var(--bg-inner)" },
       dataLabels: {
-        name: { offsetY: 22, color: legendColor, fontSize: "11px" },
-        value: { offsetY: -16, fontSize: "26px", fontWeight: 700, color: "var(--text-1)", formatter: (v) => `${Math.round(v)}%` },
+        name: { show: false },
+        value: { offsetY: 10, fontSize: "30px", fontWeight: 700, color: "var(--text-1)", formatter: (v) => `${Math.round(v)}%` },
       },
     } },
     fill: { type: "solid", colors: [BRAND] },
