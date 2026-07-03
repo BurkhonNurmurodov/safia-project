@@ -957,10 +957,11 @@ export default function Concerns() {
               activeCount={filterActiveCount}
               anyActive={anyFilterActive}
               onClearAll={clearAllFilters}
+              compact
             />
             <button
               onClick={openCreate}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
             >
               <Plus size={14} /> {t("concerns.add")}
             </button>
