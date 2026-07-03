@@ -837,16 +837,16 @@ export default function Concerns() {
         )}
       </div>
 
-      {/* KPIs — three headline insights (rich, colour-coded cards) */}
+      {/* KPIs — three headline insights (rich, colour-coded cards). Units are
+          pluralised ("1 day" / "3 days"; invariant in uz, abbreviated in ru)
+          and accent colours come from theme-aware --kpi-* variables. */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         {/* 1 ─ longest-running unresolved problem */}
         <InsightCard icon={Hourglass} tint="#ef4444" label={t("concerns.kpiLongestOpen")}>
           {insights.longest ? (
             <>
-              <Metric value={insights.longest.age} unit={t("concerns.days")} color="#ef4444" />
-              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_text}>
-                {tl(insights.longest.row.concern_text)}
-              </div>
+              <Metric value={insights.longest.age} unit={t(insights.longest.age === 1 ? "concerns.day" : "concerns.days")} color="var(--kpi-red)" />
+              <Subject text={tl(insights.longest.row.concern_text)} title={insights.longest.row.concern_text} />
             </>
           ) : (
             <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
@@ -857,10 +857,8 @@ export default function Concerns() {
         <InsightCard icon={Gauge} tint="#f59e0b" label={t("concerns.kpiSlowestBrigadir")}>
           {insights.slowest ? (
             <>
-              <Metric value={insights.slowest.avg} unit={t("concerns.avgPerConcern")} color="#f59e0b" />
-              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.slowest.name}>
-                {tl(insights.slowest.name)}
-              </div>
+              <Metric value={insights.slowest.avg} unit={t(insights.slowest.avg === 1 ? "concerns.day" : "concerns.days")} suffix={t("concerns.avgSuffix")} color="var(--kpi-amber)" />
+              <Subject text={tl(insights.slowest.name)} />
             </>
           ) : (
             <Empty icon={Gauge} color="var(--text-4)" text={t("concerns.noData")} />
@@ -871,10 +869,8 @@ export default function Concerns() {
         <InsightCard icon={CalendarClock} tint="#3b82f6" label={t("concerns.kpiPeakDate")}>
           {insights.peak ? (
             <>
-              <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="#3b82f6" />
-              <div className="text-[15px] font-bold leading-snug" style={{ color: "var(--text-1)" }}>
-                {fmtDate(insights.peak.date, lang)}
-              </div>
+              <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="var(--kpi-blue)" />
+              <Subject text={fmtDate(insights.peak.date, lang)} />
             </>
           ) : (
             <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
