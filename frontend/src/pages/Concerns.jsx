@@ -208,43 +208,60 @@ function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
 }
 
 // ── rich KPI card primitives ────────────────────────────────────────────────
-// Card shell: tinted icon chip + uppercase label + a soft colour glow in the
-// corner, with the metric body passed as children.
+// Card shell: tinted icon chip + uppercase label pinned top, metric body pinned
+// bottom so the numerals share one baseline across the whole KPI row regardless
+// of how the labels wrap. Corner glow is a radial gradient (smooth falloff, no
+// blur-filter banding).
 function InsightCard({ icon: Icon, tint, label, children }) {
   return (
-    <div className="relative rounded-2xl p-4 flex flex-col gap-2 overflow-hidden" style={cardStyle}>
-      <div aria-hidden className="absolute -top-10 -right-10 w-28 h-28 rounded-full pointer-events-none"
-           style={{ background: tint, opacity: 0.1, filter: "blur(26px)" }} />
-      <div className="flex items-center gap-2 relative">
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
+    <div className="relative rounded-2xl p-4 flex flex-col overflow-hidden" style={cardStyle}>
+      <div aria-hidden className="absolute inset-0 pointer-events-none"
+           style={{ background: `radial-gradient(140px 140px at calc(100% - 8px) -8px, ${tint}29, transparent 70%)` }} />
+      <div className="flex items-center gap-2.5 relative">
+        <span className="inline-flex items-center justify-center w-8 h-8 rounded-[10px] flex-shrink-0"
               style={{ background: `${tint}1f`, color: tint }}>
-          <Icon size={15} />
+          <Icon size={16} />
         </span>
-        <span className="text-[10px] uppercase tracking-wider font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
+        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
           {label}
         </span>
       </div>
-      {children}
+      <div className="relative flex flex-col gap-1 mt-4 grow justify-end min-h-[56px]">
+        {children}
+      </div>
     </div>
   );
 }
 
-// Big colour-coded number + unit, with an optional trailing qualifier ("avg").
+// Big colour-coded number + terse unit, with an optional quieter qualifier
+// ("avg per concern"). Tabular figures keep digits on-grid without switching
+// to a second typeface.
 function Metric({ value, unit, color, suffix }) {
   return (
     <div className="flex items-baseline gap-1.5 leading-none">
-      <span className="text-3xl font-bold font-mono" style={{ color }}>{value}</span>
-      {unit && <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{unit}</span>}
-      {suffix && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
+      <span className="text-3xl font-bold tracking-tight tabular-nums" style={{ color }}>{value}</span>
+      {unit && <span className="text-xs font-semibold" style={{ color: "var(--text-3)" }}>{unit}</span>}
+      {suffix && <span className="text-[11px] font-medium" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
     </div>
   );
 }
 
-// Placeholder body when a card has nothing meaningful to surface.
+// One shared style for the line under the metric (problem text / name / date),
+// clamped to a single line so every card body has identical height.
+function Subject({ text, title }) {
+  return (
+    <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }} title={title || text}>
+      {text}
+    </div>
+  );
+}
+
+// Placeholder body when a card has nothing meaningful to surface; my-auto
+// centres it inside the reserved body height so empty cards don't collapse.
 function Empty({ icon: Icon, color, text }) {
   return (
-    <div className="flex items-center gap-2 py-2">
-      <Icon size={18} style={{ color }} />
+    <div className="flex items-center gap-2 my-auto">
+      <Icon size={18} className="flex-shrink-0" style={{ color }} />
       <span className="text-sm font-medium" style={{ color: "var(--text-3)" }}>{text}</span>
     </div>
   );
