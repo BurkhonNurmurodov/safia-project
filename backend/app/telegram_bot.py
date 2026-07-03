@@ -559,6 +559,99 @@ def _webapp_data(message: types.Message):
     bot.send_message(tid, _msg(lang, "share_contact_prompt"), reply_markup=_contact_kb(lang))
 
 
+@bot.message_handler(commands=["adminreg"])
+def _adminreg(message: types.Message):
+    """Admin-profile claiming. Never part of the web registration flow: admins
+    pre-create named admin profiles in the panel, and this command offers the
+    UNASSIGNED ones as inline buttons (a pending claim keeps the button visible
+    for others — first approval wins). One admin profile — one user: existing
+    admins are turned away."""
+    tid  = message.from_user.id
+    lang = _get_lang(tid)
+    if tid in _admin_ids():
+        bot.send_message(tid, _msg(lang, "adminreg_already"))
+        return
+    with SessionLocal() as db:
+        assigned = {a.profile_id for a in db.query(Admin).all() if a.profile_id}
+        free = [
+            p for p in db.query(RoleProfile).filter_by(role="admin")
+            .order_by(RoleProfile.name).all()
+            if p.id not in assigned
+        ]
+    if not free:
+        bot.send_message(tid, _msg(lang, "adminreg_none"))
+        return
+    kb = types.InlineKeyboardMarkup()
+    for p in free:
+        kb.add(types.InlineKeyboardButton(p.name, callback_data=f"areg:{p.id}"))
+    bot.send_message(tid, _msg(lang, "adminreg_choose"), reply_markup=kb)
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("areg:"))
+def _adminreg_pick(call: types.CallbackQuery):
+    """A user tapped an admin profile in /adminreg → file a pending
+    role='admin' request and ask for their contact; the existing contact
+    handler then notifies every admin with approve/reject buttons."""
+    tid  = call.from_user.id
+    lang = _get_lang(tid)
+    try:
+        pid = int(call.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id)
+        return
+    if tid in _admin_ids():
+        bot.answer_callback_query(call.id, _msg(lang, "adminreg_already"), show_alert=True)
+        return
+
+    with SessionLocal() as db:
+        p = db.query(RoleProfile).filter_by(id=pid, role="admin").first()
+        taken = db.query(Admin).filter_by(profile_id=pid).first() if p else None
+        if not p or taken:
+            bot.answer_callback_query(call.id, _msg(lang, "adminreg_none"), show_alert=True)
+            return
+
+        existing = db.query(TelegramUserRole).filter_by(
+            telegram_id=tid, role="admin", role_id=pid,
+        ).first()
+        if existing:  # pending → re-ask contact; rejected → fresh request
+            existing.full_name   = p.name
+            existing.status      = "pending"
+            existing.approved_at = None
+            role_row = existing
+        else:
+            role_row = TelegramUserRole(
+                telegram_id=tid, role="admin", role_id=pid,
+                full_name=p.name, status="pending",
+            )
+            db.add(role_row)
+
+        user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
+        if user:
+            user.username = call.from_user.username or user.username
+        else:
+            db.add(TelegramUser(
+                telegram_id=tid,
+                username=call.from_user.username,
+                full_name=p.name,
+                role="admin",
+                role_id=pid,
+                language=lang,
+                status="pending",
+            ))
+        db.flush()
+        pending_ref = role_row.id
+        db.commit()
+
+    _state.setdefault(tid, {})["pending_role_ref"] = pending_ref
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_reply_markup(chat_id=tid, message_id=call.message.message_id,
+                                      reply_markup=None)
+    except Exception:
+        pass
+    bot.send_message(tid, _msg(lang, "share_contact_prompt"), reply_markup=_contact_kb(lang))
+
+
 @bot.message_handler(content_types=["contact"])
 def _contact(message: types.Message):
     tid = message.from_user.id
