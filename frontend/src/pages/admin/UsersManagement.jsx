@@ -60,15 +60,16 @@ export default function UsersManagement() {
     queryFn: () => api.get("/admin/users").then((r) => r.data),
   });
 
-  const { data: units = [] } = useQuery({
-    queryKey: ["all-managers"],
-    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+  // Pre-created profiles feed every picker in the add-role modal — the admin
+  // assigns an existing profile, never invents a name.
+  const { data: profiles } = useQuery({
+    queryKey: ["admin-profiles"],
+    queryFn: () => api.get("/api/profiles/admin/list").then((r) => r.data),
   });
-
-  const { data: shiftSlots = [] } = useQuery({
-    queryKey: ["shift-admins"],
-    queryFn: () => api.get("/api/auth/shift-admins").then((r) => r.data),
-  });
+  const units       = (profiles?.supervisors ?? []).filter((s) => !s.archived);
+  const shiftSlots  = profiles?.shift_managers ?? [];
+  const topManagers = profiles?.top_managers ?? [];
+  const leaderProfiles = profiles?.leaders ?? [];
 
   const updateMut = useMutation({
     mutationFn: ({ userId, roleRef, payload }) =>
