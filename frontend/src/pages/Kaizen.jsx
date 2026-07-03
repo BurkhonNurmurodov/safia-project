@@ -311,17 +311,21 @@ export default function Kaizen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kaizen"] }),
   });
 
-  // ApexCharts measures its container width at render time. Inside the responsive
-  // grid the charts can render before the grid cell has its final width, which
-  // collapses the y-axis label gutter (names overlap the bars) and shifts the
-  // bar baseline. Nudge every chart to re-measure once layout has settled after
-  // data loads or language changes.
+  // ApexCharts measures its container width once at mount. Inside the
+  // responsive grid the cells only get their final width a frame or two after
+  // the data render lands, so a chart mounted too early gets a collapsed
+  // y-axis gutter (names overlap the bars). Hold the charts back until layout
+  // has settled, then mount them once at the right width — no global resize
+  // nudges, no mid-render redraw flashes.
+  const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => {
-    if (isLoading) return;
-    const raf = requestAnimationFrame(() =>
-      window.dispatchEvent(new Event("resize")));
-    return () => cancelAnimationFrame(raf);
-  }, [isLoading, lang]);
+    if (isLoading) return undefined;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setChartsReady(true));
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [isLoading]);
 
   const tasks = data?.tasks || [];
   const projects = data?.projects || [];
@@ -439,7 +443,7 @@ export default function Kaizen() {
 
   // ── charts ───────────────────────────────────────────────────────────────────
   const gaugeOpts = {
-    chart: { type: "radialBar", sparkline: { enabled: true }, fontFamily: "inherit" },
+    chart: { type: "radialBar", sparkline: { enabled: true }, fontFamily: "inherit", animations: { enabled: false } },
     plotOptions: { radialBar: {
       hollow: { size: "60%" },
       track: { background: "var(--bg-inner)" },
@@ -457,7 +461,7 @@ export default function Kaizen() {
   // "Technician Availability" analog). Per-slice labels are off; the legend
   // beside the ring carries the colour → label → count mapping.
   const donutOpts = {
-    chart: { type: "donut", fontFamily: "inherit", background: "transparent" },
+    chart: { type: "donut", fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     labels: [T.sDone, T.sProg, T.sTodo],
     colors: [C_DONE, C_PROG, C_TODO],
     legend: { show: false },
@@ -479,7 +483,7 @@ export default function Kaizen() {
   // the period selector. Smooth gold gradient over the monthly task buckets.
   const shownMonths = period === "all" ? A.months : A.months.slice(-Number(period));
   const areaOpts = {
-    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: true } },
+    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
     colors: [BRAND],
     stroke: { curve: "smooth", width: 2.5 },
@@ -499,7 +503,7 @@ export default function Kaizen() {
 
   const topPeople = A.people.slice(0, 10);
   const peopleOpts = {
-    chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit" },
+    chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: false } },
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "62%", borderRadius: 3 } },
     colors: [C_DONE, C_PROG, C_TODO],
@@ -520,7 +524,7 @@ export default function Kaizen() {
   const topTypes = A.types.slice(0, 8);
   const typeCats = topTypes.map((t) => tl(t.type === "—" ? "—" : t.type));
   const typeOpts = {
-    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit" },
+    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: false } },
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 4, borderRadiusApplication: "end" } },
     colors: [BRAND],
@@ -656,9 +660,11 @@ export default function Kaizen() {
                 </div>
               </div>
               <div className="px-1">
-                {shownMonths.length > 0
-                  ? <ReactApexChart options={areaOpts} series={areaSeries} type="area" height={206} />
-                  : <div className="h-[206px] grid place-items-center text-xs" style={{ color: "var(--text-4)" }}>—</div>}
+                {shownMonths.length === 0
+                  ? <div className="h-[206px] grid place-items-center text-xs" style={{ color: "var(--text-4)" }}>—</div>
+                  : chartsReady
+                    ? <ReactApexChart options={areaOpts} series={areaSeries} type="area" height={206} />
+                    : <div style={{ height: 206 }} />}
               </div>
               {/* Two inline sub-stat cells (mirrors Total Revenue · Avg Booking Value) */}
               <div className="grid grid-cols-2 gap-3 px-4 pb-4 pt-1 mt-auto">
@@ -679,7 +685,9 @@ export default function Kaizen() {
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={ListChecks} title={T.secStatus} right={viewAllBtn} />
               <div className="p-4 flex flex-col items-center gap-3">
-                <ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={200} />
+                {chartsReady
+                  ? <ReactApexChart options={donutOpts} series={[A.totals.done, A.totals.prog, A.totals.todo]} type="donut" height={200} />
+                  : <div style={{ height: 200 }} />}
                 <div className="w-full space-y-2.5">
                   {[
                     { label: T.sDone, color: C_DONE, n: A.totals.done },
@@ -740,7 +748,9 @@ export default function Kaizen() {
                   </div>
                 </div>
                 <div className="w-28 flex-shrink-0">
-                  <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={150} />
+                  {chartsReady
+                    ? <ReactApexChart options={gaugeOpts} series={[A.donePct]} type="radialBar" height={150} />
+                    : <div style={{ height: 150 }} />}
                 </div>
               </div>
             </div>
@@ -822,9 +832,9 @@ export default function Kaizen() {
             <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={Users} title={T.secPeople} />
               <div className="px-3 pb-3 pt-1">
-                {topPeople.length > 0 && (
-                  <ReactApexChart options={peopleOpts} series={peopleSeries} type="bar" height={Math.max(220, topPeople.length * 34)} />
-                )}
+                {topPeople.length > 0 && (chartsReady
+                  ? <ReactApexChart options={peopleOpts} series={peopleSeries} type="bar" height={Math.max(220, topPeople.length * 34)} />
+                  : <div style={{ height: Math.max(220, topPeople.length * 34) }} />)}
               </div>
             </div>
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
@@ -852,9 +862,9 @@ export default function Kaizen() {
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={ListChecks} title={T.secTypes} />
               <div className="px-3 pb-3 pt-1">
-                {topTypes.length > 0 && (
-                  <ReactApexChart options={typeOpts} series={typeSeries} type="bar" height={Math.max(200, topTypes.length * 36)} />
-                )}
+                {topTypes.length > 0 && (chartsReady
+                  ? <ReactApexChart options={typeOpts} series={typeSeries} type="bar" height={Math.max(200, topTypes.length * 36)} />
+                  : <div style={{ height: Math.max(200, topTypes.length * 36) }} />)}
               </div>
             </div>
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
