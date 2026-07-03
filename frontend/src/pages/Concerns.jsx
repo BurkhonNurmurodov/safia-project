@@ -39,13 +39,12 @@ const MONTHS = {
   uz:      ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
   uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
 };
-const enOrd = (d) => { const t = d % 100; if (t >= 11 && t <= 13) return "th"; return ["th", "st", "nd", "rd"][d % 10] || "th"; };
 const fmtDate = (iso, lang) => {
   if (!iso) return "";
   const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
   if (!y || !m || !d) return iso;
   const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
-  if (lang === "en") return `${d}${enOrd(d)} ${mn}, ${y}`;   // 2nd July, 2026
+  if (lang === "en") return `${d} ${mn} ${y}`;               // 2 July 2026
   if (lang === "ru") return `${d} ${mn} ${y}`;               // 2 июля 2026
   return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
 };
