@@ -905,6 +905,7 @@ const t = {
     "settings.save":           "Saqlash",
     "settings.saved":          "Saqlandi",
     "settings.error":          "Saqlab bo'lmadi",
+    "settings.translate":      "O'zbekchadan o'girish",
 
     "login.chooseLeader":        "O'z ismingizni tanlang:",
     "login.pickSupervisorFirst": "Avval brigadirni tanlang",
@@ -2093,6 +2094,7 @@ const t = {
     "settings.save":           "Сақлаш",
     "settings.saved":          "Сақланди",
     "settings.error":          "Сақлаб бўлмади",
+    "settings.translate":      "Ўзбекчадан ўгириш",
 
     "login.chooseLeader":        "Ўз исмингизни танланг:",
     "login.pickSupervisorFirst": "Аввал бригадирни танланг",
@@ -3281,6 +3283,7 @@ const t = {
     "settings.save":           "Сохранить",
     "settings.saved":          "Сохранено",
     "settings.error":          "Не удалось сохранить",
+    "settings.translate":      "Перевести с узбекского",
 
     "login.chooseLeader":        "Выберите своё имя:",
     "login.pickSupervisorFirst": "Сначала выберите бригадира",
@@ -4469,6 +4472,7 @@ const t = {
     "settings.save":           "Save",
     "settings.saved":          "Saved",
     "settings.error":          "Could not save",
+    "settings.translate":      "Translate from Uzbek",
 
     "login.chooseLeader":        "Select your name:",
     "login.pickSupervisorFirst": "Pick your supervisor first",

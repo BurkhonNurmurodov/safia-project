@@ -560,7 +560,7 @@ def my_profiles(caller: dict = Depends(_caller), db: Session = Depends(get_db)):
 
     admin_row = db.query(Admin).filter_by(telegram_id=tid).first()
     if admin_row and admin_row.profile_id:
-        p = db.query(RoleProfile).filter_by(id=admin_row.profile_id).first()
+        p = db.query(RoleProfile).filter_by(id=admin_row.profile_id, role="admin").first()
         if p:
             entries.append({"kind": "admin", "role": "admin",
                             "role_ref": None, "canonical": p.name})
