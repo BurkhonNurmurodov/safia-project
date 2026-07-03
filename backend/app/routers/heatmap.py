@@ -49,7 +49,7 @@ def get_heatmap(
     # supervisor hasn't closed it ("not_closed"), or it's closed with edit
     # requests still awaiting the admin ("requests"). Draft HR documents also
     # block confirmation but don't get a marker — those cells stay empty.
-    mgr_q = db.query(Manager.id, Manager.name)
+    mgr_q = db.query(Manager.id, Manager.name).filter(Manager.archived.is_(False))
     if shift:
         mgr_q = mgr_q.filter(Manager.shift == shift)
     if manager_id:
