@@ -446,7 +446,7 @@ export default function Kaizen() {
         value: { offsetY: -16, fontSize: "26px", fontWeight: 700, color: "var(--text-1)", formatter: (v) => `${Math.round(v)}%` },
       },
     } },
-    fill: { type: "gradient", gradient: { shade: "dark", type: "horizontal", gradientToColors: [mix(BRAND, 0.18)], stops: [0, 100] }, colors: [BRAND] },
+    fill: { type: "solid", colors: [BRAND] },
     stroke: { lineCap: "round" },
     labels: [T.kDonePct],
   };
