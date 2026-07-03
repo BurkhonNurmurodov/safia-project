@@ -796,7 +796,7 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
 
     Admin-profile requests (/adminreg) add a layer: approval inserts the
     admins-table row (that table is what grants rights — admins.profile_id is
-    the binding), the profile races on first-approval-wins,同 the losers'
+    the binding), the profile races on first-approval-wins, and the losers'
     pending requests are auto-rejected. The winning role row is deleted
     outright so a stale role='admin' row can never mint an admin JWT after a
     later unassign."""
