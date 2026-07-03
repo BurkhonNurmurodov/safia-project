@@ -44,6 +44,7 @@ const t = {
     "concerns.kpiPeakDate":       "Eng ko'p ochiq xavotirli sana",
     "concerns.openLower":         "ochiq",
     "concerns.avgShort":          "o'rtacha",
+    "concerns.avgPerConcern":     "kun o'rtacha har bir xavotirga",
     "concerns.itemsUnit":         "ta xavotir",
     "concerns.ofOpen":            "ochiqlardan",
     "concerns.allClear":          "Ochiq xavotirlar yo'q",
