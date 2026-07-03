@@ -421,7 +421,7 @@ export default function Concerns() {
     let slowest = null;
     for (const [name, g] of byBrig) {
       const avg = g.sum / g.n;
-      if (!slowest || avg > slowest.avg) slowest = { name, avg: Math.round(avg), n: g.n, open: g.open };
+      if (!slowest || avg > slowest.avg) slowest = { name, avg: Math.round(avg * 10) / 10, n: g.n, open: g.open };
     }
 
     // 3 ─ the entry date that carries the most still-open concerns (ties → oldest).
