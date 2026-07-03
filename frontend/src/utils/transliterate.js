@@ -79,6 +79,93 @@ function transliterateWord(word) {
   return result;
 }
 
+// ─── Latin → Cyrillic (reverse direction) ─────────────────────────────────────
+// Used by the settings name editor: the canonical name is Uzbek Latin, and the
+// per-language "translate" buttons derive the Cyrillic variants from it.
+// Digraphs/apostrophe-letters must be matched before single letters.
+const LATIN_MULTI = [
+  ["oʻ", "ў"], ["o'", "ў"], ["o‘", "ў"], ["o`", "ў"],
+  ["gʻ", "ғ"], ["g'", "ғ"], ["g‘", "ғ"], ["g`", "ғ"],
+  ["sh", "ш"], ["ch", "ч"], ["yo", "ё"], ["yu", "ю"],
+  ["ya", "я"], ["ye", "е"], ["ts", "ц"],
+];
+
+const LATIN_SINGLE = {
+  a: "а", b: "б", c: "ц", d: "д", e: "е", f: "ф", g: "г", h: "ҳ",
+  i: "и", j: "ж", k: "к", l: "л", m: "м", n: "н", o: "о", p: "п",
+  q: "қ", r: "р", s: "с", t: "т", u: "у", v: "в", x: "х", y: "й",
+  z: "з", "ʼ": "ъ", "'": "ъ", "’": "ъ",
+};
+
+// Russian alphabet has no ў/қ/ғ/ҳ — map them to the closest Russian letters.
+const UZ_CYR_TO_RU = { "ў": "у", "қ": "к", "ғ": "г", "ҳ": "х" };
+
+const LATIN_VOWELS = new Set(["a", "e", "i", "o", "u"]);
+
+function latinWordToCyrillic(word) {
+  const src = [...word];
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const ch  = src[i];
+    const low = ch.toLowerCase();
+
+    // "e" at word start or after a vowel is э ("Erkin" → "Эркин")
+    if (low === "e" && (i === 0 || LATIN_VOWELS.has(src[i - 1]?.toLowerCase()))) {
+      out += ch === low ? "э" : "Э";
+      i += 1;
+      continue;
+    }
+
+    const pair = src.slice(i, i + 2).join("").toLowerCase();
+    const multi = LATIN_MULTI.find(([lat]) => lat === pair);
+    if (multi) {
+      out += ch === low ? multi[1] : multi[1].toUpperCase();
+      i += 2;
+      continue;
+    }
+
+    const single = LATIN_SINGLE[low];
+    if (single !== undefined) {
+      out += ch === low ? single : single.toUpperCase();
+    } else {
+      out += ch; // digits, punctuation, already-Cyrillic — pass through
+    }
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Derive a per-language display name from the canonical Uzbek-Latin name.
+ * Pure alphabet switching — no dictionary, no external API.
+ *
+ *   uz      → unchanged
+ *   uz_cyrl → Uzbek Cyrillic ("Gʻulom" → "Ғулом")
+ *   ru      → Russian Cyrillic ("Gʻulom" → "Гулом")
+ *   en      → Latin with the Uzbek modifier letters normalised to '
+ */
+export function convertFromUz(value, targetLang) {
+  if (!value) return value;
+  if (targetLang === "uz") return value;
+  if (targetLang === "uz_cyrl" || targetLang === "ru") {
+    let cyr = value
+      .split(/(\s+)/)
+      .map(token => /\s/.test(token) ? token : latinWordToCyrillic(token))
+      .join("");
+    if (targetLang === "ru") {
+      cyr = [...cyr].map(ch => {
+        const low = ch.toLowerCase();
+        const ru = UZ_CYR_TO_RU[low];
+        return ru === undefined ? ch : (ch === low ? ru : ru.toUpperCase());
+      }).join("");
+    }
+    return cyr;
+  }
+  // en (and any other Latin-script language): normalise ʻ/‘/` to a plain '
+  return value.replace(/[ʻ‘`]/g, "'");
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
