@@ -252,7 +252,7 @@ export function transliterate(value, lang) {
     .join("");
 
   // English additionally remaps the Uzbek-Latin letters that misread in
-  // English (x→kh, q→k, oʻ→u, gʻ→g, tutuq dropped) — so "Burxon" and its
+  // English (x→kh, q→k, oʻ→u, gʻ→gh, tutuq dropped) — so "Burxon" and its
   // Cyrillic twin "Бурхон" both render "Burkhon".
   return lang === "en" ? toEnglish(latin) : latin;
 }
