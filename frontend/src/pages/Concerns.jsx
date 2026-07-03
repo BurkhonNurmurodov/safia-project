@@ -839,12 +839,8 @@ export default function Concerns() {
           {insights.longest ? (
             <>
               <Metric value={insights.longest.age} unit={t("concerns.days")} color="#ef4444" />
-              <div className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_text}>
-                {tl(insights.longest.row.concern_text)}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                <Chip icon={UserRound}>{tl(insights.longest.row.concern_owner)}</Chip>
-                <Chip icon={CalendarClock}><span className="font-mono">{insights.longest.row.entry_date}</span></Chip>
+              <div className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: "var(--text-1)" }} title={insights.longest.row.concern_owner}>
+                {tl(insights.longest.row.concern_owner)}
               </div>
             </>
           ) : (
