@@ -600,3 +600,42 @@ class LeaderConcern(Base):
     created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
     updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LeaderTask(Base):
+    """A supervisor→leader assignment (the "DAILY протокол" board that used to
+    live in Google Sheets). ``priority`` is the per-leader queue position over
+    the ACTIVE (todo/doing) tasks only — always a dense 1..N; a done task leaves
+    the queue (priority NULL) and the rest close ranks. The queue invariant is
+    maintained by routers/tasks.py."""
+    __tablename__ = "leader_tasks"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    # Ownership key: the assigned leader's telegram_user_roles.id.
+    leader_role_ref       = Column(Integer, nullable=False, index=True)
+    leader_name           = Column(String, nullable=False)         # snapshot of the leader's name
+    supervisor_manager_id = Column(Integer, nullable=True)         # managers.id (leader's unit)
+    supervisor_name       = Column(String, nullable=True)          # snapshot of the unit/brigadir name
+    task_text             = Column(Text, nullable=False)           # Задача
+    priority              = Column(Integer, nullable=True)         # Приоритет: 1..N among active tasks; NULL once done
+    status                = Column(String, nullable=False, server_default="todo")  # todo | doing | done
+    due_date              = Column(Date, nullable=False)           # Срок выполнения
+    completed_at          = Column(DateTime(timezone=True), nullable=True)  # set when flipped to done
+    created_by            = Column(BigInteger, nullable=True)      # telegram_id of creator (supervisor or admin)
+    created_by_name       = Column(String, nullable=True)          # snapshot of the creator's display name
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at            = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LeaderTaskComment(Base):
+    """Chat-style comment thread on a leader task. Editable/deletable only by
+    the author (enforced in routers/tasks.py)."""
+    __tablename__ = "leader_task_comments"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    task_id            = Column(Integer, nullable=False, index=True)   # leader_tasks.id
+    author_telegram_id = Column(BigInteger, nullable=False)
+    author_name        = Column(String, nullable=True)                 # snapshot of the author's display name
+    text               = Column(Text, nullable=False)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
