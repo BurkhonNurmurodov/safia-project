@@ -240,16 +240,6 @@ function Metric({ value, unit, color, suffix }) {
   );
 }
 
-// Small pill for the supporting detail row under each metric.
-function Chip({ icon: Icon, children, color }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-[10.5px] px-1.5 py-0.5 rounded-md whitespace-nowrap"
-          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: color || "var(--text-3)" }}>
-      {Icon && <Icon size={11} />}{children}
-    </span>
-  );
-}
-
 // Placeholder body when a card has nothing meaningful to surface.
 function Empty({ icon: Icon, color, text }) {
   return (
