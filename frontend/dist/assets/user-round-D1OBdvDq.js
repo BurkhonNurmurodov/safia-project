@@ -1,0 +1,1 @@
+import{f as c}from"./Skeleton-DVb6W9Sw.js";var r=[["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}],["circle",{cx:"12",cy:"12",r:"1",key:"41hilf"}]],a=c("circle-dot",r),e=[["circle",{cx:"12",cy:"8",r:"5",key:"1hypcn"}],["path",{d:"M20 21a8 8 0 0 0-16 0",key:"rfgkzh"}]],i=c("user-round",e);export{a as n,i as t};
