@@ -49,6 +49,7 @@ const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
+const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
