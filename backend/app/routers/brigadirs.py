@@ -33,7 +33,7 @@ def build_metrics_list(
     manager_ids: Optional[list[int]],
     use_confirmed_only: bool = False,
 ):
-    managers = db.query(Manager)
+    managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
     if manager_ids:
