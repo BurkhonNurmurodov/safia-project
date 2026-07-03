@@ -8,7 +8,7 @@ const FLAT = "#94a3b8";
 // Tiny inline sparkline. Scales to the card width; stroke stays crisp.
 // Points are joined with Catmull-Rom-derived Béziers so the line reads as a
 // gentle curve; control-point Y is clamped so curves never overshoot the box.
-function Sparkline({ values, color }) {
+export function Sparkline({ values, color }) {
   const pts = (values || []).filter((v) => v != null);
   if (pts.length < 2) return <div style={{ height: 30 }} />;
   const min = Math.min(...pts);

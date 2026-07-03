@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Activity, Users, Clock, Radio, TrendingUp, CalendarDays, Trophy,
-  RefreshCw, Search, Shield, Timer, CalendarClock, UserPlus, Hash,
+  RefreshCw, Search, Shield, Timer, CalendarClock, Hash,
   ChevronUp, ChevronDown, ChevronsUpDown, CircleUserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ContributionHeatmap from "../components/charts/ContributionHeatmap";
+import { Sparkline } from "../components/ui/KpiDeltaCard";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -23,19 +24,6 @@ const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
-const mix = (hex, amt) => {
-  const n = parseInt(hex.slice(1), 16);
-  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
-  const ch = (s) => Math.round(((n >> s) & 255) + (t - ((n >> s) & 255)) * p);
-  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
-};
-const tipHTML = (label, val, color) => `
-  <div style="padding:8px 12px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
-    <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;margin-bottom:3px;">${label}</div>
-    <div style="display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:#f5f6f8;line-height:1;">
-      <span style="width:9px;height:9px;border-radius:9px;background:${color};box-shadow:0 0 8px ${color}88;"></span>${val}
-    </div>
-  </div>`;
 
 // ── i18n copy, 4 platform languages ──────────────────────────────────────────
 const TXT = {
@@ -45,6 +33,8 @@ const TXT = {
     p7: "7 kun", p30: "30 kun", p90: "90 kun",
     kOnline: "Hozir onlayn", kToday: "Bugun faol", k7d: "7 kunda faol", k30d: "30 kunda faol",
     kAvgDay: "Kunlik o'rtacha", kTotalTime: "Jami vaqt", kUsers: "Kuzatilgan", kNew: "Yangi (7 kun)",
+    cardTime: "Ilovadagi vaqt", perDay: "/kun", noOnline: "Hozir hech kim yo'q",
+    coverage30: "30 kunlik qamrov", dataSince: "Ma'lumot {d} dan",
     secTrend: "Vaqt bo'yicha faollik", trendSub: "Kunlik faol foydalanuvchilar va vaqt",
     mUsers: "Faol foydalanuvchilar", mMinutes: "Daqiqa",
     secCalendar: "Faollik kalendari", calSub: "So'nggi 53 hafta — kunlik ishlatilgan vaqt",
@@ -63,6 +53,8 @@ const TXT = {
     p7: "7 кун", p30: "30 кун", p90: "90 кун",
     kOnline: "Ҳозир онлайн", kToday: "Бугун фаол", k7d: "7 кунда фаол", k30d: "30 кунда фаол",
     kAvgDay: "Кунлик ўртача", kTotalTime: "Жами вақт", kUsers: "Кузатилган", kNew: "Янги (7 кун)",
+    cardTime: "Иловадаги вақт", perDay: "/кун", noOnline: "Ҳозир ҳеч ким йўқ",
+    coverage30: "30 кунлик қамров", dataSince: "Маълумот {d} дан",
     secTrend: "Вақт бўйича фаоллик", trendSub: "Кунлик фаол фойдаланувчилар ва вақт",
     mUsers: "Фаол фойдаланувчилар", mMinutes: "Дақиқа",
     secCalendar: "Фаоллик календари", calSub: "Сўнгги 53 ҳафта — кунлик ишлатилган вақт",
@@ -81,6 +73,8 @@ const TXT = {
     p7: "7 дней", p30: "30 дней", p90: "90 дней",
     kOnline: "Онлайн сейчас", kToday: "Активны сегодня", k7d: "Активны за 7 дней", k30d: "Активны за 30 дней",
     kAvgDay: "В среднем в день", kTotalTime: "Всего времени", kUsers: "Отслеживается", kNew: "Новые (7 дней)",
+    cardTime: "Время в приложении", perDay: "/день", noOnline: "Сейчас никого нет",
+    coverage30: "Охват за 30 дней", dataSince: "Данные с {d}",
     secTrend: "Активность по времени", trendSub: "Активные пользователи и время по дням",
     mUsers: "Активные пользователи", mMinutes: "Минуты",
     secCalendar: "Календарь активности", calSub: "Последние 53 недели — время в приложении по дням",
@@ -99,6 +93,8 @@ const TXT = {
     p7: "7 days", p30: "30 days", p90: "90 days",
     kOnline: "Online now", kToday: "Active today", k7d: "Active 7d", k30d: "Active 30d",
     kAvgDay: "Avg per day", kTotalTime: "Total time", kUsers: "Tracked users", kNew: "New (7d)",
+    cardTime: "Time in app", perDay: "/day", noOnline: "No one online",
+    coverage30: "30-day coverage", dataSince: "Data since {d}",
     secTrend: "Activity over time", trendSub: "Daily active users and time-in-app",
     mUsers: "Active users", mMinutes: "Minutes",
     secCalendar: "Activity calendar", calSub: "Last 53 weeks — time in app per day",
@@ -171,6 +167,57 @@ function SectionHead({ icon: Icon, title, right }) {
     </div>
   );
 }
+// One KPI card = one story: primary metric, its closest companion metric,
+// and a live footer (sparkline / avatars / coverage bar) instead of dead space.
+function StatCard({ icon: Icon, label, accent, live, value, valueSuffix, secLabel, secValue, secAccent, footer }) {
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-2.5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: hexA(accent, 0.14), color: accent }}>
+          <Icon size={14} />
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-3)" }}>{label}</span>
+        {live && (
+          <span className="relative flex w-2 h-2 ml-auto flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: C_ONLINE }} />
+            <span className="relative inline-flex rounded-full w-2 h-2" style={{ background: C_ONLINE }} />
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: "var(--text-1)" }}>{value}</span>
+        {valueSuffix && <span className="text-[11px] font-medium" style={{ color: "var(--text-4)" }}>{valueSuffix}</span>}
+      </div>
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="truncate" style={{ color: "var(--text-3)" }}>{secLabel}</span>
+        <span className="font-semibold tabular-nums flex-shrink-0" style={{ color: secAccent || "var(--text-2)" }}>{secValue}</span>
+      </div>
+      <div className="mt-auto">{footer}</div>
+    </div>
+  );
+}
+
+function AvatarStack({ users, tl, emptyText }) {
+  const shown = users.slice(0, 6);
+  if (!shown.length) {
+    return <div className="flex items-center h-[30px] text-[11px]" style={{ color: "var(--text-4)" }}>{emptyText}</div>;
+  }
+  return (
+    <div className="flex items-center h-[30px]">
+      {shown.map((u) => (
+        <div key={u.telegram_id} title={tl(u.full_name)}
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white -ml-1.5 first:ml-0 flex-shrink-0"
+          style={{ background: nameToColor(u.full_name), border: "2px solid var(--bg-card)" }}>
+          {nameInitials(u.full_name)}
+        </div>
+      ))}
+      {users.length > shown.length && (
+        <span className="text-[10px] ml-1.5 font-semibold" style={{ color: "var(--text-3)" }}>+{users.length - shown.length}</span>
+      )}
+    </div>
+  );
+}
+
 function SortIcon({ active, dir }) {
   const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
   return <Icon size={11} style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />;
@@ -265,49 +312,66 @@ export default function UsersActivity() {
       .map((u) => ({ value: String(u.telegram_id), label: tl(u.full_name) }))];
   const medals = ["🥇", "🥈", "🥉", "🏅", "🏅"];
 
+  const onlineUsers = useMemo(() => users.filter((u) => u.online), [users]);
+
+  // Tracking is forward-only, so early on most of the window is a flat run of
+  // zero days. Trim the dead prefix (keeping ≥7 points and one leading zero for
+  // context) so the chart tells the story instead of showing the void.
+  const firstIdx = daily.findIndex((d) => d.minutes > 0 || d.active_users > 0);
+  const trimStart = firstIdx > 1 ? Math.max(0, Math.min(firstIdx - 1, daily.length - 7)) : 0;
+  const shownDaily = trimStart > 0 ? daily.slice(trimStart) : daily;
+  const firstDataDay = firstIdx >= 0 ? daily[firstIdx].day : null;
+
   // ── trend chart: minutes (columns) + active users (line), dual axis ──
-  const trendCats = daily.map((d) => d.day);
   const shortDay = (iso) => { const [, m, dd] = iso.split("-"); return `${dd}.${m}`; };
   const trendOpts = {
     chart: { type: "line", stacked: false, toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent" },
     theme: chartTheme,
     stroke: { width: [0, 2.5], curve: "smooth" },
-    colors: [hexA(BRAND, 0.55), C_USERS],
+    colors: [hexA(BRAND, 0.7), C_USERS],
     fill: { type: ["solid", "solid"] },
-    plotOptions: { bar: { columnWidth: days > 45 ? "82%" : "55%", borderRadius: 2 } },
+    plotOptions: { bar: { columnWidth: shownDaily.length > 45 ? "82%" : shownDaily.length > 14 ? "58%" : "40%", borderRadius: 3 } },
     dataLabels: { enabled: false },
     xaxis: {
-      categories: trendCats.map(shortDay),
-      tickAmount: Math.min(12, trendCats.length),
+      categories: shownDaily.map((d) => shortDay(d.day)),
+      tickAmount: Math.min(12, shownDaily.length),
       labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: 0, hideOverlappingLabels: true },
       axisBorder: { show: false }, axisTicks: { show: false },
     },
     yaxis: [
-      { seriesName: T.mMinutes, labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) }, title: { text: T.mMinutes, style: { color: labelColor, fontSize: "10px", fontWeight: 500 } } },
-      { seriesName: T.mUsers, opposite: true, labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) }, title: { text: T.mUsers, style: { color: labelColor, fontSize: "10px", fontWeight: 500 } } },
+      { seriesName: T.mMinutes, min: 0, labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) } },
+      { seriesName: T.mUsers, opposite: true, min: 0, labels: { style: { colors: labelColor, fontSize: "11px" }, formatter: (v) => Math.round(v) } },
     ],
     grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } },
     legend: { position: "top", horizontalAlign: "right", labels: { colors: legendColor }, markers: { width: 10, height: 10, radius: 3 } },
-    markers: { size: 0, hover: { size: 5 } },
+    markers: { size: shownDaily.length <= 31 ? 3 : 0, strokeWidth: 0, hover: { size: 5 } },
     tooltip: { theme: tooltipTheme, shared: true, intersect: false },
   };
   const trendSeries = [
-    { name: T.mMinutes, type: "column", data: daily.map((d) => d.minutes) },
-    { name: T.mUsers, type: "line", data: daily.map((d) => d.active_users) },
+    { name: T.mMinutes, type: "column", data: shownDaily.map((d) => d.minutes) },
+    { name: T.mUsers, type: "line", data: shownDaily.map((d) => d.active_users) },
   ];
 
   const isEmpty = !isLoading && (kpis.tracked_users || 0) === 0;
 
-  const KPIS = [
-    { icon: Radio, label: T.kOnline, value: kpis.online_now ?? 0, accent: C_ONLINE, live: true },
-    { icon: Activity, label: T.kToday, value: kpis.active_today ?? 0, accent: BRAND },
-    { icon: Users, label: T.k7d, value: kpis.active_7d ?? 0, accent: C_USERS },
-    { icon: CalendarDays, label: T.k30d, value: kpis.active_30d ?? 0, accent: C_USERS },
-    { icon: Timer, label: T.kAvgDay, value: fmtDur(kpis.avg_minutes_day), accent: C_TIME },
-    { icon: Clock, label: T.kTotalTime, value: kpis.total_hours != null ? `${kpis.total_hours}h` : "—", accent: C_TIME },
-    { icon: CircleUserRound, label: T.kUsers, value: kpis.tracked_users ?? 0, accent: "var(--text-2)" },
-    { icon: UserPlus, label: T.kNew, value: kpis.new_7d ?? 0, accent: C_NEW },
-  ];
+  // Share of the tracked audience that was active in the last 30 days.
+  const coverage = kpis.tracked_users
+    ? Math.min(100, Math.round(((kpis.active_30d || 0) / kpis.tracked_users) * 100))
+    : 0;
+
+  const periodSeg = (
+    <div className="inline-flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: "1px solid var(--border-md)" }}>
+      {periodOpts.map((o) => (
+        <button key={o.value} onClick={() => setDays(o.value)}
+          className="text-[11px] font-semibold px-3 py-2 transition-colors"
+          style={days === o.value
+            ? { background: BRAND, color: "#fff" }
+            : { background: "var(--bg-inner)", color: "var(--text-3)" }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 
   const refreshBtn = (
     <button onClick={() => refresh.mutate()} disabled={refresh.isPending || isLoading}
@@ -329,17 +393,18 @@ export default function UsersActivity() {
           <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{T.subtitle}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <StyledSelect value={days} onChange={(v) => setDays(Number(v))} options={periodOpts} className="w-28" />
+          {periodSeg}
           {refreshBtn}
         </div>
       </div>
 
       {isLoading ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-2xl px-4 py-3.5" style={cardStyle}>
-                <SkeletonBlock className="h-3 w-14 mb-3" /><SkeletonBlock className="h-6 w-10" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-2xl p-4" style={cardStyle}>
+                <SkeletonBlock className="h-3 w-24 mb-3" /><SkeletonBlock className="h-7 w-16 mb-3" />
+                <SkeletonBlock className="h-3 w-full mb-2" /><SkeletonBlock className="h-[30px] w-full" />
               </div>
             ))}
           </div>
@@ -355,26 +420,54 @@ export default function UsersActivity() {
             </div>
           )}
 
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-            {KPIS.map(({ icon: Icon, label, value, accent, live }) => (
-              <div key={label} className="rounded-2xl p-3.5" style={cardStyle}>
-                <div className="flex items-center gap-2 mb-2.5">
-                  <span className="grid place-items-center w-8 h-8 rounded-lg flex-shrink-0 relative" style={{ background: hexA(typeof accent === "string" && accent.startsWith("#") ? accent : "#888", 0.14), color: accent }}>
-                    <Icon size={15} />
-                    {live && value > 0 && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: C_ONLINE, boxShadow: `0 0 0 2px var(--bg-card)` }} />}
-                  </span>
+          {/* KPI cards — 4 stories: live now, engagement, time in app, audience */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard icon={Radio} label={T.kOnline} accent={C_ONLINE} live={(kpis.online_now ?? 0) > 0}
+              value={kpis.online_now ?? 0}
+              secLabel={T.kToday} secValue={kpis.active_today ?? 0}
+              footer={<AvatarStack users={onlineUsers} tl={tl} emptyText={T.noOnline} />} />
+
+            <StatCard icon={Users} label={T.mUsers} accent={C_USERS}
+              value={kpis.active_7d ?? 0} valueSuffix={`/ ${T.p7}`}
+              secLabel={T.k30d} secValue={kpis.active_30d ?? 0}
+              footer={<Sparkline values={shownDaily.map((d) => d.active_users)} color={C_USERS} />} />
+
+            <StatCard icon={Clock} label={T.cardTime} accent={C_TIME}
+              value={fmtDur(kpis.avg_minutes_day)} valueSuffix={T.perDay}
+              secLabel={T.kTotalTime} secValue={kpis.total_hours != null ? `${kpis.total_hours}h` : "—"}
+              footer={<Sparkline values={shownDaily.map((d) => d.minutes)} color={C_TIME} />} />
+
+            <StatCard icon={CircleUserRound} label={T.kUsers} accent={C_NEW}
+              value={kpis.tracked_users ?? 0}
+              secLabel={T.kNew} secValue={(kpis.new_7d ?? 0) > 0 ? `+${kpis.new_7d}` : 0}
+              secAccent={(kpis.new_7d ?? 0) > 0 ? C_ONLINE : undefined}
+              footer={
+                <div className="h-[30px] flex flex-col justify-center gap-1.5">
+                  <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--text-4)" }}>
+                    <span className="truncate">{T.coverage30}</span>
+                    <span className="font-semibold tabular-nums" style={{ color: C_NEW }}>{coverage}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${coverage}%`, background: C_NEW }} />
+                  </div>
                 </div>
-                <div className="text-xl font-bold tabular-nums leading-none truncate" style={{ color: "var(--text-1)" }} title={String(value)}>{value}</div>
-                <div className="text-[10px] mt-1.5 uppercase tracking-wider truncate" style={{ color: "var(--text-3)" }}>{label}</div>
-              </div>
-            ))}
+              } />
           </div>
 
           {/* Trend chart */}
           <div className="rounded-2xl overflow-hidden" style={cardStyle}>
             <SectionHead icon={TrendingUp} title={T.secTrend}
-              right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{T.trendSub}</span>} />
+              right={
+                <div className="flex items-center gap-2 flex-wrap">
+                  {trimStart > 0 && firstDataDay && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: hexA(C_USERS, 0.12), border: `1px solid ${hexA(C_USERS, 0.3)}`, color: C_USERS }}>
+                      {T.dataSince.replace("{d}", shortDay(firstDataDay))}
+                    </span>
+                  )}
+                  <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{T.trendSub}</span>
+                </div>
+              } />
             <div className="px-1 pt-2 pb-1">
               <ReactApexChart options={trendOpts} series={trendSeries} type="line" height={260} />
             </div>
