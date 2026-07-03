@@ -1011,7 +1011,7 @@ export default function Tasks() {
 
       {/* Task table — POSITIONS-style card: header band, toolbar, sticky-header
           grid table with per-column sort. */}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+      <div className="rounded-2xl overflow-hidden mb-8" style={cardStyle}>
         <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
             <ClipboardList size={14} style={{ color: "var(--brand-text)" }} />

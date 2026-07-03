@@ -949,7 +949,7 @@ export default function Concerns() {
 
       {/* Task table — header band (title · count · search · filters · add) over a
           grid-ruled, sortable, icon-led table (mirrors the Kaizen task list). */}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+      <div className="rounded-2xl overflow-hidden mb-8" style={cardStyle}>
         <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
             <ClipboardList size={14} style={{ color: "var(--brand-text)" }} />
