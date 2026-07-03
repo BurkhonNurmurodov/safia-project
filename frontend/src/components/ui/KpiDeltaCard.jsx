@@ -6,6 +6,8 @@ const BAD  = "#ef4444";
 const FLAT = "#94a3b8";
 
 // Tiny inline sparkline. Scales to the card width; stroke stays crisp.
+// Points are joined with Catmull-Rom-derived Béziers so the line reads as a
+// gentle curve; control-point Y is clamped so curves never overshoot the box.
 function Sparkline({ values, color }) {
   const pts = (values || []).filter((v) => v != null);
   if (pts.length < 2) return <div style={{ height: 30 }} />;
@@ -19,13 +21,27 @@ function Sparkline({ values, color }) {
     const y = P + (1 - (v - min) / span) * (H - P * 2);
     return [x, y];
   });
-  const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const area = `${P},${H} ${line} ${(W - P)},${H}`;
+  const clampY = (y) => Math.min(H - P, Math.max(P, y));
+  let curve = "";
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[i - 1] || coords[i];
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const p3 = coords[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = clampY(p1[1] + (p2[1] - p0[1]) / 6);
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = clampY(p2[1] - (p3[1] - p1[1]) / 6);
+    curve += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  const start = `${coords[0][0].toFixed(1)},${coords[0][1].toFixed(1)}`;
+  const line = `M ${start}${curve}`;
+  const area = `M ${P},${H} L ${start}${curve} L ${W - P},${H} Z`;
   return (
     <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block" }}>
-      <polygon points={area} fill={color} opacity={0.12} />
-      <polyline
-        points={line} fill="none" stroke={color} strokeWidth={1.6}
+      <path d={area} fill={color} opacity={0.12} />
+      <path
+        d={line} fill="none" stroke={color} strokeWidth={1.6}
         strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
       />
     </svg>
