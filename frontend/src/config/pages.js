@@ -59,6 +59,7 @@ export const DEFAULT_PAGE_ACCESS = {
   leaders: [], // pilot: admin-only until enabled from the Access tab
   kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
   concerns: ["leader"], // Leader concerns ("Xavotirlar") — leaders manage their own; admin all
+  tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
 };
 
