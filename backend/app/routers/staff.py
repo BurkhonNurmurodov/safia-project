@@ -517,7 +517,7 @@ def field_options(db: Session = Depends(get_db)):
 def list_supervisors(caller=Depends(_require_staff), db: Session = Depends(get_db)):
     if caller.get("role") not in ("admin", "shift-manager"):
         raise HTTPException(status_code=403, detail="Admin or shift-manager only")
-    q = db.query(Manager).order_by(Manager.shift, Manager.name)
+    q = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name)
     vis = _visible_manager_ids(db, caller)  # None = all (admin); shift-managers see their shift only
     if vis is not None:
         q = q.filter(Manager.id.in_(vis))
