@@ -72,6 +72,7 @@ def get_headcount(
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
         .filter(CALC_ROWS_FILTER)
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
     )
     if shift:
         q = q.filter(Manager.shift == shift)
@@ -123,6 +124,7 @@ def get_role_trend(
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
         .filter(CALC_ROWS_FILTER)
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
     )
     if shift:
         q = q.filter(Manager.shift == shift)
