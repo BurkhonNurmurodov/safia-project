@@ -27,6 +27,7 @@ const ALL_LINKS = [
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
+  { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
 ];
 
