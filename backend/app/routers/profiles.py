@@ -282,6 +282,9 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
     if role == "shift-manager":
         if payload.shift not in (1, 2):
             raise HTTPException(status_code=400, detail="Shift must be 1 or 2")
+        # Registration resolves shift-managers by name — duplicates would be ambiguous.
+        if db.query(RoleProfile).filter_by(role=role, name=name).first():
+            raise HTTPException(status_code=409, detail="Profile with this name already exists")
         p = RoleProfile(role=role, name=name, shift=payload.shift)
     elif role == "leader":
         mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
