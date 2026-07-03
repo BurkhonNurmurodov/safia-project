@@ -1107,6 +1107,7 @@ const t = {
     "concerns.kpiPeakDate":       "Энг кўп очиқ хавотирли сана",
     "concerns.openLower":         "очиқ",
     "concerns.avgShort":          "ўртача",
+    "concerns.avgPerConcern":     "кун ўртача ҳар бир хавотирга",
     "concerns.itemsUnit":         "та хавотир",
     "concerns.ofOpen":            "очиқлардан",
     "concerns.allClear":          "Очиқ хавотирлар йўқ",
