@@ -2734,11 +2734,6 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
 #  Only an admin can re-open a closed day (deletes the row → back to OPEN).
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _shift_of_slot(slot: Optional[int]) -> int:
-    """shift-manager role_id (slot 1-4) → shift number (1 or 2)."""
-    return 1 if slot in (1, 2) else 2
-
-
 def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
     """Manager ids a caller may see/approve. None = all (admin)."""
     role    = caller.get("role")
