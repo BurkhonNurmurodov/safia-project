@@ -42,7 +42,7 @@ const TXT = {
     matrix: "Бригадир × ҳафта куни", trend: "Ҳафта куни тренди", avgWord: "Ўртача",
     totalWord: "Жами", perBrigadir: "бригадирга ўртача", sumAll: "йиғинди", export: "Excel",
     supervisor: "Бригадир", weekday: "Ҳафта куни", avgLine: "Ўртача", noData: "Маълумот йўқ",
-    brigadirsN: "бригадир", normHour: "норм-соат", min: "мин", rise: "ўсиш", fall: "пасайиш",
+    brigadirsN: "бригадир", normHour: "соат", min: "мин", rise: "ўсиш", fall: "пасайиш",
     week: "ҳафта", noSelection: "Тренд учун бригадир ва ҳафта кунларини танланг", exporting: "Юкланмоқда…",
     planFaktTitle: "План ва Факт", plan: "План", fakt: "Факт", fulfillment: "Бажарилиш",
     filter: "Фильтр", search: "Қидириш", clearAll: "Тозалаш", noMatch: "Мос келмади",
