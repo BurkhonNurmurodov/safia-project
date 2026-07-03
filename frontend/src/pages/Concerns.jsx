@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import DateRangePicker from "../components/ui/DateRangePicker";
 import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import { SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
