@@ -687,15 +687,23 @@ def backfill_pp_actual_from_deliv() -> None:
         db.close()
 
 
+MANAGERS_SEEDED_FLAG = "managers_seeded"
+
+
 def seed_managers_and_sources() -> None:
-    """Ensure supervisors (managers) and sheet sources exist (idempotent)."""
+    """Ensure supervisors (managers) and sheet sources exist. The manager seed
+    is flag-guarded after its first run: admins now manage units in the
+    Profiles tab, and re-adding missing MANAGERS entries on every boot would
+    resurrect a unit an admin deliberately deleted."""
     db = SessionLocal()
     try:
-        for mgr_id, name, shift in MANAGERS:
-            existing = db.query(Manager).filter(Manager.id == mgr_id).first()
-            if not existing:
-                db.add(Manager(id=mgr_id, name=name, shift=shift))
-                print(f"[startup] Added manager {mgr_id}: {name}")
+        if not db.query(AppSetting).filter_by(key=MANAGERS_SEEDED_FLAG).first():
+            for mgr_id, name, shift in MANAGERS:
+                existing = db.query(Manager).filter(Manager.id == mgr_id).first()
+                if not existing:
+                    db.add(Manager(id=mgr_id, name=name, shift=shift))
+                    print(f"[startup] Added manager {mgr_id}: {name}")
+            db.add(AppSetting(key=MANAGERS_SEEDED_FLAG, value="1"))
 
         for name, sheet_id in SHEET_SOURCES:
             existing = db.query(SheetSource).filter(SheetSource.name == name).first()
