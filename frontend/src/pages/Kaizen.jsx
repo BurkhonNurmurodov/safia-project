@@ -39,13 +39,35 @@ const tipHTML = (label, val, color) => `
     </div>
   </div>`;
 
-// Per-project identity emoji, keyed by the stable slug. Colour is unified to the
-// brand accent so the project grid reads as one family — not eight loud hues.
-const PROJECT_EMOJI = {
-  zakreplenie: "📌", shadzinka: "🧩", nastavnich: "🤝", kachestvo: "🎯",
-  pokazateli: "📊", standarty: "📐", hansei: "🪞", kormery: "🛠️",
+// Per-project identity — lucide icon + own hue, keyed by the stable slug.
+// Hues deliberately avoid the traffic-light status palette (green/yellow/
+// grey/red) so identity never reads as progress state.
+const PROJECT_IDENT = {
+  zakreplenie: { Icon: Pin,             color: "#f43f5e" },
+  shadzinka:   { Icon: Puzzle,          color: "#8b5cf6" },
+  nastavnich:  { Icon: Handshake,       color: "#14b8a6" },
+  kachestvo:   { Icon: Target,          color: "#f97316" },
+  pokazateli:  { Icon: ChartColumn,     color: "#3b82f6" },
+  standarty:   { Icon: DraftingCompass, color: "#06b6d4" },
+  hansei:      { Icon: Lightbulb,       color: "#ec4899" },
+  kormery:     { Icon: Wrench,          color: "#6366f1" },
 };
-const emojiFor = (key) => PROJECT_EMOJI[key] || "📁";
+const identFor = (key) => PROJECT_IDENT[key] || { Icon: Folder, color: "#94a3b8" };
+
+// Soft tint chip holding the project's icon — the emoji replacement.
+function ProjectIcon({ pkey, size = "sm", title }) {
+  const { Icon, color } = identFor(pkey);
+  const lg = size === "lg";
+  return (
+    <span
+      className={`grid place-items-center flex-shrink-0 ${lg ? "w-9 h-9 rounded-full" : "w-6 h-6 rounded-md"}`}
+      style={{ background: hexA(color, 0.13), color }}
+      title={title}
+    >
+      <Icon size={lg ? 16 : 13} strokeWidth={2.4} />
+    </span>
+  );
+}
 
 // ── UI copy, 4 platform languages ────────────────────────────────────────────
 const TXT = {
