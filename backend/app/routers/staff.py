@@ -2744,7 +2744,8 @@ def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
         return [role_id] if role_id else []
     if role == "shift-manager":
         shift = _sm_shift(db, role_id)
-        return [m.id for m in db.query(Manager).filter(Manager.shift == shift).all()]
+        return [m.id for m in db.query(Manager)
+                .filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
     return []
 
 
