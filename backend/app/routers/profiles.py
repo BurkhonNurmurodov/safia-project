@@ -228,7 +228,6 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
             item["bindings"] = [
                 binding(r) for r in by_key.get(("leader", p.manager_id), [])
                 if r.full_name == p.name
-                for r in [r]
             ]
             out["leaders"].append(item)
         elif p.role == "admin":
