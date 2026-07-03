@@ -25,7 +25,7 @@ def get_downtime(
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
-    managers = db.query(Manager)
+    managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
     if manager_id:
