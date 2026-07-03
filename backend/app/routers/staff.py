@@ -1578,7 +1578,7 @@ def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     # task target → a shift-manager of the sending unit's shift
     if role == "shift-manager":
         shift = _get_shift_for_manager(db, doc.manager_id)
-        return caller.get("role_id") in SHIFT_ROLE_IDS.get(shift, [])
+        return _sm_shift(db, caller.get("role_id")) == shift
     return False
 
 
