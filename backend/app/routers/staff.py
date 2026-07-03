@@ -28,7 +28,8 @@ from app.permissions import get_page_access, role_can_access, require_page
 from app.translit import transliterate
 from app.models import (
     Admin, Attendance, DayApproval, EditRequest, ExchangeTask, HrDocument,
-    HrDocumentHistory, Manager, Notification, TelegramUser, TelegramUserRole,
+    HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
+    TelegramUserRole,
 )
 from app.services.day_state import confirmed_pairs, day_state
 
