@@ -134,7 +134,10 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             .all()
             if user else []
         )
-        visible = [r for r in roles if r.status != "rejected"]
+        # role='admin' rows are /adminreg plumbing (pending requests only —
+        # approvals delete the row and write the admins table instead); the
+        # switcher's "admin" entry is the ADMIN_ROLE_REF sentinel below.
+        visible = [r for r in roles if r.status != "rejected" and r.role != "admin"]
 
         if not visible:
             token = create_jwt(telegram_id, "admin", full_name)
