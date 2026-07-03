@@ -112,10 +112,7 @@ export default function UsersManagement() {
   function submitAdd() {
     setAddError("");
     if (!form.userId) { setAddError(t("admin.users.selectUserFirst")); return; }
-    if (form.role !== "top-manager" && !form.roleId) {
-      setAddError(t("admin.users.selectTargetFirst"));
-      return;
-    }
+    if (!form.roleId) { setAddError(t("admin.users.selectTargetFirst")); return; }
     addRoleMut.mutate({ userId: form.userId, role: form.role, roleId: form.roleId });
   }
 
