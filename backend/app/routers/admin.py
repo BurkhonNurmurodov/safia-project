@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Manager, Attendance, SheetSource, AppSetting, TelegramUser, TelegramUserRole
+from app.models import Manager, Attendance, RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole
 from app.services.verifix_parser import parse_verifix_file
 from app.services.sheets_sync import sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet
 from app.permissions import get_page_access, set_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
-from app.routers.auth import SHIFT_ADMIN_SLOTS, VALID_ROLES
+from app.routers.auth import VALID_ROLES
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
