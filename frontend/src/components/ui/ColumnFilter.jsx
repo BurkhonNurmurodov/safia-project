@@ -340,7 +340,7 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, comp
       {/* Mobile: bottom sheet */}
       <button
         onClick={() => setSheetOpen(true)}
-        className="flex md:hidden items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors flex-shrink-0"
+        className={`flex md:hidden ${triggerCls} transition-colors flex-shrink-0`}
         style={{
           background: "var(--bg-card)",
           border: `1px solid ${anyActive ? "var(--brand)" : "var(--border-md)"}`,
