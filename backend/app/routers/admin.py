@@ -257,8 +257,11 @@ def update_user_role(
 
 
 class AddRolePayload(BaseModel):
-    role:    str            # top-manager | shift-manager | supervisor
-    role_id: Optional[int] = None  # supervisor→managers.id | shift-manager→slot 1-4 | top-manager→null
+    role:    str            # top-manager | shift-manager | supervisor | leader
+    # supervisor→managers.id | shift-manager/top-manager→role_profiles.id |
+    # leader→role_profiles.id of the leader profile (stored role_id becomes
+    # that profile's unit, per the leader role_id contract)
+    role_id: Optional[int] = None
 
 
 @router.post("/users/{user_id}/roles")
