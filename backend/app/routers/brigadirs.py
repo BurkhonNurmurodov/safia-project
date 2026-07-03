@@ -117,17 +117,18 @@ def build_metrics_list(
     return results
 
 
-@router.get("/managers")
-def list_manager_names(db: Session = Depends(get_db)):
-    """Public endpoint — returns all manager names for the registration name picker."""
-    names = db.query(Manager.name).order_by(Manager.name).all()
-    return [r.name for r in names]
-
-
 @router.get("/managers/all")
 def list_all_managers(db: Session = Depends(get_db)):
-    """Returns all managers as {manager_id, name, shift} for filter dropdowns."""
-    rows = db.query(Manager.id, Manager.name, Manager.shift).order_by(Manager.name).all()
+    """Returns active managers as {manager_id, name, shift} for filter
+    dropdowns. Archived units are hidden everywhere (their data stays stored).
+    The old public /managers registration picker is gone — registration lists
+    now come from the initData-gated /api/profiles/registration-options."""
+    rows = (
+        db.query(Manager.id, Manager.name, Manager.shift)
+        .filter(Manager.archived.is_(False))
+        .order_by(Manager.name)
+        .all()
+    )
     return [{"manager_id": r.id, "name": r.name, "shift": r.shift} for r in rows]
 
 
