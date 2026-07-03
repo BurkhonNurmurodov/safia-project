@@ -57,6 +57,9 @@ _MESSAGES = {
         "admin_role_added":  "✅ Yangi rol qo'shildi va tasdiqlandi. Web ilovada profilni almashtirib turing.",
         "add_role_hint":     "➕ Yana bir rol qo'shmoqchimisiz? Quyidagi tugma orqali yangi rol uchun ro'yxatdan o'ting.",
         "unknown_command":   "Boshlash uchun /start ni bosing.",
+        "adminreg_choose":   "👤 Admin profilini tanlang:",
+        "adminreg_none":     "Bo'sh admin profillari yo'q.",
+        "adminreg_already":  "Siz allaqachon adminsiz.",
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
