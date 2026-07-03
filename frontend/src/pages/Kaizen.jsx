@@ -785,9 +785,7 @@ export default function Kaizen() {
                   const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                   return (
                     <div key={t.id} className="flex items-center gap-3 px-2 py-2.5" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
-                      <span className="grid place-items-center w-9 h-9 rounded-full text-base flex-shrink-0" style={{ background: "var(--brand-bg)" }} title={tl(t.project)}>
-                        {emojiFor(t.project_key)}
-                      </span>
+                      <ProjectIcon pkey={t.project_key} size="lg" title={tl(t.project)} />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={t.title}>{t.title}</div>
                         <div className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
