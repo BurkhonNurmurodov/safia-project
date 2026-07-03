@@ -867,7 +867,7 @@ export default function Kaizen() {
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   {[
                     { label: T.dueOverdue, value: A.totals.overdue, color: C_OVERDUE },
-                    { label: T.dueWeek, value: A.dueWeek, color: "#f59e0b" },
+                    { label: T.dueWeek, value: A.dueWeek, color: "#f97316" },
                     { label: T.dueUpcoming, value: A.dueUpcoming, color: C_PROG },
                     { label: T.dueNoDate, value: A.noDate, color: C_TODO },
                   ].map((b) => (
