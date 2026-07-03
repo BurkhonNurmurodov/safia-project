@@ -1191,7 +1191,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
         sm_slot = caller.get("role_id")
         if not sm_slot:
             raise HTTPException(status_code=403, detail="No shift assigned")
-        sm_shift  = 1 if sm_slot in [1, 2] else 2
+        sm_shift  = _sm_shift(db, sm_slot)
         mgr_shift = _get_shift_for_manager(db, req.manager_id)
         if sm_shift != mgr_shift:
             raise HTTPException(status_code=403, detail="Not responsible for this shift")
