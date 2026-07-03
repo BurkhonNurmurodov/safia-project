@@ -39,8 +39,48 @@ def _translit_word(word: str) -> str:
     return "".join(out)
 
 
+# Uzbek-Latin letters that MISREAD in English → their conventional English
+# renderings (x→kh, q→k, oʻ→u, gʻ→g, tutuq apostrophe dropped), so "Burxon"
+# and its Cyrillic twin "Бурхон" both render "Burkhon" for lang="en".
+# Mirror of EN_MULTI / EN_SINGLE in transliterate.js.
+_EN_MULTI = [
+    ("oʻ", "u"), ("o'", "u"), ("o‘", "u"), ("o’", "u"), ("o`", "u"),
+    ("gʻ", "g"), ("g'", "g"), ("g‘", "g"), ("g’", "g"), ("g`", "g"),
+]
+_EN_SINGLE = {"x": "kh", "q": "k", "ʼ": "", "'": "", "’": "", "‘": "", "`": ""}
+
+
+def _english_word(word: str) -> str:
+    chars = list(word)
+    out = []
+    i = 0
+    while i < len(chars):
+        ch = chars[i]
+        low = ch.lower()
+        pair = "".join(chars[i:i + 2]).lower()
+        rep = next((r for lat, r in _EN_MULTI if lat == pair), None)
+        if rep is not None:
+            out.append(rep if ch == low else rep.upper())
+            i += 2
+            continue
+        single = _EN_SINGLE.get(low)
+        if single is None:
+            out.append(ch)
+        elif ch == low or not single:
+            out.append(single)
+        else:
+            nxt = chars[i + 1] if i + 1 < len(chars) else ""
+            # "XURSHID" → "KHURSHID", "Xurshid" → "Khurshid"
+            out.append(single.upper() if nxt and nxt != nxt.lower()
+                       else single[0].upper() + single[1:])
+        i += 1
+    return "".join(out)
+
+
 def transliterate(value, lang: str):
     """Latinise a Cyrillic string for uz/en; keep the original for ru/uz_cyrl.
+    English additionally remaps the Uzbek-Latin letters that misread in
+    English (x→kh, q→k, oʻ→u, gʻ→g).
 
     Non-string / empty values are returned unchanged so this is safe to apply
     blindly over a params dict.
@@ -50,10 +90,16 @@ def transliterate(value, lang: str):
     if lang == "ru" or lang == "uz_cyrl":
         return value
     # Split on whitespace, transliterating each word so spacing is preserved.
-    return "".join(
+    latin = "".join(
         tok if tok.isspace() else _translit_word(tok)
         for tok in _split_keep_ws(value)
     )
+    if lang == "en":
+        return "".join(
+            tok if tok.isspace() else _english_word(tok)
+            for tok in _split_keep_ws(latin)
+        )
+    return latin
 
 
 def _split_keep_ws(s: str):
