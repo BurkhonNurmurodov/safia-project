@@ -30,7 +30,7 @@ const TXT = {
     matrix: "Brigadir × hafta kuni", trend: "Hafta kuni trendi", avgWord: "O'rtacha",
     totalWord: "Jami", perBrigadir: "brigadirga o'rtacha", sumAll: "yig'indi", export: "Excel",
     supervisor: "Brigadir", weekday: "Hafta kuni", avgLine: "O'rtacha", noData: "Ma'lumot yo'q",
-    brigadirsN: "brigadir", normHour: "norm-soat", min: "min", rise: "o'sish", fall: "pasayish",
+    brigadirsN: "brigadir", normHour: "soat", min: "min", rise: "o'sish", fall: "pasayish",
     week: "hafta", noSelection: "Trend uchun brigadir va hafta kunlarini tanlang", exporting: "Yuklanmoqda…",
     planFaktTitle: "Plan va Fakt", plan: "Plan", fakt: "Fakt", fulfillment: "Bajarilish",
     filter: "Filtr", search: "Qidirish", clearAll: "Tozalash", noMatch: "Mos kelmadi",
