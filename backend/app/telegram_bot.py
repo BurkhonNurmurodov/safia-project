@@ -12,8 +12,9 @@ from sqlalchemy import and_, or_
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import Admin, Manager, RegistrationNotice, TelegramUser, TelegramUserRole
-from app.routers.auth import SHIFT_ADMIN_SLOTS
+from app.models import (
+    Admin, Manager, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole,
+)
 
 logger = logging.getLogger(__name__)
 
