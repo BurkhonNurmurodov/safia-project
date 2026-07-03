@@ -60,7 +60,13 @@ def _english_word(word: str) -> str:
         pair = "".join(chars[i:i + 2]).lower()
         rep = next((r for lat, r in _EN_MULTI if lat == pair), None)
         if rep is not None:
-            out.append(rep if ch == low else rep.upper())
+            if ch == low or len(rep) == 1:
+                out.append(rep if ch == low else rep.upper())
+            else:
+                nxt = chars[i + 2] if i + 2 < len(chars) else ""
+                # "GʻULOM" → "GHULOM", "Gʻulom" → "Ghulom"
+                out.append(rep.upper() if nxt and nxt != nxt.lower()
+                           else rep[0].upper() + rep[1:])
             i += 2
             continue
         single = _EN_SINGLE.get(low)
