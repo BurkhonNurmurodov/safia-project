@@ -369,6 +369,30 @@ def _assert_day_open(db: Session, manager_id: int, d: date):
         )
 
 
+def _unit_has_attendance(db: Session, manager_id: int, d: date) -> bool:
+    """True once the unit's verifix data for the date has landed (≥1 named row).
+    Nameless hours-only leftovers created by split exchanges don't count."""
+    return db.query(Attendance.id).filter(
+        Attendance.manager_id == manager_id,
+        Attendance.date == d,
+        Attendance.worker_name.isnot(None),
+        Attendance.worker_name.notin_(["", "nan", "NaN"]),
+    ).first() is not None
+
+
+class ExchangeTargetNoData(HTTPException):
+    """A people-exchange may only target a unit whose verifix attendance for the
+    date is already uploaded: upload_verifix wipes (manager, date) wholesale, so
+    rows transferred into a data-less unit would be destroyed by its eventual
+    upload. approvals.py re-raises this instead of folding it into the generic
+    409 → "already handled" toast."""
+    def __init__(self):
+        super().__init__(
+            status_code=409,
+            detail="Target unit has no attendance data for this date yet — upload its verifix file first",
+        )
+
+
 def _find_supervisor(db: Session, manager_id: int) -> Optional[TelegramUserRole]:
     """The approved supervisor role instance for a unit. Role instances live in
     telegram_user_roles (a person may hold several roles); the returned row
