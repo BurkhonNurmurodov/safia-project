@@ -342,14 +342,20 @@ export default function Concerns() {
   });
   const rows = listResp?.data || [];
 
-  // ApexCharts measures its container width at render time; inside the responsive
-  // grid that can happen before the cell has its final width. Nudge a re-measure
-  // once layout settles after load / language switches (same fix as Kaizen).
+  // ApexCharts measures its container width once at mount; inside the
+  // responsive grid the cells only get their final width a frame or two after
+  // the data render lands. Hold the charts back until layout has settled, then
+  // mount them once at the right width — no global resize nudges, no
+  // mid-render redraw flashes (same fix as Kaizen).
+  const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => {
-    if (isLoading) return;
-    const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
-    return () => cancelAnimationFrame(raf);
-  }, [isLoading, lang]);
+    if (isLoading) return undefined;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setChartsReady(true));
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [isLoading]);
 
   // ── brigadir → leader cascade, built from the fetched rows (admin only) ──────
   const brigOptions = useMemo(() => {
@@ -706,7 +712,7 @@ export default function Concerns() {
     { name: t("concerns.seriesOpen"), data: charts.trend.map((p) => p.open) },
   ];
   const lineOpts = {
-    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent" },
+    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
     colors: [CHART_BRAND],
     stroke: { curve: "smooth", width: 2.5 },
@@ -753,7 +759,7 @@ export default function Concerns() {
   ];
   const donutSeries = donutRows.map((r) => r.n);
   const donutOpts = {
-    chart: { type: "donut", fontFamily: "inherit", background: "transparent" },
+    chart: { type: "donut", fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     labels: donutRows.map((r) => r.label),
     colors: donutRows.map((r) => r.color),
     legend: { show: false },
@@ -900,7 +906,11 @@ export default function Concerns() {
             <div className="p-4"><SkeletonChart className="h-52" /></div>
           ) : charts.trend.length ? (
             <>
-              <div className="px-1 pt-1"><ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} /></div>
+              <div className="px-1 pt-1">
+                {chartsReady
+                  ? <ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} />
+                  : <div style={{ height: 232 }} />}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 mt-auto">
                 {openCards.map((c) => (
                   <div key={c.label} className="px-4 py-3 flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
@@ -928,7 +938,9 @@ export default function Concerns() {
             <div className="p-4"><SkeletonChart className="h-52" /></div>
           ) : charts.total ? (
             <div className="p-4 flex flex-col items-center gap-3">
-              <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={180} />
+              {chartsReady
+                ? <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={180} />
+                : <div style={{ height: 180 }} />}
               <div className="w-full space-y-2">
                 {donutRows.map((r) => (
                   <div key={r.label} className="flex items-center gap-2 text-xs">
