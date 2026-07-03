@@ -86,7 +86,7 @@ def _english_word(word: str) -> str:
 def transliterate(value, lang: str):
     """Latinise a Cyrillic string for uz/en; keep the original for ru/uz_cyrl.
     English additionally remaps the Uzbek-Latin letters that misread in
-    English (x→kh, q→k, oʻ→u, gʻ→g).
+    English (x→kh, q→k, oʻ→u, gʻ→gh).
 
     Non-string / empty values are returned unchanged so this is safe to apply
     blindly over a params dict.
