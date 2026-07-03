@@ -5,11 +5,16 @@ from app.database import Base
 
 
 class Manager(Base):
+    """A supervisor unit. Doubles as the supervisor *profile* in the admin
+    Profiles tab: id IS the Verifix file id attendance uploads are keyed by.
+    Archived units keep their history but disappear from registration pickers
+    and dashboards (units with data are archived instead of deleted)."""
     __tablename__ = "managers"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     shift = Column(Integer)  # 1 or 2
+    archived = Column(Boolean, default=False, nullable=False)
 
     attendance = relationship("Attendance", back_populates="manager")
     comments = relationship("Comment", back_populates="manager")
