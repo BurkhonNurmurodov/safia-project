@@ -89,7 +89,7 @@ export default function UsersManagement() {
     mutationFn: ({ userId, role, roleId }) =>
       api.post(`/admin/users/${userId}/roles`, {
         role,
-        role_id: role === "top-manager" || roleId === "" ? null : Number(roleId),
+        role_id: roleId === "" ? null : Number(roleId),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
