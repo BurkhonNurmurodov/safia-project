@@ -402,7 +402,7 @@ def _notify_all_parties(
     # Shift-managers for this manager's shift — anyone holding such a role,
     # regardless of which role they are currently switched into
     shift    = _get_shift_for_manager(db, manager_id)
-    role_ids = SHIFT_ROLE_IDS.get(shift, [1, 2])
+    role_ids = _sm_role_ids_for_shift(db, shift)
     recipients.update(
         r.telegram_id
         for r in db.query(TelegramUserRole).filter(
