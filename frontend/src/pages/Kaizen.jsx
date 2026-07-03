@@ -969,7 +969,7 @@ export default function Kaizen() {
                     const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                     return (
                       <tr key={t.id}>
-                        <td className="px-4 py-2 whitespace-nowrap" style={cellB}><span title={tl(t.project)}>{emojiFor(t.project_key)}</span></td>
+                        <td className="px-4 py-2 whitespace-nowrap" style={cellB}><ProjectIcon pkey={t.project_key} title={tl(t.project)} /></td>
                         <td className="px-4 py-2 max-w-xs" style={cellB}><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
                         <td className="px-4 py-2 hidden md:table-cell" style={{ ...cellB, color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
                         <td className="px-4 py-2 hidden sm:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
