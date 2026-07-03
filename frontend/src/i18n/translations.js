@@ -3233,6 +3233,7 @@ const t = {
     "concerns.kpiPeakDate":       "Date with most open concerns",
     "concerns.openLower":         "open",
     "concerns.avgShort":          "avg",
+    "concerns.avgPerConcern":     "days on average per concern",
     "concerns.itemsUnit":         "concerns",
     "concerns.ofOpen":            "of open",
     "concerns.allClear":          "No open concerns",
