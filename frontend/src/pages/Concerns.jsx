@@ -867,11 +867,8 @@ export default function Concerns() {
           {insights.peak ? (
             <>
               <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="#3b82f6" />
-              <div className="text-[15px] font-bold font-mono leading-snug" style={{ color: "var(--text-1)" }}>
-                {insights.peak.date}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                <Chip icon={Layers}>{insights.peakShare}% {t("concerns.ofOpen")}</Chip>
+              <div className="text-[15px] font-bold leading-snug" style={{ color: "var(--text-1)" }}>
+                {fmtDate(insights.peak.date, lang)}
               </div>
             </>
           ) : (
