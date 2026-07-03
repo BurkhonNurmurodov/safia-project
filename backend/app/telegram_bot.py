@@ -792,22 +792,62 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
     The single source of truth for registration decisions — called by BOTH the
     admin panel (routers/admin.py) and the Telegram approve/reject buttons.
     Returns False if the request is gone or already at this status, so a race
-    between two admins (or panel + Telegram) resolves to a no-op for the loser."""
+    between two admins (or panel + Telegram) resolves to a no-op for the loser.
+
+    Admin-profile requests (/adminreg) add a layer: approval inserts the
+    admins-table row (that table is what grants rights — admins.profile_id is
+    the binding), the profile races on first-approval-wins,同 the losers'
+    pending requests are auto-rejected. The winning role row is deleted
+    outright so a stale role='admin' row can never mint an admin JWT after a
+    later unassign."""
+    losers: list[tuple[int, int | None, str]] = []  # (role_ref, telegram_id|None→no DM, lang)
     with SessionLocal() as db:
         role_row = db.query(TelegramUserRole).filter_by(id=role_ref).first()
         if not role_row or role_row.status == status:
             return False
         user = db.query(TelegramUser).filter_by(telegram_id=role_row.telegram_id).first()
-        role_row.status = status
-        if status == "approved":
-            role_row.approved_at = datetime.now(timezone.utc)
         telegram_id  = role_row.telegram_id
         decided_role = role_row.role
         lang = (user.language if user else "uz") or "uz"
+
+        if decided_role == "admin" and status == "approved":
+            profile_taken = db.query(Admin).filter_by(profile_id=role_row.role_id).first()
+            already_admin = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+            if profile_taken or already_admin:
+                status = "rejected"   # lost the race (or became admin meanwhile)
+                role_row.status = status
+            else:
+                db.add(Admin(telegram_id=telegram_id, profile_id=role_row.role_id,
+                             language=lang))
+                pending_admin = (
+                    db.query(TelegramUserRole)
+                    .filter(TelegramUserRole.role == "admin",
+                            TelegramUserRole.status == "pending",
+                            TelegramUserRole.id != role_row.id)
+                    .all()
+                )
+                for l in pending_admin:
+                    if l.role_id == role_row.role_id:      # same profile → lost the race
+                        l.status = "rejected"
+                        lu = db.query(TelegramUser).filter_by(telegram_id=l.telegram_id).first()
+                        losers.append((l.id, l.telegram_id, (lu.language if lu else "uz") or "uz"))
+                    elif l.telegram_id == telegram_id:      # winner's other claims → withdrawn
+                        l.status = "rejected"
+                        losers.append((l.id, None, lang))   # no DM — they just got approved
+                db.delete(role_row)
+        else:
+            role_row.status = status
+            if status == "approved":
+                role_row.approved_at = datetime.now(timezone.utc)
         db.commit()
 
     notify_status_change(telegram_id, status, lang, role=decided_role)
     notify_admins_of_decision(telegram_id, status, decided_by=decided_by, role_ref=role_ref)
+    for loser_ref, loser_tid, loser_lang in losers:
+        if loser_tid:
+            notify_status_change(loser_tid, "rejected", loser_lang, role="admin")
+        notify_admins_of_decision(loser_tid or telegram_id, "rejected",
+                                  decided_by=decided_by, role_ref=loser_ref)
     return True
 
 
