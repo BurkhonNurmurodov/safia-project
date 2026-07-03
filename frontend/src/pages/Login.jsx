@@ -88,9 +88,15 @@ export default function Login() {
     );
   }
 
-  const filteredManagers = managers.filter(n =>
+  const managerNames = (options?.supervisors ?? []).map(s => s.name);
+  const filteredManagers = managerNames.filter(n =>
     n.toLowerCase().includes(search.toLowerCase())
   );
+  const topManagers = (options?.top_managers ?? []).filter(n =>
+    n.toLowerCase().includes(search.toLowerCase())
+  );
+  const shiftAdmins = options?.shift_managers ?? [];
+  const leadersForSupervisor = supervisor ? (options?.leaders?.[supervisor] ?? []) : [];
 
   return (
     <div
