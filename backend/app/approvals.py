@@ -554,6 +554,11 @@ def _decide_hr_document(doc_id: int, status: str, call) -> None:
                     staff._notify_exchange(db, doc, "approved", int(caller["sub"]))
             else:  # rejected → delete the draft
                 staff._reject_document(doc, caller, db)
+        except staff.ExchangeTargetNoData:
+            # Not a stale tap: the target unit's verifix data isn't uploaded yet.
+            # Let it reach the generic handler so the tapper sees an error toast
+            # rather than the "already handled" one.
+            raise
         except HTTPException as e:
             if e.status_code in (404, 409):
                 raise AlreadyHandled()
