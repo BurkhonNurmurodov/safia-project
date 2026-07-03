@@ -1,0 +1,625 @@
+"""
+Pre-created profiles.
+
+Admins create every identity here (Profiles tab); registration only binds one
+of them to a Telegram account — nobody types a name at registration anymore.
+
+Profile storage:
+  supervisor              → the `managers` row itself (id = Verifix file id)
+  top-manager / shift-manager / leader / admin → `role_profiles`
+
+Binding resolution (who holds a profile):
+  supervisor      telegram_user_roles: role='supervisor',   role_id = manager.id
+  shift-manager   telegram_user_roles: role='shift-manager',role_id = profile.id
+  top-manager     telegram_user_roles: role='top-manager',  role_id = profile.id
+  leader          telegram_user_roles: role='leader',
+                  role_id = profile.manager_id AND full_name = profile.name
+                  (leader role rows keep pointing at the unit — JWT/Concerns contract)
+  admin           admins.profile_id = profile.id
+
+Multilingual names: one canonical (Uzbek Latin) name per profile; per-language
+display variants are `name.<canonical>` override keys in `translations`
+(rendered by the frontend tl() helper, auto-transliterated when absent).
+"""
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+import jwt
+from jwt import PyJWTError as JWTError
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.database import get_db
+from app.models import (
+    Admin, Manager, RoleProfile, TelegramUser, TelegramUserRole, Translation,
+)
+from app.routers.admin import verify_admin
+from app.routers.auth import _validate_init_data
+
+router = APIRouter(prefix="/api/profiles", tags=["profiles"])
+_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
+
+PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin"}
+
+# Every relational column that keys on managers.id — used when an admin
+# re-keys a supervisor's Verifix ID. (JSONB payloads inside hr_documents may
+# embed manager ids too; those are historical snapshots and stay untouched.)
+_MANAGER_ID_REFS = [
+    ("attendance", "manager_id"),
+    ("comments", "manager_id"),
+    ("edit_requests", "manager_id"),
+    ("hr_documents", "manager_id"),
+    ("day_approvals", "manager_id"),
+    ("daily_submissions", "manager_id"),
+    ("pp_products", "manager_id"),
+    ("pp_work_centers", "manager_id"),
+    ("pp_daily", "manager_id"),
+    ("pp_reconciliation", "manager_id"),
+    ("pp_uploads", "manager_id"),
+    ("leader_concerns", "brigadir_manager_id"),
+    ("leader_checklists", "supervisor_manager_id"),
+    ("role_profiles", "manager_id"),
+]
+
+
+def _caller(token: Annotated[str, Depends(_oauth2)]) -> dict:
+    try:
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _rekey_name_overrides(db: Session, old_name: str, new_name: str) -> None:
+    """Move `name.<old>` translation overrides to `name.<new>` so per-language
+    display variants survive a canonical rename."""
+    if not old_name or old_name == new_name:
+        return
+    old_key, new_key = f"name.{old_name}", f"name.{new_name}"
+    taken = {(t.lang, t.key) for t in db.query(Translation).filter(Translation.key == new_key).all()}
+    for t in db.query(Translation).filter(Translation.key == old_key).all():
+        if (t.lang, new_key) in taken:
+            db.delete(t)  # target already customised — keep it, drop the stale source
+        else:
+            t.key = new_key
+
+
+def _remove_role_row(db: Session, role_row: TelegramUserRole) -> None:
+    """Delete one role binding, mirroring admin.delete_user_role semantics:
+    the user's last role takes the whole account with it, and a deleted active
+    role falls back to the first remaining approved one."""
+    tid = role_row.telegram_id
+    ref = role_row.id
+    db.delete(role_row)
+    remaining = (
+        db.query(TelegramUserRole)
+        .filter(TelegramUserRole.telegram_id == tid, TelegramUserRole.id != ref)
+        .all()
+    )
+    user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
+    if not remaining:
+        if user:
+            db.delete(user)
+    elif user and user.active_role_ref == ref:
+        approved = [r for r in remaining if r.status == "approved"]
+        user.active_role_ref = approved[0].id if approved else None
+
+
+def _bound_role_rows(db: Session, ptype: str, pid: int) -> list[TelegramUserRole]:
+    if ptype == "supervisor":
+        return db.query(TelegramUserRole).filter_by(role="supervisor", role_id=pid).all()
+    if ptype in ("shift-manager", "top-manager"):
+        return db.query(TelegramUserRole).filter_by(role=ptype, role_id=pid).all()
+    if ptype == "leader":
+        p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
+        if not p:
+            return []
+        return db.query(TelegramUserRole).filter_by(
+            role="leader", role_id=p.manager_id, full_name=p.name,
+        ).all()
+    return []
+
+
+def _rename_profile(db: Session, ptype: str, pid: int, new_name: str) -> str:
+    """Canonical rename + full cascade (role rows, translation overrides).
+    Returns the old name. Caller commits."""
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    if ptype == "supervisor":
+        mgr = db.query(Manager).filter_by(id=pid).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        old = mgr.name
+        if old == new_name:
+            return old
+        mgr.name = new_name
+        for r in db.query(TelegramUserRole).filter_by(role="supervisor", role_id=pid).all():
+            r.full_name = new_name
+    else:
+        p = db.query(RoleProfile).filter_by(id=pid).first()
+        if not p or p.role != ptype:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        old = p.name
+        if old == new_name:
+            return old
+        for r in _bound_role_rows(db, ptype, pid):
+            r.full_name = new_name
+        p.name = new_name
+
+    _rekey_name_overrides(db, old, new_name)
+    return old
+
+
+def _user_info(db: Session) -> dict[int, dict]:
+    return {
+        u.telegram_id: {"full_name": u.full_name, "username": u.username, "phone": u.phone}
+        for u in db.query(TelegramUser).all()
+    }
+
+
+def _manager_has_data(db: Session, manager_id: int) -> bool:
+    for table, col in _MANAGER_ID_REFS:
+        if table == "role_profiles":
+            continue  # leader profiles are config, not history — deleted along
+        row = db.execute(
+            text(f"SELECT 1 FROM {table} WHERE {col} = :mid LIMIT 1"), {"mid": manager_id}
+        ).first()
+        if row:
+            return True
+    return False
+
+
+# ── Admin: list ───────────────────────────────────────────────────────────────
+
+@router.get("/admin/list")
+def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    users = _user_info(db)
+
+    def binding(r: TelegramUserRole) -> dict:
+        info = users.get(r.telegram_id, {})
+        return {
+            "role_ref":    r.id,
+            "telegram_id": r.telegram_id,
+            "status":      r.status,
+            "user_name":   info.get("full_name"),
+            "username":    info.get("username"),
+        }
+
+    role_rows = db.query(TelegramUserRole).order_by(TelegramUserRole.id).all()
+    by_key: dict[tuple, list] = {}
+    for r in role_rows:
+        if r.status == "rejected":
+            continue
+        by_key.setdefault((r.role, r.role_id), []).append(r)
+
+    supervisors = []
+    for m in db.query(Manager).order_by(Manager.id).all():
+        supervisors.append({
+            "id": m.id, "name": m.name, "shift": m.shift, "archived": bool(m.archived),
+            "has_data": _manager_has_data(db, m.id),
+            "bindings": [binding(r) for r in by_key.get(("supervisor", m.id), [])],
+        })
+
+    profiles = db.query(RoleProfile).order_by(RoleProfile.id).all()
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    admin_rows = db.query(Admin).all()
+    admins_by_profile = {a.profile_id: a for a in admin_rows if a.profile_id}
+
+    out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
+           "leaders": [], "admins": []}
+    for p in profiles:
+        item = {"id": p.id, "name": p.name}
+        if p.role == "top-manager":
+            item["bindings"] = [binding(r) for r in by_key.get(("top-manager", p.id), [])]
+            out["top_managers"].append(item)
+        elif p.role == "shift-manager":
+            item["shift"] = p.shift
+            item["bindings"] = [binding(r) for r in by_key.get(("shift-manager", p.id), [])]
+            out["shift_managers"].append(item)
+        elif p.role == "leader":
+            item["manager_id"] = p.manager_id
+            item["supervisor"] = mgr_names.get(p.manager_id)
+            item["bindings"] = [
+                binding(r) for r in by_key.get(("leader", p.manager_id), [])
+                if r.full_name == p.name
+                for r in [r]
+            ]
+            out["leaders"].append(item)
+        elif p.role == "admin":
+            a = admins_by_profile.get(p.id)
+            info = users.get(a.telegram_id, {}) if a else {}
+            item["bindings"] = [{
+                "role_ref": None, "telegram_id": a.telegram_id, "status": "approved",
+                "user_name": info.get("full_name"), "username": info.get("username"),
+            }] if a else []
+            # pending /adminreg requests for this profile
+            item["bindings"] += [
+                binding(r) for r in db.query(TelegramUserRole)
+                .filter_by(role="admin", role_id=p.id, status="pending").all()
+            ]
+            out["admins"].append(item)
+
+    out["assigned_admin_count"] = sum(1 for a in admin_rows)
+    return out
+
+
+# ── Admin: create ─────────────────────────────────────────────────────────────
+
+class CreateProfilePayload(BaseModel):
+    role:       str
+    name:       str
+    shift:      Optional[int] = None   # shift-manager | supervisor
+    manager_id: Optional[int] = None   # leader → supervisor unit
+    verifix_id: Optional[int] = None   # supervisor → managers.id
+
+
+@router.post("/admin")
+def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(get_db),
+                         _: dict = Depends(verify_admin)):
+    role = payload.role
+    name = (payload.name or "").strip()
+    if role not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile type")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    if role == "supervisor":
+        if not payload.verifix_id or payload.verifix_id <= 0:
+            raise HTTPException(status_code=400, detail="Verifix ID is required")
+        if payload.shift not in (1, 2):
+            raise HTTPException(status_code=400, detail="Shift must be 1 or 2")
+        if db.query(Manager).filter_by(id=payload.verifix_id).first():
+            raise HTTPException(status_code=409, detail="Verifix ID already in use")
+        db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False))
+        db.commit()
+        return {"ok": True, "id": payload.verifix_id}
+
+    if role == "shift-manager":
+        if payload.shift not in (1, 2):
+            raise HTTPException(status_code=400, detail="Shift must be 1 or 2")
+        p = RoleProfile(role=role, name=name, shift=payload.shift)
+    elif role == "leader":
+        mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
+        if not mgr:
+            raise HTTPException(status_code=400, detail="Supervisor unit not found")
+        dup = db.query(RoleProfile).filter_by(role="leader", name=name,
+                                              manager_id=payload.manager_id).first()
+        if dup:
+            raise HTTPException(status_code=409, detail="This leader already exists")
+        p = RoleProfile(role=role, name=name, manager_id=payload.manager_id)
+    else:  # top-manager | admin
+        if db.query(RoleProfile).filter_by(role=role, name=name).first():
+            raise HTTPException(status_code=409, detail="Profile with this name already exists")
+        p = RoleProfile(role=role, name=name)
+
+    db.add(p)
+    db.commit()
+    return {"ok": True, "id": p.id}
+
+
+# ── Admin: update ─────────────────────────────────────────────────────────────
+
+class UpdateProfilePayload(BaseModel):
+    name:           Optional[str] = None
+    shift:          Optional[int] = None
+    manager_id:     Optional[int] = None   # leader → move to another unit
+    new_verifix_id: Optional[int] = None   # supervisor → re-key managers.id
+    archived:       Optional[bool] = None  # supervisor only
+    overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
+
+
+def _apply_overrides(db: Session, canonical: str, overrides: dict[str, str]) -> None:
+    key = f"name.{canonical}"
+    for lang, value in overrides.items():
+        row = db.query(Translation).filter_by(lang=lang, key=key).first()
+        value = (value or "").strip()
+        if value:
+            if row:
+                row.value = value
+            else:
+                db.add(Translation(lang=lang, key=key, value=value))
+        elif row:
+            db.delete(row)
+
+
+@router.put("/admin/{ptype}/{pid}")
+def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
+                         db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    if ptype not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile type")
+
+    if ptype == "supervisor":
+        mgr = db.query(Manager).filter_by(id=pid).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        if payload.name is not None:
+            _rename_profile(db, "supervisor", pid, payload.name)
+        if payload.shift in (1, 2):
+            mgr.shift = payload.shift
+        if payload.archived is not None:
+            mgr.archived = bool(payload.archived)
+        if payload.overrides:
+            _apply_overrides(db, mgr.name, payload.overrides)
+        new_id = pid
+        if payload.new_verifix_id and payload.new_verifix_id != pid:
+            new_id = _rekey_manager_id(db, mgr, payload.new_verifix_id)
+        db.commit()
+        return {"ok": True, "id": new_id}
+
+    p = db.query(RoleProfile).filter_by(id=pid).first()
+    if not p or p.role != ptype:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if payload.name is not None:
+        _rename_profile(db, ptype, pid, payload.name)
+    if ptype == "shift-manager" and payload.shift in (1, 2):
+        p.shift = payload.shift
+    if ptype == "leader" and payload.manager_id and payload.manager_id != p.manager_id:
+        mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
+        if not mgr:
+            raise HTTPException(status_code=400, detail="Supervisor unit not found")
+        # Bound leaders move with their profile — their role rows point at the unit.
+        for r in _bound_role_rows(db, "leader", pid):
+            r.role_id = payload.manager_id
+        p.manager_id = payload.manager_id
+    if payload.overrides:
+        _apply_overrides(db, p.name, payload.overrides)
+    db.commit()
+    return {"ok": True, "id": pid}
+
+
+def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
+    """Change a unit's Verifix ID: insert a fresh managers row under the new id,
+    re-point every referencing table, drop the old row. One transaction —
+    the caller commits."""
+    if new_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid Verifix ID")
+    if db.query(Manager).filter_by(id=new_id).first():
+        raise HTTPException(status_code=409, detail="Verifix ID already in use")
+
+    old_id = mgr.id
+    db.add(Manager(id=new_id, name=mgr.name, shift=mgr.shift, archived=mgr.archived))
+    db.flush()
+    for table, col in _MANAGER_ID_REFS:
+        db.execute(text(f"UPDATE {table} SET {col} = :new WHERE {col} = :old"),
+                   {"new": new_id, "old": old_id})
+    db.execute(text(
+        "UPDATE telegram_user_roles SET role_id = :new "
+        "WHERE role IN ('supervisor', 'leader') AND role_id = :old"
+    ), {"new": new_id, "old": old_id})
+    db.execute(text("DELETE FROM managers WHERE id = :old"), {"old": old_id})
+    return new_id
+
+
+# ── Admin: delete / unassign ──────────────────────────────────────────────────
+
+@router.delete("/admin/{ptype}/{pid}")
+def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
+                         _: dict = Depends(verify_admin)):
+    if ptype not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile type")
+
+    if ptype == "supervisor":
+        mgr = db.query(Manager).filter_by(id=pid).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        for r in _bound_role_rows(db, "supervisor", pid):
+            _remove_role_row(db, r)
+        if _manager_has_data(db, pid):
+            mgr.archived = True   # history stays queryable; unit leaves pickers/dashboards
+            db.commit()
+            return {"ok": True, "archived": True}
+        # No history: take the unit's leader profiles (and their bindings) along.
+        for lp in db.query(RoleProfile).filter_by(role="leader", manager_id=pid).all():
+            for r in _bound_role_rows(db, "leader", lp.id):
+                _remove_role_row(db, r)
+            db.delete(lp)
+        db.delete(mgr)
+        db.commit()
+        return {"ok": True, "archived": False}
+
+    p = db.query(RoleProfile).filter_by(id=pid).first()
+    if not p or p.role != ptype:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if ptype == "admin":
+        holder = db.query(Admin).filter_by(profile_id=pid).first()
+        if holder and db.query(Admin).count() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the last admin")
+        if holder:
+            db.delete(holder)
+        # drop pending /adminreg requests for this profile
+        for r in db.query(TelegramUserRole).filter_by(role="admin", role_id=pid).all():
+            _remove_role_row(db, r)
+    else:
+        for r in _bound_role_rows(db, ptype, pid):
+            _remove_role_row(db, r)
+
+    db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
+class UnassignPayload(BaseModel):
+    ptype:       str
+    pid:         int
+    role_ref:    Optional[int] = None  # non-admin bindings
+    telegram_id: Optional[int] = None  # admin bindings
+
+
+@router.post("/admin/unassign")
+def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_db),
+                           _: dict = Depends(verify_admin)):
+    if payload.ptype == "admin":
+        holder = db.query(Admin).filter_by(telegram_id=payload.telegram_id,
+                                           profile_id=payload.pid).first()
+        if not holder:
+            raise HTTPException(status_code=404, detail="Assignment not found")
+        if db.query(Admin).count() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the last admin")
+        db.delete(holder)
+        db.commit()
+        return {"ok": True}
+
+    row = db.query(TelegramUserRole).filter_by(id=payload.role_ref).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    _remove_role_row(db, row)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Registration options (pre-login, Telegram-initData-gated) ─────────────────
+
+class RegistrationOptionsPayload(BaseModel):
+    init_data: str
+
+
+@router.post("/registration-options")
+def registration_options(payload: RegistrationOptionsPayload, db: Session = Depends(get_db)):
+    """Name lists for the registration pickers. Requires valid Telegram
+    initData so only people who actually opened the bot's mini-app see them —
+    anonymous web visitors get 401 (per the privacy decision)."""
+    if not payload.init_data or payload.init_data == "__dev__":
+        if not settings.dev_auth:
+            raise HTTPException(status_code=401, detail="Missing Telegram initData")
+    elif not _validate_init_data(payload.init_data):
+        raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+
+    managers = (
+        db.query(Manager)
+        .filter(Manager.archived.is_(False))
+        .order_by(Manager.shift, Manager.name)
+        .all()
+    )
+    mgr_names = {m.id: m.name for m in managers}
+    leaders: dict[str, list[str]] = {}
+    for p in (
+        db.query(RoleProfile)
+        .filter(RoleProfile.role == "leader")
+        .order_by(RoleProfile.name)
+        .all()
+    ):
+        sup = mgr_names.get(p.manager_id)
+        if sup:  # archived units keep their leaders out of the picker
+            leaders.setdefault(sup, []).append(p.name)
+
+    return {
+        "top_managers": [
+            p.name for p in db.query(RoleProfile)
+            .filter(RoleProfile.role == "top-manager").order_by(RoleProfile.name).all()
+        ],
+        "shift_managers": [
+            {"name": p.name, "shift": p.shift}
+            for p in db.query(RoleProfile)
+            .filter(RoleProfile.role == "shift-manager")
+            .order_by(RoleProfile.shift, RoleProfile.name).all()
+        ],
+        "supervisors": [{"name": m.name, "shift": m.shift} for m in managers],
+        "leaders": leaders,
+    }
+
+
+# ── Self-service: my profile names ────────────────────────────────────────────
+
+@router.get("/mine")
+def my_profiles(caller: dict = Depends(_caller), db: Session = Depends(get_db)):
+    """The caller's approved profiles with their canonical names and stored
+    per-language overrides — the settings-modal name editor's data source."""
+    tid = int(caller["sub"])
+    entries = []
+
+    for r in (
+        db.query(TelegramUserRole)
+        .filter_by(telegram_id=tid, status="approved")
+        .order_by(TelegramUserRole.id)
+        .all()
+    ):
+        if r.role == "admin":
+            continue  # surfaced via the admins-table entry below
+        entries.append({
+            "kind": "role", "role": r.role, "role_ref": r.id, "canonical": r.full_name,
+        })
+
+    admin_row = db.query(Admin).filter_by(telegram_id=tid).first()
+    if admin_row and admin_row.profile_id:
+        p = db.query(RoleProfile).filter_by(id=admin_row.profile_id).first()
+        if p:
+            entries.append({"kind": "admin", "role": "admin",
+                            "role_ref": None, "canonical": p.name})
+
+    names = {e["canonical"] for e in entries if e["canonical"]}
+    overrides: dict[str, dict[str, str]] = {n: {} for n in names}
+    if names:
+        keys = [f"name.{n}" for n in names]
+        for t in db.query(Translation).filter(Translation.key.in_(keys)).all():
+            overrides[t.key[len("name."):]][t.lang] = t.value
+    for e in entries:
+        e["overrides"] = overrides.get(e["canonical"], {})
+    return {"profiles": entries}
+
+
+class MyNamePayload(BaseModel):
+    kind:      str                       # "role" | "admin"
+    role_ref:  Optional[int] = None      # kind="role"
+    name:      Optional[str] = None      # new canonical (uz) — rename cascade
+    overrides: Optional[dict[str, str]] = None  # lang → display ("" clears)
+
+
+@router.put("/mine")
+def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
+                   db: Session = Depends(get_db)):
+    """Self-service rename: users edit their own profile's canonical name and
+    per-language display variants once approved. Immediate, app-wide."""
+    tid = int(caller["sub"])
+
+    if payload.kind == "admin":
+        admin_row = db.query(Admin).filter_by(telegram_id=tid).first()
+        if not admin_row or not admin_row.profile_id:
+            raise HTTPException(status_code=403, detail="No admin profile")
+        p = db.query(RoleProfile).filter_by(id=admin_row.profile_id).first()
+        if not p:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        if payload.name is not None:
+            _rename_profile(db, "admin", p.id, payload.name)
+        if payload.overrides:
+            _apply_overrides(db, p.name, payload.overrides)
+        db.commit()
+        return {"ok": True, "canonical": p.name}
+
+    row = db.query(TelegramUserRole).filter_by(id=payload.role_ref, telegram_id=tid).first()
+    if not row or row.status != "approved":
+        raise HTTPException(status_code=403, detail="Not your approved profile")
+
+    canonical = row.full_name
+    if payload.name is not None and (payload.name or "").strip() != canonical:
+        if row.role == "supervisor":
+            _rename_profile(db, "supervisor", row.role_id, payload.name)
+        elif row.role in ("shift-manager", "top-manager"):
+            if row.role_id:
+                _rename_profile(db, row.role, row.role_id, payload.name)
+            else:  # legacy row without a profile — rename the row itself
+                _rekey_name_overrides(db, canonical, payload.name.strip())
+                row.full_name = payload.name.strip()
+        else:  # leader — bind via (manager_id, name)
+            p = db.query(RoleProfile).filter_by(
+                role="leader", manager_id=row.role_id, name=canonical,
+            ).first()
+            if p:
+                _rename_profile(db, "leader", p.id, payload.name)
+            else:
+                _rekey_name_overrides(db, canonical, payload.name.strip())
+                row.full_name = payload.name.strip()
+        db.refresh(row)
+        canonical = row.full_name
+
+    if payload.overrides:
+        _apply_overrides(db, canonical, payload.overrides)
+    db.commit()
+    return {"ok": True, "canonical": canonical}
