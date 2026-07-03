@@ -37,8 +37,30 @@ router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
-SHIFT_ROLE_IDS = {1: [1, 2], 2: [3, 4]}
 STAFF_ROLES = {"admin", "supervisor", "shift-manager"}
+
+
+def _sm_shift(db: Session, role_id: Optional[int]) -> Optional[int]:
+    """shift-manager role_id (a shift-manager RoleProfile id) → its shift.
+    Pre-profile JWTs still carry the old fixed slot numbers 1-4; the rollout
+    backfill created the slot profiles under those very ids, so the lookup
+    covers them, with the historic 1/2→shift-1, 3/4→shift-2 mapping as a last
+    resort for tokens issued before the migration ran."""
+    if not role_id:
+        return None
+    p = db.query(RoleProfile).filter_by(id=role_id, role="shift-manager").first()
+    if p and p.shift in (1, 2):
+        return p.shift
+    return 1 if role_id in (1, 2) else 2
+
+
+def _sm_role_ids_for_shift(db: Session, shift: Optional[int]) -> list[int]:
+    """All shift-manager profile ids working the given shift — the role_id
+    values to notify when something happens on that shift."""
+    return [
+        p.id for p in db.query(RoleProfile)
+        .filter_by(role="shift-manager", shift=shift).all()
+    ]
 
 # Roles that exist only as verifix-imported job titles and may NOT be chosen as
 # the target of a Role Change document — staff can only acquire them via verifix
