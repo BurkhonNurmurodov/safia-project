@@ -84,8 +84,8 @@ function transliterateWord(word) {
 // per-language "translate" buttons derive the Cyrillic variants from it.
 // Digraphs/apostrophe-letters must be matched before single letters.
 const LATIN_MULTI = [
-  ["oʻ", "ў"], ["o'", "ў"], ["o‘", "ў"], ["o`", "ў"],
-  ["gʻ", "ғ"], ["g'", "ғ"], ["g‘", "ғ"], ["g`", "ғ"],
+  ["oʻ", "ў"], ["o'", "ў"], ["o‘", "ў"], ["o’", "ў"], ["o`", "ў"],
+  ["gʻ", "ғ"], ["g'", "ғ"], ["g‘", "ғ"], ["g’", "ғ"], ["g`", "ғ"],
   ["sh", "ш"], ["ch", "ч"], ["yo", "ё"], ["yu", "ю"],
   ["ya", "я"], ["ye", "е"], ["ts", "ц"],
 ];
