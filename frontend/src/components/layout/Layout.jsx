@@ -18,6 +18,7 @@ const ROLE_TKEYS = {
   "top-manager":  "role.topManager",
   "shift-manager":"role.manager",
   "supervisor":   "role.supervisor",
+  "leader":       "role.leader",
 };
 
 function nameInitials(name = "") {
