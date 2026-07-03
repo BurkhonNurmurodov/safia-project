@@ -286,6 +286,9 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     # to the *viewer's* language, not the creator's (doc_type → doc_label).
     if "doc_type" in params:
         localized["doc_label"] = _doc_label(params["doc_type"], lang)
+    if "task_status" in params:
+        by_lang = _TASK_STATUS_LABELS.get(params["task_status"], {})
+        localized["status_label"] = by_lang.get(lang) or by_lang.get("en") or params["task_status"]
     return title_tmpl.format(**localized), body_tmpl.format(**localized)
 
 
