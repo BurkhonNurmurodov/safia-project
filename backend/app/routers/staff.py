@@ -2036,6 +2036,8 @@ def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Option
         if not target:
             raise HTTPException(status_code=404, detail="Target supervisor not found")
         _assert_day_open(db, target.id, d)   # can't move into a closed unit
+        if not _unit_has_attendance(db, target.id, d):
+            raise ExchangeTargetNoData()     # can't move into a unit with no data yet
         return ttype, target.id, target.name, None
     name = (task_name_in or "").strip()
     if not name:
