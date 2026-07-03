@@ -356,7 +356,7 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, comp
       <div ref={ref} className="relative hidden md:block flex-shrink-0">
         <button
           onClick={() => setOpen(o => !o)}
-          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors"
+          className={`flex ${triggerCls} transition-colors`}
           style={{
             background: "var(--bg-card)",
             border: `1px solid ${open || anyActive ? "var(--brand)" : "var(--border-md)"}`,
