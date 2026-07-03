@@ -7,6 +7,7 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import TranslationsEditor from "./TranslationsEditor";
 import UsersManagement from "./UsersManagement";
+import ProfilesManagement from "./ProfilesManagement";
 import PageAccess from "./PageAccess";
 import ProductionUpload from "./ProductionUpload";
 import { fillDescs } from "../../utils/segments";
