@@ -127,6 +127,10 @@ class Admin(Base):
     # Seeded admins have no telegram_users row, so their bot-DM language lives here
     # (kept in sync with the dashboard via POST /api/auth/language). See _get_user_lang.
     language = Column(String, default="uz")  # uz | uz_cyrl | ru | en
+    # The admin RoleProfile this account claimed (via /adminreg or backfill).
+    # One admin profile — one account; NULL only transiently for legacy rows
+    # until backfill_role_profiles links them.
+    profile_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
