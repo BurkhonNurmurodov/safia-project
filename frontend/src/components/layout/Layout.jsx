@@ -8,6 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings } from "lucide-react";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
+import MyNameEditor from "../ui/MyNameEditor";
 import useActivityPing from "../../hooks/useActivityPing";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
