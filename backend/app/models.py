@@ -213,6 +213,25 @@ class TelegramUserRole(Base):
     )
 
 
+class RoleProfile(Base):
+    """An admin-pre-created profile a Telegram user claims at registration.
+    Registration never creates identities anymore — users only bind one of
+    these to their account. Supervisor profiles are NOT here: they are the
+    `managers` rows themselves (managers.id = Verifix file id). role_id
+    semantics per role: top-manager/shift-manager role rows point at this
+    table's id; leader role rows keep pointing at the supervisor's manager id
+    (JWT/Concerns compatibility) and bind to a profile via (manager_id, name).
+    Admin profiles are bound via admins.profile_id."""
+    __tablename__ = "role_profiles"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    role       = Column(String, nullable=False, index=True)  # top-manager | shift-manager | leader | admin
+    name       = Column(String, nullable=False)              # canonical (Uzbek Latin) display name
+    shift      = Column(Integer, nullable=True)              # shift-managers only: 1 | 2
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
