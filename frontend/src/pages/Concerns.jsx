@@ -948,7 +948,7 @@ export default function Concerns() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("concerns.search")}
-                className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-44 outline-none"
+                className="h-8 pl-8 pr-3 rounded-lg text-xs w-44 outline-none"
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
               />
             </div>
