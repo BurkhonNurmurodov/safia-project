@@ -703,7 +703,7 @@ export default function Concerns() {
     theme: chartTheme,
     colors: [CHART_BRAND],
     stroke: { curve: "smooth", width: 2.5 },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.22, opacityTo: 0.02, stops: [0, 95, 100] } },
+    fill: { type: "solid", opacity: 0.15 },
     dataLabels: { enabled: false },
     xaxis: {
       type: "category",
