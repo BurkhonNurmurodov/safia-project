@@ -402,11 +402,11 @@ export default function UsersManagement() {
                 </select>
               </label>
 
-              {/* Unit (supervisor) — leaders pick their supervisor's unit too */}
-              {(form.role === "supervisor" || form.role === "leader") && (
+              {/* Unit (supervisor) */}
+              {form.role === "supervisor" && (
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t(form.role === "leader" ? "admin.users.fieldSupervisor" : "admin.users.fieldUnit")}
+                    {t("admin.users.fieldUnit")}
                   </span>
                   <select
                     value={form.roleId}
@@ -415,13 +415,34 @@ export default function UsersManagement() {
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
                     {units.map((u) => (
-                      <option key={u.manager_id} value={u.manager_id}>{tl(u.name)}</option>
+                      <option key={u.id} value={u.id}>{tl(u.name)}</option>
                     ))}
                   </select>
                 </label>
               )}
 
-              {/* Slot (shift-manager) */}
+              {/* Leader — pick a pre-created leader profile (shows its unit) */}
+              {form.role === "leader" && (
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                    {t("admin.users.fieldLeaderProfile")}
+                  </span>
+                  <select
+                    value={form.roleId}
+                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
+                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
+                  >
+                    <option value="">{t("admin.users.selectPlaceholder")}</option>
+                    {leaderProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {tl(p.name)}{p.supervisor ? ` — ${tl(p.supervisor)}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* Shift-manager — pick a pre-created profile */}
               {form.role === "shift-manager" && (
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
@@ -433,8 +454,27 @@ export default function UsersManagement() {
                     className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {shiftSlots.map((s, i) => (
-                      <option key={i} value={i + 1}>{tl(s.name)}</option>
+                    {shiftSlots.map((s) => (
+                      <option key={s.id} value={s.id}>{tl(s.name)} — S{s.shift}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* Top-manager — pick a pre-created profile */}
+              {form.role === "top-manager" && (
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                    {t("admin.users.fieldTopProfile")}
+                  </span>
+                  <select
+                    value={form.roleId}
+                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
+                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
+                  >
+                    <option value="">{t("admin.users.selectPlaceholder")}</option>
+                    {topManagers.map((p) => (
+                      <option key={p.id} value={p.id}>{tl(p.name)}</option>
                     ))}
                   </select>
                 </label>
