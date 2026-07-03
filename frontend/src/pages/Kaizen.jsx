@@ -932,7 +932,15 @@ export default function Kaizen() {
                     />
                   </div>
                   <StyledSelect value={project} onChange={setProject} className="w-44"
-                    options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => ({ value: p.key, label: `${emojiFor(p.key)} ${tl(p.name)}` }))]} />
+                    options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => {
+                      const { Icon, color } = identFor(p.key);
+                      return { value: p.key, label: (
+                        <span className="inline-flex items-center gap-1.5 min-w-0">
+                          <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
+                          <span className="truncate">{tl(p.name)}</span>
+                        </span>
+                      ) };
+                    })]} />
                   <StyledSelect value={status} onChange={setStatus} className="w-36"
                     options={[
                       { value: "all", label: T.allStatuses },
