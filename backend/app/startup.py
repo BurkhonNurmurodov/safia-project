@@ -793,11 +793,13 @@ def backfill_role_profiles() -> None:
         created = 0
         admins = db.query(Admin).order_by(Admin.id).all()
         for n, a in enumerate(admins, start=1):
-            if a.profile_id and db.query(RoleProfile).filter_by(id=a.profile_id).first():
+            if a.profile_id and db.query(RoleProfile).filter_by(id=a.profile_id, role="admin").first():
                 continue
             u = users_by_tid.get(a.telegram_id)
-            name = ((u.full_name or "").strip() if u else "") or \
-                   ((f"@{u.username}" if u and u.username else "")) or f"Admin {n}"
+            # telegram_users.full_name mirrors the LAST-CLAIMED role profile
+            # (e.g. the user's leader name) — never name an admin profile after
+            # it. Use the @username or a placeholder; admins rename in Settings.
+            name = (f"@{u.username}" if u and u.username else "") or f"Admin {n}"
             p = RoleProfile(role="admin", name=name)
             db.add(p)
             db.flush()
