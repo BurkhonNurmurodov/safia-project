@@ -457,19 +457,37 @@ def _webapp_data(message: types.Message):
     with SessionLocal() as db:
         user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
 
-        # Resolve role_id
+        # Resolve role_id — registration only binds a pre-created profile now.
+        # A name that matches no profile is dropped silently: the pickers only
+        # offer real profiles, so this can only be a stale/forged payload.
         role_id = None
         if role == "supervisor":
-            mgr = db.query(Manager).filter(Manager.name == full_name).first()
-            role_id = mgr.id if mgr else None
+            mgr = db.query(Manager).filter(Manager.name == full_name,
+                                           Manager.archived.is_(False)).first()
+            if not mgr:
+                return
+            role_id = mgr.id
         elif role == "leader":
-            # A leader types their own name (full_name) and picks their
-            # supervisor's unit — role_id points at that unit's manager.
-            mgr = db.query(Manager).filter(Manager.name == supervisor).first()
-            role_id = mgr.id if mgr else None
+            # A leader picks their supervisor's unit, then one of that unit's
+            # pre-created leader profiles — role_id keeps pointing at the unit.
+            mgr = db.query(Manager).filter(Manager.name == supervisor,
+                                           Manager.archived.is_(False)).first()
+            if not mgr:
+                return
+            if not db.query(RoleProfile).filter_by(role="leader", manager_id=mgr.id,
+                                                   name=full_name).first():
+                return
+            role_id = mgr.id
         elif role == "shift-manager":
-            slot = next((s for s in SHIFT_ADMIN_SLOTS if s["name"] == full_name), None)
-            role_id = SHIFT_ADMIN_SLOTS.index(slot) + 1 if slot else None
+            p = db.query(RoleProfile).filter_by(role="shift-manager", name=full_name).first()
+            if not p:
+                return
+            role_id = p.id
+        else:  # top-manager — also a pre-created profile now
+            p = db.query(RoleProfile).filter_by(role="top-manager", name=full_name).first()
+            if not p:
+                return
+            role_id = p.id
 
         # A user may hold several roles, but only one instance of the exact
         # same (role, role_id). A rejected instance can be re-requested.
