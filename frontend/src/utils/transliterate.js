@@ -161,7 +161,16 @@ function latinWordToEnglish(word) {
     const pair = src.slice(i, i + 2).join("").toLowerCase();
     const multi = EN_MULTI.find(([lat]) => lat === pair);
     if (multi) {
-      out += ch === low ? multi[1] : multi[1].toUpperCase();
+      const rep = multi[1];
+      if (ch === low || rep.length === 1) {
+        out += ch === low ? rep : rep.toUpperCase();
+      } else {
+        // "GʻULOM" → "GHULOM", "Gʻulom" → "Ghulom"
+        const next = src[i + 2];
+        out += next && next !== next.toLowerCase()
+          ? rep.toUpperCase()
+          : rep[0].toUpperCase() + rep.slice(1);
+      }
       i += 2;
       continue;
     }
