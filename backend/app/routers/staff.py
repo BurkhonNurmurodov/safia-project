@@ -1002,7 +1002,7 @@ def pending_count(caller=Depends(_require_staff), db: Session = Depends(get_db))
         sm_slot = caller.get("role_id")
         if not sm_slot:
             return {"count": 0}
-        shift   = 1 if sm_slot in [1, 2] else 2
+        shift   = _sm_shift(db, sm_slot)
         mgr_ids = [m.id for m in db.query(Manager).filter_by(shift=shift).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
 
