@@ -22,16 +22,10 @@ import { useChartTheme } from "../hooks/useChartTheme";
 const C_DONE = "#22c55e", C_PROG = "#eab308", C_TODO = "#3b82f6", C_OVERDUE = "#ef4444";
 const BRAND = "#C8973F";          // brand gold — the page accent (mirrors --brand)
 
-// rgba tint + lighten/darken toward white/black (chart gradients & soft fills)
+// rgba tint (soft chip/badge fills)
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-};
-const mix = (hex, amt) => {                          // amt > 0 → lighter, < 0 → darker
-  const n = parseInt(hex.slice(1), 16);
-  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
-  const ch = (s) => Math.round(((n >> s) & 255) + (t - ((n >> s) & 255)) * p);
-  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
 };
 
 // premium glassy tooltip shared by the page's bar charts (padding · blur · shadow)
