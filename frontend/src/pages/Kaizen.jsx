@@ -527,7 +527,7 @@ export default function Kaizen() {
     xaxis: { categories: typeCats, labels: { style: { colors: labelColor, fontSize: "11px" } }, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 220 } },
     legend: { show: false },
-    dataLabels: { enabled: true, style: { colors: ["#1a1208"], fontSize: "11px", fontWeight: 600 } },
+    dataLabels: { enabled: true, style: { colors: ["#ffffff"], fontSize: "11px", fontWeight: 600 } },
     grid: { borderColor: gridColor, strokeDashArray: 3 },
     tooltip: { custom: ({ dataPointIndex }) => tipHTML(typeCats[dataPointIndex] ?? "", `${topTypes[dataPointIndex].total} ${T.tasksWord}`, BRAND) },
   };
