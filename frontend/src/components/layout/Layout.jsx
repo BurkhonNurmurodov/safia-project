@@ -169,7 +169,7 @@ function UserProfile() {
           onClick={() => setSettingsOpen(false)}
         >
           <div
-            className="rounded-2xl flex flex-col overflow-hidden"
+            className="rounded-2xl flex flex-col"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--border)",
@@ -177,6 +177,8 @@ function UserProfile() {
               minWidth: 300,
               maxWidth: 360,
               width: "100%",
+              maxHeight: "85vh",
+              overflowY: "auto",
             }}
             onClick={e => e.stopPropagation()}
           >
