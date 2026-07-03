@@ -213,6 +213,34 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Добавлено новое опасение", "Лидер: {leader_name} | Владелец: {owner} | Дата: {date}\n{concern}"),
         "en": ("New concern added", "Leader: {leader_name} | Owner: {owner} | Date: {date}\n{concern}"),
     },
+    "task_created": {
+        "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
+        "uz_cyrl": ("Янги вазифа: {creator_name}", "Муддат: {date}\n{task}"),
+        "ru": ("Новая задача от {creator_name}", "Срок: {date}\n{task}"),
+        "en": ("New task from {creator_name}", "Due: {date}\n{task}"),
+    },
+    "task_status_changed": {
+        "uz": ("{actor_name} vazifa holatini o'zgartirdi", "Yangi holat: {status_label}\n{task}"),
+        "uz_cyrl": ("{actor_name} вазифа ҳолатини ўзгартирди", "Янги ҳолат: {status_label}\n{task}"),
+        "ru": ("{actor_name} изменил(а) статус задачи", "Новый статус: {status_label}\n{task}"),
+        "en": ("{actor_name} changed a task status", "New status: {status_label}\n{task}"),
+    },
+    "task_comment": {
+        "uz": ("{author_name} vazifaga izoh qoldirdi", "{comment}\nVazifa: {task}"),
+        "uz_cyrl": ("{author_name} вазифага изоҳ қолдирди", "{comment}\nВазифа: {task}"),
+        "ru": ("{author_name} оставил(а) комментарий к задаче", "{comment}\nЗадача: {task}"),
+        "en": ("{author_name} commented on a task", "{comment}\nTask: {task}"),
+    },
+}
+
+# Leader-task status labels for notification text — resolved from the raw
+# ``task_status`` param at view time so the label follows the *viewer's*
+# language (same mechanism as doc_type → doc_label). Wording matches the
+# tasks page's status pills.
+_TASK_STATUS_LABELS = {
+    "todo":  {"uz": "Bajarilishi kerak", "uz_cyrl": "Бажарилиши керак", "ru": "К выполнению", "en": "To do"},
+    "doing": {"uz": "Jarayonda",         "uz_cyrl": "Жараёнда",         "ru": "В процессе",   "en": "Doing"},
+    "done":  {"uz": "Bajarildi",         "uz_cyrl": "Бажарилди",        "ru": "Выполнено",    "en": "Done"},
 }
 
 
