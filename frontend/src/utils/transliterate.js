@@ -60,6 +60,15 @@ function transliterateWord(word) {
     const ch  = chars[i];
     const low = ch.toLowerCase();
 
+    // "е" is /ye/ only at word start or after a vowel/ъ/ь; after a consonant
+    // it is plain /e/ — "Бекзод" → "Bekzod", not "Byekzod".
+    if (low === "е") {
+      const prev = i > 0 ? chars[i - 1].toLowerCase() : "";
+      const rep = !prev || "аеёиоуыэюяўъь".includes(prev) ? "ye" : "e";
+      result += ch !== low ? rep[0].toUpperCase() + rep.slice(1) : rep;
+      continue;
+    }
+
     if (CYRILLIC_TO_LATIN[low] !== undefined) {
       const latin = CYRILLIC_TO_LATIN[low];
 
