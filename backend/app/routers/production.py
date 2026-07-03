@@ -574,7 +574,7 @@ def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
 
     Returns {manager_id: {"name": str, "days": {date: {"plan": m, "actual": m}}}}.
     """
-    managers = db.query(Manager)
+    managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
     if manager_ids:
