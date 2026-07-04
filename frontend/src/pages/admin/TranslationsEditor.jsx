@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { Search, Plus, Save, Globe, Check, Loader2 } from "lucide-react";
+import { Plus, Save, Globe, Check, Loader2 } from "lucide-react";
+import SearchInput from "../../components/ui/SearchInput";
 import dict from "../../i18n/translations";
 import { useLang } from "../../context/LangContext";
 import { transliterate } from "../../utils/transliterate";
