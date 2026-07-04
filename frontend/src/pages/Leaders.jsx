@@ -658,7 +658,9 @@ export default function Leaders() {
         </div>
       )}
       {!isLoading && !isError && !hasData && (
-        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>{T.noData}</div>
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState title={T.noData} message={null} showUploadLink={false} />
+        </div>
       )}
 
       {hasData && (<>
