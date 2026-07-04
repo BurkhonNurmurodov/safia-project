@@ -222,6 +222,7 @@ function RequireAdmin({ children }) {
  */
 function NoAccess() {
   const { t } = useLang();
+  const { tl } = useTranslit();
   const { auth, switchRole, logout } = useAuth();
   const others = (auth?.roles ?? []).filter(
     (r) => r.id !== auth?.active_role_ref && r.status === "approved",
