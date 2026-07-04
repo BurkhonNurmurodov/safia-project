@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import LeaderTask, LeaderTaskComment, Manager, TelegramUserRole
 from app.permissions import require_page
+from app.routers.auth import ADMIN_ROLE_REF
 # Shared notification helper: writes the bell row (rendered per-viewer) + DM.
 from app.routers.staff import _notify
 
