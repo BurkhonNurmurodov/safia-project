@@ -317,9 +317,9 @@ export default function Login() {
               </div>
             )}
 
-            {/* Leader — pick the supervisor (unit) first… */}
+            {/* Leader — pick the shift's supervisor (unit) first… */}
             {role === "leader" && (
-              <div>
+              <div style={{ opacity: shift ? 1 : 0.45 }}>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
                   {t("login.chooseSupervisor")}
                 </label>
