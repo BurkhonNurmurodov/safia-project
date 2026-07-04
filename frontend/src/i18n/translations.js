@@ -3320,7 +3320,6 @@ const t = {
     "login.guestHint":              "Введите имя и фамилию кириллицей",
     "login.guestScript":            "Используйте только кириллицу",
     "login.guestTwoWords":          "Введите имя и фамилию полностью",
-    "login.guestNameTaken":         "Это имя уже занято",
     "login.guestExisting":          "Выбрать существующий профиль",
     "login.noGuestProfiles":        "Нет свободных профилей",
     "login.chooseSlot":             "Выберите слот:",
