@@ -618,7 +618,7 @@ export default function Concerns() {
     entry_date: form.entry_date || null,
     completion_date: form.status === "done" ? form.completion_date || null : null,
     solution: form.solution.trim() || null,
-    ...(isAdmin ? { leader_ref: form.leader_ref } : {}),
+    ...(canPickLeader ? { leader_profile_id: form.leader_profile_id } : {}),
   });
 
   const saveMutation = useMutation({
