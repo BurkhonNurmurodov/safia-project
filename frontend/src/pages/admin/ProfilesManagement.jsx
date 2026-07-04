@@ -60,6 +60,7 @@ export default function ProfilesManagement() {
   const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);   // profile item
   const [confirmUnassign, setConfirmUnassign] = useState(null); // {item, binding}
+  const [confirmSwitch, setConfirmSwitch] = useState(null);   // {body, detail} — 409 confirm_required
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-profiles"],
