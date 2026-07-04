@@ -511,12 +511,13 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
         if not db.query(Manager).filter_by(id=payload.manager_id).first():
             raise HTTPException(status_code=400, detail="Supervisor unit not found")
 
-    # Registration resolves profiles by name — same duplicate rules as create.
+    # Registration resolves profiles by name — same duplicate rules as create
+    # (guest names are not unique, so they are exempt).
     if new_role == "leader":
         if db.query(RoleProfile).filter_by(role="leader", name=name,
                                            manager_id=payload.manager_id).first():
             raise HTTPException(status_code=409, detail="This leader already exists")
-    elif new_role != "supervisor":
+    elif new_role not in ("supervisor", "guest"):
         if db.query(RoleProfile).filter_by(role=new_role, name=name).first():
             raise HTTPException(status_code=409, detail="Profile with this name already exists")
 
