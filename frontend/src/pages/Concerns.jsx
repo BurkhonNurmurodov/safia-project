@@ -1091,6 +1091,7 @@ export default function Concerns() {
                             label={statusLabel(r.status)}
                             statusLabel={statusLabel}
                             saving={savingStatusId === r.id}
+                            disabled={readOnly}
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                           />
                         </td>
