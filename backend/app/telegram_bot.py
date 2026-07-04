@@ -551,12 +551,29 @@ def _webapp_data(message: types.Message):
                     bot.send_message(tid, _msg(lang, "already_pending"))
                 return
 
+            def _held_by_other(profile_id: int):
+                return (
+                    db.query(TelegramUserRole)
+                    .filter(TelegramUserRole.role == "guest",
+                            TelegramUserRole.role_id == profile_id,
+                            TelegramUserRole.status == "approved",
+                            TelegramUserRole.telegram_id != tid)
+                    .first()
+                )
+
             if guest_pid:
                 try:
                     p = db.query(RoleProfile).filter_by(id=int(guest_pid), role="guest").first()
                 except (TypeError, ValueError):
                     p = None
                 if not p:
+                    return
+                # The picker only offers unassigned profiles, but the profile
+                # may have been approved for someone else in the meantime —
+                # pending claims race and the first approval wins
+                # (see decide_registration).
+                if _held_by_other(p.id):
+                    bot.send_message(tid, _msg(lang, "guest_name_taken"))
                     return
             else:
                 # Canonical name is Uzbek Latin — a name typed in ru/uz_cyrl
@@ -566,14 +583,25 @@ def _webapp_data(message: types.Message):
                 canonical = " ".join(_to_uz_latin(full_name, "uz").split())
                 if len(canonical.split()) < 2:
                     return
-                p = db.query(RoleProfile).filter_by(role="guest", name=canonical).first()
+                # Guest names are NOT unique — two real people may share one.
+                # A typed name only re-uses a profile the caller already has a
+                # claim on (retry after rejection); anything else gets a fresh
+                # profile row. Deliberate re-claims go through the picker.
+                p = None
+                for r in db.query(TelegramUserRole).filter_by(
+                        telegram_id=tid, role="guest").all():
+                    rp = db.query(RoleProfile).filter_by(id=r.role_id, role="guest").first()
+                    if rp and rp.name == canonical and not _held_by_other(rp.id):
+                        p = rp
+                        break
                 if not p:
                     p = RoleProfile(role="guest", name=canonical)
                     db.add(p)
                     db.flush()
                     # Silent per-language variants: the exact typed form for the
                     # typed language + alphabet-switched forms for the rest.
-                    # Existing overrides (re-typed known name) are never touched.
+                    # Overrides are keyed by the raw name, so same-named guests
+                    # share them — never overwrite an existing row.
                     for ov_lang, ov_val in guest_ovr.items():
                         ov_val = str(ov_val or "").strip()
                         if ov_lang not in ("uz_cyrl", "ru", "en") or not ov_val:
@@ -582,20 +610,6 @@ def _webapp_data(message: types.Message):
                                 lang=ov_lang, key=f"name.{canonical}").first():
                             db.add(Translation(lang=ov_lang, key=f"name.{canonical}",
                                                value=ov_val))
-
-            # A profile with an approved holder is taken for good; pending
-            # claims race and the first approval wins (see decide_registration).
-            held = (
-                db.query(TelegramUserRole)
-                .filter(TelegramUserRole.role == "guest",
-                        TelegramUserRole.role_id == p.id,
-                        TelegramUserRole.status == "approved",
-                        TelegramUserRole.telegram_id != tid)
-                .first()
-            )
-            if held:
-                bot.send_message(tid, _msg(lang, "guest_name_taken"))
-                return
             role_id = p.id
             full_name = p.name
         else:  # top-manager — also a pre-created profile now
