@@ -521,6 +521,72 @@ def _webapp_data(message: types.Message):
             if not p:
                 return
             role_id = p.id
+        elif role == "guest":
+            # Guests are the one self-created identity: the profile row is made
+            # here at registration (typed name) or re-claimed from the picker
+            # (guest_profile_id). Strictly one guest profile per Telegram user.
+            other = (
+                db.query(TelegramUserRole)
+                .filter(TelegramUserRole.telegram_id == tid,
+                        TelegramUserRole.role == "guest",
+                        TelegramUserRole.status.in_(("pending", "approved")))
+                .first()
+            )
+            if other and not is_admin:
+                if other.status == "approved":
+                    bot.send_message(tid, _msg(lang, "already_approved"),
+                                     reply_markup=_dashboard_kb(lang))
+                else:
+                    bot.send_message(tid, _msg(lang, "already_pending"))
+                return
+
+            if guest_pid:
+                try:
+                    p = db.query(RoleProfile).filter_by(id=int(guest_pid), role="guest").first()
+                except (TypeError, ValueError):
+                    p = None
+                if not p:
+                    return
+            else:
+                # Canonical name is Uzbek Latin — a name typed in ru/uz_cyrl
+                # arrives Cyrillic and is alphabet-switched here. The webapp
+                # validates script and word count before sendData; anything
+                # that fails here is a stale/forged payload and is dropped.
+                canonical = " ".join(_to_uz_latin(full_name, "uz").split())
+                if len(canonical.split()) < 2:
+                    return
+                p = db.query(RoleProfile).filter_by(role="guest", name=canonical).first()
+                if not p:
+                    p = RoleProfile(role="guest", name=canonical)
+                    db.add(p)
+                    db.flush()
+                    # Silent per-language variants: the exact typed form for the
+                    # typed language + alphabet-switched forms for the rest.
+                    # Existing overrides (re-typed known name) are never touched.
+                    for ov_lang, ov_val in guest_ovr.items():
+                        ov_val = str(ov_val or "").strip()
+                        if ov_lang not in ("uz_cyrl", "ru", "en") or not ov_val:
+                            continue
+                        if not db.query(Translation).filter_by(
+                                lang=ov_lang, key=f"name.{canonical}").first():
+                            db.add(Translation(lang=ov_lang, key=f"name.{canonical}",
+                                               value=ov_val))
+
+            # A profile with an approved holder is taken for good; pending
+            # claims race and the first approval wins (see decide_registration).
+            held = (
+                db.query(TelegramUserRole)
+                .filter(TelegramUserRole.role == "guest",
+                        TelegramUserRole.role_id == p.id,
+                        TelegramUserRole.status == "approved",
+                        TelegramUserRole.telegram_id != tid)
+                .first()
+            )
+            if held:
+                bot.send_message(tid, _msg(lang, "guest_name_taken"))
+                return
+            role_id = p.id
+            full_name = p.name
         else:  # top-manager — also a pre-created profile now
             p = db.query(RoleProfile).filter_by(role="top-manager", name=full_name).first()
             if not p:
