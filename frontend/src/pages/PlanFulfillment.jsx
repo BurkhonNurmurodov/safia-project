@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import Layout from "../components/layout/Layout";
