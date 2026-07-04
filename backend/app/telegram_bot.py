@@ -62,6 +62,10 @@ _MESSAGES = {
         "adminreg_choose":   "👤 Admin profilini tanlang:",
         "adminreg_none":     "Bo'sh admin profillari yo'q.",
         "adminreg_already":  "Siz allaqachon adminsiz.",
+        "guest_name_taken":  (
+            "❌ Bu ism allaqachon band.\n"
+            "Boshqa ism bilan qayta ro'yxatdan o'ting: /start"
+        ),
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
