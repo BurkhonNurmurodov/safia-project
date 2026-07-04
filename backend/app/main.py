@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     add_admin_language_column()
     add_profiles_columns()
     add_concern_profile_columns()
+    add_concern_done_at()
     add_task_comment_author_ref()
     migrate_multi_roles()
     backfill_leader_page_access()
