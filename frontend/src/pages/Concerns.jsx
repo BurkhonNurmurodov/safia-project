@@ -56,9 +56,8 @@ const fmtDate = (iso, lang) => {
   return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
 };
 
-// Card chrome + the Notion-style grid rule shared by every cell (mirrors Kaizen).
+// Card chrome (mirrors Kaizen).
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
-const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
 
 // Inline, editable status pill. Renders the traffic-light badge as a trigger and
 // opens a compact portal dropdown (portal ⇒ never clipped by the table's
