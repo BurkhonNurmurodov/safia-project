@@ -356,26 +356,14 @@ function CommentsModal({ task, canComment, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
-      <div
-        className="rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "85vh" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header — task snippet as the thread title */}
-        <div className="flex items-center justify-between gap-3 px-5 py-4 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-2 min-w-0">
-            <MessageSquare size={15} className="flex-shrink-0 text-[var(--brand-text)]" />
-            <div className="min-w-0">
-              <div className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>{t("tasks.commentsTitle")}</div>
-              <div className="text-xs truncate" style={{ color: "var(--text-3)" }} title={task.task_text}>{tl(task.task_text)}</div>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ color: "var(--text-3)" }} className="hover:text-red-400 transition-colors flex-shrink-0">
-            <X size={18} />
-          </button>
-        </div>
-
+    <Modal
+      onClose={onClose}
+      maxWidth="max-w-md"
+      icon={<MessageSquare size={15} className="flex-shrink-0 text-[var(--brand-text)]" />}
+      title={t("tasks.commentsTitle")}
+      subtitle={tl(task.task_text)}
+      bodyClassName="p-0 flex flex-col"
+    >
         {/* Thread */}
         <div className="overflow-y-auto px-4 py-3 space-y-2.5" style={{ flex: "1 1 auto", minHeight: 160 }}>
           {isLoading ? (
@@ -478,8 +466,7 @@ function CommentsModal({ task, canComment, onClose }) {
             </button>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
