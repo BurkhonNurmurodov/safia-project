@@ -2140,6 +2140,7 @@ const t = {
     "admin.users.fieldUnit":       "Бўлим",
     "admin.users.fieldSupervisor": "Бригадир",
     "admin.users.fieldSlot":       "Смена слоти",
+    "admin.users.fieldShift":      "Смена",
     "admin.users.selectPlaceholder": "— танланг —",
     "admin.users.add":             "Қўшиш",
     "admin.users.addError":        "Рол қўшиб бўлмади",
