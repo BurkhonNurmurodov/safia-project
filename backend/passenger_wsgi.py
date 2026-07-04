@@ -46,6 +46,7 @@ try:
     print("Running startup migrations and seeds...", flush=True)
     Base.metadata.create_all(bind=engine)
     add_last_seen_column()
+    add_tg_name_column()
     add_edit_requests_batch_id()
     add_notification_template_columns()
     add_admin_language_column()
