@@ -929,11 +929,27 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
                     if l.role_id == role_row.role_id:      # same profile → lost the race
                         l.status = "rejected"
                         lu = db.query(TelegramUser).filter_by(telegram_id=l.telegram_id).first()
-                        losers.append((l.id, l.telegram_id, (lu.language if lu else "uz") or "uz"))
+                        losers.append((l.id, l.telegram_id, (lu.language if lu else "uz") or "uz", "admin"))
                     elif l.telegram_id == telegram_id:      # winner's other claims → withdrawn
                         l.status = "rejected"
-                        losers.append((l.id, None, lang))   # no DM — they just got approved
+                        losers.append((l.id, None, lang, "admin"))  # no DM — they just got approved
                 db.delete(role_row)
+        elif decided_role == "guest" and status == "approved":
+            role_row.status = status
+            role_row.approved_at = datetime.now(timezone.utc)
+            # One guest profile — one user: the first approval takes the
+            # profile, every other pending claim on it is auto-rejected.
+            for l in (
+                db.query(TelegramUserRole)
+                .filter(TelegramUserRole.role == "guest",
+                        TelegramUserRole.role_id == role_row.role_id,
+                        TelegramUserRole.status == "pending",
+                        TelegramUserRole.id != role_row.id)
+                .all()
+            ):
+                l.status = "rejected"
+                lu = db.query(TelegramUser).filter_by(telegram_id=l.telegram_id).first()
+                losers.append((l.id, l.telegram_id, (lu.language if lu else "uz") or "uz", "guest"))
         else:
             role_row.status = status
             if status == "approved":
