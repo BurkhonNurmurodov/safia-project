@@ -14,7 +14,9 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import (
     Admin, Manager, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole,
+    Translation,
 )
+from app.translit import transliterate as _to_uz_latin
 
 logger = logging.getLogger(__name__)
 
