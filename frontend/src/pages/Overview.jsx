@@ -148,9 +148,13 @@ export default function Overview() {
     enabled: ready,
   });
 
+  // Fleet-trend window: never chart fewer than MIN_CHART_DAYS days — a short
+  // selection is padded back (n..n+4 charts as n-2..n+4). KPIs/table above
+  // keep the exact selected range.
+  const chartParams = useMemo(() => padChartParams(params), [params]);
   const { data: heatmap, isLoading: hmLoading } = useQuery({
-    queryKey: ["heatmap", params],
-    queryFn: () => api.get("/api/heatmap", { params }).then((r) => r.data),
+    queryKey: ["heatmap", chartParams],
+    queryFn: () => api.get("/api/heatmap", { params: chartParams }).then((r) => r.data),
     enabled: ready,
   });
 
