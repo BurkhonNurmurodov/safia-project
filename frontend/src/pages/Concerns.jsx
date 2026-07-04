@@ -1073,7 +1073,7 @@ export default function Concerns() {
               <tbody>
                 {sorted.map((r) => {
                   const expanded = expandedId === r.id;
-                  const colSpan = showLeaderCol ? 7 : 6;
+                  const colSpan = showLeaderCol ? 8 : 7;
                   return (
                     <Fragment key={r.id}>
                       {/* Click a row to reveal its Edit/Delete action bar (Staff-style);
