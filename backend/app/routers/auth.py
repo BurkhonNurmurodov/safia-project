@@ -73,6 +73,16 @@ def create_jwt(telegram_id: int, role: str, full_name: str, role_id: int | None 
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
+def _admin_profile_name(db: Session, admin_row: Admin | None) -> str | None:
+    """Canonical name of the admin's claimed profile (admins.profile_id →
+    role_profiles). Profiles are the identity shown everywhere in the app;
+    the Telegram account name is only a fallback for unbound legacy admins."""
+    if not admin_row or not admin_row.profile_id:
+        return None
+    p = db.query(RoleProfile).filter_by(id=admin_row.profile_id, role="admin").first()
+    return p.name if p else None
+
+
 def _serialize_role(r: TelegramUserRole) -> dict:
     return {
         "id":        r.id,
