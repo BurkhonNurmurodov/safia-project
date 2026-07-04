@@ -1012,18 +1012,19 @@ export default function Tasks() {
         </div>
       </div>
 
-      {/* Task table — POSITIONS-style card: header band, toolbar, sticky-header
-          grid table with per-column sort. */}
-      <div className="rounded-2xl overflow-hidden mb-8" style={cardStyle}>
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-            <ClipboardList size={14} style={{ color: "var(--brand-text)" }} />
-            {t("tasks.listTitle")}
-            <span className="text-[11px] font-normal normal-case tracking-normal tabular-nums" style={{ color: "var(--text-4)" }}>
-              ({sorted.length}{sorted.length !== rows.length ? ` / ${rows.length}` : ""})
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      {/* Task table — canonical POSITIONS-style TableCard with per-column sort. */}
+      <TableCard
+        className="mb-8"
+        icon={ClipboardList}
+        title={t("tasks.listTitle")}
+        wrap
+        right={
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            {sorted.length}{sorted.length !== rows.length ? ` / ${rows.length}` : ""}
+          </span>
+        }
+        toolbar={
+          <>
             <SearchInput
               value={search}
               onChange={setSearch}
@@ -1038,47 +1039,32 @@ export default function Tasks() {
               compact
             />
             {canCreate && (
-              <button
-                onClick={openCreate}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
-              >
-                <Plus size={14} /> {t("tasks.add")}
-              </button>
+              <Button size="sm" icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>
             )}
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="p-4"><SkeletonTable rows={6} cols={COLS.length} /></div>
-        ) : sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 gap-3">
-            <ClipboardList size={28} style={{ color: "var(--text-4)" }} />
-            <div className="text-sm" style={{ color: "var(--text-3)" }}>
-              {rows.length === 0 ? t("tasks.empty") : t("tasks.noMatch")}
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-auto max-h-[70vh]">
-            <table className="w-full text-xs [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)]" style={{ color: "var(--text-1)", borderCollapse: "collapse" }}>
+          </>
+        }
+      >
               <thead>
-                <tr style={{ color: "var(--text-3)" }}>
+                <tr>
                   {COLS.map((c) => (
-                    <th key={c.key}
-                      onClick={() => onSort(c.key)}
-                      aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                      className={`sticky top-0 z-10 px-3 py-2.5 font-semibold cursor-pointer select-none whitespace-nowrap transition-colors hover:bg-[var(--bg-accent)] ${c.align === "center" ? "text-center" : "text-left"}`}
-                      style={{ background: "var(--bg-inner)", borderBottom: "1px solid var(--border)" }}>
-                      <span className={`inline-flex items-center gap-1.5 ${c.align === "center" ? "justify-center" : ""}`}>
-                        <c.icon size={12} style={{ color: "var(--brand-text)" }} />
-                        {c.label}
-                        <SortIcon active={sort.key === c.key} dir={sort.dir} />
-                      </span>
-                    </th>
+                    <Th key={c.key} label={c.label} icon={c.icon} k={c.key} sort={sort} onSort={onSort} align={c.align} />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((r) => {
+                {isLoading && Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`sk-${i}`}>
+                    {COLS.map((c, j) => (
+                      <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {!isLoading && sorted.length === 0 && (
+                  <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                    {rows.length === 0 ? t("tasks.empty") : t("tasks.noMatch")}
+                  </td></tr>
+                )}
+                {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
                   const overdue = isOverdue(r);
                   const canEditRow = r.can_edit;
@@ -1154,10 +1140,7 @@ export default function Tasks() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      </TableCard>
 
       {/* Create / edit modal */}
       {modalOpen && (
