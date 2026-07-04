@@ -42,13 +42,6 @@ function fmtMin(m, minLabel = "min", hrsLabel = "hrs") {
   return `${Math.floor(v / 60)} ${hrsLabel} ${v % 60} ${minLabel}`;
 }
 
-function fmtLongLocalized(iso, t) {
-  if (!iso) return "—";
-  const d = new Date(iso + "T00:00:00");
-  const dayIdx = (d.getDay() + 6) % 7;
-  return `${t(`cal.d${dayIdx}`)}, ${d.getDate()} ${t(`cal.mg${d.getMonth()}`)} ${d.getFullYear()}`;
-}
-
 const DONUT_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
 // ── Single-day picker ─────────────────────────────────────────────────────────
