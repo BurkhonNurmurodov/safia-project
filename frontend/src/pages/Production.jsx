@@ -543,15 +543,17 @@ export default function Production() {
       </div>
 
       {/* main table */}
-      <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Boxes} title={t("production.positions")} right={
+      <TableCard
+        className="mb-4"
+        icon={Boxes}
+        title={t("production.positions")}
+        right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
             {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
           </span>
-        } />
-        {/* toolbar — search bar + consolidated filter button (left-aligned) */}
-        {!loading && (
-          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        }
+        toolbar={!loading && (
+          <>
             <SearchInput
               value={search}
               onChange={setSearch}
@@ -564,29 +566,20 @@ export default function Production() {
               anyActive={wcSel.length > 0}
               onClearAll={() => setWcSel([])}
             />
-          </div>
+          </>
         )}
-        <div className="overflow-auto max-h-[70vh]">
-          <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)]" style={{ color: "var(--text-1)" }}>
+      >
             <thead>
-              <tr style={{ color: "var(--text-3)" }}>
+              <tr>
                 {COLS.map((c) => (
-                  <th key={c.key} title={c.hintKey ? t(c.hintKey) : undefined}
-                    onClick={() => toggleSort(c.key)}
-                    aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                    className={`sticky top-0 z-10 px-3 py-2.5 font-semibold cursor-pointer select-none transition-colors hover:bg-[var(--bg-accent)] ${c.align === "center" ? "text-center" : c.align === "right" ? "text-right" : "text-left"}`}
-                    style={{ background: "var(--bg-inner)" }}>
-                    <span className={`inline-flex items-center gap-1 ${c.align === "center" ? "justify-center" : c.align === "right" ? "justify-end" : ""}`}>
-                      {t(c.labelKey)}
-                      <SortIcon active={sort.key === c.key} dir={sort.dir} />
-                    </span>
-                  </th>
+                  <Th key={c.key} label={t(c.labelKey)} k={c.key} sort={sort} onSort={toggleSort}
+                    align={c.align} hint={c.hintKey ? t(c.hintKey) : undefined} />
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading && Array.from({ length: 8 }).map((_, i) => (
-                <tr key={`sk-${i}`} style={{ borderTop: "1px solid var(--border)" }}>
+                <tr key={`sk-${i}`}>
                   {COLS.map((c, j) => (
                     <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                   ))}
@@ -602,8 +595,8 @@ export default function Production() {
                 const wc = wcColor(r.work_center);
                 return (
                   <tr key={`${r.sap_code}-${r.work_center}-${i}`}
-                    className="transition-colors hover:bg-[var(--bg-inner)]"
-                    style={{ borderTop: "1px solid var(--border)", borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}` }}>
+                    className="transition-colors"
+                    style={{ borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}` }}>
                     <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>
                     <td className="px-3 py-2 text-left max-w-[220px] truncate" title={r.name}>{r.name}</td>
                     <td className="px-3 py-2 text-center tabular-nums">
@@ -634,9 +627,7 @@ export default function Production() {
                 );
               })}
             </tbody>
-          </table>
-        </div>
-      </div>
+      </TableCard>
 
       {/* reconciliation */}
       <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
