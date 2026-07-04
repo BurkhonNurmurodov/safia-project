@@ -16,7 +16,7 @@ the leader's unit) and the leader themself via the bell + a Telegram DM —
 whoever of them isn't the author (unregistered leaders are skipped silently).
 Access is gated by the ``concerns`` page in the access matrix.
 """
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
