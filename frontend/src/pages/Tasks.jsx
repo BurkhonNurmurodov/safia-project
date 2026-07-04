@@ -639,16 +639,23 @@ export default function Tasks() {
   const today = localTodayIso();
   const isOverdue = (r) => r.status !== "done" && r.due_date && r.due_date < today;
 
-  // KPIs + chart data over the fully filtered rows, so every filter reshapes them.
+  // KPIs + chart data over the fully filtered rows, so every filter reshapes
+  // them. KPI buckets use the selected period; the trend uses the padded
+  // chart window (≥7 days) with the axis pinned to it.
   const stats = useMemo(() => {
     let done = 0, doing = 0, todo = 0, overdue = 0;
-    const opened = new Map(), closed = new Map();
     for (const r of filtered) {
       if (r.status === "done") done += 1;
       else if (isOverdue(r)) overdue += 1;
       else if (r.status === "doing") doing += 1;
       else todo += 1;
+    }
 
+    const trendRows = chartFiltered ?? filtered;
+    const opened = new Map(), closed = new Map();
+    let trendOpen = 0;
+    for (const r of trendRows) {
+      if (r.status !== "done") trendOpen += 1;
       const day = createdDay(r);
       if (!day) continue;
       opened.set(day, (opened.get(day) || 0) + 1);
@@ -663,11 +670,14 @@ export default function Tasks() {
     const trend = [];
     let maxOpen = 0;
     if (dayKeys.length) {
+      let firstIso = dayKeys[0];
+      if (chartStart && chartStart < firstIso) firstIso = chartStart;
       let lastIso = dayKeys[dayKeys.length - 1];
-      if (filtered.length - done > 0 && lastIso < today) lastIso = today;
+      if (trendOpen > 0 && lastIso < today) lastIso = today;
+      if (endDate && endDate > lastIso) lastIso = endDate;
       const end = new Date(lastIso + "T00:00:00");
       let run = 0;
-      for (const d = new Date(dayKeys[0] + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
+      for (const d = new Date(firstIso + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
         const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         run += (opened.get(iso) || 0) - (closed.get(iso) || 0);
         const open = Math.max(0, run);
@@ -677,7 +687,7 @@ export default function Tasks() {
     }
     const total = filtered.length;
     return { done, doing, todo, overdue, total, trend, maxOpen, completion: total ? done / total : null };
-  }, [filtered, today]);
+  }, [filtered, chartFiltered, chartStart, endDate, today]);
 
   // ── column sort (asc → desc → off). Done tasks always sit below the active
   // queue; sorting applies within each group.
