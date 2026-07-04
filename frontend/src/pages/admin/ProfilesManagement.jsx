@@ -389,6 +389,39 @@ export default function ProfilesManagement() {
             </div>
 
             <div className="space-y-3">
+              {/* Role — switching moves only the name; other values are asked fresh */}
+              {modal.mode === "edit" && (
+                <label className="block">
+                  <span className={labelCls} style={{ color: "var(--text-3)" }}>
+                    {t("admin.profiles.roleLabel")}
+                  </span>
+                  <select
+                    value={form.role}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm((f) => v === type
+                        ? { ...f, role: v, name: modal.item.name,
+                            shift: modal.item.shift ?? 1,
+                            manager_id: modal.item.manager_id ?? "",
+                            verifix_id: type === "supervisor" ? modal.item.id : "" }
+                        : { ...f, role: v, name: modal.item.name,
+                            shift: "", manager_id: "", verifix_id: "" });
+                    }}
+                    className={inputCls}
+                    style={inputStyle}
+                  >
+                    {TYPES.map(({ key, tKey }) => (
+                      <option key={key} value={key}>{t(tKey)}</option>
+                    ))}
+                  </select>
+                  {roleChanged && (
+                    <p className="mt-1 text-[10px] leading-snug text-yellow-500">
+                      {t("admin.profiles.switchRoleHint")}
+                    </p>
+                  )}
+                </label>
+              )}
+
               {/* Canonical name — entered in Uzbek; other languages render automatically */}
               <label className="block">
                 <span className={labelCls} style={{ color: "var(--text-3)" }}>
@@ -398,7 +431,8 @@ export default function ProfilesManagement() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className={inputCls}
+                  disabled={roleChanged}
+                  className={inputCls + (roleChanged ? " opacity-60" : "")}
                   style={inputStyle}
                   placeholder={t("admin.profiles.namePlaceholder")}
                 />
