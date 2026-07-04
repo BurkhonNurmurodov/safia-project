@@ -865,8 +865,8 @@ export default function Concerns() {
           )}
         </div>
 
-        {/* Brigadir — admin only */}
-        {isAdmin && (
+        {/* Brigadir — multi-unit roles only */}
+        {showBrigFilter && (
           <div>
             <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.colSupervisor")}</label>
             <StyledSelect
@@ -877,8 +877,8 @@ export default function Concerns() {
           </div>
         )}
 
-        {/* Leader — admin only */}
-        {isAdmin && (
+        {/* Leader — everyone above a leader */}
+        {showLeaderFilter && (
           <div>
             <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.fieldLeader")}</label>
             <StyledSelect
