@@ -521,7 +521,7 @@ def add_task_comment(
 
     db.commit()
     db.refresh(c)
-    return _serialize_comment(c)
+    return _serialize_comment(c, payload)
 
 
 def _get_own_comment(task_id: int, comment_id: int, payload: dict, db: Session) -> LeaderTaskComment:
@@ -530,8 +530,8 @@ def _get_own_comment(task_id: int, comment_id: int, payload: dict, db: Session) 
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if c.author_telegram_id != int(payload["sub"]):
-        raise HTTPException(status_code=403, detail="Only the author can modify a comment")
+    if not _is_comment_author(c, payload):
+        raise HTTPException(status_code=403, detail="Only the author profile can modify a comment")
     return c
 
 
