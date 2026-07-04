@@ -1107,6 +1107,11 @@ export default function Concerns() {
                           />
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
+                        {/* Minutes from creation to the done-flip; open rows and
+                            rows finished before done_at existed show "—". */}
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>
+                          {r.resolution_minutes != null ? r.resolution_minutes.toLocaleString() : "—"}
+                        </td>
                       </tr>
                       {expanded && (
                         <tr style={{ background: "var(--bg-inner)" }}>
