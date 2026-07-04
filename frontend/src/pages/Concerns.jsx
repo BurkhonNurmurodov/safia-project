@@ -343,21 +343,34 @@ export default function Concerns() {
   const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  // Admin leader picker source ─────────────────────────────────────────────
+  // Create-cascade picker sources (both backend-scoped to the caller's role):
+  // supervisors of the caller's scope, then every pre-created leader profile
+  // (claimed or not — a not-yet-registered leader inherits the concern later).
+  const { data: supervisors = [] } = useQuery({
+    queryKey: ["concern-supervisors"],
+    queryFn: () => api.get("/api/concerns/supervisors").then((r) => r.data),
+    enabled: canPickSupervisor,
+  });
   const { data: leaders = [] } = useQuery({
     queryKey: ["concern-leaders"],
     queryFn: () => api.get("/api/concerns/leaders").then((r) => r.data),
-    enabled: isAdmin,
+    enabled: canPickLeader,
   });
 
   // Concern list ─────────────────────────────────────────────────────────────
-  // Admins always fetch every concern and slice locally (period/brigadir/leader);
-  // leaders only ever get their own rows from the backend.
+  // The backend returns only the caller's scope (admin/top-manager: all,
+  // shift-manager: their shift, supervisor: their unit, leader: own rows);
+  // every filter below slices those rows locally.
   const { data: listResp, isLoading } = useQuery({
-    queryKey: ["concerns", isAdmin ? "all" : "own"],
+    queryKey: ["concerns", role],
     queryFn: () => api.get("/api/concerns").then((r) => r.data),
   });
   const rows = listResp?.data || [];
+
+  // Stable per-leader key for filter options: profile-first, with the role-row
+  // fallback for legacy rows that never matched a profile.
+  const leaderKey = (r) =>
+    r.leader_profile_id != null ? `p${r.leader_profile_id}` : `r${r.leader_role_ref}`;
 
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
