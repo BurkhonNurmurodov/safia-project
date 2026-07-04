@@ -1240,12 +1240,12 @@ export default function Concerns() {
               {form.status === "done" && (
                 <div className="grid grid-cols-1 gap-3 rounded-lg p-3" style={{ background: "var(--bg-inner)" }}>
                   <Field label={t("concerns.fieldCompletion")}>
-                    <input
-                      type="date"
-                      value={form.completion_date}
-                      onChange={(e) => setForm((f) => ({ ...f, completion_date: e.target.value }))}
-                      className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                    <DateRangePicker
+                      single
+                      dateFrom={form.completion_date} dateTo={form.completion_date}
+                      setDateFrom={(iso) => setForm((f) => ({ ...f, completion_date: iso }))}
+                      setDateTo={() => {}}
+                      triggerClassName="px-3 py-2 text-sm w-full"
                     />
                   </Field>
                   <Field label={t("concerns.fieldSolution")}>
