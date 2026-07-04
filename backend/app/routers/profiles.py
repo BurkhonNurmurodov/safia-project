@@ -285,6 +285,9 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
     name = (payload.name or "").strip()
     if role not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
+    # Guest profiles are the registration flow's own creation — no admin path.
+    if role == "guest":
+        raise HTTPException(status_code=400, detail="Guest profiles are created at registration")
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
 
