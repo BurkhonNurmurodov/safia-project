@@ -199,6 +199,7 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
             "status":      r.status,
             "user_name":   info.get("full_name"),
             "username":    info.get("username"),
+            "tg_name":     info.get("tg_name"),
         }
 
     role_rows = db.query(TelegramUserRole).order_by(TelegramUserRole.id).all()
