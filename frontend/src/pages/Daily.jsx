@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import ReactApexChart from "react-apexcharts";
 import {
-  ChevronLeft, ChevronRight, AlertTriangle, ArrowLeft,
-  CalendarDays, Clock, Lock, FileText, Trash2, BarChart2, Unlock, Eye, Loader2,
+  AlertTriangle, ArrowLeft,
+  Clock, Lock, FileText, Trash2, BarChart2, Unlock, Eye, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
