@@ -310,6 +310,30 @@ def add_concern_profile_columns() -> None:
         db.close()
 
 
+def add_concern_done_at() -> None:
+    """Concerns "время выполнения" column: done_at is the exact moment a concern
+    flipped to done (completion_date is only day-grained, so minutes need a real
+    timestamp). Best-effort backfill for already-done rows: when the last edit
+    landed on the completion day it almost certainly WAS the done-flip, so reuse
+    updated_at; anything else stays NULL and renders as "—"."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ"
+        ))
+        db.execute(text(
+            "UPDATE leader_concerns SET done_at = updated_at "
+            "WHERE done_at IS NULL AND status = 'done' "
+            "AND completion_date IS NOT NULL AND updated_at::date = completion_date"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern done_at migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def backfill_concern_profiles() -> None:
     """Point every legacy concern (keyed only by the leader's role row) at the
     leader's profile: role row → (unit, canonical name) → role_profiles.
