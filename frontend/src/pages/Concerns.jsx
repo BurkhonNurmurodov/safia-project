@@ -1025,12 +1025,14 @@ export default function Concerns() {
               onClearAll={clearAllFilters}
               compact
             />
-            <button
-              onClick={openCreate}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
-            >
-              <Plus size={14} /> {t("concerns.add")}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={openCreate}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
+              >
+                <Plus size={14} /> {t("concerns.add")}
+              </button>
+            )}
           </div>
         </div>
 
