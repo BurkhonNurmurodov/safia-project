@@ -167,7 +167,10 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
   const [trendTab, setTrendTab] = useState("workload");
   const [formulaModal, setFormulaModal] = useState(null);
 
-  const params = { date_from: date, date_to: date };
+  // Fetch a 7-day window ending on the selected day: `latest` (KPIs) is the
+  // range's last day, so the cards still show the picked date while the trend
+  // chart gets the minimum 7-day span.
+  const params = { date_from: padChartFrom(date, date), date_to: date };
 
   const { data, isLoading } = useQuery({
     queryKey: ["brigadir-daily", managerId, date],
