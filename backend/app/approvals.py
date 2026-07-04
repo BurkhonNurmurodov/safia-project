@@ -426,7 +426,11 @@ def forget_notices(kind: str, ref) -> None:
 # ── Callback handling (Telegram tap → shared staff core) ──────────────────────
 
 def _display_name(u) -> str:
-    name = " ".join(p for p in (u.first_name, u.last_name) if p).strip()
+    """Admin tapper's display name — their claimed profile name; the Telegram
+    account name only covers unbound legacy admins."""
+    from app.telegram_bot import admin_profile_name
+    name = admin_profile_name(u.id) \
+        or " ".join(p for p in (u.first_name, u.last_name) if p).strip()
     if not name:
         name = f"@{u.username}" if u.username else "Admin"
     return name
