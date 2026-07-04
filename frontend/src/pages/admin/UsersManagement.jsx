@@ -71,6 +71,13 @@ export default function UsersManagement() {
   const shiftSlots  = profiles?.shift_managers ?? [];
   const topManagers = profiles?.top_managers ?? [];
   const leaderProfiles = profiles?.leaders ?? [];
+  // Shift-first cascade (same as registration): profiles without a shift stay
+  // hidden until an admin sets one in the Profiles tab.
+  const shiftedUnits = form.shift ? units.filter((u) => u.shift === Number(form.shift)) : [];
+  const shiftedSlots = form.shift ? shiftSlots.filter((s) => s.shift === Number(form.shift)) : [];
+  const unitLeaders  = form.supervisorId
+    ? leaderProfiles.filter((p) => p.manager_id === Number(form.supervisorId))
+    : [];
 
   const updateMut = useMutation({
     mutationFn: ({ userId, roleRef, payload }) =>
