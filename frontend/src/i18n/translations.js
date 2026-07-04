@@ -123,6 +123,7 @@ const t = {
     "concerns.colConcern":     "Xavotir",
     "concerns.colStatus":      "Holat",
     "concerns.colDeadline":    "Muddat (kun)",
+    "concerns.colResolution":  "Bajarilish vaqti (daq.)",
     "concerns.colActions":     "Amallar",
     "concerns.edit":           "Tahrirlash",
     "concerns.delete":         "O'chirish",
