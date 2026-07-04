@@ -181,14 +181,12 @@ export default function TranslationsEditor() {
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("admin.tr.search")}
-            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg pl-8 pr-3 py-2 text-xs text-gray-100 outline-none focus:border-[var(--brand)]"
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("admin.tr.search")}
+          className="flex-1 min-w-[180px]"
+        />
         <button onClick={addLanguage} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[#1a1d27] border border-white/10 text-gray-300 hover:border-[var(--brand-border)]">
           <Globe size={13} /> {t("admin.tr.addLang")}
         </button>
