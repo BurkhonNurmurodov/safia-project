@@ -1121,12 +1121,12 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 
         {/* employee search */}
         <div className="px-5 py-2.5 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t("staff.searchEmployees")}
-              className="w-full text-xs pl-8 pr-3 py-2 rounded-lg outline-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-          </div>
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={t("staff.searchEmployees")}
+            inputClassName="text-xs pl-8 pr-7 py-2"
+          />
         </div>
 
         {/* employee list */}
@@ -1609,12 +1609,12 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
         {/* employee search */}
         <div className="px-5 py-2.5 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t("staff.searchEmployees")}
-              className="w-full text-xs pl-8 pr-3 py-2 rounded-lg outline-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-          </div>
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={t("staff.searchEmployees")}
+            inputClassName="text-xs pl-8 pr-7 py-2"
+          />
         </div>
 
         {/* employee list */}
