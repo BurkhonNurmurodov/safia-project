@@ -90,13 +90,6 @@ const sortVal = (r, key) => {
   }
 };
 
-// ── sortable-header indicator ─────────────────────────────────────────────────
-function SortIcon({ active, dir }) {
-  if (!active) return <ChevronsUpDown size={12} style={{ opacity: 0.3 }} />;
-  const Icon = dir === "asc" ? ChevronUp : ChevronDown;
-  return <Icon size={12} style={{ color: "var(--brand-text)" }} />;
-}
-
 // ── thin progress bar ────────────────────────────────────────────────────────
 function Bar({ value, color, height = 6, track = "var(--bg-inner)" }) {
   const w = Math.max(0, Math.min(1, value ?? 0)) * 100;
