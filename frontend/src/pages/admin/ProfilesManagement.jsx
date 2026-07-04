@@ -9,13 +9,16 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
-// The five profile sections. `listKey` = field in GET /api/profiles/admin/list.
+// The profile sections. `listKey` = field in GET /api/profiles/admin/list.
+// Guests are self-created at registration — the section manages (rename /
+// delete / unassign) but never creates them.
 const TYPES = [
   { key: "top-manager",   listKey: "top_managers",   tKey: "admin.profiles.topManagers",   icon: Star },
   { key: "shift-manager", listKey: "shift_managers", tKey: "admin.profiles.shiftManagers", icon: UserCog },
   { key: "supervisor",    listKey: "supervisors",    tKey: "admin.profiles.supervisors",   icon: Users },
   { key: "leader",        listKey: "leaders",        tKey: "admin.profiles.leaders",       icon: Flag },
   { key: "admin",         listKey: "admins",         tKey: "admin.profiles.admins",        icon: Shield },
+  { key: "guest",         listKey: "guests",         tKey: "admin.profiles.guests",        icon: UserRound },
 ];
 
 function HolderChip({ b, onUnassign, disabled }) {
