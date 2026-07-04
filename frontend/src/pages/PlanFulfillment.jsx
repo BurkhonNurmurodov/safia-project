@@ -12,6 +12,7 @@ import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
 import { ChevronsUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import api from "../utils/api";
+import { padChartParams } from "../utils/chartRange";
 
 export default function PlanFulfillment() {
   const { params, unit, ready } = useFilters();
