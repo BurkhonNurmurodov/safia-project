@@ -539,6 +539,18 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         if sup:  # archived units keep their leaders out of the picker
             leaders.setdefault(sup, []).append(p.name)
 
+    # Guest profiles: an approved holder makes the profile (and its name) taken;
+    # everything else is offered for re-claiming in the registration picker.
+    guest_profiles = (
+        db.query(RoleProfile).filter(RoleProfile.role == "guest")
+        .order_by(RoleProfile.name).all()
+    )
+    approved_guest_ids = {
+        r.role_id for r in db.query(TelegramUserRole)
+        .filter(TelegramUserRole.role == "guest",
+                TelegramUserRole.status == "approved").all()
+    }
+
     return {
         "top_managers": [
             p.name for p in db.query(RoleProfile)
@@ -552,6 +564,13 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         ],
         "supervisors": [{"name": m.name, "shift": m.shift} for m in managers],
         "leaders": leaders,
+        "guests": [
+            {"id": p.id, "name": p.name}
+            for p in guest_profiles if p.id not in approved_guest_ids
+        ],
+        "guest_taken_names": [
+            p.name for p in guest_profiles if p.id in approved_guest_ids
+        ],
     }
 
 
