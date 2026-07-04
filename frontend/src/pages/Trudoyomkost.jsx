@@ -6,6 +6,7 @@ import {
   BarChart3, LineChart, TrendingUp, TrendingDown, Activity, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import StyledSelect from "../components/ui/StyledSelect";
 import WorkerForecast from "../components/WorkerForecast";
 import WorkerStats from "../components/WorkerStats";
 import api from "../utils/api";
