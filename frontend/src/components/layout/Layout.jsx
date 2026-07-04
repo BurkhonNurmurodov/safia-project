@@ -123,7 +123,7 @@ function UserProfile() {
           >
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-              style={{ background: nameToColor(rName) }}
+              style={{ background: nameToColor(r.full_name || "") }}
             >
               {nameInitials(rName)}
             </div>
