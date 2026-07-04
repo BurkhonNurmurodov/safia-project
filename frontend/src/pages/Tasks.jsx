@@ -507,9 +507,10 @@ export default function Tasks() {
   const statusLabel = (s) => t(`tasks.status.${s}`);
 
   // Top filter bar: period (by creation date) + supervisor/leader cascade.
-  const [period, setPeriod] = useState("all");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Period is a concrete date range picked with the same control as Leaders
+  // (presets + calendar popover); defaults to the last 7 days.
+  const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
+  const [endDate, setEndDate] = useState(() => localTodayIso());
   const [fSup, setFSup] = useState("All");       // admin only
   const [fLeader, setFLeader] = useState("All"); // admin + supervisor
   const [search, setSearch] = useState("");
