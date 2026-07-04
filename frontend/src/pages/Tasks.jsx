@@ -405,11 +405,9 @@ function CommentsModal({ task, canComment, onClose }) {
                       ? { background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }
                       : { background: "var(--bg-inner)", border: "1px solid var(--border)" }}
                   >
-                    {!own && (
-                      <div className="text-[10px] font-semibold mb-0.5" style={{ color: "var(--brand-text)" }}>
-                        {tl(c.author_name) || "—"}
-                      </div>
-                    )}
+                    <div className="text-[10px] font-semibold mb-0.5" style={{ color: "var(--brand-text)" }}>
+                      {tl(c.author_name) || "—"}
+                    </div>
                     {editingId === c.id ? (
                       <div>
                         <textarea
