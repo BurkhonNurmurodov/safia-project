@@ -491,13 +491,13 @@ export default function Concerns() {
     return [...s].sort((a, b) => tl(a).localeCompare(tl(b)));
   }, [scoped, tl]);
 
-  // Table-level filters (status/owner/deadline) + free-text search, over the
-  // period/brigadir/leader-scoped rows.
-  const filtered = useMemo(() => {
+  // Table-level filters (status/owner/deadline) + free-text search, applied to
+  // both the period-scoped rows (table/donut) and the chart-scoped rows.
+  const tableFilterPred = useMemo(() => {
     const q = search.trim().toLowerCase();
     const dMin = deadlineMin === "" ? null : Number(deadlineMin);
     const dMax = deadlineMax === "" ? null : Number(deadlineMax);
-    return scoped.filter((r) => {
+    return (r) => {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
       if (ownerSel.length && !ownerSel.includes(r.concern_owner)) return false;
       if (dMin != null || dMax != null) {
@@ -515,8 +515,13 @@ export default function Concerns() {
         if (!hit) return false;
       }
       return true;
-    });
-  }, [scoped, search, statusSel, ownerSel, deadlineMin, deadlineMax]);
+    };
+  }, [search, statusSel, ownerSel, deadlineMin, deadlineMax]);
+
+  const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
+  const chartFiltered = useMemo(
+    () => (chartScoped === scoped ? null : chartScoped.filter(tableFilterPred)),
+    [chartScoped, scoped, tableFilterPred]);
 
   // ── chart data — built over the fully filtered rows, so every filter (period /
   // brigadir / leader, status / owner / deadline, search) reshapes both charts.
