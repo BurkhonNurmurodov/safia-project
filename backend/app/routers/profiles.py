@@ -247,6 +247,7 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
             item["bindings"] = [{
                 "role_ref": None, "telegram_id": a.telegram_id, "status": "approved",
                 "user_name": info.get("full_name"), "username": info.get("username"),
+                "tg_name": info.get("tg_name"),
             }] if a else []
             # pending /adminreg requests for this profile
             item["bindings"] += [
