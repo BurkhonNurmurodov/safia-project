@@ -3888,6 +3888,7 @@ const t = {
     "concerns.colConcern":     "Concern",
     "concerns.colStatus":      "Status",
     "concerns.colDeadline":    "Deadline (days)",
+    "concerns.colResolution":  "Completion time (min)",
     "concerns.colActions":     "Actions",
     "concerns.edit":           "Edit",
     "concerns.delete":         "Delete",
