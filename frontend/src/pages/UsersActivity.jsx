@@ -526,12 +526,13 @@ export default function UsersActivity() {
               title={<span className="flex items-center gap-2">{T.secTable}
                 <span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({rows.length})</span></span>}
               right={
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={T.searchPh}
-                    className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-48 outline-none"
-                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-                </div>
+                <SearchInput
+                  value={search}
+                  onChange={setSearch}
+                  placeholder={T.searchPh}
+                  className="w-48"
+                  inputClassName="text-xs pl-8 pr-7 py-1.5"
+                />
               } />
             <div className="overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
