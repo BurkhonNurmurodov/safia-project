@@ -218,6 +218,8 @@ export default function Login() {
                 >
                   {loading ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                  ) : !shift ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.pickShiftFirst")}</div>
                   ) : filteredManagers.length === 0 ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
                   ) : filteredManagers.map(name => (
@@ -239,11 +241,11 @@ export default function Login() {
               </div>
             )}
 
-            {/* Shift-admin / Shift-manager — pick from 4 preset slots */}
+            {/* Shift-manager — the chosen shift's profiles only */}
             {role === "shift-manager" && (
-              <div>
+              <div style={{ opacity: shift ? 1 : 0.45 }}>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
-                  {t("login.chooseSlot")}
+                  {t("login.chooseName")}
                 </label>
                 <div
                   className="rounded-xl overflow-hidden"
@@ -251,22 +253,23 @@ export default function Login() {
                 >
                   {loading ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                  ) : !shift ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.pickShiftFirst")}</div>
+                  ) : shiftAdmins.length === 0 ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
                   ) : shiftAdmins.map(slot => (
                     <button
                       key={slot.name}
                       type="button"
                       onClick={() => selectName(slot.name)}
-                      className="w-full text-left px-4 py-3 text-sm transition-colors flex items-center justify-between"
+                      className="w-full text-left px-4 py-3 text-sm transition-colors"
                       style={{
                         color: fullName === slot.name ? "var(--brand-text)" : "var(--text-1)",
                         background: fullName === slot.name ? "var(--brand-bg)" : "transparent",
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
-                      <span>{tl(slot.name)}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--bg-card)", color: "var(--text-3)" }}>
-                        S{slot.shift}
-                      </span>
+                      {tl(slot.name)}
                     </button>
                   ))}
                 </div>
