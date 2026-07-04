@@ -639,6 +639,10 @@ class LeaderConcern(Base):
     deadline_days       = Column(Integer, nullable=True)          # Срок (days)
     entry_date          = Column(Date, nullable=False)            # Дата заполнения
     completion_date     = Column(Date, nullable=True)             # Дата завершения (set when done)
+    # Exact moment the status flipped to done (cleared on reopen) — powers the
+    # created→done "время выполнения" minutes column; completion_date is only
+    # day-grained.
+    done_at             = Column(DateTime(timezone=True), nullable=True)
     solution            = Column(Text, nullable=True)             # Решение
     created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
