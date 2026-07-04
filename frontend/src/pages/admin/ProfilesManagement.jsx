@@ -104,6 +104,7 @@ export default function ProfilesManagement() {
   function openEdit(item) {
     const ov = {};
     for (const l of languages) {
+      if (l.code === "uz") continue; // canonical IS the Uzbek name — no override input
       ov[l.code] = nameOverrides?.[l.code]?.[`name.${item.name}`] || "";
     }
     setForm({
