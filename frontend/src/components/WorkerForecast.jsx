@@ -152,7 +152,7 @@ function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
     ? a >= cell.band_lo && a <= cell.band_hi : null;
   return (
     <div className="fixed inset-0 z-[210] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
+      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-sm shadow-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>

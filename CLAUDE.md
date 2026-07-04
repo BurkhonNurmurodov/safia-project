@@ -1,0 +1,38 @@
+# Safia Dashboard — project instructions
+
+## UI element templates (mandatory)
+
+Every recurring element type has exactly ONE template component in
+`frontend/src/components/ui/`. When building any new feature, use these
+templates — never hand-roll a new variant of an element type that already
+has one. If a template lacks a feature, extend it with a prop; do not fork
+or copy-paste its markup into a page.
+
+| Element type | Template | Rules |
+|---|---|---|
+| Dropdown / select | `StyledSelect.jsx` | Never a native `<select>`. Compact toolbars: `triggerClassName="px-2.5 py-1.5 text-xs"`. |
+| Date picker (range or single) | `DateRangePicker.jsx` | Single date → `single` prop. Never a bare `<input type="date">`. |
+| "‹ day ›" stepper on daily pages | `DayStepper.jsx` | `max={null}` to allow future dates. |
+| Dialog / form modal | `Modal.jsx` | Backdrop `rgba(0,0,0,0.6)` + Telegram safe-top; rounded-2xl card; header = title (+subtitle/icon) + X close; body scrolls; footer right-aligned. |
+| Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
+| Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). |
+| Button | `Button.jsx` | Variants `primary/secondary/danger/ghost`, sizes `sm/md`; `loading` shows the spinner. |
+| Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. |
+| Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
+| Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
+| Loading | `Skeleton.jsx` blocks for page/section data loads; `Loader2` spinner inside buttons for actions | Never bare `…` / "Загрузка…" text. |
+
+Other UI conventions:
+
+- Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100.
+- All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
+- No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
+- Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
+- Date-axis line/area charts never show fewer than 7 days — use `utils/chartRange.js`.
+
+## Workflow
+
+- Before any change: `git fetch` and pull if behind `origin/main`.
+- Never build/commit/push manually — the Edit/Write hook builds `frontend/dist` and auto-commits+pushes. A failed build silently aborts the commit, so verify builds with `cd frontend && npx vite build` when in doubt.
+- Backend changes need a Passenger restart on prod; startup migrations go in BOTH the FastAPI lifespan and `passenger_wsgi.py`.
+- i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.

@@ -239,7 +239,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
 
       {/* ── Mobile: full-screen bottom sheet ── */}
       {open && isMobile && (
-        <div className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background:"rgba(0,0,0,0.5)" }}
+        <div className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={e => { if (e.target===e.currentTarget) setOpen(false); }}>
           <div className="rounded-t-2xl flex flex-col max-h-[90dvh]"
             style={{ background:"var(--bg-card)", border:"1px solid var(--border-md)" }}>

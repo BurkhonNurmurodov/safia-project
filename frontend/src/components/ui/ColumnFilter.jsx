@@ -248,7 +248,7 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div onClick={onClose}
-        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }} />
+        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
       <div style={{
         position: "relative", background: "var(--bg-card)", borderRadius: "20px 20px 0 0",
         maxHeight: "82vh", display: "flex", flexDirection: "column",

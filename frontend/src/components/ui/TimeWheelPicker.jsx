@@ -140,7 +140,7 @@ function WheelDialog({ lo, hi, value, onConfirm, onClose }) {
   return (
     <div
       className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.5)", paddingBottom: "calc(var(--tg-safe-bottom, 0px))" }}
+      style={{ background: "rgba(0,0,0,0.6)", paddingBottom: "calc(var(--tg-safe-bottom, 0px))" }}
       onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}

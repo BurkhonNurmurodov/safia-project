@@ -17,7 +17,7 @@ export default function PendingInfoModal({ managerName, date, reason, onClose })
   return (
     <div
       className="fixed inset-0 z-[210] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
+      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
       onClick={onClose}
     >
       <div

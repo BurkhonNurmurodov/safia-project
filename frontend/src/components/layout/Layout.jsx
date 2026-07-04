@@ -162,7 +162,7 @@ function UserProfile() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.45)" }}
+          style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setSettingsOpen(false)}
         >
           <div
@@ -292,7 +292,7 @@ function UserProfile() {
       {confirmLogout && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.45)" }}
+          style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setConfirmLogout(false)}
         >
           <div
