@@ -11,6 +11,7 @@ import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DayStepper from "../components/ui/DayStepper";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
