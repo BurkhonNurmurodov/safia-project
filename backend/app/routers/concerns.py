@@ -64,6 +64,7 @@ def _serialize(c: LeaderConcern) -> dict:
         "completion_date": c.completion_date.isoformat() if c.completion_date else None,
         "solution": c.solution,
         "resolution_days": resolution_days,
+        "resolution_minutes": resolution_minutes,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
