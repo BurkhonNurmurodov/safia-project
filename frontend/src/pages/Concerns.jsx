@@ -307,7 +307,17 @@ export default function Concerns() {
   const { tl } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
-  const isAdmin = auth?.role === "admin";
+
+  // Role-scoped access (the backend enforces the same scopes): admins and
+  // shift-managers create via a supervisor → leader cascade, supervisors pick
+  // among their own leaders, leaders always write on themselves, top-managers
+  // get a read-only view of everything in their scope.
+  const role = auth?.role;
+  const isAdmin = role === "admin";
+  const canPickSupervisor = isAdmin || role === "shift-manager";
+  const canPickLeader = canPickSupervisor || role === "supervisor";
+  const readOnly = role === "top-manager";
+  const isLeaderViewer = role === "leader";
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
 
@@ -315,8 +325,8 @@ export default function Concerns() {
   const [period, setPeriod] = useState("all");        // all | today | yesterday | last-week | custom
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [fBrig, setFBrig] = useState("All");          // admin: brigadir_manager_id (string) | "All"
-  const [fLeader, setFLeader] = useState("All");      // admin: leader_role_ref (string) | "All"
+  const [fBrig, setFBrig] = useState("All");          // brigadir_manager_id (string) | "All"
+  const [fLeader, setFLeader] = useState("All");      // leaderKey(row) (string) | "All"
   const [search, setSearch] = useState("");
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
