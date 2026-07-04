@@ -26,6 +26,12 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 SETTING_KEY = "page_access"
 
+# Meta key stored inside the page_access blob: the TOGGLEABLE_ROLES the matrix
+# was last saved with. Lets get_page_access tell "role added to the code after
+# the last save" (keep code defaults) apart from "admin deliberately unchecked
+# the role everywhere" (respect the stored empty state).
+_ROLES_KEY = "_roles"
+
 # Roles an admin may toggle per page. "admin" is intentionally excluded — it is
 # always granted full access and can never be locked out. "guest" ships with
 # zero default pages: a fresh guest sees the no-access screen until an admin
