@@ -29,7 +29,7 @@ function HolderChip({ b, onUnassign, disabled }) {
         : { background: "rgba(34,197,94,0.10)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
       title={b.username ? `@${b.username}` : String(b.telegram_id)}
     >
-      {tl(b.user_name) || (b.username ? `@${b.username}` : b.telegram_id)}
+      {b.tg_name || tl(b.user_name) || (b.username ? `@${b.username}` : b.telegram_id)}
       {pending && <span className="opacity-80">· {t("admin.users.status.pending")}</span>}
       {!pending && (
         <button
