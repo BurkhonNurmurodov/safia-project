@@ -21,6 +21,7 @@ import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
 import { diffStatus } from "../utils/segments";
 import { utilNumbers, utilInputs, differenceNumbers, differenceInputs, differencePctNumbers, hcEquivNumbers, hcEquivInputs, avgWorkloadNumbers, rangeDays } from "../utils/formulas";
+import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
 
 const INIT_FILTERS = {
