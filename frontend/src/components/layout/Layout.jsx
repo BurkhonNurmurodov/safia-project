@@ -103,8 +103,8 @@ function UserProfile() {
 
           {/* Other profiles */}
           {others.map(r => {
-        const rName     = r.full_name || "";
-        const rTkey     = ROLE_TKEYS[r.role];
+        const rName     = tl(r.full_name || "");
+        const rTkey     = ROLE_LABEL_KEYS[r.role];
         const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
         const isPending = r.status === "pending";
         return (
