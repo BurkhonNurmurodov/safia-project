@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Sparkles, RefreshCw, CheckCircle2, Loader2, Circle, AlarmClock,
-  Users, ListChecks, CalendarClock, Trophy, ExternalLink, Search, Plug,
+  Users, ListChecks, CalendarClock, Trophy, ExternalLink, Plug,
   Clock, TrendingUp, FolderKanban, FileText, Tag, UserCheck, UserRound,
   CircleDot, ChevronUp, ChevronDown, ChevronsUpDown,
   Pin, Puzzle, Handshake, Target, ChartColumn, DraftingCompass,

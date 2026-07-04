@@ -501,12 +501,15 @@ export default function Trudoyomkost() {
       )}
 
       {isLoading && (
-        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>…</div>
+        <div className="rounded-2xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SkeletonBlock className="h-3 w-44 mb-4" />
+          <SkeletonChart className="h-56" />
+        </div>
       )}
 
       {!isLoading && !hasData && !isError && (
-        <div className="rounded-2xl p-10 text-center text-sm" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
-          {T.noData}
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <EmptyState title={T.noData} message={null} showUploadLink={false} />
         </div>
       )}
 

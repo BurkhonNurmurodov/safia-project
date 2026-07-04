@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Activity, Users, Clock, Radio, TrendingUp, CalendarDays, Trophy,
-  RefreshCw, Search, Shield, Timer, CalendarClock, Hash,
+  RefreshCw, Shield, Timer, CalendarClock, Hash,
   ChevronUp, ChevronDown, ChevronsUpDown, CircleUserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
