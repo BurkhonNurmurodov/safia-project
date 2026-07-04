@@ -138,7 +138,8 @@ export default function ProfilesManagement() {
       return;
     }
 
-    const body = { name, overrides: form.overrides };
+    // uz: "" clears any stale uz override — it would shadow the canonical name in tl()
+    const body = { name, overrides: { ...form.overrides, uz: "" } };
     if (type === "shift-manager" || type === "supervisor") body.shift = Number(form.shift);
     if (type === "leader" && form.manager_id) body.manager_id = Number(form.manager_id);
     if (type === "supervisor" && Number(form.verifix_id) !== modal.item.id) {
