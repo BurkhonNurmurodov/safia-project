@@ -947,6 +947,7 @@ const t = {
     "admin.users.fieldUnit":       "Bo'lim",
     "admin.users.fieldSupervisor": "Brigadir",
     "admin.users.fieldSlot":       "Smena sloti",
+    "admin.users.fieldShift":      "Smena",
     "admin.users.selectPlaceholder": "— tanlang —",
     "admin.users.add":             "Qo'shish",
     "admin.users.addError":        "Rol qo'shib bo'lmadi",
