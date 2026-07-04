@@ -681,6 +681,73 @@ export default function ProfilesManagement() {
           </div>
         </div>
       )}
+
+      {/* Role-switch confirmation (backend 409 confirm_required) */}
+      {confirmSwitch && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
+          onClick={() => !switchMut.isPending && setConfirmSwitch(null)}
+        >
+          <div
+            className="rounded-2xl w-full max-w-xs shadow-2xl p-5"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                   style={{ background: "rgba(234,179,8,0.15)" }}>
+                <AlertTriangle size={16} className="text-yellow-500" />
+              </div>
+              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
+                {t("admin.profiles.switchConfirmTitle")}
+              </div>
+            </div>
+            <p className="text-xs mb-2 leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {t("admin.profiles.switchConfirmMsg")
+                .replace("{name}", modal?.item?.name ?? "")
+                .replace("{role}", t(TYPES.find((x) => x.key === confirmSwitch.body.new_role)?.tKey))}
+            </p>
+            <ul className="text-xs mb-5 leading-relaxed list-disc pl-4 space-y-1"
+                style={{ color: "var(--text-3)" }}>
+              {confirmSwitch.detail.concerns > 0 && (
+                <li>{t("admin.profiles.switchImpactConcerns").replace("{n}", confirmSwitch.detail.concerns)}</li>
+              )}
+              {confirmSwitch.detail.tasks > 0 && (
+                <li>{t("admin.profiles.switchImpactTasks").replace("{n}", confirmSwitch.detail.tasks)}</li>
+              )}
+              {confirmSwitch.detail.unit_archive && (
+                <li>{t("admin.profiles.switchImpactUnitArchive")}</li>
+              )}
+              {confirmSwitch.detail.unit_delete && (
+                <li>{t("admin.profiles.switchImpactUnitDelete")}</li>
+              )}
+              {confirmSwitch.detail.unit_leaders > 0 && (
+                <li>{t("admin.profiles.switchImpactUnitLeaders").replace("{n}", confirmSwitch.detail.unit_leaders)}</li>
+              )}
+            </ul>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmSwitch(null)}
+                disabled={switchMut.isPending}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
+              >
+                {t("admin.users.cancel")}
+              </button>
+              <button
+                onClick={() => switchMut.mutate({ ...confirmSwitch.body, confirm: true })}
+                disabled={switchMut.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                style={{ background: "#eab308", color: "#1a1d27" }}
+              >
+                {switchMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Pencil size={12} />}
+                {t("admin.profiles.switchConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
