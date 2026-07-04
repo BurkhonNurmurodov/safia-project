@@ -829,30 +829,16 @@ export default function Concerns() {
           top-manager), the leader filter for everyone above a leader; a leader
           only ever sees their own concerns. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-        {/* Period */}
+        {/* Period — same range picker as the Leaders page (presets + calendar) */}
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
-          <StyledSelect
-            value={period}
-            onChange={setPeriod}
-            options={[
-              { value: "all", label: t("concerns.periodAll") },
-              { value: "today", label: t("concerns.periodToday") },
-              { value: "yesterday", label: t("concerns.periodYesterday") },
-              { value: "last-week", label: t("concerns.periodWeek") },
-              { value: "custom", label: t("concerns.periodCustom") },
-            ]}
+          <DateRangePicker
+            dateFrom={startDate}
+            dateTo={endDate}
+            setDateFrom={setStartDate}
+            setDateTo={setEndDate}
+            triggerClassName="w-full px-3 py-2 text-sm"
           />
-          {period === "custom" && (
-            <div className="mt-2">
-              <DateRangePicker
-                dateFrom={startDate}
-                dateTo={endDate}
-                setDateFrom={setStartDate}
-                setDateTo={setEndDate}
-              />
-            </div>
-          )}
         </div>
 
         {/* Brigadir — multi-unit roles only */}
