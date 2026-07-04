@@ -1262,13 +1262,3 @@ export default function Tasks() {
   );
 }
 
-function Field({ label, required, children }) {
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--text-3)" }}>
-        {label}{required && <span className="text-red-400"> *</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
