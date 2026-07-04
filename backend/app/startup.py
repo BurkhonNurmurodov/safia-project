@@ -220,6 +220,26 @@ def add_notification_template_columns() -> None:
         db.close()
 
 
+def add_notification_recipient_profile() -> None:
+    """Add recipient_profile to notifications (idempotent). New rows address the
+    recipient's PROFILE ("role:id" canonical key) so an account holding several
+    profiles sees each notification only under the profile it concerns; legacy
+    NULL rows stay account-keyed via recipient_telegram_id — no backfill."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_profile VARCHAR"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_recipient_profile "
+            "ON notifications (recipient_profile)"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] notification recipient_profile migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_task_comment_author_ref() -> None:
     """Add author_role_ref to leader_task_comments (idempotent). Comments are
     owned by the authoring PROFILE (telegram_user_roles.id, 0 = admin), not the
