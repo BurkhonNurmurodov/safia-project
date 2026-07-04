@@ -173,7 +173,7 @@ export default function PlanFulfillment() {
           <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
             {t("plan.trendSub")}
           </div>
-          {isLoading ? (
+          {isLoading || chartLoading ? (
             <SkeletonChart className="h-64" />
           ) : trendDates.length > 0 ? (
             <ReactApexChart type="line" series={trendSeries} options={trendOptions} height={320} />
