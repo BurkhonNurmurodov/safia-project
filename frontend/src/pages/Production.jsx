@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown, Search, X,
+  ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown,
   AlertTriangle, Pencil, Save,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, CalendarDays, Loader2,
 } from "lucide-react";
