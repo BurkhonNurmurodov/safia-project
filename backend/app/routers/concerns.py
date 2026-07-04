@@ -1,22 +1,31 @@
 """
 Leader concerns ("Xavotirlar") API.
 
-A leader logs the concerns raised on their floor and manages only their own
-rows; an admin can act for any registered leader by passing ``leader_ref`` (the
-leader's ``telegram_user_roles.id``). Every new concern notifies the leader's
-brigadir — the approved supervisor of the leader's unit — via the bell + a
-Telegram DM. Access is gated by the ``concerns`` page in the access matrix
-(default: the ``leader`` role + admin).
+A concern is owned by a leader's pre-created *profile* (role_profiles), so it
+can be logged for a leader who hasn't claimed their profile yet — the leader
+inherits it on registration. Every role works within its scope:
+
+- admin         — everything, full manage, picks supervisor → leader
+- top-manager   — everything, read-only
+- shift-manager — their shift's units, full manage, picks supervisor → leader
+- supervisor    — their own unit's leaders, full manage, picks a leader
+- leader        — their own rows only (no picker — always writes on themselves)
+
+Every new concern notifies the leader's brigadir (the approved supervisor of
+the leader's unit) and the leader themself via the bell + a Telegram DM —
+whoever of them isn't the author (unregistered leaders are skipped silently).
+Access is gated by the ``concerns`` page in the access matrix.
 """
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import LeaderConcern, Manager, TelegramUserRole
+from app.models import LeaderConcern, Manager, RoleProfile, TelegramUserRole
 from app.permissions import require_page
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
@@ -26,6 +35,9 @@ router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
 VALID_STATUSES = {"todo", "doing", "done"}
 
+# Roles that pick a leader when creating (everyone but the leader themself).
+PICKER_ROLES = ("admin", "shift-manager", "supervisor")
+
 
 def _serialize(c: LeaderConcern) -> dict:
     resolution_days = None
@@ -33,6 +45,7 @@ def _serialize(c: LeaderConcern) -> dict:
         resolution_days = (c.completion_date - c.entry_date).days
     return {
         "id": c.id,
+        "leader_profile_id": c.leader_profile_id,
         "leader_role_ref": c.leader_role_ref,
         "leader_name": c.leader_name,
         "brigadir_manager_id": c.brigadir_manager_id,
@@ -59,38 +72,148 @@ class ConcernIn(BaseModel):
     entry_date: Optional[date] = None
     completion_date: Optional[date] = None
     solution: Optional[str] = None
-    leader_ref: Optional[int] = None   # admin only: which leader to act for
+    leader_profile_id: Optional[int] = None   # picker roles: which leader to act for
+    leader_ref: Optional[int] = None          # legacy clients: telegram_user_roles.id
 
 
-def _resolve_owner(payload: dict, body_leader_ref: Optional[int], db: Session):
-    """Resolve the owning leader for a new concern → (role_ref, leader_name,
-    brigadir_manager_id, brigadir_name). Leaders always write their own row;
-    admins must name a registered leader via ``leader_ref``."""
-    if payload.get("role") == "admin":
-        if not body_leader_ref:
-            raise HTTPException(status_code=400, detail="Select a leader")
-        lr = db.query(TelegramUserRole).filter(
-            TelegramUserRole.id == body_leader_ref,
-            TelegramUserRole.role == "leader",
-        ).first()
-        if not lr:
-            raise HTTPException(status_code=404, detail="Leader not found")
-        mgr = db.query(Manager).filter(Manager.id == lr.role_id).first()
-        return lr.id, lr.full_name, lr.role_id, (mgr.name if mgr else None)
+# ── role scope helpers ───────────────────────────────────────────────────────
 
-    role_ref = payload.get("role_ref")
-    if not role_ref:
-        raise HTTPException(status_code=403, detail="Only a leader can create concerns")
-    mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
-    return role_ref, payload.get("full_name"), payload.get("role_id"), (mgr.name if mgr else None)
+def _viewer_shift(db: Session, payload: dict) -> Optional[int]:
+    """A shift-manager's shift (1|2) — the JWT has no shift field, so it is
+    resolved from their claimed profile (role_id → role_profiles.id)."""
+    prof = db.query(RoleProfile).filter(
+        RoleProfile.id == payload.get("role_id"),
+        RoleProfile.role == "shift-manager",
+    ).first()
+    return prof.shift if prof else None
 
 
-def _assert_can_edit(payload: dict, c: LeaderConcern):
-    """Admins may touch any row; a leader only their own."""
-    if payload.get("role") == "admin":
+def _shift_unit_ids(db: Session, shift: Optional[int]) -> list[int]:
+    if shift is None:
+        return []
+    return [mid for (mid,) in db.query(Manager.id).filter(Manager.shift == shift).all()]
+
+
+def _own_profile(db: Session, payload: dict) -> Optional[RoleProfile]:
+    """The viewing leader's pre-created profile. Leader role rows point at the
+    unit (role_id = managers.id) and bind to a profile via (unit, name)."""
+    return db.query(RoleProfile).filter_by(
+        role="leader",
+        manager_id=payload.get("role_id"),
+        name=payload.get("full_name"),
+    ).first()
+
+
+def _leader_own_filter(db: Session, payload: dict):
+    """SQLAlchemy condition matching the viewing leader's own concerns: by
+    profile when it resolves, plus the role-row fallback (legacy rows without a
+    profile match, or a stale JWT name during a canonical rename)."""
+    conds = [LeaderConcern.leader_role_ref == payload.get("role_ref")]
+    prof = _own_profile(db, payload)
+    if prof:
+        conds.append(LeaderConcern.leader_profile_id == prof.id)
+    return or_(*conds)
+
+
+def _scope_query(query, payload: dict, db: Session):
+    """Restrict a LeaderConcern query to what the caller may see."""
+    role = payload.get("role")
+    if role in ("admin", "top-manager"):
+        return query
+    if role == "shift-manager":
+        unit_ids = _shift_unit_ids(db, _viewer_shift(db, payload))
+        return query.filter(LeaderConcern.brigadir_manager_id.in_(unit_ids))
+    if role == "supervisor":
+        return query.filter(LeaderConcern.brigadir_manager_id == payload.get("role_id"))
+    return query.filter(_leader_own_filter(db, payload))
+
+
+def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
+    """Full manage inside one's scope: admin anything, shift-manager their
+    shift's units, supervisor their unit, leader their own rows. Top-managers
+    are read-only."""
+    role = payload.get("role")
+    if role == "admin":
         return
-    if c.leader_role_ref != payload.get("role_ref"):
-        raise HTTPException(status_code=403, detail="You can only manage your own concerns")
+    if role == "top-manager":
+        raise HTTPException(status_code=403, detail="Read-only access")
+    if role == "shift-manager":
+        if c.brigadir_manager_id in _shift_unit_ids(db, _viewer_shift(db, payload)):
+            return
+        raise HTTPException(status_code=403, detail="This concern is outside your shift")
+    if role == "supervisor":
+        if c.brigadir_manager_id == payload.get("role_id"):
+            return
+        raise HTTPException(status_code=403, detail="This concern is outside your unit")
+    # leader
+    if c.leader_role_ref == payload.get("role_ref"):
+        return
+    prof = _own_profile(db, payload)
+    if prof and c.leader_profile_id == prof.id:
+        return
+    raise HTTPException(status_code=403, detail="You can only manage your own concerns")
+
+
+def _claimed_role_row(db: Session, prof: RoleProfile) -> Optional[TelegramUserRole]:
+    """The approved leader role row that claimed this profile, if any — leader
+    role rows bind to profiles via (unit, canonical name)."""
+    return db.query(TelegramUserRole).filter_by(
+        role="leader",
+        role_id=prof.manager_id,
+        full_name=prof.name,
+        status="approved",
+    ).first()
+
+
+def _resolve_owner(payload: dict, body: ConcernIn, db: Session):
+    """Resolve the owning leader for a new concern → (profile_id, role_ref,
+    leader_name, brigadir_manager_id, brigadir_name, leader_telegram_id).
+    Leaders always write their own row; picker roles name a leader profile
+    inside their scope."""
+    role = payload.get("role")
+
+    if role == "leader":
+        role_ref = payload.get("role_ref")
+        if not role_ref:
+            raise HTTPException(status_code=403, detail="Only a leader can create concerns")
+        prof = _own_profile(db, payload)
+        mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
+        return (
+            prof.id if prof else None, role_ref, payload.get("full_name"),
+            payload.get("role_id"), (mgr.name if mgr else None), int(payload["sub"]),
+        )
+
+    if role not in PICKER_ROLES:
+        raise HTTPException(status_code=403, detail="Read-only access")
+
+    prof = None
+    if body.leader_profile_id:
+        prof = db.query(RoleProfile).filter_by(
+            id=body.leader_profile_id, role="leader",
+        ).first()
+    elif body.leader_ref:
+        # Legacy client fallback: role row → its bound profile.
+        lr = db.query(TelegramUserRole).filter_by(id=body.leader_ref, role="leader").first()
+        if lr:
+            prof = db.query(RoleProfile).filter_by(
+                role="leader", manager_id=lr.role_id, name=lr.full_name,
+            ).first()
+    if not prof:
+        raise HTTPException(status_code=400, detail="Select a leader")
+
+    if role == "supervisor" and prof.manager_id != payload.get("role_id"):
+        raise HTTPException(status_code=403, detail="This leader is outside your unit")
+    if role == "shift-manager":
+        if prof.manager_id not in _shift_unit_ids(db, _viewer_shift(db, payload)):
+            raise HTTPException(status_code=403, detail="This leader is outside your shift")
+
+    mgr = db.query(Manager).filter(Manager.id == prof.manager_id).first()
+    claimed = _claimed_role_row(db, prof)
+    return (
+        prof.id, (claimed.id if claimed else None), prof.name,
+        prof.manager_id, (mgr.name if mgr else None),
+        (claimed.telegram_id if claimed else None),
+    )
 
 
 def _apply_completion(status: str, requested: Optional[date], existing: Optional[date]) -> Optional[date]:
@@ -109,15 +232,13 @@ def list_concerns(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
-    """Leaders get their own concerns; admins get all, or one leader's rows when
-    ``leader_ref`` is passed. Optional status + free-text filters."""
+    """Concerns inside the caller's scope (see module docstring). Admins may
+    additionally narrow to one leader via ``leader_ref``; optional status +
+    free-text filters."""
     role = payload.get("role")
-    query = db.query(LeaderConcern)
-    if role == "admin":
-        if leader_ref:
-            query = query.filter(LeaderConcern.leader_role_ref == leader_ref)
-    else:
-        query = query.filter(LeaderConcern.leader_role_ref == payload.get("role_ref"))
+    query = _scope_query(db.query(LeaderConcern), payload, db)
+    if role == "admin" and leader_ref:
+        query = query.filter(LeaderConcern.leader_role_ref == leader_ref)
 
     if status in VALID_STATUSES:
         query = query.filter(LeaderConcern.status == status)
@@ -135,61 +256,104 @@ def list_concerns(
             or ql in (r.cell_code or "").lower()
         ]
 
+    picker = (
+        "supervisor_leader" if role in ("admin", "shift-manager")
+        else "leader" if role == "supervisor"
+        else None
+    )
     return {
         "role": role,
-        "can_pick_leader": role == "admin",
+        "picker": picker,
+        "read_only": role == "top-manager",
+        "can_pick_leader": picker is not None,
         "data": [_serialize(r) for r in rows],
     }
 
 
-@router.get("/leaders")
-def list_registered_leaders(
+@router.get("/supervisors")
+def list_supervisor_units(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
-    """Admin picker source: approved ``leader``-role users with their brigadir."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    rows = (
-        db.query(TelegramUserRole)
-        .filter(TelegramUserRole.role == "leader", TelegramUserRole.status == "approved")
-        .order_by(TelegramUserRole.full_name)
-        .all()
-    )
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    """Supervisor step of the create cascade: active units for admins, the
+    caller's shift's units for shift-managers."""
+    role = payload.get("role")
+    if role not in ("admin", "shift-manager"):
+        raise HTTPException(status_code=403, detail="Admin or shift-manager only")
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if role == "shift-manager":
+        shift = _viewer_shift(db, payload)
+        if shift is None:
+            return []
+        q = q.filter(Manager.shift == shift)
     return [
-        {
-            "role_ref": r.id,
-            "name": r.full_name,
-            "brigadir_manager_id": r.role_id,
-            "brigadir_name": mgr_names.get(r.role_id),
-        }
-        for r in rows
+        {"manager_id": m.id, "name": m.name, "shift": m.shift}
+        for m in q.order_by(Manager.name).all()
     ]
+
+
+@router.get("/leaders")
+def list_leader_profiles(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Leader step of the create cascade: every pre-created leader profile in
+    the caller's scope (claimed or not), with its unit for client-side
+    cascading. Archived units are excluded."""
+    role = payload.get("role")
+    if role not in PICKER_ROLES:
+        raise HTTPException(status_code=403, detail="No leader picker for this role")
+
+    q = db.query(RoleProfile).filter(RoleProfile.role == "leader")
+    if role == "supervisor":
+        q = q.filter(RoleProfile.manager_id == payload.get("role_id"))
+    elif role == "shift-manager":
+        q = q.filter(RoleProfile.manager_id.in_(
+            _shift_unit_ids(db, _viewer_shift(db, payload))
+        ))
+
+    mgrs = {m.id: m for m in db.query(Manager).all()}
+    claimed = {
+        (r.role_id, r.full_name)
+        for r in db.query(TelegramUserRole).filter_by(role="leader", status="approved").all()
+    }
+    out = []
+    for p in q.order_by(RoleProfile.name).all():
+        mgr = mgrs.get(p.manager_id)
+        if not mgr or mgr.archived:
+            continue
+        out.append({
+            "profile_id": p.id,
+            "name": p.name,
+            "manager_id": p.manager_id,
+            "brigadir_name": mgr.name,
+            "registered": (p.manager_id, p.name) in claimed,
+        })
+    return out
 
 
 @router.get("/cell-codes")
 def list_cell_codes(
+    leader_profile_id: Optional[int] = Query(default=None),
     leader_ref: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
-    """Distinct cell codes already used by the leader — powers the code dropdown
-    (with an 'add new' option on the client). Admins pass ``leader_ref``."""
-    role = payload.get("role")
-    ref = leader_ref if role == "admin" else payload.get("role_ref")
-    if not ref:
-        return []
-    rows = (
-        db.query(LeaderConcern.cell_code)
-        .filter(
-            LeaderConcern.leader_role_ref == ref,
-            LeaderConcern.cell_code.isnot(None),
-            LeaderConcern.cell_code != "",
-        )
-        .distinct()
-        .all()
-    )
+    """Distinct cell codes already used by a leader — powers the code dropdown
+    (with an 'add new' option on the client). Picker roles pass the leader;
+    leaders get their own. Always scope-filtered."""
+    query = _scope_query(db.query(LeaderConcern.cell_code), payload, db)
+    if payload.get("role") in PICKER_ROLES:
+        if leader_profile_id:
+            query = query.filter(LeaderConcern.leader_profile_id == leader_profile_id)
+        elif leader_ref:
+            query = query.filter(LeaderConcern.leader_role_ref == leader_ref)
+        else:
+            return []
+    rows = query.filter(
+        LeaderConcern.cell_code.isnot(None),
+        LeaderConcern.cell_code != "",
+    ).distinct().all()
     return sorted({r[0] for r in rows})
 
 
@@ -209,11 +373,12 @@ def create_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     _validate(body)
-    ref, name, mgr_id, mgr_name = _resolve_owner(payload, body.leader_ref, db)
+    profile_id, role_ref, name, mgr_id, mgr_name, leader_tg = _resolve_owner(payload, body, db)
     entry = body.entry_date or date.today()
 
     c = LeaderConcern(
-        leader_role_ref=ref,
+        leader_profile_id=profile_id,
+        leader_role_ref=role_ref,
         leader_name=name,
         brigadir_manager_id=mgr_id,
         brigadir_name=mgr_name,
@@ -231,23 +396,39 @@ def create_concern(
     db.commit()
     db.refresh(c)
 
-    # Notify the brigadir (the supervisor of the leader's unit) about every new
-    # concern. Skipped silently if that brigadir hasn't registered, or is the
-    # author (e.g. would never happen for a leader, but guards admin edge cases).
-    if mgr_id:
-        sup = _find_supervisor(db, mgr_id)
-        if sup and sup.telegram_id != int(payload["sub"]):
-            snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
-            _notify(
-                db, sup.telegram_id, type="info", nkey="concern_created",
-                params={
-                    "leader_name": name,
-                    "owner": c.concern_owner,
-                    "date": entry,
-                    "concern": snippet,
-                },
-            )
-            db.commit()
+    # Notify the brigadir (approved supervisor of the leader's unit) and the
+    # leader themself about every new concern — skipping whoever authored it,
+    # never DM'ing the same person twice (one account may hold both roles), and
+    # silently skipping leaders who haven't registered (no Telegram account
+    # bound to the profile yet).
+    author = int(payload["sub"])
+    snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+    notified: set[int] = set()
+    sup = _find_supervisor(db, mgr_id) if mgr_id else None
+    if sup and sup.telegram_id != author:
+        _notify(
+            db, sup.telegram_id, type="info", nkey="concern_created",
+            params={
+                "leader_name": name,
+                "owner": c.concern_owner,
+                "date": entry,
+                "concern": snippet,
+            },
+        )
+        notified.add(sup.telegram_id)
+    if leader_tg and leader_tg != author and leader_tg not in notified:
+        _notify(
+            db, leader_tg, type="info", nkey="concern_assigned",
+            params={
+                "actor_name": payload.get("full_name") or "",
+                "owner": c.concern_owner,
+                "date": entry,
+                "concern": snippet,
+            },
+        )
+        notified.add(leader_tg)
+    if notified:
+        db.commit()
 
     return _serialize(c)
 
@@ -262,7 +443,7 @@ def update_concern(
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
-    _assert_can_edit(payload, c)
+    _assert_can_edit(payload, c, db)
     _validate(body)
 
     # Ownership (leader/brigadir) is never reassigned on edit — only the concern
@@ -291,6 +472,6 @@ def delete_concern(
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
-    _assert_can_edit(payload, c)
+    _assert_can_edit(payload, c, db)
     db.delete(c)
     db.commit()
