@@ -51,30 +51,6 @@ function fmtLongLocalized(iso, t) {
 const DONUT_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
 // ── Single-day picker ─────────────────────────────────────────────────────────
-function DayPicker({ value, onChange }) {
-  const today = toISO(new Date());
-  const atToday = value >= today;
-  const { t } = useLang();
-  return (
-    <div className="flex items-center gap-1.5">
-      <button onClick={() => onChange(addDaysISO(value, -1))}
-        className="p-2 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
-        <ChevronLeft size={15} />
-      </button>
-      <label className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm cursor-pointer"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}>
-        <CalendarDays size={14} style={{ color: "var(--text-4)" }} />
-        <span className="whitespace-nowrap">{fmtLongLocalized(value, t)}</span>
-        <input type="date" value={value} max={today} onChange={(e) => e.target.value && onChange(e.target.value)}
-          className="sr-only" />
-      </label>
-      <button onClick={() => onChange(addDaysISO(value, 1))} disabled={atToday}
-        className="p-2 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-3)", opacity: atToday ? 0.4 : 1 }}>
-        <ChevronRight size={15} />
-      </button>
-    </div>
-  );
-}
 
 // ── Idle-by-category donut ────────────────────────────────────────────────────
 function IdleDonut({ byCategory }) {
