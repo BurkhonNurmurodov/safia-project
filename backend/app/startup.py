@@ -189,6 +189,21 @@ def add_last_seen_column() -> None:
         db.close()
 
 
+def add_tg_name_column() -> None:
+    """Add tg_name to telegram_users (idempotent). full_name mirrors the claimed
+    profile name, so the actual Telegram account name (first+last) gets its own
+    column — written at bot registration and refreshed on every web login."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS tg_name VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] tg_name migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_notification_template_columns() -> None:
     """Add nkey + params columns to notifications (idempotent). They let each row
     store its template key + params so the bell can render it in the viewer's
