@@ -150,7 +150,8 @@ export default function ProfilesManagement() {
     updateMut.mutate({ ptype: "supervisor", pid: item.id, body: { archived: !item.archived } });
   }
 
-  const inputCls = "mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]";
+  const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
+  const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
   const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
 
   return (
