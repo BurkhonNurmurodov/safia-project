@@ -618,7 +618,7 @@ export default function Concerns() {
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const va = val(a), vb = val(b);
-      if (sort.key === "deadline") {                 // blank deadlines always sink
+      if (sort.key === "deadline" || sort.key === "resolution") {   // blanks always sink
         const an = va == null, bn = vb == null;
         if (an && bn) return 0;
         if (an) return 1;
