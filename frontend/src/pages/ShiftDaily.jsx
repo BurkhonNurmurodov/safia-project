@@ -164,7 +164,7 @@ export default function ShiftDaily() {
     <Layout title={t("shiftDaily.title")} showFilters={false}>
       {/* Controls: date + unit */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
-        <DayPicker value={date} onChange={setDate} />
+        <DayStepper value={date} onChange={setDate} />
         <div className="ml-auto">{unitToggle}</div>
       </div>
 
