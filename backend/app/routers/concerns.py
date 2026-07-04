@@ -395,6 +395,7 @@ def create_concern(
         deadline_days=body.deadline_days,
         entry_date=entry,
         completion_date=_apply_completion(body.status, body.completion_date, None),
+        done_at=datetime.now(timezone.utc) if body.status == "done" else None,
         solution=(body.solution or "").strip() or None,
         created_by=int(payload["sub"]),
     )
