@@ -805,9 +805,6 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
             {"id": p.id, "name": p.name}
             for p in guest_profiles if p.id not in approved_guest_ids
         ],
-        "guest_taken_names": [
-            p.name for p in guest_profiles if p.id in approved_guest_ids
-        ],
     }
 
 
