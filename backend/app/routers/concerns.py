@@ -465,6 +465,13 @@ def update_concern(
     if body.entry_date:
         c.entry_date = body.entry_date
     c.completion_date = _apply_completion(body.status, body.completion_date, c.completion_date)
+    # Same lifecycle as completion_date, but minute-grained and never client-set:
+    # stamp the flip to done, keep it across done→done edits, clear on reopen.
+    if body.status == "done":
+        if c.done_at is None:
+            c.done_at = datetime.now(timezone.utc)
+    else:
+        c.done_at = None
     c.solution = (body.solution or "").strip() or None
 
     db.commit()
