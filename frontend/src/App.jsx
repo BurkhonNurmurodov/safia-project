@@ -56,6 +56,7 @@ import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
+import { useTranslit } from "./utils/transliterate";
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
