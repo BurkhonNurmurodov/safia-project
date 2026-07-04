@@ -665,12 +665,16 @@ class LeaderTask(Base):
 
 class LeaderTaskComment(Base):
     """Chat-style comment thread on a leader task. Editable/deletable only by
-    the author (enforced in routers/tasks.py)."""
+    the authoring profile (enforced in routers/tasks.py)."""
     __tablename__ = "leader_task_comments"
 
     id                 = Column(Integer, primary_key=True, autoincrement=True)
     task_id            = Column(Integer, nullable=False, index=True)   # leader_tasks.id
     author_telegram_id = Column(BigInteger, nullable=False)
+    # telegram_user_roles.id of the authoring PROFILE (0 = admin sentinel). One
+    # account can hold several profiles, so ownership is per-profile; NULL rows
+    # predate the column and fall back to account-scoped ownership.
+    author_role_ref    = Column(Integer, nullable=True)
     author_name        = Column(String, nullable=True)                 # snapshot of the author's display name
     text               = Column(Text, nullable=False)
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
