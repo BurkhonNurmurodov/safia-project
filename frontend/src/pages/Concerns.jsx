@@ -413,6 +413,21 @@ export default function Concerns() {
     });
   }, [rows, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Trend-chart scope: same filters, but the period start is pulled back so the
+  // chart never spans fewer than 7 days (n..n+4 charts as n-2..n+4). KPIs,
+  // donut and table keep the exact selected period.
+  const chartStart = padChartFrom(startDate, endDate);
+  const chartScoped = useMemo(() => {
+    if (chartStart === startDate) return scoped;
+    return rows.filter((r) => {
+      if (chartStart && !(r.entry_date && r.entry_date >= chartStart)) return false;
+      if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
+      if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) return false;
+      if (fLeader !== "All" && leaderKey(r) !== fLeader) return false;
+      return true;
+    });
+  }, [rows, scoped, chartStart, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
   //  3) the date carrying the most still-open concerns.
