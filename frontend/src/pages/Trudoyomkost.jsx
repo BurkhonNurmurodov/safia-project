@@ -689,11 +689,13 @@ export default function Trudoyomkost() {
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
               <LineChart size={14} style={{ color: "var(--brand-text)" }} /> {T.trend} · {unitLabel}
             </div>
-            <select value={trendSup ?? ""} onChange={(e) => setTrendSup(Number(e.target.value))}
-              className="text-xs rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--brand-border)", color: "var(--text-1)" }}>
-              {supervisors.map((s) => <option key={s.id} value={s.id}>{tl(s.name)}</option>)}
-            </select>
+            <StyledSelect
+              value={trendSup != null ? String(trendSup) : ""}
+              onChange={(v) => setTrendSup(Number(v))}
+              options={supervisors.map((s) => ({ value: String(s.id), label: tl(s.name) }))}
+              triggerClassName="px-2.5 py-1.5 text-xs"
+              className="w-48"
+            />
           </div>
 
           {/* weekday checkboxes */}
