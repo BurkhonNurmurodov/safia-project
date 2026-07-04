@@ -47,7 +47,7 @@ from app.routers.auth import _validate_init_data
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
-PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin"}
+PROFILE_TYPES = {"top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"}
 
 # Every relational column that keys on managers.id — used when an admin
 # re-keys a supervisor's Verifix ID. (JSONB payloads inside hr_documents may
