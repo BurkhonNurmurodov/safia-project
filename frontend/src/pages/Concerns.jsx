@@ -98,7 +98,7 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggle() {
-    if (saving) return;
+    if (saving || disabled) return;
     if (open) setOpen(false);
     else { setDropStyle(computeDropStyle()); setOpen(true); }
   }
