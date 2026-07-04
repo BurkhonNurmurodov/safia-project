@@ -563,8 +563,12 @@ export default function Concerns() {
     return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen };
   }, [filtered]);
 
-  // Admins always see the leader column (even when filtered to one leader).
-  const showLeaderCol = isAdmin;
+  // Everyone but the leader themself sees whose concern each row is (even when
+  // filtered to one leader). Brigadir filter is pointless for a supervisor
+  // (single unit), so it stays with the multi-unit roles.
+  const showLeaderCol = !isLeaderViewer;
+  const showBrigFilter = canPickSupervisor || readOnly;
+  const showLeaderFilter = showBrigFilter || role === "supervisor";
 
   // ── column sort (asc → desc → off), applied over the filtered rows ──────────
   const onSort = (k) => setSort((s) =>
