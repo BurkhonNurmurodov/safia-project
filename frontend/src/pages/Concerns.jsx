@@ -834,8 +834,10 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
-      {/* Filters — period + brigadir + leader (mirrors the Leaders page). Brigadir
-          and leader are admin-only; a leader only ever sees their own concerns. */}
+      {/* Filters — period + brigadir + leader (mirrors the Leaders page). The
+          brigadir filter shows for multi-unit roles (admin/shift-manager/
+          top-manager), the leader filter for everyone above a leader; a leader
+          only ever sees their own concerns. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
         {/* Period */}
         <div>
