@@ -140,6 +140,10 @@ _MESSAGES = {
         "adminreg_choose":   "👤 Выберите админ-профиль:",
         "adminreg_none":     "Нет свободных админ-профилей.",
         "adminreg_already":  "Вы уже администратор.",
+        "guest_name_taken":  (
+            "❌ Это имя уже занято.\n"
+            "Зарегистрируйтесь заново с другим именем: /start"
+        ),
     },
     "en": {
         "choose_language":   "🌐 Choose your language:",
