@@ -648,18 +648,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         <div style={{ overflow: "hidden", minHeight: 0, opacity: isCollapsed ? 0 : 1, transition: "opacity 200ms ease" }}>
       {/* Toolbar */}
       <div className="px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
-        <div className="relative flex-1">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-          <input
-            type="text" placeholder={t("staff.searchByName")}
-            value={filters.worker} onChange={e => setF("worker", e.target.value)}
-            className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg outline-none"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+        <div className="flex-1">
+          <SearchInput
+            value={filters.worker}
+            onChange={(v) => setF("worker", v)}
+            placeholder={t("staff.searchByName")}
+            inputClassName="text-xs pl-8 pr-7 py-1.5"
           />
-          {filters.worker && (
-            <button onClick={() => setF("worker", "")} className="absolute right-2.5 top-1/2 -translate-y-1/2"
-              style={{ color: "var(--text-4)" }}><X size={12} /></button>
-          )}
         </div>
         {activeFilter && (
           <button onClick={() => setFilters(INIT_FILTERS)}
