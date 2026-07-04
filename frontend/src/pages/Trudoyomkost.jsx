@@ -9,6 +9,7 @@ import Layout from "../components/layout/Layout";
 import WorkerForecast from "../components/WorkerForecast";
 import WorkerStats from "../components/WorkerStats";
 import api from "../utils/api";
+import { padChartFrom } from "../utils/chartRange";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
