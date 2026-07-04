@@ -1019,16 +1019,12 @@ export default function Concerns() {
             <span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("concerns.search")}
-                className="h-8 pl-8 pr-3 rounded-lg text-xs w-44 outline-none"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-              />
-            </div>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("concerns.search")}
+              className="w-44"
+            />
             <FilterPanel
               sections={filterSections}
               activeCount={filterActiveCount}
