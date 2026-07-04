@@ -108,13 +108,13 @@ export default function UsersManagement() {
   });
 
   function openAdd() {
-    setForm({ userId: "", role: "supervisor", roleId: "" });
+    setForm({ userId: "", role: "supervisor", roleId: "", shift: "", supervisorId: "" });
     setAddError("");
     setAddOpen(true);
   }
   function closeAdd() {
     setAddOpen(false);
-    setForm({ userId: "", role: "supervisor", roleId: "" });
+    setForm({ userId: "", role: "supervisor", roleId: "", shift: "", supervisorId: "" });
     setAddError("");
   }
   function submitAdd() {
