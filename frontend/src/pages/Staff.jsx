@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle, Pencil, Trash2, Search, X, AlertTriangle,
+  CheckCircle, Pencil, Trash2, X, AlertTriangle,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsUpDown,
   Users, Download, Plus, Check, Ban, Eye, History, Clock, Lock,
   Calendar, SlidersHorizontal, FileText, UserCheck, Loader2,
@@ -1087,7 +1087,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: "rgba(0,0,0,0.45)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
+      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
       onClick={onClose}>
       <div className="w-full max-w-3xl rounded-2xl flex flex-col overflow-hidden max-h-[90dvh]"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
@@ -1461,7 +1461,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   return createPortal(
     <>
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: "rgba(0,0,0,0.45)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
+      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
       onClick={onClose}>
       <div className="w-full max-w-3xl rounded-2xl flex flex-col overflow-hidden max-h-[90dvh]"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
@@ -1744,7 +1744,7 @@ export function DocumentViewModal({ docId, onClose }) {
   });
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.45)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
       <div className="w-full max-w-lg my-6 rounded-2xl overflow-y-auto max-h-[90vh]"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
         onClick={(e) => e.stopPropagation()}>
@@ -1878,7 +1878,7 @@ function DocumentHistoryModal({ docId, onClose }) {
   });
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.45)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
       <div className="w-full max-w-md my-6 rounded-2xl overflow-y-auto max-h-[90vh]"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
         onClick={(e) => e.stopPropagation()}>
@@ -2120,7 +2120,7 @@ function MobileSheetDatePicker({ value, onChange, t }) {
 
       {open && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(3px)" }} />
+          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
           <div style={{
             position: "relative",
             background: "var(--bg-card)",
@@ -2353,7 +2353,7 @@ function FilterBottomSheet({
         onClick={onClose}
         style={{
           position: "absolute", inset: 0,
-          background: "rgba(0,0,0,0.55)",
+          background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(3px)",
         }}
       />
