@@ -978,10 +978,11 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
 
 
 def _caller_name(call: types.CallbackQuery) -> str:
-    """Display name for the admin who tapped a button (admins may have no
-    TelegramUser row, so derive from the callback's from_user)."""
+    """Display name for the admin who tapped a button — their claimed profile
+    name; the Telegram account name only covers unbound legacy admins."""
     u = call.from_user
-    name = " ".join(p for p in (u.first_name, u.last_name) if p).strip()
+    name = admin_profile_name(u.id) \
+        or " ".join(p for p in (u.first_name, u.last_name) if p).strip()
     if not name:
         name = f"@{u.username}" if u.username else "Admin"
     return name
