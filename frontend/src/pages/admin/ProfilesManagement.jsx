@@ -573,7 +573,7 @@ export default function ProfilesManagement() {
             </div>
             <p className="text-xs mb-5 leading-relaxed" style={{ color: "var(--text-3)" }}>
               {t("admin.profiles.unassignMsg")
-                .replace("{user}", confirmUnassign.binding.user_name ||
+                .replace("{user}", confirmUnassign.binding.tg_name || confirmUnassign.binding.user_name ||
                   (confirmUnassign.binding.username ? `@${confirmUnassign.binding.username}` : confirmUnassign.binding.telegram_id))
                 .replace("{name}", confirmUnassign.item.name)}
             </p>
