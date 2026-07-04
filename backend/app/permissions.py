@@ -89,13 +89,29 @@ def get_page_access(db: Session) -> dict:
             stored = json.loads(row.value)
         except (ValueError, TypeError):
             stored = {}
+    if not isinstance(stored, dict):
+        stored = {}
+
+    # A role introduced in the code after the matrix was last saved appears
+    # nowhere in the stored blob; letting the stored per-page lists shadow its
+    # defaults would leave the role with zero pages (a dead-end no-access
+    # screen). Such roles keep their code defaults until the next Access-tab
+    # save makes every checkbox explicit. Legacy blobs predate _ROLES_KEY, so
+    # fall back to "mentioned anywhere in the matrix" as the known-role set.
+    known = stored.get(_ROLES_KEY)
+    if not isinstance(known, list):
+        known = {r for v in stored.values() if isinstance(v, list) for r in v}
+    new_roles = [r for r in TOGGLEABLE_ROLES if r not in known]
 
     result = {}
     for page in PAGE_KEYS:
         roles = stored.get(page, DEFAULT_PAGE_ACCESS.get(page, []))
         if not isinstance(roles, list):
             roles = DEFAULT_PAGE_ACCESS.get(page, [])
-        result[page] = [r for r in roles if r in TOGGLEABLE_ROLES]
+        roles = [r for r in roles if r in TOGGLEABLE_ROLES]
+        roles += [r for r in new_roles
+                  if r in DEFAULT_PAGE_ACCESS.get(page, []) and r not in roles]
+        result[page] = roles
     return result
 
 
