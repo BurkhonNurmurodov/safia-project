@@ -76,24 +76,20 @@ export default function Login() {
   // supervisor, then one of that unit's leader profiles.
   const needsShift = role === "shift-manager" || role === "supervisor" || role === "leader";
 
-  // Guest name validation: script follows the UI language, two words minimum,
-  // and the (canonical Uzbek-Latin) name must not belong to an approved guest.
+  // Guest name validation: script follows the UI language, two words minimum.
+  // Names are NOT unique — a typed name always creates its own guest profile,
+  // so there is no taken-name check; re-claims go through the picker instead.
   const guestLatin   = lang === "uz" || lang === "en";
   const guestTyped   = fullName.trim().replace(/\s+/g, " ");
   const guestScriptOk = !guestTyped ||
     (guestLatin ? LATIN_NAME_RE.test(guestTyped) : CYRILLIC_NAME_RE.test(guestTyped));
   const guestWordsOk = guestTyped.split(" ").filter(Boolean).length >= 2;
   const guestCanonical = guestLatin ? guestTyped : transliterate(guestTyped, "uz");
-  const guestTaken = !guestPid && !!guestTyped &&
-    (options?.guest_taken_names ?? []).some(
-      (n) => n.toLowerCase() === guestCanonical.toLowerCase()
-    );
   const guestError =
     role !== "guest" || guestPid || !guestTyped ? "" :
     !guestScriptOk ? t("login.guestScript") :
-    !guestWordsOk  ? t("login.guestTwoWords") :
-    guestTaken     ? t("login.guestNameTaken") : "";
-  const guestOk = guestPid != null || (guestScriptOk && guestWordsOk && !guestTaken);
+    !guestWordsOk  ? t("login.guestTwoWords") : "";
+  const guestOk = guestPid != null || (guestScriptOk && guestWordsOk);
 
   const canSubmit = fullName.trim() && role && (!needsShift || shift) &&
     (role !== "leader" || supervisor) && (role !== "guest" || guestOk);
