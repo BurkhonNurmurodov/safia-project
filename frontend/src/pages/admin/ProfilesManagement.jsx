@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  IdCard, Plus, RefreshCw, Loader2, Trash2, Pencil, AlertTriangle, X,
+  IdCard, Plus, RefreshCw, Loader2, Trash2, Pencil, X,
   Star, UserCog, Users, Flag, Shield, Archive, ArchiveRestore, Languages,
   UserRound,
 } from "lucide-react";
 import api from "../../utils/api";
+import Modal from "../../components/ui/Modal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import Button from "../../components/ui/Button";
+import FormField from "../../components/ui/FormField";
+import StyledSelect from "../../components/ui/StyledSelect";
 import { useLang } from "../../context/LangContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
@@ -366,39 +371,34 @@ export default function ProfilesManagement() {
 
       {/* Add / edit modal */}
       {modal && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 overflow-y-auto"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !busy && setModal(null)}
+        <Modal
+          onClose={() => setModal(null)}
+          dismissable={!busy}
+          title={`${t(modal.mode === "add" ? "admin.profiles.addTitle" : "admin.profiles.editTitle")} · ${t(activeType.tKey)}`}
+          maxWidth="max-w-sm"
+          zIndex={60}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setModal(null)} disabled={busy}>
+                {t("admin.users.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                icon={modal.mode === "add" ? <Plus size={12} /> : <Pencil size={12} />}
+                loading={busy}
+                onClick={submit}
+              >
+                {t(modal.mode === "add" ? "admin.profiles.create" : "admin.profiles.save")}
+              </Button>
+            </>
+          }
         >
-          <div
-            className="rounded-2xl w-full max-w-sm shadow-2xl p-5 my-8"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                   style={{ background: "var(--brand-bg)" }}>
-                {modal.mode === "add" ? <Plus size={16} className="text-[var(--brand-text)]" />
-                                      : <Pencil size={15} className="text-[var(--brand-text)]" />}
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t(modal.mode === "add" ? "admin.profiles.addTitle" : "admin.profiles.editTitle")}
-                {" · "}{t(activeType.tKey)}
-              </div>
-            </div>
-
-            <div className="space-y-3">
               {/* Role — switching moves only the name; other values are asked fresh */}
               {modal.mode === "edit" && (
-                <label className="block">
-                  <span className={labelCls} style={{ color: "var(--text-3)" }}>
-                    {t("admin.profiles.roleLabel")}
-                  </span>
-                  <select
+                <FormField label={t("admin.profiles.roleLabel")}>
+                  <StyledSelect
                     value={form.role}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    onChange={(v) => {
                       setForm((f) => v === type
                         ? { ...f, role: v, name: modal.item.name,
                             shift: modal.item.shift ?? 1,
@@ -407,26 +407,18 @@ export default function ProfilesManagement() {
                         : { ...f, role: v, name: modal.item.name,
                             shift: "", manager_id: "", verifix_id: "" });
                     }}
-                    className={inputCls}
-                    style={inputStyle}
-                  >
-                    {TYPES.map(({ key, tKey }) => (
-                      <option key={key} value={key}>{t(tKey)}</option>
-                    ))}
-                  </select>
+                    options={TYPES.map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
+                  />
                   {roleChanged && (
                     <p className="mt-1 text-[10px] leading-snug text-yellow-500">
                       {t("admin.profiles.switchRoleHint")}
                     </p>
                   )}
-                </label>
+                </FormField>
               )}
 
               {/* Canonical name — entered in Uzbek; other languages render automatically */}
-              <label className="block">
-                <span className={labelCls} style={{ color: "var(--text-3)" }}>
-                  {t("admin.profiles.nameLabel")}
-                </span>
+              <FormField label={t("admin.profiles.nameLabel")}>
                 <input
                   type="text"
                   value={form.name}
@@ -447,52 +439,34 @@ export default function ProfilesManagement() {
                     {t("admin.profiles.renameWarnSupervisor")}
                   </p>
                 )}
-              </label>
+              </FormField>
 
               {(effType === "shift-manager" || effType === "supervisor") && (
-                <label className="block">
-                  <span className={labelCls} style={{ color: "var(--text-3)" }}>
-                    {t("admin.profiles.shiftLabel")}
-                  </span>
-                  <select
-                    value={form.shift}
-                    onChange={(e) => setForm((f) => ({ ...f, shift: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  >
-                    {roleChanged && <option value="">{t("admin.users.selectPlaceholder")}</option>}
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                  </select>
-                </label>
+                <FormField label={t("admin.profiles.shiftLabel")}>
+                  <StyledSelect
+                    value={String(form.shift ?? "")}
+                    onChange={(v) => setForm((f) => ({ ...f, shift: v }))}
+                    options={[{ value: "1", label: "1" }, { value: "2", label: "2" }]}
+                    placeholder={roleChanged ? t("admin.users.selectPlaceholder") : undefined}
+                  />
+                </FormField>
               )}
 
               {effType === "leader" && (
-                <label className="block">
-                  <span className={labelCls} style={{ color: "var(--text-3)" }}>
-                    {t("admin.profiles.supervisorLabel")}
-                  </span>
-                  <select
-                    value={form.manager_id}
-                    onChange={(e) => setForm((f) => ({ ...f, manager_id: e.target.value }))}
-                    className={inputCls}
-                    style={inputStyle}
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {units
+                <FormField label={t("admin.profiles.supervisorLabel")}>
+                  <StyledSelect
+                    value={String(form.manager_id ?? "")}
+                    onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
+                    options={units
                       .filter((u) => !(roleChanged && type === "supervisor" && u.id === modal.item.id))
-                      .map((u) => (
-                        <option key={u.id} value={u.id}>{tl(u.name)}</option>
-                      ))}
-                  </select>
-                </label>
+                      .map((u) => ({ value: String(u.id), label: tl(u.name) }))}
+                    placeholder={t("admin.users.selectPlaceholder")}
+                  />
+                </FormField>
               )}
 
               {effType === "supervisor" && (
-                <label className="block">
-                  <span className={labelCls} style={{ color: "var(--text-3)" }}>
-                    {t("admin.profiles.verifixLabel")}
-                  </span>
+                <FormField label={t("admin.profiles.verifixLabel")}>
                   <input
                     type="number"
                     value={form.verifix_id}
@@ -505,7 +479,7 @@ export default function ProfilesManagement() {
                       {t("admin.profiles.verifixWarn")}
                     </p>
                   )}
-                </label>
+                </FormField>
               )}
 
               {/* Per-language display names — edit only; creation is Uzbek-only */}
@@ -550,166 +524,58 @@ export default function ProfilesManagement() {
               )}
 
               {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
-            </div>
-
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={() => setModal(null)}
-                disabled={busy}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
-                {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={submit}
-                disabled={busy}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "var(--brand)" }}
-              >
-                {busy ? <Loader2 size={12} className="animate-spin" />
-                      : modal.mode === "add" ? <Plus size={12} /> : <Pencil size={12} />}
-                {t(modal.mode === "add" ? "admin.profiles.create" : "admin.profiles.save")}
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Delete / archive confirmation */}
-      {confirmDelete && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !deleteMut.isPending && setConfirmDelete(null)}
-        >
-          <div
-            className="rounded-2xl w-full max-w-xs shadow-2xl p-5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                   style={{ background: "rgba(239,68,68,0.15)" }}>
-                <AlertTriangle size={16} className="text-red-400" />
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t("admin.profiles.deleteTitle")}
-              </div>
-            </div>
-            <p className="text-xs mb-5 leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {(type === "supervisor" && confirmDelete.has_data
-                ? t("admin.profiles.archiveMsg")
-                : t("admin.profiles.deleteMsg")
-              ).replace("{name}", confirmDelete.name)}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                disabled={deleteMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
-                {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={() => deleteMut.mutate({ ptype: type, pid: confirmDelete.id })}
-                disabled={deleteMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "#ef4444" }}
-              >
-                {deleteMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                {type === "supervisor" && confirmDelete.has_data
-                  ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => deleteMut.mutate({ ptype: type, pid: confirmDelete.id })}
+        title={t("admin.profiles.deleteTitle")}
+        message={confirmDelete && (type === "supervisor" && confirmDelete.has_data
+          ? t("admin.profiles.archiveMsg")
+          : t("admin.profiles.deleteMsg")
+        ).replace("{name}", confirmDelete.name)}
+        confirmLabel={confirmDelete && (type === "supervisor" && confirmDelete.has_data
+          ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete"))}
+        cancelLabel={t("admin.users.cancel")}
+        tone="danger"
+        loading={deleteMut.isPending}
+      />
 
       {/* Unassign confirmation */}
-      {confirmUnassign && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !unassignMut.isPending && setConfirmUnassign(null)}
-        >
-          <div
-            className="rounded-2xl w-full max-w-xs shadow-2xl p-5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                   style={{ background: "rgba(234,179,8,0.15)" }}>
-                <AlertTriangle size={16} className="text-yellow-500" />
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t("admin.profiles.unassignTitle")}
-              </div>
-            </div>
-            <p className="text-xs mb-5 leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.unassignMsg")
-                .replace("{user}", confirmUnassign.binding.tg_name || confirmUnassign.binding.user_name ||
-                  (confirmUnassign.binding.username ? `@${confirmUnassign.binding.username}` : confirmUnassign.binding.telegram_id))
-                .replace("{name}", confirmUnassign.item.name)}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmUnassign(null)}
-                disabled={unassignMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
-                {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={() => unassignMut.mutate({
-                  ptype: type,
-                  pid: confirmUnassign.item.id,
-                  role_ref: confirmUnassign.binding.role_ref,
-                  telegram_id: confirmUnassign.binding.telegram_id,
-                })}
-                disabled={unassignMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "#eab308", color: "#1a1d27" }}
-              >
-                {unassignMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
-                {t("admin.profiles.unassign")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmUnassign}
+        onCancel={() => setConfirmUnassign(null)}
+        onConfirm={() => unassignMut.mutate({
+          ptype: type,
+          pid: confirmUnassign.item.id,
+          role_ref: confirmUnassign.binding.role_ref,
+          telegram_id: confirmUnassign.binding.telegram_id,
+        })}
+        title={t("admin.profiles.unassignTitle")}
+        message={confirmUnassign && t("admin.profiles.unassignMsg")
+          .replace("{user}", confirmUnassign.binding.tg_name || confirmUnassign.binding.user_name ||
+            (confirmUnassign.binding.username ? `@${confirmUnassign.binding.username}` : confirmUnassign.binding.telegram_id))
+          .replace("{name}", confirmUnassign.item.name)}
+        confirmLabel={t("admin.profiles.unassign")}
+        cancelLabel={t("admin.users.cancel")}
+        loading={unassignMut.isPending}
+      />
 
       {/* Role-switch confirmation (backend 409 confirm_required) */}
-      {confirmSwitch && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !switchMut.isPending && setConfirmSwitch(null)}
-        >
-          <div
-            className="rounded-2xl w-full max-w-xs shadow-2xl p-5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                   style={{ background: "rgba(234,179,8,0.15)" }}>
-                <AlertTriangle size={16} className="text-yellow-500" />
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t("admin.profiles.switchConfirmTitle")}
-              </div>
-            </div>
-            <p className="text-xs mb-2 leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.switchConfirmMsg")
-                .replace("{name}", modal?.item?.name ?? "")
-                .replace("{role}", t(TYPES.find((x) => x.key === confirmSwitch.body.new_role)?.tKey))}
-            </p>
-            <ul className="text-xs mb-5 leading-relaxed list-disc pl-4 space-y-1"
-                style={{ color: "var(--text-3)" }}>
+      <ConfirmDialog
+        open={!!confirmSwitch}
+        onCancel={() => setConfirmSwitch(null)}
+        onConfirm={() => switchMut.mutate({ ...confirmSwitch.body, confirm: true })}
+        title={t("admin.profiles.switchConfirmTitle")}
+        message={confirmSwitch && (
+          <>
+            {t("admin.profiles.switchConfirmMsg")
+              .replace("{name}", modal?.item?.name ?? "")
+              .replace("{role}", t(TYPES.find((x) => x.key === confirmSwitch.body.new_role)?.tKey))}
+            <ul className="list-disc pl-4 space-y-1 mt-2">
               {confirmSwitch.detail.concerns > 0 && (
                 <li>{t("admin.profiles.switchImpactConcerns").replace("{n}", confirmSwitch.detail.concerns)}</li>
               )}
@@ -726,28 +592,13 @@ export default function ProfilesManagement() {
                 <li>{t("admin.profiles.switchImpactUnitLeaders").replace("{n}", confirmSwitch.detail.unit_leaders)}</li>
               )}
             </ul>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmSwitch(null)}
-                disabled={switchMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
-                {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={() => switchMut.mutate({ ...confirmSwitch.body, confirm: true })}
-                disabled={switchMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "#eab308", color: "#1a1d27" }}
-              >
-                {switchMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Pencil size={12} />}
-                {t("admin.profiles.switchConfirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+        confirmLabel={t("admin.profiles.switchConfirm")}
+        cancelLabel={t("admin.users.cancel")}
+        loading={switchMut.isPending}
+        zIndex={110}
+      />
     </div>
   );
 }

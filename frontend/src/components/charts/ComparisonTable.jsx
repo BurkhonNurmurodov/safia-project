@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Maximize2, Minimize2, Info } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
+import { orderedSegments } from "../../utils/segments";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import FormulaModal from "../ui/FormulaModal";
@@ -34,12 +35,21 @@ export const DEFAULT_DIFF_SEGMENTS = [
   { from: 6,     color: "#ef4444" },
 ];
 
-export const DIFF_LEGEND = [
-  { color: "#3b82f6", labelKey: "comparison.legendLt"  },
-  { color: "#22c55e", labelKey: "comparison.legendMid" },
-  { color: "#eab308", labelKey: "comparison.legendHi"  },
-  { color: "#ef4444", labelKey: "comparison.legendTop" },
-];
+// Legend bands derived from the admin-panel thresholds, so the labels follow
+// whatever the admin saves. Wording per language comes from template keys.
+function diffLegendBands(segs, t) {
+  const ordered = orderedSegments(segs);
+  const fmt = n => String(n).replace("-", "−");
+  return ordered.map((seg, i) => {
+    const next = ordered[i + 1];
+    const label = i === 0 && next
+      ? t("comparison.legendBelow").replace("{v}", fmt(next.from))
+      : !next
+        ? t("comparison.legendAbove").replace("{v}", fmt(seg.from - 1))
+        : t("comparison.legendRange").replace("{a}", fmt(seg.from)).replace("{b}", fmt(next.from - 1));
+    return { color: seg.color, label };
+  });
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -248,10 +258,10 @@ export default function ComparisonTable({
         style={{ color: "var(--text-3)", visibility: isDiff ? "visible" : "hidden" }}
       >
         <span className="font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>D = P−A:</span>
-        {DIFF_LEGEND.map(({ color, labelKey }) => (
-          <span key={labelKey} className="flex items-center gap-1.5">
+        {diffLegendBands(dsegs, t).map(({ color, label }, i) => (
+          <span key={`${color}-${i}`} className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: color }} />
-            <span>{t(labelKey)}</span>
+            <span>{label}</span>
           </span>
         ))}
       </div>

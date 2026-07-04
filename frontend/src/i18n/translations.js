@@ -1077,10 +1077,9 @@ const t = {
     "comparison.lowest":      "eng past",
     "comparison.highest":     "eng yuqori",
     "comparison.cycleTooltip":"Almashtirish uchun bosing: o'rt → min → maks",
-    "comparison.legendLt":    "D < −20",
-    "comparison.legendMid":   "−20 dan 0 gacha",
-    "comparison.legendHi":    "1 dan 5 gacha",
-    "comparison.legendTop":   "> 5",
+    "comparison.legendBelow": "D < {v}",
+    "comparison.legendRange": "{a} dan {b} gacha",
+    "comparison.legendAbove": "> {v}",
 
     // ── Speedometer gauges ───────────────────────────────────────────────────
     "gauge.workloadPlan":   "Yuk rejasi",
@@ -2332,10 +2331,9 @@ const t = {
     "comparison.lowest":      "энг паст",
     "comparison.highest":     "энг юқори",
     "comparison.cycleTooltip":"Алмаштириш учун босинг: ўрт → мин → макс",
-    "comparison.legendLt":    "D < −20",
-    "comparison.legendMid":   "−20 дан 0 гача",
-    "comparison.legendHi":    "1 дан 5 гача",
-    "comparison.legendTop":   "> 5",
+    "comparison.legendBelow": "D < {v}",
+    "comparison.legendRange": "{a} дан {b} гача",
+    "comparison.legendAbove": "> {v}",
 
     // ── Speedometer gauges ───────────────────────────────────────────────────
     "gauge.workloadPlan":   "Юк режаси",
@@ -3587,10 +3585,9 @@ const t = {
     "comparison.lowest":      "наименьшему",
     "comparison.highest":     "наибольшему",
     "comparison.cycleTooltip":"Нажмите для переключения: сред → мин → макс",
-    "comparison.legendLt":    "D < −20",
-    "comparison.legendMid":   "от −20 до 0",
-    "comparison.legendHi":    "от 1 до 5",
-    "comparison.legendTop":   "> 5",
+    "comparison.legendBelow": "D < {v}",
+    "comparison.legendRange": "от {a} до {b}",
+    "comparison.legendAbove": "> {v}",
 
     // ── Speedometer gauges ───────────────────────────────────────────────────
     "gauge.workloadPlan":   "План нагрузки",
@@ -4842,10 +4839,9 @@ const t = {
     "comparison.lowest":      "lowest",
     "comparison.highest":     "highest",
     "comparison.cycleTooltip":"Click to cycle: avg → min → max",
-    "comparison.legendLt":    "D < −20",
-    "comparison.legendMid":   "−20 to 0",
-    "comparison.legendHi":    "1 to 5",
-    "comparison.legendTop":   "> 5",
+    "comparison.legendBelow": "D < {v}",
+    "comparison.legendRange": "{a} to {b}",
+    "comparison.legendAbove": "> {v}",
 
     // ── Speedometer gauges ───────────────────────────────────────────────────
     "gauge.workloadPlan":   "Workload Plan",
