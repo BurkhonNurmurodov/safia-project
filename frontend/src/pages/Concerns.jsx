@@ -1132,8 +1132,24 @@ export default function Concerns() {
             </div>
 
             <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ flex: "1 1 auto", minHeight: 0 }}>
-              {/* Leader — admin picks who the concern belongs to (fixed on edit) */}
-              {isAdmin && (
+              {/* Who the concern belongs to (fixed on edit — ownership is never
+                  reassigned): admin/shift-manager cascade supervisor → leader,
+                  a supervisor picks straight from their own leaders. */}
+              {canPickSupervisor && !form.id && (
+                <Field label={t("concerns.colSupervisor")} required>
+                  <StyledSelect
+                    value={form.brigadir_id ? String(form.brigadir_id) : ""}
+                    onChange={(v) => setForm((f) => ({
+                      ...f,
+                      brigadir_id: v ? Number(v) : null,
+                      leader_profile_id: null,   // unit changed — reselect the leader
+                    }))}
+                    options={brigadirSelectOptions}
+                    placeholder={t("concerns.pickBrigadir")}
+                  />
+                </Field>
+              )}
+              {canPickLeader && (
                 <Field label={t("concerns.fieldLeader")} required={!form.id}>
                   {form.id ? (
                     <div
@@ -1144,10 +1160,10 @@ export default function Concerns() {
                     </div>
                   ) : (
                     <StyledSelect
-                      value={form.leader_ref ? String(form.leader_ref) : ""}
-                      onChange={(v) => setForm((f) => ({ ...f, leader_ref: v ? Number(v) : null }))}
+                      value={form.leader_profile_id ? String(form.leader_profile_id) : ""}
+                      onChange={(v) => setForm((f) => ({ ...f, leader_profile_id: v ? Number(v) : null }))}
                       options={leaderOptions}
-                      placeholder={t("concerns.pickLeader")}
+                      placeholder={t(canPickSupervisor && !form.brigadir_id ? "concerns.pickBrigadirFirst" : "concerns.pickLeader")}
                     />
                   )}
                 </Field>
