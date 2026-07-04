@@ -534,13 +534,22 @@ export default function Concerns() {
       r.entry_date < isoMinusDays(today, r.deadline_days);
 
     // Donut buckets stay disjoint: an overdue row leaves its todo/doing bucket.
+    // Buckets come from the selected period only — the padding below is chart-axis only.
     let done = 0, doing = 0, todo = 0, overdue = 0;
-    const opened = new Map(), closed = new Map();
     for (const r of filtered) {
       if (r.status === "done") done += 1;
       else if (isOverdue(r)) overdue += 1;
       else if (r.status === "doing") doing += 1;
       else todo += 1;
+    }
+
+    // Trend rows come from the padded chart window (≥7 days) when the selected
+    // period is shorter.
+    const trendRows = chartFiltered ?? filtered;
+    const opened = new Map(), closed = new Map();
+    let trendOpen = 0;
+    for (const r of trendRows) {
+      if (r.status !== "done") trendOpen += 1;
       if (!r.entry_date) continue;   // undatable rows can't sit on the axis
       opened.set(r.entry_date, (opened.get(r.entry_date) || 0) + 1);
       if (r.status === "done") {
@@ -551,18 +560,22 @@ export default function Concerns() {
       }
     }
 
-    // Running end-of-day open count over a continuous day axis, from the first
-    // entry through today while anything is still open (else the last close),
-    // so quiet days plot as a flat line instead of gaps.
+    // Running end-of-day open count over a continuous day axis, from the chart
+    // window's start (or first entry, if earlier) through today while anything
+    // is still open — never ending before the selected period does — so quiet
+    // days plot as a flat line instead of gaps.
     const dayKeys = [...opened.keys(), ...closed.keys()].sort();
     const trend = [];
     let maxOpen = 0;
     if (dayKeys.length) {
+      let firstIso = dayKeys[0];
+      if (chartStart && chartStart < firstIso) firstIso = chartStart;
       let lastIso = dayKeys[dayKeys.length - 1];
-      if (filtered.length - done > 0 && lastIso < today) lastIso = today;
+      if (trendOpen > 0 && lastIso < today) lastIso = today;
+      if (endDate && endDate > lastIso) lastIso = endDate;
       const end = new Date(lastIso + "T00:00:00");
       let run = 0;
-      for (const d = new Date(dayKeys[0] + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
+      for (const d = new Date(firstIso + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
         const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         run += (opened.get(iso) || 0) - (closed.get(iso) || 0);
         const open = Math.max(0, run);
@@ -571,7 +584,7 @@ export default function Concerns() {
       }
     }
     return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen };
-  }, [filtered]);
+  }, [filtered, chartFiltered, chartStart, endDate]);
 
   // Everyone but the leader themself sees whose concern each row is (even when
   // filtered to one leader). Brigadir filter is pointless for a supervisor
