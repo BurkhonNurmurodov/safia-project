@@ -958,9 +958,9 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
 
     notify_status_change(telegram_id, status, lang, role=decided_role)
     notify_admins_of_decision(telegram_id, status, decided_by=decided_by, role_ref=role_ref)
-    for loser_ref, loser_tid, loser_lang in losers:
+    for loser_ref, loser_tid, loser_lang, loser_role in losers:
         if loser_tid:
-            notify_status_change(loser_tid, "rejected", loser_lang, role="admin")
+            notify_status_change(loser_tid, "rejected", loser_lang, role=loser_role)
         notify_admins_of_decision(loser_tid or telegram_id, "rejected",
                                   decided_by=decided_by, role_ref=loser_ref)
     return True
