@@ -269,26 +269,34 @@ export default function UsersManagement() {
                       {user.username ? `@${user.username}` : "—"}
                     </td>
 
-                    {/* Role selector */}
+                    {/* Role selector — guest is not convertible (its role_id
+                        points at a self-created guest profile), so it renders
+                        as a static label instead of the select. */}
                     <td className="py-2.5 px-3">
-                      <div className="relative inline-block">
-                        <select
-                          value={role.role}
-                          onChange={(e) => changeRole({ user, role }, e.target.value)}
-                          disabled={updateMut.isPending}
-                          className="appearance-none bg-[#12151f] border border-white/10 rounded-lg pl-2.5 pr-6 py-1 text-[11px] text-gray-300 cursor-pointer focus:outline-none focus:border-[var(--brand-border)] transition-colors"
-                        >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>
-                              {t(ROLE_LABEL_KEYS[r])}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={10}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                        />
-                      </div>
+                      {role.role === "guest" ? (
+                        <span className="inline-block bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-1 text-[11px] text-gray-300">
+                          {t(ROLE_LABEL_KEYS[role.role])}
+                        </span>
+                      ) : (
+                        <div className="relative inline-block">
+                          <select
+                            value={role.role}
+                            onChange={(e) => changeRole({ user, role }, e.target.value)}
+                            disabled={updateMut.isPending}
+                            className="appearance-none bg-[#12151f] border border-white/10 rounded-lg pl-2.5 pr-6 py-1 text-[11px] text-gray-300 cursor-pointer focus:outline-none focus:border-[var(--brand-border)] transition-colors"
+                          >
+                            {ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {t(ROLE_LABEL_KEYS[r])}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={10}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                          />
+                        </div>
+                      )}
                     </td>
 
                     {/* Status badge */}
