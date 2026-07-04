@@ -401,7 +401,7 @@ export default function UsersManagement() {
                 </span>
                 <select
                   value={form.role}
-                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value, roleId: "" }))}
+                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value, roleId: "", shift: "", supervisorId: "" }))}
                   className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
                 >
                   {ROLES.map((r) => (
@@ -409,6 +409,25 @@ export default function UsersManagement() {
                   ))}
                 </select>
               </label>
+
+              {/* Shift — narrows the profile pickers below (registration parity) */}
+              {["supervisor", "shift-manager", "leader"].includes(form.role) && (
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                    {t("admin.users.fieldShift")}
+                  </span>
+                  <select
+                    value={form.shift}
+                    onChange={(e) => setForm((f) => ({ ...f, shift: e.target.value, roleId: "", supervisorId: "" }))}
+                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
+                  >
+                    <option value="">{t("admin.users.selectPlaceholder")}</option>
+                    {[1, 2].map((s) => (
+                      <option key={s} value={s}>{t("login.shiftN").replace("{n}", s)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {/* Unit (supervisor) */}
               {form.role === "supervisor" && (
@@ -418,39 +437,57 @@ export default function UsersManagement() {
                   </span>
                   <select
                     value={form.roleId}
+                    disabled={!form.shift}
                     onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
+                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {units.map((u) => (
+                    {shiftedUnits.map((u) => (
                       <option key={u.id} value={u.id}>{tl(u.name)}</option>
                     ))}
                   </select>
                 </label>
               )}
 
-              {/* Leader — pick a pre-created leader profile (shows its unit) */}
+              {/* Leader — shift's supervisor first, then the unit's leader profiles */}
               {form.role === "leader" && (
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldLeaderProfile")}
-                  </span>
-                  <select
-                    value={form.roleId}
-                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {leaderProfiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {tl(p.name)}{p.supervisor ? ` — ${tl(p.supervisor)}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label className="block">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                      {t("admin.users.fieldUnit")}
+                    </span>
+                    <select
+                      value={form.supervisorId}
+                      disabled={!form.shift}
+                      onChange={(e) => setForm((f) => ({ ...f, supervisorId: e.target.value, roleId: "" }))}
+                      className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
+                    >
+                      <option value="">{t("admin.users.selectPlaceholder")}</option>
+                      {shiftedUnits.map((u) => (
+                        <option key={u.id} value={u.id}>{tl(u.name)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                      {t("admin.users.fieldLeaderProfile")}
+                    </span>
+                    <select
+                      value={form.roleId}
+                      disabled={!form.supervisorId}
+                      onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
+                      className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
+                    >
+                      <option value="">{t("admin.users.selectPlaceholder")}</option>
+                      {unitLeaders.map((p) => (
+                        <option key={p.id} value={p.id}>{tl(p.name)}</option>
+                      ))}
+                    </select>
+                  </label>
+                </>
               )}
 
-              {/* Shift-manager — pick a pre-created profile */}
+              {/* Shift-manager — the chosen shift's profiles only */}
               {form.role === "shift-manager" && (
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
@@ -458,12 +495,13 @@ export default function UsersManagement() {
                   </span>
                   <select
                     value={form.roleId}
+                    disabled={!form.shift}
                     onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
+                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {shiftSlots.map((s) => (
-                      <option key={s.id} value={s.id}>{tl(s.name)} — S{s.shift}</option>
+                    {shiftedSlots.map((s) => (
+                      <option key={s.id} value={s.id}>{tl(s.name)}</option>
                     ))}
                   </select>
                 </label>
