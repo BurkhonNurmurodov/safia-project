@@ -895,8 +895,11 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
     the binding), the profile races on first-approval-wins, and the losers'
     pending requests are auto-rejected. The winning role row is deleted
     outright so a stale role='admin' row can never mint an admin JWT after a
-    later unassign."""
-    losers: list[tuple[int, int | None, str]] = []  # (role_ref, telegram_id|None→no DM, lang)
+    later unassign.
+
+    Guest profiles race the same way: one guest profile — one user, so
+    approving a claim auto-rejects every other pending claim on that profile."""
+    losers: list[tuple[int, int | None, str, str]] = []  # (role_ref, telegram_id|None→no DM, lang, role)
     with SessionLocal() as db:
         role_row = db.query(TelegramUserRole).filter_by(id=role_ref).first()
         if not role_row or role_row.status == status:
