@@ -312,9 +312,10 @@ export default function Concerns() {
   const statusLabel = (s) => t(`concerns.status.${s}`);
 
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
-  const [period, setPeriod] = useState("all");        // all | today | yesterday | last-week | custom
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Period is a concrete date range picked with the same control as Leaders
+  // (presets + calendar popover); defaults to the last 7 days.
+  const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
+  const [endDate, setEndDate] = useState(() => localTodayIso());
   const [fBrig, setFBrig] = useState("All");          // brigadir_manager_id (string) | "All"
   const [fLeader, setFLeader] = useState("All");      // leaderKey(row) (string) | "All"
   const [search, setSearch] = useState("");
