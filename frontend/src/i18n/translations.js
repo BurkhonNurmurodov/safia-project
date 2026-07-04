@@ -1406,6 +1406,7 @@ const t = {
     "role.manager":        "Менежер",
     "role.supervisor":     "Бригадир",
     "role.leader":         "Лидер",
+    "role.guest":          "Меҳмон",
     "daily.title":         "Кунлик",
     "daily.approved":      "Тасдиқланган",
     "daily.pending":        "Тасдиқ кутилмоқда",
