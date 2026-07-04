@@ -8,8 +8,8 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import (
     Admin, AppSetting, Attendance, DayApproval, EditRequest, ExchangeTask,
-    HrDocument, Language, Manager, RoleProfile, SheetSource, TelegramUser,
-    TelegramUserRole,
+    HrDocument, Language, LeaderConcern, Manager, RoleProfile, SheetSource,
+    TelegramUser, TelegramUserRole,
 )
 
 MANAGERS = [
