@@ -1065,10 +1065,11 @@ export default function Concerns() {
                   const colSpan = showLeaderCol ? 7 : 6;
                   return (
                     <Fragment key={r.id}>
-                      {/* Click a row to reveal its Edit/Delete action bar (Staff-style) */}
+                      {/* Click a row to reveal its Edit/Delete action bar (Staff-style);
+                          read-only viewers have no actions, so rows stay inert. */}
                       <tr
-                        onClick={() => setExpandedId(expanded ? null : r.id)}
-                        className="align-top cursor-pointer hover:bg-white/5"
+                        onClick={readOnly ? undefined : () => setExpandedId(expanded ? null : r.id)}
+                        className={`align-top hover:bg-white/5 ${readOnly ? "" : "cursor-pointer"}`}
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ ...cellB, color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
