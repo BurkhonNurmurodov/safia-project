@@ -35,9 +35,8 @@ export function listChartDays(fromISO, toISO) {
   const d = new Date(fromISO + "T00:00:00");
   const end = new Date(toISO + "T00:00:00");
   while (d <= end && out.length < 1000) {
-    out.push(toISO_(d));
+    out.push(toISO(d));
     d.setDate(d.getDate() + 1);
   }
   return out;
 }
-const toISO_ = toISO;
