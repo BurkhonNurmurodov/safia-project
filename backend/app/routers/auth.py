@@ -209,6 +209,7 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
 
     user.last_seen = datetime.now(timezone.utc)
     user.active_role_ref = active.id
+    user.tg_name = tg_name or user.tg_name
     db.commit()
 
     token = create_jwt(telegram_id, active.role, active.full_name, active.role_id, active.id)
