@@ -510,11 +510,16 @@ def add_task_comment(
     db.add(c)
 
     # Notify the other side(s) of the thread: the task's creator and the
-    # assigned leader, minus the author.
-    recipients = {t.created_by, _leader_telegram_id(db, t.leader_role_ref)}
-    recipients.discard(None)
-    recipients.discard(sub)
-    for tg_id in recipients:
+    # assigned leader, minus the author. The leader's row is addressed to their
+    # profile; the creator is recorded as an account, so theirs stays account-keyed.
+    recipients: dict[int, str | None] = {}
+    lr = db.query(TelegramUserRole).filter(TelegramUserRole.id == t.leader_role_ref).first()
+    if lr:
+        recipients[lr.telegram_id] = _role_row_profile_key(db, lr)
+    if t.created_by:
+        recipients.setdefault(t.created_by, None)
+    recipients.pop(sub, None)
+    for tg_id, prof in recipients.items():
         _notify(
             db, tg_id, type="info", nkey="task_comment",
             params={
@@ -522,6 +527,7 @@ def add_task_comment(
                 "comment": _snippet(body.text, 200),
                 "task": _snippet(t.task_text),
             },
+            profile=prof,
         )
 
     db.commit()
