@@ -3874,6 +3874,7 @@ const t = {
     "role.manager":        "Manager",
     "role.supervisor":     "Supervisor",
     "role.leader":         "Leader",
+    "role.guest":          "Guest",
     "daily.title":         "Daily",
     "daily.approved":      "Approved",
     "daily.pending":        "Pending approval",
