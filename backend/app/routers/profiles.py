@@ -649,7 +649,7 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
     if payload.name is not None and (payload.name or "").strip() != canonical:
         if row.role == "supervisor":
             _rename_profile(db, "supervisor", row.role_id, payload.name)
-        elif row.role in ("shift-manager", "top-manager"):
+        elif row.role in ("shift-manager", "top-manager", "guest"):
             if row.role_id:
                 _rename_profile(db, row.role, row.role_id, payload.name)
             else:  # legacy row without a profile — rename the row itself
