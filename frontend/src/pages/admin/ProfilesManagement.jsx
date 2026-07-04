@@ -355,6 +355,7 @@ export default function ProfilesManagement() {
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   className={inputCls}
+                  style={inputStyle}
                   placeholder={t("admin.profiles.namePlaceholder")}
                 />
                 {modal.mode === "add" && (
