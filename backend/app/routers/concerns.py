@@ -43,6 +43,11 @@ def _serialize(c: LeaderConcern) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
         resolution_days = (c.completion_date - c.entry_date).days
+    # Minute-grained "время выполнения": created_at → done_at. NULL done_at
+    # (still open, or done before the column existed) renders as "—".
+    resolution_minutes = None
+    if c.done_at and c.created_at:
+        resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
     return {
         "id": c.id,
         "leader_profile_id": c.leader_profile_id,
