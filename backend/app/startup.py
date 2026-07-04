@@ -587,7 +587,7 @@ def seed_admins() -> None:
 PP_SEED_FLAG = "pp_seed_manager5"
 # Bump when backend/app/data/pp_seed_manager5.json changes so prod re-syncs the
 # catalog. v2: fixed 3 junk SKU='0' rows → real product F00002812 (18.06 data).
-PP_CATALOG_VERSION = "2"
+PP_CATALOG_VERSION = "3"
 PP_CATALOG_FLAG = "pp_catalog_version"
 
 
