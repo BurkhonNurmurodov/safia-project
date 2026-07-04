@@ -868,28 +868,16 @@ export default function Tasks() {
     <Layout title={t("tasks.title")} showFilters={false}>
       {/* Filters — period + supervisor/leader cascade (role-scoped) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+        {/* Period — same range picker as the Leaders page (presets + calendar) */}
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-          <StyledSelect
-            value={period}
-            onChange={setPeriod}
-            options={[
-              { value: "all", label: t("tasks.periodAll") },
-              { value: "today", label: t("tasks.periodToday") },
-              { value: "yesterday", label: t("tasks.periodYesterday") },
-              { value: "last-week", label: t("tasks.periodWeek") },
-              { value: "custom", label: t("tasks.periodCustom") },
-            ]}
+          <DateRangePicker
+            dateFrom={startDate}
+            dateTo={endDate}
+            setDateFrom={setStartDate}
+            setDateTo={setEndDate}
+            triggerClassName="w-full px-3 py-2 text-sm"
           />
-          {period === "custom" && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-              <span style={{ color: "var(--text-4)" }}>—</span>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                className="min-w-0 flex-1 text-xs rounded-lg px-2 py-1.5 outline-none" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-            </div>
-          )}
         </div>
 
         {isAdmin && (
