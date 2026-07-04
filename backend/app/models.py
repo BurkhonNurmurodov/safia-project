@@ -238,6 +238,13 @@ class Notification(Base):
 
     id                    = Column(Integer, primary_key=True, autoincrement=True)
     recipient_telegram_id = Column(BigInteger, nullable=True)   # null = broadcast; set = user-specific
+    # Canonical key of the addressee PROFILE ("role:id" — role_profiles.id for
+    # admin/top-manager/shift-manager/leader/guest, managers.id for supervisor).
+    # One account can hold several profiles via role switching, so delivery is
+    # per-profile: a keyed row shows only under that profile and follows the
+    # profile if it is re-claimed. NULL = legacy account-keyed row (delivered by
+    # recipient_telegram_id) or broadcast — no backfill, both models coexist.
+    recipient_profile     = Column(String, nullable=True, index=True)
     # Template-based, view-time-localizable text: nkey + params let the bell render
     # each row in the *viewer's* current language (and re-render on switch). title/
     # body still hold the text rendered in the recipient's language at creation —

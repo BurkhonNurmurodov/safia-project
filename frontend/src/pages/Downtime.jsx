@@ -12,6 +12,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtTime } from "../utils/formatters";
 import api from "../utils/api";
+import { padChartParams } from "../utils/chartRange";
 import { AlertTriangle, ChevronsUpDown, ChevronUp, ChevronDown, Info } from "lucide-react";
 
 const INDIGO = "#6366f1";
