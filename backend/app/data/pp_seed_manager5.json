@@ -1,7 +1,7 @@
 {
   "manager_id": 5,
   "manager_name": "Абдугамитов Мухаммад",
-  "source_sheet": "Оф. Торт (Оф. Торт Elshod faza yacheyka.xlsx)",
+  "source_sheet": "Оф. Торт (OF. Elshod aka FAZA YACHEYKA.xlsx)",
   "work_centers": [
     {
       "code": "A1431",
@@ -40,7 +40,7 @@
       "sort_order": 5
     },
     {
-      "code": "A1421",
+      "code": "A1437",
       "shtatka": 0,
       "capacity": null,
       "sort_order": 6
@@ -92,8 +92,8 @@
     {
       "sap_code": "F00000102",
       "name": "Сафия офор",
-      "work_center": "A1436",
-      "labor_time": 41.0,
+      "work_center": "A1435",
+      "labor_time": 99.0,
       "sort_order": 6
     },
     {
@@ -121,7 +121,7 @@
       "sap_code": "F00001139",
       "name": "Торт Сафия бежевый",
       "work_center": "A1436",
-      "labor_time": 185.1,
+      "labor_time": 89.0,
       "sort_order": 10
     },
     {
@@ -174,143 +174,143 @@
       "sort_order": 17
     },
     {
+      "sap_code": "F00000077",
+      "name": "Мороженко",
+      "work_center": "A1436",
+      "labor_time": 43.0,
+      "sort_order": 18
+    },
+    {
       "sap_code": "F00000012",
       "name": "Смородина",
       "work_center": "A1435",
       "labor_time": 100.0,
-      "sort_order": 18
+      "sort_order": 19
     },
     {
       "sap_code": "F00000012",
       "name": "Смородина",
       "work_center": "A1431",
       "labor_time": 180.7,
-      "sort_order": 19
+      "sort_order": 20
     },
     {
       "sap_code": "F00000103",
       "name": "Сафия розовая",
       "work_center": "A1435",
       "labor_time": 99.0,
-      "sort_order": 20
+      "sort_order": 21
     },
     {
       "sap_code": "F00000103",
       "name": "Сафия розовая",
       "work_center": "A1431",
       "labor_time": 185.5,
-      "sort_order": 21
+      "sort_order": 22
     },
     {
       "sap_code": "F00000103",
       "name": "Сафия розовая",
       "work_center": "A1436",
       "labor_time": 41.0,
-      "sort_order": 22
+      "sort_order": 23
     },
     {
       "sap_code": "F00000825",
       "name": "Торт Молочная девочка",
       "work_center": "A1435",
       "labor_time": 94.0,
-      "sort_order": 23
+      "sort_order": 24
     },
     {
       "sap_code": "F00000825",
       "name": "Торт Молочная девочка",
       "work_center": "A1431",
       "labor_time": 80.7,
-      "sort_order": 24
+      "sort_order": 25
     },
     {
       "sap_code": "F00000098",
       "name": "Роше",
       "work_center": "A1436",
       "labor_time": 5.0,
-      "sort_order": 25
+      "sort_order": 26
     },
     {
       "sap_code": "F00000098",
       "name": "Роше",
       "work_center": "A1435",
       "labor_time": 85.0,
-      "sort_order": 26
+      "sort_order": 27
     },
     {
       "sap_code": "F00000098",
       "name": "Роше",
       "work_center": "A1431",
       "labor_time": 202.8,
-      "sort_order": 27
+      "sort_order": 28
     },
     {
       "sap_code": "F00001143",
       "name": "Торт ''Джулетта'' оформленный",
       "work_center": "A1436",
       "labor_time": 94.0,
-      "sort_order": 28
+      "sort_order": 29
     },
     {
       "sap_code": "F00001143",
       "name": "Торт ''Джулетта'' оформленный",
       "work_center": "A1435",
       "labor_time": 114.0,
-      "sort_order": 29
+      "sort_order": 30
     },
     {
       "sap_code": "F00001143",
       "name": "Торт ''Джулетта'' оформленный",
       "work_center": "A1431",
       "labor_time": 202.8,
-      "sort_order": 30
+      "sort_order": 31
     },
     {
       "sap_code": "F00001909",
       "name": "Торт Барби",
       "work_center": "A1436",
       "labor_time": 94.0,
-      "sort_order": 31
+      "sort_order": 32
     },
     {
       "sap_code": "F00001909",
       "name": "Торт Барби",
       "work_center": "A1435",
       "labor_time": 110.0,
-      "sort_order": 32
+      "sort_order": 33
     },
     {
       "sap_code": "F00001909",
       "name": "Торт Барби",
       "work_center": "A1431",
       "labor_time": 146.5,
-      "sort_order": 33
+      "sort_order": 34
     },
     {
       "sap_code": "F00000122",
       "name": "Фруктовый 1 - этап",
       "work_center": "A1432",
       "labor_time": 230.0,
-      "sort_order": 34
+      "sort_order": 35
     },
     {
       "sap_code": "F00002812",
       "name": "Торт Волк Бек",
       "work_center": "A1436",
       "labor_time": 90.8,
-      "sort_order": 35
+      "sort_order": 36
     },
     {
       "sap_code": "F00002812",
       "name": "Торт Волк Бек",
       "work_center": "A1431",
       "labor_time": 64.2,
-      "sort_order": 36
-    },
-    {
-      "sap_code": "F00002812",
-      "name": "Торт Волк Бек",
-      "work_center": "A1432",
-      "labor_time": 273.0,
       "sort_order": 37
     },
     {
@@ -379,8 +379,8 @@
     {
       "sap_code": "F00000097",
       "name": "Торт Рафаэлло",
-      "work_center": "A1421",
-      "labor_time": null,
+      "work_center": "A1432",
+      "labor_time": 250.0,
       "sort_order": 47
     },
     {
@@ -540,8 +540,8 @@
     {
       "sap_code": "F00002788",
       "name": "Торт Джулетта m/n",
-      "work_center": "A1431",
-      "labor_time": 82.0,
+      "work_center": "A1437",
+      "labor_time": null,
       "sort_order": 70
     },
     {
@@ -631,93 +631,86 @@
     {
       "sap_code": "F00002789",
       "name": "Торт Птичка m/n",
-      "work_center": "A1432",
-      "labor_time": null,
-      "sort_order": 83
-    },
-    {
-      "sap_code": "F00002789",
-      "name": "Торт Птичка m/n",
       "work_center": "A1436",
       "labor_time": 96.0,
-      "sort_order": 84
+      "sort_order": 83
     },
     {
       "sap_code": "F00002790",
       "name": "Торт Смородина m/n",
       "work_center": "A1435",
       "labor_time": 100.0,
-      "sort_order": 85
+      "sort_order": 84
     },
     {
       "sap_code": "F00002790",
       "name": "Торт Смородина m/n",
       "work_center": "A1432",
       "labor_time": 100.0,
-      "sort_order": 86
+      "sort_order": 85
     },
     {
       "sap_code": "F00001402",
       "name": "Меренговый Прямоугольный",
       "work_center": "A1434",
       "labor_time": 109.0,
-      "sort_order": 87
+      "sort_order": 86
     },
     {
       "sap_code": "F00000036",
       "name": "Итальяно торт",
       "work_center": "A1434",
       "labor_time": 94.0,
-      "sort_order": 88
+      "sort_order": 87
     },
     {
       "sap_code": "F00000091",
       "name": "Карамельный медовый прямоуг торт",
       "work_center": "A1434",
       "labor_time": 99.0,
-      "sort_order": 89
+      "sort_order": 88
     },
     {
       "sap_code": "F00000114",
       "name": "Шок медовый торт",
       "work_center": "A1434",
       "labor_time": 124.0,
-      "sort_order": 90
+      "sort_order": 89
     },
     {
       "sap_code": "F00000020",
       "name": "Афганка New торт",
       "work_center": "A1434",
       "labor_time": 99.0,
-      "sort_order": 91
+      "sort_order": 90
     },
     {
       "sap_code": "F00000061",
       "name": "Маркиза торт",
       "work_center": "A1434",
       "labor_time": 99.0,
-      "sort_order": 92
+      "sort_order": 91
     },
     {
       "sap_code": "F00000819",
       "name": "Микадо торт прямоугольный",
       "work_center": "A1434",
       "labor_time": 124.0,
-      "sort_order": 93
+      "sort_order": 92
     },
     {
       "sap_code": "F00002753",
       "name": "Спартак прямоугольный торт",
       "work_center": "A1434",
       "labor_time": 242.0,
-      "sort_order": 94
+      "sort_order": 93
     },
     {
       "sap_code": "F00000038",
       "name": "Киев Бантик",
       "work_center": "A1432",
       "labor_time": 273.0,
-      "sort_order": 95
+      "sort_order": 94
     }
   ]
 }

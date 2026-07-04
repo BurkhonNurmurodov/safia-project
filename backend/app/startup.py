@@ -587,7 +587,8 @@ def seed_admins() -> None:
 PP_SEED_FLAG = "pp_seed_manager5"
 # Bump when backend/app/data/pp_seed_manager5.json changes so prod re-syncs the
 # catalog. v2: fixed 3 junk SKU='0' rows → real product F00002812 (18.06 data).
-PP_CATALOG_VERSION = "3"
+# v3: Оф. Торт faza-yacheyka rebuild. v4: 04.07 update (A1421 → A1437).
+PP_CATALOG_VERSION = "4"
 PP_CATALOG_FLAG = "pp_catalog_version"
 
 
@@ -630,16 +631,23 @@ def resync_production_catalog() -> None:
             ))
 
         existing = {w.code: w for w in db.query(PPWorkCenter).filter_by(manager_id=mid).all()}
+        seed_codes = set()
         for w in seed.get("work_centers", []):
+            seed_codes.add(w["code"])
             wc = existing.get(w["code"])
             if wc:
                 wc.shtatka = w.get("shtatka") or 0
                 wc.capacity = w.get("capacity")
+                wc.active = True
             else:
                 db.add(PPWorkCenter(
                     manager_id=mid, code=w["code"], shtatka=w.get("shtatka") or 0,
                     capacity=w.get("capacity"), sort_order=w.get("sort_order", 0),
                 ))
+        # WCs dropped from the seed would otherwise linger as empty team cards
+        for code, wc in existing.items():
+            if code not in seed_codes:
+                wc.active = False
 
         if row:
             row.value = PP_CATALOG_VERSION
