@@ -15,6 +15,7 @@ import { useAuth } from "../../context/AuthContext";
 import { fmtPct, fmtTime } from "../../utils/formatters";
 import { utilNumbers, utilInputs, verifixNumbers, verifixInputs, differenceNumbers, differenceInputs } from "../../utils/formulas";
 import api from "../../utils/api";
+import { padChartFrom } from "../../utils/chartRange";
 
 function CommentsBox({ managerId, date }) {
   const qc = useQueryClient();
