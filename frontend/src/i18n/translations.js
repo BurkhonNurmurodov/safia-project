@@ -2107,6 +2107,7 @@ const t = {
     "admin.profiles.supervisors":    "Бригадирлар",
     "admin.profiles.leaders":        "Лидерлар",
     "admin.profiles.admins":         "Админлар",
+    "admin.profiles.guests":         "Меҳмонлар",
     "admin.profiles.add":            "Профиль қўшиш",
     "admin.profiles.addTitle":       "Янги профиль",
     "admin.profiles.editTitle":      "Профилни таҳрирлаш",
