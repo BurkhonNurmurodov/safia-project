@@ -334,6 +334,7 @@ def _notify(
     db: Session, telegram_id: int, title: str | None = None, body: str | None = None,
     type: str = "info", dm: bool = True, *,
     nkey: str | None = None, params: dict | None = None, lang: str | None = None,
+    profile: str | None = None,
 ):
     # Ghost Mode (admin header toggle): the change still applies and is recorded
     # in the audit trail, but no bell/Telegram notification is pushed to anyone.
@@ -347,18 +348,65 @@ def _notify(
             lang = _get_user_lang(db, telegram_id)
         title, body = _mk_notif(nkey, params or {}, lang)
         db.add(Notification(
-            recipient_telegram_id=telegram_id, nkey=nkey,
+            recipient_telegram_id=telegram_id, recipient_profile=profile, nkey=nkey,
             params=_jsonify_params(params or {}), title=title, body=body, type=type,
         ))
     else:
         title, body = title or "", body or ""
-        db.add(Notification(recipient_telegram_id=telegram_id, title=title, body=body, type=type))
+        db.add(Notification(recipient_telegram_id=telegram_id, recipient_profile=profile,
+                            title=title, body=body, type=type))
     if dm:
         try:
             from app.telegram_bot import send_tg_notification
             send_tg_notification(telegram_id, title, body)
         except Exception:
             pass
+
+
+# ── profile addressing ────────────────────────────────────────────────────────
+# Bell rows are addressed to PROFILES (notifications.recipient_profile), not
+# telegram accounts: one account can hold several profiles via role switching,
+# and an unclaimed profile inherits its rows when claimed. The canonical key is
+# "role:id" over the stable profile namespaces — role_profiles.id for
+# admin / top-manager / shift-manager / leader / guest, managers.id for
+# supervisor — never telegram_user_roles.id (role rows churn on re-claim).
+
+def _profile_key(role: str, ref: int | None) -> str | None:
+    return f"{role}:{ref}" if ref else None
+
+
+def _role_row_profile_key(db: Session, r: TelegramUserRole) -> str | None:
+    """Canonical profile key bound to a role row. top-manager / shift-manager /
+    guest role rows point at role_profiles directly; supervisor rows point at
+    the unit (managers.id IS the profile); leader rows keep role_id = manager id
+    and bind to their profile via (unit, name)."""
+    if r.role in ("top-manager", "shift-manager", "guest", "supervisor"):
+        return _profile_key(r.role, r.role_id)
+    if r.role == "leader":
+        prof = db.query(RoleProfile).filter_by(
+            role="leader", manager_id=r.role_id, name=r.full_name,
+        ).first()
+        return _profile_key("leader", prof.id if prof else None)
+    return None
+
+
+def _viewer_profile_key(db: Session, payload: dict) -> str | None:
+    """The JWT holder's ACTIVE profile key — what profile-addressed bell rows
+    are matched against at read time. None (legacy unbound admins, stale
+    leader-name JWTs) degrades to account-keyed delivery only."""
+    role = payload.get("role")
+    if role == "admin":
+        a = db.query(Admin).filter_by(telegram_id=int(payload["sub"])).first()
+        return _profile_key("admin", a.profile_id if a else None)
+    if role == "leader":
+        prof = db.query(RoleProfile).filter_by(
+            role="leader", manager_id=payload.get("role_id"),
+            name=payload.get("full_name"),
+        ).first()
+        return _profile_key("leader", prof.id if prof else None)
+    if role in ("top-manager", "shift-manager", "guest", "supervisor"):
+        return _profile_key(role, payload.get("role_id"))
+    return None
 
 
 def _get_shift_for_manager(db: Session, manager_id: int) -> int:
