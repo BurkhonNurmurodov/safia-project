@@ -404,15 +404,14 @@ export default function Concerns() {
 
   // Period + brigadir + leader filters (client-side, over the fetched rows).
   const scoped = useMemo(() => {
-    const [lo, hi] = periodBounds(period, startDate, endDate);
     return rows.filter((r) => {
-      if (lo && !(r.entry_date && r.entry_date >= lo)) return false;
-      if (hi && !(r.entry_date && r.entry_date <= hi)) return false;
+      if (startDate && !(r.entry_date && r.entry_date >= startDate)) return false;
+      if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
       if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) return false;
       if (fLeader !== "All" && leaderKey(r) !== fLeader) return false;
       return true;
     });
-  }, [rows, period, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
