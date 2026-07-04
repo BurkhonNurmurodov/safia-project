@@ -337,6 +337,8 @@ export default function Login() {
                 >
                   {loading ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                  ) : !shift ? (
+                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.pickShiftFirst")}</div>
                   ) : filteredManagers.length === 0 ? (
                     <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
                   ) : filteredManagers.map(name => (
