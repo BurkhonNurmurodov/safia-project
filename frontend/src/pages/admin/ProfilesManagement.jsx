@@ -441,7 +441,7 @@ export default function ProfilesManagement() {
                     {t("admin.profiles.nameUzHint")}
                   </p>
                 )}
-                {modal.mode === "edit" && type === "supervisor" &&
+                {modal.mode === "edit" && !roleChanged && type === "supervisor" &&
                   (form.name || "").trim() !== modal.item.name && (
                   <p className="mt-1 text-[10px] leading-snug text-yellow-500">
                     {t("admin.profiles.renameWarnSupervisor")}
@@ -449,7 +449,7 @@ export default function ProfilesManagement() {
                 )}
               </label>
 
-              {(type === "shift-manager" || type === "supervisor") && (
+              {(effType === "shift-manager" || effType === "supervisor") && (
                 <label className="block">
                   <span className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.shiftLabel")}
@@ -460,13 +460,14 @@ export default function ProfilesManagement() {
                     className={inputCls}
                     style={inputStyle}
                   >
+                    {roleChanged && <option value="">{t("admin.users.selectPlaceholder")}</option>}
                     <option value={1}>1</option>
                     <option value={2}>2</option>
                   </select>
                 </label>
               )}
 
-              {type === "leader" && (
+              {effType === "leader" && (
                 <label className="block">
                   <span className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.supervisorLabel")}
@@ -478,14 +479,16 @@ export default function ProfilesManagement() {
                     style={inputStyle}
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {units.map((u) => (
-                      <option key={u.id} value={u.id}>{tl(u.name)}</option>
-                    ))}
+                    {units
+                      .filter((u) => !(roleChanged && type === "supervisor" && u.id === modal.item.id))
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>{tl(u.name)}</option>
+                      ))}
                   </select>
                 </label>
               )}
 
-              {type === "supervisor" && (
+              {effType === "supervisor" && (
                 <label className="block">
                   <span className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.verifixLabel")}
@@ -497,7 +500,7 @@ export default function ProfilesManagement() {
                     className={inputCls}
                     style={inputStyle}
                   />
-                  {modal.mode === "edit" && Number(form.verifix_id) !== modal.item.id && (
+                  {modal.mode === "edit" && !roleChanged && Number(form.verifix_id) !== modal.item.id && (
                     <p className="mt-1 text-[10px] leading-snug text-yellow-500">
                       {t("admin.profiles.verifixWarn")}
                     </p>
@@ -506,7 +509,7 @@ export default function ProfilesManagement() {
               )}
 
               {/* Per-language display names — edit only; creation is Uzbek-only */}
-              {modal.mode === "edit" && (
+              {modal.mode === "edit" && !roleChanged && (
                 <div className="pt-1">
                   <div className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.langNames")}
