@@ -172,9 +172,35 @@ export default function Login() {
               </button>
             </div>
 
+            {/* Shift — narrows every picker below; nothing unlocks until chosen */}
+            {needsShift && (
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
+                  {t("login.chooseShift")}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[1, 2].map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => selectShift(s)}
+                      className="px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                      style={{
+                        background: shift === s ? "var(--brand-bg)" : "var(--bg-inner)",
+                        border: `1px solid ${shift === s ? "var(--brand)" : "var(--border-md)"}`,
+                        color: shift === s ? "var(--brand-text)" : "var(--text-1)",
+                      }}
+                    >
+                      {t("login.shiftN").replace("{n}", s)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Supervisor — pick from list */}
             {role === "supervisor" && (
-              <div>
+              <div style={{ opacity: shift ? 1 : 0.45 }}>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
                   {t("login.chooseName")}
                 </label>
