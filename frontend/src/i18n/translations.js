@@ -872,6 +872,7 @@ const t = {
     "admin.profiles.supervisors":    "Brigadirlar",
     "admin.profiles.leaders":        "Liderlar",
     "admin.profiles.admins":         "Adminlar",
+    "admin.profiles.guests":         "Mehmonlar",
     "admin.profiles.add":            "Profil qo'shish",
     "admin.profiles.addTitle":       "Yangi profil",
     "admin.profiles.editTitle":      "Profilni tahrirlash",
