@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, and_, tuple_
 
 from app.database import get_db
 from app.permissions import require_page
-from app.models import Attendance, HrDocument, Manager
+from app.models import Attendance, HeadcountData, HrDocument, Manager
 from app.services.day_state import confirmed_pairs
 
 router = APIRouter(prefix="/api", tags=["workers"])
@@ -91,7 +91,63 @@ def get_headcount(
         agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + cnt
         agg[mgr_id]["total"] += cnt
 
-    return list(agg.values())
+    # Per-day verifix HC (distinct workers present per confirmed day) — the number
+    # official_hc is actually comparable to. `total` above counts unique workers
+    # across the whole period, which grows with range length and would flag every
+    # multi-day selection as a mismatch.
+    daily_q = (
+        db.query(
+            Attendance.manager_id,
+            Attendance.date,
+            func.count(func.distinct(Attendance.worker_name)).label("hc"),
+        )
+        .join(Manager, Manager.id == Attendance.manager_id)
+        .filter(Attendance.date >= date_from, Attendance.date <= date_to)
+        .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
+        .filter(CALC_ROWS_FILTER)
+        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
+    )
+    if shift:
+        daily_q = daily_q.filter(Manager.shift == shift)
+    if manager_id:
+        daily_q = daily_q.filter(Attendance.manager_id.in_(manager_id))
+    daily_hc: dict[int, dict[date, int]] = {}
+    for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
+        daily_hc.setdefault(mgr_id, {})[d] = hc
+
+    # Official HC per (manager name, day) — HeadcountData is keyed by display
+    # name and "DD.MM.YYYY" strings (same convention as brigadirs.py).
+    names = {m["name"] for m in agg.values()}
+    date_strs = {d.strftime("%d.%m.%Y"): d for days in daily_hc.values() for d in days}
+    official: dict[str, dict[date, float]] = {}
+    if names and date_strs:
+        for r in db.query(HeadcountData).filter(
+            HeadcountData.manager_name.in_(names),
+            HeadcountData.date.in_(list(date_strs)),
+        ).all():
+            val = float(r.official_hc or 0)
+            if val > 0:
+                official.setdefault(r.manager_name, {})[date_strs[r.date]] = val
+
+    # Same per-day mismatch rule as kpi_calculator.hc_suspicious: |official − verifix| > 2.
+    # Days without official data are skipped rather than treated as official=0.
+    for m in agg.values():
+        days = daily_hc.get(m["manager_id"], {})
+        off  = official.get(m["name"], {})
+        both = [(days[d], off[d]) for d in days if d in off]
+        m["days"] = len(days)
+        m["avg_daily_hc"] = round(sum(days.values()) / len(days), 1) if days else 0
+        if both:
+            avg_vfx = sum(v for v, _ in both) / len(both)
+            avg_off = sum(o for _, o in both) / len(both)
+            m["official_hc"]      = round(avg_off, 1)
+            m["official_hc_diff"] = round(abs(avg_off - avg_vfx), 1)
+        else:
+            m["official_hc"] = m["official_hc_diff"] = None
+        m["mismatch_days"] = sum(1 for v, o in both if abs(o - v) > 2)
+
+    return sorted(agg.values(), key=lambda x: (x["shift"] or 0, x["name"] or ""))
 
 
 @router.get("/workers/trend")
