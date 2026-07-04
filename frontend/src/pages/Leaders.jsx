@@ -288,22 +288,6 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   );
 }
 
-function Modal({ title, onClose, children, wide }) {
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
-      <div className="rounded-2xl flex flex-col overflow-hidden w-full"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,.35)", maxWidth: wide ? 860 : 560, maxHeight: "88vh" }}
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)", background: "var(--brand)" }}>
-          <span className="text-sm font-semibold text-white truncate">{title}</span>
-          <button onClick={onClose} className="p-0.5 rounded text-white/80 hover:text-white"><X size={16} /></button>
-        </div>
-        <div className="overflow-y-auto p-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function Leaders() {
   const { auth } = useAuth();
