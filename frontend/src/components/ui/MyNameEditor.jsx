@@ -90,7 +90,7 @@ export default function MyNameEditor() {
           {t("settings.myName")}
         </span>
         <span className="text-[10px]" style={{ color: "var(--text-3)" }}>
-          {t(ROLE_TKEYS[profile.role]) || profile.role}
+          {t(ROLE_LABEL_KEYS[profile.role]) || profile.role}
         </span>
       </div>
 
