@@ -180,6 +180,7 @@ class TelegramUser(Base):
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=False)
+    tg_name = Column(String, nullable=True)  # Telegram account name (first+last), refreshed on login
     role    = Column(String, nullable=False)   # LEGACY mirror — see class docstring
     role_id = Column(Integer, nullable=True)   # LEGACY mirror — see class docstring
     phone   = Column(String, nullable=True)
