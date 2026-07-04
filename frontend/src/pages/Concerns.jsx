@@ -665,15 +665,25 @@ export default function Concerns() {
 
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
-    // Pre-select the leader the admin is currently filtering by, if any.
-    setForm({ ...emptyForm(), leader_ref: isAdmin && fLeader !== "All" ? Number(fLeader) : null });
+    // Pre-select whatever the creator is currently filtering by, if anything.
+    const f = { ...emptyForm() };
+    if (canPickLeader && fLeader.startsWith("p")) {
+      const prof = leaders.find((l) => l.profile_id === Number(fLeader.slice(1)));
+      if (prof) {
+        f.leader_profile_id = prof.profile_id;
+        f.brigadir_id = prof.manager_id;
+      }
+    }
+    if (canPickSupervisor && !f.brigadir_id && fBrig !== "All") f.brigadir_id = Number(fBrig);
+    setForm(f);
     setFormError("");
     setModalOpen(true);
   }
   function openEdit(r) {
     setForm({
       id: r.id,
-      leader_ref: r.leader_role_ref,
+      brigadir_id: r.brigadir_manager_id,
+      leader_profile_id: r.leader_profile_id,
       leader_name: r.leader_name || "",
       concern_owner: r.concern_owner || "",
       concern_text: r.concern_text || "",
@@ -692,16 +702,28 @@ export default function Concerns() {
     setFormError("");
   }
   function submit() {
-    if (isAdmin && !form.id && !form.leader_ref) return setFormError(t("concerns.pickLeaderFirst"));
+    if (!form.id && canPickSupervisor && !form.brigadir_id) return setFormError(t("concerns.pickBrigadirFirst"));
+    if (!form.id && canPickLeader && !form.leader_profile_id) return setFormError(t("concerns.pickLeaderFirst"));
     if (!form.concern_owner.trim()) return setFormError(t("concerns.ownerRequired"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
   }
 
-  const leaderOptions = leaders.map((l) => ({
-    value: String(l.role_ref),
-    label: l.brigadir_name ? `${tl(l.name)} · ${tl(l.brigadir_name)}` : tl(l.name),
+  const brigadirSelectOptions = supervisors.map((s) => ({
+    value: String(s.manager_id),
+    label: tl(s.name),
   }));
+
+  // Leader options for the modal — admin/shift-manager cascade by the chosen
+  // brigadir (a supervisor's list is already just their own unit). Unclaimed
+  // profiles stay pickable, quietly marked; the leader inherits the concern
+  // once they register.
+  const leaderOptions = leaders
+    .filter((l) => !canPickSupervisor || (form.brigadir_id && l.manager_id === form.brigadir_id))
+    .map((l) => ({
+      value: String(l.profile_id),
+      label: l.registered ? tl(l.name) : `${tl(l.name)} · ${t("concerns.notRegistered")}`,
+    }));
 
   // ── consolidated table filter button (shared <FilterPanel>) ─────────────────
   const deadlineActive = deadlineMin !== "" || deadlineMax !== "";
