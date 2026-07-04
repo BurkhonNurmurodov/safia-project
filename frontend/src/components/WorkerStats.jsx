@@ -343,11 +343,13 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
       <Card>
         <Head icon={TableProperties} title={t.secPerSup}
           right={
-            <select value={selSup ?? ""} onChange={(e) => setSelSup(Number(e.target.value))}
-              className="text-xs rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--brand-border)", color: "var(--text-1)" }}>
-              {supervisors.map((s) => <option key={s.id} value={s.id}>{tl(s.name)}</option>)}
-            </select>
+            <StyledSelect
+              value={selSup != null ? String(selSup) : ""}
+              onChange={(v) => setSelSup(Number(v))}
+              options={supervisors.map((s) => ({ value: String(s.id), label: tl(s.name) }))}
+              triggerClassName="px-2.5 py-1.5 text-xs"
+              className="w-48"
+            />
           } />
         <div className="p-3 overflow-x-auto">
           <table className="w-full text-[11px] border-collapse" style={{ minWidth: 720 }}>
