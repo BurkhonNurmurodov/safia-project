@@ -36,7 +36,6 @@ import {
 const pad2 = (n) => String(n).padStart(2, "0");
 const toISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return toISO(d); }
-function addDaysISO(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return toISO(d); }
 function fmtMin(m, minLabel = "min", hrsLabel = "hrs") {
   const v = Math.round(m || 0);
   if (v < 60) return `${v} ${minLabel}`;
