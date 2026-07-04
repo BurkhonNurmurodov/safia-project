@@ -574,21 +574,12 @@ export default function Production() {
         {/* toolbar — search bar + consolidated filter button (left-aligned) */}
         {!loading && (
           <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-4)" }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("production.filterPlaceholder")}
-                className="w-52 sm:w-64 text-sm pl-8 pr-7 py-2 rounded-xl outline-none"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-              />
-              {search && (
-                <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} aria-label="Очистить">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("production.filterPlaceholder")}
+              className="w-52 sm:w-64"
+            />
             <FilterPanel
               sections={filterSections}
               activeCount={filterActiveCount}
