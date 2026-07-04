@@ -331,7 +331,7 @@ def _jsonify_params(params: dict) -> dict:
 
 
 def _notify(
-    db: Session, telegram_id: int, title: str | None = None, body: str | None = None,
+    db: Session, telegram_id: int | None, title: str | None = None, body: str | None = None,
     type: str = "info", dm: bool = True, *,
     nkey: str | None = None, params: dict | None = None, lang: str | None = None,
     profile: str | None = None,
@@ -340,6 +340,12 @@ def _notify(
     # in the audit trail, but no bell/Telegram notification is pushed to anyone.
     if notifications_suppressed():
         return
+    # telegram_id None = the addressee profile is UNCLAIMED: the bell row queues
+    # on the profile (whoever claims it inherits the history) and no DM goes out.
+    if telegram_id is None:
+        if profile is None:
+            return
+        dm = False
     if nkey is not None:
         # Template row: store the key + raw params so the bell renders it in each
         # viewer's current language. title/body are also stored, rendered in the
