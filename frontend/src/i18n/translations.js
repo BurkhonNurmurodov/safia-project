@@ -2633,6 +2633,7 @@ const t = {
     "concerns.colConcern":     "Опасение",
     "concerns.colStatus":      "Статус",
     "concerns.colDeadline":    "Срок (дн.)",
+    "concerns.colResolution":  "Время выполнения (мин.)",
     "concerns.colActions":     "Действия",
     "concerns.edit":           "Редактировать",
     "concerns.delete":         "Удалить",
