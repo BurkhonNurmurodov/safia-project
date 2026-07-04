@@ -144,6 +144,10 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
         # switcher's "admin" entry is the ADMIN_ROLE_REF sentinel below.
         visible = [r for r in roles if r.status != "rejected" and r.role != "admin"]
 
+        if user and tg_name and user.tg_name != tg_name:
+            user.tg_name = tg_name
+            db.commit()
+
         if not visible:
             token = create_jwt(telegram_id, "admin", full_name)
             return {"status": "approved", "role": "admin", "full_name": full_name,
