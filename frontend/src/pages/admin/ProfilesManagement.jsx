@@ -173,13 +173,15 @@ export default function ProfilesManagement() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-              style={{ background: "var(--brand)" }}
-            >
-              <Plus size={13} /> {t("admin.profiles.add")}
-            </button>
+            {type !== "guest" && (
+              <button
+                onClick={openAdd}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+                style={{ background: "var(--brand)" }}
+              >
+                <Plus size={13} /> {t("admin.profiles.add")}
+              </button>
+            )}
             <button
               onClick={() => refetch()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-colors"
