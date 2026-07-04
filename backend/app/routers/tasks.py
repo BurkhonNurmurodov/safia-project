@@ -146,11 +146,6 @@ def _close_ranks_behind(db: Session, leader_ref: int, gone_priority: Optional[in
         row.priority = row.priority - 1
 
 
-def _leader_telegram_id(db: Session, leader_ref: int) -> Optional[int]:
-    lr = db.query(TelegramUserRole).filter(TelegramUserRole.id == leader_ref).first()
-    return lr.telegram_id if lr else None
-
-
 # ── list + picker ─────────────────────────────────────────────────────────────
 
 @router.get("")
