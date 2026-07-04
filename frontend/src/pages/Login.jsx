@@ -75,17 +75,54 @@ export default function Login() {
   // Every role except top-manager narrows by shift first; leaders then pick a
   // supervisor, then one of that unit's leader profiles.
   const needsShift = role === "shift-manager" || role === "supervisor" || role === "leader";
-  const canSubmit = fullName.trim() && role && (!needsShift || shift) && (role !== "leader" || supervisor);
+
+  // Guest name validation: script follows the UI language, two words minimum,
+  // and the (canonical Uzbek-Latin) name must not belong to an approved guest.
+  const guestLatin   = lang === "uz" || lang === "en";
+  const guestTyped   = fullName.trim().replace(/\s+/g, " ");
+  const guestScriptOk = !guestTyped ||
+    (guestLatin ? LATIN_NAME_RE.test(guestTyped) : CYRILLIC_NAME_RE.test(guestTyped));
+  const guestWordsOk = guestTyped.split(" ").filter(Boolean).length >= 2;
+  const guestCanonical = guestLatin ? guestTyped : transliterate(guestTyped, "uz");
+  const guestTaken = !guestPid && !!guestTyped &&
+    (options?.guest_taken_names ?? []).some(
+      (n) => n.toLowerCase() === guestCanonical.toLowerCase()
+    );
+  const guestError =
+    role !== "guest" || guestPid || !guestTyped ? "" :
+    !guestScriptOk ? t("login.guestScript") :
+    !guestWordsOk  ? t("login.guestTwoWords") :
+    guestTaken     ? t("login.guestNameTaken") : "";
+  const guestOk = guestPid != null || (guestScriptOk && guestWordsOk && !guestTaken);
+
+  const canSubmit = fullName.trim() && role && (!needsShift || shift) &&
+    (role !== "leader" || supervisor) && (role !== "guest" || guestOk);
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!canSubmit) return;
 
-    const payload = JSON.stringify({
+    const data = {
       full_name: fullName.trim(),
       role,
       ...(role === "leader" ? { supervisor } : {}),
-    });
+    };
+    if (role === "guest") {
+      if (guestPid) {
+        data.guest_profile_id = guestPid;
+      } else {
+        // Canonical name travels in Uzbek Latin; the other three language
+        // variants are derived silently (exact typed form for the typed
+        // language, alphabet switching for the rest) — see convertFromUz.
+        data.full_name = guestCanonical;
+        const overrides = {};
+        for (const l of ["uz_cyrl", "ru", "en"]) {
+          overrides[l] = l === lang ? guestTyped : convertFromUz(guestCanonical, l);
+        }
+        data.guest_overrides = overrides;
+      }
+    }
+    const payload = JSON.stringify(data);
 
     if (tg) {
       try { tg.sendData(payload); } catch (err) { console.error(err); }
