@@ -260,14 +260,14 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
 
     # Switch into the admin's own "admin" profile (not a telegram_user_roles row).
     if body.role_ref == ADMIN_ROLE_REF:
-        if not db.query(Admin).filter_by(telegram_id=telegram_id).first():
+        admin_row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+        if not admin_row:
             raise HTTPException(status_code=403, detail="Not an admin")
         user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
         if user:
             user.active_role_ref = ADMIN_ROLE_REF
             db.commit()
-        # full_name is transient — the post-switch reload re-derives it from initData.
-        full_name = payload.get("full_name") or "Admin"
+        full_name = _admin_profile_name(db, admin_row) or "Admin"
         new_token = create_jwt(telegram_id, "admin", full_name)
         return {
             "token":     new_token,
