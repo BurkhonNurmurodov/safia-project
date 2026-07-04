@@ -4703,6 +4703,7 @@ const t = {
     "admin.access.hint":     "Choose which roles can open each page. Admin always has full access.",
     "admin.access.colPage":  "Page",
     "access.noPages":        "You don't have access to any pages. Contact an administrator.",
+    "access.noPagesAdmin":   "This profile has no pages assigned yet. Grant pages in the admin panel, Access tab.",
     "access.switchProfile":  "Switch profile",
 
     // ── Users management ──────────────────────────────────────────────────────
