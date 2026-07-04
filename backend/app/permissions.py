@@ -27,8 +27,10 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 SETTING_KEY = "page_access"
 
 # Roles an admin may toggle per page. "admin" is intentionally excluded — it is
-# always granted full access and can never be locked out.
-TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader"]
+# always granted full access and can never be locked out. "guest" ships with
+# zero default pages: a fresh guest sees the no-access screen until an admin
+# grants pages here.
+TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest"]
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
