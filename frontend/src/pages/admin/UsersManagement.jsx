@@ -278,24 +278,14 @@ export default function UsersManagement() {
                           {t(ROLE_LABEL_KEYS[role.role])}
                         </span>
                       ) : (
-                        <div className="relative inline-block">
-                          <select
-                            value={role.role}
-                            onChange={(e) => changeRole({ user, role }, e.target.value)}
-                            disabled={updateMut.isPending}
-                            className="appearance-none bg-[#12151f] border border-white/10 rounded-lg pl-2.5 pr-6 py-1 text-[11px] text-gray-300 cursor-pointer focus:outline-none focus:border-[var(--brand-border)] transition-colors"
-                          >
-                            {ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {t(ROLE_LABEL_KEYS[r])}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={10}
-                            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                          />
-                        </div>
+                        <StyledSelect
+                          value={role.role}
+                          onChange={(v) => changeRole({ user, role }, v)}
+                          disabled={updateMut.isPending}
+                          options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEYS[r]) }))}
+                          triggerClassName="px-2.5 py-1 text-[11px]"
+                          className="inline-block w-40 align-middle"
+                        />
                       )}
                     </td>
 
