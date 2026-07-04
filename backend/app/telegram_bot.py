@@ -259,6 +259,12 @@ def _dashboard_kb(lang: str) -> types.InlineKeyboardMarkup:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _tg_account_name(u) -> str | None:
+    """The Telegram account's own name (first+last) — distinct from the claimed
+    profile name that full_name mirrors. Stored as telegram_users.tg_name."""
+    return " ".join(p for p in (u.first_name, u.last_name) if p).strip() or None
+
+
 def _admin_ids() -> set[int]:
     with SessionLocal() as db:
         return {a.telegram_id for a in db.query(Admin).all()}
