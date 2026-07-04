@@ -36,6 +36,7 @@ const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 function UserProfile() {
   const { auth, leaveRole, switchRole } = useAuth();
   const { lang, setLang, t, languages } = useLang();
+  const { tl } = useTranslit();
   const { theme, toggle } = useTheme();
   const { ghost, toggleGhost } = useGhost();
   const [open, setOpen] = useState(false);
