@@ -228,12 +228,15 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
     admins_by_profile = {a.profile_id: a for a in admin_rows if a.profile_id}
 
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
-           "leaders": [], "admins": []}
+           "leaders": [], "admins": [], "guests": []}
     for p in profiles:
         item = {"id": p.id, "name": p.name}
         if p.role == "top-manager":
             item["bindings"] = [binding(r) for r in by_key.get(("top-manager", p.id), [])]
             out["top_managers"].append(item)
+        elif p.role == "guest":
+            item["bindings"] = [binding(r) for r in by_key.get(("guest", p.id), [])]
+            out["guests"].append(item)
         elif p.role == "shift-manager":
             item["shift"] = p.shift
             item["bindings"] = [binding(r) for r in by_key.get(("shift-manager", p.id), [])]
