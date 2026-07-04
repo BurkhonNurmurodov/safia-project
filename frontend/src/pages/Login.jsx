@@ -26,7 +26,7 @@ const LATIN_NAME_RE    = /^[A-Za-zʻʼ'’‘`\-\s]+$/;
 const CYRILLIC_NAME_RE = /^[Ѐ-ӿʻʼ'’\-\s]+$/;
 
 export default function Login() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const [step,      setStep]      = useState("role");   // "role" | "name"
   const [role,       setRole]       = useState("");
@@ -37,6 +37,8 @@ export default function Login() {
   const [options,    setOptions]    = useState(null); // pre-created profiles, all roles
   const [loading,    setLoading]    = useState(false);
   const [submitted,  setSubmitted]  = useState(false);
+  const [guestPid,   setGuestPid]   = useState(null);  // guest → re-claimed profile id
+  const [guestList,  setGuestList]  = useState(false); // guest → picker open
 
   // Every role now picks a pre-created profile — nobody types a name. One
   // gated endpoint serves all the pickers: it validates Telegram initData so
