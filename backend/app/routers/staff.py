@@ -474,15 +474,20 @@ def _notify_all_parties(
     When ``admin_dm`` is False, admins still get the in-app (bell) notification
     but NOT the plain Telegram DM — used on request-creation events where admins
     instead receive the rich approve/reject button-message (see app.approvals)."""
-    admin_ids: set[int] = {a.telegram_id for a in db.query(Admin).all()}
-    recipients: set[int] = set(admin_ids)
+    admin_rows = db.query(Admin).all()
+    admin_ids: set[int] = {a.telegram_id for a in admin_rows}
+    # One bell row per (account, PROFILE): an account holding several relevant
+    # profiles sees the event under each of them, in the right profile's bell.
+    recipients: set[tuple[int, str | None]] = {
+        (a.telegram_id, _profile_key("admin", a.profile_id)) for a in admin_rows
+    }
 
     # Shift-managers for this manager's shift — anyone holding such a role,
     # regardless of which role they are currently switched into
     shift    = _get_shift_for_manager(db, manager_id)
     role_ids = _sm_role_ids_for_shift(db, shift)
     recipients.update(
-        r.telegram_id
+        (r.telegram_id, _profile_key("shift-manager", r.role_id))
         for r in db.query(TelegramUserRole).filter(
             TelegramUserRole.role == "shift-manager",
             TelegramUserRole.role_id.in_(role_ids),
@@ -494,12 +499,18 @@ def _notify_all_parties(
     if include_supervisor:
         sup = _find_supervisor(db, manager_id)
         if sup:
-            recipients.add(sup.telegram_id)
+            recipients.add((sup.telegram_id, _profile_key("supervisor", sup.role_id)))
 
-    for tg_id in recipients:
-        if tg_id != actor_tg_id:
-            dm = admin_dm or tg_id not in admin_ids
-            _notify(db, tg_id, type=ntype, dm=dm, nkey=nkey, params=params)
+    dmed: set[int] = set()
+    for tg_id, prof in recipients:
+        if tg_id == actor_tg_id:
+            continue
+        # The DM goes to the ACCOUNT — never twice, however many of the
+        # account's profiles receive a bell row.
+        dm = (admin_dm or tg_id not in admin_ids) and tg_id not in dmed
+        if dm:
+            dmed.add(tg_id)
+        _notify(db, tg_id, type=ntype, dm=dm, nkey=nkey, params=params, profile=prof)
 
 
 def notify_supervisor_verifix_upload(
