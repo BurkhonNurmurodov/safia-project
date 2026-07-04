@@ -98,14 +98,18 @@ export default function Login() {
     );
   }
 
-  const managerNames = (options?.supervisors ?? []).map(s => s.name);
+  // Profiles without a shift stay hidden until an admin sets one.
+  const managerNames = (options?.supervisors ?? [])
+    .filter(s => shift != null && s.shift === shift)
+    .map(s => s.name);
   const filteredManagers = managerNames.filter(n =>
     n.toLowerCase().includes(search.toLowerCase())
   );
   const topManagers = (options?.top_managers ?? []).filter(n =>
     n.toLowerCase().includes(search.toLowerCase())
   );
-  const shiftAdmins = options?.shift_managers ?? [];
+  const shiftAdmins = (options?.shift_managers ?? [])
+    .filter(s => shift != null && s.shift === shift);
   const leadersForSupervisor = supervisor ? (options?.leaders?.[supervisor] ?? []) : [];
 
   return (
