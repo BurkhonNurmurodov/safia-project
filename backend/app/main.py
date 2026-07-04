@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         backfill_leader_page_access, add_profiles_columns, backfill_role_profiles,
         add_concern_profile_columns, backfill_concern_profiles,
+        add_task_comment_author_ref,
     )
     add_last_seen_column()
     add_tg_name_column()
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
     add_admin_language_column()
     add_profiles_columns()
     add_concern_profile_columns()
+    add_task_comment_author_ref()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
