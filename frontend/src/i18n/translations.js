@@ -172,6 +172,7 @@ const t = {
     "role.manager":        "Menejer",
     "role.supervisor":     "Brigadir",
     "role.leader":         "Lider",
+    "role.guest":          "Mehmon",
     "daily.title":         "Kunlik",
     "daily.approved":      "Tasdiqlangan",
     "daily.pending":        "Tasdiq kutilmoqda",
