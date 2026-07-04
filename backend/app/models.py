@@ -602,19 +602,26 @@ class UserActivity(Base):
 # ---------------------------------------------------------------------------
 # Leader concerns ("Xavotirlar") — replicates the per-brigadir concern log
 # (Sanjar.xlsx). A leader logs concerns raised on the floor; each row is owned
-# by the leader's role instance (telegram_user_roles.id) and carries a snapshot
-# of the leader + their brigadir (the supervisor of the leader's unit). Admins
-# manage any leader's rows by picking the leader; leaders see only their own.
-# New table only — created by Base.metadata.create_all, no ALTERs needed.
+# by the leader's pre-created profile (role_profiles), so admins, shift
+# managers, and supervisors can log a concern for a leader who hasn't claimed
+# their profile yet — the leader inherits it on registration. Each row carries
+# a snapshot of the leader + their brigadir (the supervisor of the leader's
+# unit). Visibility is role-scoped in routers/concerns.py: admin/top-manager
+# everything, shift-manager their shift's units, supervisor their unit,
+# leader their own rows.
 # ---------------------------------------------------------------------------
 
 class LeaderConcern(Base):
     __tablename__ = "leader_concerns"
 
     id                  = Column(Integer, primary_key=True, autoincrement=True)
-    # Ownership key: the owning leader's telegram_user_roles.id (stable across
-    # name changes and unique per leader-role instance).
-    leader_role_ref     = Column(Integer, nullable=False, index=True)
+    # Ownership key: the owning leader's role_profiles.id. Profiles exist for
+    # every leader (claimed or not), so this is the stable canonical owner.
+    leader_profile_id   = Column(Integer, nullable=True, index=True)
+    # The owning leader's telegram_user_roles.id when the profile was already
+    # claimed at creation — NULL for concerns logged for unregistered leaders,
+    # kept as a scope fallback for legacy rows without a profile match.
+    leader_role_ref     = Column(Integer, nullable=True, index=True)
     leader_name         = Column(String, nullable=False)          # snapshot of the leader's name
     brigadir_manager_id = Column(Integer, nullable=True)          # managers.id (leader's unit/brigadir)
     brigadir_name       = Column(String, nullable=True)           # snapshot of the brigadir's name
