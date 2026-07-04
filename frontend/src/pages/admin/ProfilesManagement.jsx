@@ -417,6 +417,7 @@ export default function ProfilesManagement() {
                     value={form.verifix_id}
                     onChange={(e) => setForm((f) => ({ ...f, verifix_id: e.target.value }))}
                     className={inputCls}
+                    style={inputStyle}
                   />
                   {modal.mode === "edit" && Number(form.verifix_id) !== modal.item.id && (
                     <p className="mt-1 text-[10px] leading-snug text-yellow-500">
