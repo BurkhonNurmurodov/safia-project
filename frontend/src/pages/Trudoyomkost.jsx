@@ -205,6 +205,18 @@ export default function Trudoyomkost() {
     }).then((r) => r.data),
   });
 
+  // План/Факт chart never spans fewer than 7 days — its own fetch is padded
+  // back to end-6d (identical key = one request when no padding). Matrix,
+  // KPIs and the weekday trend stay on the selected range.
+  const chartFrom = padChartFrom(dateFrom, dateTo);
+  const { data: pfChartData } = useQuery({
+    queryKey: ["trudoyomkost", chartFrom, dateTo, brigadirIds, shift],
+    enabled: ready && !!dateFrom && !!dateTo,
+    queryFn: () => api.get("/api/production/trudoyomkost", {
+      params: { date_from: chartFrom, date_to: dateTo, manager_id: brigadirIds, shift },
+    }).then((r) => r.data),
+  });
+
   const matrix = data?.matrix ?? [];
   const profile = data?.weekday_profile ?? [];
   const supervisors = data?.supervisors ?? [];
