@@ -176,32 +176,43 @@ export default function ProductionUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <label className="flex flex-col gap-1.5">
-            <span className={label}>Бригадир</span>
-            <select value={managerId} onChange={(e) => setManagerId(Number(e.target.value))} className={input}>
-              {BRIGADIRS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={label}>Дата</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={input} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={label}>Режим</span>
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className={input}>
-              <option value="both">План + Факт</option>
-              <option value="plan">Только План (утро)</option>
-              <option value="actual">Только Факт (вечер)</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={label}>Тип файла</span>
-            <select value={fileType} onChange={(e) => setFileType(e.target.value)} className={input}>
-              <option value="auto">Авто-определение</option>
-              <option value="faza">Фаза (операции)</option>
-              <option value="zaga">Заголовок (заказы)</option>
-            </select>
-          </label>
+          <FormField label="Бригадир">
+            <StyledSelect
+              value={String(managerId)}
+              onChange={(v) => setManagerId(Number(v))}
+              options={BRIGADIRS.map((b) => ({ value: String(b.id), label: b.name }))}
+            />
+          </FormField>
+          <FormField label="Дата">
+            <DateRangePicker
+              single
+              dateFrom={date} dateTo={date}
+              setDateFrom={setDate} setDateTo={() => {}}
+              triggerClassName="px-3 py-2 text-sm w-full"
+            />
+          </FormField>
+          <FormField label="Режим">
+            <StyledSelect
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "both", label: "План + Факт" },
+                { value: "plan", label: "Только План (утро)" },
+                { value: "actual", label: "Только Факт (вечер)" },
+              ]}
+            />
+          </FormField>
+          <FormField label="Тип файла">
+            <StyledSelect
+              value={fileType}
+              onChange={setFileType}
+              options={[
+                { value: "auto", label: "Авто-определение" },
+                { value: "faza", label: "Фаза (операции)" },
+                { value: "zaga", label: "Заголовок (заказы)" },
+              ]}
+            />
+          </FormField>
         </div>
 
         <input
