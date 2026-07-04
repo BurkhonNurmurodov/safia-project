@@ -349,260 +349,140 @@ export default function UsersManagement() {
 
       {/* Add-role modal */}
       {addOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !addRoleMut.isPending && closeAdd()}
-        >
-          <div
-            className="rounded-2xl w-full max-w-sm shadow-2xl p-5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-4">
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ background: "var(--brand-bg)" }}
-              >
-                <Plus size={16} className="text-[var(--brand-text)]" />
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t("admin.users.addRoleTitle")}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {/* User */}
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                  {t("admin.users.fieldUser")}
-                </span>
-                <select
-                  value={form.userId}
-                  onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
-                  className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
-                >
-                  <option value="">{t("admin.users.selectPlaceholder")}</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {tl(u.full_name) || "—"}
-                      {u.username ? ` (@${u.username})` : u.phone ? ` (${u.phone})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Role */}
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                  {t("admin.users.fieldRole")}
-                </span>
-                <select
-                  value={form.role}
-                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value, roleId: "", shift: "", supervisorId: "" }))}
-                  className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{t(ROLE_LABEL_KEYS[r])}</option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Shift — narrows the profile pickers below (registration parity) */}
-              {["supervisor", "shift-manager", "leader"].includes(form.role) && (
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldShift")}
-                  </span>
-                  <select
-                    value={form.shift}
-                    onChange={(e) => setForm((f) => ({ ...f, shift: e.target.value, roleId: "", supervisorId: "" }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {[1, 2].map((s) => (
-                      <option key={s} value={s}>{t("login.shiftN").replace("{n}", s)}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {/* Unit (supervisor) */}
-              {form.role === "supervisor" && (
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldUnit")}
-                  </span>
-                  <select
-                    value={form.roleId}
-                    disabled={!form.shift}
-                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {shiftedUnits.map((u) => (
-                      <option key={u.id} value={u.id}>{tl(u.name)}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {/* Leader — shift's supervisor first, then the unit's leader profiles */}
-              {form.role === "leader" && (
-                <>
-                  <label className="block">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                      {t("admin.users.fieldUnit")}
-                    </span>
-                    <select
-                      value={form.supervisorId}
-                      disabled={!form.shift}
-                      onChange={(e) => setForm((f) => ({ ...f, supervisorId: e.target.value, roleId: "" }))}
-                      className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
-                    >
-                      <option value="">{t("admin.users.selectPlaceholder")}</option>
-                      {shiftedUnits.map((u) => (
-                        <option key={u.id} value={u.id}>{tl(u.name)}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                      {t("admin.users.fieldLeaderProfile")}
-                    </span>
-                    <select
-                      value={form.roleId}
-                      disabled={!form.supervisorId}
-                      onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                      className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
-                    >
-                      <option value="">{t("admin.users.selectPlaceholder")}</option>
-                      {unitLeaders.map((p) => (
-                        <option key={p.id} value={p.id}>{tl(p.name)}</option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              )}
-
-              {/* Shift-manager — the chosen shift's profiles only */}
-              {form.role === "shift-manager" && (
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldSlot")}
-                  </span>
-                  <select
-                    value={form.roleId}
-                    disabled={!form.shift}
-                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)] disabled:opacity-50"
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {shiftedSlots.map((s) => (
-                      <option key={s.id} value={s.id}>{tl(s.name)}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {/* Top-manager — pick a pre-created profile */}
-              {form.role === "top-manager" && (
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    {t("admin.users.fieldTopProfile")}
-                  </span>
-                  <select
-                    value={form.roleId}
-                    onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
-                    className="mt-1 w-full bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-gray-200 focus:outline-none focus:border-[var(--brand-border)]"
-                  >
-                    <option value="">{t("admin.users.selectPlaceholder")}</option>
-                    {topManagers.map((p) => (
-                      <option key={p.id} value={p.id}>{tl(p.name)}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {addError && (
-                <p className="text-[11px] font-medium text-red-400">{addError}</p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={closeAdd}
-                disabled={addRoleMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
+        <Modal
+          onClose={closeAdd}
+          dismissable={!addRoleMut.isPending}
+          title={t("admin.users.addRoleTitle")}
+          maxWidth="max-w-sm"
+          zIndex={60}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={closeAdd} disabled={addRoleMut.isPending}>
                 {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={submitAdd}
-                disabled={addRoleMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "var(--brand)" }}
-              >
-                {addRoleMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+              </Button>
+              <Button size="sm" icon={<Plus size={12} />} loading={addRoleMut.isPending} onClick={submitAdd}>
                 {t("admin.users.add")}
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          {/* User */}
+          <FormField label={t("admin.users.fieldUser")}>
+            <StyledSelect
+              value={form.userId}
+              onChange={(v) => setForm((f) => ({ ...f, userId: v }))}
+              options={users.map((u) => ({
+                value: String(u.id),
+                label: `${tl(u.full_name) || "—"}${u.username ? ` (@${u.username})` : u.phone ? ` (${u.phone})` : ""}`,
+              }))}
+              placeholder={t("admin.users.selectPlaceholder")}
+            />
+          </FormField>
+
+          {/* Role */}
+          <FormField label={t("admin.users.fieldRole")}>
+            <StyledSelect
+              value={form.role}
+              onChange={(v) => setForm((f) => ({ ...f, role: v, roleId: "", shift: "", supervisorId: "" }))}
+              options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEYS[r]) }))}
+            />
+          </FormField>
+
+          {/* Shift — narrows the profile pickers below (registration parity) */}
+          {["supervisor", "shift-manager", "leader"].includes(form.role) && (
+            <FormField label={t("admin.users.fieldShift")}>
+              <StyledSelect
+                value={form.shift}
+                onChange={(v) => setForm((f) => ({ ...f, shift: v, roleId: "", supervisorId: "" }))}
+                options={[1, 2].map((s) => ({ value: String(s), label: t("login.shiftN").replace("{n}", s) }))}
+                placeholder={t("admin.users.selectPlaceholder")}
+              />
+            </FormField>
+          )}
+
+          {/* Unit (supervisor) */}
+          {form.role === "supervisor" && (
+            <FormField label={t("admin.users.fieldUnit")}>
+              <StyledSelect
+                value={form.roleId}
+                disabled={!form.shift}
+                onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
+                options={shiftedUnits.map((u) => ({ value: String(u.id), label: tl(u.name) }))}
+                placeholder={t("admin.users.selectPlaceholder")}
+              />
+            </FormField>
+          )}
+
+          {/* Leader — shift's supervisor first, then the unit's leader profiles */}
+          {form.role === "leader" && (
+            <>
+              <FormField label={t("admin.users.fieldUnit")}>
+                <StyledSelect
+                  value={form.supervisorId}
+                  disabled={!form.shift}
+                  onChange={(v) => setForm((f) => ({ ...f, supervisorId: v, roleId: "" }))}
+                  options={shiftedUnits.map((u) => ({ value: String(u.id), label: tl(u.name) }))}
+                  placeholder={t("admin.users.selectPlaceholder")}
+                />
+              </FormField>
+              <FormField label={t("admin.users.fieldLeaderProfile")}>
+                <StyledSelect
+                  value={form.roleId}
+                  disabled={!form.supervisorId}
+                  onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
+                  options={unitLeaders.map((p) => ({ value: String(p.id), label: tl(p.name) }))}
+                  placeholder={t("admin.users.selectPlaceholder")}
+                />
+              </FormField>
+            </>
+          )}
+
+          {/* Shift-manager — the chosen shift's profiles only */}
+          {form.role === "shift-manager" && (
+            <FormField label={t("admin.users.fieldSlot")}>
+              <StyledSelect
+                value={form.roleId}
+                disabled={!form.shift}
+                onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
+                options={shiftedSlots.map((s) => ({ value: String(s.id), label: tl(s.name) }))}
+                placeholder={t("admin.users.selectPlaceholder")}
+              />
+            </FormField>
+          )}
+
+          {/* Top-manager — pick a pre-created profile */}
+          {form.role === "top-manager" && (
+            <FormField label={t("admin.users.fieldTopProfile")}>
+              <StyledSelect
+                value={form.roleId}
+                onChange={(v) => setForm((f) => ({ ...f, roleId: v }))}
+                options={topManagers.map((p) => ({ value: String(p.id), label: tl(p.name) }))}
+                placeholder={t("admin.users.selectPlaceholder")}
+              />
+            </FormField>
+          )}
+
+          {addError && (
+            <p className="text-[11px] font-medium text-red-400">{addError}</p>
+          )}
+        </Modal>
       )}
 
       {/* Delete confirmation */}
-      {confirmDelete && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.65)", paddingTop: "var(--tg-safe-top, 0px)" }}
-          onClick={() => !deleteMut.isPending && setConfirmDelete(null)}
-        >
-          <div
-            className="rounded-2xl w-full max-w-xs shadow-2xl p-5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(239,68,68,0.15)" }}
-              >
-                <AlertTriangle size={16} className="text-red-400" />
-              </div>
-              <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-                {t("admin.users.deleteTitle")}
-              </div>
-            </div>
-            <p className="text-xs mb-5 leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {t("admin.users.deleteMsg").replace(
-                "{name}",
-                `${confirmDelete.role.full_name || confirmDelete.user.full_name || "—"} (${t(ROLE_LABEL_KEYS[confirmDelete.role.role]) || confirmDelete.role.role})`,
-              )}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                disabled={deleteMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}
-              >
-                {t("admin.users.cancel")}
-              </button>
-              <button
-                onClick={() => deleteMut.mutate({ userId: confirmDelete.user.id, roleRef: confirmDelete.role.id })}
-                disabled={deleteMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "#ef4444" }}
-              >
-                {deleteMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                {t("admin.users.confirmDelete")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => deleteMut.mutate({ userId: confirmDelete.user.id, roleRef: confirmDelete.role.id })}
+        title={t("admin.users.deleteTitle")}
+        message={confirmDelete && t("admin.users.deleteMsg").replace(
+          "{name}",
+          `${confirmDelete.role.full_name || confirmDelete.user.full_name || "—"} (${t(ROLE_LABEL_KEYS[confirmDelete.role.role]) || confirmDelete.role.role})`,
+        )}
+        confirmLabel={t("admin.users.confirmDelete")}
+        cancelLabel={t("admin.users.cancel")}
+        tone="danger"
+        loading={deleteMut.isPending}
+      />
     </div>
   );
 }
