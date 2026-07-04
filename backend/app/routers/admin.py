@@ -281,6 +281,10 @@ def add_user_role(
 
     if payload.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
+    # Guests create their own profile during bot registration — there is no
+    # pre-created pool for an admin to grant from.
+    if payload.role == "guest":
+        raise HTTPException(status_code=400, detail="Guests register themselves via the bot")
 
     # Derive role_id + role-scoped display name from the pre-created profile,
     # exactly like the bot does on self-registration.
