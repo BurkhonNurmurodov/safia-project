@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
-  X, CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide, Search,
+  CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -791,7 +791,7 @@ export default function Leaders() {
 
       {/* Detail modal */}
       {detail && (
-        <Modal wide title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`} onClose={() => setDetail(null)}>
+        <Modal maxWidth="max-w-3xl" title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`} onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
@@ -819,7 +819,7 @@ export default function Leaders() {
 
       {/* Task-info modal */}
       {taskInfo && (
-        <Modal wide title={T.taskInfoTitle} onClose={() => setTaskInfo(false)}>
+        <Modal maxWidth="max-w-3xl" title={T.taskInfoTitle} onClose={() => setTaskInfo(false)}>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ background: "var(--brand)", color: "#fff" }}>
