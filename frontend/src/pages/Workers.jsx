@@ -13,6 +13,7 @@ import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
 
 // ── palette ────────────────────────────────────────────────────────────────────
