@@ -498,6 +498,7 @@ def add_task_comment(
     c = LeaderTaskComment(
         task_id=t.id,
         author_telegram_id=sub,
+        author_role_ref=_profile_ref(payload),
         author_name=payload.get("full_name"),
         text=body.text.strip(),
     )
