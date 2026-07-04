@@ -25,6 +25,15 @@ export default function PlanFulfillment() {
     enabled: ready,
   });
 
+  // Trend chart never spans fewer than 7 days: a short selection fetches a
+  // window padded back to end-6d (same key = same request when no padding).
+  const chartParams = useMemo(() => padChartParams(params), [params]);
+  const { data: chartData, isLoading: chartLoading } = useQuery({
+    queryKey: ["plan", chartParams],
+    queryFn: () => api.get("/api/plan-fulfillment", { params: chartParams }).then((r) => r.data),
+    enabled: ready,
+  });
+
   const summary = data?.summary || [];
   const fleet   = data?.fleet_avg_fulfillment;
 
