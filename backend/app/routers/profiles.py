@@ -26,6 +26,7 @@ Multilingual names: one canonical (Uzbek Latin) name per profile; per-language
 display variants are `name.<canonical>` override keys in `translations`
 (rendered by the frontend tl() helper, auto-transliterated when absent).
 """
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,7 +40,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Admin, Manager, RoleProfile, TelegramUser, TelegramUserRole, Translation,
+    Admin, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
+    TelegramUserRole, Translation,
 )
 from app.routers.admin import verify_admin
 from app.routers.auth import _validate_init_data
