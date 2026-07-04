@@ -123,6 +123,7 @@ export default function ProfilesManagement() {
       ov[l.code] = nameOverrides?.[l.code]?.[`name.${item.name}`] || "";
     }
     setForm({
+      role: type,
       name: item.name,
       shift: item.shift ?? 1,
       manager_id: item.manager_id ?? "",
@@ -132,6 +133,11 @@ export default function ProfilesManagement() {
     setFormError("");
     setModal({ mode: "edit", item });
   }
+
+  // Role switch: only the name moves with the profile — every other value is
+  // entered fresh for the target role.
+  const roleChanged = modal?.mode === "edit" && form.role && form.role !== type;
+  const effType = roleChanged ? form.role : type;
 
   function submit() {
     setFormError("");
