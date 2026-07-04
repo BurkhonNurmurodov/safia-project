@@ -588,16 +588,15 @@ export default function Tasks() {
 
   // Period + supervisor + leader scope.
   const scoped = useMemo(() => {
-    const [lo, hi] = periodBounds(period, startDate, endDate);
     return rows.filter((r) => {
       const day = createdDay(r);
-      if (lo && !(day && day >= lo)) return false;
-      if (hi && !(day && day <= hi)) return false;
+      if (startDate && !(day && day >= startDate)) return false;
+      if (endDate && !(day && day <= endDate)) return false;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
       if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
       return true;
     });
-  }, [rows, period, startDate, endDate, fSup, fLeader]);
+  }, [rows, startDate, endDate, fSup, fLeader]);
 
   // Table filters (status multi-select + free text) over the scoped rows.
   const filtered = useMemo(() => {
