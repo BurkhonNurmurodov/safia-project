@@ -29,8 +29,11 @@ from app.database import get_db
 from app.models import LeaderTask, LeaderTaskComment, Manager, TelegramUserRole
 from app.permissions import require_page
 from app.routers.auth import ADMIN_ROLE_REF
-# Shared notification helper: writes the bell row (rendered per-viewer) + DM.
-from app.routers.staff import _notify
+# Shared notification helpers: _notify writes the bell row (rendered per-viewer)
+# + DM; _role_row_profile_key addresses the row to the recipient's PROFILE so it
+# only shows under that profile (creator-addressed rows stay account-keyed —
+# tasks record their creator as an account, not a profile).
+from app.routers.staff import _notify, _role_row_profile_key
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
