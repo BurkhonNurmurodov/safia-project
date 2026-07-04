@@ -1192,13 +1192,15 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
     sup_nkey    = "request_approved_supervisor" if is_approved else "request_rejected_supervisor"
     others_nkey = "request_approved_others"     if is_approved else "request_rejected_others"
 
-    # Notify supervisor about their request result (different message)
+    # Notify supervisor about their request result (different message). The
+    # request belongs to a unit, so it addresses that unit's supervisor profile.
     if req.supervisor_telegram_id:
         _notify(
             db, req.supervisor_telegram_id,
             type="success" if is_approved else "error",
             nkey=sup_nkey,
             params={"worker_name": req.worker_name, "date": req.date, "processor_name": processor_name},
+            profile=_profile_key("supervisor", req.manager_id),
         )
 
     # Notify admin + shift-managers (supervisor already notified above)
