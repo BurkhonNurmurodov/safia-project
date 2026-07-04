@@ -4577,6 +4577,7 @@ const t = {
     "admin.profiles.supervisors":    "Supervisors",
     "admin.profiles.leaders":        "Leaders",
     "admin.profiles.admins":         "Admins",
+    "admin.profiles.guests":         "Guests",
     "admin.profiles.add":            "Add profile",
     "admin.profiles.addTitle":       "New profile",
     "admin.profiles.editTitle":      "Edit profile",
