@@ -694,12 +694,12 @@ export default function Leaders() {
 
           {/* table-level filters: leader search + score-band chips */}
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div className="relative flex-1 min-w-[150px]">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-4)" }} />
-              <input value={tSearch} onChange={(e) => setTSearch(e.target.value)} placeholder={T.searchPh}
-                className="w-full text-sm rounded-lg pl-8 pr-2 py-1.5 outline-none"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
-            </div>
+            <SearchInput
+              value={tSearch}
+              onChange={setTSearch}
+              placeholder={T.searchPh}
+              className="flex-1 min-w-[150px]"
+            />
             <div className="flex gap-1 flex-wrap">
               {BANDS.map((b) => {
                 const on = tBand === b.id;
