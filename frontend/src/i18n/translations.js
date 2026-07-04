@@ -4573,7 +4573,6 @@ const t = {
     "login.guestHint":              "Enter your first and last name in Latin letters",
     "login.guestScript":            "Please use Latin letters only",
     "login.guestTwoWords":          "Enter both first and last name",
-    "login.guestNameTaken":         "This name is already taken",
     "login.guestExisting":          "Pick an existing profile",
     "login.noGuestProfiles":        "No available profiles",
     "login.chooseSlot":             "Select your slot:",
