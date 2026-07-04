@@ -428,6 +428,236 @@ def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
     return new_id
 
 
+# ── Admin: switch role ────────────────────────────────────────────────────────
+
+class SwitchRolePayload(BaseModel):
+    ptype:      str                    # current type
+    pid:        int                    # current id (managers.id for supervisor)
+    new_role:   str
+    shift:      Optional[int] = None   # → shift-manager | supervisor
+    manager_id: Optional[int] = None   # → leader (unit)
+    verifix_id: Optional[int] = None   # → supervisor (new managers.id)
+    confirm:    bool = False           # acknowledge the impacts from the 409
+
+
+def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
+                      new_role_id: int) -> None:
+    """Re-point one binding at the profile's new role. If the user already
+    holds exactly that binding (uq_user_role_instance), keep the stronger row
+    and drop the other."""
+    dup = (
+        db.query(TelegramUserRole)
+        .filter(TelegramUserRole.telegram_id == row.telegram_id,
+                TelegramUserRole.role == new_role,
+                TelegramUserRole.role_id == new_role_id,
+                TelegramUserRole.id != row.id)
+        .first()
+    )
+    if dup:
+        if row.status == "approved" and dup.status != "approved":
+            _remove_role_row(db, dup)
+        else:
+            _remove_role_row(db, row)
+            return
+        db.flush()  # the DELETE must land before the UPDATE re-uses the unique key
+    row.role = new_role
+    row.role_id = new_role_id
+
+
+@router.post("/admin/switch-role")
+def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
+                      _: dict = Depends(verify_admin)):
+    """Move a profile to another role. Only the name (and its per-language
+    display overrides, keyed by name) moves along — every role-specific value
+    comes from the payload. Holders migrate in place: their binding rows switch
+    to the new role, so the next app open grants the new role's access.
+
+    Side effects that lose or hide something (leader history staying behind,
+    the unit being archived/deleted on a supervisor switch) are returned as a
+    409 {"code": "confirm_required", ...} until the caller re-sends confirm."""
+    ptype, new_role = payload.ptype, payload.new_role
+    if ptype not in PROFILE_TYPES or new_role not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile type")
+    if ptype == new_role:
+        raise HTTPException(status_code=400, detail="Profile already has this role")
+
+    mgr = p = None
+    if ptype == "supervisor":
+        mgr = db.query(Manager).filter_by(id=payload.pid).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        name = mgr.name
+    else:
+        p = db.query(RoleProfile).filter_by(id=payload.pid).first()
+        if not p or p.role != ptype:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        name = p.name
+
+    # Target-specific values are never inherited — they must be explicit.
+    if new_role in ("shift-manager", "supervisor") and payload.shift not in (1, 2):
+        raise HTTPException(status_code=400, detail="Shift must be 1 or 2")
+    if new_role == "supervisor":
+        if not payload.verifix_id or payload.verifix_id <= 0:
+            raise HTTPException(status_code=400, detail="Verifix ID is required")
+        if db.query(Manager).filter_by(id=payload.verifix_id).first():
+            raise HTTPException(status_code=409, detail="Verifix ID already in use")
+    if new_role == "leader":
+        if ptype == "supervisor" and payload.manager_id == payload.pid:
+            raise HTTPException(status_code=400,
+                                detail="The unit is being removed — pick another unit")
+        if not db.query(Manager).filter_by(id=payload.manager_id).first():
+            raise HTTPException(status_code=400, detail="Supervisor unit not found")
+
+    # Registration resolves profiles by name — same duplicate rules as create.
+    if new_role == "leader":
+        if db.query(RoleProfile).filter_by(role="leader", name=name,
+                                           manager_id=payload.manager_id).first():
+            raise HTTPException(status_code=409, detail="This leader already exists")
+    elif new_role != "supervisor":
+        if db.query(RoleProfile).filter_by(role=new_role, name=name).first():
+            raise HTTPException(status_code=409, detail="Profile with this name already exists")
+
+    if ptype == "admin":
+        # Approved admins live in the admins table; role rows are pending /adminreg.
+        rows = db.query(TelegramUserRole).filter_by(role="admin", role_id=payload.pid).all()
+        admin_holders = db.query(Admin).filter_by(profile_id=payload.pid).all()
+        if admin_holders and db.query(Admin).count() - len(admin_holders) < 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the last admin")
+    else:
+        rows = _bound_role_rows(db, ptype, payload.pid)
+        admin_holders = []
+    approved_rows = [r for r in rows if r.status == "approved"]
+
+    if new_role == "admin":
+        # One admin profile — one account (mirrors /adminreg semantics).
+        if len(approved_rows) > 1:
+            raise HTTPException(status_code=409,
+                                detail="An admin profile can be held by one account only — "
+                                       "unassign the extra holders first")
+        if approved_rows and db.query(Admin).filter_by(
+                telegram_id=approved_rows[0].telegram_id).first():
+            raise HTTPException(status_code=409, detail="The holder is already an admin")
+
+    # Impacts an admin must acknowledge before the switch goes through.
+    impacts: dict = {}
+    if ptype == "leader":
+        refs = [r.id for r in rows]
+        concerns = db.query(LeaderConcern).filter(
+            LeaderConcern.leader_profile_id == payload.pid).count()
+        tasks = 0
+        if refs:
+            concerns += (
+                db.query(LeaderConcern)
+                .filter(LeaderConcern.leader_profile_id.is_(None),
+                        LeaderConcern.leader_role_ref.in_(refs)).count()
+            )
+            tasks = db.query(LeaderTask).filter(LeaderTask.leader_role_ref.in_(refs)).count()
+        if concerns:
+            impacts["concerns"] = concerns
+        if tasks:
+            impacts["tasks"] = tasks
+    if ptype == "supervisor":
+        if _manager_has_data(db, payload.pid):
+            impacts["unit_archive"] = True
+        else:
+            impacts["unit_delete"] = True
+            n_leaders = db.query(RoleProfile).filter_by(
+                role="leader", manager_id=payload.pid).count()
+            if n_leaders:
+                impacts["unit_leaders"] = n_leaders
+    if impacts and not payload.confirm:
+        raise HTTPException(status_code=409, detail={"code": "confirm_required", **impacts})
+
+    # ── target entity ──
+    if new_role == "supervisor":
+        db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False))
+        db.flush()
+        target_profile = None
+        target_role_id = payload.verifix_id
+    else:
+        if ptype == "supervisor":
+            target_profile = RoleProfile(role=new_role, name=name)
+            db.add(target_profile)
+        else:
+            target_profile = p
+            target_profile.role = new_role
+        target_profile.shift = payload.shift if new_role == "shift-manager" else None
+        target_profile.manager_id = payload.manager_id if new_role == "leader" else None
+        db.flush()
+        target_role_id = payload.manager_id if new_role == "leader" else target_profile.id
+
+    # ── migrate holders ──
+    now = datetime.now(timezone.utc)
+    if new_role == "admin":
+        for r in rows:
+            if r.status != "approved":
+                _migrate_role_row(db, r, "admin", target_profile.id)
+        for r in approved_rows:
+            user = db.query(TelegramUser).filter_by(telegram_id=r.telegram_id).first()
+            db.add(Admin(telegram_id=r.telegram_id, profile_id=target_profile.id,
+                         language=(user.language if user else None) or "uz"))
+            # The admins row is the binding — the role row goes away (see /adminreg).
+            if user and user.active_role_ref == r.id:
+                other = (
+                    db.query(TelegramUserRole)
+                    .filter(TelegramUserRole.telegram_id == r.telegram_id,
+                            TelegramUserRole.status == "approved",
+                            TelegramUserRole.id != r.id)
+                    .first()
+                )
+                user.active_role_ref = other.id if other else None
+            db.delete(r)
+    else:
+        for r in rows:
+            _migrate_role_row(db, r, new_role, target_role_id)
+        for a in admin_holders:  # ptype == "admin": convert admins rows to role rows
+            user = db.query(TelegramUser).filter_by(telegram_id=a.telegram_id).first()
+            if not user:
+                # Seeded admins have no telegram_users row — create the account shell.
+                user = TelegramUser(telegram_id=a.telegram_id, full_name=name,
+                                    role=new_role, role_id=target_role_id,
+                                    status="approved", language=a.language or "uz")
+                db.add(user)
+            row = (
+                db.query(TelegramUserRole)
+                .filter_by(telegram_id=a.telegram_id, role=new_role, role_id=target_role_id)
+                .first()
+            )
+            if row:
+                row.full_name = name
+                if row.status != "approved":
+                    row.status, row.approved_at = "approved", now
+            else:
+                row = TelegramUserRole(telegram_id=a.telegram_id, role=new_role,
+                                       role_id=target_role_id, full_name=name,
+                                       status="approved", approved_at=now)
+                db.add(row)
+            db.flush()
+            if not user.active_role_ref:
+                user.active_role_ref = row.id
+            db.delete(a)
+
+    # ── source cleanup ──
+    if ptype == "supervisor":
+        if impacts.get("unit_archive"):
+            mgr.archived = True
+        else:
+            # No history: same cascade as delete — the unit's leader profiles go too.
+            for lp in db.query(RoleProfile).filter_by(role="leader",
+                                                      manager_id=payload.pid).all():
+                for r in _bound_role_rows(db, "leader", lp.id):
+                    _remove_role_row(db, r)
+                db.delete(lp)
+            db.flush()
+            db.delete(mgr)
+    elif new_role == "supervisor":
+        db.delete(p)  # the identity now lives in the managers row
+
+    db.commit()
+    return {"ok": True, "role": new_role,
+            "id": target_role_id if new_role == "supervisor" else target_profile.id}
+
+
 # ── Admin: delete / unassign ──────────────────────────────────────────────────
 
 @router.delete("/admin/{ptype}/{pid}")
