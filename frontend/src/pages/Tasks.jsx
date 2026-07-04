@@ -354,7 +354,9 @@ function CommentsModal({ task, canComment, onClose }) {
     listEndRef.current?.scrollIntoView({ block: "end" });
   }, [comments.length, isLoading]);
 
-  const isOwn = (c) => myId && String(c.author_telegram_id) === myId;
+  // Server-resolved: ownership is per-profile (one account can hold several
+  // profiles). Fallback for responses cached before is_own existed.
+  const isOwn = (c) => c.is_own ?? (myId && String(c.author_telegram_id) === myId);
 
   function send() {
     if (!text.trim() || addMutation.isPending) return;
