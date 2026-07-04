@@ -16,6 +16,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
+import TableCard, { Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
