@@ -284,6 +284,7 @@ def create_task(
                 "date": body.due_date,
                 "task": _snippet(t.task_text),
             },
+            profile=_role_row_profile_key(db, lr),
         )
 
     db.commit()

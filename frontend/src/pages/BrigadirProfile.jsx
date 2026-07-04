@@ -18,6 +18,7 @@ import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
 import { utilNumbers, utilInputs, verifixNumbers, verifixInputs, differenceNumbers, differenceInputs, hcDiffNumbers, hcDiffInputs } from "../utils/formulas";
 import api from "../utils/api";
+import { padChartParams } from "../utils/chartRange";
 import { diffStatus } from "../utils/segments";
 
 // Keyed by the D = P − A status (P = План, A = Итог): blue Monitor → green Good
