@@ -44,18 +44,27 @@ export default function Login() {
 
   function selectRole(r) {
     setRole(r);
+    setShift(null);
     setFullName("");
     setSupervisor("");
     setSearch("");
     setStep("name");
   }
 
+  function selectShift(s) {
+    setShift(s);
+    setFullName("");
+    setSupervisor("");
+  }
+
   function selectName(name) {
     setFullName(name);
   }
 
-  // Leaders pick a supervisor first, then one of that unit's leader profiles.
-  const canSubmit = fullName.trim() && role && (role !== "leader" || supervisor);
+  // Every role except top-manager narrows by shift first; leaders then pick a
+  // supervisor, then one of that unit's leader profiles.
+  const needsShift = role === "shift-manager" || role === "supervisor" || role === "leader";
+  const canSubmit = fullName.trim() && role && (!needsShift || shift) && (role !== "leader" || supervisor);
 
   function handleSubmit(e) {
     e.preventDefault();
