@@ -58,9 +58,10 @@ DEFAULT_PAGE_ACCESS = {
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
-    # Leader concerns ("Xavotirlar") log. Leaders manage their own concerns by
-    # default; admins always have full access and act for any leader.
-    "concerns": ["leader"],
+    # Leader concerns ("Xavotirlar") log. Role-scoped: leaders manage their own
+    # rows, supervisors their unit's leaders, shift-managers their shift's
+    # units, admins everything; top-managers get a read-only view of all.
+    "concerns": ["top-manager", "shift-manager", "supervisor", "leader"],
     # Leader tasks ("DAILY протокол") board. Supervisors assign tasks to their
     # leaders; leaders work their own queue; admins see everything.
     "tasks": ["supervisor", "leader"],
