@@ -81,9 +81,12 @@ export default function Workers() {
     enabled: ready,
   });
 
+  // Trend chart never spans fewer than 7 days — short selections fetch a
+  // window padded back to end-6d.
+  const chartParams = useMemo(() => padChartParams(params), [params]);
   const { data: trend } = useQuery({
-    queryKey: ["worker-trend", params],
-    queryFn: () => api.get("/api/workers/trend", { params }).then((r) => r.data),
+    queryKey: ["worker-trend", chartParams],
+    queryFn: () => api.get("/api/workers/trend", { params: chartParams }).then((r) => r.data),
     enabled: ready,
   });
 
