@@ -2188,7 +2188,8 @@ def _notify_exchange(db: Session, doc: HrDocument, event: str, actor_tg_id: int,
             # so skip the duplicate plain DM here — keep only the in-app bell.
             # approved/cancelled events carry no inline message, so DM as usual.
             _notify(db, sup.telegram_id, type="info", dm=event != "created",
-                    nkey=nkey, params=params)
+                    nkey=nkey, params=params,
+                    profile=_profile_key("supervisor", sup.role_id))
 
 
 def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool = False):

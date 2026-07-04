@@ -188,9 +188,13 @@ export default function BrigadirProfile() {
   const [showModal, setShowModal] = useState(false);
   const [formulaModal, setFormulaModal] = useState(null); // { title, value, formula, inputs }
 
+  // The daily series only feeds the trend chart, and `latest` (KPIs) is the
+  // range's last day — so the whole fetch can use the padded window: the chart
+  // never spans fewer than 7 days (n..n+4 charts as n-2..n+4).
+  const chartParams = useMemo(() => padChartParams(params), [params]);
   const { data, isLoading } = useQuery({
-    queryKey: ["brigadir", id, params],
-    queryFn: () => api.get(`/api/brigadir/${id}`, { params }).then((r) => r.data),
+    queryKey: ["brigadir", id, chartParams],
+    queryFn: () => api.get(`/api/brigadir/${id}`, { params: chartParams }).then((r) => r.data),
   });
 
   const { data: allAttendanceDates = [] } = useQuery({
