@@ -387,7 +387,7 @@ export default function Concerns() {
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [isLoading]);
 
-  // ── brigadir → leader cascade, built from the fetched rows (admin only) ──────
+  // ── brigadir → leader filter cascade, built from the fetched (scoped) rows ──
   const brigOptions = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -402,14 +402,14 @@ export default function Concerns() {
   const leaderFilterOptions = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
-      if (r.leader_role_ref == null) continue;
+      if (r.leader_profile_id == null && r.leader_role_ref == null) continue;
       if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) continue;
-      if (!m.has(r.leader_role_ref)) m.set(r.leader_role_ref, r.leader_name || "—");
+      if (!m.has(leaderKey(r))) m.set(leaderKey(r), r.leader_name || "—");
     }
     return [...m.entries()]
-      .map(([id, name]) => ({ value: String(id), label: tl(name) }))
+      .map(([key, name]) => ({ value: key, label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, fBrig, tl]);
+  }, [rows, fBrig, tl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Period + brigadir + leader filters (client-side, over the fetched rows).
   const scoped = useMemo(() => {
@@ -418,10 +418,10 @@ export default function Concerns() {
       if (lo && !(r.entry_date && r.entry_date >= lo)) return false;
       if (hi && !(r.entry_date && r.entry_date <= hi)) return false;
       if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) return false;
-      if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
+      if (fLeader !== "All" && leaderKey(r) !== fLeader) return false;
       return true;
     });
-  }, [rows, period, startDate, endDate, fBrig, fLeader]);
+  }, [rows, period, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
