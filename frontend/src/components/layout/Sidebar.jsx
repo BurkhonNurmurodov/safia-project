@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
-  ChevronDown, Check, Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
+  Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -38,49 +38,13 @@ function fmtDate(iso) {
   return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`;
 }
 
-// Profile display mirrors the header's UserProfile (Layout.jsx)
-const ROLE_TKEYS = {
-  "admin":        "role.admin",
-  "top-manager":  "role.topManager",
-  "shift-manager":"role.manager",
-  "supervisor":   "role.supervisor",
-};
-
-function nameInitials(name = "") {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
-function nameToColor(name = "") {
-  let hash = 0;
-  for (const c of name) hash = c.charCodeAt(0) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 50%, 42%)`;
-}
-
 export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const [hovered, setHovered] = useState(false);
-  const [rolesOpen, setRolesOpen] = useState(false);
   const location = useLocation();
-  const { auth, switchRole } = useAuth();
+  const { auth } = useAuth();
   const { t }    = useLang();
   const { access } = usePageAccess();
   const isAdmin  = auth?.role === "admin";
-
-  // Multi-role: every role instance the user holds (pending ones included).
-  // Admins who also registered regular roles get an "admin" profile in the list,
-  // so the switcher is shown for them too (a plain admin has no roles array).
-  const roles = auth?.roles || [];
-  const showSwitcher = roles.length > 0;
-
-  const roleLabel = (r) => {
-    const base = t(`roles.${r.role}`);
-    return r.full_name && r.full_name !== base ? `${base} — ${r.full_name}` : base;
-  };
-
-  // Profile shown in the footer — same data as the header's UserProfile
-  const profileName = auth?.full_name || "";
-  const profileRole = ROLE_TKEYS[auth?.role] ? t(ROLE_TKEYS[auth.role]) : (auth?.role ?? "");
 
   const BADGE_ROLES = ["admin", "shift-manager"];
   const showBadge = BADGE_ROLES.includes(auth?.role);
@@ -253,115 +217,6 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
         {/* Footer */}
         <div className="px-2 py-3 space-y-1 overflow-hidden" style={{ borderTop: "1px solid var(--border)" }}>
-          {showSwitcher && (
-            <div>
-              {/* Profile (mirrors the header) + account-switch arrow */}
-              <button
-                onClick={() => setRolesOpen(v => !v)}
-                title={!expanded ? profileName : undefined}
-                className="flex items-center rounded-lg text-sm transition-colors w-full"
-                style={{
-                  gap: "10px",
-                  padding: "8px 10px",
-                  background: rolesOpen ? "var(--bg-inner)" : "transparent",
-                  justifyContent: !expanded ? "center" : undefined,
-                }}
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-                  style={{ background: nameToColor(profileName) }}
-                >
-                  {nameInitials(profileName)}
-                </div>
-                <div
-                  className="flex-1 min-w-0 text-left leading-tight transition-all duration-200"
-                  style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden" }}
-                >
-                  <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
-                    {profileName}
-                  </div>
-                  <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
-                    {profileRole}
-                  </div>
-                </div>
-                {expanded && (
-                  <ChevronDown
-                    size={13}
-                    className="flex-shrink-0 transition-transform"
-                    style={{ color: "var(--text-3)", transform: rolesOpen ? "rotate(180deg)" : "none" }}
-                  />
-                )}
-              </button>
-
-              {/* Account list — switch only; new accounts are added via /register in the bot */}
-              {rolesOpen && expanded && (
-                <div
-                  className="mt-1 rounded-lg overflow-hidden"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
-                >
-                  {/* Active profile at top */}
-                  <div
-                    className="flex items-center gap-2.5 px-3 py-2.5"
-                    style={{ borderBottom: roles.filter(r => r.id !== auth?.active_role_ref).length > 0 ? "1px solid var(--border)" : "none" }}
-                  >
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 select-none"
-                      style={{ background: nameToColor(profileName) }}
-                    >
-                      {nameInitials(profileName)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{profileName}</div>
-                      <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{profileRole}</div>
-                    </div>
-                    <Check size={11} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
-                  </div>
-
-                  {/* Other profiles */}
-                  {roles.filter(r => r.id !== auth?.active_role_ref).map((r, i, arr) => {
-                    const isPending = r.status === "pending";
-                    const rName     = r.full_name || "";
-                    const rRole     = t(`roles.${r.role}`);
-                    return (
-                      <button
-                        key={r.id}
-                        disabled={isPending}
-                        onClick={() => switchRole(r.id)}
-                        className="w-full min-w-0 text-left flex items-center gap-2.5 px-3 py-2.5"
-                        style={{
-                          borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
-                          opacity: isPending ? 0.55 : 1,
-                          cursor: isPending ? "default" : "pointer",
-                        }}
-                      >
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 select-none"
-                          style={{ background: nameToColor(rName) }}
-                        >
-                          {nameInitials(rName)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold truncate" style={{ color: "var(--text-2)" }}>{rName}</div>
-                          <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                            {rRole}
-                            {isPending && (
-                              <span
-                                className="text-[9px] font-semibold px-1 py-0.5 rounded-full"
-                                style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
-                              >
-                                {t("roles.pending")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {isAdmin && (
             <NavLink
               to={withSearch("/admin/upload")}
