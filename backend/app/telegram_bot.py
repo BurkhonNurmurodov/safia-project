@@ -475,10 +475,12 @@ def _webapp_data(message: types.Message):
         full_name  = str(data.get("full_name", "")).strip()
         role       = str(data.get("role", ""))
         supervisor = str(data.get("supervisor", "")).strip()  # leader → chosen brigadir/unit
+        guest_pid  = data.get("guest_profile_id")             # guest → re-claimed profile
+        guest_ovr  = data.get("guest_overrides") or {}        # guest → lang → typed/derived name
     except Exception:
         return
 
-    if not full_name or role not in ("top-manager", "shift-manager", "supervisor", "leader"):
+    if not full_name or role not in ("top-manager", "shift-manager", "supervisor", "leader", "guest"):
         return
     # A leader must pick their supervisor (unit); without it we can't file the request.
     if role == "leader" and not supervisor:
