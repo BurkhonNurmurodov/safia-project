@@ -366,6 +366,83 @@ export default function Login() {
               </div>
             )}
 
+            {/* Guest — the one role that types its own name. The button on the
+                right lists unassigned guest profiles for returning guests
+                (re-claiming still goes through admin approval). */}
+            {role === "guest" && (
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
+                  {t("login.guestNameLabel")}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={fullName}
+                    maxLength={60}
+                    onChange={e => { setFullName(e.target.value); setGuestPid(null); }}
+                    placeholder={t("login.namePlaceholder")}
+                    className="flex-1 min-w-0 rounded-lg px-3 py-2 text-sm outline-none"
+                    style={{
+                      background: "var(--input-bg)",
+                      border: `1px solid ${guestError ? "#ef4444" : "var(--border-md)"}`,
+                      color: "var(--text-1)",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setGuestList(v => !v)}
+                    title={t("login.guestExisting")}
+                    className="flex-shrink-0 w-10 rounded-lg flex items-center justify-center transition-colors"
+                    style={{
+                      background: guestList ? "var(--brand-bg)" : "var(--bg-inner)",
+                      border: `1px solid ${guestList ? "var(--brand)" : "var(--border-md)"}`,
+                      color: guestList ? "var(--brand-text)" : "var(--text-3)",
+                    }}
+                  >
+                    <UserRound size={15} />
+                  </button>
+                </div>
+                {guestError ? (
+                  <p className="mt-1.5 text-xs" style={{ color: "#ef4444" }}>{guestError}</p>
+                ) : (
+                  <p className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+                    {t("login.guestHint")}
+                  </p>
+                )}
+                {guestList && (
+                  <div className="mt-2">
+                    <p className="text-xs mb-1.5" style={{ color: "var(--text-3)" }}>
+                      {t("login.guestExisting")}
+                    </p>
+                    <div
+                      className="rounded-xl overflow-y-auto"
+                      style={{ maxHeight: 180, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
+                    >
+                      {loading ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                      ) : guestProfiles.length === 0 ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.noGuestProfiles")}</div>
+                      ) : guestProfiles.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => { setFullName(p.name); setGuestPid(p.id); setGuestList(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                          style={{
+                            color: guestPid === p.id ? "var(--brand-text)" : "var(--text-1)",
+                            background: guestPid === p.id ? "var(--brand-bg)" : "transparent",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          {tl(p.name)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Leader — pick the shift's supervisor (unit) first… */}
             {role === "leader" && (
               <div style={{ opacity: shift ? 1 : 0.45 }}>
