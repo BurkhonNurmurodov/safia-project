@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+import { UserRound } from "lucide-react";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
-import { useTranslit } from "../utils/transliterate";
+import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
 
 const tg = window.Telegram?.WebApp;
 
