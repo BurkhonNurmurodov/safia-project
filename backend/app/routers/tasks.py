@@ -551,7 +551,7 @@ def edit_task_comment(
     c.edited_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(c)
-    return _serialize_comment(c)
+    return _serialize_comment(c, payload)
 
 
 @router.delete("/{task_id}/comments/{comment_id}", status_code=204)
