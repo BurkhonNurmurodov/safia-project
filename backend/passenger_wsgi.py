@@ -40,6 +40,7 @@ try:
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         backfill_leader_page_access, add_profiles_columns, backfill_role_profiles,
+        add_concern_profile_columns, backfill_concern_profiles,
     )
     from app.telegram_bot import setup_webhook
 
@@ -51,12 +52,14 @@ try:
     add_notification_template_columns()
     add_admin_language_column()
     add_profiles_columns()
+    add_concern_profile_columns()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
     seed_languages()
     seed_managers_and_sources()
     backfill_role_profiles()
+    backfill_concern_profiles()
     seed_exchange_tasks()
     seed_production_pilot()
     resync_production_catalog()
