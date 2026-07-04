@@ -2640,6 +2640,7 @@ const t = {
     "role.manager":        "Менеджер",
     "role.supervisor":     "Бригадир",
     "role.leader":         "Лидер",
+    "role.guest":          "Гость",
     "daily.title":         "Ежедневно",
     "daily.approved":      "Утверждено",
     "daily.pending":        "Ожидает утверждения",
