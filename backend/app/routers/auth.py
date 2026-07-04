@@ -136,9 +136,9 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
 
     # Admin check — no telegram_users record needed
     if is_admin:
-        first_name = tg_user.get("first_name", "Admin")
-        last_name = tg_user.get("last_name", "")
-        full_name = f"{first_name} {last_name}".strip() or "Admin"
+        # The admin's display name is their claimed profile, never the
+        # Telegram account name (that lives in tg_name for the holder chips).
+        full_name = _admin_profile_name(db, admin_row) or tg_name or "Admin"
 
         # An admin may also have registered regular roles (via /register). If so,
         # expose an "admin" profile alongside them so they can switch in the app.
