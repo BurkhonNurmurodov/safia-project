@@ -125,7 +125,9 @@ def set_page_access(db: Session, matrix: dict) -> dict:
         clean[page] = [r for r in roles if r in TOGGLEABLE_ROLES]
 
     row = db.query(AppSetting).filter(AppSetting.key == SETTING_KEY).first()
-    value = json.dumps(clean)
+    # Stamp the roles this save knew about so a later read can distinguish a
+    # deliberately empty role column from a role that didn't exist yet.
+    value = json.dumps({**clean, _ROLES_KEY: TOGGLEABLE_ROLES})
     if row:
         row.value = value
     else:
