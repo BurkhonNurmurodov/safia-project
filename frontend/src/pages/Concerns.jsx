@@ -289,8 +289,9 @@ function periodBounds(period, startDate, endDate) {
 
 const emptyForm = () => ({
   id: null,
-  leader_ref: null,   // admin only: which leader this concern belongs to
-  leader_name: "",    // display-only, used when editing an admin-owned row
+  brigadir_id: null,        // create cascade (admin/shift-manager): chosen unit
+  leader_profile_id: null,  // picker roles: which leader the concern belongs to
+  leader_name: "",          // display-only, used when editing someone's row
   concern_owner: "",
   concern_text: "",
   status: "todo",
