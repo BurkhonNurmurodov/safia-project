@@ -18,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { padChartFrom } from "../utils/chartRange";
 
 const STATUSES = ["todo", "doing", "done"];
 
