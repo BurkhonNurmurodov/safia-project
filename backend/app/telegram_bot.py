@@ -187,10 +187,10 @@ _MESSAGES = {
 }
 
 _ROLE_LABELS = {
-    "uz":      {"top-manager": "Top-menejer", "shift-manager": "Smena menejeri", "supervisor": "Brigadir", "leader": "Lider", "admin": "Admin"},
-    "uz_cyrl": {"top-manager": "Топ-менежер", "shift-manager": "Смена менежери", "supervisor": "Бригадир", "leader": "Лидер", "admin": "Админ"},
-    "ru":      {"top-manager": "Топ-менеджер", "shift-manager": "Сменный менеджер", "supervisor": "Бригадир", "leader": "Лидер", "admin": "Администратор"},
-    "en":      {"top-manager": "Top Manager", "shift-manager": "Shift Manager", "supervisor": "Supervisor", "leader": "Leader", "admin": "Admin"},
+    "uz":      {"top-manager": "Top-menejer", "shift-manager": "Smena menejeri", "supervisor": "Brigadir", "leader": "Lider", "admin": "Admin", "guest": "Mehmon"},
+    "uz_cyrl": {"top-manager": "Топ-менежер", "shift-manager": "Смена менежери", "supervisor": "Бригадир", "leader": "Лидер", "admin": "Админ", "guest": "Меҳмон"},
+    "ru":      {"top-manager": "Топ-менеджер", "shift-manager": "Сменный менеджер", "supervisor": "Бригадир", "leader": "Лидер", "admin": "Администратор", "guest": "Гость"},
+    "en":      {"top-manager": "Top Manager", "shift-manager": "Shift Manager", "supervisor": "Supervisor", "leader": "Leader", "admin": "Admin", "guest": "Guest"},
 }
 
 
