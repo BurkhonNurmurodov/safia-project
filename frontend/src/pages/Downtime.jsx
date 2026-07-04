@@ -11,9 +11,10 @@ import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtTime } from "../utils/formatters";
+import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
-import { AlertTriangle, ChevronsUpDown, ChevronUp, ChevronDown, Info } from "lucide-react";
+import { Info } from "lucide-react";
 
 const INDIGO = "#6366f1";
 // Cat D3 now uses indigo (was golden #C8973F) — shared by the merged bar chart and the doughnut
@@ -23,7 +24,7 @@ export default function Downtime() {
   const { params, unit, ready } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
-  const [nameAsc, setNameAsc] = useState(true);
+  const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
   const [chartView, setChartView] = useState("total"); // "total" | "category"
   const [selectedCats, setSelectedCats] = useState([]); // categories chosen via doughnut clicks → filter the left chart
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
@@ -156,48 +157,64 @@ export default function Downtime() {
     theme: { mode: "dark" },
   };
 
-  // Trend: fleet total downtime per day (padded ≥7-day window)
+  // Trend: fleet total downtime per day (padded ≥7-day window).
+  // Dates arrive as "DD.MM.YYYY" strings, so a plain string sort mis-orders months
+  // (01.07 before 27.06). Sort on a "YYYY-MM-DD" key to get true chronological order.
+  const dmyKey = (s) => {
+    const [d, m, y] = (s || "").split(".");
+    return `${y || ""}-${m || ""}-${d || ""}`;
+  };
   const trendMap = {};
   (chartData?.rows || []).forEach((r) => {
     if (!trendMap[r.date]) trendMap[r.date] = 0;
     trendMap[r.date] += r.total || 0;
   });
-  const trendDates  = Object.keys(trendMap).sort();
-  const trendSeries = [{ name: t("downtime.totalDowntime"), data: trendDates.map((d) => Math.round(trendMap[d])) }];
+  const trendDates  = Object.keys(trendMap).sort((a, b) => dmyKey(a).localeCompare(dmyKey(b)));
+  const trendValues = trendDates.map((d) => Math.round(trendMap[d]));
+  const trendSeries = [{ name: t("downtime.totalDowntime"), data: trendValues }];
+  // Headroom above the tallest point, snapped to a clean 50-min step so labels never clip.
+  const trendMax = Math.ceil((Math.max(50, ...(trendValues.length ? trendValues : [0])) * 1.15) / 50) * 50;
   const trendOptions = {
-    chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false },
-    stroke: { curve: "smooth", width: 2 },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0.05 } },
+    chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0 },
+    stroke: { curve: "smooth", width: 2.5, lineCap: "round" },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 100] } },
     colors: ["#ef4444"],
+    markers: { size: 4, colors: ["#ef4444"], strokeColors: gridColor, strokeWidth: 2, hover: { size: 6 } },
     dataLabels: {
       enabled: true,
       formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
-      style: { fontSize: "10px", fontWeight: 600, colors: ["#ef4444"] },
-      background: { enabled: true, foreColor: "#fff", borderRadius: 3, padding: 3, borderWidth: 0, dropShadow: { enabled: false } },
+      style: { fontSize: "10px", fontWeight: 700 },
+      background: { enabled: true, foreColor: "#fff", borderRadius: 4, padding: 4, borderWidth: 0, dropShadow: { enabled: false } },
+      offsetY: -6,
     },
     xaxis: {
       categories: trendDates,
-      labels: { style: { colors: "#6b7280", fontSize: "10px" }, rotate: -45 },
-      tickAmount: Math.min(trendDates.length, 10),
+      axisBorder: { show: false },
+      axisTicks: { color: gridColor },
+      labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: -45, hideOverlappingLabels: true },
+      tickAmount: Math.min(trendDates.length, 12),
+      tooltip: { enabled: false },
     },
     yaxis: {
       labels: {
-        style: { colors: "#6b7280", fontSize: "10px" },
+        style: { colors: labelColor, fontSize: "10px" },
         formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
       },
       min: 0,
+      max: trendMax,
+      forceNiceScale: true,
     },
     annotations: {
       yaxis: [{
         y: 50,
         borderColor: "#ef4444",
         strokeDashArray: 4,
-        label: { text: t("downtime.threshold"), style: { color: "#fff", background: "#ef4444", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } },
+        label: { text: t("downtime.threshold"), borderColor: "#ef4444", style: { color: "#fff", background: "#ef4444", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } },
       }],
     },
-    grid: { borderColor: "#1e2235" },
-    tooltip: { theme: "dark", y: { formatter: (v) => fmt(v) } },
-    theme: { mode: "dark" },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { top: 8, right: 14, bottom: 0, left: 6 } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => fmt(v) } },
+    theme: chartTheme,
   };
 
   const chartH = Math.max(300, summary.length * 28 + 60);
@@ -352,70 +369,10 @@ export default function Downtime() {
         {isLoading || chartLoading ? (
           <SkeletonChart className="h-48" />
         ) : trendDates.length > 0 ? (
-          <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={220} />
+          <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={240} />
         ) : (
           <EmptyState title={t("downtime.noTrendData")} message={t("downtime.noDataMsg")} height="h-32" />
         )}
-      </div>
-
-      {/* Detail table */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-[var(--border)] text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
-          {t("downtime.detail")}
-        </div>
-        <div className="overflow-x-auto max-h-96">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0">
-              <tr className="text-[var(--text-3)] border-b border-[var(--border)] bg-[var(--bg-inner)]">
-                <th className="text-left px-4 py-2.5">{t("downtime.colDate")}</th>
-                <th className="text-left px-2 py-2.5 cursor-pointer select-none" onClick={() => setNameAsc(p => p === null ? true : p ? false : null)}>
-                  <span className="inline-flex items-center gap-1">
-                    {t("downtime.name")}
-                    {nameAsc === null ? <ChevronsUpDown size={9} style={{opacity:.4}}/> : nameAsc ? <ChevronUp size={9}/> : <ChevronDown size={9}/>}
-                  </span>
-                </th>
-                <th className="text-center px-2 py-2.5">{t("downtime.colShift")}</th>
-                <th className="text-right px-2 py-2.5">{t("downtime.total")}</th>
-                {catNames.map((c) => (
-                  <th key={c} className="text-right px-2 py-2.5">{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const raw = (data?.rows || []).filter((r) => r.total > 0);
-                const rows = nameAsc !== null
-                  ? [...raw].sort((a, b) => nameAsc
-                      ? (tl(a.manager_name) || "").localeCompare(tl(b.manager_name) || "")
-                      : (tl(b.manager_name) || "").localeCompare(tl(a.manager_name) || ""))
-                  : raw;
-                if (!rows.length) return (
-                  <tr><td colSpan={4 + (catNames.length || 0)}>
-                    <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} />
-                  </td></tr>
-                );
-                return rows.map((r, i) => (
-                <tr key={i} className={`border-b border-[var(--border)] hover:bg-white/5 ${r.flagged ? "bg-red-500/5" : ""}`}>
-                  <td className="px-4 py-2 text-[var(--text-2)]">{r.date}</td>
-                  <td className="px-2 py-2 text-[var(--text-1)]">{tl(r.manager_name)}</td>
-                  <td className="px-2 py-2 text-center text-[var(--text-2)]">S{r.shift}</td>
-                  <td className="px-2 py-2 text-right font-mono">
-                    <span className={r.flagged ? "text-red-400 font-bold flex items-center justify-end gap-1" : "text-[var(--text-1)]"}>
-                      {r.flagged && <AlertTriangle size={11} />}
-                      {fmt(r.total)}
-                    </span>
-                  </td>
-                  {catNames.map((c) => (
-                    <td key={c} className="px-2 py-2 text-right font-mono text-[var(--text-2)]">
-                      {r.by_category?.[c] > 0 ? fmt(r.by_category[c]) : "—"}
-                    </td>
-                  ))}
-                </tr>
-              ));
-              })()}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {showCatGuide && (
