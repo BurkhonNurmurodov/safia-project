@@ -17,6 +17,8 @@ import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 import SupervisorPerformance from "../components/ui/SupervisorPerformance";
 import Tooltip from "../components/ui/Tooltip";
+import DayStepper from "../components/ui/DayStepper";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import api from "../utils/api";
 import {
   AttendanceTable,
