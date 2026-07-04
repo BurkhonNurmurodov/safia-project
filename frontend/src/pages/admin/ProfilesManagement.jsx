@@ -141,6 +141,25 @@ export default function ProfilesManagement() {
 
   function submit() {
     setFormError("");
+
+    if (roleChanged) {
+      const body = { ptype: type, pid: modal.item.id, new_role: form.role };
+      if (form.role === "shift-manager" || form.role === "supervisor") {
+        if (!form.shift) { setFormError(t("admin.profiles.shiftRequired")); return; }
+        body.shift = Number(form.shift);
+      }
+      if (form.role === "leader") {
+        if (!form.manager_id) { setFormError(t("admin.profiles.supervisorRequired")); return; }
+        body.manager_id = Number(form.manager_id);
+      }
+      if (form.role === "supervisor") {
+        if (!form.verifix_id) { setFormError(t("admin.profiles.verifixRequired")); return; }
+        body.verifix_id = Number(form.verifix_id);
+      }
+      switchMut.mutate(body);
+      return;
+    }
+
     const name = (form.name || "").trim();
     if (!name) { setFormError(t("admin.profiles.nameRequired")); return; }
 
