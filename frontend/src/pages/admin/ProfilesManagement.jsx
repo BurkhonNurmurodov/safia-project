@@ -397,6 +397,7 @@ export default function ProfilesManagement() {
                     value={form.manager_id}
                     onChange={(e) => setForm((f) => ({ ...f, manager_id: e.target.value }))}
                     className={inputCls}
+                    style={inputStyle}
                   >
                     <option value="">{t("admin.users.selectPlaceholder")}</option>
                     {units.map((u) => (
