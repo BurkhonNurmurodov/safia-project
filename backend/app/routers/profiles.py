@@ -6,12 +6,17 @@ of them to a Telegram account — nobody types a name at registration anymore.
 
 Profile storage:
   supervisor              → the `managers` row itself (id = Verifix file id)
-  top-manager / shift-manager / leader / admin → `role_profiles`
+  top-manager / shift-manager / leader / admin / guest → `role_profiles`
+
+Guest is the one exception to "admins create every identity": a guest profile
+is auto-created (or re-claimed) during bot registration and only managed here
+(rename / delete / unassign) — there is no admin "create guest" path.
 
 Binding resolution (who holds a profile):
   supervisor      telegram_user_roles: role='supervisor',   role_id = manager.id
   shift-manager   telegram_user_roles: role='shift-manager',role_id = profile.id
   top-manager     telegram_user_roles: role='top-manager',  role_id = profile.id
+  guest           telegram_user_roles: role='guest',        role_id = profile.id
   leader          telegram_user_roles: role='leader',
                   role_id = profile.manager_id AND full_name = profile.name
                   (leader role rows keep pointing at the unit — JWT/Concerns contract)
