@@ -941,6 +941,7 @@ const t = {
     "admin.access.hint":     "Har bir sahifa uchun qaysi rollar kira olishini belgilang. Admin har doim to'liq kirishga ega.",
     "admin.access.colPage":  "Sahifa",
     "access.noPages":        "Sizga hech qanday sahifa biriktirilmagan. Administrator bilan bog'laning.",
+    "access.noPagesAdmin":   "Bu profilga hali sahifa biriktirilmagan. Admin panel → Ruxsatlar bo'limida sahifalarni belgilang.",
     "access.switchProfile":  "Boshqa profilga o'tish",
 
     // ── Users management ──────────────────────────────────────────────────────
