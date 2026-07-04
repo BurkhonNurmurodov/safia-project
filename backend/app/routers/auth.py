@@ -113,6 +113,11 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     telegram_id = tg_user.get("id")
     if not telegram_id:
         raise HTTPException(status_code=400, detail="No user ID in initData")
+    # Telegram account name from initData — refreshed on every login so the
+    # admin profiles list can show who actually holds each profile.
+    tg_name = " ".join(
+        p for p in (tg_user.get("first_name"), tg_user.get("last_name")) if p
+    ).strip() or None
 
     admin_row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
     is_admin = admin_row is not None
