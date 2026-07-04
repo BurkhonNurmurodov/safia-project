@@ -277,16 +277,6 @@ const isoMinusDays = (iso, n) => {
   d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-// Period → [lo, hi] inclusive ISO bounds (null = unbounded on that side).
-function periodBounds(period, startDate, endDate) {
-  const today = localTodayIso();
-  if (period === "today") return [today, today];
-  if (period === "yesterday") { const y = isoMinusDays(today, 1); return [y, y]; }
-  if (period === "last-week") return [isoMinusDays(today, 6), today];
-  if (period === "custom") return [startDate || null, endDate || null];
-  return [null, null];   // all time
-}
-
 const emptyForm = () => ({
   id: null,
   brigadir_id: null,        // create cascade (admin/shift-manager): chosen unit
