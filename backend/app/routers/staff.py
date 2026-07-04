@@ -526,7 +526,8 @@ def notify_supervisor_verifix_upload(
     sup = _find_supervisor(db, manager_id)
     if not sup or sup.telegram_id == actor_tg_id:
         return
-    _notify(db, sup.telegram_id, type="info", nkey="verifix_uploaded", params={"date": d})
+    _notify(db, sup.telegram_id, type="info", nkey="verifix_uploaded", params={"date": d},
+            profile=_profile_key("supervisor", sup.role_id))
 
 
 def _log_admin_action(
