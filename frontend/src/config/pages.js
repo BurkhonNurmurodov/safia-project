@@ -2,7 +2,7 @@
 
 // Roles an admin can toggle per page. "admin" is always granted full access
 // and never appears here.
-export const TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader"];
+export const TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "guest"];
 
 export const ROLE_LABELS = {
   "top-manager":  "Top Manager",
@@ -10,6 +10,7 @@ export const ROLE_LABELS = {
   "supervisor":   "Supervisor",
   "leader":       "Leader",
   "admin":        "Admin",
+  "guest":        "Guest",
 };
 
 // Translation keys for the same roles — resolve with t() in components so the
