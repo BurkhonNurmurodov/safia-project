@@ -1184,12 +1184,12 @@ export default function Concerns() {
 
               {/* Date */}
               <Field label={t("concerns.fieldDate")}>
-                <input
-                  type="date"
-                  value={form.entry_date}
-                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                <DateRangePicker
+                  single
+                  dateFrom={form.entry_date} dateTo={form.entry_date}
+                  setDateFrom={(iso) => setForm((f) => ({ ...f, entry_date: iso }))}
+                  setDateTo={() => {}}
+                  triggerClassName="px-3 py-2 text-sm w-full"
                 />
               </Field>
 
