@@ -610,6 +610,7 @@ export default function Concerns() {
         case "owner":    return tl(r.concern_owner || "");
         case "concern":  return tl(r.concern_text || "");
         case "deadline": return r.deadline_days;
+        case "resolution": return r.resolution_minutes;
         case "status":   return STATUSES.indexOf(r.status);
         default:         return "";
       }
