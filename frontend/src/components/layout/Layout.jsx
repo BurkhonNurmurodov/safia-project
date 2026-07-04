@@ -10,16 +10,10 @@ import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings }
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import MyNameEditor from "../ui/MyNameEditor";
 import useActivityPing from "../../hooks/useActivityPing";
+import { useTranslit } from "../../utils/transliterate";
+import { ROLE_LABEL_KEYS } from "../../config/pages";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-const ROLE_TKEYS = {
-  "admin":        "role.admin",
-  "top-manager":  "role.topManager",
-  "shift-manager":"role.manager",
-  "supervisor":   "role.supervisor",
-  "leader":       "role.leader",
-};
 
 function nameInitials(name = "") {
   const parts = name.trim().split(/\s+/);
