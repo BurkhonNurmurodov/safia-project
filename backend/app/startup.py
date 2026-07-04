@@ -220,6 +220,22 @@ def add_notification_template_columns() -> None:
         db.close()
 
 
+def add_task_comment_author_ref() -> None:
+    """Add author_role_ref to leader_task_comments (idempotent). Comments are
+    owned by the authoring PROFILE (telegram_user_roles.id, 0 = admin), not the
+    telegram account — one account can hold several profiles via role switching.
+    Legacy NULL rows fall back to account-scoped ownership in routers/tasks.py."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_task_comments ADD COLUMN IF NOT EXISTS author_role_ref INTEGER"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_task_comments author_role_ref migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_admin_language_column() -> None:
     """Add a language column to admins (idempotent). Seeded admins have no
     telegram_users row, so this is where their bot-DM language is stored, kept in
