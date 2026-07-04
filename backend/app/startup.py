@@ -253,6 +253,71 @@ def add_profiles_columns() -> None:
         db.close()
 
 
+def add_concern_profile_columns() -> None:
+    """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
+    the leader's pre-created profile so it can be logged for a leader who hasn't
+    registered yet. Adds leader_concerns.leader_profile_id and relaxes
+    leader_role_ref to NULL (unclaimed profiles have no role row)."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS leader_profile_id INTEGER"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ALTER COLUMN leader_role_ref DROP NOT NULL"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern profile columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_concern_profiles() -> None:
+    """Point every legacy concern (keyed only by the leader's role row) at the
+    leader's profile: role row → (unit, canonical name) → role_profiles.
+    Idempotent — only touches rows with a NULL profile; rows without a profile
+    match keep working through the leader_role_ref fallback in the concerns
+    scope filters."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(LeaderConcern)
+            .filter(LeaderConcern.leader_profile_id.is_(None),
+                    LeaderConcern.leader_role_ref.isnot(None))
+            .all()
+        )
+        if not rows:
+            return
+        refs = {r.leader_role_ref for r in rows}
+        role_rows = {
+            t.id: t for t in
+            db.query(TelegramUserRole).filter(TelegramUserRole.id.in_(refs)).all()
+        }
+        profiles = {
+            (p.manager_id, p.name): p.id
+            for p in db.query(RoleProfile).filter_by(role="leader").all()
+        }
+        moved = 0
+        for c in rows:
+            role_row = role_rows.get(c.leader_role_ref)
+            if not role_row:
+                continue
+            pid = profiles.get((role_row.role_id, role_row.full_name))
+            if pid:
+                c.leader_profile_id = pid
+                moved += 1
+        if moved:
+            db.commit()
+            print(f"[startup] backfilled {moved} concern(s) onto leader profiles")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern profile backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_edit_requests_batch_id() -> None:
     """Add batch_id column to edit_requests if it does not exist yet (idempotent)."""
     db = SessionLocal()
