@@ -2067,7 +2067,6 @@ const t = {
     "login.guestHint":              "Исм ва фамилиянгизни кирилл ҳарфларида киритинг",
     "login.guestScript":            "Фақат кирилл ҳарфларидан фойдаланинг",
     "login.guestTwoWords":          "Исм ва фамилияни тўлиқ киритинг",
-    "login.guestNameTaken":         "Бу исм аллақачон банд",
     "login.guestExisting":          "Мавжуд профилни танлаш",
     "login.noGuestProfiles":        "Бўш профиллар йўқ",
     "login.chooseSlot":             "Слотни танланг:",
