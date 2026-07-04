@@ -1019,21 +1019,12 @@ export default function Tasks() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--text-4)" }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("tasks.search")}
-                className="h-8 pl-8 pr-7 rounded-lg text-xs w-44 outline-none"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-              />
-              {search && (
-                <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} aria-label="clear">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("tasks.search")}
+              className="w-44"
+            />
             <FilterPanel
               sections={filterSections}
               activeCount={filterActiveCount}
