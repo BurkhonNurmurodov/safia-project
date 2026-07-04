@@ -411,19 +411,7 @@ export default function Production() {
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
       {/* date navigation */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <div className="inline-flex items-center rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-          <button onClick={() => setDate((d) => shiftDate(d, -1))} className="p-2 transition-colors hover:bg-[var(--bg-inner)]"
-            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label={t("production.prevDay")}>
-            <ChevronLeft size={16} />
-          </button>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 text-sm tabular-nums outline-none"
-            style={{ background: "var(--bg-card)", color: "var(--text-1)", borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)" }} />
-          <button onClick={() => setDate((d) => shiftDate(d, 1))} className="p-2 transition-colors hover:bg-[var(--bg-inner)]"
-            style={{ background: "var(--bg-card)", color: "var(--text-2)" }} aria-label={t("production.nextDay")}>
-            <ChevronRight size={16} />
-          </button>
-        </div>
+        <DayStepper value={date} onChange={setDate} max={null} />
         {!isToday && (
           <button onClick={() => setDate(todayISO())} className="px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--bg-accent)]"
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
@@ -433,22 +421,13 @@ export default function Production() {
 
         {/* switcher — jump to a date that has uploaded data */}
         {availableDates.length > 0 && (
-          <div className="ml-auto inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <CalendarDays size={14} style={{ color: "var(--brand-text)" }} />
-            <select
-              value={availableDates.includes(date) ? date : ""}
-              onChange={(e) => { if (e.target.value) setDate(e.target.value); }}
-              className="text-sm bg-transparent outline-none cursor-pointer"
-              style={{ color: availableDates.includes(date) ? "var(--text-1)" : "var(--text-3)" }}
-              title={t("production.loadedDatesTitle")}
-            >
-              <option value="">{t("production.loadedDates")} ({availableDates.length})</option>
-              {availableDates.map((d) => (
-                <option key={d} value={d}>{ddmmyyyy(d)}</option>
-              ))}
-            </select>
-          </div>
+          <StyledSelect
+            className="ml-auto w-48"
+            value={availableDates.includes(date) ? date : ""}
+            onChange={(v) => { if (v) setDate(v); }}
+            options={availableDates.map((d) => ({ value: d, label: ddmmyyyy(d) }))}
+            placeholder={`${t("production.loadedDates")} (${availableDates.length})`}
+          />
         )}
       </div>
 
