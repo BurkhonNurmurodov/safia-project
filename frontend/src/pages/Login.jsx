@@ -57,6 +57,8 @@ export default function Login() {
     setFullName("");
     setSupervisor("");
     setSearch("");
+    setGuestPid(null);
+    setGuestList(false);
     setStep("name");
   }
 
