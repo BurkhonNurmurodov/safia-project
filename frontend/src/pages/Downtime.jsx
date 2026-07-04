@@ -36,6 +36,15 @@ export default function Downtime() {
     enabled: ready,
   });
 
+  // Trend chart never spans fewer than 7 days: a short selection fetches a
+  // window padded back to end-6d (same key = same request when no padding).
+  const chartParams = useMemo(() => padChartParams(params), [params]);
+  const { data: chartData, isLoading: chartLoading } = useQuery({
+    queryKey: ["downtime", chartParams],
+    queryFn: () => api.get("/api/downtime", { params: chartParams }).then((r) => r.data),
+    enabled: ready,
+  });
+
   const summary     = data?.summary || [];
   const catNames    = data?.cat_names || [];
   const flaggedCount  = summary.filter((s) => s.flagged_days > 0).length;
