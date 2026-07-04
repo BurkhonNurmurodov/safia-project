@@ -22,6 +22,7 @@ export const ROLE_LABEL_KEYS = {
   "supervisor":    "role.supervisor",
   "leader":        "role.leader",
   "admin":         "role.admin",
+  "guest":         "role.guest",
 };
 
 // Order matters — it drives the "first accessible page" fallback.
