@@ -159,6 +159,7 @@ export default function Login() {
   const shiftAdmins = (options?.shift_managers ?? [])
     .filter(s => shift != null && s.shift === shift);
   const leadersForSupervisor = supervisor ? (options?.leaders?.[supervisor] ?? []) : [];
+  const guestProfiles = options?.guests ?? [];
 
   return (
     <div
