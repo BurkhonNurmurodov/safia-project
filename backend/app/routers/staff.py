@@ -236,6 +236,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Добавлено новое опасение", "Лидер: {leader_name} | Владелец: {owner} | Дата: {date}\n{concern}"),
         "en": ("New concern added", "Leader: {leader_name} | Owner: {owner} | Date: {date}\n{concern}"),
     },
+    "concern_assigned": {
+        "uz": ("{actor_name} nomingizga xavotir qo'shdi", "Xavotir egasi: {owner} | Sana: {date}\n{concern}"),
+        "uz_cyrl": ("{actor_name} номингизга хавотир қўшди", "Хавотир эгаси: {owner} | Сана: {date}\n{concern}"),
+        "ru": ("{actor_name} добавил(а) опасение на ваше имя", "Владелец: {owner} | Дата: {date}\n{concern}"),
+        "en": ("{actor_name} added a concern for you", "Owner: {owner} | Date: {date}\n{concern}"),
+    },
     "task_created": {
         "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
         "uz_cyrl": ("Янги вазифа: {creator_name}", "Муддат: {date}\n{task}"),
