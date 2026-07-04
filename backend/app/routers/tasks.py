@@ -432,15 +432,34 @@ def set_priority(
 
 # ── comments ──────────────────────────────────────────────────────────────────
 
-def _serialize_comment(c: LeaderTaskComment) -> dict:
+def _profile_ref(payload: dict) -> Optional[int]:
+    """Stable id of the acting profile: telegram_user_roles.id of the active
+    role, or the admin sentinel (admin JWTs carry role_ref=None)."""
+    return ADMIN_ROLE_REF if payload.get("role") == "admin" else payload.get("role_ref")
+
+
+def _is_comment_author(c: LeaderTaskComment, payload: dict) -> bool:
+    """Ownership is per-PROFILE, not per-account: one telegram account can hold
+    several profiles via role switching. Legacy rows (NULL ref, written before
+    author_role_ref existed) match by account only."""
+    if c.author_telegram_id != int(payload["sub"]):
+        return False
+    return c.author_role_ref is None or c.author_role_ref == _profile_ref(payload)
+
+
+def _serialize_comment(c: LeaderTaskComment, payload: dict) -> dict:
     return {
         "id": c.id,
         "task_id": c.task_id,
         "author_telegram_id": c.author_telegram_id,
+        "author_role_ref": c.author_role_ref,
         "author_name": c.author_name,
         "text": c.text,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "edited_at": c.edited_at.isoformat() if c.edited_at else None,
+        # Edit/delete rights of the CALLER, resolved server-side so the client
+        # never has to re-derive the profile-ownership rule.
+        "is_own": _is_comment_author(c, payload),
     }
 
 
