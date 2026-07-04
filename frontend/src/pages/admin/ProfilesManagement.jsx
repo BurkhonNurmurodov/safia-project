@@ -94,8 +94,18 @@ export default function ProfilesManagement() {
     onSuccess: () => { done(); setConfirmUnassign(null); },
     onError: (e) => { setConfirmUnassign(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
   });
+  const switchMut = useMutation({
+    mutationFn: (body) => api.post("/api/profiles/admin/switch-role", body),
+    onSuccess: () => { done(); setModal(null); setConfirmSwitch(null); },
+    onError: (e, body) => {
+      const detail = e?.response?.data?.detail;
+      if (detail?.code === "confirm_required") { setConfirmSwitch({ body, detail }); return; }
+      setConfirmSwitch(null);
+      setFormError(typeof detail === "string" ? detail : t("admin.profiles.error"));
+    },
+  });
 
-  const busy = createMut.isPending || updateMut.isPending;
+  const busy = createMut.isPending || updateMut.isPending || switchMut.isPending;
   const activeType = TYPES.find((x) => x.key === type);
   const items = data?.[activeType.listKey] ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
