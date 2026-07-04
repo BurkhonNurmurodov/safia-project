@@ -29,7 +29,7 @@ from app.models import LeaderConcern, Manager, RoleProfile, TelegramUserRole
 from app.permissions import require_page
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
-from app.routers.staff import _find_supervisor, _notify
+from app.routers.staff import _find_supervisor, _notify, _profile_key
 
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
