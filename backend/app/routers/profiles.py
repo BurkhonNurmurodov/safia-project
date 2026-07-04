@@ -167,7 +167,8 @@ def _rename_profile(db: Session, ptype: str, pid: int, new_name: str) -> str:
 
 def _user_info(db: Session) -> dict[int, dict]:
     return {
-        u.telegram_id: {"full_name": u.full_name, "username": u.username, "phone": u.phone}
+        u.telegram_id: {"full_name": u.full_name, "username": u.username,
+                        "phone": u.phone, "tg_name": u.tg_name}
         for u in db.query(TelegramUser).all()
     }
 
