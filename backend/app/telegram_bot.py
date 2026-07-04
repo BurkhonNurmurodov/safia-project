@@ -179,6 +179,10 @@ _MESSAGES = {
         "adminreg_choose":   "👤 Select an admin profile:",
         "adminreg_none":     "No available admin profiles.",
         "adminreg_already":  "You are already an admin.",
+        "guest_name_taken":  (
+            "❌ This name is already taken.\n"
+            "Please register again with a different name: /start"
+        ),
     },
 }
 
