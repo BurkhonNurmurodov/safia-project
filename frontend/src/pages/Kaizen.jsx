@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import SearchInput from "../components/ui/SearchInput";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";

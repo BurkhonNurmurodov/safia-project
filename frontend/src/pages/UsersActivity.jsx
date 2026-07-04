@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import SearchInput from "../components/ui/SearchInput";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ContributionHeatmap from "../components/charts/ContributionHeatmap";
 import { Sparkline } from "../components/ui/KpiDeltaCard";
