@@ -814,7 +814,6 @@ const t = {
     "login.guestHint":              "Ism va familiyangizni lotin harflarida kiriting",
     "login.guestScript":            "Faqat lotin harflaridan foydalaning",
     "login.guestTwoWords":          "Ism va familiyani to'liq kiriting",
-    "login.guestNameTaken":         "Bu ism allaqachon band",
     "login.guestExisting":          "Mavjud profilni tanlash",
     "login.noGuestProfiles":        "Bo'sh profillar yo'q",
     "login.chooseSlot":             "Slotni tanlang:",
