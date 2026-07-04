@@ -171,15 +171,6 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange }
   );
 }
 
-// Sort affordance for the table headers — clicking cycles asc → desc → off, with
-// neutral chevrons until a column is active (mirrors the Kaizen task table).
-function SortIcon({ active, dir }) {
-  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
-  return (
-    <Icon size={11} style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />
-  );
-}
-
 // Revealed-row action button (matches the Staff requests table's ActionBtn).
 function ActionBtn({ icon: Icon, label, color, onClick }) {
   return (
@@ -199,7 +190,7 @@ function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
   const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
   const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
   return (
-    <th className={`font-medium px-3 py-2 select-none whitespace-nowrap ${alignCls} ${cls}`} style={cellB}>
+    <th className={`font-medium px-3 py-2 select-none whitespace-nowrap ${alignCls} ${cls}`}>
       <button
         type="button" onClick={() => onSort(k)}
         className={`group inline-flex items-center gap-1.5 transition-colors ${justify}`}
@@ -1080,14 +1071,14 @@ export default function Concerns() {
                           read-only viewers have no actions, so rows stay inert. */}
                       <tr
                         onClick={readOnly ? undefined : () => setExpandedId(expanded ? null : r.id)}
-                        className={`align-top hover:bg-white/5 ${readOnly ? "" : "cursor-pointer"}`}
+                        className={`align-top ${readOnly ? "" : "cursor-pointer"}`}
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
-                        <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ ...cellB, color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
-                        {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.brigadir_name) || "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
-                        <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ ...cellB, color: "var(--text-1)" }}>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
+                        {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.brigadir_name) || "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
+                        <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
                           <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
                           {r.solution && (
                             <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
@@ -1096,7 +1087,7 @@ export default function Concerns() {
                           )}
                         </td>
                         {/* Status stays inline-editable → swallow the click so it doesn't toggle the row */}
-                        <td className="px-3 py-2.5" style={cellB} onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <StatusSelect
                             status={r.status}
                             label={statusLabel(r.status)}
@@ -1106,10 +1097,10 @@ export default function Concerns() {
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                           />
                         </td>
-                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
                         {/* Minutes from creation to the done-flip; open rows and
                             rows finished before done_at existed show "—". */}
-                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ ...cellB, color: "var(--text-2)" }}>
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
                           {r.resolution_minutes != null ? r.resolution_minutes.toLocaleString() : "—"}
                         </td>
                       </tr>
