@@ -329,6 +329,10 @@ class UpdateProfilePayload(BaseModel):
 
 
 def _apply_overrides(db: Session, canonical: str, overrides: dict[str, str]) -> None:
+    # The session runs with autoflush=False; a rename in the same request keeps
+    # its rekeyed override rows pending, invisible to the SELECTs below — flush
+    # first or the inserts collide with them on uq_translation_lang_key.
+    db.flush()
     key = f"name.{canonical}"
     for lang, value in overrides.items():
         row = db.query(Translation).filter_by(lang=lang, key=key).first()
