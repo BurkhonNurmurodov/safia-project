@@ -272,11 +272,6 @@ function PrioritySelect({ priority, count, saving, editable, onApply, t }) {
   );
 }
 
-function SortIcon({ active, dir }) {
-  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
-  return <Icon size={11} style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />;
-}
-
 function ActionBtn({ icon: Icon, label, color, onClick }) {
   return (
     <button
@@ -886,7 +881,6 @@ export default function Tasks() {
   const completionColor = stats.completion == null ? "var(--text-3)"
     : stats.completion >= 0.8 ? "#22c55e" : stats.completion >= 0.5 ? "#eab308" : "#ef4444";
 
-  const cellB = { borderBottom: "1px solid var(--border)" };
 
   return (
     <Layout title={t("tasks.title")} showFilters={false}>
@@ -1076,10 +1070,10 @@ export default function Tasks() {
                         className={`align-top transition-colors hover:bg-[var(--bg-inner)] ${canEditRow ? "cursor-pointer" : ""}`}
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent", opacity: r.status === "done" ? 0.75 : 1 }}
                       >
-                        <td className="px-3 py-2.5 min-w-[240px] max-w-md" style={cellB}>
+                        <td className="px-3 py-2.5 min-w-[240px] max-w-md">
                           <div className="line-clamp-2" title={r.task_text}>{tl(r.task_text)}</div>
                         </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap" style={cellB} onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           {r.status === "done" || r.priority == null ? (
                             <span style={{ color: "var(--text-4)" }}>—</span>
                           ) : (
@@ -1094,12 +1088,12 @@ export default function Tasks() {
                           )}
                         </td>
                         {isAdmin && (
-                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.supervisor_name) || "—"}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.supervisor_name) || "—"}</td>
                         )}
                         {!isLeader && (
-                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: "var(--text-2)" }}>{tl(r.leader_name)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.leader_name)}</td>
                         )}
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={cellB} onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <StatusSelect
                             status={r.status}
                             statusLabel={statusLabel}
@@ -1108,13 +1102,13 @@ export default function Tasks() {
                             onChange={(s) => statusMutation.mutate({ id: r.id, status: s })}
                           />
                         </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ ...cellB, color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : 400 }}>
+                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : 400 }}>
                           <span className="inline-flex items-center gap-1.5">
                             {overdue && <AlertTriangle size={11} />}
                             {fmtDate(r.due_date, lang)}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap" style={cellB} onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => setCommentsTask(r)}
