@@ -117,7 +117,7 @@ def _remove_role_row(db: Session, role_row: TelegramUserRole) -> None:
 def _bound_role_rows(db: Session, ptype: str, pid: int) -> list[TelegramUserRole]:
     if ptype == "supervisor":
         return db.query(TelegramUserRole).filter_by(role="supervisor", role_id=pid).all()
-    if ptype in ("shift-manager", "top-manager"):
+    if ptype in ("shift-manager", "top-manager", "guest"):
         return db.query(TelegramUserRole).filter_by(role=ptype, role_id=pid).all()
     if ptype == "leader":
         p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
