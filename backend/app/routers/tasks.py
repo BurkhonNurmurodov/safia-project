@@ -480,7 +480,7 @@ def list_task_comments(
         .order_by(LeaderTaskComment.created_at, LeaderTaskComment.id)
         .all()
     )
-    return [_serialize_comment(c) for c in rows]
+    return [_serialize_comment(c, payload) for c in rows]
 
 
 @router.post("/{task_id}/comments")
