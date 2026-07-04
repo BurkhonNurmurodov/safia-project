@@ -75,8 +75,13 @@ def list_notifications(
     db: Session = Depends(get_db),
 ):
     """Returns notifications relevant to the caller:
-    - broadcast (recipient_telegram_id IS NULL)
-    - addressed specifically to them
+    - broadcast (no recipient at all)
+    - addressed to their ACTIVE profile (recipient_profile)
+    - legacy account-keyed rows addressed to their telegram account
+
+    Profile-addressed rows never leak across the account's other profiles:
+    switching roles re-issues the JWT, and the filter matches the profile the
+    caller is currently switched into.
 
     Each row is rendered in ``lang`` (the viewer's current UI language). When it
     is omitted, the caller's saved language is used; otherwise Uzbek.
@@ -88,14 +93,27 @@ def list_notifications(
     q = db.query(Notification).order_by(Notification.created_at.desc())
 
     if telegram_id:
-        q = q.filter(
-            or_(
-                Notification.recipient_telegram_id == None,       # noqa: E711
-                Notification.recipient_telegram_id == telegram_id,
+        # Broadcast + own legacy rows. Profile-addressed rows (recipient_profile
+        # set) are excluded here even when recipient_telegram_id matches — they
+        # belong to exactly one profile.
+        conds = [
+            and_(
+                Notification.recipient_profile == None,               # noqa: E711
+                or_(
+                    Notification.recipient_telegram_id == None,       # noqa: E711
+                    Notification.recipient_telegram_id == telegram_id,
+                ),
             )
-        )
+        ]
+        profile_key = _viewer_profile_key(db, payload)
+        if profile_key:
+            conds.append(Notification.recipient_profile == profile_key)
+        q = q.filter(or_(*conds))
     else:
-        q = q.filter(Notification.recipient_telegram_id == None)  # noqa: E711
+        q = q.filter(
+            Notification.recipient_telegram_id == None,   # noqa: E711
+            Notification.recipient_profile == None,       # noqa: E711
+        )
 
     rows = q.limit(50).all()
     return [_row(r, view_lang) for r in rows]
