@@ -111,8 +111,9 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
         _log.warning("AUTH: __dev__ bypass fired, returning admin_id=%s",
                      first_admin.telegram_id if first_admin else None)
         if first_admin:
-            token = create_jwt(first_admin.telegram_id, "admin", "Dev Admin")
-            return {"status": "approved", "role": "admin", "full_name": "Dev Admin", "token": token, "telegram_id": first_admin.telegram_id}
+            dev_name = _admin_profile_name(db, first_admin) or "Dev Admin"
+            token = create_jwt(first_admin.telegram_id, "admin", dev_name)
+            return {"status": "approved", "role": "admin", "full_name": dev_name, "token": token, "telegram_id": first_admin.telegram_id}
         return {"status": "not_registered"}
 
     parsed = _validate_init_data(body.init_data)
