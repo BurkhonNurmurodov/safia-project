@@ -775,8 +775,9 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         if sup:  # archived units keep their leaders out of the picker
             leaders.setdefault(sup, []).append(p.name)
 
-    # Guest profiles: an approved holder makes the profile (and its name) taken;
-    # everything else is offered for re-claiming in the registration picker.
+    # Guest profiles without an approved holder are offered for re-claiming in
+    # the registration picker. Guest names are NOT unique — a typed name always
+    # gets its own fresh profile, so there is no taken-name list to check.
     guest_profiles = (
         db.query(RoleProfile).filter(RoleProfile.role == "guest")
         .order_by(RoleProfile.name).all()
