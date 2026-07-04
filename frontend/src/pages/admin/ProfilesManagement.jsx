@@ -439,7 +439,7 @@ export default function ProfilesManagement() {
                     {t("admin.profiles.langNamesHint")}
                   </p>
                   <div className="space-y-2">
-                    {languages.map((l) => (
+                    {languages.filter((l) => l.code !== "uz").map((l) => (
                       <label key={l.code} className="flex items-center gap-2">
                         <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
                               style={{ color: "var(--text-4)" }}>{l.code}</span>
@@ -453,21 +453,17 @@ export default function ProfilesManagement() {
                           className={inputCls + " !mt-0"}
                           style={inputStyle}
                         />
-                        {l.code === "uz" ? (
-                          <span className="w-7 flex-shrink-0" />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setForm((f) => ({
-                              ...f, overrides: { ...f.overrides, [l.code]: convertFromUz((f.name || "").trim(), l.code) },
-                            }))}
-                            className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
-                            style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                            title={t("settings.translate")}
-                          >
-                            <Languages size={12} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setForm((f) => ({
+                            ...f, overrides: { ...f.overrides, [l.code]: convertFromUz((f.name || "").trim(), l.code) },
+                          }))}
+                          className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
+                          style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                          title={t("settings.translate")}
+                        >
+                          <Languages size={12} />
+                        </button>
                       </label>
                     ))}
                   </div>
