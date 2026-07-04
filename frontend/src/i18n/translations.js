@@ -3342,6 +3342,7 @@ const t = {
     "admin.profiles.supervisors":    "Бригадиры",
     "admin.profiles.leaders":        "Лидеры",
     "admin.profiles.admins":         "Админы",
+    "admin.profiles.guests":         "Гости",
     "admin.profiles.add":            "Добавить профиль",
     "admin.profiles.addTitle":       "Новый профиль",
     "admin.profiles.editTitle":      "Редактировать профиль",
