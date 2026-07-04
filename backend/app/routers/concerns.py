@@ -417,7 +417,7 @@ def create_concern(
             profile=_profile_key("supervisor", mgr_id),
         )
         notified.add(sup.telegram_id)
-    if leader_tg and leader_tg != author and leader_tg not in notified:
+    if leader_tg != author and leader_tg not in notified:
         _notify(
             db, leader_tg, type="info", nkey="concern_assigned",
             params={
