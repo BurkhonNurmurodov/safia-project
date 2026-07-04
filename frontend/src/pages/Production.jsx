@@ -28,13 +28,6 @@ const fmt = (v, d = 1) =>
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(0)}%`);
 const ddmmyyyy = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 
-function shiftDate(iso, days) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
-
 // status colours (theme-agnostic, work on both dark & light)
 const GREEN = "#22c55e", AMBER = "#eab308", RED = "#ef4444";
 // completion: ≥95% good, ≥70% partial, below = behind
