@@ -74,9 +74,9 @@ export default function PlanFulfillment() {
     theme: { mode: "dark" },
   };
 
-  // Trend: fleet fulfillment % over time
+  // Trend: fleet fulfillment % over time (padded ≥7-day window)
   const dateMap = {};
-  (data?.rows || []).forEach((r) => {
+  (chartData?.rows || []).forEach((r) => {
     if (!dateMap[r.date]) dateMap[r.date] = { plan: 0, actual: 0 };
     dateMap[r.date].plan   += r.prod_plan   || 0;
     dateMap[r.date].actual += r.prod_actual || 0;
