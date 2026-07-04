@@ -52,11 +52,13 @@ function UserProfile() {
 
   if (!auth || auth.status !== "approved") return null;
 
-  const name     = auth.full_name || "";
-  const tkey     = ROLE_TKEYS[auth.role];
+  const name     = tl(auth.full_name || "");
+  const tkey     = ROLE_LABEL_KEYS[auth.role];
   const role     = tkey ? t(tkey) : (auth.role ?? "");
   const initials = nameInitials(name);
-  const color    = nameToColor(name);
+  // Colour is keyed to the raw canonical name so the avatar hue stays stable
+  // across language switches.
+  const color    = nameToColor(auth.full_name || "");
   const others   = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
 
   return (
