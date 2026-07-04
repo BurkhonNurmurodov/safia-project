@@ -310,22 +310,12 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
         {/* Search bar */}
         <div className="px-5 pt-3 pb-2 flex-shrink-0">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2"
-              style={{ color: "var(--text-4)" }} />
-            <input
-              type="text"
-              placeholder={t("staff.searchByName")}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              className="w-full text-sm pl-9 pr-8 py-2 rounded-lg outline-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-            {query && (
-              <button onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-4)" }}><X size={12} /></button>
-            )}
-          </div>
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={t("staff.searchByName")}
+            inputClassName="text-sm pl-8 pr-7 py-2"
+          />
         </div>
 
         {/* Column header row */}
