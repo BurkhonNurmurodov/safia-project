@@ -17,7 +17,13 @@ const ROLES = [
   { value: "shift-manager", tKey: "login.chooseRole.shift",      tKeyRu: "login.chooseRole.shiftRu" },
   { value: "supervisor",    tKey: "login.chooseRole.sup",        tKeyRu: "login.chooseRole.supRu" },
   { value: "leader",        tKey: "login.chooseRole.leader",     tKeyRu: "login.chooseRole.leaderRu" },
+  { value: "guest",         tKey: "login.chooseRole.guest",      tKeyRu: "login.chooseRole.guestRu" },
 ];
+
+// Guests type their own name — script must match the UI language (Latin for
+// uz/en, Cyrillic for ru/uz_cyrl). Letters, apostrophes and hyphens only.
+const LATIN_NAME_RE    = /^[A-Za-zʻʼ'’‘`\-\s]+$/;
+const CYRILLIC_NAME_RE = /^[Ѐ-ӿʻʼ'’\-\s]+$/;
 
 export default function Login() {
   const { t } = useLang();
