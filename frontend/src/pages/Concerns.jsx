@@ -208,10 +208,10 @@ function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
 }
 
 // ── rich KPI card primitives ────────────────────────────────────────────────
-// Card shell: tinted icon chip + uppercase label pinned top, metric body pinned
-// bottom so the numerals share one baseline across the whole KPI row regardless
-// of how the labels wrap. Corner glow is a radial gradient (smooth falloff, no
-// blur-filter banding).
+// Card shell: tinted icon chip + uppercase label pinned top, body (subject
+// headline + compact metric) pinned bottom so cards align across the KPI row
+// regardless of how the labels wrap. Corner glow is a radial gradient (smooth
+// falloff, no blur-filter banding).
 function InsightCard({ icon: Icon, tint, label, children }) {
   return (
     <div className="relative rounded-2xl p-4 flex flex-col overflow-hidden" style={cardStyle}>
@@ -233,24 +233,23 @@ function InsightCard({ icon: Icon, tint, label, children }) {
   );
 }
 
-// Big colour-coded number + terse unit, with an optional quieter qualifier
-// ("avg per concern"). Tabular figures keep digits on-grid without switching
-// to a second typeface.
+// Compact colour-coded number + terse unit, with an optional quieter qualifier
+// ("avg per concern"). Sits under the subject line as supporting detail.
 function Metric({ value, unit, color, suffix }) {
   return (
-    <div className="flex items-baseline gap-1.5 leading-none">
-      <span className="text-3xl font-bold tracking-tight tabular-nums" style={{ color }}>{value}</span>
-      {unit && <span className="text-xs font-semibold" style={{ color: "var(--text-3)" }}>{unit}</span>}
-      {suffix && <span className="text-[11px] font-medium" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
+    <div className="flex items-baseline gap-1 leading-none">
+      <span className="text-base font-bold tabular-nums" style={{ color }}>{value}</span>
+      {unit && <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{unit}</span>}
+      {suffix && <span className="text-[10px] font-medium" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
     </div>
   );
 }
 
-// One shared style for the line under the metric (problem text / name / date),
-// clamped to a single line so every card body has identical height.
+// Headline of the card body (problem text / name / date), clamped to a single
+// line so every card body has identical height.
 function Subject({ text, title }) {
   return (
-    <div className="text-sm font-semibold truncate" style={{ color: "var(--text-1)" }} title={title || text}>
+    <div className="text-lg font-bold leading-snug truncate" style={{ color: "var(--text-1)" }} title={title || text}>
       {text}
     </div>
   );
@@ -847,8 +846,8 @@ export default function Concerns() {
         <InsightCard icon={Hourglass} tint="#ef4444" label={t("concerns.kpiLongestOpen")}>
           {insights.longest ? (
             <>
-              <Metric value={insights.longest.age} unit={t(insights.longest.age === 1 ? "concerns.day" : "concerns.days")} color="var(--kpi-red)" />
               <Subject text={tl(insights.longest.row.concern_text)} title={insights.longest.row.concern_text} />
+              <Metric value={insights.longest.age} unit={t(insights.longest.age === 1 ? "concerns.day" : "concerns.days")} color="var(--kpi-red)" />
             </>
           ) : (
             <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
@@ -859,8 +858,8 @@ export default function Concerns() {
         <InsightCard icon={Gauge} tint="#f59e0b" label={t("concerns.kpiSlowestBrigadir")}>
           {insights.slowest ? (
             <>
-              <Metric value={insights.slowest.avg} unit={t(insights.slowest.avg === 1 ? "concerns.day" : "concerns.days")} suffix={t("concerns.avgSuffix")} color="var(--kpi-amber)" />
               <Subject text={tl(insights.slowest.name)} />
+              <Metric value={insights.slowest.avg} unit={t(insights.slowest.avg === 1 ? "concerns.day" : "concerns.days")} suffix={t("concerns.avgSuffix")} color="var(--kpi-amber)" />
             </>
           ) : (
             <Empty icon={Gauge} color="var(--text-4)" text={t("concerns.noData")} />
@@ -871,8 +870,8 @@ export default function Concerns() {
         <InsightCard icon={CalendarClock} tint="#3b82f6" label={t("concerns.kpiPeakDate")}>
           {insights.peak ? (
             <>
-              <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="var(--kpi-blue)" />
               <Subject text={fmtDate(insights.peak.date, lang)} />
+              <Metric value={insights.peak.count} unit={t("concerns.openLower")} color="var(--kpi-blue)" />
             </>
           ) : (
             <Empty icon={ShieldCheck} color="#22c55e" text={t("concerns.allClear")} />
