@@ -155,9 +155,9 @@ export default function Downtime() {
     theme: { mode: "dark" },
   };
 
-  // Trend: fleet total downtime per day
+  // Trend: fleet total downtime per day (padded ≥7-day window)
   const trendMap = {};
-  (data?.rows || []).forEach((r) => {
+  (chartData?.rows || []).forEach((r) => {
     if (!trendMap[r.date]) trendMap[r.date] = 0;
     trendMap[r.date] += r.total || 0;
   });
