@@ -414,6 +414,7 @@ def create_concern(
                 "date": entry,
                 "concern": snippet,
             },
+            profile=_profile_key("supervisor", mgr_id),
         )
         notified.add(sup.telegram_id)
     if leader_tg and leader_tg != author and leader_tg not in notified:
@@ -425,6 +426,7 @@ def create_concern(
                 "date": entry,
                 "concern": snippet,
             },
+            profile=_profile_key("leader", profile_id),
         )
         notified.add(leader_tg)
     if notified:
