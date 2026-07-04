@@ -4526,6 +4526,7 @@ const t = {
     "admin.users.fieldUnit":       "Unit",
     "admin.users.fieldSupervisor": "Supervisor",
     "admin.users.fieldSlot":       "Shift slot",
+    "admin.users.fieldShift":      "Shift",
     "admin.users.selectPlaceholder": "— select —",
     "admin.users.add":             "Add",
     "admin.users.addError":        "Could not add role",
