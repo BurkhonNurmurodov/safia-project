@@ -228,12 +228,15 @@ function NoAccess() {
   const others = (auth?.roles ?? []).filter(
     (r) => r.id !== auth?.active_role_ref && r.status === "approved",
   );
+  // An account that holds an admin profile can fix this itself (Access tab) —
+  // "contact an administrator" would read like a pending confirmation.
+  const isAdminAccount = (auth?.roles ?? []).some((r) => r.role === "admin");
   return (
     <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
       <div className="text-center max-w-xs w-full">
         <div className="text-5xl mb-4">🔒</div>
         <p className="text-sm mb-6" style={{ color: "var(--text-3)" }}>
-          {t("access.noPages")}
+          {t(isAdminAccount ? "access.noPagesAdmin" : "access.noPages")}
         </p>
 
         {others.length > 0 && (
