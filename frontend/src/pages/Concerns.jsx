@@ -1014,16 +1014,19 @@ export default function Concerns() {
         </div>
       </div>
 
-      {/* Task table — header band (title · count · search · filters · add) over a
-          grid-ruled, sortable, icon-led table (mirrors the Kaizen task list). */}
-      <div className="rounded-2xl overflow-hidden mb-8" style={cardStyle}>
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-            <ClipboardList size={14} style={{ color: "var(--brand-text)" }} />
-            {t("concerns.listTitle")}
-            <span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      {/* Concern table — canonical POSITIONS-style TableCard with per-column sort. */}
+      <TableCard
+        className="mb-8"
+        icon={ClipboardList}
+        title={t("concerns.listTitle")}
+        wrap
+        right={
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            {filtered.length}
+          </span>
+        }
+        toolbar={
+          <>
             <SearchInput
               value={search}
               onChange={setSearch}
@@ -1038,30 +1041,13 @@ export default function Concerns() {
               compact
             />
             {!readOnly && (
-              <button
-                onClick={openCreate}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white transition-colors"
-              >
-                <Plus size={14} /> {t("concerns.add")}
-              </button>
+              <Button size="sm" icon={<Plus size={14} />} onClick={openCreate}>{t("concerns.add")}</Button>
             )}
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="p-4">
-            <SkeletonTable rows={6} cols={showLeaderCol ? 8 : 7} />
-          </div>
-        ) : sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 gap-3">
-            <ClipboardList size={28} style={{ color: "var(--text-4)" }} />
-            <div className="text-sm" style={{ color: "var(--text-3)" }}>{t("concerns.empty")}</div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          </>
+        }
+      >
               <thead>
-                <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                <tr>
                   <Th icon={CalendarClock} label={t("concerns.colDate")}     k="date"     sort={sort} onSort={onSort} />
                   {showLeaderCol && <Th icon={UserCheck} label={t("concerns.colLeader")} k="leader" sort={sort} onSort={onSort} />}
                   <Th icon={ShieldCheck}   label={t("concerns.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} />
@@ -1073,7 +1059,19 @@ export default function Concerns() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((r) => {
+                {isLoading && Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`sk-${i}`}>
+                    {Array.from({ length: showLeaderCol ? 8 : 7 }).map((_, j) => (
+                      <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {!isLoading && sorted.length === 0 && (
+                  <tr><td colSpan={showLeaderCol ? 8 : 7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                    {t("concerns.empty")}
+                  </td></tr>
+                )}
+                {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
                   const colSpan = showLeaderCol ? 8 : 7;
                   return (
@@ -1129,10 +1127,7 @@ export default function Concerns() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      </TableCard>
 
       {/* Create / edit modal */}
       {modalOpen && (

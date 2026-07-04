@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
-  ChevronDown, ChevronUp, ChevronsUpDown, Check, MessageSquare, Send,
+  ChevronDown, Check, MessageSquare, Send,
   CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
   ListTodo, CheckCircle2, Timer, TrendingUp, PieChart, XCircle, ArrowLeft, Gauge,
 } from "lucide-react";
@@ -18,7 +18,7 @@ import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
-import { SkeletonBlock, SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
+import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
