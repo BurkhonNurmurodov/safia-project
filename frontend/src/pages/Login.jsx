@@ -23,6 +23,7 @@ export default function Login() {
   const { tl } = useTranslit();
   const [step,      setStep]      = useState("role");   // "role" | "name"
   const [role,       setRole]       = useState("");
+  const [shift,      setShift]      = useState(null);  // 1 | 2 — filters every list below
   const [fullName,   setFullName]   = useState("");
   const [supervisor, setSupervisor] = useState("");   // leader → chosen brigadir/unit
   const [search,     setSearch]     = useState("");
