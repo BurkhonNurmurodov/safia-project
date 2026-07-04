@@ -636,11 +636,13 @@ def _adminreg_pick(call: types.CallbackQuery):
         user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
         if user:
             user.username = call.from_user.username or user.username
+            user.tg_name = _tg_account_name(call.from_user) or user.tg_name
         else:
             db.add(TelegramUser(
                 telegram_id=tid,
                 username=call.from_user.username,
                 full_name=p.name,
+                tg_name=_tg_account_name(call.from_user),
                 role="admin",
                 role_id=pid,
                 language=lang,
