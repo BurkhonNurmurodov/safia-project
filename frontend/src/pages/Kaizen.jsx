@@ -923,14 +923,13 @@ export default function Kaizen() {
               title={<span className="flex items-center gap-2">{T.secTasks}<span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span></span>}
               right={
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--text-4)" }} />
-                    <input
-                      value={search} onChange={(e) => setSearch(e.target.value)} placeholder={T.searchPh}
-                      className="pl-8 pr-3 py-1.5 rounded-lg text-xs w-44 outline-none"
-                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                    />
-                  </div>
+                  <SearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder={T.searchPh}
+                    className="w-44"
+                    inputClassName="text-xs pl-8 pr-7 py-1.5"
+                  />
                   <StyledSelect value={project} onChange={setProject} className="w-44"
                     options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => {
                       const { Icon, color } = identFor(p.key);
