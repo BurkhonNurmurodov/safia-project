@@ -282,12 +282,13 @@ export default function Trudoyomkost() {
     }),
   );
 
-  // raw plan/fakt folded per brigadir per date (minutes) + period totals for the header
+  // raw plan/fakt folded per brigadir per date (minutes) + period totals for
+  // the header. The chart series fold over the padded ≥7-day window; the
+  // header totals stay on the exact selected period.
   const planFakt = useMemo(() => {
-    const rows = data?.daily ?? [];
+    const rows = (pfChartData ?? data)?.daily ?? [];
     const dateSet = new Set();
     const byMgr = new Map();   // mid -> Map(isoDate -> {plan, fakt})
-    let totalPlan = 0, totalFakt = 0;
     for (const r of rows) {
       dateSet.add(r.date);
       let m = byMgr.get(r.manager_id);
@@ -296,6 +297,9 @@ export default function Trudoyomkost() {
       e.plan += r.plan || 0;
       e.fakt += r.actual || 0;
       m.set(r.date, e);
+    }
+    let totalPlan = 0, totalFakt = 0;
+    for (const r of data?.daily ?? []) {
       totalPlan += r.plan || 0;
       totalFakt += r.actual || 0;
     }
@@ -305,7 +309,7 @@ export default function Trudoyomkost() {
       totalPlan, totalFakt,
       overallPct: totalPlan > 0 ? Math.round((totalFakt / totalPlan) * 100) : 0,
     };
-  }, [data]);
+  }, [data, pfChartData]);
 
   // series in the current P / A / P−A lens: the average over all brigadirs, plus one line per selected brigadir
   const pfSeries = useMemo(() => {
