@@ -397,10 +397,10 @@ def create_concern(
     db.refresh(c)
 
     # Notify the brigadir (approved supervisor of the leader's unit) and the
-    # leader themself about every new concern — skipping whoever authored it,
-    # never DM'ing the same person twice (one account may hold both roles), and
-    # silently skipping leaders who haven't registered (no Telegram account
-    # bound to the profile yet).
+    # leader themself about every new concern — skipping whoever authored it and
+    # never DM'ing the same person twice (one account may hold both roles). For
+    # a leader who hasn't registered yet the bell row queues on their profile
+    # (leader_tg None → no DM); they inherit it when they claim the profile.
     author = int(payload["sub"])
     snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
     notified: set[int] = set()
