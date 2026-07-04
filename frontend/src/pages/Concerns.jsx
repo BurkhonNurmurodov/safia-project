@@ -152,13 +152,13 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange }
         type="button"
         onClick={toggle}
         className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-        style={{ background: `${color}24`, color, cursor: saving ? "default" : "pointer" }}
+        style={{ background: `${color}24`, color, cursor: saving || disabled ? "default" : "pointer" }}
       >
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
         {label}
         {saving
           ? <Loader2 size={10} className="animate-spin" />
-          : <ChevronDown size={10} style={{ opacity: 0.7 }} />}
+          : !disabled && <ChevronDown size={10} style={{ opacity: 0.7 }} />}
       </button>
       {dropdown}
     </>
