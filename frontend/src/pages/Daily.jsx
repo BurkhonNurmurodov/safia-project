@@ -482,46 +482,16 @@ function SupervisorDaily() {
       )}
 
       {/* Close-the-day confirmation modal */}
-      {showCloseModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.55)" }}
-          onClick={() => { if (!closeMut.isPending) setShowCloseModal(false); }}>
-          <div className="rounded-2xl p-6 w-full max-w-md"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 16px 48px rgba(0,0,0,0.35)" }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ background: "#f59e0b22", border: "1px solid #f59e0b55" }}>
-                <AlertTriangle size={20} style={{ color: "#d97706" }} />
-              </div>
-              <div className="text-sm font-bold" style={{ color: "var(--text-1)" }}>
-                {t("daily.closeConfirmTitle")}
-              </div>
-            </div>
-            <p className="text-xs leading-relaxed mb-5" style={{ color: "var(--text-3)" }}>
-              {t("daily.closeConfirmText")}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowCloseModal(false)}
-                disabled={closeMut.isPending}
-                className="px-4 py-2 rounded-lg text-xs font-semibold"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}
-              >
-                {t("daily.cancel")}
-              </button>
-              <button
-                onClick={() => closeMut.mutate()}
-                disabled={closeMut.isPending}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold"
-                style={{ background: "var(--brand)", color: "#fff", opacity: closeMut.isPending ? 0.6 : 1 }}
-              >
-                {closeMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />} {closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showCloseModal}
+        onCancel={() => setShowCloseModal(false)}
+        onConfirm={() => closeMut.mutate()}
+        title={t("daily.closeConfirmTitle")}
+        message={t("daily.closeConfirmText")}
+        confirmLabel={closeMut.isPending ? t("daily.closing") : t("daily.closeConfirmBtn")}
+        cancelLabel={t("daily.cancel")}
+        loading={closeMut.isPending}
+      />
     </Layout>
   );
 }
