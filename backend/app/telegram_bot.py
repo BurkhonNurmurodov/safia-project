@@ -288,6 +288,17 @@ def _admin_ids() -> set[int]:
         return {a.telegram_id for a in db.query(Admin).all()}
 
 
+def admin_profile_name(telegram_id: int) -> str | None:
+    """Canonical name of an admin's claimed profile (admins.profile_id →
+    role_profiles) — what the app shows instead of the Telegram account name."""
+    with SessionLocal() as db:
+        row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
+        if not row or not row.profile_id:
+            return None
+        p = db.query(RoleProfile).filter_by(id=row.profile_id, role="admin").first()
+        return p.name if p else None
+
+
 def _registration_text(full_name: str, role: str, phone: str | None,
                        target_id: int, username: str | None,
                        supervisor: str | None = None) -> str:
