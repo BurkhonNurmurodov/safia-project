@@ -539,6 +539,7 @@ def _webapp_data(message: types.Message):
         if user:
             user.username  = message.from_user.username or user.username
             user.full_name = full_name   # legacy mirror — latest registration
+            user.tg_name   = _tg_account_name(message.from_user) or user.tg_name
             user.role      = role
             user.role_id   = role_id
             user.language  = lang
@@ -547,6 +548,7 @@ def _webapp_data(message: types.Message):
                 telegram_id=tid,
                 username=message.from_user.username,
                 full_name=full_name,
+                tg_name=_tg_account_name(message.from_user),
                 role=role,
                 role_id=role_id,
                 language=lang,
