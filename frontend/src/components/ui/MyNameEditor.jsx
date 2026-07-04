@@ -5,14 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { transliterate, convertFromUz } from "../../utils/transliterate";
 import { SkeletonBlock } from "./Skeleton";
-
-const ROLE_TKEYS = {
-  "admin":         "role.admin",
-  "top-manager":   "role.topManager",
-  "shift-manager": "role.manager",
-  "supervisor":    "role.supervisor",
-  "leader":        "role.leader",
-};
+import { ROLE_LABEL_KEYS } from "../../config/pages";
 
 const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 
