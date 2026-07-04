@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   IdCard, Plus, RefreshCw, Loader2, Trash2, Pencil, AlertTriangle, X,
-  Star, UserCog, Users, Flag, Shield, Archive, ArchiveRestore,
+  Star, UserCog, Users, Flag, Shield, Archive, ArchiveRestore, Languages,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
-import { useTranslit, transliterate } from "../../utils/transliterate";
+import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
 // The five profile sections. `listKey` = field in GET /api/profiles/admin/list.
 const TYPES = [
