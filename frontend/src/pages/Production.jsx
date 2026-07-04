@@ -173,18 +173,6 @@ function QtyCell({ value, overridden, onSave }) {
 }
 
 // ── section header strip ─────────────────────────────────────────────────────
-function SectionHead({ icon: Icon, title, right }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
-      </div>
-      {right}
-    </div>
-  );
-}
-
 // ── reconciliation panel (manual) ───────────────────────────────────────────
 const RECON_FIELDS = [
   { key: "po_shtatke_fact", labelKey: "production.recon.poShtatkeFact" },
