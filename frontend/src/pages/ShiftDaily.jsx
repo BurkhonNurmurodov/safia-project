@@ -24,13 +24,6 @@ function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); retur
 function addDaysISO(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return toISO(d); }
 const toDMY = (iso) => { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; };
 
-function fmtLongLocalized(iso, t) {
-  if (!iso) return "—";
-  const d = new Date(iso + "T00:00:00");
-  const dayIdx = (d.getDay() + 6) % 7;
-  return `${t(`cal.d${dayIdx}`)}, ${d.getDate()} ${t(`cal.mg${d.getMonth()}`)} ${d.getFullYear()}`;
-}
-
 // Signed display for a card delta, formatted in the card's own unit.
 function signed(n, fmt) {
   if (n === 0) return null;
