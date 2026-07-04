@@ -235,7 +235,7 @@ function SupervisorDaily() {
             supervisors={supervisors}
           />
         ) : null}
-        <DayPicker value={date} onChange={setDate} />
+        <DayStepper value={date} onChange={setDate} />
         {isDrill && (
           <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
             style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
