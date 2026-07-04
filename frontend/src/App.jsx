@@ -252,7 +252,7 @@ function NoAccess() {
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand)")}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-md)")}
                 >
-                  {r.full_name || rRole}
+                  {tl(r.full_name) || rRole}
                   <span className="ml-2 text-xs" style={{ color: "var(--text-3)" }}>· {rRole}</span>
                 </button>
               );
