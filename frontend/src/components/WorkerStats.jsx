@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import api from "../utils/api";
 import { SkeletonBlock } from "./ui/Skeleton";
+import StyledSelect from "./ui/StyledSelect";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
