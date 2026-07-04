@@ -348,7 +348,7 @@ export default function Downtime() {
         <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
           {t("downtime.trendSub")}
         </div>
-        {isLoading ? (
+        {isLoading || chartLoading ? (
           <SkeletonChart className="h-48" />
         ) : trendDates.length > 0 ? (
           <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={220} />
