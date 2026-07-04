@@ -598,10 +598,26 @@ export default function Tasks() {
     });
   }, [rows, startDate, endDate, fSup, fLeader]);
 
+  // Trend-chart scope: same filters with the period start pulled back so the
+  // chart never spans fewer than 7 days (n..n+4 charts as n-2..n+4). KPIs,
+  // donut and table keep the exact selected period.
+  const chartStart = padChartFrom(startDate, endDate);
+  const chartScoped = useMemo(() => {
+    if (chartStart === startDate) return scoped;
+    return rows.filter((r) => {
+      const day = createdDay(r);
+      if (chartStart && !(day && day >= chartStart)) return false;
+      if (endDate && !(day && day <= endDate)) return false;
+      if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
+      if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
+      return true;
+    });
+  }, [rows, scoped, chartStart, startDate, endDate, fSup, fLeader]);
+
   // Table filters (status multi-select + free text) over the scoped rows.
-  const filtered = useMemo(() => {
+  const tableFilterPred = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return scoped.filter((r) => {
+    return (r) => {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
       if (q) {
         const hit =
@@ -612,8 +628,13 @@ export default function Tasks() {
         if (!hit) return false;
       }
       return true;
-    });
-  }, [scoped, search, statusSel]);
+    };
+  }, [search, statusSel]);
+
+  const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
+  const chartFiltered = useMemo(
+    () => (chartScoped === scoped ? null : chartScoped.filter(tableFilterPred)),
+    [chartScoped, scoped, tableFilterPred]);
 
   const today = localTodayIso();
   const isOverdue = (r) => r.status !== "done" && r.due_date && r.due_date < today;
