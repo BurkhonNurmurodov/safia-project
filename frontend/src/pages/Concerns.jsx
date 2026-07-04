@@ -1135,20 +1135,16 @@ export default function Concerns() {
 
       {/* Create / edit modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={closeModal}>
-          <div
-            className="rounded-2xl w-full max-w-lg flex flex-col overflow-hidden"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "90vh" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-              <div className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>
-                {form.id ? t("concerns.editTitle") : t("concerns.addTitle")}
-              </div>
-              <button onClick={closeModal} style={{ color: "var(--text-3)" }} className="hover:text-red-400 transition-colors"><X size={18} /></button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-4 space-y-3" style={{ flex: "1 1 auto", minHeight: 0 }}>
+        <Modal
+          onClose={closeModal}
+          title={form.id ? t("concerns.editTitle") : t("concerns.addTitle")}
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeModal}>{t("concerns.cancel")}</Button>
+              <Button loading={saveMutation.isPending} onClick={submit}>{t("concerns.save")}</Button>
+            </>
+          }
+        >
               {/* Who the concern belongs to (fixed on edit — ownership is never
                   reassigned): admin/shift-manager cascade supervisor → leader,
                   a supervisor picks straight from their own leaders. */}
@@ -1269,61 +1265,21 @@ export default function Concerns() {
                   <AlertTriangle size={13} /> {formError}
                 </div>
               )}
-            </div>
-
-            <div className="px-5 py-4 flex-shrink-0 flex gap-2" style={{ borderTop: "1px solid var(--border)" }}>
-              <button
-                onClick={submit}
-                disabled={saveMutation.isPending}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white disabled:opacity-40 transition-colors"
-              >
-                {saveMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-                {t("concerns.save")}
-              </button>
-              <button onClick={closeModal} className="px-4 py-2 rounded-lg text-sm" style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-                {t("concerns.cancel")}
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Delete confirm */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setConfirmDelete(null)}>
-          <div className="rounded-2xl w-full max-w-sm p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={18} className="text-red-400" />
-              <div className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>{t("concerns.deleteTitle")}</div>
-            </div>
-            <div className="text-xs mb-4" style={{ color: "var(--text-3)" }}>{t("concerns.deleteConfirm")}</div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => deleteMutation.mutate(confirmDelete.id)}
-                disabled={deleteMutation.isPending}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-red-500/90 hover:bg-red-500 text-white disabled:opacity-40 transition-colors"
-              >
-                {deleteMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-                {t("concerns.delete")}
-              </button>
-              <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 rounded-lg text-sm" style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-                {t("concerns.cancel")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => deleteMutation.mutate(confirmDelete.id)}
+        title={t("concerns.deleteTitle")}
+        message={t("concerns.deleteConfirm")}
+        confirmLabel={t("concerns.delete")}
+        cancelLabel={t("concerns.cancel")}
+        tone="danger"
+        loading={deleteMutation.isPending}
+      />
     </Layout>
-  );
-}
-
-function Field({ label, required, children }) {
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--text-3)" }}>
-        {label}{required && <span className="text-red-400"> *</span>}
-      </div>
-      {children}
-    </div>
   );
 }
