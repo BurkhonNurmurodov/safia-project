@@ -50,9 +50,10 @@ export default function UsersManagement() {
     STATUS_FILTERS.includes(urlStatus) ? urlStatus : "all",
   );
   const [confirmDelete, setConfirmDelete] = useState(null); // {user, role} pending deletion
-  // Add-role modal: pick an existing user + a role to grant (approved on the spot)
+  // Add-role modal: pick an existing user + a role to grant (approved on the
+  // spot). Shift narrows the profile pickers, mirroring the registration flow.
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ userId: "", role: "supervisor", roleId: "" });
+  const [form, setForm] = useState({ userId: "", role: "supervisor", roleId: "", shift: "", supervisorId: "" });
   const [addError, setAddError] = useState("");
 
   const { data: users = [], isLoading, refetch } = useQuery({
