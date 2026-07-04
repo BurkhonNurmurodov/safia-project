@@ -149,3 +149,14 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Destructive context — stays red (e.g. workers' deletion document) */
 input[type="checkbox"].cb-danger { --cb-color: #ef4444; }
 input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,68,68,0.40); }
+
+/* ── Charts with self-styled (glassy) custom tooltips ─────────────────────────
+   ApexCharts wraps custom tooltip HTML in its own themed box (light background,
+   border, shadow), which rings the glassy container. Charts marked
+   .apx-bare-tip draw the tooltip container themselves, so strip the wrapper. */
+.apx-bare-tip .apexcharts-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}

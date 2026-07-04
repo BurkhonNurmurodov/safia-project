@@ -111,7 +111,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t }) {
 
 // ── DateRangePicker ───────────────────────────────────────────────────────────
 
-export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo, single = false }) {
+export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo, single = false, triggerClassName = "px-2.5 py-1.5 text-xs" }) {
   const { t } = useLang();
   const [open,     setOpen]     = useState(false);
   const [tempFrom, setTempFrom] = useState(dateFrom||"");
@@ -226,7 +226,7 @@ export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDate
       <button
         ref={triggerRef}
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
+        className={`flex items-center gap-2 rounded-lg transition-colors ${triggerClassName}`}
         style={{
           background: "var(--bg-inner)",
           border: `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,

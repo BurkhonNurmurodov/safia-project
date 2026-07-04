@@ -47,8 +47,6 @@ const tipHTML = (label, val, color) => `
 const TXT = {
   uz: {
     title: "Lider nazorati", avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr",
-    periodAll: "Barcha vaqt", periodToday: "Bugun", periodYesterday: "Kecha",
-    periodWeek: "Oxirgi 7 kun", periodCustom: "Boshqa oraliq…", to: "—",
     supervisor: "Brigadir", allSups: "Barcha brigadirlar", leader: "Lider", allLeaders: "Barcha liderlar",
     trend: "Bajarilish dinamikasi", taskTitle: "Vazifalar kesimida muvaffaqiyat",
     standing: "Liderlar reytingi", supStanding: "Brigadirlar reytingi",
@@ -68,8 +66,6 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
-    periodAll: "Барча вақт", periodToday: "Бугун", periodYesterday: "Кеча",
-    periodWeek: "Охирги 7 кун", periodCustom: "Бошқа оралиқ…", to: "—",
     supervisor: "Бригадир", allSups: "Барча бригадирлар", leader: "Лидер", allLeaders: "Барча лидерлар",
     trend: "Бажарилиш динамикаси", taskTitle: "Вазифалар кесимида муваффақият",
     standing: "Лидерлар рейтинги", supStanding: "Бригадирлар рейтинги",
@@ -89,8 +85,6 @@ const TXT = {
   },
   ru: {
     title: "Контроль лидеров", avgSuccess: "Средний успех", timePeriod: "Период",
-    periodAll: "За всё время", periodToday: "Сегодня", periodYesterday: "Вчера",
-    periodWeek: "Последние 7 дней", periodCustom: "Свой диапазон…", to: "—",
     supervisor: "Бригадир", allSups: "Все бригадиры", leader: "Лидер", allLeaders: "Все лидеры",
     trend: "Тренд выполнения", taskTitle: "Успех по задачам",
     standing: "Рейтинг лидеров", supStanding: "Рейтинг бригадиров",
@@ -110,8 +104,6 @@ const TXT = {
   },
   en: {
     title: "Leader Monitoring", avgSuccess: "Average Success", timePeriod: "Period",
-    periodAll: "All Time", periodToday: "Today", periodYesterday: "Yesterday",
-    periodWeek: "Last 7 Days", periodCustom: "Custom Range…", to: "—",
     supervisor: "Supervisor", allSups: "All Supervisors", leader: "Leader", allLeaders: "All Leaders",
     trend: "Completion Trend", taskTitle: "Success per Task",
     standing: "Leader Standings", supStanding: "Supervisor Standings",
@@ -155,6 +147,10 @@ const taskDetail = (i, lang) => {
 
 const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
+const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayISO = () => localISO(new Date());
+const isoShift = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); };
+const weekStartISO = (iso) => { const d = new Date(iso + "T00:00:00"); return isoShift(iso, -((d.getDay() + 6) % 7)); };
 
 // ── localized long-date formatter ("19th June, 2026" and its translations) ──────
 const MONTHS = {
@@ -325,9 +321,10 @@ export default function Leaders() {
   // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
   const isAdmin = auth?.role === "admin";
 
-  const [period, setPeriod] = useState("last-week");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Period — a concrete date range picked with the same control as the global
+  // filters (presets + calendar popover). Defaults to the last 7 days.
+  const [startDate, setStartDate] = useState(() => isoShift(todayISO(), -6));
+  const [endDate, setEndDate] = useState(() => todayISO());
   const [fSup, setFSup] = useState("All");
   const [fLeader, setFLeader] = useState("All");
   const [standMode, setStandMode] = useState("leader");
@@ -374,47 +371,72 @@ export default function Leaders() {
   const supervisors = useMemo(() => Object.keys(supLeaderMap).filter((s) => s !== "All").sort(), [supLeaderMap]);
   const leaderOptions = useMemo(() => [...(supLeaderMap[fSup] || [])].sort(), [supLeaderMap, fSup]);
 
-  // date-period bounds (mirrors updateDashboard in JavaScript.html)
-  const filtered = useMemo(() => {
-    const now = new Date();
-    const todayTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    let lo = 0, hi = Infinity;
-    if (period === "today") { lo = todayTs; hi = todayTs + DAY - 1; }
-    else if (period === "yesterday") { lo = todayTs - DAY; hi = todayTs - 1; }
-    else if (period === "last-week") { lo = todayTs - 7 * DAY; hi = now.getTime(); }
-    else if (period === "custom") {
-      if (startDate) lo = new Date(startDate).getTime();
-      if (endDate) hi = new Date(endDate).getTime() + DAY - 1;
-    }
-    return rows.filter((r) => {
-      const ts = new Date(r.date).getTime();
-      const dm = period === "all" || (ts >= lo && ts <= hi);
-      const sm = fSup === "All" || r.supervisor === fSup;
-      const lm = fLeader === "All" || r.leader === fLeader;
-      return dm && sm && lm;
-    });
-  }, [rows, period, startDate, endDate, fSup, fLeader]);
+  // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
+  const filtered = useMemo(() => rows.filter((r) => {
+    const d = String(r.date).slice(0, 10);
+    return (!startDate || d >= startDate) && (!endDate || d <= endDate)
+      && (fSup === "All" || r.supervisor === fSup)
+      && (fLeader === "All" || r.leader === fLeader);
+  }), [rows, startDate, endDate, fSup, fLeader]);
+
+  // The trend chart uses a window widened to at least the last 7 days (ending
+  // at the selected end date), so short periods still draw a meaningful line.
+  const trendFrom = useMemo(() => {
+    if (!endDate) return startDate;
+    const weekAgo = isoShift(endDate, -6);
+    return startDate && startDate < weekAgo ? startDate : weekAgo;
+  }, [startDate, endDate]);
+  const trendRows = useMemo(() => rows.filter((r) => {
+    const d = String(r.date).slice(0, 10);
+    return (!trendFrom || d >= trendFrom) && (!endDate || d <= endDate)
+      && (fSup === "All" || r.supervisor === fSup)
+      && (fLeader === "All" || r.leader === fLeader);
+  }), [rows, trendFrom, endDate, fSup, fLeader]);
 
   const hasData = filtered.length > 0;
 
-  // aggregates
-  const { avg, trendCats, trendVals, taskRates } = useMemo(() => {
-    if (!filtered.length) return { avg: 0, trendCats: [], trendVals: [], taskRates: [] };
-    const trendMap = {}; const taskCounts = new Array(12).fill(0); let total = 0;
+  // aggregates over the selected period (KPIs, task chart, standings, table)
+  const { avg, taskRates } = useMemo(() => {
+    if (!filtered.length) return { avg: 0, taskRates: [] };
+    const taskCounts = new Array(12).fill(0); let total = 0;
     for (const r of filtered) {
       total += r.completion;
-      (trendMap[r.date] ||= { sum: 0, n: 0 });
-      trendMap[r.date].sum += r.completion; trendMap[r.date].n++;
       (r.tasks || []).forEach((tk, i) => { if (tk.done) taskCounts[i]++; });
     }
-    const keys = Object.keys(trendMap).sort();
     return {
       avg: Math.round(total / filtered.length),
-      trendCats: keys.map(ddmm),
-      trendVals: keys.map((k) => Math.round(trendMap[k].sum / trendMap[k].n)),
       taskRates: taskCounts.map((c) => Math.round((c / filtered.length) * 100)),
     };
   }, [filtered]);
+
+  // Trend series — daily points for short windows; aggregates into weekly /
+  // monthly buckets as the span grows so the date axis stays readable.
+  const { trendCats, trendVals, trendTips } = useMemo(() => {
+    if (!trendRows.length) return { trendCats: [], trendVals: [], trendTips: [] };
+    const byDay = {};
+    for (const r of trendRows) {
+      const d = String(r.date).slice(0, 10);
+      (byDay[d] ||= { sum: 0, n: 0 });
+      byDay[d].sum += r.completion; byDay[d].n++;
+    }
+    const days = Object.keys(byDay).sort();
+    const span = Math.round((new Date(days[days.length - 1] + "T00:00:00") - new Date(days[0] + "T00:00:00")) / DAY) + 1;
+    const mode = span <= 31 ? "day" : span <= 180 ? "week" : "month";
+    const buckets = {};
+    for (const d of days) {
+      const key = mode === "day" ? d : mode === "week" ? weekStartISO(d) : d.slice(0, 7);
+      (buckets[key] ||= { sum: 0, n: 0 });
+      buckets[key].sum += byDay[d].sum; buckets[key].n += byDay[d].n;
+    }
+    const keys = Object.keys(buckets).sort();
+    const label = (k) => (mode === "month" ? `${k.slice(5, 7)}.${k.slice(0, 4)}` : ddmm(k));
+    return {
+      trendCats: keys.map(label),
+      trendVals: keys.map((k) => Math.round(buckets[k].sum / buckets[k].n)),
+      // weekly buckets get a full "start – end" range in the tooltip
+      trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
+    };
+  }, [trendRows]);
 
   const effStandMode = isSupervisor ? "leader" : standMode;
 
@@ -497,12 +519,13 @@ export default function Leaders() {
     colors: [C_TREND],
     stroke: { curve: "smooth", width: 3, lineCap: "round" },
     fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.02, stops: [0, 90, 100] } },
-    markers: { size: trendVals.length <= 16 ? 4 : 0, colors: ["#fff"], strokeColors: C_TREND, strokeWidth: 2, hover: { size: 6 } },
+    // clean spline: no static dot markers — a single marker surfaces on hover
+    markers: { size: 0, colors: ["#fff"], strokeColors: C_TREND, strokeWidth: 2, hover: { size: 5 } },
     dataLabels: { enabled: false },
     grid: grid("y"),
-    xaxis: { categories: trendCats, labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
+    xaxis: { categories: trendCats, tickAmount: trendCats.length > 14 ? 12 : undefined, labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false } },
     yaxis: { min: 0, max: 100, tickAmount: 4, labels: { ...axisLabel, formatter: (v) => Math.round(v) } },
-    tooltip: { custom: ({ dataPointIndex }) => tipHTML(trendCats[dataPointIndex] ?? "", `${trendVals[dataPointIndex]}%`, C_TREND) },
+    tooltip: { custom: ({ dataPointIndex }) => tipHTML(trendTips[dataPointIndex] ?? "", `${trendVals[dataPointIndex]}%`, C_TREND) },
   };
 
   // Per-task bars — rounded tops, vertical gradient (lighter top → darker base),
@@ -546,27 +569,16 @@ export default function Leaders() {
       {/* Filters + admin refresh */}
       <div className="flex flex-wrap items-start gap-3 mb-3">
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 flex-1 min-w-[260px]`}>
-        {/* Period */}
+        {/* Period — same range picker as the global filters (presets + calendar) */}
         <div>
           <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
-          <StyledSelect value={period} onChange={setPeriod}
-            options={[
-              { value: "all", label: T.periodAll },
-              { value: "today", label: T.periodToday },
-              { value: "yesterday", label: T.periodYesterday },
-              { value: "last-week", label: T.periodWeek },
-              { value: "custom", label: T.periodCustom },
-            ]} />
-          {period === "custom" && (
-            <div className="mt-2">
-              <DateRangePicker
-                dateFrom={startDate}
-                dateTo={endDate}
-                setDateFrom={setStartDate}
-                setDateTo={setEndDate}
-              />
-            </div>
-          )}
+          <DateRangePicker
+            dateFrom={startDate}
+            dateTo={endDate}
+            setDateFrom={setStartDate}
+            setDateTo={setEndDate}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
         </div>
 
         {/* Supervisor — shift-managers / admins only; supervisors are locked to their own unit */}
@@ -668,12 +680,12 @@ export default function Leaders() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={TrendingUp} title={T.trend} />
-            <div className="px-3 pb-3 pt-1"><ReactApexChart type="area" series={[{ name: "%", data: trendVals }]} options={trendOptions} height={260} /></div>
+            <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="area" series={[{ name: "%", data: trendVals }]} options={trendOptions} height={260} /></div>
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
               right={<button onClick={() => setTaskInfo(true)} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
-            <div className="px-3 pb-3 pt-1"><ReactApexChart type="bar" series={[{ name: "%", data: taskRates }]} options={taskOptions} height={260} /></div>
+            <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: taskRates }]} options={taskOptions} height={260} /></div>
           </div>
         </div>
 
@@ -689,7 +701,7 @@ export default function Leaders() {
                   options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
               </div>
             } />
-          <div className="px-3 pb-3 pt-1"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
+          <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
         </div>
 
         {/* Recent submissions */}
