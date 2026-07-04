@@ -184,26 +184,6 @@ function ActionBtn({ icon: Icon, label, color, onClick }) {
   );
 }
 
-// Sortable, icon-led column header — brand-tinted glyph + label + sort state.
-function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
-  const active = sort.key === k;
-  const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
-  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
-  return (
-    <th className={`font-medium px-3 py-2 select-none whitespace-nowrap ${alignCls} ${cls}`}>
-      <button
-        type="button" onClick={() => onSort(k)}
-        className={`group inline-flex items-center gap-1.5 transition-colors ${justify}`}
-        style={{ color: active ? "var(--text-1)" : "inherit" }}
-      >
-        {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
-        <span>{label}</span>
-        <SortIcon active={active} dir={sort.dir} />
-      </button>
-    </th>
-  );
-}
-
 // ── rich KPI card primitives ────────────────────────────────────────────────
 // Card shell: tinted icon chip + uppercase label pinned top, body (subject
 // headline + compact metric) pinned bottom so cards align across the KPI row
