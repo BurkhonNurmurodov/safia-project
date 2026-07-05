@@ -339,8 +339,10 @@ export default function Concerns() {
   // Production/Staff tables) — status + owner multi-selects, deadline-day range.
   const [statusSel, setStatusSel] = useState([]);       // [] = all statuses
   const [ownerSel, setOwnerSel] = useState([]);         // [] = all owners
+  const [levelSel, setLevelSel] = useState([]);         // [] = all levels
   const [deadlineMin, setDeadlineMin] = useState("");
   const [deadlineMax, setDeadlineMax] = useState("");
+  const [onlyMyLevel, setOnlyMyLevel] = useState(false); // toolbar toggle (chain roles), default OFF
   const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
 
   const [expandedId, setExpandedId] = useState(null);   // row whose action bar is open
@@ -348,6 +350,15 @@ export default function Concerns() {
   const [form, setForm] = useState(emptyForm());
   const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
+
+  // Escalation UI: the uplift/send-back modal ({ row, direction }) with its
+  // mandatory reason (+ top-manager pick on the last up-step), and the
+  // per-concern history modal.
+  const [escalate, setEscalate] = useState(null);       // { row, direction: "up"|"down" } | null
+  const [escReason, setEscReason] = useState("");
+  const [escTop, setEscTop] = useState(null);           // top-manager profile_id (up from shift-manager)
+  const [escError, setEscError] = useState("");
+  const [historyRow, setHistoryRow] = useState(null);   // row whose escalation trail is open
 
   // Create-cascade picker sources (both backend-scoped to the caller's role):
   // supervisors of the caller's scope, then every pre-created leader profile
