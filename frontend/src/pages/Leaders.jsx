@@ -541,39 +541,56 @@ export default function Leaders() {
     <Layout title={T.title} showFilters={false}>
       {/* Filters + admin refresh */}
       <div className="flex flex-wrap items-start gap-3 mb-3">
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 flex-1 min-w-[260px]`}>
-        {/* Period — same range picker as the global filters (presets + calendar) */}
-        <div>
-          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
-          <DateRangePicker
-            dateFrom={startDate}
-            dateTo={endDate}
-            setDateFrom={setStartDate}
-            setDateTo={setEndDate}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
+      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
+        {/* Period — same range picker as the global filters (presets + calendar).
+            Mobile: full row, labels hidden (controls are self-describing), admin
+            refresh collapses to an icon button beside the picker. */}
+        <div className="col-span-2 sm:col-span-1 flex items-end gap-2">
+          <div className="flex-1 min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
+            <DateRangePicker
+              dateFrom={startDate}
+              dateTo={endDate}
+              setDateFrom={setStartDate}
+              setDateTo={setEndDate}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+          {isAdmin && (
+            <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
+              aria-label={T.refresh} title={T.refresh}
+              className="sm:hidden flex-shrink-0 p-2.5 rounded-lg transition-colors"
+              style={justSynced
+                ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
+                : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
+              {refreshMut.isPending ? <Loader2 size={16} className="animate-spin" />
+                : justSynced ? <CheckCircle2 size={16} />
+                : <RefreshCw size={16} />}
+            </button>
+          )}
         </div>
 
         {/* Supervisor — shift-managers / admins only; supervisors are locked to their own unit */}
         {!isSupervisor && (
-          <div>
-            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
             <StyledSelect value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}
               options={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s) }))]} />
           </div>
         )}
 
-        {/* Leader */}
-        <div>
-          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
+        {/* Leader — takes the full row on mobile when it is the only select */}
+        <div className={`min-w-0 ${isSupervisor ? "col-span-2 sm:col-span-1" : ""}`}>
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
           <StyledSelect value={fLeader} onChange={setFLeader}
             options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
         </div>
       </div>
 
-      {/* Re-sync the leaders sheet without leaving the page (admins only) */}
+      {/* Re-sync the leaders sheet without leaving the page (admins only, sm+ —
+          on mobile the icon button next to the date picker replaces this) */}
       {isAdmin && (
-        <div className="flex-shrink-0">
+        <div className="hidden sm:block flex-shrink-0">
           <div className="text-[10px] font-semibold block mb-1 select-none" aria-hidden="true">&nbsp;</div>
           <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
