@@ -1226,8 +1226,17 @@ export default function Concerns() {
                             label={statusLabel(r.status)}
                             statusLabel={statusLabel}
                             saving={savingStatusId === r.id}
-                            disabled={readOnly}
+                            disabled={!r.can_edit}
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
+                          />
+                        </td>
+                        {/* Escalation level — top-level rows carry the assigned
+                            top-manager's name as a tooltip (row heights stay uniform) */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <LevelChip
+                            level={r.level || "leader"}
+                            label={levelLabel(r.level || "leader")}
+                            title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
                           />
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
