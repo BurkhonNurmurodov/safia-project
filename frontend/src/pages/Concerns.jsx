@@ -374,6 +374,16 @@ export default function Concerns() {
     enabled: canPickLeader,
   });
 
+  // Top-manager profiles for the shift-manager → top-management uplift step —
+  // fetched only once that step's modal is actually open.
+  const needsTopPick =
+    escalate?.direction === "up" && (escalate?.row?.level || "leader") === "shift-manager";
+  const { data: topManagers = [] } = useQuery({
+    queryKey: ["concern-top-managers"],
+    queryFn: () => api.get("/api/concerns/top-managers").then((r) => r.data),
+    enabled: needsTopPick,
+  });
+
   // Concern list ─────────────────────────────────────────────────────────────
   // The backend returns only the caller's scope (admin/top-manager: all,
   // shift-manager: their shift, supervisor: their unit, leader: own rows);
