@@ -27,4 +27,45 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Imunify360 WebShield (ahost's anti-bot layer) can intercept /api calls
+// mid-session and answer with its challenge page (HTML, or a bare 415 from
+// openresty) instead of JSON. An XHR can't solve the JS challenge, so:
+// retry twice with backoff (covers transient graylisting), then reload the
+// page once per session so the document-level challenge can re-complete.
+const isWebShieldResponse = (resp) => {
+  if (!resp || !String(resp.config?.url || "").startsWith("/api")) return false;
+  if (resp.status === 415) return true;
+  return String(resp.headers?.["content-type"] || "").includes("text/html");
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function retryAfterWebShield(config, response) {
+  const attempt = (config._wsAttempt || 0) + 1;
+  if (attempt <= 2) {
+    await sleep(1500 * attempt);
+    return api({ ...config, _wsAttempt: attempt });
+  }
+  if (!sessionStorage.getItem("ws_reloaded")) {
+    sessionStorage.setItem("ws_reloaded", "1");
+    window.location.reload();
+    return new Promise(() => {}); // page is going away — never settle
+  }
+  const err = new Error("Hosting anti-bot challenge blocked the API request");
+  err.response = response;
+  err.config = config;
+  throw err;
+}
+
+api.interceptors.response.use(
+  (response) =>
+    isWebShieldResponse(response)
+      ? retryAfterWebShield(response.config, response)
+      : response,
+  (error) =>
+    isWebShieldResponse(error.response)
+      ? retryAfterWebShield(error.config, error.response)
+      : Promise.reject(error)
+);
+
 export default api;
