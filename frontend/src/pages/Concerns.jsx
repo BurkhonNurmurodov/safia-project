@@ -29,6 +29,20 @@ import { padChartFrom } from "../utils/chartRange";
 
 const STATUSES = ["todo", "doing", "done"];
 
+// Escalation chain, bottom → top. A concern starts at "leader" and is uplifted
+// one step at a time by whoever can't solve it (see the uplift/send-back
+// actions); the level column shows who currently holds it.
+const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
+
+// Level → identity hue (never traffic-light — level is a position, not a
+// status): grey → teal → blue → violet as the concern climbs the chain.
+const LEVEL_COLOR = {
+  leader: "#94a3b8",
+  supervisor: "#14b8a6",
+  "shift-manager": "#3b82f6",
+  "top-manager": "#8b5cf6",
+};
+
 // status → traffic-light tint from the admin-panel palette. Not-started stays
 // neutral grey on purpose (a project exists but no process yet):
 // todo grey · doing yellow · done green (overdue red lives in the charts).
