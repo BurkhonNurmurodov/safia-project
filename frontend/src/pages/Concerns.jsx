@@ -1416,7 +1416,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setEscalate(null)}
           title={escalate.direction === "up" ? t("concerns.upliftTitle") : t("concerns.sendBackTitle")}
-          subtitle={tl(escalate.row.concern_text)}
+          subtitle={tl(escalate.row.concern_text || "").slice(0, 90)}
           icon={escalate.direction === "up" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
           footer={
             <>
