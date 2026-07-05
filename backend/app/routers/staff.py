@@ -284,6 +284,16 @@ _TASK_STATUS_LABELS = {
     "done":  {"uz": "Bajarildi",         "uz_cyrl": "Бажарилди",        "ru": "Выполнено",    "en": "Done"},
 }
 
+# Concern escalation-level labels — resolved from the raw ``concern_level``
+# param at view time (same mechanism as task_status). Wording matches the
+# concerns page's level pills.
+_CONCERN_LEVEL_LABELS = {
+    "leader":        {"uz": "Lider",           "uz_cyrl": "Лидер",           "ru": "Лидер",            "en": "Leader"},
+    "supervisor":    {"uz": "Brigadir",        "uz_cyrl": "Бригадир",        "ru": "Бригадир",         "en": "Supervisor"},
+    "shift-manager": {"uz": "Smena menejeri",  "uz_cyrl": "Смена менежери",  "ru": "Сменный менеджер", "en": "Shift manager"},
+    "top-manager":   {"uz": "Top-menejment",   "uz_cyrl": "Топ-менежмент",   "ru": "Топ-менеджмент",   "en": "Top management"},
+}
+
 
 def _fmt_date(d, lang: str) -> str:
     if isinstance(d, str):
