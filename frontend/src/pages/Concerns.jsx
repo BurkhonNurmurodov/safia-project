@@ -813,6 +813,14 @@ export default function Concerns() {
       ),
     },
     {
+      key: "level", icon: Layers, label: t("concerns.colLevel"),
+      active: levelSel.length > 0,
+      display: `${levelSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={LEVELS} sel={levelSel} onChange={setLevelSel} render={(l) => levelLabel(l)} />
+      ),
+    },
+    {
       key: "deadline", icon: Clock, label: t("concerns.colDeadline"),
       active: deadlineActive,
       display: `${deadlineMin || "0"}–${deadlineMax || "∞"}`,
@@ -822,9 +830,12 @@ export default function Concerns() {
     },
   ];
   const filterActiveCount =
-    (statusSel.length > 0 ? 1 : 0) + (ownerSel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
+    (statusSel.length > 0 ? 1 : 0) + (ownerSel.length > 0 ? 1 : 0) +
+    (levelSel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
   const anyFilterActive = filterActiveCount > 0;
-  const clearAllFilters = () => { setStatusSel([]); setOwnerSel([]); setDeadlineMin(""); setDeadlineMax(""); };
+  const clearAllFilters = () => {
+    setStatusSel([]); setOwnerSel([]); setLevelSel([]); setDeadlineMin(""); setDeadlineMax("");
+  };
 
   // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
   // Category axis over the pre-built day list (one point per day) keeps the
