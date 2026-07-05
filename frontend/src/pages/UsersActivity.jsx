@@ -521,24 +521,27 @@ export default function UsersActivity() {
             </div>
           )}
 
-          {/* Users table */}
-          <section className="rounded-2xl overflow-hidden" style={cardStyle}>
-            <SectionHead icon={Users}
-              title={<span className="flex items-center gap-2">{T.secTable}
-                <span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({rows.length})</span></span>}
-              right={
-                <SearchInput
-                  value={search}
-                  onChange={setSearch}
-                  placeholder={T.searchPh}
-                  className="w-48"
-                  inputClassName="text-xs pl-8 pr-7 py-1.5"
-                />
-              } />
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          {/* Users table — canonical POSITIONS-style TableCard with per-column sort. */}
+          <TableCard
+            icon={Users}
+            title={T.secTable}
+            right={
+              <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                {rows.length}
+              </span>
+            }
+            toolbar={
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder={T.searchPh}
+                className="w-48"
+                inputClassName="text-xs pl-8 pr-7 py-1.5"
+              />
+            }
+          >
                 <thead>
-                  <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                  <tr>
                     <Th icon={CircleUserRound} label={T.colUser} k="user" sort={sort} onSort={onSort} />
                     <Th icon={Shield} label={T.colRole} k="role" sort={sort} onSort={onSort} cls="hidden sm:table-cell" />
                     <Th icon={CalendarClock} label={T.colJoined} k="joined" sort={sort} onSort={onSort} cls="hidden lg:table-cell" />
@@ -587,9 +590,7 @@ export default function UsersActivity() {
                     <tr><td colSpan={8} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{search ? T.noMatch : T.emptyTitle}</td></tr>
                   )}
                 </tbody>
-              </table>
-            </div>
-          </section>
+          </TableCard>
         </div>
       )}
     </Layout>
