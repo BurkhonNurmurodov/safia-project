@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Users, Check, X, RefreshCw, Loader2, Trash2, Plus,
+  Users, Check, X, RefreshCw, Trash2, Plus,
 } from "lucide-react";
 import api from "../../utils/api";
 import Modal from "../../components/ui/Modal";
