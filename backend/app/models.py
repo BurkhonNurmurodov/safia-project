@@ -644,9 +644,38 @@ class LeaderConcern(Base):
     # day-grained.
     done_at             = Column(DateTime(timezone=True), nullable=True)
     solution            = Column(Text, nullable=True)             # Решение
+    # Escalation level — who currently holds the concern. Every concern starts
+    # at "leader"; each level uplifts one step when they can't solve it:
+    # leader → supervisor → shift-manager → top-manager. The handler at the
+    # current level AND everyone above it in the chain keep edit rights; levels
+    # below turn read-only (see _assert_can_edit in routers/concerns.py).
+    level               = Column(String, nullable=False, server_default="leader")
+    # Top-management is person-specific: the shift-manager picks ONE top-manager
+    # profile on the last uplift step; only that person (plus admin) may act.
+    # Cleared when the concern is sent back down.
+    top_manager_profile_id = Column(Integer, nullable=True)
+    top_manager_name       = Column(String, nullable=True)        # snapshot of the chosen top-manager
     created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
     updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ConcernEscalation(Base):
+    """One uplift / send-back event on a concern — the escalation trail shown in
+    the history modal. ``reason`` is mandatory ("why I can't solve this");
+    ``target_name`` carries the chosen top-manager on shift-manager → top steps."""
+    __tablename__ = "concern_escalations"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    concern_id  = Column(Integer, nullable=False, index=True)     # leader_concerns.id
+    from_level  = Column(String, nullable=False)
+    to_level    = Column(String, nullable=False)
+    reason      = Column(Text, nullable=False)
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    actor_name  = Column(String, nullable=True)                   # snapshot of the escalator's name
+    actor_role  = Column(String, nullable=True)
+    target_name = Column(String, nullable=True)                   # chosen top-manager (top step only)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class LeaderTask(Base):
