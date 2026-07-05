@@ -287,6 +287,10 @@ const isoMinusDays = (iso, n) => {
   d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
+const isoPlusDays = (iso, n) => isoMinusDays(iso, -n);
+// Whole days from b to a (positive when a is later) — deadline countdowns.
+const isoDiffDays = (a, b) =>
+  Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
 const emptyForm = () => ({
   id: null,
   brigadir_id: null,        // create cascade (admin/shift-manager): chosen unit
