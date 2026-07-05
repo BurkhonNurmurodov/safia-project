@@ -419,6 +419,26 @@ def list_leader_profiles(
     return out
 
 
+@router.get("/top-managers")
+def list_top_manager_profiles(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Target list for the shift-manager → top-management uplift step: every
+    pre-created top-manager profile (claimed or not — the bell row queues on an
+    unclaimed profile and is inherited on registration)."""
+    if payload.get("role") not in ("admin", "shift-manager"):
+        raise HTTPException(status_code=403, detail="Admin or shift-manager only")
+    claimed = {
+        r.role_id
+        for r in db.query(TelegramUserRole).filter_by(role="top-manager", status="approved").all()
+    }
+    return [
+        {"profile_id": p.id, "name": p.name, "registered": p.id in claimed}
+        for p in db.query(RoleProfile).filter_by(role="top-manager").order_by(RoleProfile.name).all()
+    ]
+
+
 @router.get("/cell-codes")
 def list_cell_codes(
     leader_profile_id: Optional[int] = Query(default=None),
