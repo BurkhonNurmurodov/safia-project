@@ -334,6 +334,31 @@ def add_concern_done_at() -> None:
         db.close()
 
 
+def add_concern_level_columns() -> None:
+    """Concern escalation rollout: ``level`` is who currently holds the concern
+    (leader → supervisor → shift-manager → top-manager; every existing row is a
+    leader-level concern), plus the person-specific top-management assignment.
+    The concern_escalations history table itself comes from create_all."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS "
+            "level VARCHAR NOT NULL DEFAULT 'leader'"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS top_manager_profile_id INTEGER"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS top_manager_name VARCHAR"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern level columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def backfill_concern_profiles() -> None:
     """Point every legacy concern (keyed only by the leader's role row) at the
     leader's profile: role row → (unit, canonical name) → role_profiles.
