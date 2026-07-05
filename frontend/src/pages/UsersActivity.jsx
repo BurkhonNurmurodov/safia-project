@@ -221,26 +221,6 @@ function AvatarStack({ users, tl, emptyText }) {
   );
 }
 
-function SortIcon({ active, dir }) {
-  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
-  return <Icon size={11} style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />;
-}
-const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
-function Th({ icon: Icon, label, k, sort, onSort, align = "left", cls = "" }) {
-  const active = sort.key === k;
-  return (
-    <th className={`font-medium px-4 py-2 select-none ${cls}`} style={{ ...cellB, textAlign: align }}>
-      <button type="button" onClick={() => onSort(k)}
-        className="group inline-flex items-center gap-1.5 transition-colors"
-        style={{ color: active ? "var(--text-1)" : "inherit" }}>
-        {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
-        <span>{label}</span>
-        <SortIcon active={active} dir={sort.dir} />
-      </button>
-    </th>
-  );
-}
-
 export default function UsersActivity() {
   const { lang, t } = useLang();
   const { tl } = useTranslit();
@@ -555,7 +535,7 @@ export default function UsersActivity() {
                 <tbody>
                   {rows.map((u) => (
                     <tr key={u.telegram_id}>
-                      <td className="px-4 py-2" style={cellB}>
+                      <td className="px-4 py-2">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 relative" style={{ background: nameToColor(u.full_name) }}>
                             {nameInitials(u.full_name)}
@@ -567,23 +547,23 @@ export default function UsersActivity() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2 hidden sm:table-cell" style={cellB}>
+                      <td className="px-4 py-2 hidden sm:table-cell">
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
                           style={{ background: hexA(ROLE_COLOR[u.role] || "#888", 0.14), color: ROLE_COLOR[u.role] || "var(--text-3)" }}>
                           {roleLabel(u.role)}
                         </span>
                       </td>
-                      <td className="px-4 py-2 hidden lg:table-cell tabular-nums" style={{ ...cellB, color: "var(--text-3)" }}>{fmtJoined(u.created_at)}</td>
-                      <td className="px-4 py-2 whitespace-nowrap" style={cellB}>
+                      <td className="px-4 py-2 hidden lg:table-cell tabular-nums" style={{ color: "var(--text-3)" }}>{fmtJoined(u.created_at)}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: u.online ? C_ONLINE : "var(--text-4)" }} />
                           <span style={{ color: u.online ? C_ONLINE : "var(--text-2)" }}>{u.online ? T.online : relTime(u.last_seen, T)}</span>
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums hidden md:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>{u.active_days}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-semibold" style={{ ...cellB, color: "var(--text-1)" }}>{fmtDur(u.total_minutes)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums hidden sm:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>{fmtDur(u.avg_minutes)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums hidden lg:table-cell" style={{ ...cellB, color: "var(--text-3)" }}>{u.event_count}</td>
+                      <td className="px-4 py-2 text-right tabular-nums hidden md:table-cell" style={{ color: "var(--text-2)" }}>{u.active_days}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmtDur(u.total_minutes)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-2)" }}>{fmtDur(u.avg_minutes)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums hidden lg:table-cell" style={{ color: "var(--text-3)" }}>{u.event_count}</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (
