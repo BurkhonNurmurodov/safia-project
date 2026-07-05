@@ -481,7 +481,7 @@ def _language(call: types.CallbackQuery):
         pass
 
     # Send register button as a ReplyKeyboard (required for sendData() to work)
-    bot.send_message(tid, _msg(lang, "welcome_new"), reply_markup=_webapp_register_kb(lang))
+    bot.send_message(tid, _msg(lang, "welcome_new"), reply_markup=_webapp_register_kb(lang, tid))
 
 
 @bot.message_handler(content_types=["web_app_data"])
