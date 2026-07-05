@@ -655,6 +655,7 @@ export default function Concerns() {
         case "deadline": return r.deadline_days;
         case "resolution": return r.resolution_minutes;
         case "status":   return STATUSES.indexOf(r.status);
+        case "level":    return LEVELS.indexOf(r.level || "leader");
         default:         return "";
       }
     };
