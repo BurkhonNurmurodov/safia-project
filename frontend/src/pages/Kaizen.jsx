@@ -12,6 +12,7 @@ import {
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
