@@ -886,10 +886,11 @@ export default function Tasks() {
   return (
     <Layout title={t("tasks.title")} showFilters={false}>
       {/* Filters — period + supervisor/leader cascade (role-scoped) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-        {/* Period — same range picker as the Leaders page (presets + calendar) */}
-        <div>
-          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 mb-3">
+        {/* Period — same range picker as the Leaders page (presets + calendar).
+            Mobile: full row + hidden labels; the two selects pair up below. */}
+        <div className="col-span-2 sm:col-span-1">
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
           <DateRangePicker
             dateFrom={startDate}
             dateTo={endDate}
@@ -900,8 +901,8 @@ export default function Tasks() {
         </div>
 
         {isAdmin && (
-          <div>
-            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
             <StyledSelect
               value={fSup}
               onChange={(v) => { setFSup(v); setFLeader("All"); }}
@@ -911,8 +912,8 @@ export default function Tasks() {
         )}
 
         {!isLeader && (
-          <div>
-            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colLeader")}</label>
+          <div className={`min-w-0 ${isAdmin ? "" : "col-span-2 sm:col-span-1"}`}>
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colLeader")}</label>
             <StyledSelect
               value={fLeader}
               onChange={setFLeader}
