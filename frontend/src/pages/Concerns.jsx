@@ -1410,6 +1410,119 @@ export default function Concerns() {
         </Modal>
       )}
 
+      {/* Uplift / send-back modal — one step along the chain, reason mandatory;
+          the shift-manager → top step additionally picks the exact top-manager. */}
+      {escalate && (
+        <Modal
+          onClose={() => setEscalate(null)}
+          title={escalate.direction === "up" ? t("concerns.upliftTitle") : t("concerns.sendBackTitle")}
+          subtitle={tl(escalate.row.concern_text)}
+          icon={escalate.direction === "up" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setEscalate(null)}>{t("concerns.cancel")}</Button>
+              <Button loading={escalateMutation.isPending} onClick={submitEscalate}>
+                {escalate.direction === "up" ? t("concerns.uplift") : t("concerns.sendBack")}
+              </Button>
+            </>
+          }
+        >
+          {/* current → new level */}
+          <Field label={t("concerns.newLevel")}>
+            <div className="flex items-center gap-2 py-1">
+              <LevelChip
+                level={escalate.row.level || "leader"}
+                label={levelLabel(escalate.row.level || "leader")}
+              />
+              <ArrowRight size={14} style={{ color: "var(--text-4)" }} />
+              {escTargetLevel && <LevelChip level={escTargetLevel} label={levelLabel(escTargetLevel)} />}
+            </div>
+          </Field>
+
+          {needsTopPick && (
+            <Field label={t("concerns.fieldTopManager")} required>
+              <StyledSelect
+                value={escTop ? String(escTop) : ""}
+                onChange={(v) => setEscTop(v ? Number(v) : null)}
+                options={topManagers.map((m) => ({
+                  value: String(m.profile_id),
+                  label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
+                }))}
+                placeholder={t("concerns.pickTopManager")}
+              />
+            </Field>
+          )}
+
+          <Field label={t("concerns.fieldReason")} required>
+            <textarea
+              value={escReason}
+              onChange={(e) => setEscReason(e.target.value)}
+              rows={3}
+              placeholder={t("concerns.reasonHint")}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+            />
+          </Field>
+
+          {escError && (
+            <div className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertTriangle size={13} /> {escError}
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* Escalation history modal — the trail lives here (not inline in the
+          table) so row heights stay uniform. */}
+      {historyRow && (
+        <Modal
+          onClose={() => setHistoryRow(null)}
+          title={t("concerns.historyTitle")}
+          subtitle={tl(historyRow.concern_text)}
+          icon={<History size={16} />}
+          footer={
+            <Button variant="secondary" onClick={() => setHistoryRow(null)}>{t("concerns.cancel")}</Button>
+          }
+        >
+          {historyLoading ? (
+            <div className="space-y-2">
+              <SkeletonBlock className="h-16 w-full" />
+              <SkeletonBlock className="h-16 w-full" />
+            </div>
+          ) : escHistory.length === 0 ? (
+            <div className="text-xs text-center py-6" style={{ color: "var(--text-4)" }}>
+              {t("concerns.historyEmpty")}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {escHistory.map((e) => (
+                <div
+                  key={e.id}
+                  className="rounded-lg p-3 space-y-1.5"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <LevelChip level={e.from_level} label={levelLabel(e.from_level)} />
+                    <ArrowRight size={12} style={{ color: "var(--text-4)" }} />
+                    <LevelChip level={e.to_level} label={levelLabel(e.to_level)} />
+                    {e.target_name && (
+                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{tl(e.target_name)}</span>
+                    )}
+                    <span className="ml-auto text-[10px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                      {fmtDateTime(e.created_at)}
+                    </span>
+                  </div>
+                  <div className="text-xs" style={{ color: "var(--text-1)" }}>{tl(e.reason)}</div>
+                  {e.actor_name && (
+                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{tl(e.actor_name)}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Delete confirm */}
       <ConfirmDialog
         open={!!confirmDelete}
