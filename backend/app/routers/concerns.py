@@ -577,7 +577,189 @@ def update_concern(
 
     db.commit()
     db.refresh(c)
-    return _serialize(c)
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id))
+
+
+def _esc_counts_for(db: Session, concern_id: int) -> dict:
+    n = db.query(func.count(ConcernEscalation.id)).filter(
+        ConcernEscalation.concern_id == concern_id
+    ).scalar() or 0
+    return {concern_id: n}
+
+
+def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[Optional[int], Optional[str]]]:
+    """(telegram_id, profile_key) pairs for whoever holds ``level`` on this
+    concern. telegram_id None = the profile is unclaimed — the bell row queues
+    on the profile (no DM) and is inherited when the profile is claimed."""
+    out: list[tuple[Optional[int], Optional[str]]] = []
+    if level == "leader":
+        tg = None
+        if c.leader_profile_id:
+            prof = db.query(RoleProfile).filter_by(id=c.leader_profile_id, role="leader").first()
+            if prof:
+                claimed = _claimed_role_row(db, prof)
+                tg = claimed.telegram_id if claimed else None
+        if tg is None and c.leader_role_ref:
+            row = db.query(TelegramUserRole).filter_by(
+                id=c.leader_role_ref, status="approved",
+            ).first()
+            tg = row.telegram_id if row else None
+        out.append((tg, _profile_key("leader", c.leader_profile_id)))
+    elif level == "supervisor":
+        if c.brigadir_manager_id:
+            sup = _find_supervisor(db, c.brigadir_manager_id)
+            out.append((sup.telegram_id if sup else None,
+                        _profile_key("supervisor", c.brigadir_manager_id)))
+    elif level == "shift-manager":
+        mgr = db.query(Manager).filter_by(id=c.brigadir_manager_id).first() if c.brigadir_manager_id else None
+        if mgr:
+            claimed = {
+                r.role_id: r.telegram_id
+                for r in db.query(TelegramUserRole).filter_by(
+                    role="shift-manager", status="approved",
+                ).all()
+            }
+            for p in db.query(RoleProfile).filter_by(role="shift-manager", shift=mgr.shift).all():
+                out.append((claimed.get(p.id), _profile_key("shift-manager", p.id)))
+    elif level == "top-manager":
+        if c.top_manager_profile_id:
+            row = db.query(TelegramUserRole).filter_by(
+                role="top-manager", role_id=c.top_manager_profile_id, status="approved",
+            ).first()
+            out.append((row.telegram_id if row else None,
+                        _profile_key("top-manager", c.top_manager_profile_id)))
+    return out
+
+
+class EscalateIn(BaseModel):
+    direction: str                              # "up" | "down"
+    reason: str
+    top_manager_profile_id: Optional[int] = None  # required on the shift-manager → top step
+
+
+@router.post("/{concern_id}/escalate")
+def escalate_concern(
+    concern_id: int,
+    body: EscalateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Move a concern one step up ("I can't solve this") or back down the
+    leader → supervisor → shift-manager → top-manager chain. Gated by the same
+    rights as editing; a reason is mandatory and the move lands in the
+    concern_escalations trail + the receiving handler's bell/DM."""
+    c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Concern not found")
+    _assert_can_edit(payload, c, db)
+
+    reason = (body.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A reason is required")
+    if c.status == "done":
+        raise HTTPException(status_code=400, detail="A resolved concern cannot be escalated")
+
+    cur = c.level or "leader"
+    idx = LEVEL_IDX.get(cur, 0)
+    if body.direction == "up":
+        if idx >= LEVEL_IDX["top-manager"]:
+            raise HTTPException(status_code=400, detail="Already at the top level")
+        new_level = LEVELS[idx + 1]
+        if new_level == "top-manager":
+            prof = db.query(RoleProfile).filter_by(
+                id=body.top_manager_profile_id or 0, role="top-manager",
+            ).first()
+            if not prof:
+                raise HTTPException(status_code=400, detail="Select a top-manager")
+            c.top_manager_profile_id = prof.id
+            c.top_manager_name = prof.name
+    elif body.direction == "down":
+        if idx <= 0:
+            raise HTTPException(status_code=400, detail="Already at the leader level")
+        new_level = LEVELS[idx - 1]
+        if cur == "top-manager":
+            c.top_manager_profile_id = None
+            c.top_manager_name = None
+    else:
+        raise HTTPException(status_code=400, detail="Invalid direction")
+
+    c.level = new_level
+    db.add(ConcernEscalation(
+        concern_id=c.id,
+        from_level=cur,
+        to_level=new_level,
+        reason=reason,
+        actor_telegram_id=int(payload["sub"]),
+        actor_name=payload.get("full_name"),
+        actor_role=payload.get("role"),
+        target_name=c.top_manager_name if new_level == "top-manager" else None,
+    ))
+    db.commit()
+    db.refresh(c)
+
+    # Tell whoever now holds the concern — level label renders per-viewer at
+    # view time (concern_level param), the actor is never notified, and one
+    # account never gets the DM twice however many profiles it holds.
+    author = int(payload["sub"])
+    snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+    reason_snip = reason if len(reason) <= 160 else reason[:157] + "…"
+    nkey = "concern_escalated" if body.direction == "up" else "concern_returned"
+    dmed: set[int] = set()
+    sent = False
+    for tg, prof_key in _level_recipients(db, c, new_level):
+        if tg == author:
+            continue
+        dm = tg is not None and tg not in dmed
+        if dm:
+            dmed.add(tg)
+        _notify(
+            db, tg, type="info", dm=dm, nkey=nkey,
+            params={
+                "actor_name": payload.get("full_name") or "",
+                "leader_name": c.leader_name,
+                "date": c.entry_date,
+                "reason": reason_snip,
+                "concern": snippet,
+                "concern_level": new_level,
+            },
+            profile=prof_key,
+        )
+        sent = True
+    if sent:
+        db.commit()
+
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id))
+
+
+@router.get("/{concern_id}/history")
+def concern_history(
+    concern_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Escalation trail for the history modal, newest first — readable by
+    anyone who can SEE the concern (scope-filtered, not edit-gated)."""
+    c = _scope_query(
+        db.query(LeaderConcern).filter(LeaderConcern.id == concern_id), payload, db,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Concern not found")
+    rows = db.query(ConcernEscalation).filter_by(concern_id=concern_id).order_by(
+        ConcernEscalation.id.desc()
+    ).all()
+    return [
+        {
+            "id": e.id,
+            "from_level": e.from_level,
+            "to_level": e.to_level,
+            "reason": e.reason,
+            "actor_name": e.actor_name,
+            "actor_role": e.actor_role,
+            "target_name": e.target_name,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in rows
+    ]
 
 
 @router.delete("/{concern_id}", status_code=204)
