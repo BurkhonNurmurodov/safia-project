@@ -483,9 +483,6 @@ export default function Leaders() {
   }, [filtered, tSearch, tBand, tSort, tl]);
 
   const toggleSort = (key) => setTSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
-  const sortArrow = (key) => tSort.key !== key ? null
-    : tSort.dir === "asc" ? <ArrowUpNarrowWide size={12} /> : <ArrowDownNarrowWide size={12} />;
-
   // colored score-band chips, matching the badge palette
   const BANDS = [
     { id: "all",  label: T.bandAll, color: "var(--brand)" },
