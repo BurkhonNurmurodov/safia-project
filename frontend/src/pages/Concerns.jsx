@@ -955,6 +955,125 @@ export default function Concerns() {
     } } },
   };
 
+  // Per-row action buttons — one source for the desktop expanded row and the
+  // expanded mobile card, so the two layouts always offer the same actions.
+  const rowActions = (r) => (
+    <>
+      {r.can_edit && (
+        <ActionBtn icon={Pencil} label={t("concerns.edit")} onClick={() => openEdit(r)} />
+      )}
+      {r.can_escalate && (
+        <ActionBtn icon={ArrowUp} label={t("concerns.uplift")} color="#3b82f6" onClick={() => openEscalate(r, "up")} />
+      )}
+      {r.can_deescalate && (
+        <ActionBtn icon={ArrowDown} label={t("concerns.sendBack")} color="#f59e0b" onClick={() => openEscalate(r, "down")} />
+      )}
+      {r.escalation_count > 0 && (
+        <ActionBtn icon={History} label={t("concerns.history")} onClick={() => setHistoryRow(r)} />
+      )}
+      {r.can_edit && (
+        <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
+      )}
+    </>
+  );
+
+  // Phone layout for the concern list — stacked cards in TableCard's `mobile`
+  // slot (Leaders-style); the 9-column table keeps rendering from `sm:` up.
+  // Same data, same tap-to-reveal actions, same inline-editable status pill.
+  const mobileList = (
+    <>
+      {isLoading && Array.from({ length: 4 }).map((_, i) => (
+        <div key={`sk-${i}`} className="p-3 space-y-2" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+          <SkeletonBlock className="h-4 w-1/2" />
+          <SkeletonBlock className="h-3 w-full" />
+          <SkeletonBlock className="h-3 w-2/3" />
+        </div>
+      ))}
+      {!isLoading && sorted.length === 0 && (
+        <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
+          {t("concerns.empty")}
+        </div>
+      )}
+      {!isLoading && sorted.map((r, i) => {
+        const expanded = expandedId === r.id;
+        const hasActions =
+          r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
+        return (
+          <div
+            key={r.id}
+            onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
+            className="p-3 flex flex-col gap-2"
+            style={{
+              ...(i ? { borderTop: "1px solid var(--border)" } : {}),
+              background: expanded ? "var(--bg-inner)" : "transparent",
+            }}
+          >
+            {/* owner + inline-editable status (tap must not toggle the card) */}
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+                {tl(r.concern_owner)}
+              </span>
+              <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <StatusSelect
+                  status={r.status}
+                  label={statusLabel(r.status)}
+                  statusLabel={statusLabel}
+                  saving={savingStatusId === r.id}
+                  disabled={!r.can_edit}
+                  onChange={(s) => statusMutation.mutate({ row: r, status: s })}
+                />
+              </span>
+            </div>
+
+            {/* concern text + solution */}
+            <div className="text-xs leading-snug" style={{ color: "var(--text-1)" }}>{tl(r.concern_text)}</div>
+            {r.solution && (
+              <div className="text-[11px]" style={{ color: "var(--text-3)" }}>✓ {tl(r.solution)}</div>
+            )}
+
+            {/* date · leader · brigadir */}
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]" style={{ color: "var(--text-4)" }}>
+              <span className="whitespace-nowrap">{fmtDate(r.entry_date, lang)}</span>
+              {showLeaderCol && r.leader_name && (
+                <span className="whitespace-nowrap">· {tl(r.leader_name)}</span>
+              )}
+              {r.brigadir_name && (
+                <span className="whitespace-nowrap">· {tl(r.brigadir_name)}</span>
+              )}
+            </div>
+
+            {/* level chip + deadline / resolution */}
+            <div className="flex items-center justify-between gap-2">
+              <LevelChip
+                level={r.level || "leader"}
+                label={levelLabel(r.level || "leader")}
+                title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
+              />
+              <div className="flex items-center gap-3 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                {r.deadline_days != null && (
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap" title={t("concerns.colDeadline")}>
+                    <Clock size={11} /> {r.deadline_days} {t(r.deadline_days === 1 ? "concerns.day" : "concerns.days")}
+                  </span>
+                )}
+                {r.resolution_minutes != null && (
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap" title={t("concerns.colResolution")}>
+                    <Timer size={11} /> {r.resolution_minutes.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {expanded && (
+              <div className="flex flex-wrap items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                {rowActions(r)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
       {/* Filters — period + brigadir + leader (mirrors the Leaders page). The
