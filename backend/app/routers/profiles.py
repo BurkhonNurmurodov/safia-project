@@ -43,6 +43,7 @@ from app.models import (
     Admin, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
     TelegramUserRole, Translation,
 )
+from app.reg_token import validate_reg_token
 from app.routers.admin import verify_admin
 from app.routers.auth import _validate_init_data
 
