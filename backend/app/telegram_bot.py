@@ -217,15 +217,20 @@ def _lang_kb() -> types.InlineKeyboardMarkup:
     return kb
 
 
-def _webapp_register_kb(lang: str) -> types.ReplyKeyboardMarkup:
+def _webapp_register_kb(lang: str, tid: int) -> types.ReplyKeyboardMarkup:
     """
     MUST be a ReplyKeyboardMarkup / KeyboardButton — sendData() only works
     when the WebApp is opened from a keyboard button, not an inline button.
+    Keyboard-button launches never receive initData (Telegram platform rule),
+    so the URL carries a bot-signed ?rt= token that unlocks the name lists
+    at /api/profiles/registration-options.
     """
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(types.KeyboardButton(
         _msg(lang, "register_btn"),
-        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}/login"),
+        web_app=types.WebAppInfo(
+            url=f"{settings.webapp_url.rstrip('/')}/login?rt={make_reg_token(tid)}"
+        ),
     ))
     return kb
 
