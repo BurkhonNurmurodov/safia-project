@@ -11,7 +11,7 @@ import StyledSelect from "../components/ui/StyledSelect";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
 import SearchInput from "../components/ui/SearchInput";
-import { Th } from "../components/ui/DataTable";
+import { SectionHead, Th } from "../components/ui/DataTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
