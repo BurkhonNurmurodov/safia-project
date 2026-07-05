@@ -536,6 +536,14 @@ export default function Concerns() {
     return (r) => {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
       if (ownerSel.length && !ownerSel.includes(r.concern_owner)) return false;
+      if (levelSel.length && !levelSel.includes(r.level || "leader")) return false;
+      // "My level only": concerns currently sitting on the viewer's step. For a
+      // top-manager that's the ones assigned to THEM (can_edit), not every
+      // top-level concern in the read-only global view.
+      if (onlyMyLevel && myLevel) {
+        if ((r.level || "leader") !== myLevel) return false;
+        if (role === "top-manager" && !r.can_edit) return false;
+      }
       if (dMin != null || dMax != null) {
         const d = r.deadline_days;
         if (d == null) return false;
