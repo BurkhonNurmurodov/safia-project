@@ -615,7 +615,7 @@ def update_concern(
 
     db.commit()
     db.refresh(c)
-    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id))
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id), _sm_names(db))
 
 
 def _esc_counts_for(db: Session, concern_id: int) -> dict:
@@ -766,7 +766,7 @@ def escalate_concern(
     if sent:
         db.commit()
 
-    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id))
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id), _sm_names(db))
 
 
 @router.get("/{concern_id}/history")
