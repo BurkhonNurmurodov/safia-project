@@ -116,18 +116,6 @@ const initNum  = (k, fb) => { const v = cacheGet(k); return v == null || v === "
 const initSet  = (k, fb) => { try { const v = cacheGet(k); return v == null ? fb : new Set(JSON.parse(v)); } catch { return fb; } };
 
 // ── small UI atoms (mirror Production.jsx idioms) ──────────────────────────────
-function SectionHead({ icon: Icon, title, right }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
-      </div>
-      {right}
-    </div>
-  );
-}
-
 function Toggle({ value, onChange, options }) {
   return (
     <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
