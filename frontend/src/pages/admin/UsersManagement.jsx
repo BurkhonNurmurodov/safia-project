@@ -152,79 +152,53 @@ export default function UsersManagement() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-8">
-      <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Users size={15} className="text-[var(--brand-text)]" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              {t("admin.users.title")}
-            </span>
-            <span className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400 font-mono">
-              {rows.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-              style={{ background: "var(--brand)" }}
-            >
-              <Plus size={13} /> {t("admin.users.addRole")}
-            </button>
-            <button
-              onClick={() => refetch()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-colors"
-            >
-              <RefreshCw size={12} /> {t("admin.refresh")}
-            </button>
-          </div>
-        </div>
-
-        {/* Status filter pills */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-5">
-          {[
-            ["all",      t("admin.users.filterAll"),              null],
-            ["pending",  t("admin.users.status.pending"),  countByStatus("pending")],
-            ["approved", t("admin.users.status.approved"), countByStatus("approved")],
-            ["rejected", t("admin.users.status.rejected"), countByStatus("rejected")],
-          ].map(([s, label, count]) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
-              style={
-                statusFilter === s
-                  ? { background: "var(--brand)", color: "#fff" }
-                  : { background: "rgba(255,255,255,0.05)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.08)" }
-              }
-            >
-              {label}
-              {count !== null && (
-                <span className="ml-0.5 px-1 rounded text-[10px] font-mono"
-                  style={{ background: statusFilter === s ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)" }}>
-                  {count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Table */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 size={24} className="text-[var(--brand-text)] animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
-            {t("admin.users.empty")}
-          </div>
-        ) : (
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs min-w-[700px]">
+      <TableCard
+        icon={Users}
+        title={t("admin.users.title")}
+        right={
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            {rows.length}
+          </span>
+        }
+        toolbar={
+          <>
+            {/* Status filter pills */}
+            {[
+              ["all",      t("admin.users.filterAll"),              null],
+              ["pending",  t("admin.users.status.pending"),  countByStatus("pending")],
+              ["approved", t("admin.users.status.approved"), countByStatus("approved")],
+              ["rejected", t("admin.users.status.rejected"), countByStatus("rejected")],
+            ].map(([s, label, count]) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+                style={
+                  statusFilter === s
+                    ? { background: "var(--brand)", color: "#fff" }
+                    : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }
+                }
+              >
+                {label}
+                {count !== null && (
+                  <span className="ml-0.5 px-1 rounded text-[10px] font-mono"
+                    style={{ background: statusFilter === s ? "rgba(255,255,255,0.2)" : "var(--bg-card)" }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" icon={<Plus size={13} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
+              <Button variant="secondary" size="sm" icon={<RefreshCw size={12} />} onClick={() => refetch()}>
+                {t("admin.refresh")}
+              </Button>
+            </div>
+          </>
+        }
+      >
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr>
                   {[
                     t("admin.users.colName"),
                     t("admin.users.colPhone"),
@@ -234,22 +208,25 @@ export default function UsersManagement() {
                     t("admin.users.colLastSeen"),
                     t("admin.users.colActions"),
                   ].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left py-2 px-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap"
-                    >
-                      {h}
-                    </th>
+                    <Th key={h} label={h} />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(({ user, role }) => (
-                  <tr
-                    key={`${user.id}-${role.id}`}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-                    className="hover:bg-white/[0.02] transition-colors"
-                  >
+                {isLoading && Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`sk-${i}`}>
+                    {Array.from({ length: 7 }).map((_, j) => (
+                      <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))}
+                {!isLoading && filtered.length === 0 && (
+                  <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                    {t("admin.users.empty")}
+                  </td></tr>
+                )}
+                {!isLoading && filtered.map(({ user, role }) => (
+                  <tr key={`${user.id}-${role.id}`}>
                     {/* Role-scoped display name (+ multi-role marker) */}
                     <td className="py-2.5 px-3 font-medium text-gray-200 whitespace-nowrap">
                       {tl(role.full_name || user.full_name) || "—"}
@@ -347,10 +324,7 @@ export default function UsersManagement() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      </TableCard>
 
       {/* Add-role modal */}
       {addOpen && (
