@@ -204,6 +204,19 @@ function LevelChip({ level, label, title }) {
   );
 }
 
+// Labelled fact on a mobile concern card — every value gets a caption so
+// nobody has to guess which name is the leader and which is the brigadir.
+function MobField({ label, children }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+        {label}
+      </div>
+      <div className="text-xs break-words" style={{ color: "var(--text-1)" }}>{children}</div>
+    </div>
+  );
+}
+
 // Revealed-row action button (matches the Staff requests table's ActionBtn).
 function ActionBtn({ icon: Icon, label, color, onClick }) {
   return (
