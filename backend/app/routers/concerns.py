@@ -337,12 +337,23 @@ def list_concerns(
         else "leader" if role == "supervisor"
         else None
     )
+    # Per-viewer rights + history badge, resolved once for the whole page.
+    ctx = _viewer_ctx(db, payload)
+    esc_counts: dict = {}
+    ids = [r.id for r in rows]
+    if ids:
+        esc_counts = dict(
+            db.query(ConcernEscalation.concern_id, func.count(ConcernEscalation.id))
+            .filter(ConcernEscalation.concern_id.in_(ids))
+            .group_by(ConcernEscalation.concern_id)
+            .all()
+        )
     return {
         "role": role,
         "picker": picker,
         "read_only": role == "top-manager",
         "can_pick_leader": picker is not None,
-        "data": [_serialize(r) for r in rows],
+        "data": [_serialize(r, ctx, esc_counts) for r in rows],
     }
 
 
