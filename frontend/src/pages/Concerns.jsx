@@ -669,7 +669,7 @@ export default function Concerns() {
         if (bn) return -1;
         return (Number(va) - Number(vb)) * dir;
       }
-      if (sort.key === "status") return (va - vb) * dir;
+      if (sort.key === "status" || sort.key === "level") return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
     });
   }, [filtered, sort, tl]);
