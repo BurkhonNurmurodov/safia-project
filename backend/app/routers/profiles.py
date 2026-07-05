@@ -744,18 +744,25 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
 
 class RegistrationOptionsPayload(BaseModel):
     init_data: str
+    reg_token: Optional[str] = None  # bot-signed ?rt= from the register button
 
 
 @router.post("/registration-options")
 def registration_options(payload: RegistrationOptionsPayload, db: Session = Depends(get_db)):
-    """Name lists for the registration pickers. Requires valid Telegram
-    initData so only people who actually opened the bot's mini-app see them —
-    anonymous web visitors get 401 (per the privacy decision)."""
-    if not payload.init_data or payload.init_data == "__dev__":
-        if not settings.dev_auth:
-            raise HTTPException(status_code=401, detail="Missing Telegram initData")
-    elif not _validate_init_data(payload.init_data):
-        raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+    """Name lists for the registration pickers. Gated so anonymous web
+    visitors get 401 (per the privacy decision). Two accepted credentials:
+    Telegram initData (menu/inline/direct-link launches), or the bot-signed
+    reg_token — the register page opens from a keyboard button (required for
+    sendData()) and keyboard-button launches never receive initData."""
+    if payload.init_data and payload.init_data != "__dev__":
+        if not _validate_init_data(payload.init_data):
+            raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+    elif payload.reg_token:
+        if not validate_reg_token(payload.reg_token):
+            raise HTTPException(status_code=401,
+                                detail="Expired registration link — send /register to the bot again")
+    elif not settings.dev_auth:
+        raise HTTPException(status_code=401, detail="Missing Telegram initData")
 
     managers = (
         db.query(Manager)
