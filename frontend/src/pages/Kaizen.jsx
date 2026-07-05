@@ -243,32 +243,6 @@ function StatusPill({ status, T }) {
   );
 }
 
-// Sort affordance for the task-table headers — matches the Overview table:
-// clicking a header cycles asc → desc → off, with neutral chevrons until active.
-function SortIcon({ active, dir }) {
-  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ChevronUp : ChevronDown;
-  return <Icon size={11} className={active ? "" : "group-hover:opacity-80 transition-opacity"}
-    style={{ opacity: active ? 1 : 0.4, color: active ? "var(--brand-text)" : "inherit" }} />;
-}
-
-// Sortable, icon-led column header — brand-tinted glyph + label + sort state.
-function Th({ icon: Icon, label, k, sort, onSort, cls = "" }) {
-  const active = sort.key === k;
-  return (
-    <th className={`text-left font-medium px-4 py-2 select-none ${cls}`}>
-      <button
-        type="button" onClick={() => onSort(k)}
-        className="group inline-flex items-center gap-1.5 transition-colors"
-        style={{ color: active ? "var(--text-1)" : "inherit" }}
-      >
-        {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
-        <span>{label}</span>
-        <SortIcon active={active} dir={sort.dir} />
-      </button>
-    </th>
-  );
-}
-
 // Thin done/progress/todo stacked bar
 function MiniBar({ done, prog, todo }) {
   const total = Math.max(done + prog + todo, 1);
