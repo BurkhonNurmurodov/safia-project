@@ -214,7 +214,6 @@ const shortName = (full) => {
 };
 
 // Notion-style grid rule shared by every table cell (vertical + horizontal lines)
-const cellB = { borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" };
 
 // 'YYYY-MM' → short month label (for the activity area chart x-axis)
 const monthLabel = (key, opts) => {
