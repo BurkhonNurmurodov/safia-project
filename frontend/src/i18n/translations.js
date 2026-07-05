@@ -847,6 +847,8 @@ const t = {
     "login.search":          "Qidirish...",
     "login.notFound":        "Topilmadi",
     "login.loading":         "Yuklanmoqda...",
+    "login.loadError":       "Ro'yxatlarni yuklab bo'lmadi. Botga qaytib, /register buyrug'ini qaytadan yuboring.",
+    "login.retry":           "Qayta urinish",
     "login.back":            "Orqaga",
     "login.confirm":         "Tasdiqlash",
     "login.sent":            "Ma'lumotlar yuborildi. Telegram ga qayting.",
