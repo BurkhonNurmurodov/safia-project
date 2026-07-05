@@ -390,7 +390,7 @@ def list_concerns(
         "picker": picker,
         "read_only": role == "top-manager",
         "can_pick_leader": picker is not None,
-        "data": [_serialize(r, ctx, esc_counts) for r in rows],
+        "data": [_serialize(r, ctx, esc_counts, _sm_names(db)) for r in rows],
     }
 
 
