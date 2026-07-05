@@ -53,7 +53,7 @@ LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
 
 
-def _serialize(c: LeaderConcern) -> dict:
+def _serialize(c: LeaderConcern, ctx: Optional[dict] = None, esc_counts: Optional[dict] = None) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
         resolution_days = (c.completion_date - c.entry_date).days
@@ -62,7 +62,8 @@ def _serialize(c: LeaderConcern) -> dict:
     resolution_minutes = None
     if c.done_at and c.created_at:
         resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
-    return {
+    level = c.level or "leader"
+    out = {
         "id": c.id,
         "leader_profile_id": c.leader_profile_id,
         "leader_role_ref": c.leader_role_ref,
@@ -79,8 +80,21 @@ def _serialize(c: LeaderConcern) -> dict:
         "solution": c.solution,
         "resolution_days": resolution_days,
         "resolution_minutes": resolution_minutes,
+        "level": level,
+        "top_manager_profile_id": c.top_manager_profile_id,
+        "top_manager_name": c.top_manager_name,
+        "escalation_count": (esc_counts or {}).get(c.id, 0),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
+    # Per-row rights, computed for the requesting viewer (see _can_edit):
+    # escalation is one step at a time, blocked on resolved concerns.
+    if ctx is not None:
+        can = _can_edit(ctx, c)
+        lvl = LEVEL_IDX.get(level, 0)
+        out["can_edit"] = can
+        out["can_escalate"] = can and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
+        out["can_deescalate"] = can and c.status != "done" and lvl > 0
+    return out
 
 
 class ConcernIn(BaseModel):
