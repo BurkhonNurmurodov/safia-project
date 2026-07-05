@@ -119,6 +119,7 @@ def _serialize(
         "level": level,
         "top_manager_profile_id": c.top_manager_profile_id,
         "top_manager_name": c.top_manager_name,
+        "responsible_name": responsible,
         "escalation_count": (esc_counts or {}).get(c.id, 0),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
