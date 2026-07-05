@@ -19,6 +19,8 @@ or copy-paste its markup into a page.
 | Button | `Button.jsx` | Variants `primary/secondary/danger/ghost`, sizes `sm/md`; `loading` shows the spinner. |
 | Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
+| Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
+| Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
 | Loading | `Skeleton.jsx` blocks for page/section data loads; `Loader2` spinner inside buttons for actions | Never bare `…` / "Загрузка…" text. |
 
