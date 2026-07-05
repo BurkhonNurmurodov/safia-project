@@ -1173,6 +1173,7 @@ export default function Concerns() {
                   <Th icon={UserRound}     label={t("concerns.colOwner")}    k="owner"    sort={sort} onSort={onSort} />
                   <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
                   <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
+                  <Th icon={Layers}        label={t("concerns.colLevel")}    k="level"    sort={sort} onSort={onSort} />
                   <Th icon={Clock}         label={t("concerns.colDeadline")} k="deadline" sort={sort} onSort={onSort} align="center" />
                   <Th icon={Timer}         label={t("concerns.colResolution")} k="resolution" sort={sort} onSort={onSort} align="center" />
                 </tr>
@@ -1180,26 +1181,30 @@ export default function Concerns() {
               <tbody>
                 {isLoading && Array.from({ length: 6 }).map((_, i) => (
                   <tr key={`sk-${i}`}>
-                    {Array.from({ length: showLeaderCol ? 8 : 7 }).map((_, j) => (
+                    {Array.from({ length: showLeaderCol ? 9 : 8 }).map((_, j) => (
                       <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))}
                 {!isLoading && sorted.length === 0 && (
-                  <tr><td colSpan={showLeaderCol ? 8 : 7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  <tr><td colSpan={showLeaderCol ? 9 : 8} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                     {t("concerns.empty")}
                   </td></tr>
                 )}
                 {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
-                  const colSpan = showLeaderCol ? 8 : 7;
+                  const colSpan = showLeaderCol ? 9 : 8;
+                  // Per-row rights come from the backend (responsibility moves up
+                  // the chain): a row with no actions at all stays inert.
+                  const hasActions =
+                    r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
                   return (
                     <Fragment key={r.id}>
-                      {/* Click a row to reveal its Edit/Delete action bar (Staff-style);
-                          read-only viewers have no actions, so rows stay inert. */}
+                      {/* Click a row to reveal its action bar (Staff-style);
+                          rows the viewer can't act on stay inert. */}
                       <tr
-                        onClick={readOnly ? undefined : () => setExpandedId(expanded ? null : r.id)}
-                        className={`align-top ${readOnly ? "" : "cursor-pointer"}`}
+                        onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
+                        className={`align-top ${hasActions ? "cursor-pointer" : ""}`}
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
