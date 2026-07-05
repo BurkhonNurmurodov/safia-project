@@ -89,6 +89,16 @@ def _serialize(
     if c.done_at and c.created_at:
         resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
     level = c.level or "leader"
+    # Who answers for the concern right now — the level names a step in the
+    # chain, this names the person on that step: leader → the leader,
+    # supervisor → the brigadir, shift-manager → that unit's shift's
+    # manager(s), top-manager → the specifically assigned one.
+    responsible = (
+        c.leader_name if level == "leader"
+        else c.brigadir_name if level == "supervisor"
+        else (sm_names or {}).get(c.brigadir_manager_id) if level == "shift-manager"
+        else c.top_manager_name
+    )
     out = {
         "id": c.id,
         "leader_profile_id": c.leader_profile_id,
