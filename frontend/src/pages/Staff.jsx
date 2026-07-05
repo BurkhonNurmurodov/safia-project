@@ -13,6 +13,9 @@ import { SkeletonTable, SkeletonBlock } from "../components/ui/Skeleton";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
+import Modal from "../components/ui/Modal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -138,59 +141,36 @@ function isFilterActive(f) {
 
 function ExportModal({ filteredCount, totalCount, hasFilter, onExport, onClose, exporting }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", paddingTop: "var(--tg-safe-top, 0px)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-xs rounded-2xl p-6"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-        onClick={(e) => e.stopPropagation()}>
-        <div className="text-3xl text-center mb-3">📊</div>
-        <h2 className="text-sm font-semibold text-center mb-2" style={{ color: "var(--text-1)" }}>
-          Export to Excel
-        </h2>
-        {hasFilter ? (
-          <>
-            <p className="text-xs text-center mb-4" style={{ color: "var(--text-3)" }}>
-              You have active filters applied. What would you like to export?
-            </p>
-            <div className="space-y-2">
-              <button onClick={() => onExport(true)} disabled={exporting}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: "var(--brand)", color: "#fff" }}>
-                {exporting ? <span className="inline-flex items-center justify-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Sending…</span> : `Filtered rows (${filteredCount})`}
-              </button>
-              <button onClick={() => onExport(false)} disabled={exporting}
-                className="w-full py-2.5 rounded-xl text-sm"
-                style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" }}>
-                All rows ({totalCount})
-              </button>
-              <button onClick={onClose}
-                className="w-full py-1.5 text-xs" style={{ color: "var(--text-4)" }}>
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-xs text-center mb-4" style={{ color: "var(--text-3)" }}>
-              Export {totalCount} workers for this date and send to your Telegram chat?
-            </p>
-            <div className="flex gap-2">
-              <button onClick={onClose}
-                className="flex-1 py-2 rounded-xl text-sm"
-                style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-                Cancel
-              </button>
-              <button onClick={() => onExport(false)} disabled={exporting}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold"
-                style={{ background: "var(--brand)", color: "#fff" }}>
-                {exporting ? <span className="inline-flex items-center justify-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Sending…</span> : "Export & Send"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+    <Modal
+      onClose={onClose}
+      title="Export to Excel"
+      icon={<Download size={15} className="flex-shrink-0 text-[var(--brand-text)]" />}
+      maxWidth="max-w-sm"
+      footer={hasFilter ? (
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" size="sm" onClick={() => onExport(false)} disabled={exporting}>
+            All rows ({totalCount})
+          </Button>
+          <Button size="sm" loading={exporting} onClick={() => onExport(true)}>
+            Filtered rows ({filteredCount})
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" loading={exporting} onClick={() => onExport(false)}>
+            Export & Send
+          </Button>
+        </>
+      )}
+    >
+      <p className="text-xs" style={{ color: "var(--text-3)" }}>
+        {hasFilter
+          ? "You have active filters applied. What would you like to export?"
+          : `Export ${totalCount} workers for this date and send to your Telegram chat?`}
+      </p>
+    </Modal>
   );
 }
 
@@ -283,32 +263,27 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
     ? `${selected.size} ${t("staff.workerUnit")} → ${isAdmin ? t("staff.willBeDeleted") : t("staff.willBeRequested")}`
     : `0 ${t("staff.workerUnit")} → …`;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", paddingTop: "var(--tg-safe-top, 0px)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl flex flex-col overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "86vh",
-                 boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
-        onClick={(e) => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 flex-shrink-0"
-          style={{ borderBottom: "1px solid var(--border)" }}>
-          <div>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
-              {t("staff.deleteWorkers")} — {subtitle}
-            </h2>
-            <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {fmtDateLabel(date)} · {managerName}
-            </div>
+  return (
+    <Modal
+      onClose={onClose}
+      title={`${t("staff.deleteWorkers")} — ${subtitle}`}
+      subtitle={`${fmtDateLabel(date)} · ${managerName}`}
+      maxWidth="max-w-2xl"
+      bodyClassName="p-0 flex flex-col"
+      footer={
+        <>
+          <div className="mr-auto self-center text-sm"
+            style={{ color: saveError ? "#ef4444" : selected.size > 0 ? "#ef4444" : "var(--text-4)" }}>
+            {saveError || footerEffect}
           </div>
-          <button onClick={onClose} className="mt-0.5 transition-colors hover:text-white"
-            style={{ color: "var(--text-4)" }}>
-            <X size={18} />
-          </button>
-        </div>
-
+          <Button variant="secondary" onClick={onClose} disabled={saving}>{t("staff.cancel")}</Button>
+          <Button variant="danger" icon={<Trash2 size={13} />} loading={saving}
+            disabled={!selected.size} onClick={handleSave}>
+            {footerAction}
+          </Button>
+        </>
+      }
+    >
         {/* Search bar */}
         <div className="px-5 pt-3 pb-2 flex-shrink-0">
           <SearchInput
@@ -342,7 +317,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
         </div>
 
         {/* Worker list */}
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto flex-1 min-h-0">
           {isLoading ? (
             <div className="p-3 space-y-2">
               {Array.from({ length: 8 }).map((_, i) => <SkeletonBlock key={i} className="h-9 w-full" />)}
@@ -387,35 +362,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
           })}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-          style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="text-sm" style={{ color: saveError ? "#ef4444" : selected.size > 0 ? "#ef4444" : "var(--text-4)" }}>
-            {saveError || footerEffect}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              disabled={saving}
-              className="px-4 py-2 rounded-xl text-sm"
-              style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-            >
-              {t("staff.cancel")}
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!selected.size || saving}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity"
-              style={{ background: "#ef4444", color: "#fff", opacity: (!selected.size || saving) ? 0.45 : 1 }}
-            >
-              <Trash2 size={13} />
-              {saving ? "…" : footerAction}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 
@@ -1085,26 +1032,26 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-3xl rounded-2xl flex flex-col overflow-hidden max-h-[90dvh]"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
-        onClick={(e) => e.stopPropagation()}>
-        {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
-          <div>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
-              {isEdit ? t("staff.editRoleChange") : `${t("staff.roleChange")} — ${t("staff.newDocument")}`}
-            </h2>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
-              {fmtDateLabel(date)} · {tl(editDoc?.supervisor_name || attData?.manager_name || "")}
-            </p>
-          </div>
-          <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
-        </div>
-
+  return (
+    <Modal
+      onClose={onClose}
+      zIndex={100}
+      maxWidth="max-w-3xl"
+      title={isEdit ? t("staff.editRoleChange") : `${t("staff.roleChange")} — ${t("staff.newDocument")}`}
+      subtitle={`${fmtDateLabel(date)} · ${tl(editDoc?.supervisor_name || attData?.manager_name || "")}`}
+      bodyClassName="p-0 flex flex-col"
+      footer={
+        <>
+          <span className="mr-auto self-center text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
+            {error || `${selected.size} ${t("staff.employeesWord")} → ${newRole || "…"}`}
+          </span>
+          <Button variant="secondary" size="sm" onClick={onClose}>{t("staff.cancel")}</Button>
+          <Button size="sm" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
+            {isEdit ? t("staff.saveChanges") : t("staff.saveDocument")}
+          </Button>
+        </>
+      }
+    >
         {/* role picker */}
         <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.newRoleFor")}</span>
@@ -1173,25 +1120,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
           )}
         </div>
 
-        {/* footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-between gap-3 flex-shrink-0"
-          style={{ borderColor: "var(--border)", paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}>
-          <span className="text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
-            {error || `${selected.size} ${t("staff.employeesWord")} → ${newRole || "…"}`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="text-xs px-3 py-2 rounded-lg"
-              style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}>{t("staff.cancel")}</button>
-            <button onClick={handleSave} disabled={saving}
-              className="text-xs px-4 py-2 rounded-lg font-semibold flex items-center gap-1.5"
-              style={{ background: "var(--brand)", color: "#fff", opacity: saving ? 0.6 : 1 }}>
-              <Check size={13} /> {saving ? t("staff.saving") : (isEdit ? t("staff.saveChanges") : t("staff.saveDocument"))}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 
@@ -1458,27 +1387,27 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     }
   }
 
-  return createPortal(
+  return (
     <>
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-3xl rounded-2xl flex flex-col overflow-hidden max-h-[90dvh]"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
-        onClick={(e) => e.stopPropagation()}>
-        {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
-          <div>
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
-              {isEdit ? t("staff.editPeopleExchange") : `${t("staff.peopleExchange")} — ${t("staff.newDocument")}`}
-            </h2>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>
-              {fmtDateLabel(date)} · {tl(editDoc?.supervisor_name || attData?.manager_name || "")}
-            </p>
-          </div>
-          <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
-        </div>
-
+    <Modal
+      onClose={onClose}
+      zIndex={100}
+      maxWidth="max-w-3xl"
+      title={isEdit ? t("staff.editPeopleExchange") : `${t("staff.peopleExchange")} — ${t("staff.newDocument")}`}
+      subtitle={`${fmtDateLabel(date)} · ${tl(editDoc?.supervisor_name || attData?.manager_name || "")}`}
+      bodyClassName="p-0 flex flex-col"
+      footer={
+        <>
+          <span className="mr-auto self-center text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
+            {error || `${selected.size} ${t("staff.employeesWord")} → ${targetLabel()}`}
+          </span>
+          <Button variant="secondary" size="sm" onClick={onClose}>{t("staff.cancel")}</Button>
+          <Button size="sm" icon={<Check size={13} />} loading={saving} onClick={handleSave}>
+            {isEdit ? t("staff.saveChanges") : t("staff.saveDocument")}
+          </Button>
+        </>
+      }
+    >
         {/* target picker */}
         <div className="px-5 py-3 border-b flex flex-wrap items-center gap-3 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
@@ -1661,74 +1590,33 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           )}
         </div>
 
-        {/* footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-between gap-3 flex-shrink-0"
-          style={{ borderColor: "var(--border)", paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}>
-          <span className="text-[11px]" style={{ color: error ? "#ef4444" : "var(--text-4)" }}>
-            {error || `${selected.size} ${t("staff.employeesWord")} → ${targetLabel()}`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="text-xs px-3 py-2 rounded-lg"
-              style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}>{t("staff.cancel")}</button>
-            <button onClick={handleSave} disabled={saving}
-              className="text-xs px-4 py-2 rounded-lg font-semibold flex items-center gap-1.5"
-              style={{ background: "var(--brand)", color: "#fff", opacity: saving ? 0.6 : 1 }}>
-              <Check size={13} /> {saving ? t("staff.saving") : (isEdit ? t("staff.saveChanges") : t("staff.saveDocument"))}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Modal>
 
     {/* Admin-only task removal confirmation */}
-    {taskToRemove && (
-      <div className="fixed inset-0 z-[110] flex items-center justify-center p-4"
-        style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", paddingTop: "var(--tg-safe-top, 0px)" }}
-        onClick={() => { if (!removingTask) setTaskToRemove(null); }}>
-        <div className="w-full max-w-sm rounded-2xl overflow-hidden"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
-          onClick={(e) => e.stopPropagation()}>
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="flex items-center justify-center rounded-full flex-shrink-0"
-                style={{ width: 40, height: 40, background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
-                <AlertTriangle size={20} />
-              </span>
-              <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
-                {t("staff.removeTaskTitle")}
-              </h2>
-            </div>
-            <p className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {t("staff.removeTaskBody")}
-            </p>
-            <p className="text-sm font-semibold mt-2" style={{ color: "var(--text-1)" }}>
-              🗂 {taskToRemove}
-            </p>
-            {removeError && (
-              <p className="text-xs mt-3" style={{ color: "#ef4444" }}>{removeError}</p>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 px-6 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <button
-              onClick={() => setTaskToRemove(null)}
-              disabled={removingTask}
-              className="text-xs px-4 py-2 rounded-lg"
-              style={{ color: "var(--text-3)", border: "1px solid var(--border-md)", opacity: removingTask ? 0.6 : 1 }}>
-              {t("staff.cancel")}
-            </button>
-            <button
-              onClick={confirmRemoveTask}
-              disabled={removingTask}
-              className="text-xs px-4 py-2 rounded-lg font-semibold flex items-center gap-1.5"
-              style={{ background: "#ef4444", color: "#fff", opacity: removingTask ? 0.6 : 1 }}>
-              <Trash2 size={13} /> {removingTask ? t("staff.removing") : t("staff.removeTaskConfirm")}
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-    </>,
-    document.body
+    <ConfirmDialog
+      open={!!taskToRemove}
+      zIndex={110}
+      tone="danger"
+      icon={<AlertTriangle size={20} />}
+      title={t("staff.removeTaskTitle")}
+      message={
+        <>
+          {t("staff.removeTaskBody")}
+          <span className="block text-sm font-semibold mt-2" style={{ color: "var(--text-1)" }}>
+            🗂 {taskToRemove}
+          </span>
+          {removeError && (
+            <span className="block mt-3" style={{ color: "#ef4444" }}>{removeError}</span>
+          )}
+        </>
+      }
+      cancelLabel={t("staff.cancel")}
+      confirmLabel={t("staff.removeTaskConfirm")}
+      loading={removingTask}
+      onCancel={() => setTaskToRemove(null)}
+      onConfirm={confirmRemoveTask}
+    />
+    </>
   );
 }
 
@@ -1743,15 +1631,8 @@ export function DocumentViewModal({ docId, onClose }) {
     enabled: !!docId,
   });
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
-      <div className="w-full max-w-lg my-6 rounded-2xl overflow-y-auto max-h-[90vh]"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("staff.documentDetails")}</h2>
-          <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
-        </div>
+  return (
+    <Modal onClose={onClose} zIndex={100} title={t("staff.documentDetails")} bodyClassName="p-0">
         {isLoading || !doc ? (
           <div className="p-5 space-y-3">
             {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-5 w-full" />)}
@@ -1847,9 +1728,7 @@ export function DocumentViewModal({ docId, onClose }) {
             )}
           </div>
         )}
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 
@@ -1877,15 +1756,8 @@ function DocumentHistoryModal({ docId, onClose }) {
     enabled: !!docId,
   });
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }} onClick={onClose}>
-      <div className="w-full max-w-md my-6 rounded-2xl overflow-y-auto max-h-[90vh]"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("staff.history")}</h2>
-          <button onClick={onClose} style={{ color: "var(--text-4)" }}><X size={18} /></button>
-        </div>
+  return (
+    <Modal onClose={onClose} zIndex={100} maxWidth="max-w-md" title={t("staff.history")} bodyClassName="p-0">
         {isLoading ? (
           <div className="p-4 space-y-2">
             {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-10 w-full" />)}
@@ -1910,9 +1782,7 @@ function DocumentHistoryModal({ docId, onClose }) {
             ))}
           </div>
         )}
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 
