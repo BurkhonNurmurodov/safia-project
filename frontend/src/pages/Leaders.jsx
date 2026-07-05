@@ -175,18 +175,6 @@ const fmtDate = (iso, lang) => {
 };
 
 // ── small atoms (mirror Trudoyomkost / Production idioms) ───────────────────────
-function SectionHead({ icon: Icon, title, right }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
-      </div>
-      {right}
-    </div>
-  );
-}
-
 // ── person-name display helpers (for the insight cards) ─────────────────────────
 // Source names come from a free-text sheet in "Surname Given [Patronymic]" order,
 // sometimes SHOUTED in all-caps. Soften the casing and, when a name is too long
