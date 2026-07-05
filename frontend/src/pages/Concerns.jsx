@@ -1080,10 +1080,11 @@ export default function Concerns() {
           brigadir filter shows for multi-unit roles (admin/shift-manager/
           top-manager), the leader filter for everyone above a leader; a leader
           only ever sees their own concerns. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-        {/* Period — same range picker as the Leaders page (presets + calendar) */}
-        <div>
-          <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 mb-3">
+        {/* Period — same range picker as the Leaders page (presets + calendar).
+            Mobile: full row + hidden labels; the two selects pair up below. */}
+        <div className="col-span-2 sm:col-span-1">
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
           <DateRangePicker
             dateFrom={startDate}
             dateTo={endDate}
@@ -1095,8 +1096,8 @@ export default function Concerns() {
 
         {/* Brigadir — multi-unit roles only */}
         {showBrigFilter && (
-          <div>
-            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.colSupervisor")}</label>
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.colSupervisor")}</label>
             <StyledSelect
               value={fBrig}
               onChange={(v) => { setFBrig(v); setFLeader("All"); }}
@@ -1105,10 +1106,10 @@ export default function Concerns() {
           </div>
         )}
 
-        {/* Leader — everyone above a leader */}
+        {/* Leader — everyone above a leader; full row on mobile when it is the only select */}
         {showLeaderFilter && (
-          <div>
-            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.fieldLeader")}</label>
+          <div className={`min-w-0 ${showBrigFilter ? "" : "col-span-2 sm:col-span-1"}`}>
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.fieldLeader")}</label>
             <StyledSelect
               value={fLeader}
               onChange={setFLeader}
