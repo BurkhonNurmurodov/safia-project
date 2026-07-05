@@ -1126,6 +1126,32 @@ export default function Concerns() {
               placeholder={t("concerns.search")}
               className="w-44"
             />
+            {/* "My level only" — chain roles narrow the table to the concerns
+                currently sitting on their step; admins slice by level via the
+                Filtrlar multi-select instead of a toggle. Off by default. */}
+            {myLevel && (
+              <button
+                type="button"
+                onClick={() => setOnlyMyLevel((v) => !v)}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors"
+                style={{
+                  background: onlyMyLevel ? `${CHART_BRAND}1f` : "var(--bg-card)",
+                  border: `1px solid ${onlyMyLevel ? CHART_BRAND : "var(--border-md)"}`,
+                  color: onlyMyLevel ? CHART_BRAND : "var(--text-2)",
+                }}
+              >
+                <span
+                  className="relative inline-block w-7 h-4 rounded-full flex-shrink-0 transition-colors"
+                  style={{ background: onlyMyLevel ? CHART_BRAND : "var(--border-md)" }}
+                >
+                  <span
+                    className="absolute top-0.5 w-3 h-3 rounded-full transition-all"
+                    style={{ left: onlyMyLevel ? 14 : 2, background: "#fff" }}
+                  />
+                </span>
+                {t("concerns.myLevelOnly")}
+              </button>
+            )}
             <FilterPanel
               sections={filterSections}
               activeCount={filterActiveCount}
