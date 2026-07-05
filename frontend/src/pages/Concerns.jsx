@@ -186,6 +186,24 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange }
   );
 }
 
+// Non-interactive level pill (same silhouette as the status pill so the two
+// chip columns read as one visual family). The optional title carries the
+// assigned top-manager's name on top-level rows — a tooltip, so row heights
+// stay uniform.
+function LevelChip({ level, label, title }) {
+  const color = LEVEL_COLOR[level] || "var(--text-3)";
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: `${color}24`, color }}
+      title={title}
+    >
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
 // Revealed-row action button (matches the Staff requests table's ActionBtn).
 function ActionBtn({ icon: Icon, label, color, onClick }) {
   return (
