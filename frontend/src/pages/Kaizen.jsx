@@ -5,7 +5,7 @@ import {
   Sparkles, RefreshCw, CheckCircle2, Loader2, Circle, AlarmClock,
   Users, ListChecks, CalendarClock, Trophy, ExternalLink, Plug,
   Clock, TrendingUp, FolderKanban, FileText, Tag, UserCheck, UserRound,
-  CircleDot, ChevronUp, ChevronDown, ChevronsUpDown,
+  CircleDot,
   Pin, Puzzle, Handshake, Target, ChartColumn, DraftingCompass,
   Lightbulb, Wrench, Folder,
 } from "lucide-react";
