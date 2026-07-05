@@ -185,6 +185,29 @@ export default function Login() {
           </h1>
         </div>
 
+        {/* The one shared options request failed — without it every picker
+            below is empty, so say so instead of a misleading "not found". */}
+        {loadError && !loading && (
+          <div
+            className="mb-4 rounded-xl px-3 py-2.5 text-xs"
+            style={{
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.35)",
+              color: "#ef4444",
+            }}
+          >
+            {t("login.loadError")}
+            <button
+              type="button"
+              onClick={loadOptions}
+              className="ml-2 font-semibold underline"
+              style={{ color: "#ef4444" }}
+            >
+              {t("login.retry")}
+            </button>
+          </div>
+        )}
+
         {/* Step 1 — Role selection */}
         {step === "role" && (
           <div className="space-y-2">
