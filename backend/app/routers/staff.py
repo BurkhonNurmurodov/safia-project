@@ -242,6 +242,18 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} добавил(а) опасение на ваше имя", "Владелец: {owner} | Дата: {date}\n{concern}"),
         "en": ("{actor_name} added a concern for you", "Owner: {owner} | Date: {date}\n{concern}"),
     },
+    "concern_escalated": {
+        "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "Daraja: {level_label} | Lider: {leader_name} | Sana: {date}\nSabab: {reason}\n{concern}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "Даража: {level_label} | Лидер: {leader_name} | Сана: {date}\nСабаб: {reason}\n{concern}"),
+        "ru": ("{actor_name} передал(а) вам опасение", "Уровень: {level_label} | Лидер: {leader_name} | Дата: {date}\nПричина: {reason}\n{concern}"),
+        "en": ("{actor_name} escalated a concern to you", "Level: {level_label} | Leader: {leader_name} | Date: {date}\nReason: {reason}\n{concern}"),
+    },
+    "concern_returned": {
+        "uz": ("{actor_name} xavotirni sizga qaytardi", "Daraja: {level_label} | Lider: {leader_name} | Sana: {date}\nSabab: {reason}\n{concern}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга қайтарди", "Даража: {level_label} | Лидер: {leader_name} | Сана: {date}\nСабаб: {reason}\n{concern}"),
+        "ru": ("{actor_name} вернул(а) вам опасение", "Уровень: {level_label} | Лидер: {leader_name} | Дата: {date}\nПричина: {reason}\n{concern}"),
+        "en": ("{actor_name} returned a concern to you", "Level: {level_label} | Leader: {leader_name} | Date: {date}\nReason: {reason}\n{concern}"),
+    },
     "task_created": {
         "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
         "uz_cyrl": ("Янги вазифа: {creator_name}", "Муддат: {date}\n{task}"),
