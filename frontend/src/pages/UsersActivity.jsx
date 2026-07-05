@@ -3,12 +3,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Activity, Users, Clock, Radio, TrendingUp, CalendarDays, Trophy,
-  RefreshCw, Shield, Timer, CalendarClock, Hash,
-  ChevronUp, ChevronDown, ChevronsUpDown, CircleUserRound,
+  RefreshCw, Shield, Timer, CalendarClock, Hash, CircleUserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ContributionHeatmap from "../components/charts/ContributionHeatmap";
 import { Sparkline } from "../components/ui/KpiDeltaCard";
