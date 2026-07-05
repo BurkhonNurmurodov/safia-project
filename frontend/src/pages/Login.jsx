@@ -39,17 +39,26 @@ export default function Login() {
   const [submitted,  setSubmitted]  = useState(false);
   const [guestPid,   setGuestPid]   = useState(null);  // guest → re-claimed profile id
   const [guestList,  setGuestList]  = useState(false); // guest → picker open
+  const [loadError,  setLoadError]  = useState(false);
 
   // Every role now picks a pre-created profile — nobody types a name. One
-  // gated endpoint serves all the pickers: it validates Telegram initData so
-  // the name lists are only visible inside the bot's mini-app.
-  useEffect(() => {
+  // gated endpoint serves all the pickers. Keyboard-button launches (the
+  // register flow — required for sendData) never receive initData, so the
+  // bot signs the /login URL with ?rt= and we pass that instead; initData
+  // still works for the other launch methods.
+  function loadOptions() {
     setLoading(true);
-    api.post("/api/profiles/registration-options", { init_data: tg?.initData || "__dev__" })
+    setLoadError(false);
+    const rt = new URLSearchParams(window.location.search).get("rt") || "";
+    api.post("/api/profiles/registration-options", {
+      init_data: tg?.initData || "__dev__",
+      ...(rt ? { reg_token: rt } : {}),
+    })
       .then(r => setOptions(r.data))
-      .catch(() => setOptions(null))
+      .catch(() => { setOptions(null); setLoadError(true); })
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(loadOptions, []);
 
   function selectRole(r) {
     setRole(r);
