@@ -732,6 +732,49 @@ export default function Concerns() {
   });
   const savingStatusId = statusMutation.isPending ? statusMutation.variables?.row?.id : null;
 
+  // ── escalation (uplift / send back one step, reason mandatory) ─────────────
+  function openEscalate(row, direction) {
+    setEscalate({ row, direction });
+    setEscReason("");
+    setEscTop(null);
+    setEscError("");
+  }
+  const escTargetLevel = escalate
+    ? LEVELS[LEVELS.indexOf(escalate.row.level || "leader") + (escalate.direction === "up" ? 1 : -1)]
+    : null;
+  const escalateMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/api/concerns/${escalate.row.id}/escalate`, {
+        direction: escalate.direction,
+        reason: escReason.trim(),
+        ...(needsTopPick ? { top_manager_profile_id: escTop } : {}),
+      }).then((r) => r.data),
+    onSuccess: () => {
+      invalidate();
+      setEscalate(null);
+    },
+    onError: (e) => setEscError(e?.response?.data?.detail || t("concerns.saveError")),
+  });
+  function submitEscalate() {
+    if (!escReason.trim()) return setEscError(t("concerns.reasonRequired"));
+    if (needsTopPick && !escTop) return setEscError(t("concerns.pickTopManager"));
+    escalateMutation.mutate();
+  }
+
+  // Escalation trail for the history modal — fetched when a row's History
+  // button opens it.
+  const { data: escHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ["concern-history", historyRow?.id],
+    queryFn: () => api.get(`/api/concerns/${historyRow.id}/history`).then((r) => r.data),
+    enabled: !!historyRow,
+  });
+  const fmtDateTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const localIso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    return `${fmtDate(localIso, lang)}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
     // Pre-select whatever the creator is currently filtering by, if anything.
