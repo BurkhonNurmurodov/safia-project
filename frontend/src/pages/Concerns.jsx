@@ -1327,22 +1327,34 @@ export default function Concerns() {
         }
         toolbar={
           <>
+            {/* Mobile: search takes its own full row; Filtrlar stays compact
+                while the add button stretches over the rest of the second row
+                (label always on one line). Desktop: unchanged inline row. */}
             <SearchInput
               value={search}
               onChange={setSearch}
               placeholder={t("concerns.search")}
-              className="w-44"
+              className="w-full sm:w-44"
             />
-            <FilterPanel
-              sections={filterSections}
-              activeCount={filterActiveCount}
-              anyActive={anyFilterActive}
-              onClearAll={clearAllFilters}
-              compact
-            />
-            {!readOnly && (
-              <Button size="sm" icon={<Plus size={14} />} onClick={openCreate}>{t("concerns.add")}</Button>
-            )}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <FilterPanel
+                sections={filterSections}
+                activeCount={filterActiveCount}
+                anyActive={anyFilterActive}
+                onClearAll={clearAllFilters}
+                compact
+              />
+              {!readOnly && (
+                <Button
+                  size="sm"
+                  className="flex-1 sm:flex-none whitespace-nowrap"
+                  icon={<Plus size={14} />}
+                  onClick={openCreate}
+                >
+                  {t("concerns.add")}
+                </Button>
+              )}
+            </div>
           </>
         }
       >
