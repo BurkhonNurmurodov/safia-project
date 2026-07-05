@@ -6,10 +6,20 @@ can be logged for a leader who hasn't claimed their profile yet — the leader
 inherits it on registration. Every role works within its scope:
 
 - admin         — everything, full manage, picks supervisor → leader
-- top-manager   — everything, read-only
+- top-manager   — sees everything; manages ONLY concerns escalated to them
 - shift-manager — their shift's units, full manage, picks supervisor → leader
 - supervisor    — their own unit's leaders, full manage, picks a leader
 - leader        — their own rows only (no picker — always writes on themselves)
+
+Escalation ("uplift"): every concern starts at the "leader" level and moves one
+step at a time along leader → supervisor → shift-manager → top-manager, each
+step requiring a reason (POST /{id}/escalate, direction up|down). The handler
+at the concern's CURRENT level and everyone above it in the chain (within their
+scope) keep edit rights; levels below turn read-only. Top-management is
+person-specific — the shift-manager picks one top-manager profile, and only
+that person (plus admin) may act on the concern. Each move notifies the
+receiving handler(s) via the bell + a Telegram DM and is recorded in
+concern_escalations (the history modal).
 
 Every new concern notifies the leader's brigadir (the approved supervisor of
 the leader's unit) and the leader themself via the bell + a Telegram DM —
@@ -21,11 +31,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import LeaderConcern, Manager, RoleProfile, TelegramUserRole
+from app.models import ConcernEscalation, LeaderConcern, Manager, RoleProfile, TelegramUserRole
 from app.permissions import require_page
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
@@ -34,6 +44,10 @@ from app.routers.staff import _find_supervisor, _notify, _profile_key
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
 VALID_STATUSES = {"todo", "doing", "done"}
+
+# Escalation chain, bottom → top. leader_concerns.level always holds one of these.
+LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"]
+LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 
 # Roles that pick a leader when creating (everyone but the leader themself).
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
