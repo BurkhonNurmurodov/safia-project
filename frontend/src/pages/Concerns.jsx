@@ -560,7 +560,7 @@ export default function Concerns() {
       }
       return true;
     };
-  }, [search, statusSel, ownerSel, deadlineMin, deadlineMax]);
+  }, [search, statusSel, ownerSel, levelSel, onlyMyLevel, myLevel, role, deadlineMin, deadlineMax]);
 
   const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
   const chartFiltered = useMemo(
