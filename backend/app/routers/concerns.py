@@ -53,7 +53,33 @@ LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 PICKER_ROLES = ("admin", "shift-manager", "supervisor")
 
 
-def _serialize(c: LeaderConcern, ctx: Optional[dict] = None, esc_counts: Optional[dict] = None) -> dict:
+def _sm_names(db: Session) -> dict:
+    """manager_id → shift-manager profile name(s) covering that unit's shift.
+    Feeds responsible_name for shift-manager-level rows (the only level whose
+    holder isn't already a column on the concern); several managers sharing a
+    shift render comma-joined."""
+    by_shift: dict = {}
+    for prof in (
+        db.query(RoleProfile)
+        .filter(RoleProfile.role == "shift-manager", RoleProfile.shift.isnot(None))
+        .order_by(RoleProfile.name)
+    ):
+        by_shift.setdefault(prof.shift, []).append(prof.name)
+    if not by_shift:
+        return {}
+    return {
+        mid: ", ".join(by_shift[shift])
+        for mid, shift in db.query(Manager.id, Manager.shift).all()
+        if shift in by_shift
+    }
+
+
+def _serialize(
+    c: LeaderConcern,
+    ctx: Optional[dict] = None,
+    esc_counts: Optional[dict] = None,
+    sm_names: Optional[dict] = None,
+) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
         resolution_days = (c.completion_date - c.entry_date).days
