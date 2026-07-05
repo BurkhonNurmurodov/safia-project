@@ -577,7 +577,7 @@ def create_concern(
     if notified:
         db.commit()
 
-    return _serialize(c, _viewer_ctx(db, payload))
+    return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db))
 
 
 @router.put("/{concern_id}")
