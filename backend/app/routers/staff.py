@@ -340,6 +340,9 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     if "task_status" in params:
         by_lang = _TASK_STATUS_LABELS.get(params["task_status"], {})
         localized["status_label"] = by_lang.get(lang) or by_lang.get("en") or params["task_status"]
+    if "concern_level" in params:
+        by_lang = _CONCERN_LEVEL_LABELS.get(params["concern_level"], {})
+        localized["level_label"] = by_lang.get(lang) or by_lang.get("en") or params["concern_level"]
     return title_tmpl.format(**localized), body_tmpl.format(**localized)
 
 
