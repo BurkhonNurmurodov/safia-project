@@ -1233,6 +1233,7 @@ export default function Concerns() {
         icon={ClipboardList}
         title={t("concerns.listTitle")}
         wrap
+        mobile={mobileList}
         right={
           <div className="flex items-center gap-2">
             {/* "My level only" — chain roles narrow the table to the concerns
