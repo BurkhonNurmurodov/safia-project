@@ -162,30 +162,72 @@ def _scope_query(query, payload: dict, db: Session):
     return query.filter(_leader_own_filter(db, payload))
 
 
-def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
-    """Full manage inside one's scope: admin anything, shift-manager their
-    shift's units, supervisor their unit, leader their own rows. Top-managers
-    are read-only."""
+def _viewer_ctx(db: Session, payload: dict) -> dict:
+    """Everything _can_edit needs about the caller, resolved once per request
+    (the list endpoint reuses it across every row)."""
     role = payload.get("role")
+    ctx = {
+        "role": role,
+        "role_id": payload.get("role_id"),
+        "role_ref": payload.get("role_ref"),
+        "own_profile_id": None,
+        "shift_units": set(),
+    }
+    if role == "leader":
+        prof = _own_profile(db, payload)
+        ctx["own_profile_id"] = prof.id if prof else None
+    elif role == "shift-manager":
+        ctx["shift_units"] = set(_shift_unit_ids(db, _viewer_shift(db, payload)))
+    return ctx
+
+
+def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
+    """Responsibility moves UP the escalation chain: the handler at the
+    concern's current level and every chain role above it (inside their scope)
+    may edit / resolve / escalate; levels below the current one are read-only.
+    Top-management is person-specific — only the assigned top-manager acts at
+    the top level. Admin manages everything."""
+    role = ctx["role"]
+    lvl = LEVEL_IDX.get(c.level or "leader", 0)
     if role == "admin":
-        return
+        return True
     if role == "top-manager":
-        raise HTTPException(status_code=403, detail="Read-only access")
+        return (
+            lvl == LEVEL_IDX["top-manager"]
+            and c.top_manager_profile_id is not None
+            and c.top_manager_profile_id == ctx["role_id"]
+        )
     if role == "shift-manager":
-        if c.brigadir_manager_id in _shift_unit_ids(db, _viewer_shift(db, payload)):
-            return
-        raise HTTPException(status_code=403, detail="This concern is outside your shift")
+        return c.brigadir_manager_id in ctx["shift_units"] and lvl <= LEVEL_IDX["shift-manager"]
     if role == "supervisor":
-        if c.brigadir_manager_id == payload.get("role_id"):
-            return
+        return c.brigadir_manager_id == ctx["role_id"] and lvl <= LEVEL_IDX["supervisor"]
+    if role == "leader":
+        own = (c.leader_role_ref is not None and c.leader_role_ref == ctx["role_ref"]) or (
+            ctx["own_profile_id"] is not None and c.leader_profile_id == ctx["own_profile_id"]
+        )
+        return own and lvl == 0
+    return False
+
+
+def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
+    """403 with a scope- or level-specific message when _can_edit says no."""
+    ctx = _viewer_ctx(db, payload)
+    if _can_edit(ctx, c):
+        return
+    role = ctx["role"]
+    if role == "top-manager":
+        raise HTTPException(status_code=403, detail="Only concerns escalated to you can be managed")
+    if role == "shift-manager" and c.brigadir_manager_id not in ctx["shift_units"]:
+        raise HTTPException(status_code=403, detail="This concern is outside your shift")
+    if role == "supervisor" and c.brigadir_manager_id != ctx["role_id"]:
         raise HTTPException(status_code=403, detail="This concern is outside your unit")
-    # leader
-    if c.leader_role_ref == payload.get("role_ref"):
-        return
-    prof = _own_profile(db, payload)
-    if prof and c.leader_profile_id == prof.id:
-        return
-    raise HTTPException(status_code=403, detail="You can only manage your own concerns")
+    if role == "leader":
+        own = (c.leader_role_ref is not None and c.leader_role_ref == ctx["role_ref"]) or (
+            ctx["own_profile_id"] is not None and c.leader_profile_id == ctx["own_profile_id"]
+        )
+        if not own:
+            raise HTTPException(status_code=403, detail="You can only manage your own concerns")
+    raise HTTPException(status_code=403, detail="This concern has been escalated above your level")
 
 
 def _claimed_role_row(db: Session, prof: RoleProfile) -> Optional[TelegramUserRole]:
