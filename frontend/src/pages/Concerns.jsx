@@ -1015,21 +1015,30 @@ export default function Concerns() {
         const expanded = expandedId === r.id;
         const hasActions =
           r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
+        // Deadline as a state, not arithmetic: days remaining until
+        // entry_date + deadline_days, negative = overdue (matches the charts'
+        // isOverdue convention — the due date itself is not yet overdue).
+        const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
+          ? isoPlusDays(r.entry_date, r.deadline_days)
+          : null;
+        const daysLeft = dueIso ? isoDiffDays(dueIso, localTodayIso()) : null;
+        const overdue = daysLeft != null && daysLeft < 0;
+        // Traffic-light edge strip — status at arm's length; overdue trumps.
+        const strip = overdue ? "#ef4444" : STATUS_COLOR[r.status] || "var(--border)";
         return (
           <div
             key={r.id}
             onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
-            className="p-3 flex flex-col gap-2"
+            className={`p-3 flex flex-col gap-2.5 ${hasActions ? "cursor-pointer" : ""}`}
             style={{
               ...(i ? { borderTop: "1px solid var(--border)" } : {}),
+              borderLeft: `3px solid ${strip}`,
               background: expanded ? "var(--bg-inner)" : "transparent",
             }}
           >
-            {/* owner + inline-editable status (tap must not toggle the card) */}
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
-                {tl(r.concern_owner)}
-              </span>
+            {/* date + inline-editable status (tap must not toggle the card) */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{fmtDate(r.entry_date, lang)}</span>
               <span className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                 <StatusSelect
                   status={r.status}
@@ -1042,46 +1051,84 @@ export default function Concerns() {
               </span>
             </div>
 
-            {/* concern text + solution */}
-            <div className="text-xs leading-snug" style={{ color: "var(--text-1)" }}>{tl(r.concern_text)}</div>
+            {/* the concern itself is the headline */}
+            <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+              {tl(r.concern_text)}
+            </div>
             {r.solution && (
-              <div className="text-[11px]" style={{ color: "var(--text-3)" }}>✓ {tl(r.solution)}</div>
+              <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-[11px] leading-snug"
+                   style={{ background: `${STATUS_COLOR.done}14` }}>
+                <Check size={12} className="flex-shrink-0 mt-px" style={{ color: STATUS_COLOR.done }} />
+                <span>
+                  <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>{t("concerns.fieldSolution")}: </span>
+                  <span style={{ color: "var(--text-2)" }}>{tl(r.solution)}</span>
+                </span>
+              </div>
             )}
 
-            {/* date · leader · brigadir */}
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]" style={{ color: "var(--text-4)" }}>
-              <span className="whitespace-nowrap">{fmtDate(r.entry_date, lang)}</span>
-              {showLeaderCol && r.leader_name && (
-                <span className="whitespace-nowrap">· {tl(r.leader_name)}</span>
+            {/* labelled facts — fixed positions, no guessing which name is which */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <MobField label={t("concerns.colOwner")}>{tl(r.concern_owner) || "—"}</MobField>
+              <MobField label={t("concerns.responsible")}>
+                {r.responsible_name ? tl(r.responsible_name) : levelLabel(r.level || "leader")}
+              </MobField>
+              {showLeaderCol && (
+                <MobField label={t("concerns.colLeader")}>{tl(r.leader_name) || "—"}</MobField>
               )}
-              {r.brigadir_name && (
-                <span className="whitespace-nowrap">· {tl(r.brigadir_name)}</span>
-              )}
-            </div>
-
-            {/* level chip + deadline / resolution */}
-            <div className="flex items-center justify-between gap-2">
-              <LevelChip
-                level={r.level || "leader"}
-                label={levelLabel(r.level || "leader")}
-                title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
-              />
-              <div className="flex items-center gap-3 text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                {r.deadline_days != null && (
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap" title={t("concerns.colDeadline")}>
-                    <Clock size={11} /> {r.deadline_days} {t(r.deadline_days === 1 ? "concerns.day" : "concerns.days")}
-                  </span>
-                )}
-                {r.resolution_minutes != null && (
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap" title={t("concerns.colResolution")}>
-                    <Timer size={11} /> {r.resolution_minutes.toLocaleString()}
-                  </span>
-                )}
+              <MobField label={t("concerns.colSupervisor")}>{tl(r.brigadir_name) || "—"}</MobField>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  {t("concerns.colLevel")}
+                </div>
+                <LevelChip
+                  level={r.level || "leader"}
+                  label={levelLabel(r.level || "leader")}
+                  title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
+                />
               </div>
+              {daysLeft != null && (
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                    {t("concerns.deadline")}
+                  </div>
+                  {overdue ? (
+                    <div className="text-xs font-semibold flex items-center gap-1" style={{ color: "#ef4444" }}>
+                      <AlertTriangle size={12} className="flex-shrink-0" />
+                      {t("concerns.chartOverdue")} — {-daysLeft} {t(-daysLeft === 1 ? "concerns.day" : "concerns.days")}
+                    </div>
+                  ) : (
+                    <div className="text-xs flex items-center gap-1" style={{ color: "var(--text-1)" }}>
+                      <Clock size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+                      {daysLeft} {t("concerns.daysLeft")}
+                    </div>
+                  )}
+                </div>
+              )}
+              {r.status === "done" && r.resolution_minutes != null && (
+                <MobField label={t("concerns.colResolution")}>
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+                    {r.resolution_minutes.toLocaleString()}
+                  </span>
+                </MobField>
+              )}
             </div>
 
+            {/* explicit actions affordance — the whole card toggles too, but
+                older users need a button that says so */}
+            {hasActions && (
+              <div className="flex justify-end pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+                <span
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+                >
+                  {t("concerns.actions")}
+                  <ChevronDown size={13} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
+                </span>
+              </div>
+            )}
             {expanded && (
-              <div className="flex flex-wrap items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 {rowActions(r)}
               </div>
             )}
