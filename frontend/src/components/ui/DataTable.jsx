@@ -75,6 +75,9 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   maxHeight – scroll container cap (default "70vh")
  *   wrap      – allow cell text to wrap (default false = whitespace-nowrap)
  *   hover     – row hover highlight (default true)
+ *   mobile    – optional stacked-card list for phones: when given, the table
+ *               renders from `sm:` up only and this node takes its place
+ *               below `sm:` (same scroll cap)
  *   children  – <thead> + <tbody>
  */
 export default function TableCard({
@@ -85,6 +88,7 @@ export default function TableCard({
   maxHeight = "70vh",
   wrap = false,
   hover = true,
+  mobile,
   className = "",
   children,
 }) {
@@ -96,7 +100,7 @@ export default function TableCard({
           {toolbar}
         </div>
       )}
-      <div className="overflow-auto" style={{ maxHeight }}>
+      <div className={`overflow-auto${mobile != null ? " hidden sm:block" : ""}`} style={{ maxHeight }}>
         <table
           className={`w-full text-xs ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)" }}
@@ -104,6 +108,11 @@ export default function TableCard({
           {children}
         </table>
       </div>
+      {mobile != null && (
+        <div className="sm:hidden overflow-y-auto" style={{ maxHeight }}>
+          {mobile}
+        </div>
+      )}
     </div>
   );
 }
