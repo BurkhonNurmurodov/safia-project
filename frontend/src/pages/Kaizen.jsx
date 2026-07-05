@@ -233,18 +233,6 @@ function statusInfo(status, T) {
 // ── small presentational helpers (mirror Leaders / Trudoyomkost / Production) ──
 
 // Card section header band: uppercase tracked label + brand icon + bottom rule.
-function SectionHead({ icon: Icon, title, right }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
-      </div>
-      {right}
-    </div>
-  );
-}
-
 function StatusPill({ status, T }) {
   const { label, color } = statusInfo(status, T);
   return (
@@ -267,7 +255,7 @@ function SortIcon({ active, dir }) {
 function Th({ icon: Icon, label, k, sort, onSort, cls = "" }) {
   const active = sort.key === k;
   return (
-    <th className={`text-left font-medium px-4 py-2 select-none ${cls}`} style={cellB}>
+    <th className={`text-left font-medium px-4 py-2 select-none ${cls}`}>
       <button
         type="button" onClick={() => onSort(k)}
         className="group inline-flex items-center gap-1.5 transition-colors"
@@ -975,17 +963,17 @@ export default function Kaizen() {
                     const overdue = t.deadline && t.deadline < todayStr() && t.status !== "Done";
                     return (
                       <tr key={t.id}>
-                        <td className="px-4 py-2 whitespace-nowrap" style={cellB}><ProjectIcon pkey={t.project_key} title={tl(t.project)} /></td>
-                        <td className="px-4 py-2 max-w-xs" style={cellB}><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
-                        <td className="px-4 py-2 hidden md:table-cell" style={{ ...cellB, color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
-                        <td className="px-4 py-2 hidden sm:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
+                        <td className="px-4 py-2 whitespace-nowrap"><ProjectIcon pkey={t.project_key} title={tl(t.project)} /></td>
+                        <td className="px-4 py-2 max-w-xs"><span className="line-clamp-2" style={{ color: "var(--text-1)" }}>{t.title}</span></td>
+                        <td className="px-4 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{t.task_type ? tl(t.task_type) : "—"}</td>
+                        <td className="px-4 py-2 hidden sm:table-cell" style={{ color: "var(--text-2)" }}>
                           {t.responsible?.length ? <span title={t.responsible.map(tl).join(", ")}>{t.responsible.map((n) => shortName(tl(n))).join(", ")}</span> : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>
-                        <td className="px-4 py-2 hidden lg:table-cell" style={{ ...cellB, color: "var(--text-2)" }}>
+                        <td className="px-4 py-2 hidden lg:table-cell" style={{ color: "var(--text-2)" }}>
                           {t.customer?.length ? <span title={t.customer.map(tl).join(", ")}>{t.customer.map((n) => shortName(tl(n))).join(", ")}</span> : <span style={{ color: "var(--text-4)" }}>{T.unassigned}</span>}
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ ...cellB, color: overdue ? C_OVERDUE : "var(--text-3)" }}>{fmtDeadline(t.deadline, lang) || "—"}</td>
-                        <td className="px-4 py-2" style={cellB}><StatusPill status={t.status} T={T} /></td>
+                        <td className="px-4 py-2 whitespace-nowrap tabular-nums" style={{ color: overdue ? C_OVERDUE : "var(--text-3)" }}>{fmtDeadline(t.deadline, lang) || "—"}</td>
+                        <td className="px-4 py-2"><StatusPill status={t.status} T={T} /></td>
                         <td className="px-2 py-2 text-center" style={{ borderBottom: "1px solid var(--border)" }}>
                           {t.url && <a href={t.url} target="_blank" rel="noreferrer" title={T.openNotion} className="inline-flex transition-colors hover:text-[var(--brand-text)]" style={{ color: "var(--text-4)" }}><ExternalLink size={13} /></a>}
                         </td>
