@@ -1250,8 +1250,21 @@ export default function Concerns() {
                         <tr style={{ background: "var(--bg-inner)" }}>
                           <td colSpan={colSpan} className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
                             <div className="flex flex-wrap items-center gap-2">
-                              <ActionBtn icon={Pencil} label={t("concerns.edit")} onClick={() => openEdit(r)} />
-                              <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
+                              {r.can_edit && (
+                                <ActionBtn icon={Pencil} label={t("concerns.edit")} onClick={() => openEdit(r)} />
+                              )}
+                              {r.can_escalate && (
+                                <ActionBtn icon={ArrowUp} label={t("concerns.uplift")} color="#3b82f6" onClick={() => openEscalate(r, "up")} />
+                              )}
+                              {r.can_deescalate && (
+                                <ActionBtn icon={ArrowDown} label={t("concerns.sendBack")} color="#f59e0b" onClick={() => openEscalate(r, "down")} />
+                              )}
+                              {r.escalation_count > 0 && (
+                                <ActionBtn icon={History} label={t("concerns.history")} onClick={() => setHistoryRow(r)} />
+                              )}
+                              {r.can_edit && (
+                                <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
+                              )}
                             </div>
                           </td>
                         </tr>
