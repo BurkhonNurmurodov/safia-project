@@ -10,6 +10,8 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
+import TableCard, { Th } from "../../components/ui/DataTable";
+import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
@@ -228,7 +230,7 @@ export default function UsersManagement() {
                 {!isLoading && filtered.map(({ user, role }) => (
                   <tr key={`${user.id}-${role.id}`}>
                     {/* Role-scoped display name (+ multi-role marker) */}
-                    <td className="py-2.5 px-3 font-medium text-gray-200 whitespace-nowrap">
+                    <td className="py-2.5 px-3 font-medium whitespace-nowrap" style={{ color: "var(--text-1)" }}>
                       {tl(role.full_name || user.full_name) || "—"}
                       {user.roles.length > 1 && (
                         <span
@@ -242,12 +244,12 @@ export default function UsersManagement() {
                     </td>
 
                     {/* Phone */}
-                    <td className="py-2.5 px-3 text-gray-400 font-mono whitespace-nowrap">
+                    <td className="py-2.5 px-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                       {user.phone || "—"}
                     </td>
 
                     {/* Telegram username */}
-                    <td className="py-2.5 px-3 text-gray-400 whitespace-nowrap">
+                    <td className="py-2.5 px-3 whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                       {user.username ? `@${user.username}` : "—"}
                     </td>
 
@@ -256,7 +258,7 @@ export default function UsersManagement() {
                         as a static label instead of the select. */}
                     <td className="py-2.5 px-3">
                       {role.role === "guest" ? (
-                        <span className="inline-block bg-[#12151f] border border-white/10 rounded-lg px-2.5 py-1 text-[11px] text-gray-300">
+                        <span className="inline-block rounded-lg px-2.5 py-1 text-[11px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>
                           {t(ROLE_LABEL_KEYS[role.role])}
                         </span>
                       ) : (
@@ -277,7 +279,7 @@ export default function UsersManagement() {
                     </td>
 
                     {/* Last seen */}
-                    <td className="py-2.5 px-3 text-gray-500 whitespace-nowrap text-[11px]">
+                    <td className="py-2.5 px-3 whitespace-nowrap text-[11px]" style={{ color: "var(--text-4)" }}>
                       {fmtDate(user.last_seen)}
                     </td>
 
