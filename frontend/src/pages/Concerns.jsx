@@ -7,6 +7,7 @@ import {
   ChevronDown, Check,
   CalendarClock, UserCheck, UserRound, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
+  Layers, ArrowUp, ArrowDown, ArrowRight, History,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
