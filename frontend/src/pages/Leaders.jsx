@@ -724,38 +724,30 @@ export default function Leaders() {
           {displayRows.length === 0 ? (
             <div className="p-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{T.noMatch}</div>
           ) : (<>
-            {/* desktop / tablet: sortable table */}
-            <div className="hidden sm:block overflow-x-auto" style={{ maxHeight: 460 }}>
-              <table className="w-full text-sm border-collapse" style={{ minWidth: 560 }}>
-                <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
-                  <tr style={{ color: "var(--text-3)" }}>
-                    <th onClick={() => toggleSort("date")} className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide cursor-pointer select-none hover:opacity-80">
-                      <span className="inline-flex items-center gap-1">{T.thDate} {sortArrow("date")}</span>
-                    </th>
-                    <th onClick={() => toggleSort("leader")} className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide cursor-pointer select-none hover:opacity-80">
-                      <span className="inline-flex items-center gap-1">{T.thLeader} {sortArrow("leader")}</span>
-                    </th>
-                    <th onClick={() => toggleSort("score")} className="text-center px-4 py-2 font-semibold text-xs uppercase tracking-wide cursor-pointer select-none hover:opacity-80">
-                      <span className="inline-flex items-center gap-1">{T.thScore} {sortArrow("score")}</span>
-                    </th>
-                    <th onClick={() => toggleSort("failed")} className="text-left px-4 py-2 font-semibold text-xs uppercase tracking-wide cursor-pointer select-none hover:opacity-80">
-                      <span className="inline-flex items-center gap-1">{T.thFailed} {sortArrow("failed")}</span>
-                    </th>
-                    <th className="text-right px-4 py-2 font-semibold text-xs uppercase tracking-wide">{T.thAction}</th>
+            {/* desktop / tablet: sortable table (canonical POSITIONS-style) */}
+            <div className="hidden sm:block overflow-auto" style={{ maxHeight: 460 }}>
+              <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 560 }}>
+                <thead>
+                  <tr>
+                    <Th label={T.thDate}   k="date"   sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thLeader} k="leader" sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thScore}  k="score"  sort={tSort} onSort={toggleSort} align="center" />
+                    <Th label={T.thFailed} k="failed" sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thAction} align="right" />
                   </tr>
                 </thead>
                 <tbody>
                   {displayRows.map((r) => (
-                    <tr key={r.uid} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td className="px-4 py-2 text-xs whitespace-nowrap" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</td>
-                      <td className="px-4 py-2 font-medium" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</td>
-                      <td className="px-4 py-2 text-center">
+                    <tr key={r.uid}>
+                      <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</td>
+                      <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</td>
+                      <td className="px-3 py-2 text-center">
                         <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
                           {Math.round(r.completion)}%
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-xs" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-3 py-2" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</td>
+                      <td className="px-3 py-2 text-right">
                         <button onClick={() => setDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
                           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
                           {T.details}
