@@ -918,42 +918,48 @@ export default function Kaizen() {
             </div>
           </div>
 
-          {/* Task table */}
-          <section id="kaizen-tasks" className="rounded-2xl overflow-hidden" style={cardStyle}>
-            <SectionHead icon={ListChecks}
-              title={<span className="flex items-center gap-2">{T.secTasks}<span className="text-[11px] font-normal normal-case tracking-normal" style={{ color: "var(--text-4)" }}>({filtered.length})</span></span>}
-              right={
-                <div className="flex flex-wrap items-center gap-2">
-                  <SearchInput
-                    value={search}
-                    onChange={setSearch}
-                    placeholder={T.searchPh}
-                    className="w-44"
-                    inputClassName="text-xs pl-8 pr-7 py-1.5"
-                  />
-                  <StyledSelect value={project} onChange={setProject} className="w-44"
-                    options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => {
-                      const { Icon, color } = identFor(p.key);
-                      return { value: p.key, label: (
-                        <span className="inline-flex items-center gap-1.5 min-w-0">
-                          <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
-                          <span className="truncate">{tl(p.name)}</span>
-                        </span>
-                      ) };
-                    })]} />
-                  <StyledSelect value={status} onChange={setStatus} className="w-36"
-                    options={[
-                      { value: "all", label: T.allStatuses },
-                      { value: "Done", label: T.sDone },
-                      { value: "In progress", label: T.sProg },
-                      { value: "Not started", label: T.sTodo },
-                    ]} />
-                </div>
-              } />
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+          {/* Task table — canonical POSITIONS-style TableCard with per-column sort. */}
+          <section id="kaizen-tasks">
+          <TableCard
+            icon={ListChecks}
+            title={T.secTasks}
+            wrap
+            right={
+              <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                {filtered.length}
+              </span>
+            }
+            toolbar={
+              <>
+                <SearchInput
+                  value={search}
+                  onChange={setSearch}
+                  placeholder={T.searchPh}
+                  className="w-44"
+                  inputClassName="text-xs pl-8 pr-7 py-1.5"
+                />
+                <StyledSelect value={project} onChange={setProject} className="w-44"
+                  options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => {
+                    const { Icon, color } = identFor(p.key);
+                    return { value: p.key, label: (
+                      <span className="inline-flex items-center gap-1.5 min-w-0">
+                        <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
+                        <span className="truncate">{tl(p.name)}</span>
+                      </span>
+                    ) };
+                  })]} />
+                <StyledSelect value={status} onChange={setStatus} className="w-36"
+                  options={[
+                    { value: "all", label: T.allStatuses },
+                    { value: "Done", label: T.sDone },
+                    { value: "In progress", label: T.sProg },
+                    { value: "Not started", label: T.sTodo },
+                  ]} />
+              </>
+            }
+          >
                 <thead>
-                  <tr style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+                  <tr>
                     <Th icon={FolderKanban} label={T.colProject}  k="project"  sort={sort} onSort={onSort} />
                     <Th icon={FileText}     label={T.colTask}     k="task"     sort={sort} onSort={onSort} />
                     <Th icon={Tag}          label={T.colType}     k="type"     sort={sort} onSort={onSort} cls="hidden md:table-cell" />
@@ -961,7 +967,7 @@ export default function Kaizen() {
                     <Th icon={UserRound}    label={T.colCustomer} k="customer" sort={sort} onSort={onSort} cls="hidden lg:table-cell" />
                     <Th icon={CalendarClock} label={T.colDeadline} k="deadline" sort={sort} onSort={onSort} />
                     <Th icon={CircleDot}    label={T.colStatus}   k="status"   sort={sort} onSort={onSort} />
-                    <th className="px-2 py-2" style={{ borderBottom: "1px solid var(--border)" }}></th>
+                    <Th label="" />
                   </tr>
                 </thead>
                 <tbody>
@@ -990,8 +996,7 @@ export default function Kaizen() {
                     <tr><td colSpan={8} className="px-4 py-8 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td></tr>
                   )}
                 </tbody>
-              </table>
-            </div>
+          </TableCard>
           </section>
         </div>
       )}
