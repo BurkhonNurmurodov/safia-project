@@ -158,18 +158,6 @@ const nameToColor = (name = "") => {
   return `hsl(${Math.abs(h) % 360}, 50%, 42%)`;
 };
 
-// ── shared presentational bits (mirror Kaizen) ───────────────────────────────
-function SectionHead({ icon: Icon, title, right }) {
-  return (
-    <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
-      </div>
-      {right}
-    </div>
-  );
-}
 // One KPI card = one story: primary metric, its closest companion metric,
 // and a live footer (sparkline / avatars / coverage bar) instead of dead space.
 function StatCard({ icon: Icon, label, accent, live, value, valueSuffix, secLabel, secValue, secAccent, footer }) {
