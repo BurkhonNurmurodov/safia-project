@@ -1423,14 +1423,19 @@ export default function Concerns() {
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                           />
                         </td>
-                        {/* Escalation level — top-level rows carry the assigned
-                            top-manager's name as a tooltip (row heights stay uniform) */}
+                        {/* Escalation level + who concretely holds it — the
+                            chip names the step, the line under it the person */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <LevelChip
                             level={r.level || "leader"}
                             label={levelLabel(r.level || "leader")}
                             title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
                           />
+                          {r.responsible_name && (
+                            <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>
+                              {tl(r.responsible_name)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
                         {/* Minutes from creation to the done-flip; open rows and
