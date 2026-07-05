@@ -16,6 +16,7 @@ from app.models import (
     Admin, Manager, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole,
     Translation,
 )
+from app.reg_token import make_reg_token
 from app.translit import transliterate as _to_uz_latin
 
 logger = logging.getLogger(__name__)
