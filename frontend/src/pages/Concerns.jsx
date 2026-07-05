@@ -1478,7 +1478,7 @@ export default function Concerns() {
         <Modal
           onClose={() => setHistoryRow(null)}
           title={t("concerns.historyTitle")}
-          subtitle={tl(historyRow.concern_text)}
+          subtitle={tl(historyRow.concern_text || "").slice(0, 90)}
           icon={<History size={16} />}
           footer={
             <Button variant="secondary" onClick={() => setHistoryRow(null)}>{t("concerns.cancel")}</Button>
