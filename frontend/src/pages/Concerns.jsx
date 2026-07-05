@@ -320,6 +320,11 @@ export default function Concerns() {
   const isLeaderViewer = role === "leader";
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
+  const levelLabel = (l) => t(`concerns.level.${l}`);
+
+  // Chain roles get the "my level only" toggle; admin is outside the chain and
+  // slices by level via the Filtrlar multi-select instead.
+  const myLevel = LEVELS.includes(role) ? role : null;
 
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
