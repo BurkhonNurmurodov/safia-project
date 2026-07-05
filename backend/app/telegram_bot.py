@@ -446,7 +446,7 @@ def _begin_registration(tid: int):
             bot.send_message(tid, _msg(lang, "already_pending"))
             return
         if "approved" in statuses:
-            bot.send_message(tid, _msg(lang, "add_role_hint"), reply_markup=_webapp_register_kb(lang))
+            bot.send_message(tid, _msg(lang, "add_role_hint"), reply_markup=_webapp_register_kb(lang, tid))
             return
 
     # New user, or every previous request was rejected — fresh start
