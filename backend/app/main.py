@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
     seed_managers_and_sources()
     backfill_role_profiles()
     backfill_concern_profiles()
+    backfill_concern_owner()
     seed_exchange_tasks()
     seed_production_pilot()
     resync_production_catalog()
