@@ -17,6 +17,11 @@ def get_heatmap(
     date_to: date = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    # include_pending=1 (Overview fleet trend): uploaded-but-unclosed days keep
+    # their computed metrics, tagged pending, instead of nulling out — so the
+    # trend line has no permanent holes. The Zagruzka grid (default) still
+    # shows pending days as value-less ⏳ cells.
+    include_pending: bool = Query(default=False),
     db: Session = Depends(get_db),
     _: dict = Depends(require_page("overview", "zagruzka")),
 ):
@@ -25,7 +30,8 @@ def get_heatmap(
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
-    metrics = build_metrics_list(db, date_from, date_to, shift, manager_id or None)
+    metrics = build_metrics_list(db, date_from, date_to, shift, manager_id or None,
+                                 require_closed=not include_pending)
 
     # Group by manager, then by date
     data: dict[str, dict[str, dict]] = {}
