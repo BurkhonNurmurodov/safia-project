@@ -758,12 +758,14 @@ def escalate_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     """Move a concern one step up ("I can't solve this") or back down the
-    leader → supervisor → shift-manager → top-manager chain. Gated by the same
-    rights as editing; a reason is mandatory and the move lands in the
-    concern_escalations trail + the receiving handler's bell/DM."""
+    supervisor → shift-manager → top-manager chain. Gated by the same rights
+    as editing (leaders never escalate); a reason is mandatory and the move
+    lands in the concern_escalations trail + the receiving handler's bell/DM."""
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
+    if payload.get("role") == "leader":
+        raise HTTPException(status_code=403, detail="Leaders cannot escalate concerns")
     _assert_can_edit(payload, c, db)
 
     reason = (body.reason or "").strip()
