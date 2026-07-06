@@ -164,7 +164,9 @@ def _serialize(
 
 class ConcernIn(BaseModel):
     cell_code: Optional[str] = None
-    concern_owner: str
+    # Legacy clients still send the old free-text owner — accepted but ignored:
+    # the owner is always the authenticated creator now.
+    concern_owner: Optional[str] = None
     concern_text: str
     status: str = "todo"
     deadline_days: Optional[int] = None
