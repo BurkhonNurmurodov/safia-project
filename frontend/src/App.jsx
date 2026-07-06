@@ -286,7 +286,7 @@ function NoAccess() {
 function RequirePage({ page, children }) {
   const { auth } = useAuth();
   const { access, isLoading } = usePageAccess();
-  if (isLoading) return null;
+  if (isLoading) return <PageLoader />;
   if (canAccessPage(auth?.role, page, access)) return children;
   const dest = firstAccessibleRoute(auth?.role, access);
   if (!dest || dest === window.location.pathname) return <NoAccess />;
@@ -348,6 +348,7 @@ function AppWithLang() {
       <BrowserRouter>
         <FilterProvider>
           <LogoutOverlay />
+          <RouteChangeLoader />
           <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
