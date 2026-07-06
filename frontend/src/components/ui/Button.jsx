@@ -25,11 +25,13 @@ export default function Button({
   children,
   ...rest
 }) {
+  // Borderless variants carry a transparent border so every variant renders
+  // the same height as bordered controls (secondary, SearchInput, FilterPanel).
   const palette = {
-    primary:   { background: "var(--brand)",    color: "#fff" },
+    primary:   { background: "var(--brand)",    color: "#fff", border: "1px solid transparent" },
     secondary: { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" },
-    danger:    { background: "#ef4444",         color: "#fff" },
-    ghost:     { background: "transparent",     color: "var(--text-3)" },
+    danger:    { background: "#ef4444",         color: "#fff", border: "1px solid transparent" },
+    ghost:     { background: "transparent",     color: "var(--text-3)", border: "1px solid transparent" },
   }[variant];
 
   const sizing = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
