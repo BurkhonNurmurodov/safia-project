@@ -774,6 +774,30 @@ export default function WorkerForecast({ effPct = 100 }) {
         <CellModal cell={modalCell} supName={modalCell.supName} wdFull={modalCell.wdFull}
           t={t} tl={tl} weeks={weeks} onClose={() => setModalCell(null)} />
       )}
+
+      {callOpen && (
+        <CallTomorrowModal
+          t={t} tl={tl} lang={lang}
+          onClose={() => setCallOpen(false)}
+          onSent={(n) => {
+            setSentToast(n);
+            setTimeout(() => setSentToast(null), 4000);
+          }}
+        />
+      )}
+
+      {/* notify success toast — fixed top-right, same look as the export toast */}
+      {sentToast != null && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{
+            position: "fixed", top: 16, right: 16, zIndex: 9999,
+            background: "#22c55e", color: "#fff", maxWidth: 320,
+            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
+          }}>
+          <CheckCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{t.toastSent(sentToast)}</span>
+        </div>
+      )}
     </div>
     </div>
   );
