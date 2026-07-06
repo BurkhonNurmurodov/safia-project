@@ -354,14 +354,19 @@ export default function Concerns() {
     return null;
   };
 
-  // Format a minute span. Under a day we show plain minutes; once it spans a
-  // day or more we switch to a "N days M min" format so it stays readable.
+  // Format a minute span as days / hours / minutes, dropping any leading zero
+  // units (e.g. "56 min", "1 hrs 41 min", "3 days 22 hrs 34 min"). Minutes are
+  // always shown when nothing larger is present so a value never renders empty.
   const fmtResolution = (mins) => {
     if (mins == null) return "—";
-    if (mins < 1440) return `${mins.toLocaleString()} ${t("general.min")}`;
     const days = Math.floor(mins / 1440);
-    const rem = mins % 1440;
-    return `${days} ${t("concerns.days")} ${rem.toLocaleString()} ${t("general.min")}`;
+    const hrs = Math.floor((mins % 1440) / 60);
+    const rem = mins % 60;
+    const parts = [];
+    if (days) parts.push(`${days} ${t("concerns.days")}`);
+    if (hrs) parts.push(`${hrs} ${t("general.hrs")}`);
+    if (rem || parts.length === 0) parts.push(`${rem} ${t("general.min")}`);
+    return parts.join(" ");
   };
 
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
