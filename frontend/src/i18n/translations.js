@@ -2705,7 +2705,6 @@ const t = {
     "concerns.status.todo":    "К выполнению",
     "concerns.status.doing":   "В процессе",
     "concerns.status.done":    "Решено",
-    "concerns.ownerRequired":  "Укажите владельца обеспокоенности",
     "concerns.textRequired":   "Введите текст обеспокоенности",
     "concerns.saveError":      "Ошибка сохранения",
     "concerns.chartTrend":     "Динамика обращений",
