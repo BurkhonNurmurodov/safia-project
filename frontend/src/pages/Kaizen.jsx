@@ -844,7 +844,7 @@ export default function Kaizen() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={ListChecks} title={T.secTypes} />
-              <div className="px-3 pb-3 pt-1">
+              <div className="px-3 pb-3 pt-1 apx-bare-tip">
                 {topTypes.length > 0 && (chartsReady
                   ? <ReactApexChart options={typeOpts} series={typeSeries} type="bar" height={Math.max(200, topTypes.length * 36)} />
                   : <div style={{ height: Math.max(200, topTypes.length * 36) }} />)}
