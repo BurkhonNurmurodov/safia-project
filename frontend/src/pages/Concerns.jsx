@@ -29,13 +29,15 @@ import { padChartFrom } from "../utils/chartRange";
 
 const STATUSES = ["todo", "doing", "done"];
 
-// Escalation chain, bottom → top. A concern starts at "leader" and is uplifted
-// one step at a time by whoever can't solve it (see the uplift/send-back
-// actions); the level column shows who currently holds it.
-const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
+// Escalation chain, bottom → top. A concern starts at "supervisor" and is
+// uplifted one step at a time by whoever can't solve it (see the uplift/
+// send-back actions); the level column shows who currently holds it. Leaders
+// sit below the chain: they create and edit but never hold a level.
+const LEVELS = ["supervisor", "shift-manager", "top-manager"];
 
 // Level → identity hue (never traffic-light — level is a position, not a
-// status): grey → teal → blue → violet as the concern climbs the chain.
+// status): teal → blue → violet as the concern climbs the chain. "leader"
+// stays only so pre-migration escalation-history entries keep rendering.
 const LEVEL_COLOR = {
   leader: "#94a3b8",
   supervisor: "#14b8a6",
