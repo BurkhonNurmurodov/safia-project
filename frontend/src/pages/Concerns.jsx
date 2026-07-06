@@ -1429,9 +1429,16 @@ export default function Concerns() {
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
-                        {showLeaderCol && <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.leader_name)}</td>}
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(r.brigadir_name) || "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: "var(--text-1)" }}>{tl(r.concern_owner)}</td>
+                        {/* Owner = whoever created the concern; the line under
+                            the name is their position */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <div style={{ color: "var(--text-1)" }}>{tl(r.owner_name) || "—"}</div>
+                          {r.owner_role && (
+                            <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                              {roleLabel(r.owner_role)}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
                           <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
                           {r.solution && (
