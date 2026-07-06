@@ -267,6 +267,215 @@ function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
   );
 }
 
+// ── call-tomorrow modal ───────────────────────────────────────────────────────
+// One row per brigadir with tomorrow's forecast (all supervisors, 100%
+// efficiency — deliberately ignores the page filters so nobody is left out).
+// Numbers are editable one-offs: they go into the notification only and never
+// overwrite the stored forecast.
+function CallTomorrowModal({ t, tl, lang, onClose, onSent }) {
+  const wd = WD[lang] || WD.uz;
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["trud-call-tomorrow"],
+    queryFn: () => api.get("/api/production/trudoyomkost/call-tomorrow").then((r) => r.data),
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const rows = data?.rows ?? [];
+
+  const [values, setValues] = useState({});    // manager_id → input string
+  const [checked, setChecked] = useState({});  // manager_id → bool
+  const [confirm, setConfirm] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
+
+  // seed once per fetch: everyone with a forecast AND a claimed profile is
+  // pre-selected; edge rows (no forecast / not registered) start unchecked
+  useEffect(() => {
+    if (!data) return;
+    const v = {}, c = {};
+    data.rows.forEach((r) => {
+      v[r.manager_id] = r.forecast != null ? String(r.forecast) : "";
+      c[r.manager_id] = r.forecast != null && r.registered;
+    });
+    setValues(v);
+    setChecked(c);
+  }, [data]);
+
+  const numOf = (id) => {
+    const n = parseInt(values[id], 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const selectable = rows.filter((r) => numOf(r.manager_id) != null);
+  const selected = selectable.filter((r) => checked[r.manager_id]);
+  const allOn = selectable.length > 0 && selected.length === selectable.length;
+
+  const setValue = (id, raw) => {
+    setValues((v) => ({ ...v, [id]: raw }));
+    // an emptied/invalid number can't stay selected
+    const n = parseInt(raw, 10);
+    if (!(Number.isFinite(n) && n >= 0)) setChecked((c) => ({ ...c, [id]: false }));
+  };
+
+  const doSend = () => {
+    setSending(true);
+    setError(null);
+    api.post("/api/production/trudoyomkost/call-notify", {
+      date: data.date,
+      items: selected.map((r) => ({ manager_id: r.manager_id, workers: numOf(r.manager_id) })),
+    })
+      .then((res) => { onSent(res.data.sent); onClose(); })
+      .catch((e) => setError(e?.response?.data?.detail || "Failed"))
+      .finally(() => setSending(false));
+  };
+  const trySend = () => {
+    if (selected.some((r) => r.last_notice)) setConfirm(true);
+    else doSend();
+  };
+
+  const dateSub = data
+    ? `${wd.f[(new Date(data.date + "T00:00:00").getDay() + 6) % 7]} · ${ddmm(data.date)}`
+    : "";
+  const hhmm = (iso) => {
+    try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+    catch { return ""; }
+  };
+
+  return (
+    <>
+      <Modal
+        onClose={sending ? null : onClose}
+        dismissable={!sending}
+        title={t.callTitle}
+        subtitle={dateSub}
+        icon={<Send size={16} style={{ color: "var(--brand-text)" }} />}
+        maxWidth="max-w-md"
+        bodyClassName="px-5 py-4 space-y-2"
+        footer={
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={sending}>{t.cancel}</Button>
+            <Button icon={<Send size={14} />} loading={sending} disabled={!selected.length} onClick={trySend}>
+              {t.sendBtn(selected.length)}
+            </Button>
+          </>
+        }
+      >
+        {/* the forecast is an automatic estimate — say so up front */}
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[12px] leading-snug"
+          style={{ background: "#f59e0b14", border: "1px solid #f59e0b40", color: "var(--text-2)" }}>
+          <AlertTriangle size={14} style={{ color: "#d97706", flexShrink: 0, marginTop: 1 }} />
+          <span>{t.callDisclaimer}</span>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2 pt-1">
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-11 w-full" />)}
+          </div>
+        ) : isError || !rows.length ? (
+          <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{t.noData}</div>
+        ) : (
+          <>
+            <label className="flex items-center gap-2.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider select-none"
+              style={{ color: "var(--text-4)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={allOn}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setChecked((c) => {
+                    const next = { ...c };
+                    selectable.forEach((r) => { next[r.manager_id] = on; });
+                    return next;
+                  });
+                }}
+                style={{ accentColor: "var(--brand)" }}
+              />
+              {t.selectAll}
+              <span className="ml-auto normal-case font-normal tabular-nums">{selected.length}/{rows.length}</span>
+            </label>
+
+            <div className="space-y-1.5">
+              {rows.map((r) => {
+                const id = r.manager_id;
+                const valid = numOf(id) != null;
+                const on = !!checked[id] && valid;
+                return (
+                  <label key={id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl select-none"
+                    style={{
+                      background: "var(--bg-inner)",
+                      border: `1px solid ${on ? "var(--brand-border)" : "var(--border)"}`,
+                      cursor: valid ? "pointer" : "default",
+                      opacity: valid ? 1 : 0.75,
+                    }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={!valid || sending}
+                      onChange={(e) => setChecked((c) => ({ ...c, [id]: e.target.checked }))}
+                      style={{ accentColor: "var(--brand)", flexShrink: 0 }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate" style={{ color: "var(--text-1)" }}>{tl(r.name)}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[10px]">
+                        {r.forecast == null && (
+                          <span className="px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
+                            {t.noForecast}
+                          </span>
+                        )}
+                        {!r.registered && (
+                          <span className="px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "#ef44441a", border: "1px solid #ef444440", color: "#ef4444" }}>
+                            {t.notRegistered}
+                          </span>
+                        )}
+                        {r.last_notice && (
+                          <span className="inline-flex items-center gap-1 font-medium tabular-nums" style={{ color: "#22c55e" }}>
+                            <CheckCircle size={11} />
+                            {t.sentLabel} {hhmm(r.last_notice.sent_at)} · {r.last_notice.workers}
+                            {r.last_notice.by ? ` · ${tl(r.last_notice.by)}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {r.forecast != null && <Chip conf={r.confidence} t={t} />}
+                    <input
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      value={values[id] ?? ""}
+                      disabled={sending}
+                      onClick={(e) => e.preventDefault()}
+                      onChange={(e) => setValue(id, e.target.value)}
+                      className="w-16 px-2 py-1.5 rounded-lg text-sm font-bold tabular-nums text-center flex-shrink-0"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            {error && (
+              <div className="text-[12px] px-1 pt-1" style={{ color: "#ef4444" }}>{error}</div>
+            )}
+          </>
+        )}
+      </Modal>
+
+      {confirm && (
+        <ConfirmDialog
+          title={t.resendTitle}
+          message={t.resendMsg(selected.filter((r) => r.last_notice).length)}
+          confirmLabel={t.sendBtn(selected.length)}
+          cancelLabel={t.cancel}
+          loading={sending}
+          onCancel={() => setConfirm(false)}
+          onConfirm={() => { setConfirm(false); doSend(); }}
+        />
+      )}
+    </>
+  );
+}
+
 export default function WorkerForecast({ effPct = 100 }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
