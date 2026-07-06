@@ -317,6 +317,8 @@ const emptyForm = () => ({
   entry_date: todayIso(),
   completion_date: "",
   solution: "",
+  level: "supervisor",           // admin-only: which chain step the concern starts on
+  top_manager_profile_id: null,  // required when level === "top-manager"
 });
 
 export default function Concerns() {
@@ -438,10 +440,13 @@ export default function Concerns() {
   // fetched only once that step's modal is actually open.
   const needsTopPick =
     escalate?.direction === "up" && (escalate?.row?.level || "supervisor") === "shift-manager";
+  // Admin seeding a new concern straight at the top-manager level also needs
+  // the picker (the concern must name who holds it).
+  const adminTopPick = isAdmin && !form.id && form.level === "top-manager";
   const { data: topManagers = [] } = useQuery({
     queryKey: ["concern-top-managers"],
     queryFn: () => api.get("/api/concerns/top-managers").then((r) => r.data),
-    enabled: needsTopPick,
+    enabled: needsTopPick || adminTopPick,
   });
 
   // Concern list ─────────────────────────────────────────────────────────────
@@ -742,6 +747,10 @@ export default function Concerns() {
     completion_date: form.status === "done" ? form.completion_date || null : null,
     solution: form.solution.trim() || null,
     ...(canPickLeader ? { leader_profile_id: form.leader_profile_id } : {}),
+    ...(isAdmin && !form.id ? {
+      level: form.level,
+      ...(form.level === "top-manager" ? { top_manager_profile_id: form.top_manager_profile_id } : {}),
+    } : {}),
   });
 
   const saveMutation = useMutation({
@@ -868,6 +877,7 @@ export default function Concerns() {
   function submit() {
     if (!form.id && canPickSupervisor && !form.brigadir_id) return setFormError(t("concerns.pickBrigadirFirst"));
     if (!form.id && canPickLeader && !form.leader_profile_id) return setFormError(t("concerns.pickLeaderFirst"));
+    if (!form.id && isAdmin && form.level === "top-manager" && !form.top_manager_profile_id) return setFormError(t("concerns.pickTopManager"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
   }
@@ -1552,6 +1562,35 @@ export default function Concerns() {
                       placeholder={t(canPickSupervisor && !form.brigadir_id ? "concerns.pickBrigadirFirst" : "concerns.pickLeader")}
                     />
                   )}
+                </Field>
+              )}
+
+              {/* Level — admin-only: everyone else's concerns start at the
+                  supervisor step. A top-manager-level concern must name who holds it. */}
+              {isAdmin && !form.id && (
+                <Field label={t("concerns.colLevel")}>
+                  <StyledSelect
+                    value={form.level}
+                    onChange={(v) => setForm((f) => ({
+                      ...f,
+                      level: v,
+                      top_manager_profile_id: v === "top-manager" ? f.top_manager_profile_id : null,
+                    }))}
+                    options={LEVELS.map((l) => ({ value: l, label: levelLabel(l) }))}
+                  />
+                </Field>
+              )}
+              {isAdmin && !form.id && form.level === "top-manager" && (
+                <Field label={t("concerns.fieldTopManager")} required>
+                  <StyledSelect
+                    value={form.top_manager_profile_id ? String(form.top_manager_profile_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, top_manager_profile_id: v ? Number(v) : null }))}
+                    options={topManagers.map((m) => ({
+                      value: String(m.profile_id),
+                      label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
+                    }))}
+                    placeholder={t("concerns.pickTopManager")}
+                  />
                 </Field>
               )}
 

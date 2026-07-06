@@ -175,6 +175,8 @@ class ConcernIn(BaseModel):
     solution: Optional[str] = None
     leader_profile_id: Optional[int] = None   # picker roles: which leader to act for
     leader_ref: Optional[int] = None          # legacy clients: telegram_user_roles.id
+    level: Optional[str] = None               # admin-only on create: seed the chain step
+    top_manager_profile_id: Optional[int] = None  # required when level == "top-manager"
 
 
 # ── role scope helpers ───────────────────────────────────────────────────────
@@ -623,6 +625,20 @@ def create_concern(
         solution=(body.solution or "").strip() or None,
         created_by=int(payload["sub"]),
     )
+
+    # Admin may seed a concern at a higher chain step; everyone else always
+    # starts at "supervisor". A top-manager-level concern must name who holds it.
+    if payload.get("role") == "admin" and body.level in LEVELS:
+        c.level = body.level
+        if body.level == "top-manager":
+            prof = db.query(RoleProfile).filter_by(
+                id=body.top_manager_profile_id or 0, role="top-manager",
+            ).first()
+            if not prof:
+                raise HTTPException(status_code=400, detail="Select a top-manager")
+            c.top_manager_profile_id = prof.id
+            c.top_manager_name = prof.name
+
     db.add(c)
     db.commit()
     db.refresh(c)
