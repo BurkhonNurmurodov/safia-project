@@ -308,17 +308,20 @@ const isoDiffDays = (a, b) =>
   Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
 const emptyForm = () => ({
   id: null,
-  brigadir_id: null,        // create cascade (admin/shift-manager): chosen unit
-  leader_profile_id: null,  // picker roles: which leader the concern belongs to
-  leader_name: "",          // display-only, used when editing someone's row
+  leader_name: "",          // display-only, kept for legacy rows shown on edit
   concern_text: "",
   status: "todo",
   deadline_days: "",
   entry_date: todayIso(),
   completion_date: "",
   solution: "",
-  level: "supervisor",           // admin-only: which chain step the concern starts on
-  top_manager_profile_id: null,  // required when level === "top-manager"
+  can_set_status: false,    // edit form: may this viewer change the status?
+  // New-concern target (see createLevel): admins pick the level (+ shift), the
+  // chosen holder is a shift-manager or top-manager profile id.
+  level: "shift-manager",
+  shift: "",                     // admin, shift-manager level: 1 | 2
+  shift_manager_profile_id: null,
+  top_manager_profile_id: null,
 });
 
 export default function Concerns() {
@@ -328,16 +331,18 @@ export default function Concerns() {
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
 
-  // Role-scoped access (the backend enforces the same scopes): admins and
-  // shift-managers create via a supervisor → leader cascade, supervisors pick
-  // among their own leaders, leaders always write on themselves, top-managers
-  // get a read-only view of everything in their scope.
+  // Role-scoped access (the backend enforces the same scopes). Each role raises
+  // a concern to the step above it: leader → supervisor, supervisor →
+  // shift-manager, shift-manager → top-manager; admins pick the level. Only the
+  // responsible holder at a concern's current level may change its status.
   const role = auth?.role;
   const isAdmin = role === "admin";
-  const canPickSupervisor = isAdmin || role === "shift-manager";
-  const canPickLeader = canPickSupervisor || role === "supervisor";
+  const isSupervisor = role === "supervisor";
+  const isShiftManager = role === "shift-manager";
   const readOnly = role === "top-manager";
-  const isLeaderViewer = role === "leader";
+  // Where a NEW concern this viewer creates lands: each role raises it to the
+  // step above them; admins choose between shift-manager and top-manager.
+  const createLevel = isAdmin ? null : isSupervisor ? "shift-manager" : isShiftManager ? "top-manager" : "supervisor";
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
   const levelLabel = (l) => t(`concerns.level.${l}`);
@@ -393,8 +398,6 @@ export default function Concerns() {
   // (presets + calendar popover); defaults to the last 7 days.
   const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = useState(() => localTodayIso());
-  const [fBrig, setFBrig] = useState("All");          // brigadir_manager_id (string) | "All"
-  const [fLeader, setFLeader] = useState("All");      // leaderKey(row) (string) | "All"
   const [search, setSearch] = useState("");
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
@@ -419,34 +422,34 @@ export default function Concerns() {
   const [escalate, setEscalate] = useState(null);       // { row, direction: "up"|"down" } | null
   const [escReason, setEscReason] = useState("");
   const [escTop, setEscTop] = useState(null);           // top-manager profile_id (up from shift-manager)
+  const [escSM, setEscSM] = useState(null);             // shift-manager profile_id (up from supervisor)
   const [escError, setEscError] = useState("");
   const [historyRow, setHistoryRow] = useState(null);   // row whose escalation trail is open
 
-  // Create-cascade picker sources (both backend-scoped to the caller's role):
-  // supervisors of the caller's scope, then every pre-created leader profile
-  // (claimed or not — a not-yet-registered leader inherits the concern later).
-  const { data: supervisors = [] } = useQuery({
-    queryKey: ["concern-supervisors"],
-    queryFn: () => api.get("/api/concerns/supervisors").then((r) => r.data),
-    enabled: canPickSupervisor,
-  });
-  const { data: leaders = [] } = useQuery({
-    queryKey: ["concern-leaders"],
-    queryFn: () => api.get("/api/concerns/leaders").then((r) => r.data),
-    enabled: canPickLeader,
-  });
+  // A new concern is raised to the step above the creator; the holder at that
+  // step is named on the form (supervisor/admin → a shift-manager, shift-manager
+  // /admin → a top-manager). formLevel is the level being created.
+  const formLevel = isAdmin ? form.level : createLevel;
+  const formNeedsSM = modalOpen && !form.id && formLevel === "shift-manager";
+  const formNeedsTop = modalOpen && !form.id && formLevel === "top-manager";
+  // Escalation up-steps that must name the receiving holder.
+  const escLvl = escalate ? (escalate.row.level || "supervisor") : null;
+  const needsSMPick = escalate?.direction === "up" && escLvl === "supervisor";       // → shift-manager
+  const needsTopPick = escalate?.direction === "up" && escLvl === "shift-manager";   // → top-manager
 
-  // Top-manager profiles for the shift-manager → top-management uplift step —
-  // fetched only once that step's modal is actually open.
-  const needsTopPick =
-    escalate?.direction === "up" && (escalate?.row?.level || "supervisor") === "shift-manager";
-  // Admin seeding a new concern straight at the top-manager level also needs
-  // the picker (the concern must name who holds it).
-  const adminTopPick = isAdmin && !form.id && form.level === "top-manager";
+  // Shift-manager targets: admins narrow by the shift they picked; supervisors
+  // are backend-pinned to their own shift. Fetched only when a step needs them.
+  const smShiftParam = isAdmin && !form.id && form.shift ? `?shift=${form.shift}` : "";
+  const { data: shiftManagers = [] } = useQuery({
+    queryKey: ["concern-shift-managers", smShiftParam || "scoped"],
+    queryFn: () => api.get(`/api/concerns/shift-managers${smShiftParam}`).then((r) => r.data),
+    enabled: needsSMPick || (formNeedsSM && (!isAdmin || !!form.shift)),
+  });
+  // Top-manager targets — fetched only when that step's modal is open.
   const { data: topManagers = [] } = useQuery({
     queryKey: ["concern-top-managers"],
     queryFn: () => api.get("/api/concerns/top-managers").then((r) => r.data),
-    enabled: needsTopPick || adminTopPick,
+    enabled: needsTopPick || formNeedsTop,
   });
 
   // Concern list ─────────────────────────────────────────────────────────────
@@ -458,11 +461,6 @@ export default function Concerns() {
     queryFn: () => api.get("/api/concerns").then((r) => r.data),
   });
   const rows = listResp?.data || [];
-
-  // Stable per-leader key for filter options: profile-first, with the role-row
-  // fallback for legacy rows that never matched a profile.
-  const leaderKey = (r) =>
-    r.leader_profile_id != null ? `p${r.leader_profile_id}` : `r${r.leader_role_ref}`;
 
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
@@ -479,55 +477,28 @@ export default function Concerns() {
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [isLoading]);
 
-  // ── brigadir → leader filter cascade, built from the fetched (scoped) rows ──
-  const brigOptions = useMemo(() => {
-    const m = new Map();
-    for (const r of rows) {
-      if (r.brigadir_manager_id == null) continue;
-      if (!m.has(r.brigadir_manager_id)) m.set(r.brigadir_manager_id, r.brigadir_name || "—");
-    }
-    return [...m.entries()]
-      .map(([id, name]) => ({ value: String(id), label: tl(name) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, tl]);
-
-  const leaderFilterOptions = useMemo(() => {
-    const m = new Map();
-    for (const r of rows) {
-      if (r.leader_profile_id == null && r.leader_role_ref == null) continue;
-      if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) continue;
-      if (!m.has(leaderKey(r))) m.set(leaderKey(r), r.leader_name || "—");
-    }
-    return [...m.entries()]
-      .map(([key, name]) => ({ value: key, label: tl(name) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, fBrig, tl]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Period + brigadir + leader filters (client-side, over the fetched rows).
+  // Period filter (client-side, over the fetched rows). Concerns are level-based
+  // now, so there's no brigadir/leader slicing here.
   const scoped = useMemo(() => {
     return rows.filter((r) => {
       if (startDate && !(r.entry_date && r.entry_date >= startDate)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) return false;
-      if (fLeader !== "All" && leaderKey(r) !== fLeader) return false;
       return true;
     });
-  }, [rows, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, startDate, endDate]);
 
-  // Trend-chart scope: same filters, but the period start is pulled back so the
-  // chart never spans fewer than 7 days (n..n+4 charts as n-2..n+4). KPIs,
-  // donut and table keep the exact selected period.
+  // Trend-chart scope: same filter, but the period start is pulled back so the
+  // chart never spans fewer than 7 days. KPIs, donut and table keep the exact
+  // selected period.
   const chartStart = padChartFrom(startDate, endDate);
   const chartScoped = useMemo(() => {
     if (chartStart === startDate) return scoped;
     return rows.filter((r) => {
       if (chartStart && !(r.entry_date && r.entry_date >= chartStart)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
-      if (fBrig !== "All" && String(r.brigadir_manager_id) !== fBrig) return false;
-      if (fLeader !== "All" && leaderKey(r) !== fLeader) return false;
       return true;
     });
-  }, [rows, scoped, chartStart, startDate, endDate, fBrig, fLeader]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, scoped, chartStart, startDate, endDate]);
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
@@ -693,12 +664,6 @@ export default function Concerns() {
     return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen };
   }, [filtered, chartFiltered, chartStart, endDate]);
 
-  // Brigadir filter is pointless for a supervisor (single unit), so it stays
-  // with the multi-unit roles. (Leader/supervisor left the table columns —
-  // the dropdowns up top are the only place they surface now.)
-  const showBrigFilter = canPickSupervisor || readOnly;
-  const showLeaderFilter = showBrigFilter || role === "supervisor";
-
   // ── column sort (asc → desc → off), applied over the filtered rows ──────────
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" }
@@ -746,10 +711,12 @@ export default function Concerns() {
     entry_date: form.entry_date || null,
     completion_date: form.status === "done" ? form.completion_date || null : null,
     solution: form.solution.trim() || null,
-    ...(canPickLeader ? { leader_profile_id: form.leader_profile_id } : {}),
-    ...(isAdmin && !form.id ? {
-      level: form.level,
-      ...(form.level === "top-manager" ? { top_manager_profile_id: form.top_manager_profile_id } : {}),
+    // New concern only: where it lands + who holds it. The backend derives the
+    // level from the role (admins send it explicitly) and requires the holder.
+    ...(!form.id ? {
+      ...(isAdmin ? { level: form.level } : {}),
+      ...(formLevel === "shift-manager" ? { shift_manager_profile_id: form.shift_manager_profile_id } : {}),
+      ...(formLevel === "top-manager" ? { top_manager_profile_id: form.top_manager_profile_id } : {}),
     } : {}),
   });
 
@@ -799,6 +766,7 @@ export default function Concerns() {
     setEscalate({ row, direction });
     setEscReason("");
     setEscTop(null);
+    setEscSM(null);
     setEscError("");
   }
   const escTargetLevel = escalate
@@ -810,6 +778,7 @@ export default function Concerns() {
         direction: escalate.direction,
         reason: escReason.trim(),
         ...(needsTopPick ? { top_manager_profile_id: escTop } : {}),
+        ...(needsSMPick ? { shift_manager_profile_id: escSM } : {}),
       }).then((r) => r.data),
     onSuccess: () => {
       invalidate();
@@ -820,6 +789,7 @@ export default function Concerns() {
   function submitEscalate() {
     if (!escReason.trim()) return setEscError(t("concerns.reasonRequired"));
     if (needsTopPick && !escTop) return setEscError(t("concerns.pickTopManager"));
+    if (needsSMPick && !escSM) return setEscError(t("concerns.pickShiftManager"));
     escalateMutation.mutate();
   }
 
@@ -839,25 +809,14 @@ export default function Concerns() {
 
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
-    // Pre-select whatever the creator is currently filtering by, if anything.
-    const f = { ...emptyForm() };
-    if (canPickLeader && fLeader.startsWith("p")) {
-      const prof = leaders.find((l) => l.profile_id === Number(fLeader.slice(1)));
-      if (prof) {
-        f.leader_profile_id = prof.profile_id;
-        f.brigadir_id = prof.manager_id;
-      }
-    }
-    if (canPickSupervisor && !f.brigadir_id && fBrig !== "All") f.brigadir_id = Number(fBrig);
-    setForm(f);
+    setForm(emptyForm());
     setFormError("");
     setModalOpen(true);
   }
   function openEdit(r) {
     setForm({
+      ...emptyForm(),
       id: r.id,
-      brigadir_id: r.brigadir_manager_id,
-      leader_profile_id: r.leader_profile_id,
       leader_name: r.leader_name || "",
       concern_text: r.concern_text || "",
       status: r.status || "todo",
@@ -865,6 +824,7 @@ export default function Concerns() {
       entry_date: r.entry_date || todayIso(),
       completion_date: r.completion_date || "",
       solution: r.solution || "",
+      can_set_status: !!r.can_set_status,
     });
     setFormError("");
     setModalOpen(true);
@@ -875,28 +835,21 @@ export default function Concerns() {
     setFormError("");
   }
   function submit() {
-    if (!form.id && canPickSupervisor && !form.brigadir_id) return setFormError(t("concerns.pickBrigadirFirst"));
-    if (!form.id && canPickLeader && !form.leader_profile_id) return setFormError(t("concerns.pickLeaderFirst"));
-    if (!form.id && isAdmin && form.level === "top-manager" && !form.top_manager_profile_id) return setFormError(t("concerns.pickTopManager"));
+    if (!form.id && formLevel === "shift-manager" && !form.shift_manager_profile_id) return setFormError(t("concerns.pickShiftManager"));
+    if (!form.id && formLevel === "top-manager" && !form.top_manager_profile_id) return setFormError(t("concerns.pickTopManager"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
   }
 
-  const brigadirSelectOptions = supervisors.map((s) => ({
-    value: String(s.manager_id),
-    label: tl(s.name),
+  // Target picker options for the create modal.
+  const shiftManagerOptions = shiftManagers.map((m) => ({
+    value: String(m.profile_id),
+    label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
   }));
-
-  // Leader options for the modal — admin/shift-manager cascade by the chosen
-  // brigadir (a supervisor's list is already just their own unit). Unclaimed
-  // profiles stay pickable, quietly marked; the leader inherits the concern
-  // once they register.
-  const leaderOptions = leaders
-    .filter((l) => !canPickSupervisor || (form.brigadir_id && l.manager_id === form.brigadir_id))
-    .map((l) => ({
-      value: String(l.profile_id),
-      label: l.registered ? tl(l.name) : `${tl(l.name)} · ${t("concerns.notRegistered")}`,
-    }));
+  const topManagerOptions = topManagers.map((m) => ({
+    value: String(m.profile_id),
+    label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
+  }));
 
   // ── consolidated table filter button (shared <FilterPanel>) ─────────────────
   const deadlineActive = deadlineMin !== "" || deadlineMax !== "";
@@ -1089,8 +1042,8 @@ export default function Concerns() {
                   label={statusLabel(r.status)}
                   statusLabel={statusLabel}
                   saving={savingStatusId === r.id}
-                  disabled={!r.can_edit}
-                  options={r.can_resolve ? STATUSES : STATUSES.filter((s) => s !== "done")}
+                  disabled={!r.can_set_status}
+                  options={STATUSES}
                   onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                 />
               </span>
@@ -1120,7 +1073,7 @@ export default function Concerns() {
                 )}
               </MobField>
               <MobField label={t("concerns.responsible")}>
-                {r.responsible_name ? tl(r.responsible_name) : levelLabel(r.level || "supervisor")}
+                {r.responsible_name ? shortOwner(r.responsible_name) : levelLabel(r.level || "supervisor")}
               </MobField>
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
@@ -1186,47 +1139,17 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
-      {/* Filters — period + brigadir + leader (mirrors the Leaders page). The
-          brigadir filter shows for multi-unit roles (admin/shift-manager/
-          top-manager), the leader filter for everyone above a leader; a leader
-          only ever sees their own concerns. */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 mb-3">
-        {/* Period — same range picker as the Leaders page (presets + calendar).
-            Mobile: full row + hidden labels; the two selects pair up below. */}
-        <div className="col-span-2 sm:col-span-1">
-          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
-          <DateRangePicker
-            dateFrom={startDate}
-            dateTo={endDate}
-            setDateFrom={setStartDate}
-            setDateTo={setEndDate}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-
-        {/* Brigadir — multi-unit roles only */}
-        {showBrigFilter && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.colSupervisor")}</label>
-            <StyledSelect
-              value={fBrig}
-              onChange={(v) => { setFBrig(v); setFLeader("All"); }}
-              options={[{ value: "All", label: t("concerns.allBrigadirs") }, ...brigOptions]}
-            />
-          </div>
-        )}
-
-        {/* Leader — everyone above a leader; full row on mobile when it is the only select */}
-        {showLeaderFilter && (
-          <div className={`min-w-0 ${showBrigFilter ? "" : "col-span-2 sm:col-span-1"}`}>
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.fieldLeader")}</label>
-            <StyledSelect
-              value={fLeader}
-              onChange={setFLeader}
-              options={[{ value: "All", label: t("concerns.allLeaders") }, ...leaderFilterOptions]}
-            />
-          </div>
-        )}
+      {/* Filter — period only. Concerns are level-based now (no brigadir/leader
+          slicing); status / owner / level live behind the Filtrlar button. */}
+      <div className="mb-3">
+        <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          triggerClassName="w-full sm:w-auto px-3 py-2 text-sm"
+        />
       </div>
 
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
@@ -1474,8 +1397,8 @@ export default function Concerns() {
                             label={statusLabel(r.status)}
                             statusLabel={statusLabel}
                             saving={savingStatusId === r.id}
-                            disabled={!r.can_edit}
-                            options={r.can_resolve ? STATUSES : STATUSES.filter((s) => s !== "done")}
+                            disabled={!r.can_set_status}
+                            options={STATUSES}
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                           />
                         </td>
@@ -1488,8 +1411,8 @@ export default function Concerns() {
                             title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
                           />
                           {r.responsible_name && (
-                            <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>
-                              {tl(r.responsible_name)}
+                            <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }} title={tl(r.responsible_name)}>
+                              {shortOwner(r.responsible_name)}
                             </div>
                           )}
                         </td>
@@ -1528,67 +1451,46 @@ export default function Concerns() {
             </>
           }
         >
-              {/* Who the concern belongs to (fixed on edit — ownership is never
-                  reassigned): admin/shift-manager cascade supervisor → leader,
-                  a supervisor picks straight from their own leaders. */}
-              {canPickSupervisor && !form.id && (
-                <Field label={t("concerns.colSupervisor")} required>
-                  <StyledSelect
-                    value={form.brigadir_id ? String(form.brigadir_id) : ""}
-                    onChange={(v) => setForm((f) => ({
-                      ...f,
-                      brigadir_id: v ? Number(v) : null,
-                      leader_profile_id: null,   // unit changed — reselect the leader
-                    }))}
-                    options={brigadirSelectOptions}
-                    placeholder={t("concerns.pickBrigadir")}
-                  />
-                </Field>
-              )}
-              {canPickLeader && (
-                <Field label={t("concerns.fieldLeader")} required={!form.id}>
-                  {form.id ? (
-                    <div
-                      className="w-full rounded-lg px-3 py-2 text-sm"
-                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
-                    >
-                      {tl(form.leader_name) || "—"}
-                    </div>
-                  ) : (
-                    <StyledSelect
-                      value={form.leader_profile_id ? String(form.leader_profile_id) : ""}
-                      onChange={(v) => setForm((f) => ({ ...f, leader_profile_id: v ? Number(v) : null }))}
-                      options={leaderOptions}
-                      placeholder={t(canPickSupervisor && !form.brigadir_id ? "concerns.pickBrigadirFirst" : "concerns.pickLeader")}
-                    />
-                  )}
-                </Field>
-              )}
-
-              {/* Level — admin-only: everyone else's concerns start at the
-                  supervisor step. A top-manager-level concern must name who holds it. */}
-              {isAdmin && !form.id && (
+              {/* Target — where the concern is raised to (create only; the level
+                  and its holder are fixed once created). Each role raises it to
+                  the step above them; admins choose the level and the person. */}
+              {!form.id && isAdmin && (
                 <Field label={t("concerns.colLevel")}>
                   <StyledSelect
                     value={form.level}
                     onChange={(v) => setForm((f) => ({
-                      ...f,
-                      level: v,
-                      top_manager_profile_id: v === "top-manager" ? f.top_manager_profile_id : null,
+                      ...f, level: v, shift: "", shift_manager_profile_id: null, top_manager_profile_id: null,
                     }))}
-                    options={LEVELS.map((l) => ({ value: l, label: levelLabel(l) }))}
+                    options={["shift-manager", "top-manager"].map((l) => ({ value: l, label: levelLabel(l) }))}
                   />
                 </Field>
               )}
-              {isAdmin && !form.id && form.level === "top-manager" && (
+              {!form.id && isAdmin && form.level === "shift-manager" && (
+                <Field label={t("concerns.fieldShift")} required>
+                  <StyledSelect
+                    value={form.shift ? String(form.shift) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, shift: v ? Number(v) : "", shift_manager_profile_id: null }))}
+                    options={[{ value: "1", label: t("concerns.shift1") }, { value: "2", label: t("concerns.shift2") }]}
+                    placeholder={t("concerns.pickShift")}
+                  />
+                </Field>
+              )}
+              {!form.id && formLevel === "shift-manager" && (
+                <Field label={t("concerns.fieldShiftManager")} required>
+                  <StyledSelect
+                    value={form.shift_manager_profile_id ? String(form.shift_manager_profile_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, shift_manager_profile_id: v ? Number(v) : null }))}
+                    options={shiftManagerOptions}
+                    placeholder={t(isAdmin && !form.shift ? "concerns.pickShiftFirst" : "concerns.pickShiftManager")}
+                  />
+                </Field>
+              )}
+              {!form.id && formLevel === "top-manager" && (
                 <Field label={t("concerns.fieldTopManager")} required>
                   <StyledSelect
                     value={form.top_manager_profile_id ? String(form.top_manager_profile_id) : ""}
                     onChange={(v) => setForm((f) => ({ ...f, top_manager_profile_id: v ? Number(v) : null }))}
-                    options={topManagers.map((m) => ({
-                      value: String(m.profile_id),
-                      label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
-                    }))}
+                    options={topManagerOptions}
                     placeholder={t("concerns.pickTopManager")}
                   />
                 </Field>
@@ -1616,18 +1518,19 @@ export default function Concerns() {
                 />
               </Field>
 
-              {/* Status + deadline */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t("concerns.fieldStatus")}>
-                  {/* Resolving is the supervisor's (and above's) call — leaders
-                      only shuffle todo↔doing */}
-                  <StyledSelect
-                    value={form.status}
-                    onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-                    options={(isLeaderViewer ? STATUSES.filter((s) => s !== "done") : STATUSES)
-                      .map((s) => ({ value: s, label: statusLabel(s) }))}
-                  />
-                </Field>
+              {/* Status (edit only — a new concern always opens at "To do", and
+                  only its responsible holder may change the status) + deadline */}
+              <div className={`grid gap-3 ${form.id ? "grid-cols-2" : "grid-cols-1"}`}>
+                {form.id && (
+                  <Field label={t("concerns.fieldStatus")}>
+                    <StyledSelect
+                      value={form.status}
+                      disabled={!form.can_set_status}
+                      onChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                      options={STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
+                    />
+                  </Field>
+                )}
                 <Field label={t("concerns.fieldDeadline")}>
                   <input
                     type="number"
@@ -1700,6 +1603,20 @@ export default function Concerns() {
               {escTargetLevel && <LevelChip level={escTargetLevel} label={levelLabel(escTargetLevel)} />}
             </div>
           </Field>
+
+          {needsSMPick && (
+            <Field label={t("concerns.fieldShiftManager")} required>
+              <StyledSelect
+                value={escSM ? String(escSM) : ""}
+                onChange={(v) => setEscSM(v ? Number(v) : null)}
+                options={shiftManagers.map((m) => ({
+                  value: String(m.profile_id),
+                  label: m.registered ? tl(m.name) : `${tl(m.name)} · ${t("concerns.notRegistered")}`,
+                }))}
+                placeholder={t("concerns.pickShiftManager")}
+              />
+            </Field>
+          )}
 
           {needsTopPick && (
             <Field label={t("concerns.fieldTopManager")} required>

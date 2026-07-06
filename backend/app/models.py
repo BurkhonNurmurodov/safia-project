@@ -660,6 +660,12 @@ class LeaderConcern(Base):
     # Cleared when the concern is sent back down.
     top_manager_profile_id = Column(Integer, nullable=True)
     top_manager_name       = Column(String, nullable=True)        # snapshot of the chosen top-manager
+    # Shift-management is person-specific too (parallel to top_manager_*): the
+    # shift-manager who holds the concern at the shift-manager level — picked on
+    # the supervisor → shift-manager uplift and when a supervisor/admin seeds a
+    # concern straight at that level. Cleared when sent back down to supervisor.
+    shift_manager_profile_id = Column(Integer, nullable=True)
+    shift_manager_name       = Column(String, nullable=True)      # snapshot of the chosen shift-manager
     created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
     # The creator's PROFILE identity — the Owner column resolves the current
     # profile name from these at view time (renames stay live). owner_role:

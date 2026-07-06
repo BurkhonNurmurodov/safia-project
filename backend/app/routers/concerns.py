@@ -40,7 +40,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -113,7 +113,7 @@ def _serialize(
     # specifically assigned one.
     responsible = (
         c.brigadir_name if level == "supervisor"
-        else (sm_names or {}).get(c.brigadir_manager_id) if level == "shift-manager"
+        else (c.shift_manager_name or (sm_names or {}).get(c.brigadir_manager_id)) if level == "shift-manager"
         else c.top_manager_name
     )
     # Owner = whoever created the concern, resolved to their CURRENT profile
@@ -142,6 +142,8 @@ def _serialize(
         "level": level,
         "top_manager_profile_id": c.top_manager_profile_id,
         "top_manager_name": c.top_manager_name,
+        "shift_manager_profile_id": c.shift_manager_profile_id,
+        "shift_manager_name": c.shift_manager_name,
         "responsible_name": responsible,
         "escalation_count": (esc_counts or {}).get(c.id, 0),
         "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -151,14 +153,16 @@ def _serialize(
     # sit below the chain — they may edit their own open base-level concerns
     # but never resolve, delete or escalate them.
     if ctx is not None:
-        can = _can_edit(ctx, c)
-        full = can and ctx["role"] != "leader"
+        manage = _can_edit(ctx, c)
+        set_status = _can_set_status(ctx, c)
+        not_leader = ctx["role"] != "leader"
         lvl = LEVEL_IDX.get(level, 0)
-        out["can_edit"] = can
-        out["can_resolve"] = full
-        out["can_delete"] = full
-        out["can_escalate"] = full and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
-        out["can_deescalate"] = full and c.status != "done" and lvl > 0
+        out["can_edit"] = manage
+        out["can_set_status"] = set_status
+        out["can_resolve"] = set_status                       # kept for the status dropdown
+        out["can_delete"] = ctx["role"] == "admin" or (_is_owner(ctx, c) and not_leader)
+        out["can_escalate"] = manage and not_leader and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
+        out["can_deescalate"] = manage and not_leader and c.status != "done" and lvl > 0
     return out
 
 
@@ -176,7 +180,8 @@ class ConcernIn(BaseModel):
     leader_profile_id: Optional[int] = None   # picker roles: which leader to act for
     leader_ref: Optional[int] = None          # legacy clients: telegram_user_roles.id
     level: Optional[str] = None               # admin-only on create: seed the chain step
-    top_manager_profile_id: Optional[int] = None  # required when level == "top-manager"
+    top_manager_profile_id: Optional[int] = None    # required when the level is top-manager
+    shift_manager_profile_id: Optional[int] = None  # required when the level is shift-manager
 
 
 # ── role scope helpers ───────────────────────────────────────────────────────
@@ -189,6 +194,26 @@ def _viewer_shift(db: Session, payload: dict) -> Optional[int]:
         RoleProfile.role == "shift-manager",
     ).first()
     return prof.shift if prof else None
+
+
+def _supervisor_shift(db: Session, payload: dict) -> Optional[int]:
+    """A supervisor's shift (1|2) — a supervisor IS a manager (role_id =
+    managers.id), so their shift is that unit's shift."""
+    mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
+    return mgr.shift if mgr else None
+
+
+def _shift_manager_profile(db: Session, profile_id: Optional[int], shift: Optional[int] = None) -> Optional[RoleProfile]:
+    """Validate a picked shift-manager profile, optionally constrained to a
+    given shift (used to keep supervisors on their own shift)."""
+    if not profile_id:
+        return None
+    prof = db.query(RoleProfile).filter_by(id=profile_id, role="shift-manager").first()
+    if not prof:
+        return None
+    if shift is not None and prof.shift != shift:
+        return None
+    return prof
 
 
 def _shift_unit_ids(db: Session, shift: Optional[int]) -> list[int]:
@@ -218,16 +243,35 @@ def _leader_own_filter(db: Session, payload: dict):
     return or_(*conds)
 
 
+def _owner_filter(payload: dict):
+    """SQLAlchemy condition matching concerns the caller created (non-leader
+    roles — owner_profile_id is managers.id for supervisors, role_profiles.id
+    for the rest). Lets a creator always see their own concern even once it
+    sits at a level above their own step."""
+    return and_(
+        LeaderConcern.owner_role == payload.get("role"),
+        LeaderConcern.owner_profile_id == payload.get("role_id"),
+    )
+
+
 def _scope_query(query, payload: dict, db: Session):
-    """Restrict a LeaderConcern query to what the caller may see."""
+    """Restrict a LeaderConcern query to what the caller may see: their own
+    creations, concerns assigned to them, and the chain below them in scope."""
     role = payload.get("role")
     if role in ("admin", "top-manager"):
         return query
     if role == "shift-manager":
         unit_ids = _shift_unit_ids(db, _viewer_shift(db, payload))
-        return query.filter(LeaderConcern.brigadir_manager_id.in_(unit_ids))
+        return query.filter(or_(
+            LeaderConcern.brigadir_manager_id.in_(unit_ids),
+            LeaderConcern.shift_manager_profile_id == payload.get("role_id"),
+            _owner_filter(payload),
+        ))
     if role == "supervisor":
-        return query.filter(LeaderConcern.brigadir_manager_id == payload.get("role_id"))
+        return query.filter(or_(
+            LeaderConcern.brigadir_manager_id == payload.get("role_id"),
+            _owner_filter(payload),
+        ))
     return query.filter(_leader_own_filter(db, payload))
 
 
@@ -250,34 +294,70 @@ def _viewer_ctx(db: Session, payload: dict) -> dict:
     return ctx
 
 
-def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
-    """Responsibility moves UP the escalation chain: the handler at the
-    concern's current level and every chain role above it (inside their scope)
-    may edit / resolve / escalate; levels below the current one are read-only.
-    Top-management is person-specific — only the assigned top-manager acts at
-    the top level. Admin manages everything. Leaders sit below the chain: they
-    may edit their own concerns only while still open at the base (supervisor)
-    level — and even then never resolve/delete/escalate (enforced separately)."""
+def _is_owner(ctx: dict, c: LeaderConcern) -> bool:
+    """The authenticated caller CREATED this concern (Owner-column identity)."""
     role = ctx["role"]
-    lvl = LEVEL_IDX.get(_level(c), 0)
-    if role == "admin":
-        return True
-    if role == "top-manager":
+    if role == "leader":
         return (
-            lvl == LEVEL_IDX["top-manager"]
+            (c.leader_role_ref is not None and c.leader_role_ref == ctx["role_ref"])
+            or (ctx["own_profile_id"] is not None and c.leader_profile_id == ctx["own_profile_id"])
+        )
+    return (
+        c.owner_role == role
+        and c.owner_profile_id is not None
+        and c.owner_profile_id == ctx["role_id"]
+    )
+
+
+def _is_responsible(ctx: dict, c: LeaderConcern) -> bool:
+    """The caller is the person who currently HOLDS the concern at its level —
+    the only one (besides admin) allowed to change its STATUS. Each level names
+    its holder on the row: supervisor → the brigadir, shift-manager → the picked
+    shift-manager, top-manager → the picked top-manager."""
+    role = ctx["role"]
+    level = _level(c)
+    if level == "supervisor":
+        return role == "supervisor" and c.brigadir_manager_id == ctx["role_id"]
+    if level == "shift-manager":
+        return (
+            role == "shift-manager"
+            and c.shift_manager_profile_id is not None
+            and c.shift_manager_profile_id == ctx["role_id"]
+        )
+    if level == "top-manager":
+        return (
+            role == "top-manager"
             and c.top_manager_profile_id is not None
             and c.top_manager_profile_id == ctx["role_id"]
         )
+    return False
+
+
+def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
+    """MANAGE rights — view, edit fields, escalate/deescalate. The owner and
+    everyone above them in the chain (inside their scope) may manage; changing
+    the STATUS is reserved to the responsible holder (see _can_set_status).
+    Admin manages everything; a leader may edit only their own still-open row;
+    top-managers manage only what's assigned to them."""
+    role = ctx["role"]
+    if role == "admin":
+        return True
+    if role == "leader":
+        return _is_owner(ctx, c) and c.status != "done"
+    if _is_owner(ctx, c) or _is_responsible(ctx, c):
+        return True
+    lvl = LEVEL_IDX.get(_level(c), 0)
     if role == "shift-manager":
         return c.brigadir_manager_id in ctx["shift_units"] and lvl <= LEVEL_IDX["shift-manager"]
     if role == "supervisor":
         return c.brigadir_manager_id == ctx["role_id"] and lvl <= LEVEL_IDX["supervisor"]
-    if role == "leader":
-        own = (c.leader_role_ref is not None and c.leader_role_ref == ctx["role_ref"]) or (
-            ctx["own_profile_id"] is not None and c.leader_profile_id == ctx["own_profile_id"]
-        )
-        return own and lvl == 0 and c.status != "done"
-    return False
+    return False  # top-manager (only assigned, handled above) and anything else
+
+
+def _can_set_status(ctx: dict, c: LeaderConcern) -> bool:
+    """Only the responsible holder at the current level (plus admin) may move
+    the status between To do / Doing / Done."""
+    return ctx["role"] == "admin" or _is_responsible(ctx, c)
 
 
 def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
@@ -360,56 +440,88 @@ def _owner_names(db: Session, rows) -> dict:
     return out
 
 
-def _resolve_owner(payload: dict, body: ConcernIn, db: Session):
-    """Resolve the owning leader for a new concern → (profile_id, role_ref,
-    leader_name, brigadir_manager_id, brigadir_name, leader_telegram_id).
-    Leaders always write their own row; picker roles name a leader profile
-    inside their scope. ("Owner" here is the concern SUBJECT's leader — the
-    Owner column's creator identity comes from _creator_identity.)"""
+def _resolve_target(payload: dict, body: ConcernIn, db: Session) -> dict:
+    """Build the level + responsible-holder columns for a NEW concern from the
+    creator's role — each role raises the concern to the step directly above
+    them (the Owner column identity is stamped separately by _creator_identity):
+
+      leader        → supervisor level, held by their own unit's brigadir (auto)
+      supervisor    → shift-manager level, held by a shift-manager they pick
+                      from their own shift
+      shift-manager → top-manager level, held by a top-manager they pick
+      admin         → picks the level: shift-manager (pick a shift-manager) or
+                      top-manager (pick a top-manager)
+
+    Returns a dict of LeaderConcern kwargs (level + the holder columns)."""
     role = payload.get("role")
+    tgt = {
+        "level": "supervisor",
+        "leader_profile_id": None, "leader_role_ref": None, "leader_name": "",
+        "brigadir_manager_id": None, "brigadir_name": None,
+        "shift_manager_profile_id": None, "shift_manager_name": None,
+        "top_manager_profile_id": None, "top_manager_name": None,
+    }
 
     if role == "leader":
-        role_ref = payload.get("role_ref")
-        if not role_ref:
+        if not payload.get("role_ref"):
             raise HTTPException(status_code=403, detail="Only a leader can create concerns")
         prof = _own_profile(db, payload)
         mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
-        return (
-            prof.id if prof else None, role_ref, payload.get("full_name"),
-            payload.get("role_id"), (mgr.name if mgr else None), int(payload["sub"]),
+        tgt.update(
+            level="supervisor",
+            leader_profile_id=(prof.id if prof else None),
+            leader_role_ref=payload.get("role_ref"),
+            leader_name=(payload.get("full_name") or ""),
+            brigadir_manager_id=payload.get("role_id"),
+            brigadir_name=(mgr.name if mgr else None),
         )
+        return tgt
 
-    if role not in PICKER_ROLES:
-        raise HTTPException(status_code=403, detail="Read-only access")
+    if role == "supervisor":
+        prof = _shift_manager_profile(db, body.shift_manager_profile_id, _supervisor_shift(db, payload))
+        if not prof:
+            raise HTTPException(status_code=400, detail="Select a shift-manager from your shift")
+        mgr = db.query(Manager).filter(Manager.id == payload.get("role_id")).first()
+        tgt.update(
+            level="shift-manager",
+            brigadir_manager_id=payload.get("role_id"),   # own unit → keeps it in the shift's scope
+            brigadir_name=(mgr.name if mgr else None),
+            shift_manager_profile_id=prof.id,
+            shift_manager_name=prof.name,
+        )
+        return tgt
 
-    prof = None
-    if body.leader_profile_id:
-        prof = db.query(RoleProfile).filter_by(
-            id=body.leader_profile_id, role="leader",
-        ).first()
-    elif body.leader_ref:
-        # Legacy client fallback: role row → its bound profile.
-        lr = db.query(TelegramUserRole).filter_by(id=body.leader_ref, role="leader").first()
-        if lr:
-            prof = db.query(RoleProfile).filter_by(
-                role="leader", manager_id=lr.role_id, name=lr.full_name,
-            ).first()
-    if not prof:
-        raise HTTPException(status_code=400, detail="Select a leader")
-
-    if role == "supervisor" and prof.manager_id != payload.get("role_id"):
-        raise HTTPException(status_code=403, detail="This leader is outside your unit")
     if role == "shift-manager":
-        if prof.manager_id not in _shift_unit_ids(db, _viewer_shift(db, payload)):
-            raise HTTPException(status_code=403, detail="This leader is outside your shift")
+        top = db.query(RoleProfile).filter_by(id=(body.top_manager_profile_id or 0), role="top-manager").first()
+        if not top:
+            raise HTTPException(status_code=400, detail="Select a top-manager")
+        sm = db.query(RoleProfile).filter_by(id=payload.get("role_id"), role="shift-manager").first()
+        tgt.update(
+            level="top-manager",
+            # Remember the raising shift-manager so a later step-down returns to them.
+            shift_manager_profile_id=(sm.id if sm else None),
+            shift_manager_name=(sm.name if sm else None),
+            top_manager_profile_id=top.id,
+            top_manager_name=top.name,
+        )
+        return tgt
 
-    mgr = db.query(Manager).filter(Manager.id == prof.manager_id).first()
-    claimed = _claimed_role_row(db, prof)
-    return (
-        prof.id, (claimed.id if claimed else None), prof.name,
-        prof.manager_id, (mgr.name if mgr else None),
-        (claimed.telegram_id if claimed else None),
-    )
+    if role == "admin":
+        if body.level == "shift-manager":
+            prof = _shift_manager_profile(db, body.shift_manager_profile_id)
+            if not prof:
+                raise HTTPException(status_code=400, detail="Select a shift-manager")
+            tgt.update(level="shift-manager", shift_manager_profile_id=prof.id, shift_manager_name=prof.name)
+        elif body.level == "top-manager":
+            top = db.query(RoleProfile).filter_by(id=(body.top_manager_profile_id or 0), role="top-manager").first()
+            if not top:
+                raise HTTPException(status_code=400, detail="Select a top-manager")
+            tgt.update(level="top-manager", top_manager_profile_id=top.id, top_manager_name=top.name)
+        else:
+            raise HTTPException(status_code=400, detail="Choose a level")
+        return tgt
+
+    raise HTTPException(status_code=403, detail="Read-only access")
 
 
 def _apply_completion(status: str, requested: Optional[date], existing: Optional[date]) -> Optional[date]:
@@ -561,6 +673,33 @@ def list_top_manager_profiles(
     ]
 
 
+@router.get("/shift-managers")
+def list_shift_manager_profiles(
+    shift: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Target list for the → shift-manager step (a supervisor uplifting/seeding,
+    or an admin seeding). Supervisors are pinned to their own shift; admins see
+    every shift-manager and may narrow with ?shift."""
+    role = payload.get("role")
+    if role not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Admin or supervisor only")
+    q = db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
+    if role == "supervisor":
+        q = q.filter(RoleProfile.shift == _supervisor_shift(db, payload))
+    elif shift is not None:
+        q = q.filter(RoleProfile.shift == shift)
+    claimed = {
+        r.role_id
+        for r in db.query(TelegramUserRole).filter_by(role="shift-manager", status="approved").all()
+    }
+    return [
+        {"profile_id": p.id, "name": p.name, "shift": p.shift, "registered": p.id in claimed}
+        for p in q.order_by(RoleProfile.name).all()
+    ]
+
+
 @router.get("/cell-codes")
 def list_cell_codes(
     leader_profile_id: Optional[int] = Query(default=None),
@@ -600,83 +739,59 @@ def create_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     _validate(body)
-    if payload.get("role") == "leader" and body.status == "done":
-        raise HTTPException(status_code=403, detail="Leaders cannot resolve concerns")
-    profile_id, role_ref, name, mgr_id, mgr_name, leader_tg = _resolve_owner(payload, body, db)
+    # Where the concern lands (level + who holds it) is derived from the
+    # creator's role; the Owner column identity is the creator themselves.
+    tgt = _resolve_target(payload, body, db)
     owner_role, owner_profile_id, owner_snapshot = _creator_identity(db, payload)
     entry = body.entry_date or date.today()
 
+    # A brand-new concern always opens at "todo": setting status is the
+    # responsible holder's call, and the creator isn't that person.
     c = LeaderConcern(
-        leader_profile_id=profile_id,
-        leader_role_ref=role_ref,
-        leader_name=name,
-        brigadir_manager_id=mgr_id,
-        brigadir_name=mgr_name,
         cell_code=(body.cell_code or "").strip() or None,
         concern_owner=(owner_snapshot or "").strip() or "—",
         owner_role=owner_role,
         owner_profile_id=owner_profile_id,
         concern_text=body.concern_text.strip(),
-        status=body.status,
+        status="todo",
         deadline_days=body.deadline_days,
         entry_date=entry,
-        completion_date=_apply_completion(body.status, body.completion_date, None),
-        done_at=datetime.now(timezone.utc) if body.status == "done" else None,
-        solution=(body.solution or "").strip() or None,
+        completion_date=None,
+        done_at=None,
+        solution=None,
         created_by=int(payload["sub"]),
+        **tgt,
     )
-
-    # Admin may seed a concern at a higher chain step; everyone else always
-    # starts at "supervisor". A top-manager-level concern must name who holds it.
-    if payload.get("role") == "admin" and body.level in LEVELS:
-        c.level = body.level
-        if body.level == "top-manager":
-            prof = db.query(RoleProfile).filter_by(
-                id=body.top_manager_profile_id or 0, role="top-manager",
-            ).first()
-            if not prof:
-                raise HTTPException(status_code=400, detail="Select a top-manager")
-            c.top_manager_profile_id = prof.id
-            c.top_manager_name = prof.name
-
     db.add(c)
     db.commit()
     db.refresh(c)
 
-    # Notify the brigadir (approved supervisor of the leader's unit) and the
-    # leader themself about every new concern — skipping whoever authored it and
-    # never DM'ing the same person twice (one account may hold both roles). For
-    # a leader who hasn't registered yet the bell row queues on their profile
-    # (leader_tg None → no DM); they inherit it when they claim the profile.
+    # Tell whoever now holds the concern (the responsible person at its level),
+    # skipping the author and never DM'ing one account twice. Unclaimed profiles
+    # queue a bell row (tg None → no DM) inherited on registration.
     author = int(payload["sub"])
     snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
-    notified: set[int] = set()
-    sup = _find_supervisor(db, mgr_id) if mgr_id else None
-    if sup and sup.telegram_id != author:
+    dmed: set[int] = set()
+    sent = False
+    for tg, prof_key in _level_recipients(db, c, _level(c)):
+        if tg == author:
+            continue
+        dm = tg is not None and tg not in dmed
+        if dm:
+            dmed.add(tg)
         _notify(
-            db, sup.telegram_id, type="info", nkey="concern_created",
+            db, tg, type="info", dm=dm, nkey="concern_created",
             params={
-                "leader_name": name,
+                "leader_name": c.leader_name or "",
                 "owner": c.concern_owner,
                 "date": entry,
                 "concern": snippet,
+                "concern_level": _level(c),
             },
-            profile=_profile_key("supervisor", mgr_id),
+            profile=prof_key,
         )
-        notified.add(sup.telegram_id)
-    if leader_tg != author and leader_tg not in notified:
-        _notify(
-            db, leader_tg, type="info", nkey="concern_assigned",
-            params={
-                "actor_name": payload.get("full_name") or "",
-                "owner": c.concern_owner,
-                "date": entry,
-                "concern": snippet,
-            },
-            profile=_profile_key("leader", profile_id),
-        )
-        notified.add(leader_tg)
-    if notified:
+        sent = True
+    if sent:
         db.commit()
 
     return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db), owner_names=_owner_names(db, [c]))
@@ -694,10 +809,10 @@ def update_concern(
         raise HTTPException(status_code=404, detail="Concern not found")
     _assert_can_edit(payload, c, db)
     _validate(body)
-    # Leaders may edit fields and shuffle todo↔doing, but resolving is the
-    # supervisor's (and above's) call.
-    if payload.get("role") == "leader" and body.status == "done":
-        raise HTTPException(status_code=403, detail="Leaders cannot resolve concerns")
+    # Changing the status is the responsible holder's call (plus admin); everyone
+    # else who may edit keeps the current status untouched.
+    if body.status != c.status and not _can_set_status(_viewer_ctx(db, payload), c):
+        raise HTTPException(status_code=403, detail="Only the responsible person can change the status")
 
     # Ownership (leader/brigadir) and the creator identity are never reassigned
     # on edit — only the concern fields change.
@@ -740,16 +855,25 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
             out.append((sup.telegram_id if sup else None,
                         _profile_key("supervisor", c.brigadir_manager_id)))
     elif level == "shift-manager":
-        mgr = db.query(Manager).filter_by(id=c.brigadir_manager_id).first() if c.brigadir_manager_id else None
-        if mgr:
-            claimed = {
-                r.role_id: r.telegram_id
-                for r in db.query(TelegramUserRole).filter_by(
-                    role="shift-manager", status="approved",
-                ).all()
-            }
-            for p in db.query(RoleProfile).filter_by(role="shift-manager", shift=mgr.shift).all():
-                out.append((claimed.get(p.id), _profile_key("shift-manager", p.id)))
+        if c.shift_manager_profile_id:
+            # The specifically picked shift-manager holds it.
+            row = db.query(TelegramUserRole).filter_by(
+                role="shift-manager", role_id=c.shift_manager_profile_id, status="approved",
+            ).first()
+            out.append((row.telegram_id if row else None,
+                        _profile_key("shift-manager", c.shift_manager_profile_id)))
+        elif c.brigadir_manager_id:
+            # Legacy rows without a picked holder: everyone on the unit's shift.
+            mgr = db.query(Manager).filter_by(id=c.brigadir_manager_id).first()
+            if mgr:
+                claimed = {
+                    r.role_id: r.telegram_id
+                    for r in db.query(TelegramUserRole).filter_by(
+                        role="shift-manager", status="approved",
+                    ).all()
+                }
+                for p in db.query(RoleProfile).filter_by(role="shift-manager", shift=mgr.shift).all():
+                    out.append((claimed.get(p.id), _profile_key("shift-manager", p.id)))
     elif level == "top-manager":
         if c.top_manager_profile_id:
             row = db.query(TelegramUserRole).filter_by(
@@ -761,9 +885,10 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
 
 
 class EscalateIn(BaseModel):
-    direction: str                              # "up" | "down"
+    direction: str                                  # "up" | "down"
     reason: str
-    top_manager_profile_id: Optional[int] = None  # required on the shift-manager → top step
+    top_manager_profile_id: Optional[int] = None    # required on the → top-manager step
+    shift_manager_profile_id: Optional[int] = None  # required on the → shift-manager step
 
 
 @router.post("/{concern_id}/escalate")
@@ -796,14 +921,22 @@ def escalate_concern(
         if idx >= LEVEL_IDX["top-manager"]:
             raise HTTPException(status_code=400, detail="Already at the top level")
         new_level = LEVELS[idx + 1]
-        if new_level == "top-manager":
-            prof = db.query(RoleProfile).filter_by(
+        if new_level == "shift-manager":
+            # A supervisor uplifting picks a shift-manager from their own shift.
+            shift = _supervisor_shift(db, payload) if payload.get("role") == "supervisor" else None
+            prof = _shift_manager_profile(db, body.shift_manager_profile_id, shift)
+            if not prof:
+                raise HTTPException(status_code=400, detail="Select a shift-manager")
+            c.shift_manager_profile_id = prof.id
+            c.shift_manager_name = prof.name
+        elif new_level == "top-manager":
+            top = db.query(RoleProfile).filter_by(
                 id=body.top_manager_profile_id or 0, role="top-manager",
             ).first()
-            if not prof:
+            if not top:
                 raise HTTPException(status_code=400, detail="Select a top-manager")
-            c.top_manager_profile_id = prof.id
-            c.top_manager_name = prof.name
+            c.top_manager_profile_id = top.id
+            c.top_manager_name = top.name
     elif body.direction == "down":
         if idx <= 0:
             raise HTTPException(status_code=400, detail="Already at the supervisor level")
@@ -811,6 +944,18 @@ def escalate_concern(
         if cur == "top-manager":
             c.top_manager_profile_id = None
             c.top_manager_name = None
+            # Back to shift-manager: the remembered holder resumes, or the actor
+            # names one if none was stored (e.g. a concern seeded at the top).
+            if new_level == "shift-manager" and not c.shift_manager_profile_id:
+                prof = _shift_manager_profile(db, body.shift_manager_profile_id)
+                if not prof:
+                    raise HTTPException(status_code=400, detail="Select a shift-manager")
+                c.shift_manager_profile_id = prof.id
+                c.shift_manager_name = prof.name
+        elif cur == "shift-manager":
+            # Back to supervisor: the unit's brigadir holds it again.
+            c.shift_manager_profile_id = None
+            c.shift_manager_name = None
     else:
         raise HTTPException(status_code=400, detail="Invalid direction")
 

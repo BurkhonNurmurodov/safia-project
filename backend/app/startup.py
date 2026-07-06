@@ -310,6 +310,27 @@ def add_concern_profile_columns() -> None:
         db.close()
 
 
+def add_concern_shift_manager() -> None:
+    """Concerns can now be created/held directly at the shift-manager level with
+    a specific shift-manager attached (parallel to top_manager_*), so the
+    supervisor→shift-manager step and admin/supervisor seeding name a person.
+    Best-effort add of the two columns."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS shift_manager_profile_id INTEGER"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS shift_manager_name VARCHAR"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern shift_manager migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_done_at() -> None:
     """Concerns "время выполнения" column: done_at is the exact moment a concern
     flipped to done (completion_date is only day-grained, so minutes need a real
