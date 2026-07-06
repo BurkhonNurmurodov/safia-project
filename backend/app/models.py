@@ -257,6 +257,21 @@ class Notification(Base):
     created_at            = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class ForecastCallNotice(Base):
+    """One "invite N workers tomorrow" notification sent to a supervisor for a
+    specific shift date (Trudoyomkost call-tomorrow modal). Powers the resend
+    guard: the modal shows the latest notice per (manager, date) and asks for
+    confirmation before notifying the same brigadir twice."""
+    __tablename__ = "forecast_call_notices"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    for_date   = Column(Date, nullable=False, index=True)   # the shift date the count is for
+    workers    = Column(Integer, nullable=False)             # the (possibly hand-edited) number sent
+    sent_by    = Column(BigInteger, nullable=False)          # actor's telegram id
+    sent_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class EditRequest(Base):
     __tablename__ = "edit_requests"
 
