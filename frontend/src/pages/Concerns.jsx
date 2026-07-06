@@ -1556,18 +1556,7 @@ export default function Concerns() {
                 />
               </Field>
 
-              {/* Concern owner */}
-              <Field label={t("concerns.fieldOwner")} required>
-                <input
-                  value={form.concern_owner}
-                  onChange={(e) => setForm((f) => ({ ...f, concern_owner: e.target.value }))}
-                  placeholder={t("concerns.fieldOwnerHint")}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                />
-              </Field>
-
-              {/* Concern text */}
+              {/* Concern text (the owner is stamped server-side: the creator) */}
               <Field label={t("concerns.fieldConcern")} required>
                 <textarea
                   value={form.concern_text}
