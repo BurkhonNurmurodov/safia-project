@@ -1455,6 +1455,7 @@ export default function Concerns() {
                             statusLabel={statusLabel}
                             saving={savingStatusId === r.id}
                             disabled={!r.can_edit}
+                            options={r.can_resolve ? STATUSES : STATUSES.filter((s) => s !== "done")}
                             onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                           />
                         </td>
@@ -1462,8 +1463,8 @@ export default function Concerns() {
                             chip names the step, the line under it the person */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <LevelChip
-                            level={r.level || "leader"}
-                            label={levelLabel(r.level || "leader")}
+                            level={r.level || "supervisor"}
+                            label={levelLabel(r.level || "supervisor")}
                             title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
                           />
                           {r.responsible_name && (
