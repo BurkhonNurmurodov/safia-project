@@ -439,21 +439,14 @@ export default function Trudoyomkost() {
     if (!dateFrom || !dateTo) return;
     setExporting(true);
     try {
-      const res = await api.get("/api/production/trudoyomkost/export.xlsx", {
-        params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, mode: wdMode, unit, lang, shift },
-        responseType: "blob",
+      await api.get("/api/production/trudoyomkost/export.xlsx", {
+        params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, mode: wdMode, unit, lang, shift, send: 1 },
       });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `trudoyomkost_${dateFrom}_${dateTo}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 4000);
     } catch (e) {
       console.error("export failed", e);
-      alert("Export failed");
+      alert(e?.response?.data?.detail || "Export failed");
     } finally {
       setExporting(false);
     }
