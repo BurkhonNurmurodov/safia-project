@@ -1570,10 +1570,13 @@ export default function Concerns() {
               {/* Status + deadline */}
               <div className="grid grid-cols-2 gap-3">
                 <Field label={t("concerns.fieldStatus")}>
+                  {/* Resolving is the supervisor's (and above's) call — leaders
+                      only shuffle todo↔doing */}
                   <StyledSelect
                     value={form.status}
                     onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-                    options={STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
+                    options={(isLeaderViewer ? STATUSES.filter((s) => s !== "done") : STATUSES)
+                      .map((s) => ({ value: s, label: statusLabel(s) }))}
                   />
                 </Field>
                 <Field label={t("concerns.fieldDeadline")}>
