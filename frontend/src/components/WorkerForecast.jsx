@@ -77,6 +77,12 @@ const T = {
     netW: "нетто", cardOutSub: "бригадиров вне диапазона",
     pickDateHint: "Нажмите столбец с датой", noCompare: "За этот день ещё нет факта",
     allDays: "Вся неделя", pickDay: "Выбрать день",
+    callBtn: "Вызов на завтра", callTitle: "Вызов на смену — завтра",
+    callDisclaimer: "Числа — автоматический прогноз на основе истории, они могут быть неточными. Проверьте и при необходимости отредактируйте перед отправкой.",
+    selectAll: "Все", notRegistered: "Не зарегистрирован", noForecast: "Нет прогноза",
+    sentLabel: "Отправлено", sendBtn: (n) => `Отправить (${n})`, cancel: "Отмена",
+    resendTitle: "Отправить повторно?", resendMsg: (n) => `${n} бригадир(ам) уже отправлен вызов на завтра. Отправить ещё раз?`,
+    toastSent: (n) => `Вызов отправлен: ${n} бригадир(ов)`,
   },
   en: {
     title: "Forecast — workers to call", thisWeek: "This week", supervisor: "Brigadir",
