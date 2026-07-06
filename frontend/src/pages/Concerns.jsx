@@ -838,7 +838,6 @@ export default function Concerns() {
       brigadir_id: r.brigadir_manager_id,
       leader_profile_id: r.leader_profile_id,
       leader_name: r.leader_name || "",
-      concern_owner: r.concern_owner || "",
       concern_text: r.concern_text || "",
       status: r.status || "todo",
       deadline_days: r.deadline_days ?? "",
