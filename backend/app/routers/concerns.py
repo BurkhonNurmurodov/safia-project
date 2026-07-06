@@ -253,9 +253,11 @@ def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
     concern's current level and every chain role above it (inside their scope)
     may edit / resolve / escalate; levels below the current one are read-only.
     Top-management is person-specific — only the assigned top-manager acts at
-    the top level. Admin manages everything."""
+    the top level. Admin manages everything. Leaders sit below the chain: they
+    may edit their own concerns only while still open at the base (supervisor)
+    level — and even then never resolve/delete/escalate (enforced separately)."""
     role = ctx["role"]
-    lvl = LEVEL_IDX.get(c.level or "leader", 0)
+    lvl = LEVEL_IDX.get(_level(c), 0)
     if role == "admin":
         return True
     if role == "top-manager":
@@ -272,7 +274,7 @@ def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
         own = (c.leader_role_ref is not None and c.leader_role_ref == ctx["role_ref"]) or (
             ctx["own_profile_id"] is not None and c.leader_profile_id == ctx["own_profile_id"]
         )
-        return own and lvl == 0
+        return own and lvl == 0 and c.status != "done"
     return False
 
 
