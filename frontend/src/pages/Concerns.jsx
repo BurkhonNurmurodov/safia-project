@@ -1068,6 +1068,7 @@ export default function Concerns() {
                   statusLabel={statusLabel}
                   saving={savingStatusId === r.id}
                   disabled={!r.can_edit}
+                  options={r.can_resolve ? STATUSES : STATUSES.filter((s) => s !== "done")}
                   onChange={(s) => statusMutation.mutate({ row: r, status: s })}
                 />
               </span>
