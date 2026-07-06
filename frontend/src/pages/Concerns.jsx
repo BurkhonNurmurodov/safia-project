@@ -856,7 +856,6 @@ export default function Concerns() {
   function submit() {
     if (!form.id && canPickSupervisor && !form.brigadir_id) return setFormError(t("concerns.pickBrigadirFirst"));
     if (!form.id && canPickLeader && !form.leader_profile_id) return setFormError(t("concerns.pickLeaderFirst"));
-    if (!form.concern_owner.trim()) return setFormError(t("concerns.ownerRequired"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
   }
