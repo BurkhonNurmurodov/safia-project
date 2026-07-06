@@ -1425,7 +1425,6 @@ const t = {
     "concerns.status.todo":    "Бажарилиши керак",
     "concerns.status.doing":   "Жараёнда",
     "concerns.status.done":    "Ҳал қилинган",
-    "concerns.ownerRequired":  "Хавотир эгасини киритинг",
     "concerns.textRequired":   "Хавотир матнини киритинг",
     "concerns.saveError":      "Сақлашда хатолик",
     "concerns.chartTrend":     "Хавотирлар динамикаси",
