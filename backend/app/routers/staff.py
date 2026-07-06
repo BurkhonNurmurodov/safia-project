@@ -273,6 +273,18 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{author_name} оставил(а) комментарий к задаче", "{comment}\nЗадача: {task}"),
         "en": ("{author_name} commented on a task", "{comment}\nTask: {task}"),
     },
+    # Trudoyomkost call-tomorrow modal → per-brigadir "invite N workers" notice.
+    # The inexactness disclaimer is part of the message by design.
+    "call_forecast": {
+        "uz": ("Ertangi smenaga chaqiruv",
+               "Sana: {date}. Taxminan {count} ishchini smenaga chaqiring. Bu son tarix asosida avtomatik hisoblangan va noaniq bo'lishi mumkin."),
+        "uz_cyrl": ("Эртанги сменага чақирув",
+                    "Сана: {date}. Тахминан {count} ишчини сменага чақиринг. Бу сон тарих асосида автоматик ҳисобланган ва ноаниқ бўлиши мумкин."),
+        "ru": ("Вызов на завтрашнюю смену",
+               "Дата: {date}. Пригласите примерно {count} рабочих на смену. Число рассчитано автоматически на основе истории и может быть неточным."),
+        "en": ("Workers to call for tomorrow",
+               "Date: {date}. Please invite about {count} workers for the shift. This number is calculated automatically from history and may be inaccurate."),
+    },
 }
 
 # Leader-task status labels for notification text — resolved from the raw
