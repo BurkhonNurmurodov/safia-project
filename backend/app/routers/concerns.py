@@ -774,7 +774,7 @@ def escalate_concern(
     if c.status == "done":
         raise HTTPException(status_code=400, detail="A resolved concern cannot be escalated")
 
-    cur = c.level or "leader"
+    cur = _level(c)
     idx = LEVEL_IDX.get(cur, 0)
     if body.direction == "up":
         if idx >= LEVEL_IDX["top-manager"]:
@@ -790,7 +790,7 @@ def escalate_concern(
             c.top_manager_name = prof.name
     elif body.direction == "down":
         if idx <= 0:
-            raise HTTPException(status_code=400, detail="Already at the leader level")
+            raise HTTPException(status_code=400, detail="Already at the supervisor level")
         new_level = LEVELS[idx - 1]
         if cur == "top-manager":
             c.top_manager_profile_id = None
