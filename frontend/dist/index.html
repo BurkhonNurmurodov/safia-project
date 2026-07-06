@@ -13,9 +13,9 @@
          inspection), which broke the app with a masked "Script error.".
          Re-sync the copy occasionally. -->
     <script src="/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-DrMlOKXm.js"></script>
+    <script type="module" crossorigin src="/assets/index-BERehoL9.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/transliterate-DA_ncEFC.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-Bo9Sazcc.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-C6o27K4e.css">
   </head>
   <body>
     <div id="root"></div>
@@ -45,7 +45,63 @@
           } catch (e) { info.push('WebApp probe failed: ' + e.message); }
           return info.join('\n');
         }
+        // A content-hashed asset chunk 404'd — this client is running a stale
+        // build after a redeploy (old index.html/bundle references hashes the
+        // server has already pruned). Instead of the scary red diagnostics,
+        // show a calm "new version" notice and reload once. Guarded so a reload
+        // that can't fix it (e.g. a cached index.html still pointing at old
+        // hashes) shows a "reopen the app" message instead of looping forever.
+        function staleReload() {
+          if (window.__staleReloadStarted) return;
+          window.__staleReloadStarted = true;
+
+          var KEY = 'chunkReloadAt';
+          var last = 0;
+          try { last = Number(sessionStorage.getItem(KEY) || 0); } catch (e) {}
+          var reloadDidNotHelp = last && (Date.now() - last < 30000);
+
+          var box = document.getElementById('boot-debug');
+          if (!box) {
+            box = document.createElement('div');
+            box.id = 'boot-debug';
+            document.body.appendChild(box);
+          }
+          box.setAttribute('style',
+            'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'text-align:center;padding:24px;background:#0b0b0f;color:#fff;' +
+            "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
+
+          if (reloadDidNotHelp) {
+            box.innerHTML =
+              '<div><div style="font-size:17px;font-weight:600;margin-bottom:8px">' +
+              'Update needed</div>' +
+              '<div style="opacity:.7">Please close and reopen the app.</div></div>';
+            return;
+          }
+
+          var n = 5;
+          function paint() {
+            box.innerHTML =
+              '<div><div style="font-size:17px;font-weight:600;margin-bottom:8px">' +
+              'A new version is available</div>' +
+              '<div style="opacity:.7">Reloading… (' + n + ')</div></div>';
+          }
+          paint();
+          var timer = setInterval(function () {
+            n -= 1;
+            if (n > 0) { paint(); return; }
+            clearInterval(timer);
+            try { sessionStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+            // Cache-buster on the document URL defeats an intermediate cache
+            // (e.g. the nginx microcache) that might otherwise re-serve the
+            // same stale index.html and dead-end the reload.
+            location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+          }, 1000);
+        }
+        window.__staleReload = staleReload;
         function report() {
+          if (window.__staleReloadStarted) return; // stale-version overlay owns the screen
           var el = document.getElementById('boot-debug');
           if (!el) {
             el = document.createElement('div');
