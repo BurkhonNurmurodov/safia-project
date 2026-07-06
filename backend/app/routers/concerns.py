@@ -678,11 +678,14 @@ def update_concern(
         raise HTTPException(status_code=404, detail="Concern not found")
     _assert_can_edit(payload, c, db)
     _validate(body)
+    # Leaders may edit fields and shuffle todo↔doing, but resolving is the
+    # supervisor's (and above's) call.
+    if payload.get("role") == "leader" and body.status == "done":
+        raise HTTPException(status_code=403, detail="Leaders cannot resolve concerns")
 
-    # Ownership (leader/brigadir) is never reassigned on edit — only the concern
-    # fields change.
+    # Ownership (leader/brigadir) and the creator identity are never reassigned
+    # on edit — only the concern fields change.
     c.cell_code = (body.cell_code or "").strip() or None
-    c.concern_owner = body.concern_owner.strip()
     c.concern_text = body.concern_text.strip()
     c.status = body.status
     c.deadline_days = body.deadline_days
