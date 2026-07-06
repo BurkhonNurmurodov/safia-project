@@ -3609,7 +3609,7 @@ export default function Staff() {
                 role={role}
               />
             )}
-            {supDayClosed && (
+            {dayClosed && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("staff.dayClosedBadge")}
