@@ -1091,21 +1091,22 @@ export default function Concerns() {
 
             {/* labelled facts — fixed positions, no guessing which name is which */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              <MobField label={t("concerns.colOwner")}>{tl(r.concern_owner) || "—"}</MobField>
-              <MobField label={t("concerns.responsible")}>
-                {r.responsible_name ? tl(r.responsible_name) : levelLabel(r.level || "leader")}
+              <MobField label={t("concerns.colOwner")}>
+                {tl(r.owner_name) || "—"}
+                {r.owner_role && (
+                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{roleLabel(r.owner_role)}</div>
+                )}
               </MobField>
-              {showLeaderCol && (
-                <MobField label={t("concerns.colLeader")}>{tl(r.leader_name) || "—"}</MobField>
-              )}
-              <MobField label={t("concerns.colSupervisor")}>{tl(r.brigadir_name) || "—"}</MobField>
+              <MobField label={t("concerns.responsible")}>
+                {r.responsible_name ? tl(r.responsible_name) : levelLabel(r.level || "supervisor")}
+              </MobField>
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
                   {t("concerns.colLevel")}
                 </div>
                 <LevelChip
-                  level={r.level || "leader"}
-                  label={levelLabel(r.level || "leader")}
+                  level={r.level || "supervisor"}
+                  label={levelLabel(r.level || "supervisor")}
                   title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
                 />
               </div>
