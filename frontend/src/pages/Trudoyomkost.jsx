@@ -457,6 +457,26 @@ export default function Trudoyomkost() {
 
   return (
     <Layout title={T.title}>
+      {/* Export success toast — fixed top-right, outside normal flow */}
+      {exportDone && (
+        <div
+          className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 9999,
+            background: "#22c55e",
+            color: "#fff",
+            maxWidth: 320,
+            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
+          }}
+        >
+          <CheckCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{t("staff.exportToast")}</span>
+        </div>
+      )}
+
       {/* top controls: context chips + unit toggle + export */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {data?.range && (
