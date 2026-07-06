@@ -311,7 +311,6 @@ const emptyForm = () => ({
   brigadir_id: null,        // create cascade (admin/shift-manager): chosen unit
   leader_profile_id: null,  // picker roles: which leader the concern belongs to
   leader_name: "",          // display-only, used when editing someone's row
-  concern_owner: "",
   concern_text: "",
   status: "todo",
   deadline_days: "",
