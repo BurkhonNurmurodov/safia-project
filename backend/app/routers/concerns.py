@@ -54,8 +54,9 @@ router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
 VALID_STATUSES = {"todo", "doing", "done"}
 
-# Escalation chain, bottom → top. leader_concerns.level always holds one of these.
-LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"]
+# Escalation chain, bottom → top. leader_concerns.level always holds one of
+# these ("leader" only survives in old concern_escalations history rows).
+LEVELS = ["supervisor", "shift-manager", "top-manager"]
 LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 
 # Roles that pick a leader when creating (everyone but the leader themself).
