@@ -598,7 +598,10 @@ def create_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     _validate(body)
+    if payload.get("role") == "leader" and body.status == "done":
+        raise HTTPException(status_code=403, detail="Leaders cannot resolve concerns")
     profile_id, role_ref, name, mgr_id, mgr_name, leader_tg = _resolve_owner(payload, body, db)
+    owner_role, owner_profile_id, owner_snapshot = _creator_identity(db, payload)
     entry = body.entry_date or date.today()
 
     c = LeaderConcern(
@@ -608,7 +611,9 @@ def create_concern(
         brigadir_manager_id=mgr_id,
         brigadir_name=mgr_name,
         cell_code=(body.cell_code or "").strip() or None,
-        concern_owner=body.concern_owner.strip(),
+        concern_owner=(owner_snapshot or "").strip() or "—",
+        owner_role=owner_role,
+        owner_profile_id=owner_profile_id,
         concern_text=body.concern_text.strip(),
         status=body.status,
         deadline_days=body.deadline_days,
