@@ -340,9 +340,13 @@ export default function Concerns() {
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
   const levelLabel = (l) => t(`concerns.level.${l}`);
+  // Owner-column position (= the creator's role). Chain roles + leader reuse
+  // the level labels; admin has its own key.
+  const roleLabel = (r) => (r === "admin" ? t("concerns.roleAdmin") : t(`concerns.level.${r}`));
 
   // Chain roles get the "my level only" toggle; admin is outside the chain and
-  // slices by level via the Filtrlar multi-select instead.
+  // slices by level via the Filtrlar multi-select instead. Leaders no longer
+  // hold a level, so they get neither.
   const myLevel = LEVELS.includes(role) ? role : null;
 
   // Elapsed time for the "time since created" column. Done concerns show the
