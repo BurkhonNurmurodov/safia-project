@@ -714,6 +714,7 @@ def trudoyomkost_export(
     unit: str = Query("min"),       # 'min' | 'hrs'
     lang: str = Query("uz"),
     shift: Optional[int] = Query(None),
+    send: int = Query(0),           # 1 = send to caller's Telegram chat instead of streaming
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
