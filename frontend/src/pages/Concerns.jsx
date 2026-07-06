@@ -425,7 +425,7 @@ export default function Concerns() {
   // Top-manager profiles for the shift-manager → top-management uplift step —
   // fetched only once that step's modal is actually open.
   const needsTopPick =
-    escalate?.direction === "up" && (escalate?.row?.level || "leader") === "shift-manager";
+    escalate?.direction === "up" && (escalate?.row?.level || "supervisor") === "shift-manager";
   const { data: topManagers = [] } = useQuery({
     queryKey: ["concern-top-managers"],
     queryFn: () => api.get("/api/concerns/top-managers").then((r) => r.data),
