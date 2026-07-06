@@ -723,7 +723,6 @@ export default function Concerns() {
   };
 
   const buildPayload = () => ({
-    concern_owner: form.concern_owner.trim(),
     concern_text: form.concern_text.trim(),
     status: form.status,
     deadline_days: form.deadline_days === "" ? null : Number(form.deadline_days),
