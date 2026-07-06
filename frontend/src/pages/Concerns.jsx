@@ -761,7 +761,6 @@ export default function Concerns() {
       api
         .put(`/api/concerns/${row.id}`, {
           cell_code: row.cell_code || null,
-          concern_owner: row.concern_owner,
           concern_text: row.concern_text,
           status,
           deadline_days: row.deadline_days ?? null,
