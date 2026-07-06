@@ -1644,8 +1644,8 @@ export default function Concerns() {
           <Field label={t("concerns.newLevel")}>
             <div className="flex items-center gap-2 py-1">
               <LevelChip
-                level={escalate.row.level || "leader"}
-                label={levelLabel(escalate.row.level || "leader")}
+                level={escalate.row.level || "supervisor"}
+                label={levelLabel(escalate.row.level || "supervisor")}
               />
               <ArrowRight size={14} style={{ color: "var(--text-4)" }} />
               {escTargetLevel && <LevelChip level={escTargetLevel} label={levelLabel(escTargetLevel)} />}
