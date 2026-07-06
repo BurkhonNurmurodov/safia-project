@@ -886,6 +886,9 @@ def delete_concern(
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
+    # Deleting would be a resolve loophole for leaders — supervisor and above only.
+    if payload.get("role") == "leader":
+        raise HTTPException(status_code=403, detail="Leaders cannot delete concerns")
     _assert_can_edit(payload, c, db)
     db.delete(c)
     db.commit()
