@@ -2,14 +2,17 @@ import logoSrc from "../../assets/logo.png";
 
 /**
  * Full-screen branded loading state — Safia logo + spinner.
- * Used as the Suspense fallback while a page's code chunk loads, and while
- * auth is being resolved. Keep this component eager (never lazy) so it is
- * always available to render as a fallback.
+ * Used as the Suspense fallback while a page's code chunk loads, while auth
+ * is being resolved, and (with `overlay`) as a fixed cover during page
+ * switches. Keep this component eager (never lazy) so it is always available
+ * to render as a fallback.
  */
-export default function PageLoader() {
+export default function PageLoader({ overlay = false }) {
   return (
     <div
-      className="flex flex-col items-center justify-center min-h-screen gap-5"
+      className={`flex flex-col items-center justify-center gap-5 ${
+        overlay ? "fixed inset-0 z-[9990]" : "min-h-screen"
+      }`}
       style={{ background: "var(--bg-base)" }}
     >
       <img
