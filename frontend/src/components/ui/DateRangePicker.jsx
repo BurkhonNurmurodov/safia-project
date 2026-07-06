@@ -324,7 +324,7 @@ export default function DateRangePicker({
               <div onMouseLeave={() => setHover(null)}>
                 <MonthGrid year={leftY} month={leftM}
                   from={tempFrom} to={tempTo} hover={hover}
-                  onPick={handlePick} onHover={setHover} t={t} />
+                  onPick={handlePick} onHover={setHover} t={t} max={max} />
               </div>
             </div>
 
