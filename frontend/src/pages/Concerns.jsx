@@ -677,10 +677,9 @@ export default function Concerns() {
     return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen };
   }, [filtered, chartFiltered, chartStart, endDate]);
 
-  // Everyone but the leader themself sees whose concern each row is (even when
-  // filtered to one leader). Brigadir filter is pointless for a supervisor
-  // (single unit), so it stays with the multi-unit roles.
-  const showLeaderCol = !isLeaderViewer;
+  // Brigadir filter is pointless for a supervisor (single unit), so it stays
+  // with the multi-unit roles. (Leader/supervisor left the table columns —
+  // the dropdowns up top are the only place they surface now.)
   const showBrigFilter = canPickSupervisor || readOnly;
   const showLeaderFilter = showBrigFilter || role === "supervisor";
 
