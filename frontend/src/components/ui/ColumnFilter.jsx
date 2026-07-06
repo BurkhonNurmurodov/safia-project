@@ -295,16 +295,106 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
 }
 
 const PANEL_WIDTH = 300;
+const INLINE_POP_WIDTH = 240;
+// Single canonical trigger size — SearchInput and md Button match its height (38px).
+const TRIGGER_CLS = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
+
+// One filter as its own toolbar dropdown — the unfolded form of a FilterPanel
+// section on wide screens. Trigger matches the canonical toolbar-control size.
+function InlineFilterField({ icon: Icon, label, active, display, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const popRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e) {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+  // Portaled like the grouped panel — the table card is `overflow-hidden`.
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    function update() {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - INLINE_POP_WIDTH - 8));
+      setPos({ top: rect.bottom + 6, left });
+    }
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="flex-shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`flex ${TRIGGER_CLS} transition-colors`}
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${open || active ? "var(--brand)" : "var(--border-md)"}`,
+          color: active ? "var(--text-1)" : "var(--text-3)",
+        }}
+      >
+        {Icon && <Icon size={14} style={{ color: active ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />}
+        {/* Cap the label so a long active `display` doesn't reflow the row. */}
+        <span className="whitespace-nowrap max-w-[150px] truncate">{active && display ? display : label}</span>
+        <ChevronDown size={13}
+          style={{ color: "var(--text-4)", flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          className="rounded-xl p-3"
+          style={{
+            position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
+            width: INLINE_POP_WIDTH,
+            maxHeight: `calc(100vh - ${pos.top + 12}px)`, overflowY: "auto",
+            background: "var(--bg-card)", border: "1px solid var(--border-md)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+          }}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-4)" }}>{label}</p>
+          {children}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// Square clear-all control closing the inline row; height = canonical trigger.
+function ClearAllBtn({ onClick, title }) {
+  return (
+    <button onClick={onClick} title={title}
+      className="flex items-center justify-center rounded-xl flex-shrink-0 transition-colors"
+      style={{ width: 38, height: 38, background: "var(--bg-card)",
+        border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+      <X size={14} />
+    </button>
+  );
+}
 
 export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
   const { t } = useLang();
-  // Single canonical trigger size — SearchInput and md Button match its height.
-  const triggerCls = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false);        // grouped dropdown
   const [sheetOpen, setSheetOpen] = useState(false);
   const [pos, setPos] = useState(null);
-  const ref = useRef(null);     // desktop trigger wrapper
-  const popRef = useRef(null);  // portaled dropdown panel
+  // md+: grouped button (true) vs one dropdown per filter (false).
+  const [collapsed, setCollapsed] = useState(true);
+  const ref = useRef(null);        // grouped trigger wrapper
+  const popRef = useRef(null);     // portaled grouped panel
+  const wrapRef = useRef(null);    // md+ container — a direct toolbar-row child
+  const measureRef = useRef(null); // invisible natural-width copy of the inline row
 
   // Close on click outside either the trigger or the portaled panel.
   useEffect(() => {
@@ -337,12 +427,47 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
     };
   }, [open]);
 
+  // Unfolding removes the grouped trigger — drop its orphaned dropdown with it.
+  useEffect(() => { if (!collapsed) setOpen(false); }, [collapsed]);
+
+  // Fit check: the filters unfold only while the WHOLE toolbar row still fits on
+  // one line — natural inline-row width (hidden measurer) + every sibling
+  // control (flex-grow spacers contribute 0) vs the row's content width.
+  // No deps: re-measures on every render so label/sibling changes are picked up;
+  // the setState bail-out keeps it loop-free.
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const parent = wrap?.parentElement;
+    if (!parent) return;
+    function update() {
+      const meas = measureRef.current;
+      if (!meas) return;
+      const cs = getComputedStyle(parent);
+      const avail = parent.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      const gap = parseFloat(cs.columnGap) || 0;
+      let total = meas.offsetWidth;
+      let n = 1;
+      for (const el of parent.children) {
+        if (el === wrap || el.offsetWidth === 0) continue;
+        if (parseFloat(getComputedStyle(el).flexGrow) > 0) continue;
+        total += el.offsetWidth;
+        n += 1;
+      }
+      setCollapsed(total + gap * (n - 1) > avail);
+    }
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(parent);
+    if (measureRef.current) ro.observe(measureRef.current);
+    return () => ro.disconnect();
+  });
+
   return (
     <>
       {/* Mobile: bottom sheet */}
       <button
         onClick={() => setSheetOpen(true)}
-        className={`flex md:hidden ${triggerCls} transition-colors flex-shrink-0`}
+        className={`flex md:hidden ${TRIGGER_CLS} transition-colors flex-shrink-0`}
         style={{
           background: "var(--bg-card)",
           border: `1px solid ${anyActive ? "var(--brand)" : "var(--border-md)"}`,
@@ -354,56 +479,79 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
         {activeCount > 0 && <CountBadge n={activeCount} />}
       </button>
 
-      {/* Desktop: dropdown */}
-      <div ref={ref} className="relative hidden md:block flex-shrink-0">
-        <button
-          onClick={() => setOpen(o => !o)}
-          className={`flex ${triggerCls} transition-colors`}
-          style={{
-            background: "var(--bg-card)",
-            border: `1px solid ${open || anyActive ? "var(--brand)" : "var(--border-md)"}`,
-            color: anyActive ? "var(--text-1)" : "var(--text-3)",
-          }}
+      {/* md+: separate per-filter dropdowns while the row fits, grouped otherwise */}
+      <div ref={wrapRef} className="relative hidden md:flex items-center gap-2 flex-shrink-0">
+        <div
+          ref={measureRef} aria-hidden
+          className="flex items-center gap-2"
+          style={{ position: "absolute", top: 0, left: 0, width: "max-content",
+            visibility: "hidden", pointerEvents: "none" }}
         >
-          <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
-          <span className="whitespace-nowrap">{t("filter.filters")}</span>
-          {activeCount > 0 && <CountBadge n={activeCount} />}
-          <ChevronDown size={13}
-            style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 2,
-              transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-        </button>
-        {open && pos && createPortal(
-          <div
-            ref={popRef}
-            className="rounded-xl p-3"
-            style={{
-              position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
-              width: PANEL_WIDTH,
-              maxHeight: `calc(100vh - ${pos.top + 12}px)`, overflowY: "auto",
-              background: "var(--bg-card)", border: "1px solid var(--border-md)",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-            }}
-          >
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-                {t("filter.filters")}
-              </span>
-              {anyActive && (
-                <button onClick={onClearAll} className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
-                  <X size={11} /> {t("staff.clearAll")}
-                </button>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              {sections.map(s => (
-                <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
-                  {s.render()}
-                </PanelField>
-              ))}
-            </div>
-          </div>,
-          document.body
+          {sections.map(s => (
+            <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display} />
+          ))}
+          {anyActive && <ClearAllBtn />}
+        </div>
+
+        {!collapsed && sections.map(s => (
+          <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
+            {s.render()}
+          </InlineFilterField>
+        ))}
+        {!collapsed && anyActive && <ClearAllBtn onClick={onClearAll} title={t("staff.clearAll")} />}
+
+        {collapsed && (
+          <div ref={ref} className="relative">
+            <button
+              onClick={() => setOpen(o => !o)}
+              className={`flex ${TRIGGER_CLS} transition-colors`}
+              style={{
+                background: "var(--bg-card)",
+                border: `1px solid ${open || anyActive ? "var(--brand)" : "var(--border-md)"}`,
+                color: anyActive ? "var(--text-1)" : "var(--text-3)",
+              }}
+            >
+              <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+              <span className="whitespace-nowrap">{t("filter.filters")}</span>
+              {activeCount > 0 && <CountBadge n={activeCount} />}
+              <ChevronDown size={13}
+                style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 2,
+                  transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+            </button>
+            {open && pos && createPortal(
+              <div
+                ref={popRef}
+                className="rounded-xl p-3"
+                style={{
+                  position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
+                  width: PANEL_WIDTH,
+                  maxHeight: `calc(100vh - ${pos.top + 12}px)`, overflowY: "auto",
+                  background: "var(--bg-card)", border: "1px solid var(--border-md)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                }}
+              >
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                    {t("filter.filters")}
+                  </span>
+                  {anyActive && (
+                    <button onClick={onClearAll} className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+                      <X size={11} /> {t("staff.clearAll")}
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {sections.map(s => (
+                    <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
+                      {s.render()}
+                    </PanelField>
+                  ))}
+                </div>
+              </div>,
+              document.body
+            )}
+          </div>
         )}
       </div>
 
