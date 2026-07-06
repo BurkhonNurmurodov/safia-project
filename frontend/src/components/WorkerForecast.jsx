@@ -571,6 +571,11 @@ export default function WorkerForecast({ effPct = 100 }) {
         <span className="normal-case font-normal" style={{ color: "var(--text-4)" }}>· {t.maNote(weeks)}</span>
       </div>
       <div className="flex items-center gap-1.5">
+        <button onClick={() => setCallOpen(true)}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
+          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
+          <Send size={12} /> {t.callBtn}
+        </button>
         {pickedDate ? (
           <button onClick={() => setPickedDate(null)}
             className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors"
