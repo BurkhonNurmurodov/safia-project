@@ -487,6 +487,8 @@ export default function WorkerForecast({ effPct = 100 }) {
   const [modalCell, setModalCell] = useState(null);
   const [selWd, setSelWd] = useState(null);   // clicked date column (weekday idx); null → use default
   const [pickedDate, setPickedDate] = useState(null);   // ISO date → single-column view; null → full week
+  const [callOpen, setCallOpen] = useState(false);      // call-tomorrow modal
+  const [sentToast, setSentToast] = useState(null);     // how many brigadirs were just notified
   const curWeek = mondayOfISO(todayISO());
   const today = todayISO();
 
