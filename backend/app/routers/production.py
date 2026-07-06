@@ -768,6 +768,14 @@ def trudoyomkost_export(
     wb.save(bio)
     bio.seek(0)
     fname = f"trudoyomkost_{d_from.isoformat()}_{d_to.isoformat()}.xlsx"
+    if send:
+        from app.telegram_bot import bot
+        caption = f"📊 Trudoyomkost — {summary_label} ({unit_label})  •  {d_from.isoformat()} → {d_to.isoformat()}"
+        try:
+            bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+        return {"ok": True}
     return StreamingResponse(
         bio,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
