@@ -1010,7 +1010,7 @@ export default function Concerns() {
       {r.escalation_count > 0 && (
         <ActionBtn icon={History} label={t("concerns.history")} onClick={() => setHistoryRow(r)} />
       )}
-      {r.can_edit && (
+      {r.can_delete && (
         <ActionBtn icon={Trash2} label={t("concerns.delete")} color="#ef4444" onClick={() => setConfirmDelete(r)} />
       )}
     </>
