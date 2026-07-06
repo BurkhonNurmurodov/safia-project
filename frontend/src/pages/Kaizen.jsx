@@ -640,7 +640,7 @@ export default function Kaizen() {
                   </span>
                 </div>
               </div>
-              <div className="px-1">
+              <div className="px-1 apx-bare-tip">
                 {shownMonths.length === 0
                   ? <div className="h-[206px] grid place-items-center text-xs" style={{ color: "var(--text-4)" }}>—</div>
                   : chartsReady
