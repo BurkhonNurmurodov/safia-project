@@ -481,16 +481,19 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
 
       {/* md+: separate per-filter dropdowns while the row fits, grouped otherwise */}
       <div ref={wrapRef} className="relative hidden md:flex items-center gap-2 flex-shrink-0">
-        <div
-          ref={measureRef} aria-hidden
-          className="flex items-center gap-2"
-          style={{ position: "absolute", top: 0, left: 0, width: "max-content",
-            visibility: "hidden", pointerEvents: "none" }}
-        >
-          {sections.map(s => (
-            <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display} />
-          ))}
-          {anyActive && <ClearAllBtn />}
+        {/* 0×0 clip box so the measurer's natural width never leaks scrollable
+            overflow (phantom scrollbars) into ancestors. */}
+        <div aria-hidden style={{ position: "absolute", top: 0, left: 0, width: 0, height: 0, overflow: "hidden" }}>
+          <div
+            ref={measureRef}
+            className="flex items-center gap-2"
+            style={{ width: "max-content", visibility: "hidden", pointerEvents: "none" }}
+          >
+            {sections.map(s => (
+              <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display} />
+            ))}
+            {anyActive && <ClearAllBtn />}
+          </div>
         </div>
 
         {!collapsed && sections.map(s => (
