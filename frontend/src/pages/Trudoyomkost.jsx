@@ -151,7 +151,7 @@ function Kpi({ label, value, sub, icon: Icon, accent, primary, subColor }) {
 
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function Trudoyomkost() {
-  const { lang } = useLang();
+  const { lang, t } = useLang();
   const { tl } = useTranslit();
   const { dateFrom, dateTo, brigadirIds, shift, unit, setUnit, ready } = useFilters();
   const { gridColor, labelColor, legendColor } = useChartTheme();
@@ -174,6 +174,7 @@ export default function Trudoyomkost() {
   const [trendSup, setTrendSup] = useState(() => initNum("trendSup", null)); // single brigadir id
   const [selWd, setSelWd] = useState(() => initSet("selWd", new Set([0, 1, 2, 3, 4]))); // Mon–Fri default
   const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
   // shift efficiency (productive % of the 480-min shift) — shared by the worker
   // prediction/statistics and the workers-to-call forecast so both react to it.
   const [effPct, setEffPct] = useState(() => initNum("effPct", 100));
