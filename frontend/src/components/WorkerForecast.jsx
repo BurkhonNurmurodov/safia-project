@@ -97,6 +97,12 @@ const T = {
     netW: "net", cardOutSub: "brigadirs outside their band",
     pickDateHint: "Tap a date column", noCompare: "No actuals for this day yet",
     allDays: "Full week", pickDay: "Pick a day",
+    callBtn: "Tomorrow's call", callTitle: "Call for tomorrow's shift",
+    callDisclaimer: "These numbers are an automatic forecast based on history and may be inaccurate. Review and edit them before sending.",
+    selectAll: "All", notRegistered: "Not registered", noForecast: "No forecast",
+    sentLabel: "Sent", sendBtn: (n) => `Send (${n})`, cancel: "Cancel",
+    resendTitle: "Send again?", resendMsg: (n) => `${n} brigadir(s) were already notified for tomorrow. Send again?`,
+    toastSent: (n) => `Notified ${n} brigadir(s)`,
   },
 };
 
