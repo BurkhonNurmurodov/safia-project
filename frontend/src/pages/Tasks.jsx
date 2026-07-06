@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
   ChevronDown, Check, MessageSquare, Send,
   CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
-  ListTodo, CheckCircle2, Timer, TrendingUp, PieChart, XCircle, ArrowLeft, Gauge,
+  TrendingUp, PieChart, XCircle, ArrowLeft,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -285,26 +285,6 @@ function ActionBtn({ icon: Icon, label, color, onClick }) {
   );
 }
 
-// Compact KPI card — icon chip + label + big number (six of them fit one row).
-function Kpi({ icon: Icon, tint, label, value, sub }) {
-  return (
-    <div className="rounded-2xl px-3.5 py-3 flex flex-col gap-2" style={cardStyle}>
-      <div className="flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
-              style={{ background: `${tint}1f`, color: tint }}>
-          <Icon size={14} />
-        </span>
-        <span className="text-[10px] uppercase tracking-wider font-semibold leading-tight truncate" style={{ color: "var(--text-3)" }}>
-          {label}
-        </span>
-      </div>
-      <div className="flex items-baseline gap-1.5 leading-none">
-        <span className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: tint }}>{value}</span>
-        {sub && <span className="text-[10px] font-medium" style={{ color: "var(--text-4)" }}>{sub}</span>}
-      </div>
-    </div>
-  );
-}
 
 // ── chat-style comments modal ─────────────────────────────────────────────────
 function CommentsModal({ task, canComment, onClose }) {
@@ -878,10 +858,6 @@ export default function Tasks() {
     } } },
   };
 
-  const completionPct = stats.completion == null ? "—" : `${Math.round(stats.completion * 100)}%`;
-  const completionColor = stats.completion == null ? "var(--text-3)"
-    : stats.completion >= 0.8 ? "#22c55e" : stats.completion >= 0.5 ? "#eab308" : "#ef4444";
-
 
   return (
     <Layout title={t("tasks.title")} showFilters={false}>
@@ -922,27 +898,6 @@ export default function Tasks() {
           </div>
         )}
       </div>
-
-      {/* KPI row — six compact, colour-coded cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={`kpi-sk-${i}`} className="rounded-2xl px-3.5 py-3" style={cardStyle}>
-              <SkeletonBlock className="h-3 w-16 mb-3" />
-              <SkeletonBlock className="h-7 w-12" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-          <Kpi icon={ClipboardList} tint={CHART_BRAND}        label={t("tasks.kpiTotal")}      value={stats.total} />
-          <Kpi icon={ListTodo}      tint={CHART_TODO}         label={statusLabel("todo")}      value={stats.todo} />
-          <Kpi icon={Timer}         tint={STATUS_COLOR.doing} label={statusLabel("doing")}     value={stats.doing} />
-          <Kpi icon={CheckCircle2}  tint={STATUS_COLOR.done}  label={statusLabel("done")}      value={stats.done} />
-          <Kpi icon={AlertTriangle} tint={CHART_OVERDUE}      label={t("tasks.kpiOverdue")}    value={stats.overdue} />
-          <Kpi icon={Gauge}         tint={completionColor}    label={t("tasks.kpiCompletion")} value={completionPct} />
-        </div>
-      )}
 
       {/* Charts — open-task trend + status donut over the fully filtered rows */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
