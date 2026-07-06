@@ -84,11 +84,19 @@ def _sm_names(db: Session) -> dict:
     }
 
 
+def _level(c: LeaderConcern) -> str:
+    """Normalized escalation level — pre-migration 'leader' rows read as the
+    new base of the chain."""
+    level = c.level or "supervisor"
+    return "supervisor" if level == "leader" else level
+
+
 def _serialize(
     c: LeaderConcern,
     ctx: Optional[dict] = None,
     esc_counts: Optional[dict] = None,
     sm_names: Optional[dict] = None,
+    owner_names: Optional[dict] = None,
 ) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
@@ -98,17 +106,20 @@ def _serialize(
     resolution_minutes = None
     if c.done_at and c.created_at:
         resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
-    level = c.level or "leader"
+    level = _level(c)
     # Who answers for the concern right now — the level names a step in the
-    # chain, this names the person on that step: leader → the leader,
-    # supervisor → the brigadir, shift-manager → that unit's shift's
-    # manager(s), top-manager → the specifically assigned one.
+    # chain, this names the person on that step: supervisor → the brigadir,
+    # shift-manager → that unit's shift's manager(s), top-manager → the
+    # specifically assigned one.
     responsible = (
-        c.leader_name if level == "leader"
-        else c.brigadir_name if level == "supervisor"
+        c.brigadir_name if level == "supervisor"
         else (sm_names or {}).get(c.brigadir_manager_id) if level == "shift-manager"
         else c.top_manager_name
     )
+    # Owner = whoever created the concern, resolved to their CURRENT profile
+    # name (renames stay live); the concern_owner snapshot / legacy typed text
+    # is the fallback, without a position.
+    owner_name = (owner_names or {}).get((c.owner_role, c.owner_profile_id))
     out = {
         "id": c.id,
         "leader_profile_id": c.leader_profile_id,
@@ -118,6 +129,8 @@ def _serialize(
         "brigadir_name": c.brigadir_name,
         "cell_code": c.cell_code,
         "concern_owner": c.concern_owner,
+        "owner_name": owner_name or c.concern_owner,
+        "owner_role": c.owner_role if owner_name else None,
         "concern_text": c.concern_text,
         "status": c.status,
         "deadline_days": c.deadline_days,
@@ -134,13 +147,18 @@ def _serialize(
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
     # Per-row rights, computed for the requesting viewer (see _can_edit):
-    # escalation is one step at a time, blocked on resolved concerns.
+    # escalation is one step at a time, blocked on resolved concerns. Leaders
+    # sit below the chain — they may edit their own open base-level concerns
+    # but never resolve, delete or escalate them.
     if ctx is not None:
         can = _can_edit(ctx, c)
+        full = can and ctx["role"] != "leader"
         lvl = LEVEL_IDX.get(level, 0)
         out["can_edit"] = can
-        out["can_escalate"] = can and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
-        out["can_deescalate"] = can and c.status != "done" and lvl > 0
+        out["can_resolve"] = full
+        out["can_delete"] = full
+        out["can_escalate"] = full and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
+        out["can_deescalate"] = full and c.status != "done" and lvl > 0
     return out
 
 
