@@ -87,11 +87,16 @@ def get_heatmap(
             if (mid, d) in closed and (mid, d) not in pending_req:
                 continue  # confirmed (or held only by draft docs) → no marker
             reason = "requests" if (mid, d) in closed else "not_closed"
-            data.setdefault(mgr_name[mid], {})[d.strftime("%d.%m.%Y")] = {
-                "baseline_util": None,
-                "net_util": None,
-                "pending": reason,
-            }
+            key = d.strftime("%d.%m.%Y")
+            cell = data.get(mgr_name[mid], {}).get(key)
+            if include_pending and cell is not None:
+                cell["pending"] = reason   # keep the unconfirmed numbers
+            else:
+                data.setdefault(mgr_name[mid], {})[key] = {
+                    "baseline_util": None,
+                    "net_util": None,
+                    "pending": reason,
+                }
 
     # Build sorted date list
     cur = date_from
