@@ -80,7 +80,7 @@ const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--borde
 // Inline, editable status pill. Renders the traffic-light badge as a trigger and
 // opens a compact portal dropdown (portal ⇒ never clipped by the table's
 // overflow) so the status can be changed straight from the column.
-function StatusSelect({ status, label, statusLabel, saving, disabled, onChange }) {
+function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, options = STATUSES }) {
   const [open, setOpen] = useState(false);
   const [dropStyle, setDropStyle] = useState({});
   const triggerRef = useRef(null);
