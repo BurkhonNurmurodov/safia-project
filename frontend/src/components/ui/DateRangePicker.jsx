@@ -89,7 +89,7 @@ function Day({ iso, cur, from, to, hover, onPick, onHover, max }) {
   );
 }
 
-function MonthGrid({ year, month, from, to, hover, onPick, onHover, t }) {
+function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max }) {
   const days = calDays(year, month);
   return (
     <div>
@@ -103,7 +103,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t }) {
         {days.map(({iso,cur}) => (
           <Day key={iso} iso={iso} cur={cur}
             from={from} to={to} hover={hover}
-            onPick={onPick} onHover={onHover} />
+            onPick={onPick} onHover={onHover} max={max} />
         ))}
       </div>
     </div>
