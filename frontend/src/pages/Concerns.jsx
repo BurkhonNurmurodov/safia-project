@@ -1363,33 +1363,32 @@ export default function Concerns() {
         }
         toolbar={
           <>
-            {/* Mobile: search takes its own full row while the add button
-                stretches over the rest of the second row (label always on one
-                line). Desktop: unchanged inline row. All three controls share
-                the FilterPanel-trigger height. */}
+            {/* Mobile: search takes its own full row (w-full wraps) while the
+                add button stretches over the rest of the second row (label
+                always on one line). Desktop: inline row. All controls share the
+                FilterPanel-trigger height. FilterPanel stays a DIRECT child of
+                the toolbar row — its fits-on-one-row check measures the row. */}
             <SearchInput
               value={search}
               onChange={setSearch}
               placeholder={t("concerns.search")}
               className="w-full sm:w-44"
             />
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <FilterPanel
-                sections={filterSections}
-                activeCount={filterActiveCount}
-                anyActive={anyFilterActive}
-                onClearAll={clearAllFilters}
-              />
-              {!readOnly && (
-                <Button
-                  className="flex-1 sm:flex-none whitespace-nowrap"
-                  icon={<Plus size={14} />}
-                  onClick={openCreate}
-                >
-                  {t("concerns.add")}
-                </Button>
-              )}
-            </div>
+            <FilterPanel
+              sections={filterSections}
+              activeCount={filterActiveCount}
+              anyActive={anyFilterActive}
+              onClearAll={clearAllFilters}
+            />
+            {!readOnly && (
+              <Button
+                className="flex-1 sm:flex-none whitespace-nowrap"
+                icon={<Plus size={14} />}
+                onClick={openCreate}
+              >
+                {t("concerns.add")}
+              </Button>
+            )}
           </>
         }
       >
