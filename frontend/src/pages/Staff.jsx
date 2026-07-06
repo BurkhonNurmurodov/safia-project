@@ -3482,19 +3482,20 @@ export default function Staff() {
   const showApprovalsTab    = role === "admin" || role === "supervisor";
   const canCreate           = role === "admin" || role === "supervisor";
 
-  // Supervisors cannot submit changes for a date they have already closed
+  // No new documents once the day is closed — supervisors check their own day,
+  // admins the selected supervisor's (backend ignores manager_id for supervisors)
   const { data: dayInfo } = useQuery({
     queryKey: ["daily-approval", supervisorManagerId, selectedDate],
     queryFn: () => api.get("/api/staff/approvals/day", {
-      params: { attend_date: selectedDate },
+      params: { attend_date: selectedDate, manager_id: supervisorManagerId },
     }).then(r => r.data),
-    enabled: role === "supervisor" && !!selectedDate,
+    enabled: canCreate && !!supervisorManagerId && !!selectedDate,
   });
-  const supDayClosed = role === "supervisor" && !!dayInfo && dayInfo.state !== "open";
+  const dayClosed = !!dayInfo && dayInfo.state !== "open";
 
   // Role Change needs a date (and, for admin, a supervisor) before it can start
-  const createDisabled = !selectedDate || (role === "admin" && !selectedManagerId) || supDayClosed;
-  const createHint     = supDayClosed
+  const createDisabled = !selectedDate || (role === "admin" && !selectedManagerId) || dayClosed;
+  const createHint     = dayClosed
     ? t("staff.dayClosedHint")
     : role === "admin"
       ? t("staff.createHintAdmin")
