@@ -324,9 +324,9 @@ function AppWithLang() {
   return (
     <LangProvider defaultLang={defaultLang}>
       <BrowserRouter>
+        <RouteTransitionProvider>
         <FilterProvider>
           <LogoutOverlay />
-          <RouteChangeLoader />
           <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -354,6 +354,7 @@ function AppWithLang() {
           </Routes>
           </Suspense>
         </FilterProvider>
+        </RouteTransitionProvider>
       </BrowserRouter>
     </LangProvider>
   );
