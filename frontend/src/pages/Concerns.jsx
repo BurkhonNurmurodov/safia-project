@@ -144,7 +144,7 @@ function StatusSelect({ status, label, statusLabel, saving, disabled, onChange, 
             padding: 4,
           }}
         >
-          {STATUSES.map((s) => {
+          {options.map((s) => {
             const c = STATUS_COLOR[s] || "var(--text-3)";
             const isSel = s === status;
             return (
