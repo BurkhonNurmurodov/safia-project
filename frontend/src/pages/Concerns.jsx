@@ -374,6 +374,18 @@ export default function Concerns() {
     return parts.join(" ");
   };
 
+  // Compact owner label: "Abbos Mustafakulov" → "M. Abbos" (surname initial +
+  // first name). Single-word names are left as-is. The full name still drives
+  // search, sort and the filter list — this only shrinks the table display.
+  const shortOwner = (name) => {
+    const full = tl(name || "").trim();
+    if (!full) return "—";
+    const parts = full.split(/\s+/);
+    if (parts.length < 2) return full;
+    const last = parts[parts.length - 1];
+    return `${last[0].toUpperCase()}. ${parts[0]}`;
+  };
+
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
@@ -1092,7 +1104,7 @@ export default function Concerns() {
             {/* labelled facts — fixed positions, no guessing which name is which */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <MobField label={t("concerns.colOwner")}>
-                {tl(r.owner_name) || "—"}
+                {shortOwner(r.owner_name)}
                 {r.owner_role && (
                   <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{roleLabel(r.owner_role)}</div>
                 )}
@@ -1432,7 +1444,7 @@ export default function Concerns() {
                         {/* Owner = whoever created the concern; the line under
                             the name is their position */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <div style={{ color: "var(--text-1)" }}>{tl(r.owner_name) || "—"}</div>
+                          <div style={{ color: "var(--text-1)" }} title={tl(r.owner_name)}>{shortOwner(r.owner_name)}</div>
                           {r.owner_role && (
                             <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
                               {roleLabel(r.owner_role)}
