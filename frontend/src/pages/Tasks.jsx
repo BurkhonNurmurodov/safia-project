@@ -987,10 +987,9 @@ export default function Tasks() {
               activeCount={filterActiveCount}
               anyActive={filterActiveCount > 0}
               onClearAll={() => setStatusSel([])}
-              compact
             />
             {canCreate && (
-              <Button size="sm" icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>
+              <Button icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>
             )}
           </>
         }
