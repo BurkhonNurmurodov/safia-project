@@ -41,7 +41,7 @@ try:
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         backfill_leader_page_access, add_profiles_columns, backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
-        backfill_concern_profiles,
+        backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
     )
     from app.telegram_bot import setup_webhook
