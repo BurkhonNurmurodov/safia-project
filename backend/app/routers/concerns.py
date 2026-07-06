@@ -296,6 +296,8 @@ def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
         )
         if not own:
             raise HTTPException(status_code=403, detail="You can only manage your own concerns")
+        if c.status == "done":
+            raise HTTPException(status_code=403, detail="A resolved concern can only be managed by the supervisor and above")
     raise HTTPException(status_code=403, detail="This concern has been escalated above your level")
 
 
