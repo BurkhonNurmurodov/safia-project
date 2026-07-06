@@ -584,13 +584,13 @@ export default function Concerns() {
     const dMax = deadlineMax === "" ? null : Number(deadlineMax);
     return (r) => {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
-      if (ownerSel.length && !ownerSel.includes(r.concern_owner)) return false;
-      if (levelSel.length && !levelSel.includes(r.level || "leader")) return false;
+      if (ownerSel.length && !ownerSel.includes(r.owner_name)) return false;
+      if (levelSel.length && !levelSel.includes(r.level || "supervisor")) return false;
       // "My level only": concerns currently sitting on the viewer's step. For a
       // top-manager that's the ones assigned to THEM (can_edit), not every
       // top-level concern in the read-only global view.
       if (onlyMyLevel && myLevel) {
-        if ((r.level || "leader") !== myLevel) return false;
+        if ((r.level || "supervisor") !== myLevel) return false;
         if (role === "top-manager" && !r.can_edit) return false;
       }
       if (dMin != null || dMax != null) {
@@ -602,9 +602,7 @@ export default function Concerns() {
       if (q) {
         const hit =
           (r.concern_text || "").toLowerCase().includes(q) ||
-          (r.concern_owner || "").toLowerCase().includes(q) ||
-          (r.brigadir_name || "").toLowerCase().includes(q) ||
-          (r.leader_name || "").toLowerCase().includes(q);
+          (r.owner_name || "").toLowerCase().includes(q);
         if (!hit) return false;
       }
       return true;
