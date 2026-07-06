@@ -718,20 +718,7 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
     concern. telegram_id None = the profile is unclaimed — the bell row queues
     on the profile (no DM) and is inherited when the profile is claimed."""
     out: list[tuple[Optional[int], Optional[str]]] = []
-    if level == "leader":
-        tg = None
-        if c.leader_profile_id:
-            prof = db.query(RoleProfile).filter_by(id=c.leader_profile_id, role="leader").first()
-            if prof:
-                claimed = _claimed_role_row(db, prof)
-                tg = claimed.telegram_id if claimed else None
-        if tg is None and c.leader_role_ref:
-            row = db.query(TelegramUserRole).filter_by(
-                id=c.leader_role_ref, status="approved",
-            ).first()
-            tg = row.telegram_id if row else None
-        out.append((tg, _profile_key("leader", c.leader_profile_id)))
-    elif level == "supervisor":
+    if level == "supervisor":
         if c.brigadir_manager_id:
             sup = _find_supervisor(db, c.brigadir_manager_id)
             out.append((sup.telegram_id if sup else None,
