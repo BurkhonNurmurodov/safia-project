@@ -352,6 +352,7 @@ export default function Layout({ children, title, showFilters = true, filterSlot
   const { t } = useLang();
   const { dateFrom, dateTo, shift, unit, brigadirIds } = useFilters();
   const notif = useNotifications();
+  const switching = useRouteTransition();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
