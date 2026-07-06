@@ -568,11 +568,11 @@ export default function Concerns() {
     return { longest, slowest, peak, openTotal: open.length };
   }, [scoped]);
 
-  // Distinct concern owners in the current (period/brigadir/leader) scope — feeds
-  // the owner multi-select in the table filter button.
+  // Distinct owners (= creators) in the current (period/brigadir/leader) scope
+  // — feeds the owner multi-select in the table filter button.
   const ownerOptions = useMemo(() => {
     const s = new Set();
-    for (const r of scoped) if (r.concern_owner) s.add(r.concern_owner);
+    for (const r of scoped) if (r.owner_name) s.add(r.owner_name);
     return [...s].sort((a, b) => tl(a).localeCompare(tl(b)));
   }, [scoped, tl]);
 
