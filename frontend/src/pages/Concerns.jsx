@@ -1412,6 +1412,12 @@ export default function Concerns() {
                   // the chain): a row with no actions at all stays inert.
                   const hasActions =
                     r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
+                  // Overdue = still open and past entry_date + deadline_days
+                  // (same convention as the mobile card and the charts).
+                  const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
+                    ? isoPlusDays(r.entry_date, r.deadline_days)
+                    : null;
+                  const overdue = dueIso != null && isoDiffDays(dueIso, localTodayIso()) < 0;
                   return (
                     <Fragment key={r.id}>
                       {/* Click a row to reveal its action bar (Staff-style);
@@ -1458,7 +1464,7 @@ export default function Concerns() {
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}>{r.deadline_days ?? "—"}</td>
                         {/* Time since creation: done rows show the creation→done
                             span, open rows count up to now. Legacy done rows with
                             no done_at timestamp show "—". */}
