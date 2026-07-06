@@ -13,15 +13,21 @@ import { LangProvider, useLang } from "./context/LangContext";
 // A page chunk's filename is content-hashed (e.g. Kaizen-<hash>.js). After a
 // redeploy the old hash no longer exists on the server, so a client that still
 // holds the previous index.html/main bundle 404s when it tries to import that
-// page — surfacing as the "App failed to start" crash screen. lazyWithReload
-// catches that failure and does a single full reload to pull a fresh index.html
-// pointing at the current hashes, so the user silently recovers instead of
-// crashing. A 10s timestamp guard reloads at most once per window, so a chunk
-// that is genuinely broken (still failing right after the reload) falls through
-// to the ErrorBoundary rather than looping forever.
+// page. lazyWithReload catches that failure and hands off to the shared
+// stale-version handler defined in index.html (window.__staleReload): it shows
+// a calm "A new version is available. Reloading…" notice and does a single
+// reload to pull a fresh index.html pointing at the current hashes — so the
+// user recovers instead of hitting the red "App failed to start" screen. That
+// handler is guarded: if a reload can't fix it (a cached index.html still
+// pointing at old hashes) it shows "please reopen the app" instead of looping.
 function lazyWithReload(importer) {
   return lazy(() =>
     importer().catch((err) => {
+      if (typeof window.__staleReload === "function") {
+        window.__staleReload();
+        return new Promise(() => {}); // never resolves — the overlay takes over
+      }
+      // Fallback if the boot script is unavailable: one guarded reload.
       const KEY = "chunkReloadAt";
       let last = 0;
       try { last = Number(sessionStorage.getItem(KEY) || 0); } catch { /* storage blocked */ }
