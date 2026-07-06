@@ -1106,3 +1106,124 @@ def trudoyomkost_forecast(
     db: Session = Depends(get_db),
 ):
     return _forecast_payload(db, manager_id, _parse_date(week_start), weeks, shift, capacity_pct)
+
+
+# --------------------------------------------------------------------------- #
+# Call-tomorrow modal — one row per brigadir with tomorrow's forecast, whether
+# the supervisor profile is claimed (can receive a Telegram DM), and the latest
+# notice already sent for that date (resend guard). Deliberately UNfiltered:
+# every active unit at 100% capacity, regardless of the page's brigadir/shift
+# filters, so nobody is silently left out of the call.
+# --------------------------------------------------------------------------- #
+def _tomorrow() -> date:
+    return date.today() + timedelta(days=1)
+
+
+@router.get("/api/production/trudoyomkost/call-tomorrow")
+def trudoyomkost_call_tomorrow(
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    target = _tomorrow()
+    cap_min = _capacity_min(100.0)
+    hist_start = target - timedelta(days=7 * FORECAST_WEEKS)
+    loaded = _load_plan_by_manager(db, [], None, hist_start, target)
+
+    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    ids = [m.id for m in managers]
+    # claimed supervisor profiles → a Telegram DM can actually reach someone
+    claimed = {
+        r.role_id for r in db.query(TelegramUserRole).filter(
+            TelegramUserRole.role == "supervisor",
+            TelegramUserRole.role_id.in_(ids),
+            TelegramUserRole.status == "approved",
+        )
+    }
+    # latest notice per unit for the target date (ascending order → last wins)
+    last_notice: dict[int, ForecastCallNotice] = {}
+    for n in db.query(ForecastCallNotice).filter(
+        ForecastCallNotice.for_date == target,
+        ForecastCallNotice.manager_id.in_(ids),
+    ).order_by(ForecastCallNotice.sent_at):
+        last_notice[n.manager_id] = n
+    sender_names = {}
+    sender_ids = {n.sent_by for n in last_notice.values()}
+    if sender_ids:
+        sender_names = {
+            u.telegram_id: (u.tg_name or u.full_name)
+            for u in db.query(TelegramUser).filter(TelegramUser.telegram_id.in_(sender_ids))
+        }
+
+    rows = []
+    for m in sorted(managers, key=lambda m: m.name.lower()):
+        days = loaded.get(m.id, {}).get("days", {})
+        samples = [
+            _workers_from_plan(days[sd]["plan"], cap_min)
+            for k in range(FORECAST_WEEKS, 0, -1)
+            if (sd := target - timedelta(days=7 * k)) in days
+        ]
+        st = _cell_stats(samples)
+        ln = last_notice.get(m.id)
+        rows.append({
+            "manager_id": m.id, "name": m.name, "shift": m.shift,
+            "forecast": int(round(st["mean"])) if st["mean"] is not None else None,
+            "band_lo": st["band_lo"], "band_hi": st["band_hi"],
+            "confidence": st["confidence"], "n": st["n"],
+            "registered": m.id in claimed,
+            "last_notice": {
+                "workers": ln.workers,
+                "sent_at": ln.sent_at.isoformat() if ln.sent_at else None,
+                "by": sender_names.get(ln.sent_by),
+            } if ln else None,
+        })
+    return {"date": target.isoformat(), "weeks": FORECAST_WEEKS, "rows": rows}
+
+
+class CallNotifyItem(BaseModel):
+    manager_id: int
+    workers: int
+
+
+class CallNotifyRequest(BaseModel):
+    date: str                      # the tomorrow the client showed — guards midnight rollover
+    items: list[CallNotifyItem]
+
+
+@router.post("/api/production/trudoyomkost/call-notify")
+def trudoyomkost_call_notify(
+    req: CallNotifyRequest,
+    payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
+    db: Session = Depends(get_db),
+):
+    # function-level import: staff.py is heavy and imports would be circular-prone
+    from app.routers.staff import _find_supervisor, _notify, _profile_key
+
+    target = _tomorrow()
+    if req.date != target.isoformat():
+        raise HTTPException(409, "The forecast date is no longer tomorrow — reopen the dialog to refresh")
+    if not req.items:
+        raise HTTPException(400, "No supervisors selected")
+
+    actor = int(payload["sub"])
+    by_id = {m.id: m for m in db.query(Manager).filter(
+        Manager.id.in_([i.manager_id for i in req.items]),
+        Manager.archived.is_(False),
+    )}
+    sent = []
+    for item in req.items:
+        mgr = by_id.get(item.manager_id)
+        if mgr is None or item.workers < 0:
+            continue
+        sup = _find_supervisor(db, mgr.id)
+        # bell row keyed to the supervisor PROFILE (+ Telegram DM when claimed);
+        # an unclaimed profile queues the bell row for whoever claims it later
+        _notify(
+            db, sup.telegram_id if sup else None,
+            nkey="call_forecast", params={"date": target, "count": item.workers},
+            profile=_profile_key("supervisor", mgr.id),
+        )
+        db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
+                                  workers=item.workers, sent_by=actor))
+        sent.append(mgr.id)
+    db.commit()
+    return {"date": target.isoformat(), "sent": len(sent), "manager_ids": sent}
