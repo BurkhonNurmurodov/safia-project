@@ -312,11 +312,58 @@ def _claimed_role_row(db: Session, prof: RoleProfile) -> Optional[TelegramUserRo
     ).first()
 
 
+def _creator_identity(db: Session, payload: dict):
+    """(owner_role, owner_profile_id, name_snapshot) for the authenticated
+    creator — what the Owner column is keyed by. Profile ids follow the bell's
+    _profile_key semantics: role_profiles.id for admin/leader/shift-manager,
+    managers.id for supervisors (the manager row IS the profile). The snapshot
+    lands in concern_owner as the display fallback."""
+    role = payload.get("role")
+    prof = None
+    if role == "leader":
+        prof = _own_profile(db, payload)
+    elif role == "supervisor":
+        mgr = db.query(Manager).filter_by(id=payload.get("role_id")).first()
+        return "supervisor", payload.get("role_id"), (mgr.name if mgr else payload.get("full_name"))
+    elif role == "shift-manager":
+        prof = db.query(RoleProfile).filter_by(id=payload.get("role_id"), role="shift-manager").first()
+    elif role == "admin":
+        a = db.query(Admin).filter_by(telegram_id=int(payload["sub"])).first()
+        if a and a.profile_id:
+            prof = db.query(RoleProfile).filter_by(id=a.profile_id, role="admin").first()
+    else:
+        return None, None, payload.get("full_name")
+    return role, (prof.id if prof else None), (prof.name if prof else payload.get("full_name"))
+
+
+def _owner_names(db: Session, rows) -> dict:
+    """(owner_role, owner_profile_id) → CURRENT profile name, batch-resolved
+    for a page of rows (canonical renames stay live). Supervisor profiles live
+    in managers; every other role in role_profiles."""
+    keys = {
+        (r.owner_role, r.owner_profile_id)
+        for r in rows if r.owner_role and r.owner_profile_id
+    }
+    if not keys:
+        return {}
+    out: dict = {}
+    sup_ids = [pid for role, pid in keys if role == "supervisor"]
+    prof_ids = [pid for role, pid in keys if role != "supervisor"]
+    if sup_ids:
+        for mid, name in db.query(Manager.id, Manager.name).filter(Manager.id.in_(sup_ids)).all():
+            out[("supervisor", mid)] = name
+    if prof_ids:
+        for p in db.query(RoleProfile).filter(RoleProfile.id.in_(prof_ids)).all():
+            out[(p.role, p.id)] = p.name
+    return out
+
+
 def _resolve_owner(payload: dict, body: ConcernIn, db: Session):
     """Resolve the owning leader for a new concern → (profile_id, role_ref,
     leader_name, brigadir_manager_id, brigadir_name, leader_telegram_id).
     Leaders always write their own row; picker roles name a leader profile
-    inside their scope."""
+    inside their scope. ("Owner" here is the concern SUBJECT's leader — the
+    Owner column's creator identity comes from _creator_identity.)"""
     role = payload.get("role")
 
     if role == "leader":
