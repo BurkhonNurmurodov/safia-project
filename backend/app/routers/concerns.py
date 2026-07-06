@@ -703,7 +703,7 @@ def update_concern(
 
     db.commit()
     db.refresh(c)
-    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id), _sm_names(db))
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id), _sm_names(db), _owner_names(db, [c]))
 
 
 def _esc_counts_for(db: Session, concern_id: int) -> dict:
