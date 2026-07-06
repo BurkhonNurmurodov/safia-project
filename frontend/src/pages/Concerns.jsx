@@ -1351,9 +1351,10 @@ export default function Concerns() {
         }
         toolbar={
           <>
-            {/* Mobile: search takes its own full row; Filtrlar stays compact
-                while the add button stretches over the rest of the second row
-                (label always on one line). Desktop: unchanged inline row. */}
+            {/* Mobile: search takes its own full row while the add button
+                stretches over the rest of the second row (label always on one
+                line). Desktop: unchanged inline row. All three controls share
+                the FilterPanel-trigger height. */}
             <SearchInput
               value={search}
               onChange={setSearch}
@@ -1366,11 +1367,9 @@ export default function Concerns() {
                 activeCount={filterActiveCount}
                 anyActive={anyFilterActive}
                 onClearAll={clearAllFilters}
-                compact
               />
               {!readOnly && (
                 <Button
-                  size="sm"
                   className="flex-1 sm:flex-none whitespace-nowrap"
                   icon={<Plus size={14} />}
                   onClick={openCreate}
