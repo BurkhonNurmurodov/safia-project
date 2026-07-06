@@ -30,7 +30,7 @@ const WD = {
 
 const TXT = {
   uz: {
-    title: "Trudoyomkost — tahlil", kpiPeriod: "Davr Σ", kpiDaily: "Kunlik o'rtacha",
+    title: "Plan Prognoz — tahlil", kpiPeriod: "Davr Σ", kpiDaily: "Kunlik o'rtacha",
     kpiBusiest: "Eng band kun", kpiDelta: "Davrlararo Δ", profile: "Hafta kuni profili",
     matrix: "Brigadir × hafta kuni", trend: "Hafta kuni trendi", avgWord: "O'rtacha",
     totalWord: "Jami", perBrigadir: "brigadirga o'rtacha", sumAll: "yig'indi", export: "Excel",
@@ -42,7 +42,7 @@ const TXT = {
     ma: "Siljuvchi o'rtacha", dayShort: "kun",
   },
   uz_cyrl: {
-    title: "Trudoyomkost — таҳлил", kpiPeriod: "Давр Σ", kpiDaily: "Кунлик ўртача",
+    title: "План Прогноз — таҳлил", kpiPeriod: "Давр Σ", kpiDaily: "Кунлик ўртача",
     kpiBusiest: "Энг банд кун", kpiDelta: "Даврлараро Δ", profile: "Ҳафта куни профили",
     matrix: "Бригадир × ҳафта куни", trend: "Ҳафта куни тренди", avgWord: "Ўртача",
     totalWord: "Жами", perBrigadir: "бригадирга ўртача", sumAll: "йиғинди", export: "Excel",
@@ -54,7 +54,7 @@ const TXT = {
     ma: "Силжувчи ўртача", dayShort: "кун",
   },
   ru: {
-    title: "Трудоёмкость — анализ", kpiPeriod: "Σ за период", kpiDaily: "Средне в день",
+    title: "Прогноз плана — анализ", kpiPeriod: "Σ за период", kpiDaily: "Средне в день",
     kpiBusiest: "Самый загруженный день", kpiDelta: "Δ к прошлому периоду", profile: "Профиль по дням недели",
     matrix: "Бригадир × день недели", trend: "Тренд по дню недели", avgWord: "Среднее",
     totalWord: "Сумма", perBrigadir: "в среднем на бригадира", sumAll: "сумма", export: "Excel",
@@ -66,7 +66,7 @@ const TXT = {
     ma: "Скользящее среднее", dayShort: "дн",
   },
   en: {
-    title: "Trudoyomkost — analysis", kpiPeriod: "Period Σ", kpiDaily: "Daily average",
+    title: "Plan Forecasting — analysis", kpiPeriod: "Period Σ", kpiDaily: "Daily average",
     kpiBusiest: "Busiest weekday", kpiDelta: "Δ vs previous", profile: "Weekday profile",
     matrix: "Brigadir × weekday", trend: "Weekday trend", avgWord: "Average",
     totalWord: "Total", perBrigadir: "avg per brigadir", sumAll: "total", export: "Excel",
