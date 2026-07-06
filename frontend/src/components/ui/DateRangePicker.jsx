@@ -431,8 +431,8 @@ export default function DateRangePicker({
             </div>
 
             <div className={`grid ${single ? "grid-cols-1" : "grid-cols-2"} gap-6`} onMouseLeave={() => setHover(null)}>
-              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} />
-              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} />}
+              <MonthGrid year={leftY} month={leftM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} />
+              {!single && <MonthGrid year={rightY} month={rightM} from={tempFrom} to={tempTo} hover={hover} onPick={handlePick} onHover={setHover} t={t} max={max} />}
             </div>
 
             {!single && (
