@@ -9,6 +9,8 @@ import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings } from "lucide-react";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import MyNameEditor from "../ui/MyNameEditor";
+import PageLoader from "../ui/PageLoader";
+import { useRouteTransition } from "../../context/RouteTransitionContext";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
