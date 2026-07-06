@@ -145,7 +145,6 @@ const t = {
     "concerns.status.todo":    "Bajarilishi kerak",
     "concerns.status.doing":   "Jarayonda",
     "concerns.status.done":    "Hal qilingan",
-    "concerns.ownerRequired":  "Xavotir egasini kiriting",
     "concerns.textRequired":   "Xavotir matnini kiriting",
     "concerns.saveError":      "Saqlashda xatolik",
     "concerns.chartTrend":     "Xavotirlar dinamikasi",
