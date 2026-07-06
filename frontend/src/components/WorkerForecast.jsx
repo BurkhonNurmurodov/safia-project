@@ -3,11 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   CalendarRange, ChevronLeft, ChevronRight, X, Sparkles,
   TrendingUp, TrendingDown, Check, AlertTriangle, History,
-  Target, Award,
+  Target, Award, Send, CheckCircle,
 } from "lucide-react";
 import api from "../utils/api";
 import { SkeletonBlock } from "./ui/Skeleton";
 import DateRangePicker from "./ui/DateRangePicker";
+import Modal from "./ui/Modal";
+import Button from "./ui/Button";
+import ConfirmDialog from "./ui/ConfirmDialog";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
