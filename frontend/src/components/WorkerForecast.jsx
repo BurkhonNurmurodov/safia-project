@@ -37,6 +37,12 @@ const T = {
     netW: "sof", cardOutSub: "brigadir oraliqdan tashqarida",
     pickDateHint: "Sana ustunini bosing", noCompare: "Bu kun uchun hali haqiqiy yo'q",
     allDays: "Butun hafta", pickDay: "Kun tanlash",
+    callBtn: "Ertangi chaqiruv", callTitle: "Ertangi smenaga chaqirish",
+    callDisclaimer: "Sonlar tarix asosida avtomatik hisoblangan taxmin — noaniq bo'lishi mumkin. Yuborishdan oldin tekshirib, kerak bo'lsa tahrirlang.",
+    selectAll: "Hammasi", notRegistered: "Ro'yxatdan o'tmagan", noForecast: "Bashorat yo'q",
+    sentLabel: "Yuborilgan", sendBtn: (n) => `Yuborish (${n})`, cancel: "Bekor qilish",
+    resendTitle: "Qayta yuborish?", resendMsg: (n) => `${n} brigadirga ertaga uchun chaqiruv allaqachon yuborilgan. Yana yuborilsinmi?`,
+    toastSent: (n) => `${n} brigadirga chaqiruv yuborildi`,
   },
   uz_cyrl: {
     title: "Башорат — сменага чақириш", thisWeek: "Шу ҳафта", supervisor: "Бригадир",
