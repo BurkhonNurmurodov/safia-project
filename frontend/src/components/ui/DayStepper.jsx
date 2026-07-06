@@ -1,11 +1,11 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import { useLang } from "../../context/LangContext";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import DateRangePicker from "./DateRangePicker";
 
 /**
  * Canonical single-day stepper — THE template for "‹ [date] ›" day
  * navigation on daily pages (Daily, ShiftDaily, Production…).
- * Chevron buttons step ±1 day; clicking the label opens the native
- * date picker (hidden input) for a direct jump.
+ * Chevron buttons step ±1 day; the label is the app-wide DateRangePicker
+ * in single mode (custom calendar — never the native browser picker).
  *
  * Props:
  *   value    – ISO date "YYYY-MM-DD"
@@ -22,15 +22,7 @@ function addDaysISO(iso, n) {
   return toISO(d);
 }
 
-function fmtLongLocalized(iso, t) {
-  if (!iso) return "—";
-  const d = new Date(iso + "T00:00:00");
-  const dayIdx = (d.getDay() + 6) % 7;
-  return `${t(`cal.d${dayIdx}`)}, ${d.getDate()} ${t(`cal.mg${d.getMonth()}`)} ${d.getFullYear()}`;
-}
-
 export default function DayStepper({ value, onChange, max = toISO(new Date()) }) {
-  const { t } = useLang();
   const atMax = max != null && value >= max;
 
   return (
@@ -42,20 +34,16 @@ export default function DayStepper({ value, onChange, max = toISO(new Date()) })
       >
         <ChevronLeft size={15} />
       </button>
-      <label
-        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm cursor-pointer"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-      >
-        <CalendarDays size={14} style={{ color: "var(--text-4)" }} />
-        <span className="whitespace-nowrap">{fmtLongLocalized(value, t)}</span>
-        <input
-          type="date"
-          value={value}
-          max={max ?? undefined}
-          onChange={(e) => e.target.value && onChange(e.target.value)}
-          className="sr-only"
-        />
-      </label>
+      <DateRangePicker
+        single
+        weekday
+        max={max}
+        dateFrom={value}
+        dateTo={value}
+        setDateFrom={(v) => v && onChange(v)}
+        setDateTo={() => {}}
+        triggerClassName="px-3 py-2 text-sm"
+      />
       <button
         onClick={() => onChange(addDaysISO(value, 1))}
         disabled={atMax}
