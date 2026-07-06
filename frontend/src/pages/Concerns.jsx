@@ -343,6 +343,17 @@ export default function Concerns() {
   // slices by level via the Filtrlar multi-select instead.
   const myLevel = LEVELS.includes(role) ? role : null;
 
+  // Resolution time arrives as raw minutes. Under a day we keep the minute
+  // count as-is (matches the "(min)" header); once it spans a day or more we
+  // switch to a "N days M min" format so long-running concerns stay readable.
+  const fmtResolution = (mins) => {
+    if (mins == null) return "—";
+    if (mins < 1440) return mins.toLocaleString();
+    const days = Math.floor(mins / 1440);
+    const rem = mins % 1440;
+    return `${days} ${t("concerns.days")} ${rem.toLocaleString()} ${t("general.min")}`;
+  };
+
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
@@ -1441,7 +1452,7 @@ export default function Concerns() {
                         {/* Minutes from creation to the done-flip; open rows and
                             rows finished before done_at existed show "—". */}
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
-                          {r.resolution_minutes != null ? r.resolution_minutes.toLocaleString() : "—"}
+                          {fmtResolution(r.resolution_minutes)}
                         </td>
                       </tr>
                       {expanded && (
