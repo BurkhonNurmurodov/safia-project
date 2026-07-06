@@ -535,8 +535,6 @@ def list_cell_codes(
 def _validate(body: ConcernIn):
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
-    if not (body.concern_owner or "").strip():
-        raise HTTPException(status_code=400, detail="Concern owner is required")
     if not (body.concern_text or "").strip():
         raise HTTPException(status_code=400, detail="Concern text is required")
 
