@@ -115,8 +115,12 @@
         }
         window.addEventListener('error', function (e) {
           if (e.target && e.target.tagName) {
-            errors.push('Failed to load: ' +
-              (e.target.src || e.target.href || e.target.tagName));
+            var url = e.target.src || e.target.href || '';
+            if (/\/assets\/[^?#]+\.js(\?|#|$)/.test(url)) {
+              staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
+              return;
+            }
+            errors.push('Failed to load: ' + (url || e.target.tagName));
           } else {
             errors.push((e.message || 'script error') +
               (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
