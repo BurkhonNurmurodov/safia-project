@@ -112,7 +112,13 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover, t, max }) {
 
 // ── DateRangePicker ───────────────────────────────────────────────────────────
 
-export default function DateRangePicker({ dateFrom, dateTo, setDateFrom, setDateTo, single = false, triggerClassName = "px-2.5 py-1.5 text-xs" }) {
+export default function DateRangePicker({
+  dateFrom, dateTo, setDateFrom, setDateTo,
+  single = false,
+  max = null,          // ISO upper bound — days after it are muted/unpickable
+  weekday = false,     // single mode: prefix the trigger label with the weekday
+  triggerClassName = "px-2.5 py-1.5 text-xs",
+}) {
   const { t } = useLang();
   const [open,     setOpen]     = useState(false);
   const [tempFrom, setTempFrom] = useState(dateFrom||"");
