@@ -186,11 +186,17 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
 }
 
 // ── Consolidated filter button ───────────────────────────────────────────────
-// Collapses every column filter into one top-right "Filtrlar" control, mirroring
-// the Staff page: a dropdown on desktop and a slide-up bottom sheet on mobile.
-// Driven by a declarative `sections` list so the same filter content renders in
-// both surfaces:
+// Table-toolbar filters, driven by a declarative `sections` list so the same
+// filter content renders in every surface:
 //   { key, icon, label, active, display, render: () => <control/> }
+// Three surfaces by available space:
+//   · wide screens where the whole toolbar row fits on ONE line — each filter
+//     unfolds into its own dropdown control;
+//   · md+ where the row would wrap (tablet, many filters) — the single grouped
+//     "Filtrlar" dropdown;
+//   · below md — the grouped trigger opening a slide-up bottom sheet.
+// The fit check measures the real toolbar row, so FilterPanel must be a DIRECT
+// child of that flex row (no intermediate wrapper).
 
 function CountBadge({ n }) {
   return (
