@@ -54,7 +54,7 @@ function getPresets(t) {
 
 // ── Day cell ──────────────────────────────────────────────────────────────────
 
-function Day({ iso, cur, from, to, hover, onPick, onHover }) {
+function Day({ iso, cur, from, to, hover, onPick, onHover, max }) {
   const effTo  = from && !to && hover ? hover : to;
   let a=null, b=null;
   if (from && effTo) [a,b] = from<=effTo ? [from,effTo] : [effTo,from];
@@ -64,7 +64,8 @@ function Day({ iso, cur, from, to, hover, onPick, onHover }) {
   const isSingle=isStart&&isEnd, selected=isStart||isEnd;
   const day=parseInt(iso.split("-")[2]);
 
-  if (!cur) return (
+  // Out-of-month and beyond-max days render muted and unclickable.
+  if (!cur || (max && iso > max)) return (
     <div className="h-8 flex items-center justify-center">
       <span className="text-[11px]" style={{ color:"var(--text-4)", opacity:0.4 }}>{day}</span>
     </div>
