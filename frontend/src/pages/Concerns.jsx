@@ -781,7 +781,7 @@ export default function Concerns() {
     setEscError("");
   }
   const escTargetLevel = escalate
-    ? LEVELS[LEVELS.indexOf(escalate.row.level || "leader") + (escalate.direction === "up" ? 1 : -1)]
+    ? LEVELS[LEVELS.indexOf(escalate.row.level || "supervisor") + (escalate.direction === "up" ? 1 : -1)]
     : null;
   const escalateMutation = useMutation({
     mutationFn: () =>
