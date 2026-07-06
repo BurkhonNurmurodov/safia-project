@@ -694,14 +694,12 @@ export default function Concerns() {
     const val = (r) => {
       switch (sort.key) {
         case "date":     return r.entry_date || "";
-        case "leader":   return tl(r.leader_name || "");
-        case "supervisor": return tl(r.brigadir_name || "");
-        case "owner":    return tl(r.concern_owner || "");
+        case "owner":    return tl(r.owner_name || "");
         case "concern":  return tl(r.concern_text || "");
         case "deadline": return r.deadline_days;
         case "resolution": return resolutionMinutes(r);
         case "status":   return STATUSES.indexOf(r.status);
-        case "level":    return LEVELS.indexOf(r.level || "leader");
+        case "level":    return LEVELS.indexOf(r.level || "supervisor");
         default:         return "";
       }
     };
