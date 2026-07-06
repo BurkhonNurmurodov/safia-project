@@ -343,12 +343,22 @@ export default function Concerns() {
   // slices by level via the Filtrlar multi-select instead.
   const myLevel = LEVELS.includes(role) ? role : null;
 
-  // Resolution time arrives as raw minutes. Under a day we keep the minute
-  // count as-is (matches the "(min)" header); once it spans a day or more we
-  // switch to a "N days M min" format so long-running concerns stay readable.
+  // Elapsed time for the "time since created" column. Done concerns show the
+  // tracked creation→done span; still-open ones count up from creation to now.
+  // Legacy done rows without a done_at timestamp stay blank.
+  const resolutionMinutes = (r) => {
+    if (r.resolution_minutes != null) return r.resolution_minutes;
+    if (r.status !== "done" && r.created_at) {
+      return Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 60000));
+    }
+    return null;
+  };
+
+  // Format a minute span. Under a day we show plain minutes; once it spans a
+  // day or more we switch to a "N days M min" format so it stays readable.
   const fmtResolution = (mins) => {
     if (mins == null) return "—";
-    if (mins < 1440) return mins.toLocaleString();
+    if (mins < 1440) return `${mins.toLocaleString()} ${t("general.min")}`;
     const days = Math.floor(mins / 1440);
     const rem = mins % 1440;
     return `${days} ${t("concerns.days")} ${rem.toLocaleString()} ${t("general.min")}`;
@@ -681,7 +691,7 @@ export default function Concerns() {
         case "owner":    return tl(r.concern_owner || "");
         case "concern":  return tl(r.concern_text || "");
         case "deadline": return r.deadline_days;
-        case "resolution": return r.resolution_minutes;
+        case "resolution": return resolutionMinutes(r);
         case "status":   return STATUSES.indexOf(r.status);
         case "level":    return LEVELS.indexOf(r.level || "leader");
         default:         return "";
@@ -1115,11 +1125,11 @@ export default function Concerns() {
                   )}
                 </div>
               )}
-              {r.status === "done" && r.resolution_minutes != null && (
+              {resolutionMinutes(r) != null && (
                 <MobField label={t("concerns.colResolution")}>
                   <span className="inline-flex items-center gap-1 tabular-nums">
                     <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
-                    {r.resolution_minutes.toLocaleString()}
+                    {fmtResolution(resolutionMinutes(r))}
                   </span>
                 </MobField>
               )}
@@ -1449,10 +1459,11 @@ export default function Concerns() {
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>{r.deadline_days ?? "—"}</td>
-                        {/* Minutes from creation to the done-flip; open rows and
-                            rows finished before done_at existed show "—". */}
+                        {/* Time since creation: done rows show the creation→done
+                            span, open rows count up to now. Legacy done rows with
+                            no done_at timestamp show "—". */}
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
-                          {fmtResolution(r.resolution_minutes)}
+                          {fmtResolution(resolutionMinutes(r))}
                         </td>
                       </tr>
                       {expanded && (
