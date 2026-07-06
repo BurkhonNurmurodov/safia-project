@@ -27,6 +27,7 @@ or copy-paste its markup into a page.
 Other UI conventions:
 
 - Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100.
+- Table-toolbar controls share ONE height — the `FilterPanel` trigger (`px-3 py-2 text-sm` + border = 38px). `SearchInput` default and `Button` md match it; use md (not `sm`) buttons in toolbars. All `Button` variants carry a border (transparent on borderless ones) so heights line up — don't strip it.
 - All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
 - No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
 - Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
