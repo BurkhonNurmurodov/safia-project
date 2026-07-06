@@ -294,29 +294,6 @@ function RequirePage({ page, children }) {
   return <Navigate to={dest} replace />;
 }
 
-/**
- * Shows the branded logo loader over every page switch. Suspense only covers
- * a chunk's first download, so revisiting a page would otherwise swap in
- * instantly with no feedback. The overlay sits on top while the new page
- * mounts (and starts fetching) underneath, then lifts after a short beat.
- */
-function RouteChangeLoader() {
-  const location = useLocation();
-  const [visible, setVisible] = useState(false);
-  const prevPath = useRef(location.pathname);
-
-  useEffect(() => {
-    if (prevPath.current === location.pathname) return;
-    prevPath.current = location.pathname;
-    setVisible(true);
-    const t = setTimeout(() => setVisible(false), 500);
-    return () => clearTimeout(t);
-  }, [location.pathname]);
-
-  if (!visible) return null;
-  return <PageLoader overlay />;
-}
-
 function LogoutOverlay() {
   const { countdown } = useAuth();
   const { t } = useLang();
