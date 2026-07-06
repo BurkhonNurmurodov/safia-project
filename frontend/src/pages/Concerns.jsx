@@ -354,18 +354,18 @@ export default function Concerns() {
     return null;
   };
 
-  // Format a minute span as days / hours / minutes, dropping any leading zero
-  // units (e.g. "56 min", "1 hrs 41 min", "3 days 22 hrs 34 min"). Minutes are
-  // always shown when nothing larger is present so a value never renders empty.
+  // Compact days / hours / minutes span, dropping any leading zero units
+  // (e.g. "56m", "1h 41m", "3d 22h 34m"). Minutes are always shown when
+  // nothing larger is present so a value never renders empty.
   const fmtResolution = (mins) => {
     if (mins == null) return "—";
     const days = Math.floor(mins / 1440);
     const hrs = Math.floor((mins % 1440) / 60);
     const rem = mins % 60;
     const parts = [];
-    if (days) parts.push(`${days} ${t("concerns.days")}`);
-    if (hrs) parts.push(`${hrs} ${t("general.hrs")}`);
-    if (rem || parts.length === 0) parts.push(`${rem} ${t("general.min")}`);
+    if (days) parts.push(`${days}${t("general.dShort")}`);
+    if (hrs) parts.push(`${hrs}${t("general.hShort")}`);
+    if (rem || parts.length === 0) parts.push(`${rem}${t("general.mShort")}`);
     return parts.join(" ");
   };
 
