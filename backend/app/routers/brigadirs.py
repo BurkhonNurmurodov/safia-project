@@ -82,17 +82,22 @@ def build_metrics_list(
     # Gate: only include days the supervisor has closed. When use_confirmed_only=True
     # (used for individual profile pages) we additionally require all requests to
     # be processed; for aggregate averages we only require the day to be closed.
+    # require_closed=False drops the closure gate entirely (attendance-only) —
+    # used by the fleet-trend heatmap fetch so uploaded-but-unclosed days still
+    # plot as (unconfirmed) points instead of holes.
     mgr_ids = [m.id for m in managers]
     if use_confirmed_only:
         allowed = confirmed_pairs(db, date_from, date_to, mgr_ids)
-    else:
+    elif require_closed:
         allowed = _closed_pairs(db, date_from, date_to, mgr_ids)
+    else:
+        allowed = None
 
     results = []
     for mgr in managers:
         for d_str in all_dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
-            if (mgr.id, d_obj) not in allowed:
+            if allowed is not None and (mgr.id, d_obj) not in allowed:
                 continue
             att_rows = db.query(Attendance).filter(
                 Attendance.manager_id == mgr.id,
