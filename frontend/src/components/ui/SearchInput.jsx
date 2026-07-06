@@ -8,7 +8,8 @@ import { Search, X } from "lucide-react";
  *   value / onChange – controlled value; onChange receives the string
  *   placeholder      – pass the page's translation
  *   className        – wrapper classes (widths etc.)
- *   inputClassName   – override input sizing (default "text-xs pl-8 pr-7 py-2")
+ *   inputClassName   – override input sizing (default "text-sm pl-8 pr-7 py-2",
+ *                      same height as the FilterPanel trigger / md Button)
  *   clearable        – show the X button when there is text (default true)
  */
 export default function SearchInput({
@@ -16,7 +17,7 @@ export default function SearchInput({
   onChange,
   placeholder,
   className = "",
-  inputClassName = "text-xs pl-8 pr-7 py-2",
+  inputClassName = "text-sm pl-8 pr-7 py-2",
   clearable = true,
 }) {
   return (
