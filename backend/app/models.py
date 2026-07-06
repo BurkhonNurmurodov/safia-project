@@ -649,17 +649,25 @@ class LeaderConcern(Base):
     done_at             = Column(DateTime(timezone=True), nullable=True)
     solution            = Column(Text, nullable=True)             # Решение
     # Escalation level — who currently holds the concern. Every concern starts
-    # at "leader"; each level uplifts one step when they can't solve it:
-    # leader → supervisor → shift-manager → top-manager. The handler at the
-    # current level AND everyone above it in the chain keep edit rights; levels
-    # below turn read-only (see _assert_can_edit in routers/concerns.py).
-    level               = Column(String, nullable=False, server_default="leader")
+    # at "supervisor" (the leader level was removed 2026-07; legacy 'leader'
+    # rows were migrated up); each level uplifts one step when they can't solve
+    # it: supervisor → shift-manager → top-manager. The handler at the current
+    # level AND everyone above it in the chain keep edit rights; levels below
+    # turn read-only (see _assert_can_edit in routers/concerns.py).
+    level               = Column(String, nullable=False, server_default="supervisor")
     # Top-management is person-specific: the shift-manager picks ONE top-manager
     # profile on the last uplift step; only that person (plus admin) may act.
     # Cleared when the concern is sent back down.
     top_manager_profile_id = Column(Integer, nullable=True)
     top_manager_name       = Column(String, nullable=True)        # snapshot of the chosen top-manager
     created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
+    # The creator's PROFILE identity — the Owner column resolves the current
+    # profile name from these at view time (renames stay live). owner_role:
+    # leader|supervisor|shift-manager|admin; owner_profile_id: role_profiles.id
+    # (managers.id for supervisors). NULL pair = legacy row → the typed
+    # concern_owner text renders without a position.
+    owner_role          = Column(String, nullable=True)
+    owner_profile_id    = Column(Integer, nullable=True)
     created_at          = Column(DateTime(timezone=True), server_default=func.now())
     updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
