@@ -290,14 +290,10 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
 
 const PANEL_WIDTH = 300;
 
-export function FilterPanel({ sections, activeCount, anyActive, onClearAll, compact = false }) {
+export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
   const { t } = useLang();
-  // compact: h-8 text-xs trigger for dense table toolbars (matches the
-  // search input / action buttons on Concerns); default matches the larger
-  // Production/Overview toolbars.
-  const triggerCls = compact
-    ? "items-center gap-1.5 rounded-lg h-8 px-3 text-xs"
-    : "items-center gap-2 rounded-xl px-3 py-2 text-sm";
+  // Single canonical trigger size — SearchInput and md Button match its height.
+  const triggerCls = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
   const [open, setOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [pos, setPos] = useState(null);
