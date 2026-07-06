@@ -248,7 +248,7 @@ export default function DateRangePicker({
         }}
       >
         <CalendarDays size={13} className="flex-shrink-0" style={{ color:"var(--text-3)" }} />
-        <span className="whitespace-nowrap">{fmtRange(dateFrom, dateTo, t)}</span>
+        <span className="whitespace-nowrap">{triggerLabel}</span>
       </button>
 
       {/* ── Mobile: full-screen bottom sheet ── */}
