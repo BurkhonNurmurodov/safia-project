@@ -1,17 +1,19 @@
 import logoSrc from "../../assets/logo.png";
 
 /**
- * Full-screen branded loading state — Safia logo + spinner.
- * Used as the Suspense fallback while a page's code chunk loads, while auth
- * is being resolved, and (with `overlay`) as a fixed cover during page
- * switches. Keep this component eager (never lazy) so it is always available
- * to render as a fallback.
+ * Branded loading state — Safia logo + spinner.
+ * Full-screen by default: the Suspense fallback while a page's code chunk
+ * loads, and while auth is being resolved. With `overlay` it absolutely fills
+ * the nearest positioned ancestor — Layout uses this to cover just the
+ * content area during page switches so the header and sidebar stay visible.
+ * Keep this component eager (never lazy) so it is always available to render
+ * as a fallback.
  */
 export default function PageLoader({ overlay = false }) {
   return (
     <div
       className={`flex flex-col items-center justify-center gap-5 ${
-        overlay ? "fixed inset-0 z-[9990]" : "min-h-screen"
+        overlay ? "absolute inset-0 z-30" : "min-h-screen"
       }`}
       style={{ background: "var(--bg-base)" }}
     >
