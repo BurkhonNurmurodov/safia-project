@@ -403,6 +403,109 @@ def backfill_concern_profiles() -> None:
         db.close()
 
 
+def add_concern_owner_columns() -> None:
+    """Owner-column rollout: the Owner is the concern's CREATOR, keyed by their
+    profile identity (owner_role + owner_profile_id — role_profiles.id, or
+    managers.id for supervisors) and resolved to the current profile name at
+    view time. Also removes the leader step from the escalation chain: the
+    chain now starts at "supervisor", so existing leader-level rows move up."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS owner_role VARCHAR"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS owner_profile_id INTEGER"
+        ))
+        db.execute(text(
+            "ALTER TABLE leader_concerns ALTER COLUMN level SET DEFAULT 'supervisor'"
+        ))
+        db.execute(text(
+            "UPDATE leader_concerns SET level = 'supervisor' WHERE level = 'leader'"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern owner columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_concern_owner() -> None:
+    """Give legacy concerns (typed free-text owner, creator only as a telegram
+    id) a profile-keyed owner where it can be resolved safely, preferring the
+    roles the creator plausibly acted in ON THIS concern: the concern's own
+    leader first, then the unit's approved supervisor, then a shift-manager
+    role row, then an admin profile. Unresolvable rows stay NULL and keep
+    rendering their typed owner text (without a position). Idempotent."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(LeaderConcern)
+            .filter(LeaderConcern.owner_role.is_(None),
+                    LeaderConcern.created_by.isnot(None))
+            .all()
+        )
+        if not rows:
+            return
+        # telegram_id of whoever claimed each leader profile: profile (unit,
+        # name) ←→ approved leader role row (role_id = unit, full_name = name).
+        leader_profiles = {
+            p.id: (p.manager_id, p.name)
+            for p in db.query(RoleProfile).filter_by(role="leader").all()
+        }
+        leader_claims = {
+            (r.role_id, r.full_name): r.telegram_id
+            for r in db.query(TelegramUserRole).filter_by(role="leader", status="approved").all()
+        }
+        leader_refs = {
+            r.id: r.telegram_id
+            for r in db.query(TelegramUserRole).filter_by(role="leader").all()
+        }
+        sup_claims = {
+            (r.role_id, r.telegram_id)
+            for r in db.query(TelegramUserRole).filter_by(role="supervisor", status="approved").all()
+        }
+        sm_claims = {
+            r.telegram_id: r.role_id
+            for r in db.query(TelegramUserRole).filter_by(role="shift-manager", status="approved").all()
+        }
+        admin_profiles = {
+            a.telegram_id: a.profile_id
+            for a in db.query(Admin).all() if a.profile_id
+        }
+        moved = 0
+        for c in rows:
+            tg = c.created_by
+            owner = None
+            # 1 ─ the concern's own leader wrote it on themselves
+            prof_key = leader_profiles.get(c.leader_profile_id)
+            if prof_key and leader_claims.get(prof_key) == tg:
+                owner = ("leader", c.leader_profile_id)
+            elif c.leader_role_ref and leader_refs.get(c.leader_role_ref) == tg:
+                owner = ("leader", c.leader_profile_id)
+            # 2 ─ the unit's supervisor logged it for their leader
+            elif c.brigadir_manager_id and (c.brigadir_manager_id, tg) in sup_claims:
+                owner = ("supervisor", c.brigadir_manager_id)
+            # 3 ─ a shift-manager
+            elif tg in sm_claims:
+                owner = ("shift-manager", sm_claims[tg])
+            # 4 ─ an admin
+            elif tg in admin_profiles:
+                owner = ("admin", admin_profiles[tg])
+            if owner and owner[1]:
+                c.owner_role, c.owner_profile_id = owner
+                moved += 1
+        if moved:
+            db.commit()
+            print(f"[startup] backfilled {moved} concern owner(s) onto profiles")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern owner backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_edit_requests_batch_id() -> None:
     """Add batch_id column to edit_requests if it does not exist yet (idempotent)."""
     db = SessionLocal()
