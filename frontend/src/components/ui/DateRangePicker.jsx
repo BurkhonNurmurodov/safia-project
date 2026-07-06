@@ -217,8 +217,15 @@ export default function DateRangePicker({
     setDateFrom(tempFrom); setDateTo(tempTo||tempFrom); setOpen(false);
   }
 
-  // single-date mode only offers single-day quick picks (no ranges)
-  const presets = single ? getPresets(t).filter((p) => p.from === p.to) : getPresets(t);
+  // single-date mode only offers single-day quick picks (no ranges);
+  // an upper bound drops presets that reach past it
+  const presets = (single ? getPresets(t).filter((p) => p.from === p.to) : getPresets(t))
+    .filter((p) => !max || p.to <= max);
+
+  // Trigger label — single mode can lead with the localized weekday
+  const triggerLabel = weekday && single && dateFrom
+    ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
+    : fmtRange(dateFrom, dateTo, t);
 
   const btnStyle = (active) => ({
     background: active ? "var(--brand)" : "transparent",
