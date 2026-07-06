@@ -633,7 +633,11 @@ class LeaderConcern(Base):
     brigadir_manager_id = Column(Integer, nullable=True)          # managers.id (leader's unit/brigadir)
     brigadir_name       = Column(String, nullable=True)           # snapshot of the brigadir's name
     cell_code           = Column(String, nullable=True)           # Код ячейки
-    concern_owner       = Column(String, nullable=False)          # Хавотир эгаси (worker who raised it)
+    # Creator-name snapshot. New rows stamp the creator's name here as a
+    # fallback; the Owner column resolves the CURRENT profile name from
+    # owner_role/owner_profile_id at view time. Pre-owner-rollout rows keep
+    # whatever free text was typed ("worker who raised it").
+    concern_owner       = Column(String, nullable=False)
     concern_text        = Column(Text, nullable=False)            # Хавотир
     status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
     deadline_days       = Column(Integer, nullable=True)          # Срок (days)
