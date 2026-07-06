@@ -1,6 +1,6 @@
 // Shared per-column table-filter primitives.
 // Used by the Staff "Requests"/Workers tables and the Overview supervisor table.
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
 import { useLang } from "../../context/LangContext";
