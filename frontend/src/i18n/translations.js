@@ -1034,9 +1034,9 @@ const t = {
     "general.noData": "Ma'lumot yo'q",
     "general.min":    "min",
     "general.hrs":    "soat",
-    "general.dShort": "k",
-    "general.hShort": "s",
-    "general.mShort": "d",
+    "general.unitDay":  "kun",
+    "general.unitHour": "soat",
+    "general.unitMin":  "daq",
 
     // ── Formula popups ───────────────────────────────────────────────────────
     "fm.wfBaselineTitle":  "Plan foydalanish",
@@ -2321,9 +2321,9 @@ const t = {
     "general.noData": "Маълумот йўқ",
     "general.min":    "мин",
     "general.hrs":    "соат",
-    "general.dShort": "к",
-    "general.hShort": "с",
-    "general.mShort": "д",
+    "general.unitDay":  "кун",
+    "general.unitHour": "соат",
+    "general.unitMin":  "дақ",
 
     // ── Formula popups ───────────────────────────────────────────────────────
     "fm.wfBaselineTitle":  "План фойдаланиш",
@@ -3608,9 +3608,9 @@ const t = {
     "general.noData": "Нет данных",
     "general.min":    "мин",
     "general.hrs":    "час",
-    "general.dShort": "д",
-    "general.hShort": "ч",
-    "general.mShort": "м",
+    "general.unitDay":  "дн",
+    "general.unitHour": "ч",
+    "general.unitMin":  "мин",
 
     // ── Formula popups ───────────────────────────────────────────────────────
     "fm.wfBaselineTitle":  "Плановое использование",
@@ -4895,9 +4895,9 @@ const t = {
     "general.noData": "No data",
     "general.min":    "min",
     "general.hrs":    "hrs",
-    "general.dShort": "d",
-    "general.hShort": "h",
-    "general.mShort": "m",
+    "general.unitDay":  "d",
+    "general.unitHour": "h",
+    "general.unitMin":  "min",
 
     // ── Formula popups (shared across Overview / Profile / Zagruzka / Daily) ──
     "fm.wfBaselineTitle":  "Planned Utilization",

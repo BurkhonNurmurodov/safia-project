@@ -78,6 +78,10 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   mobile    – optional stacked-card list for phones: when given, the table
  *               renders from `sm:` up only and this node takes its place
  *               below `sm:` (same scroll cap)
+ *   mobileCards – render the `mobile` node OUTSIDE the card as a stack of
+ *               standalone cards (each child styles itself as a card); the
+ *               card keeps only the header/toolbar on phones and the stack
+ *               scrolls with the page instead of an inner scroll cap
  *   children  – <thead> + <tbody>
  */
 export default function TableCard({
@@ -89,11 +93,13 @@ export default function TableCard({
   wrap = false,
   hover = true,
   mobile,
+  mobileCards = false,
   className = "",
   children,
 }) {
-  return (
-    <div className={`rounded-2xl overflow-hidden ${className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+  const detached = mobile != null && mobileCards;
+  const card = (
+    <div className={`rounded-2xl overflow-hidden ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       {title != null && <SectionHead icon={icon} title={title} right={right} />}
       {toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -108,11 +114,18 @@ export default function TableCard({
           {children}
         </table>
       </div>
-      {mobile != null && (
+      {mobile != null && !mobileCards && (
         <div className="sm:hidden overflow-y-auto" style={{ maxHeight }}>
           {mobile}
         </div>
       )}
+    </div>
+  );
+  if (!detached) return card;
+  return (
+    <div className={className}>
+      {card}
+      <div className="sm:hidden mt-3 space-y-3">{mobile}</div>
     </div>
   );
 }

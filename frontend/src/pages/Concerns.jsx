@@ -366,18 +366,19 @@ export default function Concerns() {
     return null;
   };
 
-  // Compact days / hours / minutes span, dropping any leading zero units
-  // (e.g. "56m", "1h 41m", "3d 22h 34m"). Minutes are always shown when
-  // nothing larger is present so a value never renders empty.
+  // Days / hours / minutes span, dropping any leading zero units. Day and hour
+  // units are full words, minutes stay short (e.g. "56 daq", "1 soat 41 daq",
+  // "3 kun 22 soat"). Minutes are always shown when nothing larger is present
+  // so a value never renders empty.
   const fmtResolution = (mins) => {
     if (mins == null) return "—";
     const days = Math.floor(mins / 1440);
     const hrs = Math.floor((mins % 1440) / 60);
     const rem = mins % 60;
     const parts = [];
-    if (days) parts.push(`${days}${t("general.dShort")}`);
-    if (hrs) parts.push(`${hrs}${t("general.hShort")}`);
-    if (rem || parts.length === 0) parts.push(`${rem}${t("general.mShort")}`);
+    if (days) parts.push(`${days} ${t("general.unitDay")}`);
+    if (hrs) parts.push(`${hrs} ${t("general.unitHour")}`);
+    if (rem || parts.length === 0) parts.push(`${rem} ${t("general.unitMin")}`);
     return parts.join(" ");
   };
 
@@ -991,24 +992,24 @@ export default function Concerns() {
     </>
   );
 
-  // Phone layout for the concern list — stacked cards in TableCard's `mobile`
-  // slot (Leaders-style); the 9-column table keeps rendering from `sm:` up.
-  // Same data, same tap-to-reveal actions, same inline-editable status pill.
+  // Phone layout for the concern list — each concern is its own standalone
+  // card (TableCard's `mobileCards` mode); the 9-column table keeps rendering
+  // from `sm:` up. Same data, same tap-to-reveal actions, same status pill.
   const mobileList = (
     <>
       {isLoading && Array.from({ length: 4 }).map((_, i) => (
-        <div key={`sk-${i}`} className="p-3 space-y-2" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
+        <div key={`sk-${i}`} className="rounded-xl p-3 space-y-2" style={cardStyle}>
           <SkeletonBlock className="h-4 w-1/2" />
           <SkeletonBlock className="h-3 w-full" />
           <SkeletonBlock className="h-3 w-2/3" />
         </div>
       ))}
       {!isLoading && sorted.length === 0 && (
-        <div className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
+        <div className="rounded-xl px-3 py-8 text-center text-xs" style={{ ...cardStyle, color: "var(--text-4)" }}>
           {t("concerns.empty")}
         </div>
       )}
-      {!isLoading && sorted.map((r, i) => {
+      {!isLoading && sorted.map((r) => {
         const expanded = expandedId === r.id;
         const hasActions =
           r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
@@ -1026,11 +1027,11 @@ export default function Concerns() {
           <div
             key={r.id}
             onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
-            className={`p-3 flex flex-col gap-2.5 ${hasActions ? "cursor-pointer" : ""}`}
+            className={`rounded-xl p-3 flex flex-col gap-2.5 ${hasActions ? "cursor-pointer" : ""}`}
             style={{
-              ...(i ? { borderTop: "1px solid var(--border)" } : {}),
+              border: "1px solid var(--border)",
               borderLeft: `3px solid ${strip}`,
-              background: expanded ? "var(--bg-inner)" : "transparent",
+              background: expanded ? "var(--bg-inner)" : "var(--bg-card)",
             }}
           >
             {/* date + inline-editable status (tap must not toggle the card) */}
@@ -1267,6 +1268,7 @@ export default function Concerns() {
         title={t("concerns.listTitle")}
         wrap
         mobile={mobileList}
+        mobileCards
         right={
           <div className="flex items-center gap-2">
             {/* "My level only" — chain roles narrow the table to the concerns
