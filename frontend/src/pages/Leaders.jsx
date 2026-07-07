@@ -127,26 +127,75 @@ const TXT = {
   },
 };
 
-// 12 task descriptions, carried over verbatim from apps-script/JavaScript.html.
-// The original only had Russian + English (its "uz" was Russian); uz/uz_cyrl
-// reuse the Russian text. Weights are language-independent.
+// 12 task descriptions, carried over from apps-script/JavaScript.html.
+// Localized into all four UI languages (uz / uz_cyrl / ru / en);
+// weights are language-independent.
 const TASK_DETAILS = [
-  { w: "10%", ru: { n: "Фиксация ежедневной загрузки ячейки (план)", note: "фотоотчет" }, en: { n: "Daily cell load fixation (plan)", note: "photo report" } },
-  { w: "5%",  ru: { n: "Каскадная встреча (открытие - планерка)", note: "Фотоотчет Распределение зон" }, en: { n: "Cascade meeting (briefing)", note: "Photo report Zone distribution" } },
-  { w: "10%", ru: { n: "СОП стандарт", note: "Фотоотчет Фиксация смежных ячеек" }, en: { n: "SOP Standard", note: "Photo report adjacent cell fixation" } },
-  { w: "15%", ru: { n: "КРУ обход цеха (3 раза в день) (9:00 - 11:00 - 15:00)", note: "Чек лист обхода" }, en: { n: "Workshop inspection (3x/day 9:00-11:00-15:00)", note: "Inspection checklist" } },
-  { w: "5%",  ru: { n: "Прием сырья (холодильник, склад)", note: "Контрольный лист" }, en: { n: "Receiving raw materials", note: "Control sheet" } },
-  { w: "5%",  ru: { n: "Контроль своевременных поставок (внутреняя логистика)", note: "Фиксация Тайминга захода" }, en: { n: "Internal logistics timing control", note: "Arrival timing fixation" } },
-  { w: "5%",  ru: { n: "Заполнение контрольного стенда (САП)", note: "фотоотчет" }, en: { n: "Control board filling (SAP)", note: "photo report" } },
-  { w: "5%",  ru: { n: "Заполнение обеспокоенности", note: "фотоотчет" }, en: { n: "Concern reporting", note: "photo report" } },
-  { w: "10%", ru: { n: "Фиксация 50% плана в течении смены", note: "Отчет бригадиру" }, en: { n: "50% plan fixation during shift", note: "Report to supervisor" } },
-  { w: "10%", ru: { n: "Закрытие плана САП", note: "Подтверждение бригадира" }, en: { n: "SAP plan closure", note: "Supervisor confirmation" } },
-  { w: "10%", ru: { n: "Составление графика", note: "Фотоотчет" }, en: { n: "Scheduling", note: "Photo report" } },
-  { w: "10%", ru: { n: "Контроль работы зам лидера", note: "Фотоотчет чек листа" }, en: { n: "Assistant leader work control", note: "Checklist photo report" } },
+  { w: "10%",
+    ru:      { n: "Фиксация ежедневной загрузки ячейки (план)", note: "фотоотчет" },
+    uz:      { n: "Yacheykaning kunlik planini qayd qilish", note: "Foto hisobot" },
+    uz_cyrl: { n: "Ячейканинг кунлик планини қайд қилиш", note: "Фото ҳисобот" },
+    en:      { n: "Daily cell load fixation (plan)", note: "photo report" } },
+  { w: "5%",
+    ru:      { n: "Каскадная встреча (открытие - планерка)", note: "Фотоотчет Распределение зон" },
+    uz:      { n: "Kaskad uchrashuv (ochilish – rejalashtirish)", note: "Foto hisobot. Zonalarni taqsimlash" },
+    uz_cyrl: { n: "Каскад учрашув (очилиш – режалаштириш)", note: "Фото ҳисобот. Зоналарни тақсимлаш" },
+    en:      { n: "Cascade meeting (briefing)", note: "Photo report Zone distribution" } },
+  { w: "10%",
+    ru:      { n: "СОП стандарт", note: "Фотоотчет Фиксация смежных ячеек" },
+    uz:      { n: "SOP standarti", note: "Foto hisobot. Qo'shni yacheykalarni qayd qilish" },
+    uz_cyrl: { n: "СОП стандарти", note: "Фото ҳисобот. Қўшни ячейкаларни қайд қилиш" },
+    en:      { n: "SOP Standard", note: "Photo report adjacent cell fixation" } },
+  { w: "15%",
+    ru:      { n: "КРУ обход цеха (3 раза в день) (9:00 - 11:00 - 15:00)", note: "Чек лист обхода" },
+    uz:      { n: "KRU sexni aylanib chiqish (kuniga 3 marta) (9:00 - 11:00 - 15:00)", note: "Aylanib chiqish chek-listi" },
+    uz_cyrl: { n: "КРУ сехни айланиб чиқиш (кунига 3 марта) (9:00 - 11:00 - 15:00)", note: "Айланиб чиқиш чек-листи" },
+    en:      { n: "Workshop inspection (3x/day 9:00-11:00-15:00)", note: "Inspection checklist" } },
+  { w: "5%",
+    ru:      { n: "Прием сырья (холодильник, склад)", note: "Контрольный лист" },
+    uz:      { n: "Xomashyo qabul qilish (sovutgich, ombor)", note: "Nazorat varaqasi" },
+    uz_cyrl: { n: "Хомашё қабул қилиш (совутгич, омбор)", note: "Назорат варақаси" },
+    en:      { n: "Receiving raw materials", note: "Control sheet" } },
+  { w: "5%",
+    ru:      { n: "Контроль своевременных поставок (внутреняя логистика)", note: "Фиксация Тайминга захода" },
+    uz:      { n: "O'z vaqtida yetkazib berishni nazorat qilish (ichki logistika)", note: "Kirish taymingini qayd qilish" },
+    uz_cyrl: { n: "Ўз вақтида етказиб беришни назорат қилиш (ички логистика)", note: "Кириш таймингини қайд қилиш" },
+    en:      { n: "Internal logistics timing control", note: "Arrival timing fixation" } },
+  { w: "5%",
+    ru:      { n: "Заполнение контрольного стенда (САП)", note: "фотоотчет" },
+    uz:      { n: "Nazorat stendini to'ldirish (SAP)", note: "Foto hisobot" },
+    uz_cyrl: { n: "Назорат стендини тўлдириш (SAP)", note: "Фото ҳисобот" },
+    en:      { n: "Control board filling (SAP)", note: "photo report" } },
+  { w: "5%",
+    ru:      { n: "Заполнение обеспокоенности", note: "фотоотчет" },
+    uz:      { n: "Xavotir kiritish", note: "Foto hisobot" },
+    uz_cyrl: { n: "Хавотир киритиш", note: "Фото ҳисобот" },
+    en:      { n: "Concern reporting", note: "photo report" } },
+  { w: "10%",
+    ru:      { n: "Фиксация 50% плана в течении смены", note: "Отчет бригадиру" },
+    uz:      { n: "Smena davomida rejaning 50% ni qayd qilish", note: "Brigadirga hisobot" },
+    uz_cyrl: { n: "Смена давомида режанинг 50% ни қайд қилиш", note: "Бригадирга ҳисобот" },
+    en:      { n: "50% plan fixation during shift", note: "Report to supervisor" } },
+  { w: "10%",
+    ru:      { n: "Закрытие плана САП", note: "Подтверждение бригадира" },
+    uz:      { n: "SAP rejasini yopish", note: "Brigadir tasdig'i" },
+    uz_cyrl: { n: "SAP режасини ёпиш", note: "Бригадир тасдиғи" },
+    en:      { n: "SAP plan closure", note: "Supervisor confirmation" } },
+  { w: "10%",
+    ru:      { n: "Составление графика", note: "Фотоотчет" },
+    uz:      { n: "Ish jadvali (grafik) tuzish", note: "Foto hisobot" },
+    uz_cyrl: { n: "Иш жадвали (график) тузиш", note: "Фото ҳисобот" },
+    en:      { n: "Scheduling", note: "Photo report" } },
+  { w: "10%",
+    ru:      { n: "Контроль работы зам лидера", note: "Фотоотчет чек листа" },
+    uz:      { n: "Zam lider ishini nazorat qilish", note: "Chek-list foto hisoboti" },
+    uz_cyrl: { n: "Зам лидер ишини назорат қилиш", note: "Чек-лист фото ҳисоботи" },
+    en:      { n: "Assistant leader work control", note: "Checklist photo report" } },
 ];
 const taskDetail = (i, lang) => {
   const td = TASK_DETAILS[i];
-  return { weight: td.w, ...(lang === "en" ? td.en : td.ru) };
+  const loc = td[lang] || td.uz || td.ru;
+  return { weight: td.w, ...loc };
 };
 
 const DAY = 86400000;
