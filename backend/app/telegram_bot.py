@@ -834,15 +834,20 @@ def _contact(message: types.Message):
     _state.pop(tid, None)
 
 
-def send_tg_notification(telegram_id: int, title: str, body: str) -> None:
-    """Send a plain-text Telegram DM mirroring an in-app notification.
+def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> None:
+    """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
+    it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
+    labels + <blockquote>); otherwise falls back to the default Markdown layout.
     Silently ignores any Telegram API errors (e.g. user hasn't started the bot)."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
     _set_menu_button(telegram_id, _get_lang(telegram_id))
     try:
-        bot.send_message(telegram_id, f"🔔 *{title}*\n{body}", parse_mode="Markdown")
+        if html is not None:
+            bot.send_message(telegram_id, html, parse_mode="HTML")
+        else:
+            bot.send_message(telegram_id, f"🔔 *{title}*\n{body}", parse_mode="Markdown")
     except Exception as e:
         logger.debug("Telegram notification to %s failed: %s", telegram_id, e)
 

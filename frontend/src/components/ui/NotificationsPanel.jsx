@@ -120,7 +120,7 @@ function NotificationsList({ notifications, readIds, unread, handleRead, handleR
                       {timeAgo(n.created_at, t)}
                     </span>
                   </div>
-                  <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: "var(--text-3)" }}>
+                  <p className="text-[10px] mt-0.5 leading-relaxed whitespace-pre-line" style={{ color: "var(--text-3)" }}>
                     {n.body}
                   </p>
                 </div>

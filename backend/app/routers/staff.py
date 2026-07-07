@@ -274,16 +274,27 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("{author_name} commented on a task", "{comment}\nTask: {task}"),
     },
     # Trudoyomkost call-tomorrow modal → per-brigadir "invite N workers" notice.
-    # The inexactness disclaimer is part of the message by design.
+    # Body carries a date row, the recommended count, the upper-band maximum, and
+    # an inexactness disclaimer (by design). The bell renders this plain text;
+    # the Telegram DM gets an HTML variant with a real blockquote (see
+    # ``_mk_notif_tg``). Keep the two structurally in sync.
     "call_forecast": {
-        "uz": ("Ertangi smenaga chaqiruv",
-               "Sana: {date}. Taxminan {count} ishchini smenaga chaqiring. Bu son tarix asosida avtomatik hisoblangan va noaniq bo'lishi mumkin."),
-        "uz_cyrl": ("Эртанги сменага чақирув",
-                    "Сана: {date}. Тахминан {count} ишчини сменага чақиринг. Бу сон тарих асосида автоматик ҳисобланган ва ноаниқ бўлиши мумкин."),
-        "ru": ("Вызов на завтрашнюю смену",
-               "Дата: {date}. Пригласите примерно {count} рабочих на смену. Число рассчитано автоматически на основе истории и может быть неточным."),
-        "en": ("Workers to call for tomorrow",
-               "Date: {date}. Please invite about {count} workers for the shift. This number is calculated automatically from history and may be inaccurate."),
+        "uz": ("Ertangi kunga xodim chaqirish uchun prognozlar:",
+               "📅 Sana: {date}\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
+               "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
+               "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!"),
+        "uz_cyrl": ("Эртанги кунга ходим чақириш учун прогнозлар:",
+                    "📅 Сана: {date}\n🧑‍🍳 Чақириш тавсия қилинади: {count} нафар\n⚠️ Максимум: {max} нафар\n\n"
+                    "Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
+                    "Шу сабабли, амалдаги вазият ва бошқа омилларни ҳам инобатга олиб, керакли миқдорда одам чақиришингизни сўраймиз!"),
+        "ru": ("Прогноз по вызову сотрудников на завтра:",
+               "📅 Дата: {date}\n🧑‍🍳 Рекомендуется вызвать: {count} чел.\n⚠️ Максимум: {max} чел.\n\n"
+               "Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
+               "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!"),
+        "en": ("Tomorrow's staff call forecast:",
+               "📅 Date: {date}\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
+               "This forecast is based only on historical data from previous days. "
+               "Therefore, taking the actual situation and other factors into account, please call the number of people you need!"),
     },
 }
 
@@ -359,6 +370,47 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     return title_tmpl.format(**localized), body_tmpl.format(**localized)
 
 
+# HTML-formatted Telegram bodies for notifications whose DM should render richer
+# than the plain bell text — bold labels and a real <blockquote> the legacy
+# Markdown parse mode can't produce. Only keys present here send in HTML mode;
+# every other notification keeps the plain Markdown DM. Params are ints + a
+# pre-formatted date (no user free-text), so no HTML escaping is needed.
+_NOTIF_TG_HTML = {
+    "call_forecast": {
+        "uz": ("<b>Ertangi kunga xodim chaqirish uchun prognozlar:</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n🧑‍🍳 <b>Chaqirish tavsiya qilinadi:</b> {count} nafar\n⚠️ <b>Maksimum:</b> {max} nafar\n\n"
+               "<blockquote>Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
+               "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!</blockquote>"),
+        "uz_cyrl": ("<b>Эртанги кунга ходим чақириш учун прогнозлар:</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n🧑‍🍳 <b>Чақириш тавсия қилинади:</b> {count} нафар\n⚠️ <b>Максимум:</b> {max} нафар\n\n"
+                    "<blockquote>Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
+                    "Шу сабабли, амалдаги вазият ва бошқа омилларни ҳам инобатга олиб, керакли миқдорда одам чақиришингизни сўраймиз!</blockquote>"),
+        "ru": ("<b>Прогноз по вызову сотрудников на завтра:</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n🧑‍🍳 <b>Рекомендуется вызвать:</b> {count} чел.\n⚠️ <b>Максимум:</b> {max} чел.\n\n"
+               "<blockquote>Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
+               "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!</blockquote>"),
+        "en": ("<b>Tomorrow's staff call forecast:</b>\n\n"
+               "📅 <b>Date:</b> {date}\n🧑‍🍳 <b>Recommended to call:</b> {count} workers\n⚠️ <b>Maximum:</b> {max} workers\n\n"
+               "<blockquote>This forecast is based only on historical data from previous days. "
+               "Therefore, taking the actual situation and other factors into account, please call the number of people you need!</blockquote>"),
+    },
+}
+
+
+def _mk_notif_tg(nkey: str, params: dict, lang: str) -> str | None:
+    """Optional HTML-formatted Telegram body for a notification. Returns None when
+    the key has no HTML variant, so the caller falls back to the plain DM path."""
+    tmpls = _NOTIF_TG_HTML.get(nkey)
+    if not tmpls:
+        return None
+    tmpl = tmpls.get(lang) or tmpls.get("en")
+    params = params or {}
+    localized = {k: transliterate(v, lang) for k, v in params.items()}
+    if "date" in params:
+        localized["date"] = _fmt_date(params["date"], lang)
+    return tmpl.format(**localized)
+
+
 def _jsonify_params(params: dict) -> dict:
     """Make a template params dict JSON-storable: dates → ISO strings; everything
     else (names, counts, slugs) is already JSON-safe."""
@@ -402,7 +454,8 @@ def _notify(
     if dm:
         try:
             from app.telegram_bot import send_tg_notification
-            send_tg_notification(telegram_id, title, body)
+            html = _mk_notif_tg(nkey, params, lang) if nkey else None
+            send_tg_notification(telegram_id, title, body, html=html)
         except Exception:
             pass
 

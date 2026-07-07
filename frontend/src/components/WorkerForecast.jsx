@@ -321,7 +321,11 @@ function CallTomorrowModal({ t, tl, lang, onClose, onSent }) {
     setError(null);
     api.post("/api/production/trudoyomkost/call-notify", {
       date: data.date,
-      items: selected.map((r) => ({ manager_id: r.manager_id, workers: numOf(r.manager_id) })),
+      items: selected.map((r) => ({
+        manager_id: r.manager_id,
+        workers: numOf(r.manager_id),
+        max_workers: r.band_hi != null ? r.band_hi : numOf(r.manager_id),
+      })),
     })
       .then((res) => { onSent(res.data.sent); onClose(); })
       .catch((e) => setError(e?.response?.data?.detail || "Failed"))

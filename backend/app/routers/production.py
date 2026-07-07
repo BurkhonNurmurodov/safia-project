@@ -1111,9 +1111,11 @@ def trudoyomkost_forecast(
 # --------------------------------------------------------------------------- #
 # Call-tomorrow modal — one row per brigadir with tomorrow's forecast, whether
 # the supervisor profile is claimed (can receive a Telegram DM), and the latest
-# notice already sent for that date (resend guard). Deliberately UNfiltered:
-# every active unit at 100% capacity, regardless of the page's brigadir/shift
-# filters, so nobody is silently left out of the call.
+# notice already sent for that date (resend guard). Deliberately UNfiltered on
+# brigadir/shift: every active unit is listed, regardless of the page filters,
+# so nobody is silently left out of the call. The forecast counts DO follow the
+# page's "Smena unumi" (shift-efficiency) setting via capacity_pct, so the
+# numbers sent to supervisors match what the forecast/stats tables show.
 # --------------------------------------------------------------------------- #
 def _tomorrow() -> date:
     return date.today() + timedelta(days=1)
@@ -1121,11 +1123,12 @@ def _tomorrow() -> date:
 
 @router.get("/api/production/trudoyomkost/call-tomorrow")
 def trudoyomkost_call_tomorrow(
+    capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
     target = _tomorrow()
-    cap_min = _capacity_min(100.0)
+    cap_min = _capacity_min(capacity_pct)
     hist_start = target - timedelta(days=7 * FORECAST_WEEKS)
     loaded = _load_plan_by_manager(db, [], None, hist_start, target)
 
@@ -1181,7 +1184,8 @@ def trudoyomkost_call_tomorrow(
 
 class CallNotifyItem(BaseModel):
     manager_id: int
-    workers: int
+    workers: int                   # recommended count (editable in the modal)
+    max_workers: int | None = None # upper band (band_hi) shown as "Maksimum"
 
 
 class CallNotifyRequest(BaseModel):
@@ -1217,9 +1221,13 @@ def trudoyomkost_call_notify(
         sup = _find_supervisor(db, mgr.id)
         # bell row keyed to the supervisor PROFILE (+ Telegram DM when claimed);
         # an unclaimed profile queues the bell row for whoever claims it later
+        # Maksimum = the upper band; fall back to the recommended count when the
+        # client didn't send one (older client / insufficient-data row).
+        max_workers = item.max_workers if item.max_workers is not None else item.workers
         _notify(
             db, sup.telegram_id if sup else None,
-            nkey="call_forecast", params={"date": target, "count": item.workers},
+            nkey="call_forecast",
+            params={"date": target, "count": item.workers, "max": max_workers},
             profile=_profile_key("supervisor", mgr.id),
         )
         db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
