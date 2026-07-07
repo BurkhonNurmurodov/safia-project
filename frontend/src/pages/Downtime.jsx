@@ -178,11 +178,24 @@ export default function Downtime() {
   // only draw them when every point has room (≤ 2 weeks); tooltips cover the rest.
   const showTrendLabels = trendDates.length <= 14;
   const trendOptions = {
-    chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0 },
-    stroke: { curve: "smooth", width: 2.5, lineCap: "round" },
+    chart: {
+      type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0,
+      dropShadow: { enabled: true, top: 8, left: 0, blur: 8, color: "#ef4444", opacity: 0.18 },
+    },
+    stroke: { curve: "smooth", width: 3, lineCap: "round" },
     fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 100] } },
     colors: ["#ef4444"],
-    markers: { size: 4, colors: ["#ef4444"], strokeColors: gridColor, strokeWidth: 2, hover: { size: 6 } },
+    markers: {
+      size: showTrendLabels ? 4 : 0,
+      colors: ["#ef4444"],
+      strokeColors: gridColor,
+      strokeWidth: 2,
+      hover: { size: 6 },
+      // long ranges hide per-point dots; keep a single endpoint dot on the latest day
+      discrete: !showTrendLabels && trendValues.length > 0
+        ? [{ seriesIndex: 0, dataPointIndex: trendValues.length - 1, size: 5, fillColor: "#ef4444", strokeColor: "#fff", strokeWidth: 2 }]
+        : [],
+    },
     dataLabels: {
       enabled: showTrendLabels,
       formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
