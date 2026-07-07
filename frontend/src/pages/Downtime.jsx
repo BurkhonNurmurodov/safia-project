@@ -164,14 +164,22 @@ export default function Downtime() {
     const [d, m, y] = (s || "").split(".");
     return `${y || ""}-${m || ""}-${d || ""}`;
   };
+  // The doughnut category filter drives this chart too: while active, each day
+  // sums only the selected categories; otherwise the fleet total as usual.
   const trendMap = {};
   (chartData?.rows || []).forEach((r) => {
     if (!trendMap[r.date]) trendMap[r.date] = 0;
-    trendMap[r.date] += r.total || 0;
+    trendMap[r.date] += filterActive
+      ? selectedCats.reduce((s, c) => s + (r.by_category?.[c] || 0), 0)
+      : (r.total || 0);
   });
   const trendDates  = Object.keys(trendMap).sort((a, b) => dmyKey(a).localeCompare(dmyKey(b)));
   const trendValues = trendDates.map((d) => Math.round(trendMap[d]));
-  const trendSeries = [{ name: t("downtime.totalDowntime"), data: trendValues }];
+  const trendSeries = [{ name: filterActive ? selectedCats.join(" + ") : t("downtime.totalDowntime"), data: trendValues }];
+  // Single selected category paints the line in its doughnut colour.
+  const trendColor = selectedCats.length === 1
+    ? (CAT_COLORS[catNames.indexOf(selectedCats[0])] || "#ef4444")
+    : "#ef4444";
   // Headroom above the tallest point, snapped to a clean 50-min step so labels never clip.
   const trendMax = Math.ceil((Math.max(50, ...(trendValues.length ? trendValues : [0])) * 1.15) / 50) * 50;
   // Per-point label bubbles overlap into an unreadable smear on long ranges —
@@ -180,20 +188,20 @@ export default function Downtime() {
   const trendOptions = {
     chart: {
       type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0,
-      dropShadow: { enabled: true, top: 8, left: 0, blur: 8, color: "#ef4444", opacity: 0.18 },
+      dropShadow: { enabled: true, top: 8, left: 0, blur: 8, color: trendColor, opacity: 0.18 },
     },
     stroke: { curve: "smooth", width: 3, lineCap: "round" },
     fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 100] } },
-    colors: ["#ef4444"],
+    colors: [trendColor],
     markers: {
       size: showTrendLabels ? 4 : 0,
-      colors: ["#ef4444"],
+      colors: [trendColor],
       strokeColors: gridColor,
       strokeWidth: 2,
       hover: { size: 6 },
       // long ranges hide per-point dots; keep a single endpoint dot on the latest day
       discrete: !showTrendLabels && trendValues.length > 0
-        ? [{ seriesIndex: 0, dataPointIndex: trendValues.length - 1, size: 5, fillColor: "#ef4444", strokeColor: "#fff", strokeWidth: 2 }]
+        ? [{ seriesIndex: 0, dataPointIndex: trendValues.length - 1, size: 5, fillColor: trendColor, strokeColor: "#fff", strokeWidth: 2 }]
         : [],
     },
     dataLabels: {
@@ -236,6 +244,39 @@ export default function Downtime() {
   };
 
   const chartH = Math.max(300, summary.length * 28 + 60);
+
+  // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
+  const catChips = filterActive ? (
+    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+      {selectedCats.map((cat) => {
+        const c = CAT_COLORS[catNames.indexOf(cat)] || "#888";
+        return (
+          <span
+            key={cat}
+            className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
+            style={{ background: `${c}22`, color: c, border: `1px solid ${c}55` }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: c, flexShrink: 0 }} />
+            {cat}
+            <button
+              onClick={() => toggleCat(cat)}
+              className="ml-0.5 opacity-70 hover:opacity-100"
+              style={{ fontSize: 12, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          </span>
+        );
+      })}
+      <button
+        onClick={clearCats}
+        className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors"
+        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+      >
+        {t("filter.clear")}
+      </button>
+    </div>
+  ) : null;
 
   // toggle segmented control
   const toggle = (
@@ -289,39 +330,7 @@ export default function Downtime() {
             <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
               {!filterActive && chartView === "category" ? t("downtime.breakdown") : t("downtime.byBrigadir")}
             </div>
-            {filterActive ? (
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                {selectedCats.map((cat) => {
-                  const c = CAT_COLORS[catNames.indexOf(cat)] || "#888";
-                  return (
-                    <span
-                      key={cat}
-                      className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
-                      style={{ background: `${c}22`, color: c, border: `1px solid ${c}55` }}
-                    >
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: c, flexShrink: 0 }} />
-                      {cat}
-                      <button
-                        onClick={() => toggleCat(cat)}
-                        className="ml-0.5 opacity-70 hover:opacity-100"
-                        style={{ fontSize: 12, lineHeight: 1 }}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })}
-                <button
-                  onClick={clearCats}
-                  className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors"
-                  style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                >
-                  {t("filter.clear")}
-                </button>
-              </div>
-            ) : (
-              toggle
-            )}
+            {filterActive ? catChips : toggle}
           </div>
           <div className="text-[10px] mb-3 min-h-[14px]" style={{ color: "var(--text-4)" }}>
             {!filterActive && chartView === "total" ? t("downtime.redSub") : ""}
@@ -378,8 +387,11 @@ export default function Downtime() {
 
       {/* Downtime trend over time */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
-        <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider mb-1">
-          {t("downtime.trend")}
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+            {t("downtime.trend")}
+          </div>
+          {catChips}
         </div>
         <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
           {t("downtime.trendSub")}
