@@ -268,15 +268,18 @@ function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
 }
 
 // ── call-tomorrow modal ───────────────────────────────────────────────────────
-// One row per brigadir with tomorrow's forecast (all supervisors, 100%
-// efficiency — deliberately ignores the page filters so nobody is left out).
-// Numbers are editable one-offs: they go into the notification only and never
-// overwrite the stored forecast.
-function CallTomorrowModal({ t, tl, lang, onClose, onSent }) {
+// One row per brigadir with tomorrow's forecast (all supervisors — deliberately
+// ignores the brigadir/shift filters so nobody is left out), but the counts DO
+// follow the page's "Smena unumi" (shift-efficiency) setting so the numbers sent
+// match the forecast/stats tables. Numbers are editable one-offs: they go into
+// the notification only and never overwrite the stored forecast.
+function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
   const wd = WD[lang] || WD.uz;
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["trud-call-tomorrow"],
-    queryFn: () => api.get("/api/production/trudoyomkost/call-tomorrow").then((r) => r.data),
+    queryKey: ["trud-call-tomorrow", effPct],
+    queryFn: () => api.get("/api/production/trudoyomkost/call-tomorrow", {
+      params: { capacity_pct: effPct },
+    }).then((r) => r.data),
     staleTime: 0,
     gcTime: 0,
   });
