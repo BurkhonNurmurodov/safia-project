@@ -43,12 +43,21 @@ export default function Button({
     <button
       type="button"
       disabled={isDisabled}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-opacity ${sizing} ${className}`}
+      className={`relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-opacity ${sizing} ${className}`}
       style={{ ...palette, opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? "not-allowed" : "pointer", ...style }}
       {...rest}
     >
-      {loading ? spinner : icon}
-      {children}
+      {/* Spinner is overlaid (not inline) so toggling `loading` never changes
+          the button's width — an inline spinner on an icon-less button grows it
+          and, under a right-aligned footer + opacity transition, leaves a
+          ghost/double-image on mobile WebViews. */}
+      {loading && (
+        <span className="absolute inset-0 flex items-center justify-center">{spinner}</span>
+      )}
+      <span className={`inline-flex items-center gap-1.5 ${loading ? "invisible" : ""}`}>
+        {icon}
+        {children}
+      </span>
     </button>
   );
 }
