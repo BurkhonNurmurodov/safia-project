@@ -11,7 +11,8 @@ import { Loader2 } from "lucide-react";
  *               "ghost" (borderless, subdued — inline/toolbar actions)
  *   size      – "md" (default, px-4 py-2 text-sm) | "sm" (px-3 py-1.5 text-xs)
  *   icon      – optional lucide icon element rendered before the label
- *   loading   – shows a Loader2 spinner in place of the icon and disables
+ *   loading   – overlays a centered Loader2 spinner (label kept in place to
+ *               reserve width, so the button never reflows) and disables
  *   className – extra classes (layout only — colors come from the variant)
  */
 export default function Button({
