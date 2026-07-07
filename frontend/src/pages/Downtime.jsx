@@ -385,9 +385,9 @@ export default function Downtime() {
           {t("downtime.trendSub")}
         </div>
         {isLoading || chartLoading ? (
-          <SkeletonChart className="h-48" />
+          <SkeletonChart className="h-80" />
         ) : trendDates.length > 0 ? (
-          <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={240} />
+          <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={340} />
         ) : (
           <EmptyState title={t("downtime.noTrendData")} message={t("downtime.noDataMsg")} height="h-32" />
         )}
