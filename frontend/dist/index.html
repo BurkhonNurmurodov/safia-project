@@ -55,6 +55,53 @@
           if (window.__staleReloadStarted) return;
           window.__staleReloadStarted = true;
 
+          // Match the in-app theme (localStorage 'theme', the same source
+          // ThemeContext reads; default dark) and the branded <PageLoader/> so
+          // this screen looks like the app, not a raw dark box. Fully
+          // self-contained: assumes NONE of the bundle's CSS is available (its
+          // hashed stylesheet may be stale too), so colors + keyframes are inline.
+          var theme = 'dark';
+          try {
+            theme = localStorage.getItem('theme') ||
+              document.documentElement.getAttribute('data-theme') || 'dark';
+          } catch (e) {}
+          var p = theme === 'light'
+            ? { bg: '#faf8f5', text1: '#111827', text3: '#6b7280', brand: '#B07828' }
+            : { bg: '#0f1117', text1: '#f3f4f6', text3: '#6b7280', brand: '#C8973F' };
+
+          if (!document.getElementById('safia-boot-anims')) {
+            var st = document.createElement('style');
+            st.id = 'safia-boot-anims';
+            st.textContent =
+              '@keyframes safia-spin{to{transform:rotate(360deg)}}' +
+              '@keyframes safia-pulse{0%,100%{opacity:1}50%{opacity:.5}}';
+            (document.head || document.documentElement).appendChild(st);
+          }
+
+          // Branded logo loader mirroring components/ui/PageLoader.jsx: 96px
+          // pulsing circular logo + a 24px brand spinner (gap on the right).
+          function overlay(spinner, title, sub) {
+            return (
+              '<div style="display:flex;flex-direction:column;align-items:center;' +
+              'justify-content:center;gap:20px">' +
+                '<img src="/logo.png" alt="Safia" style="width:96px;height:96px;' +
+                'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18);' +
+                'animation:safia-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" />' +
+                (spinner
+                  ? '<div style="width:24px;height:24px;border:3px solid ' + p.brand +
+                    ';border-right-color:transparent;border-radius:9999px;' +
+                    'animation:safia-spin 1s linear infinite"></div>'
+                  : '') +
+                '<div>' +
+                  '<div style="font-size:16px;font-weight:600;color:' + p.text1 + '">' +
+                    title + '</div>' +
+                  '<div style="margin-top:6px;font-size:14px;color:' + p.text3 + '">' +
+                    sub + '</div>' +
+                '</div>' +
+              '</div>'
+            );
+          }
+
           var KEY = 'chunkReloadAt';
           var last = 0;
           try { last = Number(sessionStorage.getItem(KEY) || 0); } catch (e) {}
@@ -69,28 +116,26 @@
           box.setAttribute('style',
             'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;' +
             'display:flex;align-items:center;justify-content:center;' +
-            'text-align:center;padding:24px;background:#0b0b0f;color:#fff;' +
+            'text-align:center;padding:24px;background:' + p.bg + ';color:' + p.text1 + ';' +
             "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
 
           if (reloadDidNotHelp) {
-            box.innerHTML =
-              '<div><div style="font-size:17px;font-weight:600;margin-bottom:8px">' +
-              'Update needed</div>' +
-              '<div style="opacity:.7">Please close and reopen the app.</div></div>';
+            box.innerHTML = overlay(false, 'Update needed',
+              'Please close and reopen the app.');
             return;
           }
 
+          // Paint once (stable logo — no flicker) and tick only the countdown.
           var n = 5;
-          function paint() {
-            box.innerHTML =
-              '<div><div style="font-size:17px;font-weight:600;margin-bottom:8px">' +
-              'A new version is available</div>' +
-              '<div style="opacity:.7">Reloading… (' + n + ')</div></div>';
-          }
-          paint();
+          box.innerHTML = overlay(true, 'A new version is available',
+            'Reloading… (<span id="safia-count">' + n + '</span>)');
           var timer = setInterval(function () {
             n -= 1;
-            if (n > 0) { paint(); return; }
+            if (n > 0) {
+              var c = document.getElementById('safia-count');
+              if (c) c.textContent = n;
+              return;
+            }
             clearInterval(timer);
             try { sessionStorage.setItem(KEY, String(Date.now())); } catch (e) {}
             // Cache-buster on the document URL defeats an intermediate cache
