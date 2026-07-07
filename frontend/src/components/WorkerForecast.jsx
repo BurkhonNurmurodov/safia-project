@@ -784,7 +784,7 @@ export default function WorkerForecast({ effPct = 100 }) {
 
       {callOpen && (
         <CallTomorrowModal
-          t={t} tl={tl} lang={lang}
+          t={t} tl={tl} lang={lang} effPct={effPct}
           onClose={() => setCallOpen(false)}
           onSent={(n) => {
             setSentToast(n);
