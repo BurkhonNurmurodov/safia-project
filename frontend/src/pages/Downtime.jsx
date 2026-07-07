@@ -174,6 +174,9 @@ export default function Downtime() {
   const trendSeries = [{ name: t("downtime.totalDowntime"), data: trendValues }];
   // Headroom above the tallest point, snapped to a clean 50-min step so labels never clip.
   const trendMax = Math.ceil((Math.max(50, ...(trendValues.length ? trendValues : [0])) * 1.15) / 50) * 50;
+  // Per-point label bubbles overlap into an unreadable smear on long ranges —
+  // only draw them when every point has room (≤ 2 weeks); tooltips cover the rest.
+  const showTrendLabels = trendDates.length <= 14;
   const trendOptions = {
     chart: { type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0 },
     stroke: { curve: "smooth", width: 2.5, lineCap: "round" },
@@ -181,7 +184,7 @@ export default function Downtime() {
     colors: ["#ef4444"],
     markers: { size: 4, colors: ["#ef4444"], strokeColors: gridColor, strokeWidth: 2, hover: { size: 6 } },
     dataLabels: {
-      enabled: true,
+      enabled: showTrendLabels,
       formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
       style: { fontSize: "10px", fontWeight: 700 },
       background: { enabled: true, foreColor: "#fff", borderRadius: 4, padding: 4, borderWidth: 0, dropShadow: { enabled: false } },
@@ -209,7 +212,9 @@ export default function Downtime() {
         y: 50,
         borderColor: "#ef4444",
         strokeDashArray: 4,
-        label: { text: t("downtime.threshold"), borderColor: "#ef4444", style: { color: "#fff", background: "#ef4444", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } },
+        // offsetY drops the label below the dashed line: most days sit above the
+        // 50-min threshold, so above-line placement covers the newest points.
+        label: { text: t("downtime.threshold"), borderColor: "#ef4444", offsetY: 18, style: { color: "#fff", background: "#ef4444", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } },
       }],
     },
     grid: { borderColor: gridColor, strokeDashArray: 3, padding: { top: 8, right: 14, bottom: 0, left: 6 } },
