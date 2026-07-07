@@ -87,6 +87,7 @@ const BRIGADIR_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", 
 const PF_AVG_COLOR = "#C8973F";
 const PF_MA_COLOR = "#94a3b8";   // neutral dashed overlay — reads as a smoothed reference
 const MA_WINDOW = 7;             // trailing window (data points ≈ days) for the moving average
+const MA_TREND_WINDOW = 3;       // trailing window (weeks) for the weekday-trend reference line
 
 // trailing simple moving average over an array that may contain null gaps
 const movingAvg = (arr, w) => arr.map((_, i) => {
@@ -365,7 +366,7 @@ export default function Trudoyomkost() {
   const pfFiltered = supervisors.filter((s) =>
     !pfSearch || tl(s.name).toLowerCase().includes(pfSearch.toLowerCase()) || s.name.toLowerCase().includes(pfSearch.toLowerCase()));
 
-  // ── trend: one line per selected weekday across weeks + flat avg reference ────
+  // ── trend: one line per selected weekday across weeks + moving-avg reference ──
   const trend = useMemo(() => {
     const supDaily = (data?.daily ?? []).filter((d) => d.manager_id === trendSup);
     if (!supDaily.length || selWd.size === 0) return { cats: [], series: [] };
@@ -385,12 +386,16 @@ export default function Trudoyomkost() {
         return v == null ? null : Math.round(conv(v));
       }),
     }));
-    const pts = series.flatMap((s) => s.data).filter((v) => v != null);
-    const avg = pts.length ? Math.round(pts.reduce((a, b) => a + b, 0) / pts.length) : 0;
+    // reference line = trailing 3-week moving average of the per-week mean across the
+    // selected weekdays, so it tracks the trend instead of sitting at a flat overall mean
+    const perWeekMean = weeks.map((_, i) => {
+      const vals = series.map((s) => s.data[i]).filter((v) => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    });
     series.push({
-      name: `${T.avgLine} (${avg.toLocaleString("ru-RU")})`,
+      name: `${T.ma} · ${MA_TREND_WINDOW} ${T.week}`,
       color: "#9ca3af", dashed: true,
-      data: weeks.map(() => avg),
+      data: movingAvg(perWeekMean, MA_TREND_WINDOW),
     });
     return { cats, series, weeks };
   }, [data, trendSup, selWd, unit]); // eslint-disable-line react-hooks/exhaustive-deps
