@@ -8,7 +8,7 @@ import KPICard from "../components/ui/KPICard";
 import StatusBadge from "../components/ui/StatusBadge";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import BarRankingChart from "../components/charts/BarChart";
-import FleetLineChart from "../components/charts/FleetLineChart";
+import FleetLineChart, { FleetManagerPicker } from "../components/charts/FleetLineChart";
 import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
 import AttendanceModal from "../components/ui/AttendanceModal";
 import EmptyState from "../components/ui/EmptyState";
