@@ -692,7 +692,6 @@ export default function Production() {
                 const wc = wcColor(r.work_center);
                 const selectable = canEditCatalog && r.id != null;
                 const selected = selectable && catSel === r.id;
-                const editing = selected && catEditing;
                 return (
                   <Fragment key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}>
                   <tr
@@ -703,26 +702,16 @@ export default function Production() {
                       background: selected ? "var(--bg-inner)" : undefined,
                       cursor: selectable ? "pointer" : undefined,
                     }}>
-                    <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>
-                      {editing
-                        ? <CatInput value={catDraft.sap_code} onChange={setDraft("sap_code")} width="w-28" />
-                        : <span>{r.sap_code}</span>}
-                    </td>
+                    <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>
                     <td className="px-3 py-2 text-left max-w-[220px]">
-                      {editing
-                        ? <CatInput value={catDraft.name} onChange={setDraft("name")} width="w-full" />
-                        : <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>}
+                      <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">
-                      {editing
-                        ? <CatInput value={catDraft.labor_time} onChange={setDraft("labor_time")} type="number" align="right" width="w-20" />
-                        : (r.has_labor ? fmt(r.labor_time, 2)
-                          : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>)}
+                      {r.has_labor ? fmt(r.labor_time, 2)
+                        : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {editing
-                        ? <CatInput value={catDraft.work_center} onChange={setDraft("work_center")} width="w-24" />
-                        : <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>}
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>
                     <td className="px-3 py-2 text-center"><VypCell value={vyp} /></td>
@@ -743,20 +732,10 @@ export default function Production() {
                     </td>
                   </tr>
                   {selected && (
-                    <tr style={{ background: "var(--bg-inner)" }}>
-                      <td colSpan={COLS.length} className="px-3 py-2">
+                    <tr ref={stripRef} style={{ background: "var(--bg-inner)" }}>
+                      <td colSpan={COLS.length} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
-                          {editing ? (
-                            <>
-                              <ActionBtn icon={Save} label={t("production.save")} color="#22c55e" loading={catalog.isPending} onClick={() => saveCatEdit(r)} />
-                              <ActionBtn icon={X} label={t("production.cancelEdit")} onClick={() => setCatEditing(false)} />
-                            </>
-                          ) : (
-                            <>
-                              <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
-                              <ActionBtn icon={X} label={t("production.cancelEdit")} onClick={() => setCatSel(null)} />
-                            </>
-                          )}
+                          <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
                         </div>
                       </td>
                     </tr>
