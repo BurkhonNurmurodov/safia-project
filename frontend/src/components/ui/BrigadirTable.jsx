@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMemo } from "react";
 import { AlertTriangle, Eye, ChevronsUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import FormulaModal from "./FormulaModal";
+import SegmentedToggle from "./SegmentedToggle";
 import StatusBadge from "./StatusBadge";
 import AttendanceModal from "./AttendanceModal";
 import EmptyState from "./EmptyState";
