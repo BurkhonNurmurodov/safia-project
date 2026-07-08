@@ -406,6 +406,17 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production-dates"] });
     },
   });
+  // Remove a catalog line (PPProduct). Admin-only; hard delete — the daily
+  // plan/fact rows join on the SAP key, not this row's id, so no daily data goes.
+  const deleteCatalog = useMutation({
+    mutationFn: (id) => api.delete(`/admin/production/catalog/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      qc.invalidateQueries({ queryKey: ["production-dates"] });
+      setConfirmDel(null);
+      setCatSel(null);
+    },
+  });
 
   // Dates that actually have an uploaded snapshot — drives the switcher.
   const { data: datesData } = useQuery({
