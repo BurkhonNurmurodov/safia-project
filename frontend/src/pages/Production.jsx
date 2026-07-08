@@ -437,14 +437,13 @@ export default function Production() {
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
 
   // Row-select toggle: a click anywhere on a catalog row (admin) opens/closes its
-  // action strip. Ignored while THAT row is being edited so clicking its own
-  // inputs never collapses the editor.
+  // action strip. A second click on the same row collapses it (like the other
+  // reveal-action tables).
   const selectRow = (r) => {
     if (!canEditCatalog || r.id == null) return;
-    if (catEditing && catSel === r.id) return;
-    setCatEditing(false);
     setCatSel((id) => (id === r.id ? null : r.id));
   };
+  // «Tahrirlash» seeds the draft from the row and opens the edit modal.
   const startCatEdit = (r) => {
     setCatDraft({
       sap_code: r.sap_code ?? "",
@@ -452,10 +451,12 @@ export default function Production() {
       labor_time: r.labor_time == null ? "" : String(r.labor_time),
       work_center: r.work_center ?? "",
     });
-    setCatEditing(true);
+    setEditRow(r);
   };
   const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
-  const saveCatEdit = (r) => {
+  const saveCatEdit = () => {
+    const r = editRow;
+    if (!r) return;
     // Send only changed fields; sap_code/name/work_center never blanked.
     const body = {};
     const sap = catDraft.sap_code.trim();
@@ -467,9 +468,9 @@ export default function Production() {
     if (name && name !== (r.name ?? "")) body.name = name;
     if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
     if (labor != null && !Number.isNaN(labor) && labor !== (r.labor_time ?? null)) body.labor_time = labor;
-    if (Object.keys(body).length) catalog.mutate({ id: r.id, body });
-    setCatEditing(false);
-    setCatSel(null);
+    const done = () => { setEditRow(null); setCatSel(null); };
+    if (Object.keys(body).length) catalog.mutate({ id: r.id, body }, { onSuccess: done });
+    else done();
   };
 
   const isToday = date === todayISO();
