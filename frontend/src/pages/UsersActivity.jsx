@@ -8,6 +8,7 @@ import {
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ContributionHeatmap from "../components/charts/ContributionHeatmap";
