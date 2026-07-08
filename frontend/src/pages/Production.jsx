@@ -489,6 +489,30 @@ export default function Production() {
     setEditRow(r);
   };
   const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
+  // «Qo'shish» opens the create modal with a blank draft (same four fields).
+  const openCreate = () => {
+    setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "" });
+    setCreateOpen(true);
+  };
+  const canSubmitCreate =
+    (catDraft.sap_code?.trim() ?? "") !== "" && (catDraft.work_center?.trim() ?? "") !== "";
+  const saveCatCreate = () => {
+    const sap = catDraft.sap_code.trim();
+    const wc = catDraft.work_center.trim();
+    if (!sap || !wc) return;                         // sap_code + work_center are required
+    const laborRaw = String(catDraft.labor_time).trim();
+    const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
+    createCatalog.mutate(
+      {
+        manager_id: managerParam.manager_id,
+        sap_code: sap,
+        name: catDraft.name.trim(),
+        work_center: wc,
+        labor_time: labor != null && !Number.isNaN(labor) ? labor : null,
+      },
+      { onSuccess: () => setCreateOpen(false) },
+    );
+  };
   const saveCatEdit = () => {
     const r = editRow;
     if (!r) return;
