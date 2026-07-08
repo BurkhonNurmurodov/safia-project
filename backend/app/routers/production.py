@@ -13,6 +13,7 @@ Admin-only:
     GET  /admin/production/work-centers?manager_id=
     PUT  /admin/production/work-centers/{id}    {shtatka, capacity}
     GET  /admin/production/catalog?manager_id=
+    POST /admin/production/catalog              {manager_id, sap_code, name, work_center, labor_time}
     PUT  /admin/production/catalog/{id}         {labor_time, name, active}
 """
 from __future__ import annotations
