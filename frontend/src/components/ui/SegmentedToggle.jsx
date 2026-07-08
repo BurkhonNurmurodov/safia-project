@@ -2,8 +2,10 @@
  * SegmentedToggle — THE template for the app's inline "pill" toggles
  * (min/hrs, P·A·P−A, workload/headcount/idle, theme switch, shift, …).
  *
- * One rounded-lg bar split into connected segments; the selected segment is
- * filled brand-gold, the rest sit on --bg-inner with hairline dividers.
+ * Wears the FilterPanel «Filtrlar» trigger's chrome — a rounded-xl bar on the
+ * --bg-card surface with a --border-md hairline — split into connected
+ * segments. The selected segment is filled brand-gold; the rest are
+ * transparent (so the card surface shows through) with hairline dividers.
  * Never hand-roll this bar — use this so every toggle shares the app's
  * button height. Heights mirror Button exactly:
  *   size="md" (default) → px-3.5 py-2 text-sm  ≈ 38px  (Button md / toolbar)
