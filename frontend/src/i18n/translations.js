@@ -3852,6 +3852,8 @@ const t = {
     "production.filterPlaceholder": "Сап код / Наименование",
     "production.noMatch":          "Ничего не найдено",
     "production.editManually":     "Изменить вручную",
+    "production.editRow":          "Редактировать",
+    "production.cancelEdit":       "Отмена",
     "production.reconTitle":       "Сколько должна на штатке",
     "production.save":             "Сохранить",
     "production.recon.poShtatkeFact": "По штатке Факт",
