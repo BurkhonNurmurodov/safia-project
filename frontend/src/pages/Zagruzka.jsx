@@ -46,20 +46,11 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
 
         {/* Mode switcher + fullscreen — 2nd row on mobile */}
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg overflow-hidden text-xs" style={{ border: "1px solid var(--border-md)" }}>
-            {HEATMAP_MODES.map((m) => (
-              <button
-                key={m}
-                onClick={() => setHeatmapMode(m)}
-                className={`px-2.5 py-1.5 capitalize ${heatmapMode === m ? "text-white font-semibold" : ""}`}
-                style={heatmapMode === m
-                  ? { background: "var(--brand)" }
-                  : { background: "var(--bg-inner)", color: "var(--text-2)" }}
-              >
-                {t(`zagruzka.mode.${m}`)}
-              </button>
-            ))}
-          </div>
+          <SegmentedToggle
+            value={heatmapMode}
+            onChange={setHeatmapMode}
+            options={HEATMAP_MODES.map((m) => [m, t(`zagruzka.mode.${m}`)])}
+          />
           <button
             onClick={onToggleFullscreen}
             className="p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-white/10"
