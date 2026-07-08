@@ -5153,6 +5153,7 @@ const t = {
     "production.noMatch":          "No matching items",
     "production.editManually":     "Edit manually",
     "production.editRow":          "Edit",
+    "production.editTitle":        "Edit position",
     "production.cancelEdit":       "Cancel",
     "production.reconTitle":       "Required on staffing",
     "production.save":             "Save",
