@@ -181,7 +181,7 @@ export default function UsersManagement() {
                     {label}
                     {count !== null && (
                       <span className="px-1 rounded text-[10px] font-mono"
-                        style={{ background: "color-mix(in srgb, currentColor 18%, transparent)" }}>
+                        style={{ background: statusFilter === s ? "rgba(255,255,255,0.22)" : "var(--bg-card)" }}>
                         {count}
                       </span>
                     )}
