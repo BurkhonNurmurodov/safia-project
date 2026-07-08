@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/layout/Layout";
 import DayStepper from "../components/ui/DayStepper";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import KpiDeltaCard from "../components/ui/KpiDeltaCard";
 import LoadBarChart from "../components/charts/LoadBarChart";
 import { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
