@@ -3,13 +3,13 @@
  * (min/hrs, P·A·P−A, workload/headcount/idle, theme switch, shift, view
  * switch, …).
  *
- * iOS-style sliding-pill look: a RECESSED track (--bg-inner) holds the
- * segments with a small inset; the SELECTED segment is a RAISED --bg-card
- * pill (a soft shadow lifts it off the track) with --text-1 label; the rest
- * are transparent with muted --text-3 labels. No brand-gold fill, no divider
- * lines. Works in both themes because --bg-card is lighter than --bg-inner in
- * light AND dark. Never hand-roll this bar — use this so every toggle shares
- * the app's button height. Outer heights mirror Button exactly:
+ * Recessed-track pill look: a RECESSED track (--bg-inner + a subtle border)
+ * holds the segments with a small inset; the SELECTED segment is a brand-gold
+ * (--brand) pill with a white label; the rest are transparent with muted
+ * --text-3 labels. No divider lines. This is ALSO the style for page-level
+ * "view tabs" (Production view switch, Staff Workers/Requests) — same
+ * component, not a hand-rolled copy. Never hand-roll this bar — use this so
+ * every toggle shares the app's button height. Outer heights mirror Button:
  *   size="md" (default) → ≈ 38px  (Button md / toolbar baseline)
  *   size="sm"           → ≈ 30px  (Button sm)
  *
