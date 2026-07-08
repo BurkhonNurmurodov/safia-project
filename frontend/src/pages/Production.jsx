@@ -11,6 +11,7 @@ import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DayStepper from "../components/ui/DayStepper";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import Modal from "../components/ui/Modal";
 import Field from "../components/ui/FormField";
