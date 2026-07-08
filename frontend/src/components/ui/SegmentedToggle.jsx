@@ -49,7 +49,7 @@ export default function SegmentedToggle({
             style={
               active
                 ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
-                : { background: "var(--bg-inner)", color: "var(--text-3)" }
+                : { background: "transparent", color: "var(--text-3)" }
             }
           >
             {o.label}
