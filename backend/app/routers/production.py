@@ -592,6 +592,21 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
     return {"ok": True}
 
 
+@router.delete("/admin/production/catalog/{prod_id}")
+def admin_delete_catalog(prod_id: int,
+                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+    """Remove a single catalog line (SKU). The daily plan/fact rows join on the
+    SAP snapshot key (sap_code + work_center), not on this row's id, so deleting a
+    catalog line only drops it from the dashboard's SKU list — no daily data is
+    destroyed and nothing else references it (no FK), so a hard delete is safe."""
+    p = db.query(PPProduct).filter(PPProduct.id == prod_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="product not found")
+    db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
 # --------------------------------------------------------------------------- #
 # Trudoyomkost analysis — cross-brigadir, by-weekday view + trend + Excel.
 #
