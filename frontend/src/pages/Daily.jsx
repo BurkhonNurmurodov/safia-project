@@ -196,18 +196,11 @@ function SupervisorDaily() {
       <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
         {t("filter.unit")}
       </span>
-      <div className="flex rounded-lg overflow-hidden text-xs" style={{ border: "1px solid var(--border-md)", width: "fit-content" }}>
-        {["min", "hrs"].map(u => (
-          <button
-            key={u}
-            onClick={() => setUnit(u)}
-            className="px-3 py-1.5 font-medium"
-            style={unit === u ? { background: "var(--brand)", color: "#fff" } : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-          >
-            {u === "min" ? t("general.min") : t("general.hrs")}
-          </button>
-        ))}
-      </div>
+      <SegmentedToggle
+        value={unit}
+        onChange={setUnit}
+        options={[["min", t("general.min")], ["hrs", t("general.hrs")]]}
+      />
     </div>
   );
 
