@@ -875,7 +875,7 @@ export default function Production() {
         onCancel={() => setConfirmDel(null)}
         onConfirm={() => confirmDel && deleteCatalog.mutate(confirmDel.id)}
         title={t("production.deleteTitle")}
-        message={confirmDel ? `${confirmDel.sap_code} — ${confirmDel.name}. ${t("production.deleteConfirm")}` : ""}
+        message={confirmDel ? `${confirmDel.sap_code}${confirmDel.name ? " — " + confirmDel.name : ""}. ${t("production.deleteConfirm")}` : ""}
         confirmLabel={t("production.deleteRow")}
         cancelLabel={t("production.cancelEdit")}
         tone="danger"
