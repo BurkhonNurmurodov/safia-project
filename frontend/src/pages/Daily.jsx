@@ -7,6 +7,7 @@ import {
   Clock, Lock, FileText, Trash2, BarChart2, Unlock, Eye, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ShiftDaily from "./ShiftDaily";
 import { useAuth } from "../context/AuthContext";
