@@ -32,7 +32,7 @@ export default function SegmentedToggle({
   // Segment padding keeps the OUTER height at 38px (md) / 30px (sm) once the
   // 3px track inset is added, so the toggle still lines up with SearchInput,
   // Button md and the FilterPanel trigger in toolbars.
-  const seg = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
+  const seg = size === "sm" ? "px-2.5 py-[3px] text-xs" : "px-3 py-[5px] text-sm";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
@@ -40,7 +40,7 @@ export default function SegmentedToggle({
   return (
     <div
       className={`inline-flex items-center gap-1 rounded-xl p-[3px] ${className}`}
-      style={{ background: "var(--bg-inner)" }}
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
     >
       {items.map((o) => {
         const active = value === o.value;
@@ -50,15 +50,10 @@ export default function SegmentedToggle({
             type="button"
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-all ${seg}`}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
             style={
               active
-                ? {
-                    background: "var(--bg-card)",
-                    color: "var(--text-1)",
-                    fontWeight: 600,
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.05)",
-                  }
+                ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
                 : { background: "transparent", color: "var(--text-3)" }
             }
           >
