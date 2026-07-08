@@ -1119,6 +1119,41 @@ def _fallback(message: types.Message):
 
 # ── Webhook setup ─────────────────────────────────────────────────────────────
 
+def _meta_get(key: str) -> str | None:
+    """Read a value from the tiny app_meta key/value table (created on demand)."""
+    try:
+        with SessionLocal() as db:
+            db.execute(text(
+                "CREATE TABLE IF NOT EXISTS app_meta (key VARCHAR PRIMARY KEY, value TEXT)"
+            ))
+            db.commit()
+            row = db.execute(
+                text("SELECT value FROM app_meta WHERE key = :k"), {"k": key}
+            ).first()
+            return row[0] if row else None
+    except Exception as e:
+        logger.warning("app_meta read failed (%s): %s", key, e)
+        return None
+
+
+def _meta_set(key: str, value: str) -> None:
+    try:
+        with SessionLocal() as db:
+            db.execute(text(
+                "CREATE TABLE IF NOT EXISTS app_meta (key VARCHAR PRIMARY KEY, value TEXT)"
+            ))
+            db.execute(
+                text(
+                    "INSERT INTO app_meta (key, value) VALUES (:k, :v) "
+                    "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+                ),
+                {"k": key, "v": value},
+            )
+            db.commit()
+    except Exception as e:
+        logger.warning("app_meta write failed (%s): %s", key, e)
+
+
 def setup_webhook():
     if not settings.telegram_bot_token or not settings.backend_url:
         logger.warning("Bot token or backend_url not set — skipping webhook registration")
@@ -1127,11 +1162,6 @@ def setup_webhook():
         logger.info("backend_url is not HTTPS (%s) — skipping webhook registration (local dev mode)", settings.backend_url)
         return
     webhook_url = f"{settings.backend_url.rstrip('/')}/bot/webhook"
-    try:
-        bot.set_webhook(url=webhook_url)
-        logger.info("Webhook set to %s", webhook_url)
-    except Exception as e:
-        logger.warning("Failed to set webhook (Telegram unreachable?): %s", e)
 
     # Default command menu for every user — Uzbek default plus ru/en variants
     # (Telegram has no uz-Cyrillic language code; the default covers it).
@@ -1149,6 +1179,47 @@ def setup_webhook():
             types.BotCommand("register", "Register / add a role"),
         ],
     }
+    admin_menu = [
+        types.BotCommand("start", "Boshlash / dashboard"),
+        types.BotCommand("pending", "Kutilayotgan ro'yxatdan o'tishlar"),
+    ]
+    admin_ids = sorted(_admin_ids())
+
+    # Webhook + command registration are GLOBAL, idempotent Telegram settings
+    # that only need updating when their CONTENT changes. But this runs on every
+    # Passenger worker boot, and workers respawn constantly — re-pushing the same
+    # setMyCommands on each boot got the bot rate-limited (HTTP 429 "retry after
+    # ~2000s"). Gate the Telegram calls behind a content signature persisted in
+    # app_meta so they fire once per change, not once per boot.
+    signature = hashlib.sha256(
+        json.dumps(
+            {
+                "webhook_url": webhook_url,
+                "menus": {
+                    str(code): [(c.command, c.description) for c in cmds]
+                    for code, cmds in menus.items()
+                },
+                "admin_menu": [(c.command, c.description) for c in admin_menu],
+                "admin_ids": admin_ids,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    if _meta_get("bot_setup_sig") == signature:
+        logger.info(
+            "Bot webhook/commands unchanged (sig %s…) — skipping Telegram setup",
+            signature[:8],
+        )
+        return
+
+    try:
+        bot.set_webhook(url=webhook_url)
+        logger.info("Webhook set to %s", webhook_url)
+    except Exception as e:
+        logger.warning("Failed to set webhook (Telegram unreachable?): %s", e)
+
     for code, cmds in menus.items():
         try:
             bot.set_my_commands(cmds, language_code=code)
@@ -1156,14 +1227,14 @@ def setup_webhook():
             logger.warning("Failed to set default commands (%s): %s", code, e)
 
     # Admins get their own menu (a chat scope replaces the default entirely).
-    for admin_id in _admin_ids():
+    for admin_id in admin_ids:
         try:
-            bot.set_my_commands(
-                [
-                    types.BotCommand("start", "Boshlash / dashboard"),
-                    types.BotCommand("pending", "Kutilayotgan ro'yxatdan o'tishlar"),
-                ],
-                scope=types.BotCommandScopeChat(admin_id),
-            )
+            bot.set_my_commands(admin_menu, scope=types.BotCommandScopeChat(admin_id))
         except Exception as e:
             logger.warning("Failed to set admin commands for %s: %s", admin_id, e)
+
+    # Persist the signature even if some calls 429'd: a rate-limit response means
+    # Telegram already holds these commands from an earlier boot, so retrying on
+    # every future boot only deepens the throttle. A real content change yields a
+    # new signature and re-runs this block once.
+    _meta_set("bot_setup_sig", signature)
