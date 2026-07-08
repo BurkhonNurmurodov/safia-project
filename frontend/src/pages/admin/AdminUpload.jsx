@@ -681,20 +681,16 @@ export default function AdminUpload() {
         </button>
       </header>
 
-      {/* Admin tabs */}
-      <div className="no-scrollbar flex gap-1 px-6 pt-4 overflow-x-auto">
-        {[["data", t("admin.tabData"), Database], ["production", "Производство", Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck]].map(([id, label, Icon]) => (
-          <button
-            key={id}
-            onClick={() => setAdminTab(id)}
-            className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={adminTab === id
-              ? { background: "var(--brand)", color: "#fff" }
-              : { color: "#9ca3af", background: "#1a1d27", border: "1px solid rgba(255,255,255,0.06)" }}
-          >
-            <Icon size={14} /> {label}
-          </button>
-        ))}
+      {/* Admin tabs — the shared view-tab template (scroll wrapper for phones) */}
+      <div className="no-scrollbar px-6 pt-4 overflow-x-auto">
+        <SegmentedToggle
+          value={adminTab}
+          onChange={setAdminTab}
+          options={[["data", t("admin.tabData"), Database], ["production", "Производство", Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck]].map(([id, label, Icon]) => ({
+            value: id,
+            label: <span className="inline-flex items-center gap-1.5"><Icon size={14} /> {label}</span>,
+          }))}
+        />
       </div>
 
       {adminTab === "translations" && (
