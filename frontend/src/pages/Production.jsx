@@ -285,10 +285,23 @@ function ReconciliationCard({ data, onSave, saving }) {
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
 function RawView({ fileType, date, managerParam }) {
   const { t } = useLang();
+  const [search, setSearch] = useState("");
   const { data, isLoading } = useQuery({
     queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
   });
+  // clear a stale query when the file/date changes so its matches don't hide the new rows
+  useEffect(() => { setSearch(""); }, [fileType, date]);
+
+  // free-text filter across every column — the endpoint returns all rows, so this is client-side
+  const rows = data?.rows;
+  const filteredRows = useMemo(() => {
+    if (!rows) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => r.some((cell) => cell != null && String(cell).toLowerCase().includes(q)));
+  }, [rows, search]);
+
   if (isLoading) return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <SkeletonTable rows={8} cols={6} />
@@ -301,11 +314,21 @@ function RawView({ fileType, date, managerParam }) {
       </div>
     );
   }
+  const filtering = filteredRows.length !== data.row_count;
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between px-4 py-2.5 text-xs" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-3)" }}>
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-3)" }}>
         <span className="font-semibold truncate" style={{ color: "var(--text-2)" }}>{data.filename || "—"}</span>
-        <span className="flex-shrink-0">{data.row_count} {t("production.rows")}{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
+        <span className="flex-shrink-0 tabular-nums">{filtering ? `${filteredRows.length} / ${data.row_count}` : data.row_count} {t("production.rows")}{data.uploaded_at ? " · " + new Date(data.uploaded_at).toLocaleString("ru-RU") : ""}</span>
+      </div>
+      <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("production.rawSearchPlaceholder")}
+          className="w-full sm:w-64"
+          inputClassName="text-xs pl-8 pr-7 py-1.5"
+        />
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
@@ -317,7 +340,13 @@ function RawView({ fileType, date, managerParam }) {
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((r, ri) => (
+            {filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={data.columns.length || 1} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  {t("production.noMatch")}
+                </td>
+              </tr>
+            ) : filteredRows.map((r, ri) => (
               <tr key={ri} className="transition-colors hover:bg-[var(--bg-inner)]" style={{ borderTop: "1px solid var(--border)" }}>
                 {r.map((cell, ci) => {
                   const num = typeof cell === "number";
