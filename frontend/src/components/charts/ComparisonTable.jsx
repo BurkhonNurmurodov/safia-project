@@ -225,21 +225,12 @@ export default function ComparisonTable({
 
         {/* Mode toggle + fullscreen — 2nd row on mobile */}
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg overflow-hidden text-xs"
-            style={{ border: "1px solid var(--border-md)" }}>
-            {[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]].map(([m, label]) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`px-2.5 py-1.5 ${mode === m ? "font-semibold" : ""}`}
-                style={mode === m
-                  ? { background: "var(--brand)", color: "#fff" }
-                  : { background: "var(--bg-inner)", color: "var(--text-2)" }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedToggle
+            size="sm"
+            value={mode}
+            onChange={setMode}
+            options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
+          />
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
