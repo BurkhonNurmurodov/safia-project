@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Calendar } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TripleSpeedometer from "../components/charts/TripleSpeedometer";
 import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
 import TrendChart from "../components/charts/TrendChart";
