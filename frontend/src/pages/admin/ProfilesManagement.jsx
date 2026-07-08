@@ -11,6 +11,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
+import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import { useLang } from "../../context/LangContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
