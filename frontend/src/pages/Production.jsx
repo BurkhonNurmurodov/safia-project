@@ -474,6 +474,12 @@ export default function Production() {
     else done();
   };
 
+  // The reveal strip is appended below its row inside the scroll container, so
+  // selecting the LAST row leaves the strip below the fold. Nudge it into view.
+  useEffect(() => {
+    if (catSel != null) stripRef.current?.scrollIntoView({ block: "nearest" });
+  }, [catSel]);
+
   const isToday = date === todayISO();
 
   return (
