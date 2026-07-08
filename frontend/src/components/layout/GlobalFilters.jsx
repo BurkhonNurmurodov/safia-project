@@ -103,6 +103,7 @@ export default function GlobalFilters() {
       <div className="flex flex-col gap-2">
         {sectionLabel(t("filter.shift") || "Shift")}
         <SegmentedToggle
+          fill
           value={shift}
           onChange={setShift}
           options={[[null, t("filter.all") || "All"], [1, "S1"], [2, "S2"]]}
