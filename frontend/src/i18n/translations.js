@@ -1274,6 +1274,8 @@ const t = {
     "production.filterPlaceholder": "SAP kod / Nomi",
     "production.noMatch":          "Filtrga mos pozitsiya yo'q",
     "production.editManually":     "Qo'lda o'zgartirish",
+    "production.editRow":          "Tahrirlash",
+    "production.cancelEdit":       "Bekor qilish",
     "production.reconTitle":       "Shtatda qancha bo'lishi kerak",
     "production.save":             "Saqlash",
     "production.recon.poShtatkeFact": "Shtat bo'yicha Fakt",
