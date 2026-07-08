@@ -2572,6 +2572,8 @@ const t = {
     "production.editManually":     "Қўлда ўзгартириш",
     "production.editRow":          "Таҳрирлаш",
     "production.editTitle":        "Позицияни таҳрирлаш",
+    "production.addRow":           "Қўшиш",
+    "production.createTitle":      "Янги позиция",
     "production.cancelEdit":       "Бекор қилиш",
     "production.reconTitle":       "Штатда қанча бўлиши керак",
     "production.save":             "Сақлаш",
