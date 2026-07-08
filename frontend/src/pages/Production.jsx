@@ -733,26 +733,18 @@ export default function Production() {
                     </td>
                   </tr>
                   {selected && (
-                    <tr>
-                      <td colSpan={COLS.length} className="px-3 py-2" style={{ background: "var(--bg-accent)" }}>
-                        <div className="flex items-center justify-end gap-2">
+                    <tr style={{ background: "var(--bg-inner)" }}>
+                      <td colSpan={COLS.length} className="px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {editing ? (
                             <>
-                              <Button variant="secondary" size="sm" icon={<X size={13} />} onClick={() => setCatEditing(false)}>
-                                {t("production.cancelEdit")}
-                              </Button>
-                              <Button variant="primary" size="sm" icon={<Save size={13} />} loading={catalog.isPending} onClick={() => saveCatEdit(r)}>
-                                {t("production.save")}
-                              </Button>
+                              <ActionBtn icon={Save} label={t("production.save")} color="#22c55e" loading={catalog.isPending} onClick={() => saveCatEdit(r)} />
+                              <ActionBtn icon={X} label={t("production.cancelEdit")} onClick={() => setCatEditing(false)} />
                             </>
                           ) : (
                             <>
-                              <Button variant="secondary" size="sm" icon={<X size={13} />} onClick={() => setCatSel(null)}>
-                                {t("production.cancelEdit")}
-                              </Button>
-                              <Button variant="primary" size="sm" icon={<Pencil size={13} />} onClick={() => startCatEdit(r)}>
-                                {t("production.editRow")}
-                              </Button>
+                              <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
+                              <ActionBtn icon={X} label={t("production.cancelEdit")} onClick={() => setCatSel(null)} />
                             </>
                           )}
                         </div>
