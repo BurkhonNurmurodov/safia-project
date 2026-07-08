@@ -308,6 +308,12 @@ export default function Production() {
     setSort((s) => (s.key !== key ? { key, dir: "asc" }
       : s.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" }));
 
+  // Catalog row selection → action bar → edit (admin only). Selecting a row opens
+  // an action strip below it; «Изменить» turns the first 4 cells into inputs.
+  const [catSel, setCatSel] = useState(null);      // selected PPProduct id, or null
+  const [catEditing, setCatEditing] = useState(false);
+  const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
+
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
