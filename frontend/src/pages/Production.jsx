@@ -683,15 +683,14 @@ export default function Production() {
                 const selectable = canEditCatalog && r.id != null;
                 const selected = selectable && catSel === r.id;
                 const editing = selected && catEditing;
-                const leftBar = selected ? "var(--brand)" : (r.has_labor ? "transparent" : AMBER);
                 return (
                   <Fragment key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}>
                   <tr
                     onClick={() => selectRow(r)}
                     className="transition-colors"
                     style={{
-                      borderLeft: `2px solid ${leftBar}`,
-                      background: selected ? "var(--bg-accent)" : undefined,
+                      borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}`,
+                      background: selected ? "var(--bg-inner)" : undefined,
                       cursor: selectable ? "pointer" : undefined,
                     }}>
                     <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>
