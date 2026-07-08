@@ -1122,6 +1122,8 @@ const t = {
     // ── Fleet trend chart ────────────────────────────────────────────────────
     "fleet.avg":     "O'rtacha",
     "fleet.noMatch": "Mos kelmadi",
+    "fleet.pick":    "Brigadirlar",
+    "fleet.clear":   "Tozalash",
 
     // ── Common / shared UI ───────────────────────────────────────────────────
     "common.fullscreen":     "To'liq ekran",
