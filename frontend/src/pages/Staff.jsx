@@ -3524,53 +3524,38 @@ export default function Staff() {
 
   return (
     <Layout title={t("nav.staff")} showFilters={false}>
-      {/* Tabs */}
-      <div
-        className="flex gap-1 mb-6 p-1 rounded-xl w-fit max-w-full overflow-x-auto"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
-      >
-        {showWorkersTab && (
-          <button
-            onClick={() => setTab("workers")}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={tab === "workers"
-              ? { background: "var(--brand)", color: "#fff" }
-              : { color: "var(--text-3)" }}
-          >
-            {t("staff.tabWorkers")}
-          </button>
-        )}
-        <button
-          onClick={() => setTab("requests")}
-          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-          style={tab === "requests"
-            ? { background: "var(--brand)", color: "#fff" }
-            : { color: "var(--text-3)" }}
-        >
-          {t("staff.tabRequests")}
-          {pendingCount > 0 && (
-            <span
-              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-              style={{
-                background: tab === "requests" ? "rgba(255,255,255,0.3)" : "#ef4444",
-                color: "#fff", minWidth: 18, textAlign: "center",
-              }}
-            >
-              {pendingCount}
-            </span>
-          )}
-        </button>
-        {showApprovalsTab && (
-          <button
-            onClick={() => setTab("approvals")}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5"
-            style={tab === "approvals"
-              ? { background: "var(--brand)", color: "#fff" }
-              : { color: "var(--text-3)" }}
-          >
-            <Calendar size={14} /> {t("staff.tabApprovals")}
-          </button>
-        )}
+      {/* Tabs — the shared view-tab template (scroll wrapper for phones) */}
+      <div className="mb-6 max-w-full overflow-x-auto">
+        <SegmentedToggle
+          value={tab}
+          onChange={setTab}
+          options={[
+            ...(showWorkersTab ? [{ value: "workers", label: t("staff.tabWorkers") }] : []),
+            {
+              value: "requests",
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {t("staff.tabRequests")}
+                  {pendingCount > 0 && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: tab === "requests" ? "rgba(255,255,255,0.3)" : "#ef4444",
+                        color: "#fff", minWidth: 18, textAlign: "center",
+                      }}
+                    >
+                      {pendingCount}
+                    </span>
+                  )}
+                </span>
+              ),
+            },
+            ...(showApprovalsTab ? [{
+              value: "approvals",
+              label: <span className="inline-flex items-center gap-1.5"><Calendar size={14} /> {t("staff.tabApprovals")}</span>,
+            }] : []),
+          ]}
+        />
       </div>
 
       {/* Delete toast */}
