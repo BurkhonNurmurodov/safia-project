@@ -394,7 +394,48 @@ export default function Kaizen() {
       }
       return true;
     });
-  }, [tasks, project, status, search, tl]);
+  }, [tasks, projectSel, statusSel, search, tl]);
+
+  // ── task-table toolbar filters (shared <FilterPanel>) ───────────────────────
+  const filterSections = [
+    {
+      key: "project", icon: FolderKanban, label: T.colProject,
+      active: projectSel.length > 0,
+      display: `${projectSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={projects.map((p) => p.key)} sel={projectSel} onChange={setProjectSel}
+          render={(k) => {
+            const p = projects.find((pp) => pp.key === k);
+            const { Icon, color } = identFor(k);
+            return (
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
+                <span className="truncate">{tl(p?.name || k)}</span>
+              </span>
+            );
+          }} />
+      ),
+    },
+    {
+      key: "status", icon: CircleDot, label: T.colStatus,
+      active: statusSel.length > 0,
+      display: `${statusSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={["Done", "In progress", "Not started"]} sel={statusSel} onChange={setStatusSel}
+          render={(s) => {
+            const { label, color, Icon } = statusInfo(s, T);
+            return (
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <Icon size={12} className="flex-shrink-0" style={{ color }} />
+                <span className="truncate">{label}</span>
+              </span>
+            );
+          }} />
+      ),
+    },
+  ];
+  const filterActiveCount = (projectSel.length > 0 ? 1 : 0) + (statusSel.length > 0 ? 1 : 0);
+  const clearAllFilters = () => { setProjectSel([]); setStatusSel([]); };
 
   // Sorted view of the task table — string-compared per column, deadlines last.
   const sorted = useMemo(() => {
