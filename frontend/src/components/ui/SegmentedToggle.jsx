@@ -34,8 +34,8 @@ export default function SegmentedToggle({
 
   return (
     <div
-      className={`inline-flex rounded-lg overflow-hidden divide-x divide-[var(--border-md)] ${className}`}
-      style={{ border: "1px solid var(--border-md)" }}
+      className={`inline-flex rounded-xl overflow-hidden divide-x divide-[var(--border-md)] ${className}`}
+      style={{ border: "1px solid var(--border-md)", background: "var(--bg-card)" }}
     >
       {items.map((o) => {
         const active = value === o.value;
