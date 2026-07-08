@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, ChevronUp, Send, Trash2 } from "lucide-react";
 import TripleSpeedometer from "../charts/TripleSpeedometer";
 import DifferenceBreakdown from "./DifferenceBreakdown";
+import SegmentedToggle from "./SegmentedToggle";
 import TrendChart from "../charts/TrendChart";
 import StatusBadge from "./StatusBadge";
 import { diffStatus } from "../../utils/segments";
