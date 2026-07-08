@@ -3861,6 +3861,7 @@ const t = {
     "production.noMatch":          "Ничего не найдено",
     "production.editManually":     "Изменить вручную",
     "production.editRow":          "Редактировать",
+    "production.editTitle":        "Редактировать позицию",
     "production.cancelEdit":       "Отмена",
     "production.reconTitle":       "Сколько должна на штатке",
     "production.save":             "Сохранить",
