@@ -165,32 +165,30 @@ export default function UsersManagement() {
         }
         toolbar={
           <>
-            {/* Status filter pills */}
-            {[
-              ["all",      t("admin.users.filterAll"),              null],
-              ["pending",  t("admin.users.status.pending"),  countByStatus("pending")],
-              ["approved", t("admin.users.status.approved"), countByStatus("approved")],
-              ["rejected", t("admin.users.status.rejected"), countByStatus("rejected")],
-            ].map(([s, label, count]) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
-                style={
-                  statusFilter === s
-                    ? { background: "var(--brand)", color: "#fff" }
-                    : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }
-                }
-              >
-                {label}
-                {count !== null && (
-                  <span className="ml-0.5 px-1 rounded text-[10px] font-mono"
-                    style={{ background: statusFilter === s ? "rgba(255,255,255,0.2)" : "var(--bg-card)" }}>
-                    {count}
+            {/* Status filter — single-select segmented toggle with live counts */}
+            <SegmentedToggle
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                ["all",      t("admin.users.filterAll"),              null],
+                ["pending",  t("admin.users.status.pending"),  countByStatus("pending")],
+                ["approved", t("admin.users.status.approved"), countByStatus("approved")],
+                ["rejected", t("admin.users.status.rejected"), countByStatus("rejected")],
+              ].map(([s, label, count]) => ({
+                value: s,
+                label: (
+                  <span className="inline-flex items-center gap-1.5">
+                    {label}
+                    {count !== null && (
+                      <span className="px-1 rounded text-[10px] font-mono"
+                        style={{ background: "color-mix(in srgb, currentColor 18%, transparent)" }}>
+                        {count}
+                      </span>
+                    )}
                   </span>
-                )}
-              </button>
-            ))}
+                ),
+              }))}
+            />
             <div className="ml-auto flex items-center gap-2">
               <Button size="sm" icon={<Plus size={13} />} onClick={openAdd}>{t("admin.users.addRole")}</Button>
               <Button variant="secondary" size="sm" icon={<RefreshCw size={12} />} onClick={() => refetch()}>
