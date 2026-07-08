@@ -7,7 +7,7 @@ Access:
   admin         → view/edit/delete directly, actions logged as processed requests
 """
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, List, Optional
 from uuid import uuid4
@@ -460,6 +460,82 @@ def _notify(
             pass
 
 
+def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) -> None:
+    """A brigadir just got approved for a unit. Bell rows that were queued to the
+    supervisor PROFILE while it was still unclaimed (e.g. a call-to-shift notice)
+    were written with recipient_telegram_id NULL and never sent as a Telegram DM.
+    Deliver them now and stamp them with the new holder's id so they are sent
+    once and never replayed on a later re-claim. Bounded to the last 2 days so a
+    fresh claim never dumps stale history into the chat. Called from the approval
+    paths (decide_registration / admin add-role); guards its own errors there."""
+    if notifications_suppressed():
+        return
+    key = _profile_key("supervisor", manager_id)
+    if not key:
+        return
+    cutoff = datetime.now(timezone.utc) - timedelta(days=2)
+    rows = db.query(Notification).filter(
+        Notification.recipient_profile == key,
+        Notification.recipient_telegram_id.is_(None),
+        Notification.created_at >= cutoff,
+    ).order_by(Notification.created_at).all()
+    if not rows:
+        return
+    lang = _get_user_lang(db, telegram_id)
+    from app.telegram_bot import send_tg_notification
+    for r in rows:
+        html = None
+        if r.nkey:
+            try:
+                title, body = _mk_notif(r.nkey, r.params or {}, lang)
+                html = _mk_notif_tg(r.nkey, r.params or {}, lang)
+            except Exception:
+                title, body = r.title or r.nkey, r.body or ""
+        else:
+            title, body = r.title or "", r.body or ""
+        send_tg_notification(telegram_id, title, body, html=html)
+        r.recipient_telegram_id = telegram_id   # delivered — don't replay
+    db.commit()
+
+
+def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,
+                           params: dict, type: str = "info") -> None:
+    """Notify the supervisor PROFILE of a unit: ONE bell row (addressed to the
+    profile, so every account holding it sees it in-app) plus a Telegram DM to
+    EVERY account that holds an approved supervisor role for the unit — each
+    rendered in that account's own language. When nobody holds the profile yet
+    it queues a single unclaimed bell row, delivered as a DM once someone claims
+    (see flush_queued_supervisor_dms). Use this instead of a single-recipient
+    _notify when the whole profile — not one chosen holder — should be reached."""
+    if notifications_suppressed():
+        return
+    prof = _profile_key("supervisor", manager_id)
+    holder_ids = sorted({
+        r.telegram_id for r in db.query(TelegramUserRole).filter(
+            TelegramUserRole.role == "supervisor",
+            TelegramUserRole.role_id == manager_id,
+            TelegramUserRole.status == "approved",
+        ) if r.telegram_id
+    })
+    if not holder_ids:
+        # unclaimed profile → queue the bell row only; no account to DM yet
+        _notify(db, None, nkey=nkey, params=params, type=type, profile=prof)
+        return
+    # one profile-addressed bell row (dm handled per-holder below) …
+    _notify(db, holder_ids[0], nkey=nkey, params=params, type=type, dm=False, profile=prof)
+    # … then a DM to each holder in their own language (HTML variant when the
+    # notification defines one, e.g. the call-forecast blockquote)
+    from app.telegram_bot import send_tg_notification
+    for tid in holder_ids:
+        lang = _get_user_lang(db, tid)
+        title, body = _mk_notif(nkey, params, lang)
+        html = _mk_notif_tg(nkey, params, lang)
+        try:
+            send_tg_notification(tid, title, body, html=html)
+        except Exception:
+            pass
+
+
 # ── profile addressing ────────────────────────────────────────────────────────
 # Bell rows are addressed to PROFILES (notifications.recipient_profile), not
 # telegram accounts: one account can hold several profiles via role switching,
@@ -547,11 +623,20 @@ class ExchangeTargetNoData(HTTPException):
 def _find_supervisor(db: Session, manager_id: int) -> Optional[TelegramUserRole]:
     """The approved supervisor role instance for a unit. Role instances live in
     telegram_user_roles (a person may hold several roles); the returned row
-    carries the telegram_id and the role-scoped full_name."""
+    carries the telegram_id and the role-scoped full_name.
+
+    Turnover leaves the former holder's approved row in place — nothing revokes
+    it — so a unit can carry several approved supervisor rows. Pick the MOST
+    RECENTLY approved one so notifications and their Telegram DMs reach the
+    current brigadir; a stale row would send the DM to an old/blocked account
+    while the bell (addressed to the stable profile) still shows correctly."""
     return db.query(TelegramUserRole).filter(
         TelegramUserRole.role == "supervisor",
         TelegramUserRole.role_id == manager_id,
         TelegramUserRole.status == "approved",
+    ).order_by(
+        TelegramUserRole.approved_at.desc().nullslast(),
+        TelegramUserRole.id.desc(),
     ).first()
 
 

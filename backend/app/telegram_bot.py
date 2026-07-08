@@ -834,11 +834,13 @@ def _contact(message: types.Message):
     _state.pop(tid, None)
 
 
-def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> None:
+def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
-    Silently ignores any Telegram API errors (e.g. user hasn't started the bot)."""
+    Returns True if Telegram accepted the message, False if the send failed (e.g.
+    the user never started the bot, or blocked it). Failures are logged at
+    WARNING — an in-app bell with no matching DM is otherwise invisible to debug."""
     # Piggyback a menu-button refresh on every notification so the persistent
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
@@ -848,8 +850,10 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
             bot.send_message(telegram_id, html, parse_mode="HTML")
         else:
             bot.send_message(telegram_id, f"🔔 *{title}*\n{body}", parse_mode="Markdown")
+        return True
     except Exception as e:
-        logger.debug("Telegram notification to %s failed: %s", telegram_id, e)
+        logger.warning("Telegram notification to %s failed: %s", telegram_id, e)
+        return False
 
 
 def notify_status_change(telegram_id: int, status: str, lang: str = "uz", role: str | None = None):
@@ -943,6 +947,7 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
         user = db.query(TelegramUser).filter_by(telegram_id=role_row.telegram_id).first()
         telegram_id  = role_row.telegram_id
         decided_role = role_row.role
+        decided_role_id = role_row.role_id
         lang = (user.language if user else "uz") or "uz"
 
         if decided_role == "admin" and status == "approved":
@@ -991,6 +996,17 @@ def decide_registration(role_ref: int, status: str, decided_by: str | None = Non
             if status == "approved":
                 role_row.approved_at = datetime.now(timezone.utc)
         db.commit()
+
+        # A newly approved brigadir may have call-to-shift bell rows that were
+        # queued to their unit's supervisor profile while it was unclaimed — those
+        # never got a Telegram DM. Deliver them now (best-effort, never blocks the
+        # approval). Same session, already past the status commit above.
+        if status == "approved" and decided_role == "supervisor" and decided_role_id:
+            try:
+                from app.routers.staff import flush_queued_supervisor_dms
+                flush_queued_supervisor_dms(db, telegram_id, decided_role_id)
+            except Exception:
+                logger.warning("Queued supervisor-DM flush failed for %s", telegram_id, exc_info=True)
 
     notify_status_change(telegram_id, status, lang, role=decided_role)
     notify_admins_of_decision(telegram_id, status, decided_by=decided_by, role_ref=role_ref)

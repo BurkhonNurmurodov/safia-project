@@ -334,6 +334,15 @@ def add_user_role(
     lang = user.language or "uz"
     db.commit()
 
+    # Deliver any bell rows queued to this supervisor profile while it was
+    # unclaimed (e.g. call-to-shift notices) — same as decide_registration.
+    if payload.role == "supervisor":
+        try:
+            from app.routers.staff import flush_queued_supervisor_dms
+            flush_queued_supervisor_dms(db, telegram_id, role_id)
+        except Exception:
+            pass
+
     # Tell the user over Telegram, same as a normal approval.
     try:
         from app.telegram_bot import notify_status_change

@@ -1200,7 +1200,7 @@ def trudoyomkost_call_notify(
     db: Session = Depends(get_db),
 ):
     # function-level import: staff.py is heavy and imports would be circular-prone
-    from app.routers.staff import _find_supervisor, _notify, _profile_key
+    from app.routers.staff import _notify_supervisor_all
 
     target = _tomorrow()
     if req.date != target.isoformat():
@@ -1218,17 +1218,16 @@ def trudoyomkost_call_notify(
         mgr = by_id.get(item.manager_id)
         if mgr is None or item.workers < 0:
             continue
-        sup = _find_supervisor(db, mgr.id)
-        # bell row keyed to the supervisor PROFILE (+ Telegram DM when claimed);
-        # an unclaimed profile queues the bell row for whoever claims it later
-        # Maksimum = the upper band; fall back to the recommended count when the
-        # client didn't send one (older client / insufficient-data row).
+        # bell row keyed to the supervisor PROFILE (seen by every account holding
+        # it) + a Telegram DM to EVERY holder of that profile, each in their own
+        # language; an unclaimed profile queues the bell row for whoever claims it
+        # later. Maksimum = the upper band; fall back to the recommended count when
+        # the client didn't send one (older client / insufficient-data row).
         max_workers = item.max_workers if item.max_workers is not None else item.workers
-        _notify(
-            db, sup.telegram_id if sup else None,
+        _notify_supervisor_all(
+            db, mgr.id,
             nkey="call_forecast",
             params={"date": target, "count": item.workers, "max": max_workers},
-            profile=_profile_key("supervisor", mgr.id),
         )
         db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
                                   workers=item.workers, sent_by=actor))
