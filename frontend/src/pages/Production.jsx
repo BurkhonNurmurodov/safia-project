@@ -394,6 +394,15 @@ export default function Production() {
       qc.invalidateQueries({ queryKey: ["production-dates"] });
     },
   });
+  // Add a new catalog line (PPProduct). Admin-only; scoped to the manager the
+  // admin is previewing (managerParam.manager_id).
+  const createCatalog = useMutation({
+    mutationFn: (body) => api.post("/admin/production/catalog", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      qc.invalidateQueries({ queryKey: ["production-dates"] });
+    },
+  });
 
   // Dates that actually have an uploaded snapshot — drives the switcher.
   const { data: datesData } = useQuery({
