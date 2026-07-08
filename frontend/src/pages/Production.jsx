@@ -331,6 +331,7 @@ export default function Production() {
   const [catSel, setCatSel] = useState(null);      // selected PPProduct id, or null
   const [editRow, setEditRow] = useState(null);    // row being edited in the modal, or null
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
+  const stripRef = useRef(null);                   // revealed action strip → scroll into view
 
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
