@@ -332,17 +332,7 @@ export default function UsersActivity() {
     : 0;
 
   const periodSeg = (
-    <div className="inline-flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: "1px solid var(--border-md)" }}>
-      {periodOpts.map((o) => (
-        <button key={o.value} onClick={() => setDays(o.value)}
-          className="text-[11px] font-semibold px-3 py-2 transition-colors"
-          style={days === o.value
-            ? { background: BRAND, color: "#fff" }
-            : { background: "var(--bg-inner)", color: "var(--text-3)" }}>
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedToggle value={days} onChange={setDays} options={periodOpts} className="flex-shrink-0" />
   );
 
   const refreshBtn = (
