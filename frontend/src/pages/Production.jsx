@@ -418,9 +418,40 @@ export default function Production() {
   const saveOverride = (row, field) => (value) =>
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
 
-  const saveCatalog = (row, field) => (value) => {
-    if (row.id == null) return;               // pre-catalog rows carry no id → not editable
-    catalog.mutate({ id: row.id, body: { [field]: value } });
+  // Row-select toggle: a click anywhere on a catalog row (admin) opens/closes its
+  // action strip. Ignored while THAT row is being edited so clicking its own
+  // inputs never collapses the editor.
+  const selectRow = (r) => {
+    if (!canEditCatalog || r.id == null) return;
+    if (catEditing && catSel === r.id) return;
+    setCatEditing(false);
+    setCatSel((id) => (id === r.id ? null : r.id));
+  };
+  const startCatEdit = (r) => {
+    setCatDraft({
+      sap_code: r.sap_code ?? "",
+      name: r.name ?? "",
+      labor_time: r.labor_time == null ? "" : String(r.labor_time),
+      work_center: r.work_center ?? "",
+    });
+    setCatEditing(true);
+  };
+  const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
+  const saveCatEdit = (r) => {
+    // Send only changed fields; sap_code/name/work_center never blanked.
+    const body = {};
+    const sap = catDraft.sap_code.trim();
+    const name = catDraft.name.trim();
+    const wc = catDraft.work_center.trim();
+    const laborRaw = String(catDraft.labor_time).trim();
+    const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
+    if (sap && sap !== (r.sap_code ?? "")) body.sap_code = sap;
+    if (name && name !== (r.name ?? "")) body.name = name;
+    if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
+    if (labor != null && !Number.isNaN(labor) && labor !== (r.labor_time ?? null)) body.labor_time = labor;
+    if (Object.keys(body).length) catalog.mutate({ id: r.id, body });
+    setCatEditing(false);
+    setCatSel(null);
   };
 
   const isToday = date === todayISO();
