@@ -221,15 +221,21 @@ export default function BrigadirTable({
 
   return (
     <div className="flex-1 min-w-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
-        {diffUnitToggle}
-        <div className="flex-1" />
+      {/* Toolbar contract: search grows left, filters middle, unit toggle right. */}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
+        <SearchInput
+          value={filters.name}
+          onChange={(v) => setF("name", v)}
+          placeholder={t("overview.brigadir")}
+          className="flex-1 min-w-[150px]"
+        />
         <FilterPanel
-          sections={brigadirFilterSections({ filters, setF, distinctStatuses, t, includeShift: false })}
-          activeCount={brigadirActiveCount(filters)}
+          sections={brigadirFilterSections({ filters, setF, distinctStatuses, t, includeShift: false, includeName: false })}
+          activeCount={brigadirActiveCount(filters) - (filters.name ? 1 : 0)}
           anyActive={activeFilter}
           onClearAll={() => setFilters(INIT_FILTERS)}
         />
+        {diffUnitToggle}
       </div>
 
       <div className="overflow-x-auto">
