@@ -119,22 +119,6 @@ const initNum  = (k, fb) => { const v = cacheGet(k); return v == null || v === "
 const initSet  = (k, fb) => { try { const v = cacheGet(k); return v == null ? fb : new Set(JSON.parse(v)); } catch { return fb; } };
 
 // ── small UI atoms (mirror Production.jsx idioms) ──────────────────────────────
-function Toggle({ value, onChange, options }) {
-  return (
-    <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
-      {options.map(([id, label]) => (
-        <button key={id} onClick={() => onChange(id)}
-          className="px-3 py-1.5 text-xs font-medium transition-colors"
-          style={value === id
-            ? { background: "var(--brand)", color: "#fff" }
-            : { background: "var(--bg-inner)", color: "var(--text-3)" }}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function Kpi({ label, value, sub, icon: Icon, accent, primary, subColor }) {
   return (
     <div className="rounded-2xl px-4 py-3.5" style={{
@@ -496,7 +480,7 @@ export default function Trudoyomkost() {
           {supervisors.length} {T.brigadirsN}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <Toggle value={unit} onChange={setUnit} options={[["min", T.min], ["hrs", T.normHour]]} />
+          <SegmentedToggle value={unit} onChange={setUnit} options={[["min", T.min], ["hrs", T.normHour]]} />
           <button onClick={exportExcel} disabled={exporting || !hasData}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-opacity"
             style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: exporting || !hasData ? 0.5 : 1 }}>
@@ -554,7 +538,7 @@ export default function Trudoyomkost() {
                     </span>
                   )}
                 </span>
-                <Toggle value={pfMode} onChange={setPfMode} options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]} />
+                <SegmentedToggle value={pfMode} onChange={setPfMode} options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]} />
                 <button onClick={() => setPfMA((v) => !v)} title={`${T.ma} · ${MA_WINDOW} ${T.dayShort}`}
                   className="px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors"
                   style={pfMA
@@ -653,7 +637,7 @@ export default function Trudoyomkost() {
         {/* brigadir × weekday heatmap (display-only) */}
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Grid3x3} title={T.matrix}
-            right={<Toggle value={wdMode} onChange={setWdMode} options={[["avg", T.avgWord], ["total", T.totalWord]]} />} />
+            right={<SegmentedToggle value={wdMode} onChange={setWdMode} options={[["avg", T.avgWord], ["total", T.totalWord]]} />} />
           <div className="overflow-x-auto p-3">
             <table className="w-full text-[11px] border-collapse" style={{ minWidth: 540 }}>
               <thead>
