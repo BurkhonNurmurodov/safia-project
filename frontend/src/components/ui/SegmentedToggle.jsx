@@ -56,7 +56,7 @@ export default function SegmentedToggle({
             type="button"
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
+            className={`${fill ? "flex-1" : ""} inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
             style={
               active
                 ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
