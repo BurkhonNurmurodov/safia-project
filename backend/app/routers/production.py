@@ -519,6 +519,40 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
              "active": p.active} for p in rows]
 
 
+class CatalogCreateBody(BaseModel):
+    manager_id: int
+    sap_code: str
+    name: Optional[str] = ""
+    work_center: str
+    labor_time: Optional[float] = None
+
+
+@router.post("/admin/production/catalog")
+def admin_create_catalog(body: CatalogCreateBody,
+                         _: dict = Depends(_verify_admin), db: Session = Depends(get_db)):
+    """Add a single catalog line (SKU) for a brigadir. sap_code + work_center are
+    the (NOT NULL) join key onto the daily SAP snapshot, so both are required; the
+    daily plan/fact rows join on that key at read time (no migration needed)."""
+    if not db.query(Manager).filter(Manager.id == body.manager_id).first():
+        raise HTTPException(status_code=404, detail=f"Manager {body.manager_id} not found")
+    sap = (body.sap_code or "").strip()
+    wc = (body.work_center or "").strip()
+    if not sap:
+        raise HTTPException(status_code=400, detail="sap_code cannot be empty")
+    if not wc:
+        raise HTTPException(status_code=400, detail="work_center cannot be empty")
+    max_sort = db.query(func.max(PPProduct.sort_order)).filter(
+        PPProduct.manager_id == body.manager_id).scalar() or 0
+    p = PPProduct(
+        manager_id=body.manager_id, sap_code=sap, name=(body.name or "").strip(),
+        work_center=wc, labor_time=body.labor_time, sort_order=max_sort + 1,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return {"ok": True, "id": p.id}
+
+
 class CatalogBody(BaseModel):
     labor_time: Optional[float] = None
     name: Optional[str] = None
