@@ -503,8 +503,7 @@ export default function UsersActivity() {
                 value={search}
                 onChange={setSearch}
                 placeholder={T.searchPh}
-                className="w-48"
-                inputClassName="text-xs pl-8 pr-7 py-1.5"
+                className="w-full sm:w-48"
               />
             }
           >
