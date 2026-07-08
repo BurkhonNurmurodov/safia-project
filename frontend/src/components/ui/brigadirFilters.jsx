@@ -28,14 +28,18 @@ const BRIGADIR_RANGE_FIELDS = [
 // `filters` state (same shape) and pass it here, so the two tables never drift.
 // `includeShift` is false on the shift-manager Daily table: it's scoped to a
 // single shift server-side, so every row shares one Smena and the filter is moot.
-export function brigadirFilterSections({ filters: f, setF, distinctShifts, distinctStatuses, t, includeShift = true }) {
-  const sections = [
-    {
+// `includeName` is false when the page surfaces the name filter as a dedicated
+// toolbar <SearchInput> (the toolbar contract: search on the left), so it isn't
+// duplicated inside the «Filtrlar» panel.
+export function brigadirFilterSections({ filters: f, setF, distinctShifts, distinctStatuses, t, includeShift = true, includeName = true }) {
+  const sections = [];
+  if (includeName) {
+    sections.push({
       key: "name", icon: Search, label: t("overview.brigadir"),
       active: !!f.name, display: f.name,
       render: () => <TxtFilter value={f.name} onChange={v => setF("name", v)} />,
-    },
-  ];
+    });
+  }
   if (includeShift) {
     sections.push({
       key: "shifts", icon: Layers, label: t("overview.shift"),
