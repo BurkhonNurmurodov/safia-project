@@ -3866,6 +3866,8 @@ const t = {
     "production.editManually":     "Изменить вручную",
     "production.editRow":          "Редактировать",
     "production.editTitle":        "Редактировать позицию",
+    "production.addRow":           "Добавить",
+    "production.createTitle":      "Новая позиция",
     "production.cancelEdit":       "Отмена",
     "production.reconTitle":       "Сколько должна на штатке",
     "production.save":             "Сохранить",
