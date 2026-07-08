@@ -354,6 +354,7 @@ export default function Production() {
   // an action strip below it; «Tahrirlash» opens the edit modal.
   const [catSel, setCatSel] = useState(null);      // selected PPProduct id, or null
   const [editRow, setEditRow] = useState(null);    // row being edited in the modal, or null
+  const [createOpen, setCreateOpen] = useState(false); // "new position" modal open?
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
   const stripRef = useRef(null);                   // revealed action strip → scroll into view
 
