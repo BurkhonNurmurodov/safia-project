@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, Info } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import HeatmapChart, { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
 import ComparisonTable, { DEFAULT_DIFF_SEGMENTS } from "../components/charts/ComparisonTable";
 import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
