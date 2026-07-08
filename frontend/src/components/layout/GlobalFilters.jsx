@@ -114,6 +114,7 @@ export default function GlobalFilters() {
       <div className="flex flex-col gap-2">
         {sectionLabel(t("filter.unit") || "Unit")}
         <SegmentedToggle
+          fill
           value={unit}
           onChange={setUnit}
           options={[["min", t("general.min")], ["hrs", t("general.hrs")]]}
