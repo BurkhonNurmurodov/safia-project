@@ -45,7 +45,7 @@ export default function SegmentedToggle({
 
   return (
     <div
-      className={`inline-flex items-center gap-1 rounded-xl p-[3px] ${className}`}
+      className={`${fill ? "flex w-full" : "inline-flex"} items-center gap-1 rounded-xl p-[3px] ${className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
     >
       {items.map((o) => {
