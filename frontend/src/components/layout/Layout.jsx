@@ -10,6 +10,7 @@ import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings }
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import MyNameEditor from "../ui/MyNameEditor";
 import PageLoader from "../ui/PageLoader";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { useRouteTransition } from "../../context/RouteTransitionContext";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
