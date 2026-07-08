@@ -272,8 +272,8 @@ export default function Kaizen() {
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
 
-  const [project, setProject] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [projectSel, setProjectSel] = useState([]);   // task-table row filters (multi-select)
+  const [statusSel, setStatusSel] = useState([]);
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("12");   // activity-chart window: 6 · 12 · all
   const [sort, setSort] = useState({ key: null, dir: "asc" });  // task-table column sort
