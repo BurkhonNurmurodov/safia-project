@@ -104,20 +104,11 @@ export default function GlobalFilters() {
       {/* ── Shift ── */}
       <div className="flex flex-col gap-2">
         {sectionLabel(t("filter.shift") || "Shift")}
-        <div className="flex rounded-lg overflow-hidden w-fit" style={{ border: "1px solid var(--border-md)" }}>
-          {[null, 1, 2].map((s) => (
-            <button
-              key={String(s)}
-              onClick={() => setShift(s)}
-              className={segBtnBase}
-              style={shift === s
-                ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
-                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-            >
-              {s === null ? (t("filter.all") || "All") : `S${s}`}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          value={shift}
+          onChange={setShift}
+          options={[[null, t("filter.all") || "All"], [1, "S1"], [2, "S2"]]}
+        />
       </div>
 
       {/* ── Unit ── */}
