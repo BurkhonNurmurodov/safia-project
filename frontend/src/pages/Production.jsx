@@ -818,6 +818,7 @@ export default function Production() {
                       <td colSpan={COLS.length} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
                           <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
+                          <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
                         </div>
                       </td>
                     </tr>
