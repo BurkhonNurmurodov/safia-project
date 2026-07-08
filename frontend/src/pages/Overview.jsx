@@ -410,21 +410,12 @@ export default function Overview() {
             </div>
           </div>
           {/* P / A / P-A toggle */}
-          <div className="flex rounded-lg overflow-hidden text-[10px] flex-shrink-0"
-            style={{ border: "1px solid var(--border-md)" }}>
-            {[["planned", "P"], ["actual", "A"], ["diff", "P−A"]].map(([m, label]) => (
-              <button
-                key={m}
-                onClick={() => setLineMode(m)}
-                className="px-2 py-1 font-medium"
-                style={lineMode === m
-                  ? { background: "var(--brand)", color: "#fff" }
-                  : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedToggle
+            className="flex-shrink-0"
+            value={lineMode}
+            onChange={setLineMode}
+            options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
+          />
         </div>
         {hmLoading ? (
           <SkeletonChart className="h-64" />
