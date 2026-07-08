@@ -2569,6 +2569,7 @@ const t = {
     "production.noMatch":          "Филтрга мос позиция йўқ",
     "production.editManually":     "Қўлда ўзгартириш",
     "production.editRow":          "Таҳрирлаш",
+    "production.editTitle":        "Позицияни таҳрирлаш",
     "production.cancelEdit":       "Бекор қилиш",
     "production.reconTitle":       "Штатда қанча бўлиши керак",
     "production.save":             "Сақлаш",
