@@ -265,7 +265,7 @@ function Tally({ color, n }) {
 }
 
 export default function Kaizen() {
-  const { lang } = useLang();
+  const { lang, t } = useLang();
   const { auth } = useAuth();
   const { tl } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
