@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   ChevronRight, ChevronDown,
-  AlertTriangle, Pencil, Save, X,
+  AlertTriangle, Pencil, Save,
   Target, Users, ClipboardList, Clock, Gauge, Boxes, Loader2,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
