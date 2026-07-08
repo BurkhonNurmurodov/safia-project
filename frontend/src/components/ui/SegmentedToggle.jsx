@@ -20,6 +20,11 @@
  *               { value, label, title } objects. `label` may be a string or
  *               a node (e.g. an icon for icon-only segments).
  *   size      – "md" (default) | "sm"
+ *   fill      – when true, the track spans its container full-width and every
+ *               segment grows to an equal share (flex-1). Use for form-panel
+ *               fields (stacked in a flex column) so the pill fills the row
+ *               instead of leaving dead track space on the right. Toolbars
+ *               leave this off so the toggle shrink-wraps to its labels.
  *   className – extra wrapper classes (widths / shrink / margins only)
  */
 export default function SegmentedToggle({
@@ -27,6 +32,7 @@ export default function SegmentedToggle({
   onChange,
   options = [],
   size = "md",
+  fill = false,
   className = "",
 }) {
   // Segment padding keeps the OUTER height at 38px (md) / 30px (sm) once the
