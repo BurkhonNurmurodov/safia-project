@@ -597,21 +597,12 @@ export default function Overview() {
                 {t("overview.ranking").split("—")[0].trim()} — {RANK_LABELS[rankMode]}
               </div>
               {/* Mode toggle */}
-              <div className="flex rounded-lg overflow-hidden text-[10px] flex-shrink-0"
-                style={{ border: "1px solid var(--border-md)" }}>
-                {[["planned", "P"], ["actual", "A"], ["diff", "P−A"]].map(([m, label]) => (
-                  <button
-                    key={m}
-                    onClick={() => setRankMode(m)}
-                    className="px-2 py-1 font-medium"
-                    style={rankMode === m
-                      ? { background: "var(--brand)", color: "#fff" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedToggle
+                className="flex-shrink-0"
+                value={rankMode}
+                onChange={setRankMode}
+                options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
+              />
             </div>
             {isLoading ? (
               <SkeletonChart className="h-64" />
