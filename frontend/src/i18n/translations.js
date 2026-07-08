@@ -5141,6 +5141,8 @@ const t = {
     "production.filterPlaceholder": "SAP code / Name",
     "production.noMatch":          "No matching items",
     "production.editManually":     "Edit manually",
+    "production.editRow":          "Edit",
+    "production.cancelEdit":       "Cancel",
     "production.reconTitle":       "Required on staffing",
     "production.save":             "Save",
     "production.recon.poShtatkeFact": "By staffing actual",
