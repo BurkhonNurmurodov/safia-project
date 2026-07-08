@@ -406,7 +406,9 @@ export default function Overview() {
 
       {/* ── Fleet trend line chart ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
-        <div className="flex items-center justify-between gap-2 mb-1">
+        {/* One aligned header row: title/subtitle left, all controls grouped right
+            (supervisor picker + P/A/P−A) — no floating filter pill below. */}
+        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>
               {t("overview.fleetTrend")}
@@ -417,13 +419,24 @@ export default function Overview() {
                : t("overview.fleetTrendDiff")}
             </div>
           </div>
-          {/* P / A / P-A toggle */}
-          <SegmentedToggle
-            className="flex-shrink-0"
-            value={lineMode}
-            onChange={setLineMode}
-            options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
-          />
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {heatmap?.managers?.length > 0 && (
+              <FleetManagerPicker
+                managers={heatmap.managers}
+                selected={fleetSel}
+                onToggleManager={toggleFleetManager}
+                showAvg={fleetAvg}
+                onToggleAvg={() => setFleetAvg((v) => !v)}
+                onClearAll={() => setFleetSel(new Set())}
+              />
+            )}
+            <SegmentedToggle
+              className="flex-shrink-0"
+              value={lineMode}
+              onChange={setLineMode}
+              options={[["planned", "P"], ["actual", "A"], ["diff", "P−A"]]}
+            />
+          </div>
         </div>
         {hmLoading ? (
           <SkeletonChart className="h-64" />
