@@ -566,15 +566,16 @@ export default function Production() {
       </div>
 
       {/* view switcher: computed dashboard / raw фаза / raw заголовок */}
-      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
-        {[["zagruzka", t("production.viewZagruzka")], ["faza", t("production.viewFaza")], ["zaga", t("production.viewZaga")]].map(([id, label]) => (
-          <button key={id} onClick={() => setView(id)}
-            className="px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
-            style={view === id ? { background: "var(--brand)", color: "#fff" } : { background: "transparent", color: "var(--text-3)" }}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <SegmentedToggle
+        className="mb-4"
+        value={view}
+        onChange={setView}
+        options={[
+          ["zagruzka", t("production.viewZagruzka")],
+          ["faza", t("production.viewFaza")],
+          ["zaga", t("production.viewZaga")],
+        ]}
+      />
 
       {view !== "zagruzka" && (
         <RawView fileType={view} date={date} managerParam={managerParam} />
