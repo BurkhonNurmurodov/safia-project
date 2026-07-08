@@ -721,6 +721,15 @@ export default function Production() {
               anyActive={wcSel.length > 0}
               onClearAll={() => setWcSel([])}
             />
+            {canEditCatalog && (
+              <Button
+                className="flex-1 sm:flex-none whitespace-nowrap"
+                icon={<Plus size={14} />}
+                onClick={openCreate}
+              >
+                {t("production.addRow")}
+              </Button>
+            )}
           </>
         )}
       >
