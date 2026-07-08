@@ -6,6 +6,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { useDragSelect } from "../../hooks/useDragSelect";
 import DateRangePicker from "../ui/DateRangePicker";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import api from "../../utils/api";
 
 export default function GlobalFilters() {
