@@ -868,6 +868,19 @@ export default function Production() {
           <CatalogFields draft={catDraft} setDraft={setDraft} />
         </Modal>
       )}
+
+      {/* catalog line delete (admin) — «are you sure» before a hard delete */}
+      <ConfirmDialog
+        open={!!confirmDel}
+        onCancel={() => setConfirmDel(null)}
+        onConfirm={() => confirmDel && deleteCatalog.mutate(confirmDel.id)}
+        title={t("production.deleteTitle")}
+        message={confirmDel ? `${confirmDel.sap_code} — ${confirmDel.name}. ${t("production.deleteConfirm")}` : ""}
+        confirmLabel={t("production.deleteRow")}
+        cancelLabel={t("production.cancelEdit")}
+        tone="danger"
+        loading={deleteCatalog.isPending}
+      />
       </>)}
     </Layout>
   );
