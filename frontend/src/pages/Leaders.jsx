@@ -723,9 +723,9 @@ export default function Leaders() {
             right={
               <div className="flex items-center gap-2">
                 {!isSupervisor && (
-                  <Toggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
+                  <SegmentedToggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
                 )}
-                <Toggle value={standDir} onChange={setStandDir}
+                <SegmentedToggle value={standDir} onChange={setStandDir}
                   options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
               </div>
             } />
