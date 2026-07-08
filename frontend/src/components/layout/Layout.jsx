@@ -232,28 +232,14 @@ function UserProfile() {
               {/* Theme switch */}
               <div className="flex items-center justify-between py-1">
                 <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
-                <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
-                  <button
-                    onClick={() => { if (theme !== "light") toggle(); }}
-                    className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
-                    style={theme === "light"
-                      ? { background: "var(--brand)", color: "#fff" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                    title={t("theme.light")}
-                  >
-                    <Sun size={13} />
-                  </button>
-                  <button
-                    onClick={() => { if (theme !== "dark") toggle(); }}
-                    className="px-2.5 py-1.5 flex items-center justify-center transition-colors"
-                    style={theme === "dark"
-                      ? { background: "var(--brand)", color: "#fff" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-                    title={t("theme.dark")}
-                  >
-                    <Moon size={13} />
-                  </button>
-                </div>
+                <SegmentedToggle
+                  value={theme}
+                  onChange={(v) => { if (v !== theme) toggle(); }}
+                  options={[
+                    { value: "light", label: <Sun size={15} />, title: t("theme.light") },
+                    { value: "dark",  label: <Moon size={15} />, title: t("theme.dark") },
+                  ]}
+                />
               </div>
 
               {/* Ghost mode — admin only */}
