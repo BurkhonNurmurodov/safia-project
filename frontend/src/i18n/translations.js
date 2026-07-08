@@ -2563,6 +2563,8 @@ const t = {
     "production.filterPlaceholder": "SAP код / Номи",
     "production.noMatch":          "Филтрга мос позиция йўқ",
     "production.editManually":     "Қўлда ўзгартириш",
+    "production.editRow":          "Таҳрирлаш",
+    "production.cancelEdit":       "Бекор қилиш",
     "production.reconTitle":       "Штатда қанча бўлиши керак",
     "production.save":             "Сақлаш",
     "production.recon.poShtatkeFact": "Штат бўйича Факт",
