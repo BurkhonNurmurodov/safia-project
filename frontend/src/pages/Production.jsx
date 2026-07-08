@@ -185,8 +185,24 @@ function CatInput({ value, onChange, align = "left", width = "w-full", type = "t
       onChange={(e) => onChange(e.target.value)}
       onClick={(e) => e.stopPropagation()}
       className={`${width} ${align === "right" ? "text-right" : "text-left"} text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums`}
-      style={{ background: "var(--bg-inner)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
+      style={{ background: "var(--bg-card)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
     />
+  );
+}
+
+// Revealed-row action button — matches the Concerns / Staff requests ActionBtn
+// (outlined chip, icon + label), so the selected-row action strip here reads the
+// same as those tables. `loading` swaps the icon for a spinner and disables.
+function ActionBtn({ icon: Icon, label, color, onClick, loading }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-opacity"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: color || "var(--text-2)", opacity: loading ? 0.6 : 1 }}
+    >
+      {loading ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />} {label}
+    </button>
   );
 }
 
