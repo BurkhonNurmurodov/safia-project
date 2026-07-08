@@ -1278,6 +1278,8 @@ const t = {
     "production.editManually":     "Qo'lda o'zgartirish",
     "production.editRow":          "Tahrirlash",
     "production.editTitle":        "Pozitsiyani tahrirlash",
+    "production.addRow":           "Qo'shish",
+    "production.createTitle":      "Yangi pozitsiya",
     "production.cancelEdit":       "Bekor qilish",
     "production.reconTitle":       "Shtatda qancha bo'lishi kerak",
     "production.save":             "Saqlash",
