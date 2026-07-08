@@ -10,6 +10,7 @@ import {
   Layers, ArrowUp, ArrowDown, ArrowRight, History,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
