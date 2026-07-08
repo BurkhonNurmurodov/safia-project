@@ -230,18 +230,12 @@ export default function ShiftDaily() {
             </div>
           </div>
           {/* P/A ↔ P−A switch */}
-          <div className="flex rounded-lg overflow-hidden text-[10px] flex-shrink-0" style={{ border: "1px solid var(--border-md)" }}>
-            {[[false, "P / A"], [true, "P−A"]].map(([m, label]) => (
-              <button
-                key={label}
-                onClick={() => setLoadDiff(m)}
-                className="px-2.5 py-1 font-medium"
-                style={loadDiff === m ? { background: "var(--brand)", color: "#fff" } : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedToggle
+            className="flex-shrink-0"
+            value={loadDiff}
+            onChange={setLoadDiff}
+            options={[[false, "P / A"], [true, "P−A"]]}
+          />
         </div>
         {isLoading ? (
           <SkeletonChart className="h-64" />
