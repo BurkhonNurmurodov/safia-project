@@ -8,6 +8,7 @@ import FormulaModal from "../ui/FormulaModal";
 import CommentModal from "../ui/CommentModal";
 import PendingInfoModal from "../ui/PendingInfoModal";
 import ColorGuideModal from "../ui/ColorGuideModal";
+import SegmentedToggle from "../ui/SegmentedToggle";
 import { pValueNumbers, pValueInputs } from "../../utils/formulas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
