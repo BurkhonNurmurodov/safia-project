@@ -816,11 +816,11 @@ export default function Kaizen() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {A.byProject.map((p) => {
                 const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
-                const active = project === p.key;
+                const active = projectSel.includes(p.key);
                 return (
                   <button
                     key={p.key}
-                    onClick={() => setProject(active ? "all" : p.key)}
+                    onClick={() => setProjectSel(active ? projectSel.filter((k) => k !== p.key) : [...projectSel, p.key])}
                     className="text-left rounded-2xl p-4 transition-all"
                     style={{ background: "var(--bg-card)", border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`, boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}
                   >
