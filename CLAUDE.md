@@ -17,6 +17,7 @@ or copy-paste its markup into a page.
 | Modal footer buttons | `Button.jsx` inside `Modal footer` | Order: cancel (`variant="secondary"`) on the LEFT, primary action on the RIGHT. |
 | Confirm ("are you sure") dialog | `ConfirmDialog.jsx` | `tone="danger"` for deletions (red chip + red confirm), default warning (amber chip + brand confirm). Sits above form modals (z 100). |
 | Button | `Button.jsx` | Variants `primary/secondary/danger/ghost`, sizes `sm/md`; `loading` shows the spinner. |
+| Segmented toggle (min/hrs, P·A·P−A, view/mode switch, theme) | `SegmentedToggle.jsx` | Connected-segment pill, brand-fill active, hairline dividers. `size="md"` (default, = `Button` md height 38px) or `"sm"` (= `Button` sm). `options` = `[value,label]` tuples or `{value,label,title}` objects (label may be a node/icon). Never hand-roll the `rounded-lg overflow-hidden` bar. |
 | Form label + control | `FormField.jsx` | Uppercase 11px label, red `*` when `required`. |
 | Search box | `SearchInput.jsx` | Magnifier icon + clear-X built in. |
 | Generic data table | `DataTable.jsx` (`TableCard` + `Th` + `SortIcon` + `SectionHead`) | Styled after the Production «Позиции» table: card + SectionHead (right slot = row count), toolbar row (search/filters/actions), sticky bg-inner sortable headers, vertical column separators, `px-3 py-2` cells, baked row borders + hover. Loading = skeleton rows in tbody; empty = one centered colSpan row. Unique visualisation tables (fleet heatmap, comparison/difference, stat matrices) are exempt. |
