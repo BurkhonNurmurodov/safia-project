@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect } from "react";
 import ReactApexChart from "react-apexcharts";
+import { Users, ChevronDown } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
@@ -59,28 +60,21 @@ function buildSeries(name, dates, data, mode) {
   return { name, data: dates.map((d) => getValue(data[name]?.[d], mode)) };
 }
 
-// ─── component ────────────────────────────────────────────────────────────────
+// ─── manager picker ───────────────────────────────────────────────────────────
 
-export default function FleetLineChart({
-  dates           = [],
-  managers        = [],
-  data            = {},
-  mode            = "actual",
-  height          = 300,
-  heatmapSegments = DEFAULT_HEATMAP_SEGMENTS,
-  diffSegments    = DEFAULT_DIFF_SEGMENTS,
+// The fleet-trend supervisor picker. Lives in the chart CARD HEADER (see
+// Overview) so the card shows one aligned control row — never a floating filter
+// pill below the title. Controlled: the parent owns `selected` (Set) + `showAvg`
+// so the header dropdown and the chart share one source of truth. Trigger wears
+// the canonical toolbar chrome (rounded-xl, bg-card, 38px, brand when active).
+export function FleetManagerPicker({
+  managers = [], selected, onToggleManager, showAvg, onToggleAvg, onClearAll,
 }) {
-  const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const { t } = useLang();
-  const apexRef   = useRef(null);
-  const dropRef   = useRef(null);
+  const dropRef = useRef(null);
+  const [dropOpen, setDropOpen] = useState(false);
+  const [search, setSearch]     = useState("");
 
-  const [selected, setSelected]     = useState(new Set());   // manager names added by user
-  const [showAvg,  setShowAvg]      = useState(true);        // Fleet AVG line visible
-  const [dropOpen, setDropOpen]     = useState(false);
-  const [search,   setSearch]       = useState("");
-
-  // Close dropdown when clicking outside
   useEffect(() => {
     function onDown(e) {
       if (dropRef.current && !dropRef.current.contains(e.target)) setDropOpen(false);
@@ -89,25 +83,121 @@ export default function FleetLineChart({
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const toggleManager = useCallback((name) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
-      return next;
-    });
-  }, []);
-
-  const clearAll = () => setSelected(new Set());
-
   const dragRow = useDragSelect(
-    name => selected.has(name),
-    (name, value) => setSelected((prev) => {
-      if (prev.has(name) === value) return prev;
-      const next = new Set(prev);
-      value ? next.add(name) : next.delete(name);
-      return next;
-    }),
+    (name) => selected.has(name),
+    (name, value) => { if (selected.has(name) !== value) onToggleManager(name); },
   );
+
+  const selectedArr = [...selected];
+  const filtered = managers.filter((n) => !search || n.toLowerCase().includes(search.toLowerCase()));
+  const active = selected.size > 0;
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      {/* Selected chips render before the trigger so the button keeps its place. */}
+      {selectedArr.map((name) => {
+        const c = managerColor(name, managers);
+        return (
+          <span key={name}
+            className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
+            style={{ background: c + "33", color: c, border: `1px solid ${c}55` }}>
+            {name.split(" ")[0]}
+            <button onClick={() => onToggleManager(name)} className="ml-0.5 opacity-70 hover:opacity-100"
+              style={{ fontSize: 11, lineHeight: 1 }} aria-label="remove">×</button>
+          </span>
+        );
+      })}
+
+      <div className="relative flex-shrink-0" ref={dropRef}>
+        <button
+          onClick={() => { setDropOpen((o) => !o); setSearch(""); }}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
+          style={{
+            background: "var(--bg-card)",
+            border: `1px solid ${dropOpen || active ? "var(--brand)" : "var(--border-md)"}`,
+            color: active ? "var(--text-1)" : "var(--text-3)",
+          }}>
+          <Users size={14} style={{ color: active ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+          <span className="whitespace-nowrap">{t("fleet.pick")}{active ? ` · ${selected.size}` : ""}</span>
+          <ChevronDown size={13} style={{ color: "var(--text-4)", flexShrink: 0,
+            transform: dropOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+        </button>
+
+        {dropOpen && (
+          <div className="absolute top-full right-0 mt-1 z-30 rounded-xl overflow-hidden"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)",
+              boxShadow: "0 8px 24px rgba(0,0,0,.18)", width: 220, maxHeight: 300,
+              display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid var(--border)" }}>
+              <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder={t("common.search")}
+                className="w-full text-xs outline-none rounded-md px-2 py-1"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }} />
+            </div>
+
+            {!search && (
+              <label className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
+                style={{ fontSize: 12, color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}>
+                <input type="checkbox" checked={showAvg} onChange={onToggleAvg}
+                  className="accent-amber-500" style={{ width: 13, height: 13 }} />
+                <span style={{ color: AVG_COLOR, fontWeight: 600 }}>{t("fleet.avg")}</span>
+              </label>
+            )}
+
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {filtered.map((name) => {
+                const c = managerColor(name, managers);
+                return (
+                  <label key={name} {...dragRow(name)}
+                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
+                    style={{ fontSize: 12, color: "var(--text-2)" }}>
+                    <input type="checkbox" checked={selected.has(name)} onChange={() => onToggleManager(name)}
+                      style={{ width: 13, height: 13, accentColor: c }} />
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                    {name}
+                  </label>
+                );
+              })}
+              {filtered.length === 0 && (
+                <div className="px-3 py-3 text-[11px]" style={{ color: "var(--text-4)" }}>{t("fleet.noMatch")}</div>
+              )}
+            </div>
+
+            {active && (
+              <div style={{ padding: "6px 10px", borderTop: "1px solid var(--border)" }}>
+                <button onClick={onClearAll}
+                  className="w-full text-[11px] py-1 rounded-lg font-medium transition-colors"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+                  {t("fleet.clear")}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── component ────────────────────────────────────────────────────────────────
+
+// Controlled: `selected` (Set of manager names) and `showAvg` are owned by the
+// parent so the header <FleetManagerPicker> drives this chart. No toolbar of its
+// own — the parent renders the picker in the card header row.
+export default function FleetLineChart({
+  dates           = [],
+  managers        = [],
+  data            = {},
+  mode            = "actual",
+  height          = 300,
+  selected        = new Set(),
+  showAvg         = true,
+  heatmapSegments = DEFAULT_HEATMAP_SEGMENTS,
+  diffSegments    = DEFAULT_DIFF_SEGMENTS,
+}) {
+  const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  const { t } = useLang();
+  const apexRef = useRef(null);
 
   // ── series ──────────────────────────────────────────────────────────────────
 
@@ -193,156 +283,14 @@ export default function FleetLineChart({
     theme: chartTheme,
   };
 
-  // ── filtered manager list for dropdown ──────────────────────────────────────
-  const filtered = managers.filter((n) =>
-    !search || n.toLowerCase().includes(search.toLowerCase())
-  );
-
   // ── render ──────────────────────────────────────────────────────────────────
   return (
-    <div>
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-
-        {/* Add supervisor dropdown */}
-        <div className="relative" ref={dropRef}>
-          <button
-            onClick={() => { setDropOpen((o) => !o); setSearch(""); }}
-            className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg transition-colors"
-            style={{
-              background: "var(--bg-inner)",
-              border: "1px solid var(--border-md)",
-              color: "var(--text-2)",
-            }}
-          >
-            Filter
-            <span style={{ opacity: 0.4, fontSize: 9 }}>▾</span>
-          </button>
-
-          {dropOpen && (
-            <div
-              className="absolute top-full left-0 mt-1 z-30 rounded-xl overflow-hidden"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                boxShadow: "0 8px 24px rgba(0,0,0,.18)",
-                width: 220,
-                maxHeight: 300,
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {/* Search */}
-              <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid var(--border)" }}>
-                <input
-                  autoFocus
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t("common.search")}
-                  className="w-full text-xs outline-none rounded-md px-2 py-1"
-                  style={{
-                    background: "var(--bg-inner)",
-                    border: "1px solid var(--border-md)",
-                    color: "var(--text-1)",
-                  }}
-                />
-              </div>
-
-              {/* Fleet AVG toggle */}
-              {!search && (
-                <label
-                  className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
-                  style={{ fontSize: 12, color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={showAvg}
-                    onChange={() => setShowAvg((v) => !v)}
-                    className="accent-amber-500"
-                    style={{ width: 13, height: 13 }}
-                  />
-                  <span style={{ color: AVG_COLOR, fontWeight: 600 }}>{t("fleet.avg")}</span>
-                </label>
-              )}
-
-              {/* Manager list */}
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {filtered.map((name) => {
-                  const c = managerColor(name, managers);
-                  return (
-                    <label
-                      key={name}
-                      {...dragRow(name)}
-                      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
-                      style={{ fontSize: 12, color: "var(--text-2)" }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selected.has(name)}
-                        onChange={() => toggleManager(name)}
-                        style={{ width: 13, height: 13, accentColor: c }}
-                      />
-                      <span
-                        style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }}
-                      />
-                      {name}
-                    </label>
-                  );
-                })}
-                {filtered.length === 0 && (
-                  <div className="px-3 py-3 text-[11px]" style={{ color: "var(--text-4)" }}>{t("fleet.noMatch")}</div>
-                )}
-              </div>
-
-              {/* Clear all — inside modal */}
-              {selected.size > 0 && (
-                <div style={{ padding: "6px 10px", borderTop: "1px solid var(--border)" }}>
-                  <button
-                    onClick={clearAll}
-                    className="w-full text-[11px] py-1 rounded-lg font-medium transition-colors"
-                    style={{
-                      background: "var(--bg-inner)",
-                      border: "1px solid var(--border-md)",
-                      color: "var(--text-3)",
-                    }}
-                  >
-                    Clear all
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Selected chips */}
-        {selectedArr.map((name) => {
-          const c = managerColor(name, managers);
-          return (
-            <span
-              key={name}
-              className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
-              style={{ background: c + "33", color: c, border: `1px solid ${c}55` }}
-            >
-              {name.split(" ")[0]}
-              <button
-                onClick={() => toggleManager(name)}
-                className="ml-0.5 opacity-70 hover:opacity-100"
-                style={{ fontSize: 11, lineHeight: 1 }}
-              >
-                ×
-              </button>
-            </span>
-          );
-        })}
-      </div>
-
-      <ReactApexChart
-        key={mode}
-        type="area"
-        series={series}
-        options={options}
-        height={height}
-      />
-    </div>
+    <ReactApexChart
+      key={mode}
+      type="area"
+      series={series}
+      options={options}
+      height={height}
+    />
   );
 }
