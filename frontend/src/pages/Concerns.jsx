@@ -1276,21 +1276,11 @@ export default function Concerns() {
                 currently sitting on their step; admins slice by level via the
                 Filtrlar multi-select instead. Off (= all) by default. */}
             {myLevel && (
-              <div className="flex rounded-lg overflow-hidden text-xs" style={{ border: "1px solid var(--border-md)" }}>
-                {[[false, t("general.all")], [true, t("concerns.myLevelOnly")]].map(([v, label]) => (
-                  <button
-                    key={String(v)}
-                    type="button"
-                    onClick={() => setOnlyMyLevel(v)}
-                    className={`px-2.5 py-1.5 whitespace-nowrap ${onlyMyLevel === v ? "font-semibold" : ""}`}
-                    style={onlyMyLevel === v
-                      ? { background: "var(--brand)", color: "#fff" }
-                      : { background: "var(--bg-inner)", color: "var(--text-2)" }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedToggle
+                value={onlyMyLevel}
+                onChange={setOnlyMyLevel}
+                options={[[false, t("general.all")], [true, t("concerns.myLevelOnly")]]}
+              />
             )}
             <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
               {filtered.length}
