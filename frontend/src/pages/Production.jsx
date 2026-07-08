@@ -174,46 +174,19 @@ function QtyCell({ value, overridden, onSave }) {
   );
 }
 
-// ── inline catalog editor (Сап код / Наименование / Труд. / Команда) ─────────
-// Admin-only. Renders the cell's normal display as the trigger; clicking swaps
-// to an <input> that commits on blur/Enter. When not editable it returns the
-// display untouched, so brigadirs/supervisors see exactly the old read-only cell.
-function InlineEdit({ value, onSave, editable, children, type = "text", inputClass, inputWidth = "w-24" }) {
-  const { t } = useLang();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  if (!editable) return children;
-  const start = () => { setDraft(value === null || value === undefined ? "" : String(value)); setEditing(true); };
-  const commit = () => {
-    setEditing(false);
-    const raw = draft.trim();
-    if (type === "number") {
-      const num = raw === "" ? null : Number(raw.replace(",", "."));
-      if (raw === "" || Number.isNaN(num)) return;        // empty/invalid → no change
-      if (num !== (value ?? null)) onSave(num);
-    } else {
-      if (raw === "") return;                             // sap/wc/name never cleared to blank
-      if (raw !== (value ?? "")) onSave(raw);
-    }
-  };
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-        className={inputClass || `${inputWidth} text-xs px-1.5 py-0.5 rounded-md outline-none`}
-        style={{ background: "var(--bg-inner)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
-      />
-    );
-  }
+// ── catalog edit-row input (Сап код / Наименование / Труд. / Команда) ─────────
+// A cell input used while a selected row is in edit mode. Stops click bubbling
+// so typing inside it never re-triggers the row-select toggle on the parent <tr>.
+function CatInput({ value, onChange, align = "left", width = "w-full", type = "text" }) {
   return (
-    <button onClick={start} className="group inline-flex items-center gap-1 max-w-full" title={t("production.editManually")}>
-      {children}
-      <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
-    </button>
+    <input
+      value={value}
+      type={type}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      className={`${width} ${align === "right" ? "text-right" : "text-left"} text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums`}
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
+    />
   );
 }
 
