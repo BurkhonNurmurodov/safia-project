@@ -1,15 +1,17 @@
 /**
  * SegmentedToggle — THE template for the app's inline "pill" toggles
- * (min/hrs, P·A·P−A, workload/headcount/idle, theme switch, shift, …).
+ * (min/hrs, P·A·P−A, workload/headcount/idle, theme switch, shift, view
+ * switch, …).
  *
- * Wears the FilterPanel «Filtrlar» trigger's chrome — a rounded-xl bar on the
- * --bg-card surface with a --border-md hairline — split into connected
- * segments. The selected segment is filled brand-gold; the rest are
- * transparent (so the card surface shows through) with hairline dividers.
- * Never hand-roll this bar — use this so every toggle shares the app's
- * button height. Heights mirror Button exactly:
- *   size="md" (default) → px-3.5 py-2 text-sm  ≈ 38px  (Button md / toolbar)
- *   size="sm"           → px-3   py-1.5 text-xs ≈ 30px (Button sm)
+ * iOS-style sliding-pill look: a RECESSED track (--bg-inner) holds the
+ * segments with a small inset; the SELECTED segment is a RAISED --bg-card
+ * pill (a soft shadow lifts it off the track) with --text-1 label; the rest
+ * are transparent with muted --text-3 labels. No brand-gold fill, no divider
+ * lines. Works in both themes because --bg-card is lighter than --bg-inner in
+ * light AND dark. Never hand-roll this bar — use this so every toggle shares
+ * the app's button height. Outer heights mirror Button exactly:
+ *   size="md" (default) → ≈ 38px  (Button md / toolbar baseline)
+ *   size="sm"           → ≈ 30px  (Button sm)
  *
  * Props:
  *   value     – the currently selected option value (compared with ===)
@@ -27,15 +29,18 @@ export default function SegmentedToggle({
   size = "md",
   className = "",
 }) {
-  const seg = size === "sm" ? "px-3 py-1.5 text-xs" : "px-3.5 py-2 text-sm";
+  // Segment padding keeps the OUTER height at 38px (md) / 30px (sm) once the
+  // 3px track inset is added, so the toggle still lines up with SearchInput,
+  // Button md and the FilterPanel trigger in toolbars.
+  const seg = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
 
   return (
     <div
-      className={`inline-flex rounded-xl overflow-hidden divide-x divide-[var(--border-md)] ${className}`}
-      style={{ border: "1px solid var(--border-md)", background: "var(--bg-card)" }}
+      className={`inline-flex items-center gap-1 rounded-xl p-[3px] ${className}`}
+      style={{ background: "var(--bg-inner)" }}
     >
       {items.map((o) => {
         const active = value === o.value;
@@ -45,10 +50,15 @@ export default function SegmentedToggle({
             type="button"
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap transition-colors ${seg}`}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-all ${seg}`}
             style={
               active
-                ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
+                ? {
+                    background: "var(--bg-card)",
+                    color: "var(--text-1)",
+                    fontWeight: 600,
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.05)",
+                  }
                 : { background: "transparent", color: "var(--text-3)" }
             }
           >
