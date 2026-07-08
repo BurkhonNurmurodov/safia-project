@@ -14,6 +14,7 @@ import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import Modal from "../components/ui/Modal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Field from "../components/ui/FormField";
 import Button from "../components/ui/Button";
 import api from "../utils/api";
