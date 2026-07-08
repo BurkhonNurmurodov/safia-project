@@ -190,6 +190,32 @@ function ModalInput({ value, onChange, type = "text", className = "" }) {
   );
 }
 
+// Catalog form body — the four editable catalog fields (Сап код / Команда /
+// Наименование / Труд.), shared by the create and edit modals so both stay
+// identical. `draft` = { sap_code, name, labor_time, work_center }; `setDraft`
+// is the curried (key) => (value) => … updater.
+function CatalogFields({ draft, setDraft }) {
+  const { t } = useLang();
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t("production.col.sapCode")} required>
+          <ModalInput value={draft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
+        </Field>
+        <Field label={t("production.col.wc")} required>
+          <ModalInput value={draft.work_center} onChange={setDraft("work_center")} className="font-mono" />
+        </Field>
+      </div>
+      <Field label={t("production.col.name")}>
+        <ModalInput value={draft.name} onChange={setDraft("name")} />
+      </Field>
+      <Field label={`${t("production.col.labor")} — ${t("production.col.laborHint")}`}>
+        <ModalInput value={draft.labor_time} onChange={setDraft("labor_time")} type="number" />
+      </Field>
+    </>
+  );
+}
+
 // Revealed-row action button — matches the Concerns / Staff requests ActionBtn
 // (outlined chip, icon + label), so the selected-row action strip here reads the
 // same as those tables. `loading` swaps the icon for a spinner and disables.
