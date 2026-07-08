@@ -744,20 +744,11 @@ export default function Leaders() {
               placeholder={T.searchPh}
               className="flex-1 min-w-[150px]"
             />
-            <div className="flex gap-1 flex-wrap">
-              {BANDS.map((b) => {
-                const on = tBand === b.id;
-                return (
-                  <button key={b.id} onClick={() => setTBand(b.id)}
-                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors whitespace-nowrap"
-                    style={on
-                      ? { background: b.color, color: "#fff", border: "1px solid transparent" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}>
-                    {b.label}
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedToggle
+              value={tBand}
+              onChange={setTBand}
+              options={BANDS.map((b) => [b.id, b.label])}
+            />
           </div>
 
           {displayRows.length === 0 ? (
