@@ -234,24 +234,24 @@ export default function ProfilesManagement() {
           </div>
         </div>
 
-        {/* Type pills */}
-        <div className="no-scrollbar flex gap-1.5 mb-5 overflow-x-auto">
-          {TYPES.map(({ key, tKey, icon: Icon, listKey }) => (
-            <button
-              key={key}
-              onClick={() => setType(key)}
-              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={type === key
-                ? { background: "var(--brand)", color: "#fff" }
-                : { background: "rgba(255,255,255,0.05)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.08)" }}
-            >
-              <Icon size={12} /> {t(tKey)}
-              <span className="px-1 rounded text-[10px] font-mono"
-                style={{ background: type === key ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)" }}>
-                {data?.[listKey]?.length ?? 0}
-              </span>
-            </button>
-          ))}
+        {/* Type pills — the shared segmented-toggle template (scroll for phones) */}
+        <div className="no-scrollbar mb-5 overflow-x-auto">
+          <SegmentedToggle
+            value={type}
+            onChange={setType}
+            options={TYPES.map(({ key, tKey, icon: Icon, listKey }) => ({
+              value: key,
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon size={12} /> {t(tKey)}
+                  <span className="px-1 rounded text-[10px] font-mono"
+                    style={{ background: type === key ? "rgba(255,255,255,0.2)" : "var(--bg-card)" }}>
+                    {data?.[listKey]?.length ?? 0}
+                  </span>
+                </span>
+              ),
+            }))}
+          />
         </div>
 
         {/* Table */}
