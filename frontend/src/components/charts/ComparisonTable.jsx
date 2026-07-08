@@ -226,7 +226,6 @@ export default function ComparisonTable({
         {/* Mode toggle + fullscreen — 2nd row on mobile */}
         <div className="flex items-center gap-2">
           <SegmentedToggle
-            size="sm"
             value={mode}
             onChange={setMode}
             options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
@@ -235,10 +234,10 @@ export default function ComparisonTable({
             <button
               onClick={onToggleFullscreen}
               title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
-              className="flex-shrink-0 p-1.5 rounded-lg transition-colors"
+              className="flex-shrink-0 h-[38px] w-[38px] flex items-center justify-center rounded-lg transition-colors"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
             >
-              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
           )}
         </div>
