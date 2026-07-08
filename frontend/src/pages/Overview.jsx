@@ -461,17 +461,23 @@ export default function Overview() {
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* Table */}
         <div className="flex-1 min-w-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
-            {/* Difference-column unit switch (independent from the global unit). */}
-            {diffUnitToggle}
-            <div className="flex-1" />
-            {/* All column filters consolidated into one dropdown / mobile sheet. */}
+          {/* Toolbar contract: search grows on the left, filters in the middle,
+              the unit toggle pinned right — one aligned row, no dead gap. */}
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
+            <SearchInput
+              value={filters.name}
+              onChange={(v) => setF("name", v)}
+              placeholder={t("overview.brigadir")}
+              className="flex-1 min-w-[150px]"
+            />
             <FilterPanel
-              sections={brigadirFilterSections({ filters, setF, distinctShifts, distinctStatuses, t })}
-              activeCount={brigadirActiveCount(filters)}
+              sections={brigadirFilterSections({ filters, setF, distinctShifts, distinctStatuses, t, includeName: false })}
+              activeCount={brigadirActiveCount(filters) - (filters.name ? 1 : 0)}
               anyActive={activeFilter}
               onClearAll={() => setFilters(INIT_FILTERS)}
             />
+            {/* Difference-column unit switch (independent from the global unit). */}
+            {diffUnitToggle}
           </div>
 
           <div className="overflow-x-auto">
