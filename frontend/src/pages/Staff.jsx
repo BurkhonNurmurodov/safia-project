@@ -12,6 +12,7 @@ import KPICard from "../components/ui/KPICard";
 import { SkeletonTable, SkeletonBlock } from "../components/ui/Skeleton";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TimeWheelPicker from "../components/ui/TimeWheelPicker";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
