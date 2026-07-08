@@ -82,8 +82,6 @@ export default function GlobalFilters() {
     }
   }
 
-  const segBtnBase = "px-3 py-1.5 text-xs transition-colors";
-
   const sectionLabel = (text) => (
     <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
       {text}
