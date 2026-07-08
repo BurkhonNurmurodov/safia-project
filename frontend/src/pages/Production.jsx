@@ -833,20 +833,25 @@ export default function Production() {
             </>
           }
         >
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t("production.col.sapCode")}>
-              <ModalInput value={catDraft.sap_code} onChange={setDraft("sap_code")} className="font-mono" />
-            </Field>
-            <Field label={t("production.col.wc")}>
-              <ModalInput value={catDraft.work_center} onChange={setDraft("work_center")} className="font-mono" />
-            </Field>
-          </div>
-          <Field label={t("production.col.name")}>
-            <ModalInput value={catDraft.name} onChange={setDraft("name")} />
-          </Field>
-          <Field label={`${t("production.col.labor")} — ${t("production.col.laborHint")}`}>
-            <ModalInput value={catDraft.labor_time} onChange={setDraft("labor_time")} type="number" />
-          </Field>
+          <CatalogFields draft={catDraft} setDraft={setDraft} />
+        </Modal>
+      )}
+
+      {/* catalog line create (admin) — new position, same four fields */}
+      {createOpen && (
+        <Modal
+          onClose={() => setCreateOpen(false)}
+          title={t("production.createTitle")}
+          icon={<Plus size={16} style={{ color: "var(--brand-text)" }} />}
+          dismissable={!createCatalog.isPending}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setCreateOpen(false)}>{t("production.cancelEdit")}</Button>
+              <Button icon={<Save size={14} />} loading={createCatalog.isPending} disabled={!canSubmitCreate} onClick={saveCatCreate}>{t("production.save")}</Button>
+            </>
+          }
+        >
+          <CatalogFields draft={catDraft} setDraft={setDraft} />
         </Modal>
       )}
       </>)}
