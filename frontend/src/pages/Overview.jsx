@@ -447,6 +447,8 @@ export default function Overview() {
             data={heatmap.data}
             mode={lineMode}
             height={300}
+            selected={fleetSel}
+            showAvg={fleetAvg}
             heatmapSegments={heatmapThresholds?.segments}
             diffSegments={compThresholds?.diff_segments}
           />
