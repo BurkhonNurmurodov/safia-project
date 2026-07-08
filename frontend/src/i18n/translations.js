@@ -4995,6 +4995,8 @@ const t = {
     // ── Fleet trend chart ────────────────────────────────────────────────────
     "fleet.avg":     "Fleet AVG",
     "fleet.noMatch": "No match",
+    "fleet.pick":    "Supervisors",
+    "fleet.clear":   "Clear all",
 
     // ── Common / shared UI ───────────────────────────────────────────────────
     "common.fullscreen":     "Fullscreen",
