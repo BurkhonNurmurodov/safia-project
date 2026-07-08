@@ -327,9 +327,9 @@ export default function Production() {
       : s.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" }));
 
   // Catalog row selection → action bar → edit (admin only). Selecting a row opens
-  // an action strip below it; «Изменить» turns the first 4 cells into inputs.
+  // an action strip below it; «Tahrirlash» opens the edit modal.
   const [catSel, setCatSel] = useState(null);      // selected PPProduct id, or null
-  const [catEditing, setCatEditing] = useState(false);
+  const [editRow, setEditRow] = useState(null);    // row being edited in the modal, or null
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
 
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
