@@ -1277,6 +1277,7 @@ const t = {
     "production.noMatch":          "Filtrga mos pozitsiya yo'q",
     "production.editManually":     "Qo'lda o'zgartirish",
     "production.editRow":          "Tahrirlash",
+    "production.editTitle":        "Pozitsiyani tahrirlash",
     "production.cancelEdit":       "Bekor qilish",
     "production.reconTitle":       "Shtatda qancha bo'lishi kerak",
     "production.save":             "Saqlash",
