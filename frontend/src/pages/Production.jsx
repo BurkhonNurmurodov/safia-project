@@ -664,37 +664,47 @@ export default function Production() {
               {!loading && viewRows.map((r, i) => {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
                 const wc = wcColor(r.work_center);
+                const selectable = canEditCatalog && r.id != null;
+                const selected = selectable && catSel === r.id;
+                const editing = selected && catEditing;
+                const leftBar = selected ? "var(--brand)" : (r.has_labor ? "transparent" : AMBER);
                 return (
-                  <tr key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}
+                  <Fragment key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}>
+                  <tr
+                    onClick={() => selectRow(r)}
                     className="transition-colors"
-                    style={{ borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}` }}>
+                    style={{
+                      borderLeft: `2px solid ${leftBar}`,
+                      background: selected ? "var(--bg-accent)" : undefined,
+                      cursor: selectable ? "pointer" : undefined,
+                    }}>
                     <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>
-                      <InlineEdit editable={canEditCatalog} value={r.sap_code} onSave={saveCatalog(r, "sap_code")} inputWidth="w-28">
-                        <span>{r.sap_code}</span>
-                      </InlineEdit>
+                      {editing
+                        ? <CatInput value={catDraft.sap_code} onChange={setDraft("sap_code")} width="w-28" />
+                        : <span>{r.sap_code}</span>}
                     </td>
                     <td className="px-3 py-2 text-left max-w-[220px]">
-                      <InlineEdit editable={canEditCatalog} value={r.name} onSave={saveCatalog(r, "name")} inputWidth="w-48">
-                        <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
-                      </InlineEdit>
+                      {editing
+                        ? <CatInput value={catDraft.name} onChange={setDraft("name")} width="w-full" />
+                        : <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>}
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">
-                      <InlineEdit editable={canEditCatalog} value={r.labor_time} onSave={saveCatalog(r, "labor_time")} type="number" inputWidth="w-20" inputClass="w-20 text-right text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums">
-                        {r.has_labor ? fmt(r.labor_time, 2)
-                          : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
-                      </InlineEdit>
+                      {editing
+                        ? <CatInput value={catDraft.labor_time} onChange={setDraft("labor_time")} type="number" align="right" width="w-20" />
+                        : (r.has_labor ? fmt(r.labor_time, 2)
+                          : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>)}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <InlineEdit editable={canEditCatalog} value={r.work_center} onSave={saveCatalog(r, "work_center")} inputWidth="w-24">
-                        <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
-                      </InlineEdit>
+                      {editing
+                        ? <CatInput value={catDraft.work_center} onChange={setDraft("work_center")} width="w-24" />
+                        : <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>}
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>
                     <td className="px-3 py-2 text-center"><VypCell value={vyp} /></td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                       <QtyCell value={r.actual_qty} overridden={r.actual_overridden} onSave={saveOverride(r, "actual")} />
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                       <QtyCell value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>
@@ -707,6 +717,34 @@ export default function Production() {
                       </div>
                     </td>
                   </tr>
+                  {selected && (
+                    <tr>
+                      <td colSpan={COLS.length} className="px-3 py-2" style={{ background: "var(--bg-accent)" }}>
+                        <div className="flex items-center justify-end gap-2">
+                          {editing ? (
+                            <>
+                              <Button variant="secondary" size="sm" icon={<X size={13} />} onClick={() => setCatEditing(false)}>
+                                {t("production.cancelEdit")}
+                              </Button>
+                              <Button variant="primary" size="sm" icon={<Save size={13} />} loading={catalog.isPending} onClick={() => saveCatEdit(r)}>
+                                {t("production.save")}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button variant="secondary" size="sm" icon={<X size={13} />} onClick={() => setCatSel(null)}>
+                                {t("production.cancelEdit")}
+                              </Button>
+                              <Button variant="primary" size="sm" icon={<Pencil size={13} />} onClick={() => startCatEdit(r)}>
+                                {t("production.editRow")}
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
