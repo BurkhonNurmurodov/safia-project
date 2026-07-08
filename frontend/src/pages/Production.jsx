@@ -176,18 +176,16 @@ function QtyCell({ value, overridden, onSave }) {
   );
 }
 
-// ── catalog edit-row input (Сап код / Наименование / Труд. / Команда) ─────────
-// A cell input used while a selected row is in edit mode. Stops click bubbling
-// so typing inside it never re-triggers the row-select toggle on the parent <tr>.
-function CatInput({ value, onChange, align = "left", width = "w-full", type = "text" }) {
+// ── catalog edit-modal input (Сап код / Наименование / Труд. / Команда) ───────
+// The standard full-width modal text input (matches the Concerns/Staff forms).
+function ModalInput({ value, onChange, type = "text", className = "" }) {
   return (
     <input
       value={value}
       type={type}
       onChange={(e) => onChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      className={`${width} ${align === "right" ? "text-right" : "text-left"} text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums`}
-      style={{ background: "var(--bg-card)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
+      className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${className}`}
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
     />
   );
 }
