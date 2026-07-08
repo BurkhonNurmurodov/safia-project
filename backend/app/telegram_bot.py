@@ -2,13 +2,14 @@
 Telegram bot — runs inside the FastAPI process via webhook.
 Updates arrive at POST /bot/webhook and are dispatched here.
 """
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
 
 import telebot
 from telebot import types
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 
 from app.config import settings
 from app.database import SessionLocal
