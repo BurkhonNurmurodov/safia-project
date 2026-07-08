@@ -281,20 +281,12 @@ export default function Downtime() {
 
   // toggle segmented control
   const toggle = (
-    <div className="inline-flex rounded-lg overflow-hidden shrink-0" style={{ border: "1px solid var(--border-md)" }}>
-      {[["total", "viewTotal"], ["category", "viewCategory"]].map(([v, k]) => (
-        <button
-          key={v}
-          onClick={() => setChartView(v)}
-          className="text-[11px] font-medium px-3 py-1 transition-colors"
-          style={chartView === v
-            ? { background: "#C8973F", color: "#fff" }
-            : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-        >
-          {t(`downtime.${k}`)}
-        </button>
-      ))}
-    </div>
+    <SegmentedToggle
+      className="shrink-0"
+      value={chartView}
+      onChange={setChartView}
+      options={[["total", t("downtime.viewTotal")], ["category", t("downtime.viewCategory")]]}
+    />
   );
 
   return (
