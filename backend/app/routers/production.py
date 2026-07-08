@@ -12,9 +12,10 @@ Admin-only:
     POST /admin/production/upload           file(s) + manager_id + date + mode
     GET  /admin/production/work-centers?manager_id=
     PUT  /admin/production/work-centers/{id}    {shtatka, capacity}
-    GET  /admin/production/catalog?manager_id=
-    POST /admin/production/catalog              {manager_id, sap_code, name, work_center, labor_time}
-    PUT  /admin/production/catalog/{id}         {labor_time, name, active}
+    GET    /admin/production/catalog?manager_id=
+    POST   /admin/production/catalog            {manager_id, sap_code, name, work_center, labor_time}
+    PUT    /admin/production/catalog/{id}       {labor_time, name, sap_code, work_center, active}
+    DELETE /admin/production/catalog/{id}
 """
 from __future__ import annotations
 
