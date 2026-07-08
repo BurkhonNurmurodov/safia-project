@@ -607,15 +607,11 @@ export default function BrigadirProfile() {
               <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
                 {t("profile.historicalTrend").replace("{n}", daily.length)}
               </div>
-              <div className="flex rounded-lg overflow-hidden border border-[var(--border-md)] text-xs divide-x divide-[var(--border-md)]">
-                {[["workload", t("profile.trendWorkload")], ["headcount", t("profile.trendHeadcount")], ["idle", t("profile.trendIdle")]].map(([k,l]) => (
-                  <button key={k} onClick={() => setTrendTab(k)}
-                    className={`px-3 py-1.5 whitespace-nowrap ${trendTab === k ? "text-white font-semibold" : "bg-[var(--bg-inner)] text-[var(--text-2)]"}`}
-                    style={trendTab === k ? { background: "var(--brand)" } : {}}>
-                    {l}
-                  </button>
-                ))}
-              </div>
+              <SegmentedToggle
+                value={trendTab}
+                onChange={setTrendTab}
+                options={[["workload", t("profile.trendWorkload")], ["headcount", t("profile.trendHeadcount")], ["idle", t("profile.trendIdle")]]}
+              />
             </div>
             <TrendChart dates={sortedDates} series={trendSeries[trendTab]} unit={unit} height={220} />
           </div>
