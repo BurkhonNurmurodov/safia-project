@@ -87,6 +87,7 @@ def compute_dashboard(
             q_by_wc[wc] = q_by_wc.get(wc, 0.0) + total_labor
 
         rows.append({
+            "id": p.get("id"),               # PPProduct id — lets the client edit this catalog line
             "sap_code": p.get("sap_code"),
             "name": p.get("name") or "",
             "work_center": wc,

@@ -173,6 +173,49 @@ function QtyCell({ value, overridden, onSave }) {
   );
 }
 
+// ── inline catalog editor (Сап код / Наименование / Труд. / Команда) ─────────
+// Admin-only. Renders the cell's normal display as the trigger; clicking swaps
+// to an <input> that commits on blur/Enter. When not editable it returns the
+// display untouched, so brigadirs/supervisors see exactly the old read-only cell.
+function InlineEdit({ value, onSave, editable, children, type = "text", inputClass, inputWidth = "w-24" }) {
+  const { t } = useLang();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  if (!editable) return children;
+  const start = () => { setDraft(value === null || value === undefined ? "" : String(value)); setEditing(true); };
+  const commit = () => {
+    setEditing(false);
+    const raw = draft.trim();
+    if (type === "number") {
+      const num = raw === "" ? null : Number(raw.replace(",", "."));
+      if (raw === "" || Number.isNaN(num)) return;        // empty/invalid → no change
+      if (num !== (value ?? null)) onSave(num);
+    } else {
+      if (raw === "") return;                             // sap/wc/name never cleared to blank
+      if (raw !== (value ?? "")) onSave(raw);
+    }
+  };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+        className={inputClass || `${inputWidth} text-xs px-1.5 py-0.5 rounded-md outline-none`}
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--brand)", color: "var(--text-1)" }}
+      />
+    );
+  }
+  return (
+    <button onClick={start} className="group inline-flex items-center gap-1 max-w-full" title={t("production.editManually")}>
+      {children}
+      <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+    </button>
+  );
+}
+
 // ── section header strip ─────────────────────────────────────────────────────
 // ── reconciliation panel (manual) ───────────────────────────────────────────
 const RECON_FIELDS = [
@@ -293,6 +336,9 @@ export default function Production() {
 
   // Admins preview the pilot brigadir (manager 5) until a picker lands.
   const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
+  // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
+  // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
+  const canEditCatalog = auth?.role === "admin";
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
@@ -314,6 +360,15 @@ export default function Production() {
   const recon = useMutation({
     mutationFn: (payload) => api.post("/api/production/reconciliation", { date, data: payload }, { params: managerParam }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
+  });
+  // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
+  // Admin-only endpoint; renaming sap_code/work_center re-points the SKU/unit.
+  const catalog = useMutation({
+    mutationFn: ({ id, body }) => api.put(`/admin/production/catalog/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      qc.invalidateQueries({ queryKey: ["production-dates"] });
+    },
   });
 
   // Dates that actually have an uploaded snapshot — drives the switcher.
@@ -382,6 +437,11 @@ export default function Production() {
 
   const saveOverride = (row, field) => (value) =>
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
+
+  const saveCatalog = (row, field) => (value) => {
+    if (row.id == null) return;               // pre-catalog rows carry no id → not editable
+    catalog.mutate({ id: row.id, body: { [field]: value } });
+  };
 
   const isToday = date === todayISO();
 
@@ -594,17 +654,29 @@ export default function Production() {
                 const vyp = r.total_labor ? r.actual_labor / r.total_labor : null;
                 const wc = wcColor(r.work_center);
                 return (
-                  <tr key={`${r.sap_code}-${r.work_center}-${i}`}
+                  <tr key={r.id ?? `${r.sap_code}-${r.work_center}-${i}`}
                     className="transition-colors"
                     style={{ borderLeft: `2px solid ${r.has_labor ? "transparent" : AMBER}` }}>
-                    <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>
-                    <td className="px-3 py-2 text-left max-w-[220px] truncate" title={r.name}>{r.name}</td>
+                    <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>
+                      <InlineEdit editable={canEditCatalog} value={r.sap_code} onSave={saveCatalog(r, "sap_code")} inputWidth="w-28">
+                        <span>{r.sap_code}</span>
+                      </InlineEdit>
+                    </td>
+                    <td className="px-3 py-2 text-left max-w-[220px]">
+                      <InlineEdit editable={canEditCatalog} value={r.name} onSave={saveCatalog(r, "name")} inputWidth="w-48">
+                        <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
+                      </InlineEdit>
+                    </td>
                     <td className="px-3 py-2 text-center tabular-nums">
-                      {r.has_labor ? fmt(r.labor_time, 2)
-                        : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
+                      <InlineEdit editable={canEditCatalog} value={r.labor_time} onSave={saveCatalog(r, "labor_time")} type="number" inputWidth="w-20" inputClass="w-20 text-right text-xs px-1.5 py-0.5 rounded-md outline-none tabular-nums">
+                        {r.has_labor ? fmt(r.labor_time, 2)
+                          : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
+                      </InlineEdit>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
+                      <InlineEdit editable={canEditCatalog} value={r.work_center} onSave={saveCatalog(r, "work_center")} inputWidth="w-24">
+                        <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
+                      </InlineEdit>
                     </td>
                     <td className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>
                     <td className="px-3 py-2 text-center"><VypCell value={vyp} /></td>

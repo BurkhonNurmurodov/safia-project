@@ -126,6 +126,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
     shift_min, productive_min = _constants(db)
     result = compute_dashboard(
         products=[{
+            "id": p.id,
             "sap_code": p.sap_code, "name": p.name, "work_center": p.work_center,
             "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
             "sort_order": p.sort_order,
@@ -520,6 +521,8 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
 class CatalogBody(BaseModel):
     labor_time: Optional[float] = None
     name: Optional[str] = None
+    sap_code: Optional[str] = None
+    work_center: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -533,6 +536,20 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         p.labor_time = body.labor_time
     if body.name is not None:
         p.name = body.name
+    # sap_code + work_center are the (NOT NULL) join key onto the daily SAP
+    # snapshot, so reject blanks. Renaming them re-points which SKU/unit this
+    # catalog line tracks; the daily plan/fact rows join on the new key at read
+    # time (they are keyed by the SAP upload, not by this row), so no migration.
+    if body.sap_code is not None:
+        sap = body.sap_code.strip()
+        if not sap:
+            raise HTTPException(status_code=400, detail="sap_code cannot be empty")
+        p.sap_code = sap
+    if body.work_center is not None:
+        wc = body.work_center.strip()
+        if not wc:
+            raise HTTPException(status_code=400, detail="work_center cannot be empty")
+        p.work_center = wc
     if body.active is not None:
         p.active = body.active
     db.commit()
