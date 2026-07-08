@@ -939,26 +939,14 @@ export default function Kaizen() {
                   value={search}
                   onChange={setSearch}
                   placeholder={T.searchPh}
-                  className="w-44"
-                  inputClassName="text-xs pl-8 pr-7 py-1.5"
+                  className="w-full sm:w-44"
                 />
-                <StyledSelect value={project} onChange={setProject} className="w-44"
-                  options={[{ value: "all", label: T.allProjects }, ...projects.map((p) => {
-                    const { Icon, color } = identFor(p.key);
-                    return { value: p.key, label: (
-                      <span className="inline-flex items-center gap-1.5 min-w-0">
-                        <Icon size={12} strokeWidth={2.4} className="flex-shrink-0" style={{ color }} />
-                        <span className="truncate">{tl(p.name)}</span>
-                      </span>
-                    ) };
-                  })]} />
-                <StyledSelect value={status} onChange={setStatus} className="w-36"
-                  options={[
-                    { value: "all", label: T.allStatuses },
-                    { value: "Done", label: T.sDone },
-                    { value: "In progress", label: T.sProg },
-                    { value: "Not started", label: T.sTodo },
-                  ]} />
+                <FilterPanel
+                  sections={filterSections}
+                  activeCount={filterActiveCount}
+                  anyActive={filterActiveCount > 0}
+                  onClearAll={clearAllFilters}
+                />
               </>
             }
           >
