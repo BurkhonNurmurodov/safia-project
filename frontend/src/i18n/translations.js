@@ -5160,6 +5160,8 @@ const t = {
     "production.editManually":     "Edit manually",
     "production.editRow":          "Edit",
     "production.editTitle":        "Edit position",
+    "production.addRow":           "Add",
+    "production.createTitle":      "New position",
     "production.cancelEdit":       "Cancel",
     "production.reconTitle":       "Required on staffing",
     "production.save":             "Save",
