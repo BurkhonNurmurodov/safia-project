@@ -210,20 +210,11 @@ export default function BrigadirTable({
   const diffUnitToggle = (
     <div className="hidden md:flex items-center gap-2 flex-shrink-0">
       <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("overview.diff")}:</span>
-      <div className="flex rounded-lg overflow-hidden text-[10px]" style={{ border: "1px solid var(--border-md)" }}>
-        {DIFF_UNITS.map(([m, label]) => (
-          <button
-            key={m}
-            onClick={() => setDiffUnit(m)}
-            className="px-2 py-1 font-medium"
-            style={diffUnit === m
-              ? { background: "var(--brand)", color: "#fff" }
-              : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-          >
-            {m === "hc" ? hcLabel : label}
-          </button>
-        ))}
-      </div>
+      <SegmentedToggle
+        value={diffUnit}
+        onChange={setDiffUnit}
+        options={DIFF_UNITS.map(([m, label]) => [m, m === "hc" ? hcLabel : label])}
+      />
     </div>
   );
 
