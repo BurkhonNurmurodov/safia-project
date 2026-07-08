@@ -386,8 +386,8 @@ export default function Kaizen() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
-      if (project !== "all" && t.project_key !== project) return false;
-      if (status !== "all" && t.status !== status) return false;
+      if (projectSel.length && !projectSel.includes(t.project_key)) return false;
+      if (statusSel.length && !statusSel.includes(t.status)) return false;
       if (q) {
         const hay = `${tl(t.title)} ${t.title} ${(t.responsible || []).map(tl).join(" ")} ${(t.customer || []).map(tl).join(" ")} ${tl(t.task_type || "")}`.toLowerCase();
         if (!hay.includes(q)) return false;
