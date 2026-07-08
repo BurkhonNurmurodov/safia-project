@@ -282,20 +282,6 @@ function FitText({ full, short, max = 24, min = 13, className = "", style = {} }
   );
 }
 
-function Toggle({ value, onChange, options }) {
-  return (
-    <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
-      {options.map(([id, label]) => (
-        <button key={id} onClick={() => onChange(id)}
-          className="px-3 py-1.5 text-xs font-medium transition-colors"
-          style={value === id ? { background: "var(--brand)", color: "#fff" } : { background: "var(--bg-inner)", color: "var(--text-3)" }}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // Unified insight card. Every KPI shares one container (no per-card border
 // quirks): muted label + iconed chip on top, big value below, and the score %
 // as a soft-tinted pill so colour stays an *indicator* — never a slab of neon.
