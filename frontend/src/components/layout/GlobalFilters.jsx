@@ -114,20 +114,11 @@ export default function GlobalFilters() {
       {/* ── Unit ── */}
       <div className="flex flex-col gap-2">
         {sectionLabel(t("filter.unit") || "Unit")}
-        <div className="flex rounded-lg overflow-hidden w-fit" style={{ border: "1px solid var(--border-md)" }}>
-          {["min", "hrs"].map((u) => (
-            <button
-              key={u}
-              onClick={() => setUnit(u)}
-              className={segBtnBase}
-              style={unit === u
-                ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
-                : { background: "var(--bg-inner)", color: "var(--text-3)" }}
-            >
-              {u === "min" ? t("general.min") : t("general.hrs")}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          value={unit}
+          onChange={setUnit}
+          options={[["min", t("general.min")], ["hrs", t("general.hrs")]]}
+        />
       </div>
 
       {/* ── Date Range ── */}
