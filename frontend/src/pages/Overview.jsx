@@ -120,6 +120,14 @@ export default function Overview() {
   const [modal, setModal] = useState(null); // { managerId, dateFrom, dateTo, name }
   const [rankMode, setRankMode] = useState("actual"); // "planned" | "actual" | "diff"
   const [lineMode, setLineMode] = useState("actual"); // "planned" | "actual" | "diff"
+  // Fleet-trend picker state (lifted here so the card-header picker drives the chart)
+  const [fleetSel, setFleetSel] = useState(() => new Set());
+  const [fleetAvg, setFleetAvg] = useState(true);
+  const toggleFleetManager = (name) => setFleetSel((prev) => {
+    const next = new Set(prev);
+    next.has(name) ? next.delete(name) : next.add(name);
+    return next;
+  });
   const [formulaModal, setFormulaModal] = useState(null);
   // Difference-column unit (min/hrs/%/HC). Independent from the global unit and
   // remembered per browser via localStorage (same `zf_` convention as FilterContext).
