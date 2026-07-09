@@ -321,6 +321,11 @@ export default function ProfilesManagement() {
                         {tl(item.supervisor) || "—"}
                       </td>
                     )}
+                    {type === "leader" && (
+                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
+                        {item.cell || "—"}
+                      </td>
+                    )}
                     {type === "supervisor" && (
                       <td className="py-2.5 px-3 text-[var(--text-2)] font-mono whitespace-nowrap">{item.id}</td>
                     )}
