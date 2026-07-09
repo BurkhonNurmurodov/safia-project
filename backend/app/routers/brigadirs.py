@@ -41,7 +41,11 @@ def build_metrics_list(
     if manager_ids:
         managers = managers.filter(Manager.id.in_(manager_ids))
     managers = managers.all()
-    manager_names = {m.name for m in managers}
+    # Sheet data (production/headcount/downtime) is keyed by the brigadir's
+    # Cyrillic sheet spelling, which lives in each profile's uz_cyrl override —
+    # match against that, not the canonical Latin Manager.name.
+    sheet_of = sheet_name_map(db, (m.name for m in managers))
+    manager_names = set(sheet_of.values())
 
     all_dates = []
     cur = date_from
