@@ -123,6 +123,11 @@ export default function StyledSelect({
     if (el) el.scrollIntoView({ block: "nearest" });
   }, [open]);
 
+  // Focus the search box as soon as the searchable dropdown opens.
+  useEffect(() => {
+    if (open && searchable) searchRef.current?.focus();
+  }, [open, searchable]);
+
   function pick(val) {
     onChange(val);
     setOpen(false);
