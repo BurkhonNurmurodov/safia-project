@@ -76,7 +76,6 @@ export default function Workers() {
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = useState("attendance");   // "attendance" | "movements"
   const [sort, setSort] = useState({ key: null, dir: "asc" });
-  const [radarSup, setRadarSup] = useState(null);
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
 
