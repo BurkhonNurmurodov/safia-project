@@ -230,6 +230,7 @@ class RoleProfile(Base):
     name       = Column(String, nullable=False)              # canonical (Uzbek Latin) display name
     shift      = Column(Integer, nullable=True)              # shift-managers only: 1 | 2
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
+    cell       = Column(String, nullable=True)               # leaders only: production cell (required at creation, backfilled for legacy rows)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
