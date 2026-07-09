@@ -648,6 +648,38 @@ def list_supervisor_units(
     ]
 
 
+@router.get("/cells")
+def list_cells(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    """Cell picker for the create/edit form: every production cell in the
+    caller's scope with the leader(s) currently assigned to it. Scope mirrors
+    the concern list — admins/top-managers see all cells, shift-managers their
+    shift's units, supervisors their own unit, and a leader only their own."""
+    role = payload.get("role")
+    q = db.query(RoleProfile).filter(
+        RoleProfile.role == "leader", RoleProfile.cell.isnot(None)
+    )
+    if role == "shift-manager":
+        q = q.filter(RoleProfile.manager_id.in_(_shift_unit_ids(db, _viewer_shift(db, payload))))
+    elif role == "supervisor":
+        q = q.filter(RoleProfile.manager_id == payload.get("role_id"))
+    elif role == "leader":
+        prof = _own_profile(db, payload)
+        q = q.filter(RoleProfile.id == (prof.id if prof else 0))
+
+    by_cell: dict = {}
+    for p in q.order_by(RoleProfile.name).all():
+        cell = (p.cell or "").strip()
+        if cell:
+            by_cell.setdefault(cell, []).append(p.name)
+    return [
+        {"cell": cell, "leader": ", ".join(names)}
+        for cell, names in sorted(by_cell.items(), key=lambda kv: kv[0].lower())
+    ]
+
+
 @router.get("/leaders")
 def list_leader_profiles(
     db: Session = Depends(get_db),
