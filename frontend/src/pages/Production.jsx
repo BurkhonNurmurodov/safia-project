@@ -617,6 +617,31 @@ export default function Production() {
 
   return (
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
+      {/* brigadir picker — supervisors are pinned to their own unit (no picker);
+          shift-managers pick within their shift, top-managers/admins across all */}
+      {canPickManager && (
+        <div className="flex items-center gap-2 mb-4">
+          <Users size={15} style={{ color: "var(--text-4)" }} className="flex-shrink-0" />
+          <StyledSelect
+            className="w-full sm:w-72"
+            value={selManager != null ? String(selManager) : ""}
+            onChange={(v) => setSelManager(v ? Number(v) : null)}
+            options={managers.map((m) => ({
+              value: String(m.manager_id),
+              label: tl(m.name) + (m.shift ? ` · ${t("filter.shift")} ${m.shift}` : ""),
+            }))}
+            placeholder={t("production.pickBrigadir")}
+          />
+        </div>
+      )}
+
+      {noManagers ? (
+        <EmptyState
+          title={t("production.noConfiguredTitle")}
+          message={t("production.noConfiguredMsg")}
+          showUploadLink={false}
+        />
+      ) : (<>
       {/* date navigation */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DayStepper value={date} onChange={setDate} max={null} />
@@ -942,6 +967,7 @@ export default function Production() {
         tone="danger"
         loading={deleteCatalog.isPending}
       />
+      </>)}
       </>)}
     </Layout>
   );
