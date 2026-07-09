@@ -66,19 +66,55 @@ def _verify_admin(token: Annotated[str, Depends(_oauth2)]) -> dict:
     return payload
 
 
-def _resolve_manager_id(payload: dict, requested: Optional[int]) -> int:
-    """Supervisors are pinned to their own unit (role_id); admins choose via
-    ?manager_id=. Anything else is refused."""
+def _shift_manager_shift(payload: dict, db: Session) -> int:
+    """The shift (1|2) a shift-manager profile covers. Their JWT role_id points
+    at role_profiles.id, and the shift lives there — the JWT itself has no shift
+    field."""
+    rp = db.query(RoleProfile).filter(
+        RoleProfile.id == payload.get("role_id"),
+        RoleProfile.role == "shift-manager",
+    ).first()
+    if not rp or rp.shift is None:
+        raise HTTPException(status_code=403, detail="No shift assigned to this shift-manager profile")
+    return int(rp.shift)
+
+
+def _configured_manager_ids(db: Session) -> set[int]:
+    """Managers whose ABC production is set up — they have a catalog (pp_products)
+    or at least one uploaded daily snapshot (pp_daily). Only these have a
+    meaningful dashboard, so they are the only units offered in the picker."""
+    ids = {m for (m,) in db.query(PPProduct.manager_id).distinct()}
+    ids |= {m for (m,) in db.query(PPDaily.manager_id).distinct()}
+    return ids
+
+
+def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) -> int:
+    """Resolve the single brigadir unit a request targets, enforcing role scope:
+
+        supervisor    → pinned to their own unit (JWT role_id); ?manager_id= ignored.
+        shift-manager → any unit *in their own shift* (?manager_id= required).
+        top-manager   → any unit (?manager_id= required).
+        admin         → any unit (?manager_id= required).
+
+    Everyone else is refused. Shift scope is enforced here (not only in the
+    picker) so a shift-manager can't reach another shift by forging manager_id.
+    """
     role = payload.get("role")
     if role == "supervisor":
         mid = payload.get("role_id")
         if not mid:
             raise HTTPException(status_code=403, detail="No unit assigned to this supervisor")
         return int(mid)
-    if role == "admin":
+    if role in ("admin", "top-manager", "shift-manager"):
         if not requested:
-            raise HTTPException(status_code=400, detail="manager_id is required for admin")
-        return int(requested)
+            raise HTTPException(status_code=400, detail="manager_id is required")
+        mid = int(requested)
+        mgr = db.query(Manager).filter(Manager.id == mid, Manager.archived.is_(False)).first()
+        if not mgr:
+            raise HTTPException(status_code=404, detail=f"Manager {mid} not found")
+        if role == "shift-manager" and mgr.shift != _shift_manager_shift(payload, db):
+            raise HTTPException(status_code=403, detail="This unit is not in your shift")
+        return mid
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
 
 
