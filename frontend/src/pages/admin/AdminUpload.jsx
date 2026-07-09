@@ -675,12 +675,23 @@ export default function AdminUpload() {
         style={{ paddingTop: "calc(var(--tg-safe-top, 0px) + 0.75rem)" }}
       >
         <div>
-          <div className="text-[var(--brand-text)] text-xs font-bold uppercase tracking-widest">Zagruzka</div>
+          <div className="text-[var(--brand-text)] text-xs font-bold uppercase tracking-widest">Safia</div>
           <div className="text-sm font-semibold text-[var(--text-1)]">{t("admin.title")}</div>
         </div>
-        <button onClick={() => navigate("/")} className="text-xs text-[var(--text-2)] hover:text-[var(--text-1)]">
-          {t("admin.toDashboard")}
-        </button>
+        <div className="flex items-center gap-3">
+          <SegmentedToggle
+            size="sm"
+            value={theme}
+            onChange={(v) => { if (v !== theme) toggle(); }}
+            options={[
+              { value: "light", label: <Sun size={14} />, title: t("theme.light") },
+              { value: "dark",  label: <Moon size={14} />, title: t("theme.dark") },
+            ]}
+          />
+          <button onClick={() => navigate("/")} className="text-xs text-[var(--text-2)] hover:text-[var(--text-1)]">
+            {t("admin.toDashboard")}
+          </button>
+        </div>
       </header>
 
       {/* Admin tabs — the shared view-tab template (scroll wrapper for phones) */}
