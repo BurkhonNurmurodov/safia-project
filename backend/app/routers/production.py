@@ -249,7 +249,7 @@ def set_override(
 ):
     if body.field not in ("plan", "actual"):
         raise HTTPException(status_code=400, detail="field must be 'plan' or 'actual'")
-    mid = _resolve_manager_id(payload, manager_id)
+    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
 
     row = db.query(PPDaily).filter(
