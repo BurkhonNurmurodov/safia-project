@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
     add_concern_done_at()
     add_concern_level_columns()
     add_concern_shift_manager()
+    add_concern_category()
     add_concern_owner_columns()
     add_task_comment_author_ref()
     migrate_multi_roles()
