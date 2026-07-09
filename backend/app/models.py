@@ -648,7 +648,11 @@ class LeaderConcern(Base):
     leader_name         = Column(String, nullable=False)          # snapshot of the leader's name
     brigadir_manager_id = Column(Integer, nullable=True)          # managers.id (leader's unit/brigadir)
     brigadir_name       = Column(String, nullable=True)           # snapshot of the brigadir's name
-    cell_code           = Column(String, nullable=True)           # Код ячейки
+    cell_code           = Column(String, nullable=True)           # Ячейка (the leader's production cell the concern is about)
+    # Department category the concern falls under (fixed whitelist in
+    # routers/concerns.py CATEGORIES). Required on new rows; NULL on legacy rows
+    # created before categories existed.
+    category            = Column(String, nullable=True)
     # Creator-name snapshot. New rows stamp the creator's name here as a
     # fallback; the Owner column resolves the CURRENT profile name from
     # owner_role/owner_profile_id at view time. Pre-owner-rollout rows keep
