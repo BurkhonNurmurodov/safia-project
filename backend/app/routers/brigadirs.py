@@ -41,11 +41,11 @@ def build_metrics_list(
     if manager_ids:
         managers = managers.filter(Manager.id.in_(manager_ids))
     managers = managers.all()
-    # Sheet data (production/headcount/downtime) is keyed by the brigadir's
-    # Cyrillic sheet spelling, which lives in each profile's ru override —
-    # match against that, not the canonical Latin Manager.name.
-    sheet_of = sheet_name_map(db, (m.name for m in managers))
-    manager_names = set(sheet_of.values())
+    # Sheet data (production/headcount/downtime) spells brigadirs in either
+    # alphabet; accept every known spelling (canonical + Cyrillic overrides) and
+    # resolve each sheet row back to the canonical Manager.name.
+    alias = sheet_alias_map(db, (m.name for m in managers))
+    manager_names = set(alias.keys())
 
     all_dates = []
     cur = date_from
