@@ -630,6 +630,7 @@ export default function Concerns() {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
       if (ownerSel.length && !ownerSel.includes(r.owner_name)) return false;
       if (levelSel.length && !levelSel.includes(r.level || "supervisor")) return false;
+      if (categorySel.length && !categorySel.includes(r.category)) return false;
       // "My level only": concerns currently sitting on the viewer's step. For a
       // top-manager that's the ones assigned to THEM (can_edit), not every
       // top-level concern in the read-only global view.
