@@ -147,6 +147,24 @@ export default function StyledSelect({
             overflowY:    "auto",
           }}
         >
+          {/* Sticky search box for long lists */}
+          {searchable && (
+            <div
+              className="sticky top-0 flex items-center gap-2 px-3 py-2"
+              style={{ background: "var(--bg-card)", borderBottom: "1px solid var(--border)", zIndex: 1 }}
+            >
+              <Search size={14} style={{ flexShrink: 0, color: "var(--text-4)" }} />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="w-full bg-transparent text-sm outline-none"
+                style={{ color: "var(--text-1)" }}
+              />
+            </div>
+          )}
+
           {/* Optional placeholder row */}
           {placeholder && (
             <div
@@ -157,7 +175,13 @@ export default function StyledSelect({
             </div>
           )}
 
-          {opts.map((opt) => {
+          {searchable && shown.length === 0 && (
+            <div className="px-4 py-4 text-sm text-center" style={{ color: "var(--text-4)" }}>
+              —
+            </div>
+          )}
+
+          {shown.map((opt) => {
             const isSelected = opt.value === value;
             return (
               <button
