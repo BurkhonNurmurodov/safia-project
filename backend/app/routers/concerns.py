@@ -54,6 +54,15 @@ router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
 VALID_STATUSES = {"todo", "doing", "done"}
 
+# Department categories a concern can fall under — the "по отделам" whitelist.
+# The client renders each key's label per language (concerns.category.<key>); the
+# backend only validates membership. Keep this list in sync with the frontend
+# CATEGORIES array in Concerns.jsx.
+CATEGORIES = {
+    "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
+    "it", "washing", "plan", "hr", "technologist", "raw_material",
+}
+
 # Escalation chain, bottom → top. leader_concerns.level always holds one of
 # these ("leader" only survives in old concern_escalations history rows).
 LEVELS = ["supervisor", "shift-manager", "top-manager"]
