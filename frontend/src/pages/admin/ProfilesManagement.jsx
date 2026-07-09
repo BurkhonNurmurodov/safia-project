@@ -181,7 +181,9 @@ export default function ProfilesManagement() {
       if (type === "shift-manager" || type === "supervisor") body.shift = Number(form.shift);
       if (type === "leader") {
         if (!form.manager_id) { setFormError(t("admin.profiles.supervisorRequired")); return; }
+        if (!cellVal) { setFormError(t("admin.profiles.cellRequired")); return; }
         body.manager_id = Number(form.manager_id);
+        body.cell = cellVal;
       }
       if (type === "supervisor") {
         if (!form.verifix_id) { setFormError(t("admin.profiles.verifixRequired")); return; }
