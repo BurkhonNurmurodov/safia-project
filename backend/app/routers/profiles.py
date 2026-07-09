@@ -442,6 +442,7 @@ class SwitchRolePayload(BaseModel):
     new_role:   str
     shift:      Optional[int] = None   # → shift-manager | supervisor
     manager_id: Optional[int] = None   # → leader (unit)
+    cell:       Optional[str] = None   # → leader (production cell, required)
     verifix_id: Optional[int] = None   # → supervisor (new managers.id)
     confirm:    bool = False           # acknowledge the impacts from the 409
 
