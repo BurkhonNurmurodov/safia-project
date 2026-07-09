@@ -285,12 +285,13 @@ function ReconciliationCard({ data, onSave, saving }) {
 }
 
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
-function RawView({ fileType, date, managerParam }) {
+function RawView({ fileType, date, managerParam, ready = true }) {
   const { t } = useLang();
   const [search, setSearch] = useState("");
   const { data, isLoading } = useQuery({
     queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
+    enabled: ready,
   });
   // clear a stale query when the file/date changes so its matches don't hide the new rows
   useEffect(() => { setSearch(""); }, [fileType, date]);
