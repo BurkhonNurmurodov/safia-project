@@ -123,6 +123,7 @@ def _serialize(
     esc_counts: Optional[dict] = None,
     sm_names: Optional[dict] = None,
     owner_names: Optional[dict] = None,
+    cell_leaders: Optional[dict] = None,
 ) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
