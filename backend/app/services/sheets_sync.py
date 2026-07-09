@@ -44,7 +44,7 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
     """Fetch downtime from the shift report sheet and persist to DB."""
     managers = db.query(Manager).all()
     # The shift-report sheet lists brigadirs in Cyrillic; match rows against the
-    # uz_cyrl profile override rather than the canonical Latin Manager.name.
+    # ru profile override rather than the canonical Latin Manager.name.
     manager_names = set(sheet_name_map(db, (m.name for m in managers)).values())
 
     dt_total, dt_by_cat, cat_names = read_downtime_data(sheet_id, manager_names)

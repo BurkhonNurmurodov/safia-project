@@ -118,7 +118,7 @@ def get_headcount(
         daily_hc.setdefault(mgr_id, {})[d] = hc
 
     # Official HC per (manager name, day) — HeadcountData is keyed by the
-    # brigadir's Cyrillic sheet spelling (the uz_cyrl profile override) and
+    # brigadir's Cyrillic sheet spelling (the ru profile override) and
     # "DD.MM.YYYY" strings (same convention as brigadirs.py).
     sheet_of = sheet_name_map(db, (m["name"] for m in agg.values()))
     sheet_names = set(sheet_of.values())

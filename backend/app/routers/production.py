@@ -657,7 +657,7 @@ def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
         return {}
 
     # production_data is keyed by the brigadir's Cyrillic sheet spelling (the
-    # uz_cyrl profile override), not the canonical Latin Manager.name.
+    # ru profile override), not the canonical Latin Manager.name.
     sheet_of = sheet_name_map(db, by_name.keys())
     mgr_by_sheet = {sheet_of[n]: by_name[n] for n in by_name}
 
