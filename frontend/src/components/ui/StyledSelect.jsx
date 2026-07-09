@@ -84,6 +84,7 @@ export default function StyledSelect({
   }
 
   function openDropdown() {
+    setQuery("");
     setDropStyle(computeDropStyle());
     setOpen(true);
   }
