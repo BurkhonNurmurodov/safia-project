@@ -227,10 +227,10 @@ export default function Workers() {
     chart: { ...baseChart, type: "heatmap" },
     dataLabels: { enabled: false },
     plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: ATT_RANGES } } },
-    xaxis: { categories: heatDates.map((d) => d.slice(0, 5)), labels: { ...axisLabels, rotate: -45 } },
+    xaxis: { type: "category", labels: { ...axisLabels, rotate: -45 } },
     yaxis: { labels: axisLabelsMd },
     legend: { show: false },
-    stroke: { width: 2, colors: ["var(--bg-card)"] },
+    stroke: { width: 2, colors: [gridColor] },
     tooltip: {
       theme: tooltipTheme,
       y: { formatter: (v) => (v < 0 ? t("workers.hm.none") : `${v} ${t("workers.present").toLowerCase()}`) },
