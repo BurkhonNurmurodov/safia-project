@@ -967,10 +967,10 @@ export default function Concerns() {
   ];
   const filterActiveCount =
     (statusSel.length > 0 ? 1 : 0) + (ownerSel.length > 0 ? 1 : 0) +
-    (levelSel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
+    (levelSel.length > 0 ? 1 : 0) + (categorySel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
   const anyFilterActive = filterActiveCount > 0;
   const clearAllFilters = () => {
-    setStatusSel([]); setOwnerSel([]); setLevelSel([]); setDeadlineMin(""); setDeadlineMax("");
+    setStatusSel([]); setOwnerSel([]); setLevelSel([]); setCategorySel([]); setDeadlineMin(""); setDeadlineMax("");
   };
 
   // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
