@@ -382,6 +382,7 @@ export default function Concerns() {
 
   const statusLabel = (s) => t(`concerns.status.${s}`);
   const levelLabel = (l) => t(`concerns.level.${l}`);
+  const categoryLabel = (c) => (c ? t(`concerns.category.${c}`) : "");
   // Owner-column position (= the creator's role). Chain roles + leader reuse
   // the level labels; admin has its own key.
   const roleLabel = (r) => (r === "admin" ? t("concerns.roleAdmin") : t(`concerns.level.${r}`));
