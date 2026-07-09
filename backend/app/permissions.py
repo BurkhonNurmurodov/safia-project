@@ -53,9 +53,10 @@ DEFAULT_PAGE_ACCESS = {
     "downtime": ["shift-manager"],
     "staff":    ["shift-manager", "supervisor"],
     "daily":    ["shift-manager", "supervisor"],
-    # Pilot: admin-only by default. Admin previews the brigadir's exact dashboard
-    # (manager 5). Flip on "supervisor" from the Access tab to let brigadirs in —
-    # note that enables it for ALL supervisors (per-user gating is a later phase).
+    # Pilot: admin-only by default. Above supervisors pick a configured brigadir
+    # from the dashboard picker (shift-managers within their shift, top-managers
+    # across all); flip those roles on here to let them in. "supervisor" grants
+    # every brigadir their own pinned dashboard (per-user gating is a later phase).
     "production": [],
     # Cross-brigadir trudoyomkost analysis (by weekday + trend + Excel). Aimed at
     # the analyst roles; supervisors can be toggled on from the Access tab.
