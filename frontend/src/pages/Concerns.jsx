@@ -814,6 +814,7 @@ export default function Concerns() {
       api
         .put(`/api/concerns/${row.id}`, {
           cell_code: row.cell_code || null,
+          category: row.category || null,
           concern_text: row.concern_text,
           status,
           deadline_days: row.deadline_days ?? null,
