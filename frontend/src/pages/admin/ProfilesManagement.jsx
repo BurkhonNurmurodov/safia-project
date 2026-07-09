@@ -481,6 +481,33 @@ export default function ProfilesManagement() {
                 </FormField>
               )}
 
+              {effType === "leader" && (
+                <FormField label={t("admin.profiles.cellLabel")}
+                           required={modal.mode === "add" || roleChanged}>
+                  <StyledSelect
+                    value={String(form.cell ?? "")}
+                    onChange={(v) => setForm((f) => ({ ...f, cell: v, cellNew: "" }))}
+                    // "Other…" on top, then the pre-created cells sorted below.
+                    options={[
+                      { value: CELL_OTHER, label: t("admin.profiles.cellOther") },
+                      ...(data?.cells ?? []).map((c) => ({ value: c, label: c })),
+                    ]}
+                    placeholder={t("admin.users.selectPlaceholder")}
+                  />
+                  {form.cell === CELL_OTHER && (
+                    <input
+                      type="text"
+                      value={form.cellNew}
+                      onChange={(e) => setForm((f) => ({ ...f, cellNew: e.target.value }))}
+                      placeholder={t("admin.profiles.cellNewPlaceholder")}
+                      className={inputCls}
+                      style={inputStyle}
+                      autoFocus
+                    />
+                  )}
+                </FormField>
+              )}
+
               {effType === "supervisor" && (
                 <FormField label={t("admin.profiles.verifixLabel")}>
                   <input
