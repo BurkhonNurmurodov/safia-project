@@ -1410,7 +1410,7 @@ export default function Concerns() {
               <tbody>
                 {isLoading && Array.from({ length: 6 }).map((_, i) => (
                   <tr key={`sk-${i}`}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 9 }).map((_, j) => (
                       <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                     ))}
                   </tr>
