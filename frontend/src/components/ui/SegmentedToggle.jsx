@@ -35,9 +35,10 @@ export default function SegmentedToggle({
   fill = false,
   className = "",
 }) {
-  // Segment padding keeps the OUTER height at 30px (md) / 26px (sm) once the
-  // 3px track inset is added, so the compact toggle still lines up with
-  // Button md/sm (the white StyledSelect dropdowns stay taller by design).
+  // A 4px track inset gives the selected pill a little breathing room from the
+  // track border on every side; with the segment padding below the OUTER height
+  // lands at ~32px (md) / ~28px (sm) — a hair taller than compact Button md/sm
+  // by design (the white StyledSelect dropdowns stay taller too).
   const seg = size === "sm" ? "px-2 py-[1px] text-xs" : "px-2.5 py-[3px] text-xs";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
