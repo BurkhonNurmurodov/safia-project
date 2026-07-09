@@ -186,13 +186,6 @@ export default function ProductionUpload() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <FormField label="Бригадир">
-            <StyledSelect
-              value={String(managerId)}
-              onChange={(v) => setManagerId(Number(v))}
-              options={BRIGADIRS.map((b) => ({ value: String(b.id), label: b.name }))}
-            />
-          </FormField>
           <FormField label="Дата">
             <DateRangePicker
               single
