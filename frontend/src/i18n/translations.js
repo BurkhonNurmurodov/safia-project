@@ -4791,6 +4791,7 @@ const t = {
     "admin.tabUsers":        "Users",
     "admin.tabAccess":       "Access",
     "admin.tabProfiles":     "Profiles",
+    "admin.tabProduction":   "Production",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
     "admin.profiles.title":          "Profiles",
