@@ -600,6 +600,7 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             target_profile.role = new_role
         target_profile.shift = payload.shift if new_role == "shift-manager" else None
         target_profile.manager_id = payload.manager_id if new_role == "leader" else None
+        target_profile.cell = (payload.cell or "").strip() if new_role == "leader" else None
         db.flush()
         target_role_id = payload.manager_id if new_role == "leader" else target_profile.id
 
