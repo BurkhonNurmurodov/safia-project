@@ -111,7 +111,14 @@ function CatalogImport({ managerId, setManagerId }) {
         <BookOpen size={15} className="text-[var(--brand-text)]" />
         <div className={label}>Импорт каталога (лист «Sheet1 …»)</div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <FormField label="Бригадир">
+          <StyledSelect
+            value={String(managerId)}
+            onChange={(v) => setManagerId(Number(v))}
+            options={BRIGADIRS.map((b) => ({ value: String(b.id), label: b.name }))}
+          />
+        </FormField>
         <label className="flex flex-col gap-1.5">
           <span className={label}>Имя листа</span>
           <input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="Sheet1 Торт" className={input} />
