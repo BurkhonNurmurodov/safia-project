@@ -103,7 +103,6 @@ def build_metrics_list(
 
     results = []
     for mgr in managers:
-        sn = sheet_of.get(mgr.name, mgr.name)  # sheet-data lookup key
         for d_str in all_dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
             if allowed is not None and (mgr.id, d_obj) not in allowed:
@@ -121,11 +120,11 @@ def build_metrics_list(
                 shift=mgr.shift,
                 date=d_str,
                 attendance_rows=att_rows,
-                prod_plan=plan_data.get(sn, {}).get(d_str, 0.0),
-                prod_actual=actual_data.get(sn, {}).get(d_str, 0.0),
-                official_hc=hc_data.get(sn, {}).get(d_str, 0.0),
-                equip_downtime=dt_total.get(sn, {}).get(d_str, 0.0),
-                downtime_by_cat=dt_by_cat.get(sn, {}).get(d_str, {}),
+                prod_plan=plan_data.get(mgr.name, {}).get(d_str, 0.0),
+                prod_actual=actual_data.get(mgr.name, {}).get(d_str, 0.0),
+                official_hc=hc_data.get(mgr.name, {}).get(d_str, 0.0),
+                equip_downtime=dt_total.get(mgr.name, {}).get(d_str, 0.0),
+                downtime_by_cat=dt_by_cat.get(mgr.name, {}).get(d_str, {}),
             )
             results.append(m)
 
