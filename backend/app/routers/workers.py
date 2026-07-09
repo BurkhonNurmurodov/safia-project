@@ -137,7 +137,7 @@ def get_headcount(
     # Days without official data are skipped rather than treated as official=0.
     for m in agg.values():
         days = daily_hc.get(m["manager_id"], {})
-        off  = official.get(m["name"], {})
+        off  = official.get(sheet_of.get(m["name"], m["name"]), {})
         both = [(days[d], off[d]) for d in days if d in off]
         m["days"] = len(days)
         m["avg_daily_hc"] = round(sum(days.values()) / len(days), 1) if days else 0
