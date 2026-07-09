@@ -736,6 +736,8 @@ export default function Concerns() {
     const val = (r) => {
       switch (sort.key) {
         case "date":     return r.entry_date || "";
+        case "cell":     return (r.cell_code || "").toLowerCase();
+        case "category": return categoryLabel(r.category || "");
         case "owner":    return tl(r.owner_name || "");
         case "concern":  return tl(r.concern_text || "");
         case "deadline": return r.deadline_days;
