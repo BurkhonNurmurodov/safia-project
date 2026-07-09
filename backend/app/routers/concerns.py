@@ -202,6 +202,7 @@ def _serialize(
 
 class ConcernIn(BaseModel):
     cell_code: Optional[str] = None
+    category: Optional[str] = None            # department bucket (see CATEGORIES)
     # Legacy clients still send the old free-text owner — accepted but ignored:
     # the owner is always the authenticated creator now.
     concern_owner: Optional[str] = None
