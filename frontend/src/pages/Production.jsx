@@ -481,6 +481,7 @@ export default function Production() {
   const { data: datesData } = useQuery({
     queryKey: ["production-dates", managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/dates", { params: managerParam }).then((r) => r.data),
+    enabled: managerReady,
   });
   const availableDates = datesData?.dates ?? [];
 
