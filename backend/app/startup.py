@@ -348,6 +348,23 @@ def add_concern_shift_manager() -> None:
         db.close()
 
 
+def add_concern_category() -> None:
+    """Concerns now carry a department ``category`` (fixed whitelist) and are
+    keyed to a leader's production ``cell`` (reusing the pre-existing cell_code
+    column). Best-effort add of the category column; cell_code already exists."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE leader_concerns ADD COLUMN IF NOT EXISTS category VARCHAR"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern category migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_done_at() -> None:
     """Concerns "время выполнения" column: done_at is the exact moment a concern
     flipped to done (completion_date is only day-grained, so minutes need a real
