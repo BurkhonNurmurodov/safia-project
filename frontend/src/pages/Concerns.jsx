@@ -1597,6 +1597,29 @@ export default function Concerns() {
                 </Field>
               )}
 
+              {/* Cell — the "Ячейка номер"; a searchable picker over every cell
+                  in scope (each labelled with the leader assigned to it). */}
+              <Field label={t("concerns.fieldCell")} required>
+                <StyledSelect
+                  value={form.cell_code}
+                  onChange={(v) => setForm((f) => ({ ...f, cell_code: v }))}
+                  options={cellOptions}
+                  placeholder={t("concerns.pickCell")}
+                  searchable
+                  searchPlaceholder={t("concerns.searchCell")}
+                />
+              </Field>
+
+              {/* Category — the department bucket ("по отделам"). */}
+              <Field label={t("concerns.fieldCategory")} required>
+                <StyledSelect
+                  value={form.category}
+                  onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                  options={CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) }))}
+                  placeholder={t("concerns.pickCategory")}
+                />
+              </Field>
+
               {/* Date */}
               <Field label={t("concerns.fieldDate")}>
                 <DateRangePicker
