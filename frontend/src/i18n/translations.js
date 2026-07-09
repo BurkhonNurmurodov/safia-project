@@ -894,6 +894,7 @@ const t = {
     "admin.tabUsers":        "Foydalanuvchilar",
     "admin.tabAccess":       "Ruxsatlar",
     "admin.tabProfiles":     "Profillar",
+    "admin.tabProduction":   "Ishlab chiqarish",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
     "admin.profiles.title":          "Profillar",
