@@ -905,6 +905,8 @@ export default function Concerns() {
   function submit() {
     if (!form.id && formLevel === "shift-manager" && !form.shift_manager_profile_id) return setFormError(t("concerns.pickShiftManager"));
     if (!form.id && formLevel === "top-manager" && !form.top_manager_profile_id) return setFormError(t("concerns.pickTopManager"));
+    if (!form.cell_code) return setFormError(t("concerns.cellRequired"));
+    if (!form.category) return setFormError(t("concerns.categoryRequired"));
     if (!form.concern_text.trim()) return setFormError(t("concerns.textRequired"));
     saveMutation.mutate();
   }
