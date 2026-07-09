@@ -949,6 +949,14 @@ export default function Concerns() {
       ),
     },
     {
+      key: "category", icon: Tag, label: t("concerns.colCategory"),
+      active: categorySel.length > 0,
+      display: `${categorySel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={CATEGORIES} sel={categorySel} onChange={setCategorySel} render={(c) => categoryLabel(c)} />
+      ),
+    },
+    {
       key: "deadline", icon: Clock, label: t("concerns.colDeadline"),
       active: deadlineActive,
       display: `${deadlineMin || "0"}–${deadlineMax || "∞"}`,
