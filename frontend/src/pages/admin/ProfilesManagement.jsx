@@ -46,7 +46,7 @@ function HolderChip({ b, onUnassign, disabled }) {
           onClick={onUnassign}
           disabled={disabled}
           title={t("admin.profiles.unassign")}
-          className="rounded-full p-0.5 hover:bg-white/10 transition-colors"
+          className="rounded-full p-0.5 hover:bg-[var(--bg-accent)] transition-colors"
         >
           <X size={9} />
         </button>
@@ -204,13 +204,13 @@ export default function ProfilesManagement() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-8">
-      <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <IdCard size={15} className="text-[var(--brand-text)]" />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            <span className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
               {t("admin.profiles.title")}
             </span>
           </div>
@@ -226,7 +226,7 @@ export default function ProfilesManagement() {
             )}
             <button
               onClick={() => refetch()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)] transition-colors"
             >
               {isFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               {t("admin.refresh")}
@@ -262,7 +262,7 @@ export default function ProfilesManagement() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">{t("admin.profiles.empty")}</div>
+          <div className="py-12 text-center text-sm text-[var(--text-3)]">{t("admin.profiles.empty")}</div>
         ) : (
           <div className="overflow-x-auto -mx-1">
             <table className="w-full text-xs min-w-[640px]">
@@ -276,7 +276,7 @@ export default function ProfilesManagement() {
                     t("admin.profiles.colHolders"),
                     t("admin.profiles.colActions"),
                   ].map((h) => (
-                    <th key={h} className="text-left py-2 px-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    <th key={h} className="text-left py-2 px-3 text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
                   ))}
@@ -287,7 +287,7 @@ export default function ProfilesManagement() {
                   <tr key={item.id}
                       style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                       className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-2.5 px-3 font-medium text-gray-200 whitespace-nowrap">
+                    <td className="py-2.5 px-3 font-medium text-[var(--text-1)] whitespace-nowrap">
                       {tl(item.name)}
                       {type === "supervisor" && item.archived && (
                         <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
@@ -298,17 +298,17 @@ export default function ProfilesManagement() {
                     </td>
 
                     {(type === "shift-manager" || type === "supervisor") && (
-                      <td className="py-2.5 px-3 text-gray-400 whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
                         {item.shift ?? "—"}
                       </td>
                     )}
                     {type === "leader" && (
-                      <td className="py-2.5 px-3 text-gray-400 whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
                         {tl(item.supervisor) || "—"}
                       </td>
                     )}
                     {type === "supervisor" && (
-                      <td className="py-2.5 px-3 text-gray-400 font-mono whitespace-nowrap">{item.id}</td>
+                      <td className="py-2.5 px-3 text-[var(--text-2)] font-mono whitespace-nowrap">{item.id}</td>
                     )}
 
                     <td className="py-2.5 px-3">
@@ -324,7 +324,7 @@ export default function ProfilesManagement() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-600">{t("admin.profiles.noHolders")}</span>
+                        <span className="text-[var(--text-4)]">{t("admin.profiles.noHolders")}</span>
                       )}
                     </td>
 
@@ -512,7 +512,7 @@ export default function ProfilesManagement() {
                           onClick={() => setForm((f) => ({
                             ...f, overrides: { ...f.overrides, [l.code]: convertFromUz((f.name || "").trim(), l.code) },
                           }))}
-                          className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
+                          className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-accent)]"
                           style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}
                           title={t("settings.translate")}
                         >

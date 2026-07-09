@@ -25,9 +25,9 @@ function btnClass(st) {
   return `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
     st === "ok"      ? "bg-green-500/20 text-green-400 border border-green-500/30"  :
     st === "error"   ? "bg-red-500/20 text-red-400 border border-red-500/30"        :
-    st === "saving"  ? "bg-white/5 text-gray-500 border border-white/10 cursor-not-allowed" :
-    st === "add"     ? "bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10" :
-                       "bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 border border-transparent"
+    st === "saving"  ? "bg-[var(--bg-inner)] text-[var(--text-3)] border border-[var(--border-md)] cursor-not-allowed" :
+    st === "add"     ? "bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)]" :
+                       "bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white border border-transparent"
   }`;
 }
 
@@ -104,7 +104,7 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
       <div
         ref={barRef}
         className="relative h-12 rounded-lg overflow-visible select-none"
-        style={{ background: "#0f1117" }}
+        style={{ background: "var(--bg-base)" }}
         onClick={() => setSelectedIdx(null)}
       >
         {segments.map((seg, i) => {
@@ -154,7 +154,7 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
               onMouseDown={(e) => startDrag(e, handleIdx)}
               onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ width: 4, height: "100%", background: "#0f1117", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 4, height: "100%", background: "var(--bg-base)", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 2, height: "40%", background: "rgba(255,255,255,.5)", borderRadius: 1 }} />
               </div>
             </div>
@@ -164,13 +164,13 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
 
       {/* Tick labels */}
       <div className="relative h-5 mt-1 mb-1">
-        <span style={{ position: "absolute", left: 0, fontSize: 10, color: "#6b7280" }}>{rangeMin}%</span>
+        <span style={{ position: "absolute", left: 0, fontSize: 10, color: "var(--text-3)" }}>{rangeMin}%</span>
         {segments.slice(1).map((seg, i) => (
-          <span key={i} style={{ position: "absolute", left: `${toPct(seg.from)}%`, transform: "translateX(-50%)", fontSize: 10, color: "#6b7280" }}>
+          <span key={i} style={{ position: "absolute", left: `${toPct(seg.from)}%`, transform: "translateX(-50%)", fontSize: 10, color: "var(--text-3)" }}>
             {seg.from}%
           </span>
         ))}
-        <span style={{ position: "absolute", right: 0, fontSize: 10, color: "#6b7280" }}>{rangeMax}%</span>
+        <span style={{ position: "absolute", right: 0, fontSize: 10, color: "var(--text-3)" }}>{rangeMax}%</span>
       </div>
 
       {/* Add range + selected segment controls */}
@@ -181,9 +181,9 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
       </div>
 
       {selectedIdx !== null && (
-        <div className="mt-1 pt-3 border-t border-white/5">
+        <div className="mt-1 pt-3 border-t border-[var(--border)]">
           <div className="flex items-center justify-between mb-2.5">
-            <span className="text-[11px] text-gray-400">
+            <span className="text-[11px] text-[var(--text-2)]">
               Range&nbsp;
               <span style={{ color: segments[selectedIdx].color }}>■</span>&nbsp;
               {Math.max(segments[selectedIdx].from, rangeMin)}–{selectedIdx < segments.length - 1 ? segments[selectedIdx + 1].from - 1 : rangeMax}% — pick color
@@ -211,20 +211,20 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
           </div>
 
           {/* Per-language description shown in the color-guide modal */}
-          <div className="mt-3.5 pt-3 border-t border-white/5">
-            <div className="text-[11px] text-gray-400 mb-2">
+          <div className="mt-3.5 pt-3 border-t border-[var(--border)]">
+            <div className="text-[11px] text-[var(--text-2)] mb-2">
               Description (shown in the color guide) — leave a language blank to show only the range
             </div>
             <div className="space-y-1.5">
               {languages.map(({ code, name }) => (
                 <div key={code} className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 w-20 flex-shrink-0 text-right">{name}</span>
+                  <span className="text-[10px] text-[var(--text-3)] w-20 flex-shrink-0 text-right">{name}</span>
                   <input
                     type="text"
                     value={segments[selectedIdx].desc?.[code] || ""}
                     onChange={(e) => setDesc(selectedIdx, code, e.target.value)}
                     placeholder="—"
-                    className="flex-1 min-w-0 bg-[#0f1117] border border-white/10 rounded-md px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-white/25"
+                    className="flex-1 min-w-0 bg-[var(--bg-base)] border border-[var(--border-md)] rounded-md px-2 py-1 text-[11px] text-[var(--text-1)] placeholder:text-[var(--text-4)] focus:outline-none focus:border-[var(--border-md)]"
                   />
                 </div>
               ))}
@@ -305,24 +305,24 @@ function SheetSourceEditor() {
   }
 
   return (
-    <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <Database size={15} className="text-[var(--brand-text)]" />
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t("admin.sheetSources")}</div>
+        <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">{t("admin.sheetSources")}</div>
       </div>
 
       {/* Service account — every source sheet must be shared with this email */}
       {svc?.email && (
-        <div className="mb-5 rounded-lg p-3" style={{ background: "#12151f", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="mb-5 rounded-lg p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
           <div className="flex items-center gap-1.5 mb-2">
             <AtSign size={13} className="text-[var(--brand-text)]" />
-            <span className="text-[11px] text-gray-400">{t("admin.serviceAccountHint")}</span>
+            <span className="text-[11px] text-[var(--text-2)]">{t("admin.serviceAccountHint")}</span>
           </div>
           <div className="flex items-center gap-2">
             <code
               onClick={copyEmail}
               title={t("admin.copy")}
-              className="min-w-0 flex-1 truncate text-xs font-mono cursor-pointer text-[var(--brand-text)] bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2"
+              className="min-w-0 flex-1 truncate text-xs font-mono cursor-pointer text-[var(--brand-text)] bg-[var(--bg-base)] border border-[var(--border-md)] rounded-lg px-3 py-2"
             >
               {svc.email}
             </code>
@@ -331,7 +331,7 @@ function SheetSourceEditor() {
               className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                 copied
                   ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                  : "bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10"
+                  : "bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)]"
               }`}
             >
               {copied ? <Check size={13} /> : <Copy size={13} />}
@@ -349,7 +349,7 @@ function SheetSourceEditor() {
           const msgOk = refreshMsgOk[name] ?? true;
           return (
             <div key={name}>
-              <div className="text-[11px] text-gray-500 mb-1 capitalize">
+              <div className="text-[11px] text-[var(--text-3)] mb-1 capitalize">
                 {name === "source" ? t("admin.source") : name === "leaders" ? t("admin.leadersSheet") : t("admin.shiftReport")}
               </div>
               <div className="flex gap-2">
@@ -357,9 +357,9 @@ function SheetSourceEditor() {
                   defaultValue={current}
                   onChange={(e) => setEditing((p) => ({ ...p, [name]: e.target.value }))}
                   placeholder={t("admin.sheetId")}
-                  className="min-w-0 flex-1 bg-[#12151f] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 outline-none font-mono"
+                  className="min-w-0 flex-1 bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-1.5 text-xs text-[var(--text-2)] outline-none font-mono"
                 />
-                <button onClick={() => save(name)} className="flex-shrink-0 text-xs bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 font-semibold px-3 rounded-lg transition-colors">
+                <button onClick={() => save(name)} className="flex-shrink-0 text-xs bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white font-semibold px-3 rounded-lg transition-colors">
                   {t("admin.save")}
                 </button>
                 <button
@@ -368,8 +368,8 @@ function SheetSourceEditor() {
                   className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                     rs === "ok"      ? "bg-green-500/20 text-green-400 border border-green-500/30" :
                     rs === "error"   ? "bg-red-500/20 text-red-400 border border-red-500/30" :
-                    rs === "loading" ? "bg-white/5 text-gray-500 border border-white/10 cursor-not-allowed" :
-                                       "bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10"
+                    rs === "loading" ? "bg-[var(--bg-inner)] text-[var(--text-3)] border border-[var(--border-md)] cursor-not-allowed" :
+                                       "bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)]"
                   }`}
                 >
                   {rs === "loading" ? <Loader2 size={13} className="animate-spin" /> :
@@ -447,11 +447,11 @@ function HeatmapThresholdEditor() {
   }
 
   return (
-    <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <Sliders size={15} className="text-[var(--brand-text)]" />
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t("admin.heatmapRanges")}</span>
+          <span className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">{t("admin.heatmapRanges")}</span>
         </div>
         <button onClick={save} disabled={saveStatus === "saving"} className={btnClass(saveStatus)}>
           {saveStatus === "saving" ? <Loader2 size={12} className="animate-spin" /> :
@@ -561,12 +561,12 @@ function ComparisonThresholdEditor() {
   }
 
   return (
-    <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <Sliders size={15} className="text-[var(--brand-text)]" />
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <span className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
             {t("admin.comparisonRanges")}
           </span>
         </div>
@@ -580,9 +580,9 @@ function ComparisonThresholdEditor() {
 
       {/* P — Planned % */}
       <div className="mb-7">
-        <div className="text-[11px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+        <div className="text-[11px] font-semibold text-[var(--text-3)] mb-1 uppercase tracking-wide">
           {t("admin.pPlanned")}
-          <span className="ml-1.5 normal-case font-normal text-gray-600">{t("admin.perCellUtil")}</span>
+          <span className="ml-1.5 normal-case font-normal text-[var(--text-4)]">{t("admin.perCellUtil")}</span>
         </div>
         <SegmentBar
           segments={pSegs}
@@ -594,9 +594,9 @@ function ComparisonThresholdEditor() {
 
       {/* D — Difference P−A */}
       <div>
-        <div className="text-[11px] font-semibold text-gray-500 mb-1 uppercase tracking-wide">
+        <div className="text-[11px] font-semibold text-[var(--text-3)] mb-1 uppercase tracking-wide">
           {t("admin.dDifference")}
-          <span className="ml-1.5 normal-case font-normal text-gray-600">{t("admin.positiveAhead")}</span>
+          <span className="ml-1.5 normal-case font-normal text-[var(--text-4)]">{t("admin.positiveAhead")}</span>
         </div>
         <SegmentBar
           segments={diffSegs}
@@ -667,16 +667,16 @@ export default function AdminUpload() {
   const errorCount = fileStates.filter((f) => f.status === "error").length;
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-gray-100 overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-1)] overflow-x-hidden">
       <header
-        className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-[#12151f]"
+        className="flex items-center justify-between px-6 py-3 border-b border-[var(--border)] bg-[var(--bg-inner)]"
         style={{ paddingTop: "calc(var(--tg-safe-top, 0px) + 0.75rem)" }}
       >
         <div>
           <div className="text-[var(--brand-text)] text-xs font-bold uppercase tracking-widest">Zagruzka</div>
           <div className="text-sm font-semibold text-[var(--text-1)]">{t("admin.title")}</div>
         </div>
-        <button onClick={() => navigate("/")} className="text-xs text-gray-400 hover:text-[var(--text-1)]">
+        <button onClick={() => navigate("/")} className="text-xs text-[var(--text-2)] hover:text-[var(--text-1)]">
           {t("admin.toDashboard")}
         </button>
       </header>
@@ -710,26 +710,26 @@ export default function AdminUpload() {
       {adminTab === "data" && (
       <div className="max-w-3xl mx-auto p-4 sm:p-8 space-y-6">
         {/* Upload drop zone */}
-        <div className="bg-[#1a1d27] border border-white/5 rounded-xl p-5">
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Upload size={15} className="text-[var(--brand-text)]" />
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t("admin.uploadTitle")}</div>
+            <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">{t("admin.uploadTitle")}</div>
           </div>
 
           <div
             {...getRootProps()}
             className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${
-              uploading     ? "border-white/5 opacity-50 cursor-not-allowed"          :
+              uploading     ? "border-[var(--border)] opacity-50 cursor-not-allowed"          :
               isDragActive  ? "border-[var(--brand)] bg-[var(--brand-bg)] cursor-pointer"       :
-                              "border-white/10 hover:border-[var(--brand-border)] cursor-pointer"
+                              "border-[var(--border-md)] hover:border-[var(--brand-border)] cursor-pointer"
             }`}
           >
             <input {...getInputProps()} />
-            <Upload size={32} className="mx-auto mb-3 text-gray-500" />
-            <div className="text-sm text-gray-400">
+            <Upload size={32} className="mx-auto mb-3 text-[var(--text-3)]" />
+            <div className="text-sm text-[var(--text-2)]">
               {uploading ? t("admin.uploading") : isDragActive ? t("admin.dropActive") : t("admin.dropzone")}
             </div>
-            <div className="text-[11px] text-gray-600 mt-1">Format: {"{manager_id}_{DD.MM.YYYY}.xlsx"}</div>
+            <div className="text-[11px] text-[var(--text-4)] mt-1">Format: {"{manager_id}_{DD.MM.YYYY}.xlsx"}</div>
           </div>
 
           {fileStates.length > 0 && (
@@ -738,30 +738,30 @@ export default function AdminUpload() {
                 <div className="flex items-center gap-3 text-xs mb-3">
                   <span className="text-green-400 font-semibold">{t("admin.succeeded").replace("{n}", doneCount)}</span>
                   {errorCount > 0 && <span className="text-red-400 font-semibold">{t("admin.failed").replace("{n}", errorCount)}</span>}
-                  <button onClick={() => setFileStates([])} className="ml-auto text-gray-500 hover:text-gray-300">
+                  <button onClick={() => setFileStates([])} className="ml-auto text-[var(--text-3)] hover:text-[var(--text-2)]">
                     {t("admin.clear")}
                   </button>
                 </div>
               )}
               {fileStates.map((f) => (
-                <div key={f.name} className="bg-[#12151f] rounded-lg px-3 py-2.5">
+                <div key={f.name} className="bg-[var(--bg-inner)] rounded-lg px-3 py-2.5">
                   <div className="flex items-center gap-2 mb-1.5">
                     {f.status === "uploading" && <Loader2    size={13} className="text-[var(--brand-text)] animate-spin flex-shrink-0" />}
                     {f.status === "ok"        && <CheckCircle2 size={13} className="text-green-400 flex-shrink-0" />}
                     {f.status === "error"     && <XCircle    size={13} className="text-red-400 flex-shrink-0" />}
-                    {f.status === "pending"   && <div className="w-3 h-3 rounded-full border border-gray-600 flex-shrink-0" />}
-                    <span className="font-mono text-xs text-gray-300 flex-1 truncate">{f.name}</span>
+                    {f.status === "pending"   && <div className="w-3 h-3 rounded-full border border-[var(--border-md)] flex-shrink-0" />}
+                    <span className="font-mono text-xs text-[var(--text-2)] flex-1 truncate">{f.name}</span>
                     <span className={`text-[11px] flex-shrink-0 ${
                       f.status === "ok"       ? "text-green-400"  :
                       f.status === "error"    ? "text-red-400"    :
-                      f.status === "uploading"? "text-[var(--brand-text)]" : "text-gray-600"
+                      f.status === "uploading"? "text-[var(--brand-text)]" : "text-[var(--text-4)]"
                     }`}>
                       {f.status === "ok"        ? f.detail           :
                        f.status === "error"     ? f.detail           :
                        f.status === "uploading" ? `${f.progress}%`   : t("admin.waiting")}
                     </span>
                   </div>
-                  <div className="h-1 bg-[#1e2235] rounded-full overflow-hidden">
+                  <div className="h-1 bg-[var(--bg-accent)] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-200 ${
                         f.status === "ok"    ? "bg-green-500" :

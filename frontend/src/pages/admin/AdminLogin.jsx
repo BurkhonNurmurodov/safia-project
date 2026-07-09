@@ -28,29 +28,29 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
-      <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-8 w-full max-w-sm">
+    <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-md)] rounded-2xl p-8 w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="text-[var(--brand-text)] text-xs font-bold uppercase tracking-widest mb-1">Zagruzka</div>
-          <div className="text-white text-lg font-semibold">Admin Login</div>
+          <div className="text-[var(--brand-text)] text-xs font-bold uppercase tracking-widest mb-1">Safia</div>
+          <div className="text-[var(--text-1)] text-lg font-semibold">Admin Login</div>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Username</label>
+            <label className="text-xs text-[var(--text-3)] mb-1 block">Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-[#12151f] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[var(--brand-border)]"
+              className="w-full bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-2 text-sm text-[var(--text-1)] outline-none focus:border-[var(--brand-border)]"
               required
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Password</label>
+            <label className="text-xs text-[var(--text-3)] mb-1 block">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#12151f] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[var(--brand-border)]"
+              className="w-full bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-2 text-sm text-[var(--text-1)] outline-none focus:border-[var(--brand-border)]"
               required
             />
           </div>
@@ -58,7 +58,7 @@ export default function AdminLogin() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[var(--brand)] hover:bg-[var(--brand-text)] text-gray-900 font-semibold rounded-lg py-2 text-sm transition-colors disabled:opacity-50"
+            className="w-full bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white font-semibold rounded-lg py-2 text-sm transition-colors disabled:opacity-50"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>

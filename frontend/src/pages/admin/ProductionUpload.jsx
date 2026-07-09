@@ -16,9 +16,9 @@ const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-const card = "bg-[#1a1d27] border border-white/5 rounded-xl p-5";
-const label = "text-[11px] font-semibold text-gray-500 uppercase tracking-wider";
-const input = "bg-[#12151f] border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[var(--brand)]";
+const card = "bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5";
+const label = "text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider";
+const input = "bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-2 text-sm text-[var(--text-1)] outline-none focus:border-[var(--brand)]";
 
 // ── штатка / capacity editor ─────────────────────────────────────────────────
 function WorkCenters({ managerId }) {
@@ -42,9 +42,9 @@ function WorkCenters({ managerId }) {
         <div className={label}>Команды — штатка и мощность (S)</div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-gray-200">
+        <table className="w-full text-sm text-[var(--text-1)]">
           <thead>
-            <tr className="text-gray-500 text-xs">
+            <tr className="text-[var(--text-3)] text-xs">
               <th className="text-left py-2">Команда</th>
               <th className="text-right py-2">Штатка (W)</th>
               <th className="text-right py-2">Мощность S</th>
@@ -53,7 +53,7 @@ function WorkCenters({ managerId }) {
           </thead>
           <tbody>
             {data.map((w) => (
-              <tr key={w.id} className="border-t border-white/5">
+              <tr key={w.id} className="border-t border-[var(--border)]">
                 <td className="py-2 font-semibold">{w.code}</td>
                 <td className="py-2 text-right">
                   <input type="number" value={val(w, "shtatka")} onChange={(e) => set(w.id, "shtatka", e.target.value)}
@@ -75,7 +75,7 @@ function WorkCenters({ managerId }) {
           </tbody>
         </table>
       </div>
-      <div className="text-[11px] text-gray-600 mt-3">
+      <div className="text-[11px] text-[var(--text-4)] mt-3">
         Людей = ОКРУГЛ(W × Σтруд / S). S ≈ W × 408 (85% от 480 мин/смена).
       </div>
     </div>
@@ -119,10 +119,10 @@ function CatalogImport({ managerId }) {
         <label className="flex flex-col gap-1.5">
           <span className={label}>Файл (.xlsx)</span>
           <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold" />
+            className="text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold" />
         </label>
       </div>
-      <div className="text-[11px] text-gray-600 mb-3">
+      <div className="text-[11px] text-[var(--text-4)] mb-3">
         Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Снимки данных не затрагиваются.
       </div>
       <button onClick={doImport} disabled={!file || state.status === "uploading"}
@@ -221,9 +221,9 @@ export default function ProductionUpload() {
         <input
           type="file" accept=".xlsx" multiple
           onChange={(e) => setFiles(Array.from(e.target.files || []))}
-          className="block w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
+          className="block w-full text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
         />
-        <div className="text-[11px] text-gray-600 mt-1">
+        <div className="text-[11px] text-[var(--text-4)] mt-1">
           Выберите оба файла: «фаза» (операции) и «заголовок» (заказы→SKU). Тип определяется автоматически; соединяются по номеру заказа.
         </div>
 
@@ -237,18 +237,18 @@ export default function ProductionUpload() {
         </button>
 
         {state.status === "ok" && (
-          <div className="mt-4 bg-[#12151f] rounded-lg p-4 text-sm">
+          <div className="mt-4 bg-[var(--bg-inner)] rounded-lg p-4 text-sm">
             <div className="flex items-center gap-2 text-green-400 font-semibold mb-2">
               <CheckCircle2 size={14} /> Записано строк (SKU×команда): {state.data.rows_written}
             </div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[var(--text-2)]">
               Операций «фаза»: {state.data.faza_operations} · Заказов в карте: {state.data.zaga_orders}
               {state.data.unmapped_operations > 0 && (
                 <span className="text-yellow-500"> · без SKU: {state.data.unmapped_operations} (загрузите «заголовок»)</span>
               )}
             </div>
             {state.data.files?.map((f, i) => (
-              <div key={i} className="text-xs text-gray-500 mt-1 font-mono">
+              <div key={i} className="text-xs text-[var(--text-3)] mt-1 font-mono">
                 {f.file}: {f.faza ? `фаза — ${f.faza.operations} опер.` : f.zaga ? `заголовок — ${f.zaga.orders} заказов` : "не распознан"}
               </div>
             ))}

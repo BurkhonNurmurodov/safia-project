@@ -175,7 +175,7 @@ export default function TranslationsEditor() {
     reloadTranslations?.();
   }
 
-  const inputCls = "w-full bg-[#0f1117] border border-white/10 rounded px-2 py-1.5 text-xs text-gray-100 focus:border-[var(--brand)] outline-none";
+  const inputCls = "w-full bg-[var(--bg-base)] border border-[var(--border-md)] rounded px-2 py-1.5 text-xs text-[var(--text-1)] focus:border-[var(--brand)] outline-none";
 
   return (
     <div className="space-y-4">
@@ -187,16 +187,16 @@ export default function TranslationsEditor() {
           placeholder={t("admin.tr.search")}
           className="flex-1 min-w-[180px]"
         />
-        <button onClick={addLanguage} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[#1a1d27] border border-white/10 text-gray-300 hover:border-[var(--brand-border)]">
+        <button onClick={addLanguage} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-md)] text-[var(--text-2)] hover:border-[var(--brand-border)]">
           <Globe size={13} /> {t("admin.tr.addLang")}
         </button>
-        <button onClick={addKey} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[#1a1d27] border border-white/10 text-gray-300 hover:border-[var(--brand-border)]">
+        <button onClick={addKey} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-md)] text-[var(--text-2)] hover:border-[var(--brand-border)]">
           <Plus size={13} /> {t("admin.tr.addKey")}
         </button>
         <button
           onClick={save} disabled={!dirtyCount || saving}
           className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
-          style={{ background: dirtyCount ? "var(--brand)" : "#2a2e3a", color: dirtyCount ? "#fff" : "#6b7280" }}
+          style={{ background: dirtyCount ? "var(--brand)" : "var(--bg-accent)", color: dirtyCount ? "#fff" : "var(--text-3)" }}
         >
           {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <Check size={13} /> : <Save size={13} />}
           {saved ? t("admin.saved") : dirtyCount ? `${t("admin.save")} (${dirtyCount})` : t("admin.saved")}
@@ -206,7 +206,7 @@ export default function TranslationsEditor() {
       <div className="flex gap-4">
         {/* Group sidebar */}
         <div className="w-44 flex-shrink-0 space-y-0.5">
-          <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">{t("admin.tr.dbNames")}</div>
+          <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-4)]">{t("admin.tr.dbNames")}</div>
           {nameGroups.map(({ g, label, count }) => (
             <button
               key={g}
@@ -214,13 +214,13 @@ export default function TranslationsEditor() {
               className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors"
               style={group === g
                 ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
-                : { color: "#9ca3af" }}
+                : { color: "var(--text-2)" }}
             >
               <span className="truncate">{label}</span>
-              <span className="text-[10px] text-gray-500">{count}</span>
+              <span className="text-[10px] text-[var(--text-3)]">{count}</span>
             </button>
           ))}
-          <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">{t("admin.tr.uiStrings")}</div>
+          <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-4)]">{t("admin.tr.uiStrings")}</div>
           {groups.map(({ g, label, count }) => (
             <button
               key={g}
@@ -228,24 +228,24 @@ export default function TranslationsEditor() {
               className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors"
               style={group === g
                 ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
-                : { color: "#9ca3af" }}
+                : { color: "var(--text-2)" }}
             >
               <span className="truncate">{label}</span>
-              <span className="text-[10px] text-gray-500">{count}</span>
+              <span className="text-[10px] text-[var(--text-3)]">{count}</span>
             </button>
           ))}
         </div>
 
         {/* Key table */}
-        <div className="flex-1 min-w-0 bg-[#1a1d27] border border-white/5 rounded-xl overflow-hidden">
+        <div className="flex-1 min-w-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-gray-500" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                  <th className="px-3 py-2 font-semibold sticky left-0 bg-[#1a1d27] min-w-[180px]">{t("admin.tr.key")}</th>
+                <tr className="text-left text-[var(--text-3)]" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <th className="px-3 py-2 font-semibold sticky left-0 bg-[var(--bg-card)] min-w-[180px]">{t("admin.tr.key")}</th>
                   {languages.map((l) => (
                     <th key={l.code} className="px-3 py-2 font-semibold min-w-[200px]">
-                      {l.name} <span className="text-gray-600">({l.code})</span>
+                      {l.name} <span className="text-[var(--text-4)]">({l.code})</span>
                     </th>
                   ))}
                 </tr>
@@ -253,18 +253,18 @@ export default function TranslationsEditor() {
               <tbody>
                 {initLoading && Array.from({ length: 10 }).map((_, i) => (
                   <tr key={`sk-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td className="px-3 py-2 sticky left-0 bg-[#1a1d27]"><SkeletonBlock className="h-4 w-32" /></td>
+                    <td className="px-3 py-2 sticky left-0 bg-[var(--bg-card)]"><SkeletonBlock className="h-4 w-32" /></td>
                     {languages.map((l) => (
                       <td key={l.code} className="px-2 py-2"><SkeletonBlock className="h-7 w-full" /></td>
                     ))}
                   </tr>
                 ))}
                 {!initLoading && rows.length === 0 && (
-                  <tr><td colSpan={1 + languages.length} className="px-3 py-8 text-center text-gray-500">{t("admin.tr.noKeys")}</td></tr>
+                  <tr><td colSpan={1 + languages.length} className="px-3 py-8 text-center text-[var(--text-3)]">{t("admin.tr.noKeys")}</td></tr>
                 )}
                 {!initLoading && rows.slice(0, MAX_ROWS).map(({ key, label, rawName }) => (
                   <tr key={key} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td className="px-3 py-1.5 font-mono text-[11px] text-gray-400 sticky left-0 bg-[#1a1d27] align-top">{label}</td>
+                    <td className="px-3 py-1.5 font-mono text-[11px] text-[var(--text-2)] sticky left-0 bg-[var(--bg-card)] align-top">{label}</td>
                     {languages.map((l) => {
                       const ek = `${l.code}|${key}`;
                       const overridden = (l.code in overrides) && (key in (overrides[l.code] || {}));
@@ -287,7 +287,7 @@ export default function TranslationsEditor() {
                 ))}
                 {rows.length > MAX_ROWS && (
                   <tr>
-                    <td colSpan={1 + languages.length} className="px-3 py-3 text-center text-gray-500">
+                    <td colSpan={1 + languages.length} className="px-3 py-3 text-center text-[var(--text-3)]">
                       Showing first {MAX_ROWS} of {rows.length} — use search to narrow down.
                     </td>
                   </tr>
@@ -297,7 +297,7 @@ export default function TranslationsEditor() {
           </div>
         </div>
       </div>
-      <div className="text-[10px] text-gray-600">
+      <div className="text-[10px] text-[var(--text-4)]">
         Green border = customised value saved in DB · Blue border = unsaved edit · placeholder = English default (UI strings) or automatic transliteration (database names) · empty value = reset to automatic.
       </div>
     </div>
