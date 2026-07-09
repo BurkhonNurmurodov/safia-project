@@ -27,6 +27,10 @@ const TYPES = [
   { key: "guest",         listKey: "guests",         tKey: "admin.profiles.guests",        icon: UserRound },
 ];
 
+// Sentinel for the "Other…" option in the leader cell picker — selecting it
+// reveals a text input to name a brand-new cell.
+const CELL_OTHER = "__other__";
+
 function HolderChip({ b, onUnassign, disabled }) {
   const { t } = useLang();
   const { tl } = useTranslit();
