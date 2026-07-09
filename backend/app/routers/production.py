@@ -656,19 +656,18 @@ def _load_plan_by_manager(db, manager_ids, shift, d_from, d_to) -> dict:
     if not by_name:
         return {}
 
-    # production_data is keyed by the brigadir's Cyrillic sheet spelling (the
-    # ru profile override), not the canonical Latin Manager.name.
-    sheet_of = sheet_name_map(db, by_name.keys())
-    mgr_by_sheet = {sheet_of[n]: by_name[n] for n in by_name}
+    # production_data spells brigadirs in either alphabet; accept every known
+    # spelling and resolve each row back to its canonical Manager.
+    alias = sheet_alias_map(db, by_name.keys())
 
     rows = db.query(ProductionData).filter(
-        ProductionData.manager_name.in_(list(mgr_by_sheet.keys())),
+        ProductionData.manager_name.in_(list(alias.keys())),
         ProductionData.date.in_(_date_strings(d_from, d_to)),
     ).all()
 
     out: dict = {}
     for r in rows:
-        mgr = mgr_by_sheet.get(r.manager_name)
+        mgr = by_name.get(alias.get(r.manager_name))
         if not mgr:
             continue
         try:
