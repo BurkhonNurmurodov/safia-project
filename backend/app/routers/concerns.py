@@ -892,8 +892,15 @@ def update_concern(
         raise HTTPException(status_code=403, detail="Only the responsible person can change the status")
 
     # Ownership (leader/brigadir) and the creator identity are never reassigned
-    # on edit — only the concern fields change.
-    c.cell_code = (body.cell_code or "").strip() or None
+    # on edit — only the concern fields change. Cell + category are only touched
+    # when the payload carries a value, so the minimal inline status-change PUT
+    # (which round-trips whatever the row already had) never blanks them.
+    if body.cell_code and body.cell_code.strip():
+        c.cell_code = body.cell_code.strip()
+    if body.category and body.category.strip():
+        if body.category not in CATEGORIES:
+            raise HTTPException(status_code=400, detail="Invalid category")
+        c.category = body.category
     c.concern_text = body.concern_text.strip()
     c.status = body.status
     c.deadline_days = body.deadline_days
