@@ -320,11 +320,14 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
         mgr = db.query(Manager).filter_by(id=payload.manager_id).first()
         if not mgr:
             raise HTTPException(status_code=400, detail="Supervisor unit not found")
+        cell = (payload.cell or "").strip()
+        if not cell:
+            raise HTTPException(status_code=400, detail="Cell is required")
         dup = db.query(RoleProfile).filter_by(role="leader", name=name,
                                               manager_id=payload.manager_id).first()
         if dup:
             raise HTTPException(status_code=409, detail="This leader already exists")
-        p = RoleProfile(role=role, name=name, manager_id=payload.manager_id)
+        p = RoleProfile(role=role, name=name, manager_id=payload.manager_id, cell=cell)
     else:  # top-manager | admin
         if db.query(RoleProfile).filter_by(role=role, name=name).first():
             raise HTTPException(status_code=409, detail="Profile with this name already exists")
