@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
+  AlertTriangle, ArrowLeftRight, CalendarDays, CheckCircle2,
   ClipboardList, Grid3x3, LayoutGrid, Radar as RadarIcon, Repeat, TrendingUp,
   UserCheck, UserMinus, Users,
 } from "lucide-react";
