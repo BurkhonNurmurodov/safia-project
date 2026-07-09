@@ -677,7 +677,7 @@ export default function Production() {
       />
 
       {view !== "zagruzka" && (
-        <RawView fileType={view} date={date} managerParam={managerParam} />
+        <RawView fileType={view} date={date} managerParam={managerParam} ready={managerReady} />
       )}
 
       {view === "zagruzka" && (<>
