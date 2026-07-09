@@ -211,7 +211,7 @@ def get_dashboard(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    mid = _resolve_manager_id(payload, manager_id)
+    mid = _resolve_manager_id(payload, manager_id, db)
     return _build_dashboard(db, mid, _parse_date(date))
 
 
