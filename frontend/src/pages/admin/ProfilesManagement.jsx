@@ -285,7 +285,7 @@ export default function ProfilesManagement() {
                   {[
                     t("admin.profiles.colName"),
                     ...(type === "shift-manager" || type === "supervisor" ? [t("admin.profiles.colShift")] : []),
-                    ...(type === "leader" ? [t("admin.profiles.colSupervisor")] : []),
+                    ...(type === "leader" ? [t("admin.profiles.colSupervisor"), t("admin.profiles.colCell")] : []),
                     ...(type === "supervisor" ? [t("admin.profiles.colVerifix")] : []),
                     t("admin.profiles.colHolders"),
                     t("admin.profiles.colActions"),
