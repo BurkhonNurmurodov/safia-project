@@ -43,9 +43,10 @@ def sync_source_sheet(sheet_id: str, db: Session) -> dict:
 def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
     """Fetch downtime from the shift report sheet and persist to DB."""
     managers = db.query(Manager).all()
-    # The shift-report sheet lists brigadirs in Cyrillic; match rows against the
-    # ru profile override rather than the canonical Latin Manager.name.
-    manager_names = set(sheet_name_map(db, (m.name for m in managers)).values())
+    # The shift-report sheet spells brigadirs in either alphabet; read rows under
+    # every known spelling (canonical + Cyrillic overrides). The read-side
+    # endpoints resolve those spellings back to the canonical Manager.name.
+    manager_names = set(sheet_alias_map(db, (m.name for m in managers)).keys())
 
     dt_total, dt_by_cat, cat_names = read_downtime_data(sheet_id, manager_names)
 
