@@ -261,7 +261,7 @@ export default function ProductionUpload() {
         )}
       </div>
 
-      <CatalogImport managerId={managerId} />
+      <CatalogImport managerId={managerId} setManagerId={setManagerId} />
       <WorkCenters managerId={managerId} />
     </div>
   );
