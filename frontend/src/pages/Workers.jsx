@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  AlertTriangle, ArrowLeftRight, CalendarDays, CheckCircle2,
-  ClipboardList, Grid3x3, LayoutGrid, Radar as RadarIcon, Repeat, TrendingUp,
+  AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
+  ClipboardList, Grid3x3, PieChart, Repeat, TrendingUp,
   UserCheck, UserMinus, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -11,7 +11,6 @@ import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
 import Tooltip from "../components/ui/Tooltip";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import StyledSelect from "../components/ui/StyledSelect";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
