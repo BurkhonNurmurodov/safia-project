@@ -647,12 +647,15 @@ export default function Concerns() {
       if (q) {
         const hit =
           (r.concern_text || "").toLowerCase().includes(q) ||
-          (r.owner_name || "").toLowerCase().includes(q);
+          (r.owner_name || "").toLowerCase().includes(q) ||
+          (r.cell_code || "").toLowerCase().includes(q) ||
+          (r.cell_leader_name || "").toLowerCase().includes(q) ||
+          (r.category ? categoryLabel(r.category).toLowerCase().includes(q) : false);
         if (!hit) return false;
       }
       return true;
     };
-  }, [search, statusSel, ownerSel, levelSel, onlyMyLevel, myLevel, role, deadlineMin, deadlineMax]);
+  }, [search, statusSel, ownerSel, levelSel, categorySel, onlyMyLevel, myLevel, role, deadlineMin, deadlineMax]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
   const chartFiltered = useMemo(
