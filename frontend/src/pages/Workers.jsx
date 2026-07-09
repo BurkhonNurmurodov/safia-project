@@ -2,12 +2,17 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, ChevronDown,
-  ChevronsUpDown, ChevronUp, ClipboardList, Repeat, TrendingUp, Users,
+  AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
+  ClipboardList, Grid3x3, LayoutGrid, Radar as RadarIcon, Repeat, TrendingUp,
+  UserCheck, UserMinus, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
+import Tooltip from "../components/ui/Tooltip";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import StyledSelect from "../components/ui/StyledSelect";
+import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
@@ -16,64 +21,65 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { padChartParams } from "../utils/chartRange";
 import api from "../utils/api";
 
-// ── palette ────────────────────────────────────────────────────────────────────
-// Gold is the brand color (verifix numbers); gray is the official/reference side.
+// ── palette ──────────────────────────────────────────────────────────────────
+// Role identity hues (kept stable across the app); the rest of the page borrows
+// the admin-panel palette so KPIs and charts read colourful, not monochrome.
 const ROLE_COLORS = {
   Konditer:    "#C8973F",
   Fasovshik:   "#f97316",
   Zagatovitel: "#22c55e",
-  Other:       "#6b7280",
-};
-const OFFICIAL_COLOR = "#6b7280";
-const VERIFIX_COLOR  = "#C8973F";
-// Verifix-edit request types
-const REQ_COLORS = {
-  exchange:   "#3b82f6",
-  roleChange: "#a78bfa",
+  Other:       "#94a3b8",
 };
 const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"];
+const OFFICIAL_COLOR = "#94a3b8";
+const PRESENT_COLOR  = "#22c55e";
+const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#a78bfa" };
 
-// ── small UI atoms (mirror Trudoyomkost/Production idioms) ─────────────────────
-function SectionCard({ icon: Icon, title, right, children, className = "" }) {
+// Sequential ramps for the two heatmaps (green = attendance, violet = changes).
+const ATT_RANGES = [
+  { from: -1, to: 0,   color: "#e2e8f0" },
+  { from: 1,  to: 6,   color: "#bbf7d0" },
+  { from: 7,  to: 12,  color: "#4ade80" },
+  { from: 13, to: 20,  color: "#22c55e" },
+  { from: 21, to: 999, color: "#15803d" },
+];
+const TRANS_RANGES = [
+  { from: 0,  to: 0,   color: "#e2e8f0" },
+  { from: 1,  to: 2,   color: "#ddd6fe" },
+  { from: 3,  to: 5,   color: "#c4b5fd" },
+  { from: 6,  to: 10,  color: "#a78bfa" },
+  { from: 11, to: 999, color: "#7c3aed" },
+];
+
+const fmt1 = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
+const parseDate = (s) => { const [d, m, y] = s.split("."); return new Date(+y, +m - 1, +d); };
+// Traffic-light hue for an attendance percentage.
+const rateColor = (p) => (p == null ? "var(--text-2)" : p >= 90 ? "#22c55e" : p >= 75 ? "#eab308" : "#ef4444");
+
+// Chart card that composes the canonical SectionHead (+ optional info icon).
+function ChartCard({ icon, title, info, right, children, className = "" }) {
+  const head = info ? (
+    <span className="inline-flex items-center gap-1">{title}<Tooltip text={info} /></span>
+  ) : title;
   return (
-    <div className={`rounded-xl overflow-hidden ${className}`}
+    <div className={`rounded-2xl overflow-hidden ${className}`}
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap"
-        style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
-          style={{ color: "var(--text-3)" }}>
-          {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-          {title}
-        </div>
-        {right}
-      </div>
-      {children}
+      <SectionHead icon={icon} title={head} right={right} />
+      <div className="p-4">{children}</div>
     </div>
   );
 }
-
-function SortHead({ label, col, sort, onSort, align = "right", style }) {
-  const active = sort.key === col;
-  return (
-    <th className={`px-2 py-2.5 cursor-pointer select-none ${align === "left" ? "text-left" : "text-right"}`}
-      style={style} onClick={() => onSort(col)}>
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {!active ? <ChevronsUpDown size={9} style={{ opacity: 0.4 }} />
-          : sort.dir === "asc" ? <ChevronUp size={9} /> : <ChevronDown size={9} />}
-      </span>
-    </th>
-  );
-}
-
-const fmt1 = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 export default function Workers() {
   const { params, ready } = useFilters();
   const { t } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  const [view, setView] = useState("attendance");   // "attendance" | "movements"
   const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [radarSup, setRadarSup] = useState(null);
+
+  const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
 
   // ── data ─────────────────────────────────────────────────────────────────────
   const { data: headcount = [], isLoading } = useQuery({
@@ -81,51 +87,55 @@ export default function Workers() {
     queryFn: () => api.get("/api/workers/headcount", { params }).then((r) => r.data),
     enabled: ready,
   });
-
-  // Trend chart never spans fewer than 7 days — short selections fetch a
-  // window padded back to end-6d.
   const chartParams = useMemo(() => padChartParams(params), [params]);
   const { data: trend } = useQuery({
     queryKey: ["worker-trend", chartParams],
     queryFn: () => api.get("/api/workers/trend", { params: chartParams }).then((r) => r.data),
     enabled: ready,
   });
-
   const { data: req } = useQuery({
     queryKey: ["worker-requests-analysis", params],
     queryFn: () => api.get("/api/workers/requests-analysis", { params }).then((r) => r.data),
     enabled: ready,
   });
 
-  // ── headcount logic ──────────────────────────────────────────────────────────
+  // ── headcount aggregates ───────────────────────────────────────────────────────
   const totalWorkers  = headcount.reduce((s, m) => s + m.total, 0);
-  const avgDailyTotal = headcount.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
+  const avgPresent    = headcount.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
+  const attRate       = totalWorkers ? Math.round((avgPresent / totalWorkers) * 100) : null;
+  const withOfficial  = headcount.filter((m) => m.official_hc != null);
+  const officialSum   = withOfficial.reduce((s, m) => s + (m.official_hc || 0), 0);
+  const presentOfOff  = withOfficial.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
+  const shortfall     = Math.max(0, Math.round((officialSum - presentOfOff) * 10) / 10);
   const mismatchMgrs  = headcount.filter((m) => (m.mismatch_days || 0) > 0);
-  const mismatchDays  = mismatchMgrs.reduce((s, m) => s + m.mismatch_days, 0);
+
+  // per-supervisor derived rate + shortfall
+  const rows = useMemo(() => headcount.map((m) => {
+    const rate = m.total ? Math.round(((m.avg_daily_hc || 0) / m.total) * 100) : null;
+    const gap  = m.official_hc != null ? Math.round((m.official_hc - (m.avg_daily_hc || 0)) * 10) / 10 : null;
+    return { ...m, rate, gap };
+  }), [headcount]);
 
   function onSort(key) {
     setSort((p) => (p.key === key
       ? (p.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" })
       : { key, dir: key === "name" ? "asc" : "desc" }));
   }
-
-  const displayHeadcount = useMemo(() => {
-    if (!sort.key) return headcount;                     // backend order: shift, name
+  const sortedRows = useMemo(() => {
+    if (!sort.key) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = {
-      name:     (m) => tl(m.name) || "",
-      total:    (m) => m.total,
-      avg:      (m) => m.avg_daily_hc || 0,
-      official: (m) => m.official_hc ?? -1,
-      diff:     (m) => m.official_hc_diff ?? -1,
+      name: (m) => tl(m.name) || "", total: (m) => m.total, avg: (m) => m.avg_daily_hc || 0,
+      rate: (m) => m.rate ?? -1, official: (m) => m.official_hc ?? -1, gap: (m) => m.gap ?? -999,
+      ...Object.fromEntries(ROLES.map((r) => [r, (m) => m.by_role[r] || 0])),
     }[sort.key];
-    return [...headcount].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const av = val(a), bv = val(b);
       return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * dir;
     });
-  }, [headcount, sort, tl]);
+  }, [rows, sort, tl]);
 
-  // ── requests logic ───────────────────────────────────────────────────────────
+  // ── requests aggregates ────────────────────────────────────────────────────────
   const reqKpi     = req?.kpi;
   const reqSups    = req?.by_supervisor || [];
   const reqTargets = req?.targets || [];
@@ -134,93 +144,102 @@ export default function Workers() {
   const hasReqData = (reqKpi?.total || 0) > 0;
   const postedRate = reqKpi?.total ? Math.round((reqKpi.posted / reqKpi.total) * 100) : 0;
 
-  // ── shared chart pieces ──────────────────────────────────────────────────────
+  // ── shared chart pieces ────────────────────────────────────────────────────────
   const baseChart = {
     background: "transparent", toolbar: { show: false }, animations: { enabled: false },
-    redrawOnParentResize: false, redrawOnWindowResize: false,
+    redrawOnParentResize: false, redrawOnWindowResize: false, fontFamily: "inherit",
   };
   const axisLabels   = { style: { colors: labelColor, fontSize: "10px" } };
   const axisLabelsMd = { style: { colors: legendColor, fontSize: "11px" } };
   const legendCfg    = { labels: { colors: legendColor }, fontSize: "11px", position: "top" };
   const gridCfg      = { borderColor: gridColor, strokeDashArray: 3 };
+  const chartH       = Math.max(300, headcount.length * 28 + 60);
 
-  // Official vs Verifix avg daily HC per brigadir (comparable per-day numbers)
-  const hcCompSeries = [
-    { name: t("workers.officialHC"), data: headcount.map((m) => m.official_hc ?? 0) },
-    { name: t("workers.verifixHC"),  data: headcount.map((m) => m.avg_daily_hc || 0) },
-  ];
-  const hcCompOptions = {
-    chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
-    colors: [OFFICIAL_COLOR, VERIFIX_COLOR],
-    dataLabels: { enabled: false },
-    xaxis: { categories: headcount.map((m) => tl(m.name)), labels: axisLabels },
-    yaxis: { labels: axisLabelsMd },
+  // Workforce treemap — blocks sized by worker count, grouped/coloured by role.
+  const treemapSeries = ROLES.map((r) => ({
+    name: roleLabel(r),
+    data: headcount.map((m) => ({ x: tl(m.name), y: m.by_role[r] || 0 })).filter((d) => d.y > 0),
+  })).filter((s) => s.data.length);
+  const treemapOptions = {
+    chart: { ...baseChart, type: "treemap" },
+    colors: ROLES.map((r) => ROLE_COLORS[r]),
     legend: legendCfg,
-    grid: gridCfg,
-    tooltip: {
-      theme: tooltipTheme,
-      y: { formatter: (v, { dataPointIndex }) => {
-        const m = headcount[dataPointIndex];
-        const warn = m?.mismatch_days ? ` · ⚠ ${m.mismatch_days} ${t("workers.mismatchDays")}` : "";
-        return `${fmt1(v)}${warn}`;
-      }},
+    dataLabels: {
+      enabled: true, style: { fontSize: "11px", fontWeight: 600 },
+      formatter: (text, op) => [text, op.value],
     },
-    annotations: {
-      points: headcount.filter((m) => (m.mismatch_days || 0) > 0).map((m) => ({
-        x: Math.max(m.official_hc ?? 0, m.avg_daily_hc || 0),
-        y: tl(m.name),
-        marker: { size: 0 },
-        label: {
-          text: `⚠ ${m.mismatch_days}`,
-          style: { color: "#f97316", background: "transparent", fontSize: "10px" },
-        },
-      })),
-    },
+    plotOptions: { treemap: { distributed: false, enableShades: false } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
     theme: chartTheme,
   };
 
-  // Role breakdown per brigadir (unique workers in period)
-  const stackedSeries = ROLES.map((role) => ({
-    name: tl(role),
-    data: headcount.map((m) => m.by_role[role] || 0),
-  }));
-  const stackedOptions = {
-    chart: { ...baseChart, type: "bar", stacked: true },
-    plotOptions: { bar: { horizontal: true, barHeight: "70%", borderRadius: 3 } },
-    colors: ROLES.map((r) => ROLE_COLORS[r]),
-    dataLabels: { enabled: false },
-    xaxis: { categories: headcount.map((m) => tl(m.name)), labels: axisLabels },
-    yaxis: { labels: axisLabelsMd },
+  // Role-mix radar — a chosen supervisor vs the shift/overall average.
+  const supOptions = headcount.map((m) => ({ value: String(m.manager_id), label: tl(m.name) }));
+  const selSup = radarSup || (headcount[0] && String(headcount[0].manager_id));
+  const selRow = headcount.find((m) => String(m.manager_id) === selSup);
+  const roleAvg = ROLES.map((r) =>
+    headcount.length ? Math.round((headcount.reduce((s, m) => s + (m.by_role[r] || 0), 0) / headcount.length) * 10) / 10 : 0);
+  const radarSeries = selRow ? [
+    { name: tl(selRow.name), data: ROLES.map((r) => selRow.by_role[r] || 0) },
+    { name: t("workers.average"), data: roleAvg },
+  ] : [];
+  const radarOptions = {
+    chart: { ...baseChart, type: "radar" },
+    colors: ["#3b82f6", "#94a3b8"],
+    xaxis: { categories: ROLES.map(roleLabel), labels: { style: { colors: ROLES.map(() => legendColor) } } },
+    yaxis: { show: false },
+    fill: { opacity: [0.35, 0.15] },
+    stroke: { width: 2 },
+    markers: { size: 3 },
     legend: legendCfg,
-    grid: gridCfg,
     tooltip: { theme: tooltipTheme },
     theme: chartTheme,
   };
 
-  // Attendance trend by role
+  // Attendance trend by role (stacked area, min-7-day window).
   const trendSeries = trend
-    ? ROLES.filter((r) => r !== "Other").map((r) => ({ name: tl(r), data: trend.series[r] || [] }))
+    ? ROLES.filter((r) => r !== "Other").map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }))
     : [];
   const trendOptions = {
-    chart: { ...baseChart, type: "line", zoom: { enabled: false } },
+    chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
     stroke: { curve: "smooth", width: 2 },
+    fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
     colors: [ROLE_COLORS.Konditer, ROLE_COLORS.Fasovshik, ROLE_COLORS.Zagatovitel],
     xaxis: {
-      categories: trend?.dates || [],
-      labels: { ...axisLabels, rotate: -45 },
+      categories: trend?.dates || [], labels: { ...axisLabels, rotate: -45 },
       tickAmount: Math.min(trend?.dates?.length || 0, 10),
     },
     yaxis: { labels: axisLabels },
-    legend: legendCfg,
-    grid: gridCfg,
-    tooltip: { theme: tooltipTheme },
-    theme: chartTheme,
+    legend: legendCfg, grid: gridCfg, tooltip: { theme: tooltipTheme }, theme: chartTheme,
   };
 
-  const chartH = Math.max(300, headcount.length * 28 + 60);
+  // Attendance heatmap — supervisor (rows) × day (cols), cell = workers present.
+  const heatDates = useMemo(() => {
+    const set = new Set();
+    headcount.forEach((m) => (m.daily || []).forEach((d) => set.add(d.date)));
+    return [...set].sort((a, b) => parseDate(a) - parseDate(b));
+  }, [headcount]);
+  const heatSeries = headcount.map((m) => {
+    const map = Object.fromEntries((m.daily || []).map((d) => [d.date, d.hc]));
+    return { name: tl(m.name), data: heatDates.map((dt) => ({ x: dt.slice(0, 5), y: dt in map ? map[dt] : -1 })) };
+  });
+  const heatOptions = {
+    chart: { ...baseChart, type: "heatmap" },
+    dataLabels: { enabled: false },
+    plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: ATT_RANGES } } },
+    xaxis: { categories: heatDates.map((d) => d.slice(0, 5)), labels: { ...axisLabels, rotate: -45 } },
+    yaxis: { labels: axisLabelsMd },
+    legend: { show: false },
+    stroke: { width: 2, colors: ["var(--bg-card)"] },
+    tooltip: {
+      theme: tooltipTheme,
+      y: { formatter: (v) => (v < 0 ? t("workers.hm.none") : `${v} ${t("workers.present").toLowerCase()}`) },
+    },
+    theme: chartTheme,
+  };
+  const heatH = Math.max(260, headcount.length * 30 + 80);
 
-  // Requests by day: stacked columns of exchanges vs role changes
+  // Movements by day (stacked columns).
   const reqDaySeries = [
     { name: t("workers.req.exchanges"),   data: req?.by_day?.exchanges || [] },
     { name: t("workers.req.roleChanges"), data: req?.by_day?.role_changes || [] },
@@ -232,18 +251,16 @@ export default function Workers() {
     dataLabels: { enabled: false },
     xaxis: { categories: req?.by_day?.dates || [], labels: { ...axisLabels, rotate: -45 } },
     yaxis: { labels: axisLabels },
-    legend: legendCfg,
-    grid: gridCfg,
+    legend: legendCfg, grid: gridCfg,
     tooltip: {
       theme: tooltipTheme,
-      x: { formatter: (val, { dataPointIndex }) =>
-        `${val} · ${req?.by_day?.workers?.[dataPointIndex] ?? 0} ${t("workers.req.workers")}` },
+      x: { formatter: (val, { dataPointIndex }) => `${val} · ${req?.by_day?.workers?.[dataPointIndex] ?? 0} ${t("workers.req.workers")}` },
       y: { formatter: (v) => `${v} ${t("workers.req.docs")}` },
     },
     theme: chartTheme,
   };
 
-  // Requests per supervisor: stacked bars of request counts
+  // Movements per supervisor (stacked horizontal bars).
   const reqSupSeries = [
     { name: t("workers.req.exchanges"),   data: reqSups.map((s) => s.exchanges) },
     { name: t("workers.req.roleChanges"), data: reqSups.map((s) => s.role_changes) },
@@ -255,8 +272,7 @@ export default function Workers() {
     dataLabels: { enabled: false },
     xaxis: { categories: reqSups.map((s) => tl(s.name)), labels: axisLabels },
     yaxis: { labels: axisLabelsMd },
-    legend: legendCfg,
-    grid: gridCfg,
+    legend: legendCfg, grid: gridCfg,
     tooltip: {
       theme: tooltipTheme,
       y: { formatter: (v, { seriesIndex, dataPointIndex }) => {
@@ -264,47 +280,65 @@ export default function Workers() {
         if (!s) return String(v);
         const w = seriesIndex === 0 ? s.exchange_workers : s.role_change_workers;
         return `${v} ${t("workers.req.docs")} · ${w} ${t("workers.req.workers")}`;
-      }},
+      } },
     },
     theme: chartTheme,
   };
 
-  // Exchange targets: workers moved per receiving unit / task
+  // Exchange targets (where moved workers go).
   const reqTgtOptions = {
     chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
-    colors: [REQ_COLORS.exchange],
+    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, distributed: true } },
+    colors: ["#3b82f6", "#06b6d4", "#14b8a6", "#0ea5e9", "#6366f1", "#8b5cf6"],
     dataLabels: { enabled: false },
     xaxis: {
-      categories: reqTargets.map((g) =>
-        g.type === "task" ? `${tl(g.label)} · ${t("workers.req.task")}` : `→ ${tl(g.label)}`),
+      categories: reqTargets.map((g) => (g.type === "task" ? `${tl(g.label)} · ${t("workers.req.task")}` : `→ ${tl(g.label)}`)),
       labels: axisLabels,
     },
     yaxis: { labels: axisLabelsMd },
-    legend: { show: false },
-    grid: gridCfg,
+    legend: { show: false }, grid: gridCfg,
     tooltip: {
       theme: tooltipTheme,
-      y: { formatter: (v, { dataPointIndex }) =>
-        `${v} ${t("workers.req.workers")} · ${reqTargets[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
+      y: { formatter: (v, { dataPointIndex }) => `${v} ${t("workers.req.workers")} · ${reqTargets[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
     },
     theme: chartTheme,
   };
 
-  // Role changes: workers per new role
+  // New-role distribution.
   const reqRoleOptions = {
     chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
-    colors: [REQ_COLORS.roleChange],
+    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, distributed: true } },
+    colors: ["#a78bfa", "#ec4899", "#f472b6", "#c084fc", "#8b5cf6", "#d946ef"],
     dataLabels: { enabled: false },
     xaxis: { categories: reqRoles.map((r) => tl(r.role)), labels: axisLabels },
     yaxis: { labels: axisLabelsMd },
-    legend: { show: false },
-    grid: gridCfg,
+    legend: { show: false }, grid: gridCfg,
     tooltip: {
       theme: tooltipTheme,
-      y: { formatter: (v, { dataPointIndex }) =>
-        `${v} ${t("workers.req.workers")} · ${reqRoles[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
+      y: { formatter: (v, { dataPointIndex }) => `${v} ${t("workers.req.workers")} · ${reqRoles[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
+    },
+    theme: chartTheme,
+  };
+
+  // Role-transition matrix heatmap — old role (rows) × new role (cols).
+  const fromRoles = [...new Set(reqTrans.map((r) => r.from))];
+  const toRoles   = [...new Set(reqTrans.map((r) => r.to))];
+  const transMap  = Object.fromEntries(reqTrans.map((r) => [`${r.from}|${r.to}`, r.workers]));
+  const transSeries = fromRoles.map((fr) => ({
+    name: tl(fr),
+    data: toRoles.map((tr) => ({ x: tl(tr), y: transMap[`${fr}|${tr}`] || 0 })),
+  }));
+  const transOptions = {
+    chart: { ...baseChart, type: "heatmap" },
+    dataLabels: { enabled: true, style: { fontSize: "10px", colors: ["#1e293b"] } },
+    plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: TRANS_RANGES } } },
+    xaxis: { categories: toRoles.map(tl), labels: axisLabels, position: "top" },
+    yaxis: { labels: axisLabelsMd },
+    legend: { show: false },
+    stroke: { width: 2, colors: ["var(--bg-card)"] },
+    tooltip: {
+      theme: tooltipTheme,
+      y: { formatter: (v) => `${v} ${t("workers.req.workers")}` },
     },
     theme: chartTheme,
   };
@@ -312,285 +346,206 @@ export default function Workers() {
   const reqSupChartH  = Math.max(220, reqSups.length * 30 + 80);
   const reqTgtChartH  = Math.max(200, reqTargets.length * 28 + 60);
   const reqRoleChartH = Math.max(200, reqRoles.length * 28 + 60);
+  const transH        = Math.max(240, fromRoles.length * 46 + 90);
 
-  const thCls = "px-2 py-2.5";
+  const numCell = "px-3 py-2 text-right tabular-nums";
 
-  // ── render ───────────────────────────────────────────────────────────────────
+  // ── render ─────────────────────────────────────────────────────────────────────
   return (
     <Layout title={t("workers.title")}>
-      {/* Headcount KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-6">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            <KPICard
-              label={t("workers.totalWorkers")}
-              value={totalWorkers}
-              tooltip={t("workers.tip.totalWorkers")}
-            />
-            <KPICard
-              label={t("workers.totalBrigadirs")}
-              value={headcount.length}
-              tooltip={t("workers.tip.totalBrigadirs")}
-            />
-            <KPICard
-              label={t("workers.avgDailyHC")}
-              value={fmt1(Math.round(avgDailyTotal * 10) / 10)}
-              tooltip={t("workers.tip.avgDailyHC")}
-            />
-            <KPICard
-              label={t("workers.hcMismatches")}
-              value={mismatchMgrs.length}
-              sub={mismatchDays ? `${mismatchDays} ${t("workers.mismatchDays")}` : undefined}
-              danger={mismatchMgrs.length > 0}
-              tooltip={t("workers.tip.hcMismatches")}
-            />
-          </>
-        )}
+      {/* View tabs */}
+      <div className="flex justify-center sm:justify-start mb-5">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "attendance", label: <span className="inline-flex items-center gap-1.5"><Users size={14} />{t("workers.tab.attendance")}</span> },
+            { value: "movements",  label: <span className="inline-flex items-center gap-1.5"><ArrowLeftRight size={14} />{t("workers.tab.movements")}</span> },
+          ]}
+        />
       </div>
 
-      {/* Official vs Verifix avg daily HC */}
-      <SectionCard icon={Users} title={t("workers.officialVsVerifix")} className="mb-6"
-        right={<span className="text-[10px]" style={{ color: "var(--text-4)" }}>{t("workers.diffWarn")}</span>}>
-        <div className="p-4">
-          {isLoading ? (
-            <SkeletonChart className="h-64" />
-          ) : headcount.length ? (
-            <ReactApexChart type="bar" series={hcCompSeries} options={hcCompOptions} height={chartH} />
-          ) : (
-            <EmptyState title={t("workers.noHeadcount")} message={t("workers.noHeadcountMsg")} />
-          )}
-        </div>
-      </SectionCard>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-6">
-        {/* Role breakdown */}
-        <SectionCard icon={BarChart3} title={t("workers.byRolePerBrigadir")}>
-          <div className="p-4">
-            {isLoading ? (
-              <SkeletonChart className="h-64" />
-            ) : headcount.length ? (
-              <ReactApexChart type="bar" series={stackedSeries} options={stackedOptions} height={chartH} />
-            ) : (
-              <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />
+      {view === "attendance" ? (
+        <>
+          {/* KPI row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6">
+            {isLoading ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />) : (
+              <>
+                <KPICard icon={Users} color="#3b82f6" label={t("workers.kpi.workforce")}
+                  value={totalWorkers} sub={`${headcount.length} ${t("workers.kpi.supervisors")}`}
+                  tooltip={t("workers.tip.workforce")} />
+                <KPICard icon={UserCheck} color="#22c55e" label={t("workers.kpi.avgPresent")}
+                  value={fmt1(Math.round(avgPresent * 10) / 10)} tooltip={t("workers.tip.avgPresent")} />
+                <KPICard icon={TrendingUp} color="#14b8a6" label={t("workers.kpi.attRate")}
+                  value={attRate == null ? "—" : `${attRate}%`} tooltip={t("workers.tip.attRate")} />
+                <KPICard icon={UserMinus} color="#f59e0b" label={t("workers.kpi.shortfall")}
+                  value={fmt1(shortfall)}
+                  sub={mismatchMgrs.length ? `${mismatchMgrs.length} ${t("workers.mismatchWarn")}` : undefined}
+                  tooltip={t("workers.tip.shortfall")} />
+              </>
             )}
           </div>
-        </SectionCard>
 
-        {/* Role trend */}
-        <SectionCard icon={TrendingUp} title={t("workers.attendanceTrend")}>
-          <div className="p-4">
-            {!trend ? (
-              <SkeletonChart className="h-64" />
-            ) : trend?.dates?.length ? (
-              <ReactApexChart type="line" series={trendSeries} options={trendOptions} height={320} />
-            ) : (
-              <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />
-            )}
+          {/* Composition treemap + role radar */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+            <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.composition")}>
+              {isLoading ? <SkeletonChart className="h-72" />
+                : treemapSeries.length ? <ReactApexChart type="treemap" series={treemapSeries} options={treemapOptions} height={330} />
+                : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
+            </ChartCard>
+
+            <ChartCard icon={RadarIcon} title={t("workers.roleMix")} info={t("workers.info.roleMix")}
+              right={supOptions.length > 1 && (
+                <StyledSelect value={selSup} onChange={setRadarSup} options={supOptions}
+                  triggerClassName="px-2.5 py-1.5 text-xs" />
+              )}>
+              {isLoading ? <SkeletonChart className="h-72" />
+                : radarSeries.length ? <ReactApexChart type="radar" series={radarSeries} options={radarOptions} height={330} />
+                : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
+            </ChartCard>
           </div>
-        </SectionCard>
-      </div>
 
-      {/* Headcount summary table */}
-      <SectionCard icon={ClipboardList} title={t("workers.summary")} className="mb-8">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs min-w-[780px]">
+          {/* Trend + heatmap */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+            <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}>
+              {!trend ? <SkeletonChart className="h-72" />
+                : trend?.dates?.length ? <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={330} />
+                : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
+            </ChartCard>
+
+            <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")}>
+              {isLoading ? <SkeletonChart className="h-72" />
+                : heatSeries.length && heatDates.length
+                  ? <ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} />
+                  : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
+            </ChartCard>
+          </div>
+
+          {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
+          <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-8"
+            right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{headcount.length}</span>}>
             <thead>
-              <tr className="border-b" style={{ color: "var(--text-3)", borderColor: "var(--border)", background: "var(--bg-inner)" }}>
-                <SortHead label={t("workers.name")} col="name" sort={sort} onSort={onSort} align="left" style={{ paddingLeft: 16 }} />
-                <th className={`${thCls} text-center`}>{t("overview.shift")}</th>
-                <th className={`${thCls} text-right`}>{t("workers.days")}</th>
-                <SortHead label={t("workers.total")} col="total" sort={sort} onSort={onSort} />
-                <SortHead label={t("workers.avgDailyHC")} col="avg" sort={sort} onSort={onSort} />
-                <SortHead label={t("workers.official")} col="official" sort={sort} onSort={onSort} />
-                <SortHead label={t("workers.delta")} col="diff" sort={sort} onSort={onSort} />
+              <tr>
+                <Th label={t("workers.name")} k="name" sort={sort} onSort={onSort} />
+                <Th label={t("overview.shift")} align="center" />
+                <Th label={t("workers.days")} align="right" hint={t("workers.tip.daysCol")} />
+                <Th label={t("workers.roster")} k="total" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.roster")} />
+                <Th label={t("workers.present")} k="avg" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.avgPresent")} />
+                <Th label={t("workers.attRate")} k="rate" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.attRate")} />
+                <Th label={t("workers.official")} k="official" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.officialCol")} />
+                <Th label={t("workers.shortfall")} k="gap" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.shortfall")} />
                 {ROLES.map((r) => (
-                  <th key={r} className={`${thCls} text-right`} style={{ color: ROLE_COLORS[r] }}>
-                    {r === "Other" ? t("workers.roleOther") : tl(r)}
-                  </th>
+                  <Th key={r} k={r} sort={sort} onSort={onSort} align="right"
+                    label={<span style={{ color: ROLE_COLORS[r] }}>{roleLabel(r)}</span>} />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {displayHeadcount.length === 0 && (
-                <tr><td colSpan={11}>
+              {sortedRows.length === 0 && (
+                <tr><td colSpan={12}>
                   <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />
                 </td></tr>
               )}
-              {displayHeadcount.map((m) => (
-                <tr key={m.manager_id} className="border-b hover:bg-white/5" style={{ borderColor: "var(--border)" }}>
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
-                  <td className={`${thCls} text-center`} style={{ color: "var(--text-2)" }}>S{m.shift}</td>
-                  <td className={`${thCls} text-right font-mono`} style={{ color: "var(--text-2)" }}>{m.days ?? 0}</td>
-                  <td className={`${thCls} text-right font-mono`} style={{ color: "var(--text-1)" }}>{m.total}</td>
-                  <td className={`${thCls} text-right font-mono`} style={{ color: "var(--text-1)" }}>{fmt1(m.avg_daily_hc)}</td>
-                  <td className={`${thCls} text-right font-mono`} style={{ color: "var(--text-2)" }}>{fmt1(m.official_hc)}</td>
-                  <td className={`${thCls} text-right font-mono`}
-                    style={{ color: (m.mismatch_days || 0) > 0 ? "#f97316" : "var(--text-2)" }}>
-                    <span className="inline-flex items-center gap-1">
-                      {(m.mismatch_days || 0) > 0 && <AlertTriangle size={11} />}
-                      {fmt1(m.official_hc_diff)}
+              {sortedRows.map((m) => (
+                <tr key={m.manager_id}>
+                  <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
+                  <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{m.shift}</td>
+                  <td className={numCell} style={{ color: "var(--text-3)" }}>{m.days ?? 0}</td>
+                  <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{m.total}</td>
+                  <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmt1(m.avg_daily_hc)}</td>
+                  <td className={numCell} style={{ color: rateColor(m.rate), fontWeight: 600 }}>
+                    {m.rate == null ? "—" : `${m.rate}%`}
+                  </td>
+                  <td className={numCell} style={{ color: "var(--text-2)" }}>{fmt1(m.official_hc)}</td>
+                  <td className={numCell} style={{ color: (m.gap ?? 0) > 2 ? "#f59e0b" : "var(--text-2)" }}>
+                    <span className="inline-flex items-center gap-1 justify-end">
+                      {(m.gap ?? 0) > 2 && <AlertTriangle size={11} />}
+                      {m.gap == null ? "—" : (m.gap > 0 ? `−${fmt1(m.gap)}` : "0")}
                     </span>
                   </td>
                   {ROLES.map((r) => (
-                    <td key={r} className={`${thCls} text-right font-mono`} style={{ color: ROLE_COLORS[r] }}>
-                      {m.by_role[r] || 0}
-                    </td>
+                    <td key={r} className={numCell} style={{ color: ROLE_COLORS[r] }}>{m.by_role[r] || 0}</td>
                   ))}
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
-      </SectionCard>
-
-      {/* ── Requests analysis (Verifix edit) ─────────────────────────────────── */}
-      <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider mb-3"
-        style={{ color: "var(--text-1)" }}>
-        <ArrowLeftRight size={15} style={{ color: "var(--brand-text)" }} />
-        {t("workers.req.title")}
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4 mb-6">
-        {!req ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            <KPICard
-              label={t("workers.req.totalRequests")}
-              value={reqKpi.total}
-              tooltip={t("workers.req.tip.totalRequests")}
-            />
-            <KPICard
-              label={t("workers.req.workersExchanged")}
-              value={reqKpi.workers_moved}
-              tooltip={t("workers.req.tip.workersExchanged")}
-            />
-            <KPICard
-              label={t("workers.req.workersReassigned")}
-              value={reqKpi.workers_reassigned}
-              tooltip={t("workers.req.tip.workersReassigned")}
-            />
-            <KPICard
-              label={t("workers.req.postedRate")}
-              value={`${postedRate}%`}
-              sub={reqKpi.pending ? `${reqKpi.pending} ${t("workers.req.pending").toLowerCase()}` : undefined}
-              tooltip={t("workers.req.tip.postedRate")}
-            />
-          </>
-        )}
-      </div>
-
-      {req && !hasReqData ? (
-        <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />
-        </div>
+          </TableCard>
+        </>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            {/* Requests by day */}
-            <SectionCard icon={CalendarDays} title={t("workers.req.byDay")}>
-              <div className="p-4">
-                {!req ? (
-                  <SkeletonChart className="h-64" />
-                ) : (
-                  <ReactApexChart type="bar" series={reqDaySeries} options={reqDayOptions} height={300} />
-                )}
-              </div>
-            </SectionCard>
-
-            {/* Requests by supervisor */}
-            <SectionCard icon={Users} title={t("workers.req.bySupervisor")}>
-              <div className="p-4">
-                {!req ? (
-                  <SkeletonChart className="h-64" />
-                ) : (
-                  <ReactApexChart type="bar" series={reqSupSeries} options={reqSupOptions} height={reqSupChartH} />
-                )}
-              </div>
-            </SectionCard>
+          {/* Movements KPI row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6">
+            {!req ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />) : (
+              <>
+                <KPICard icon={ClipboardList} color="#8b5cf6" label={t("workers.req.totalRequests")}
+                  value={reqKpi.total} tooltip={t("workers.req.tip.totalRequests")} />
+                <KPICard icon={ArrowLeftRight} color="#3b82f6" label={t("workers.req.workersExchanged")}
+                  value={reqKpi.workers_moved} sub={`${reqKpi.exchanges} ${t("workers.req.exchanges").toLowerCase()}`}
+                  tooltip={t("workers.req.tip.workersExchanged")} />
+                <KPICard icon={Repeat} color="#ec4899" label={t("workers.req.workersReassigned")}
+                  value={reqKpi.workers_reassigned} sub={`${reqKpi.role_changes} ${t("workers.req.roleChanges").toLowerCase()}`}
+                  tooltip={t("workers.req.tip.workersReassigned")} />
+                <KPICard icon={CheckCircle2} color="#22c55e" label={t("workers.req.postedRate")}
+                  value={`${postedRate}%`}
+                  sub={reqKpi.pending ? `${reqKpi.pending} ${t("workers.req.pending").toLowerCase()}` : undefined}
+                  tooltip={t("workers.req.tip.postedRate")} />
+              </>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            {/* Exchange targets */}
-            <SectionCard icon={ArrowLeftRight} title={t("workers.req.targets")}>
-              <div className="p-4">
-                {!req ? (
-                  <SkeletonChart className="h-64" />
-                ) : reqTargets.length ? (
-                  <ReactApexChart
-                    type="bar"
-                    series={[{ name: t("workers.req.workersExchanged"), data: reqTargets.map((g) => g.workers) }]}
-                    options={reqTgtOptions}
-                    height={reqTgtChartH}
-                  />
-                ) : (
-                  <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />
-                )}
+          {req && !hasReqData ? (
+            <div className="rounded-2xl p-4 mb-6" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+              <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+                <ChartCard icon={CalendarDays} title={t("workers.req.byDay")} info={t("workers.info.byDay")}>
+                  {!req ? <SkeletonChart className="h-72" />
+                    : <ReactApexChart type="bar" series={reqDaySeries} options={reqDayOptions} height={320} />}
+                </ChartCard>
+                <ChartCard icon={Users} title={t("workers.req.bySupervisor")}>
+                  {!req ? <SkeletonChart className="h-72" />
+                    : <ReactApexChart type="bar" series={reqSupSeries} options={reqSupOptions} height={reqSupChartH} />}
+                </ChartCard>
               </div>
-            </SectionCard>
 
-            {/* Role changes by new role + transitions */}
-            <SectionCard icon={Repeat} title={t("workers.req.roles")}>
-              <div className="p-4">
-                {!req ? (
-                  <SkeletonChart className="h-64" />
-                ) : reqRoles.length ? (
-                  <>
-                    <ReactApexChart
-                      type="bar"
-                      series={[{ name: t("workers.req.workersReassigned"), data: reqRoles.map((r) => r.workers) }]}
-                      options={reqRoleOptions}
-                      height={reqRoleChartH}
-                    />
-                    {reqTrans.length > 0 && (
-                      <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-2"
-                          style={{ color: "var(--text-3)" }}>
-                          {t("workers.req.transitions")}
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          {reqTrans.map((tr, i) => (
-                            <div key={i} className="flex items-center justify-between text-xs">
-                              <span className="truncate" style={{ color: "var(--text-2)" }}>
-                                {tl(tr.from)}
-                                <span className="mx-1.5" style={{ color: REQ_COLORS.roleChange }}>→</span>
-                                <span style={{ color: "var(--text-1)" }}>{tl(tr.to)}</span>
-                              </span>
-                              <span className="font-mono flex-shrink-0 pl-3" style={{ color: "var(--text-2)" }}>
-                                {tr.workers} {t("workers.req.workers")}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />
-                )}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+                <ChartCard icon={ArrowLeftRight} title={t("workers.req.targets")} info={t("workers.info.targets")}>
+                  {!req ? <SkeletonChart className="h-72" />
+                    : reqTargets.length ? <ReactApexChart type="bar"
+                        series={[{ name: t("workers.req.workersExchanged"), data: reqTargets.map((g) => g.workers) }]}
+                        options={reqTgtOptions} height={reqTgtChartH} />
+                    : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
+                </ChartCard>
+                <ChartCard icon={Repeat} title={t("workers.req.roles")}>
+                  {!req ? <SkeletonChart className="h-72" />
+                    : reqRoles.length ? <ReactApexChart type="bar"
+                        series={[{ name: t("workers.req.workersReassigned"), data: reqRoles.map((r) => r.workers) }]}
+                        options={reqRoleOptions} height={reqRoleChartH} />
+                    : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
+                </ChartCard>
               </div>
-            </SectionCard>
-          </div>
 
-          {/* Supervisor summary table */}
-          <SectionCard icon={ClipboardList} title={t("workers.req.supervisorSummary")} className="mb-6">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[760px]">
+              {/* Role-transition matrix */}
+              <ChartCard icon={Grid3x3} title={t("workers.req.transitionMatrix")} info={t("workers.info.transitions")} className="mb-6">
+                {!req ? <SkeletonChart className="h-64" />
+                  : transSeries.length ? <ReactApexChart type="heatmap" series={transSeries} options={transOptions} height={transH} />
+                  : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
+              </ChartCard>
+
+              {/* Supervisor summary table */}
+              <TableCard icon={ClipboardList} title={t("workers.req.supervisorSummary")} className="mb-6"
+                right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{reqSups.length}</span>}>
                 <thead>
-                  <tr className="border-b" style={{ color: "var(--text-3)", borderColor: "var(--border)", background: "var(--bg-inner)" }}>
-                    <th className="text-left px-4 py-2.5">{t("workers.name")}</th>
-                    <th className={`${thCls} text-center`}>{t("overview.shift")}</th>
-                    <th className={`${thCls} text-right`} style={{ color: REQ_COLORS.exchange }}>
-                      {t("workers.req.exchanges")}
-                    </th>
-                    <th className={`${thCls} text-right`} style={{ color: REQ_COLORS.roleChange }}>
-                      {t("workers.req.roleChanges")}
-                    </th>
-                    <th className={`${thCls} text-right`}>{t("workers.req.posted")}</th>
-                    <th className={`${thCls} text-left`}>{t("workers.req.topTarget")}</th>
-                    <th className="text-left px-4 py-2.5">{t("workers.req.topRole")}</th>
+                  <tr>
+                    <Th label={t("workers.name")} />
+                    <Th label={t("overview.shift")} align="center" />
+                    <Th align="right" label={<span style={{ color: REQ_COLORS.exchange }}>{t("workers.req.exchanges")}</span>} />
+                    <Th align="right" label={<span style={{ color: REQ_COLORS.roleChange }}>{t("workers.req.roleChanges")}</span>} />
+                    <Th label={t("workers.req.posted")} align="right" />
+                    <Th label={t("workers.req.topTarget")} />
+                    <Th label={t("workers.req.topRole")} />
                   </tr>
                 </thead>
                 <tbody>
@@ -600,26 +555,24 @@ export default function Workers() {
                     </td></tr>
                   )}
                   {reqSups.map((s) => (
-                    <tr key={s.manager_id} className="border-b hover:bg-white/5" style={{ borderColor: "var(--border)" }}>
-                      <td className="px-4 py-2.5 font-medium" style={{ color: "var(--text-1)" }}>{tl(s.name)}</td>
-                      <td className={`${thCls} text-center`} style={{ color: "var(--text-2)" }}>S{s.shift}</td>
-                      <td className={`${thCls} text-right font-mono`} style={{ color: REQ_COLORS.exchange }}>
+                    <tr key={s.manager_id}>
+                      <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(s.name)}</td>
+                      <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{s.shift}</td>
+                      <td className={numCell} style={{ color: REQ_COLORS.exchange }}>
                         {s.exchanges} · {s.exchange_workers} {t("workers.req.workers")}
                       </td>
-                      <td className={`${thCls} text-right font-mono`} style={{ color: REQ_COLORS.roleChange }}>
+                      <td className={numCell} style={{ color: REQ_COLORS.roleChange }}>
                         {s.role_changes} · {s.role_change_workers} {t("workers.req.workers")}
                       </td>
-                      <td className={`${thCls} text-right font-mono`} style={{ color: "var(--text-1)" }}>
-                        {s.posted}/{s.total}
-                      </td>
-                      <td className={thCls} style={{ color: "var(--text-2)" }}>{s.top_target ? tl(s.top_target) : "—"}</td>
-                      <td className="px-4 py-2.5" style={{ color: "var(--text-2)" }}>{s.top_role ? tl(s.top_role) : "—"}</td>
+                      <td className={numCell} style={{ color: "var(--text-1)" }}>{s.posted}/{s.total}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_target ? tl(s.top_target) : "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_role ? tl(s.top_role) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
-          </SectionCard>
+              </TableCard>
+            </>
+          )}
         </>
       )}
     </Layout>
