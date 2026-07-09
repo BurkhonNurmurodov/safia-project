@@ -806,6 +806,14 @@ def create_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     _validate(body)
+    # A new concern is always about a specific cell (which names its leader) and
+    # a department category — both required.
+    cell = (body.cell_code or "").strip()
+    if not cell:
+        raise HTTPException(status_code=400, detail="A cell is required")
+    category = (body.category or "").strip()
+    if category not in CATEGORIES:
+        raise HTTPException(status_code=400, detail="A category is required")
     # Where the concern lands (level + who holds it) is derived from the
     # creator's role; the Owner column identity is the creator themselves.
     tgt = _resolve_target(payload, body, db)
@@ -815,7 +823,8 @@ def create_concern(
     # A brand-new concern always opens at "todo": setting status is the
     # responsible holder's call, and the creator isn't that person.
     c = LeaderConcern(
-        cell_code=(body.cell_code or "").strip() or None,
+        cell_code=cell,
+        category=category,
         concern_owner=(owner_snapshot or "").strip() or "—",
         owner_role=owner_role,
         owner_profile_id=owner_profile_id,
