@@ -117,14 +117,16 @@ def get_headcount(
     for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
         daily_hc.setdefault(mgr_id, {})[d] = hc
 
-    # Official HC per (manager name, day) — HeadcountData is keyed by display
-    # name and "DD.MM.YYYY" strings (same convention as brigadirs.py).
-    names = {m["name"] for m in agg.values()}
+    # Official HC per (manager name, day) — HeadcountData is keyed by the
+    # brigadir's Cyrillic sheet spelling (the uz_cyrl profile override) and
+    # "DD.MM.YYYY" strings (same convention as brigadirs.py).
+    sheet_of = sheet_name_map(db, (m["name"] for m in agg.values()))
+    sheet_names = set(sheet_of.values())
     date_strs = {d.strftime("%d.%m.%Y"): d for days in daily_hc.values() for d in days}
     official: dict[str, dict[date, float]] = {}
-    if names and date_strs:
+    if sheet_names and date_strs:
         for r in db.query(HeadcountData).filter(
-            HeadcountData.manager_name.in_(names),
+            HeadcountData.manager_name.in_(sheet_names),
             HeadcountData.date.in_(list(date_strs)),
         ).all():
             val = float(r.official_hc or 0)
