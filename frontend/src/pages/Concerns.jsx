@@ -224,6 +224,22 @@ function LevelChip({ level, label, title }) {
   );
 }
 
+// Category chip — a soft tinted pill with the department's identity hue (icon
+// tint chip convention). Renders "—" plainly when a legacy row has no category.
+function CategoryChip({ category, label }) {
+  if (!category) return <span style={{ color: "var(--text-4)" }}>—</span>;
+  const color = CATEGORY_COLOR[category] || "var(--text-3)";
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: `${color}24`, color }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
 // Labelled fact on a mobile concern card — every value gets a caption so
 // nobody has to guess which name is the leader and which is the brigadir.
 function MobField({ label, children }) {
