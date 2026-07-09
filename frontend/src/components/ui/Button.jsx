@@ -9,8 +9,8 @@ import { Loader2 } from "lucide-react";
  *               "secondary" (neutral card bg — cancel / less important)
  *               "danger" (red — destructive confirm)
  *               "ghost" (borderless, subdued — inline/toolbar actions)
- *   size      – "md" (default, compact px-3 py-1.5 text-xs ≈ 30px)
- *               | "sm" (px-2.5 py-1 text-xs ≈ 26px)
+ *   size      – "md" (default, compact px-3.5 py-1.5 text-xs ≈ 30px)
+ *               | "sm" (px-3 py-1 text-xs ≈ 26px)
  *   icon      – optional lucide icon element rendered before the label
  *   loading   – overlays a centered Loader2 spinner (label kept in place to
  *               reserve width, so the button never reflows) and disables
