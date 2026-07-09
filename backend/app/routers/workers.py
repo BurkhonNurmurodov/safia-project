@@ -117,11 +117,11 @@ def get_headcount(
     for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
         daily_hc.setdefault(mgr_id, {})[d] = hc
 
-    # Official HC per (manager name, day) — HeadcountData is keyed by the
-    # brigadir's Cyrillic sheet spelling (the ru profile override) and
-    # "DD.MM.YYYY" strings (same convention as brigadirs.py).
-    sheet_of = sheet_name_map(db, (m["name"] for m in agg.values()))
-    sheet_names = set(sheet_of.values())
+    # Official HC per (manager name, day) — HeadcountData spells brigadirs in
+    # either alphabet, so accept every known spelling and resolve rows back to
+    # the canonical Manager.name (same convention as brigadirs.py).
+    alias = sheet_alias_map(db, (m["name"] for m in agg.values()))
+    sheet_names = set(alias.keys())
     date_strs = {d.strftime("%d.%m.%Y"): d for days in daily_hc.values() for d in days}
     official: dict[str, dict[date, float]] = {}
     if sheet_names and date_strs:
@@ -131,7 +131,8 @@ def get_headcount(
         ).all():
             val = float(r.official_hc or 0)
             if val > 0:
-                official.setdefault(r.manager_name, {})[date_strs[r.date]] = val
+                canon = alias.get(r.manager_name, r.manager_name)
+                official.setdefault(canon, {})[date_strs[r.date]] = val
 
     # Same per-day mismatch rule as kpi_calculator.hc_suspicious: |official − verifix| > 2.
     # Days without official data are skipped rather than treated as official=0.
