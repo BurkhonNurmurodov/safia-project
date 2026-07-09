@@ -768,6 +768,8 @@ export default function Concerns() {
   };
 
   const buildPayload = () => ({
+    cell_code: form.cell_code || null,
+    category: form.category || null,
     concern_text: form.concern_text.trim(),
     status: form.status,
     deadline_days: form.deadline_days === "" ? null : Number(form.deadline_days),
