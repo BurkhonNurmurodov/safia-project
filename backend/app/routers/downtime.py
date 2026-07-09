@@ -64,13 +64,12 @@ def get_downtime(
 
     rows = []
     for mgr in sorted(managers, key=lambda m: m.name or ""):
-        sn = sheet_of.get(mgr.name, mgr.name)  # sheet-data lookup key
         for d_str in dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
             if (mgr.id, d_obj) not in confirmed:
                 continue
-            total = dt_total.get(sn, {}).get(d_str, 0.0)
-            cats = dt_by_cat.get(sn, {}).get(d_str, {c: 0.0 for c in cat_names})
+            total = dt_total.get(mgr.name, {}).get(d_str, 0.0)
+            cats = dt_by_cat.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
             rows.append({
                 "manager_name": mgr.name,
                 "shift": mgr.shift,
