@@ -7,7 +7,7 @@ import {
   ChevronDown, Check,
   CalendarClock, UserRound, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
-  Layers, ArrowUp, ArrowDown, ArrowRight, History,
+  Layers, ArrowUp, ArrowDown, ArrowRight, History, LayoutGrid, Tag,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
