@@ -232,6 +232,29 @@ def get_dates(
     return {"dates": [r[0].isoformat() for r in rows]}
 
 
+@router.get("/api/production/managers")
+def list_production_managers(
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """Brigadir units to offer in the dashboard picker, scoped to the caller:
+    supervisor → only their own unit; shift-manager → configured units in their
+    shift; top-manager / admin → every configured unit. 'Configured' = has an ABC
+    catalog or an uploaded daily snapshot (see _configured_manager_ids)."""
+    role = payload.get("role")
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if role == "supervisor":
+        mgrs = q.filter(Manager.id == payload.get("role_id")).all()
+    elif role in ("admin", "top-manager", "shift-manager"):
+        if role == "shift-manager":
+            q = q.filter(Manager.shift == _shift_manager_shift(payload, db))
+        configured = _configured_manager_ids(db)
+        mgrs = [m for m in q.order_by(Manager.name).all() if m.id in configured]
+    else:
+        raise HTTPException(status_code=403, detail="Not allowed to view production data")
+    return {"managers": [{"manager_id": m.id, "name": m.name, "shift": m.shift} for m in mgrs]}
+
+
 class OverrideBody(BaseModel):
     date: str
     sap_code: str
