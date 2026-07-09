@@ -22,6 +22,10 @@ import { ChevronDown, Check, Trash2, Search } from "lucide-react";
  *                  render a small trash button that calls this instead of
  *                  selecting the option (optional)
  *   removeTitle  – tooltip text for the remove button (optional)
+ *   searchable   – boolean; renders a filter box pinned to the top of the
+ *                  dropdown and narrows the list by label as you type. Use for
+ *                  long option lists (optional)
+ *   searchPlaceholder – placeholder text for the search box (optional)
  */
 export default function StyledSelect({
   value,
@@ -34,16 +38,27 @@ export default function StyledSelect({
   disabled = false,
   onRemove,
   removeTitle,
+  searchable = false,
+  searchPlaceholder,
 }) {
   const [open, setOpen]           = useState(false);
   const [dropStyle, setDropStyle] = useState({});
+  const [query, setQuery]         = useState("");
   const triggerRef                = useRef(null);
   const listRef                   = useRef(null);
+  const searchRef                 = useRef(null);
 
   // Normalise options → [{ value, label }]
   const opts = options.map((o) =>
     typeof o === "string" ? { value: o, label: o } : o,
   );
+
+  // Filtered view when searchable — match against the label's plain text
+  // (labels are usually strings here; non-string nodes fall through unfiltered).
+  const q = query.trim().toLowerCase();
+  const shown = searchable && q
+    ? opts.filter((o) => String(o.label ?? "").toLowerCase().includes(q))
+    : opts;
 
   const selectedOpt = opts.find((o) => o.value === value);
 
