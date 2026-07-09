@@ -497,6 +497,17 @@ export default function Concerns() {
     queryFn: () => api.get("/api/concerns/cells").then((r) => r.data),
     enabled: modalOpen && !readOnly,
   });
+  // When the scope has exactly one cell (e.g. a leader logging for their own
+  // cell), pre-select it so they don't have to open the picker at all.
+  useEffect(() => {
+    if (modalOpen && !form.id && !form.cell_code && cells.length === 1) {
+      setForm((f) => ({ ...f, cell_code: cells[0].cell }));
+    }
+  }, [modalOpen, form.id, form.cell_code, cells]);
+  const cellOptions = cells.map((c) => ({
+    value: c.cell,
+    label: c.leader ? `${c.cell} · ${tl(c.leader)}` : c.cell,
+  }));
 
   // Concern list ─────────────────────────────────────────────────────────────
   // The backend returns only the caller's scope (admin/top-manager: all,
