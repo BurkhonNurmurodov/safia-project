@@ -617,6 +617,7 @@ const ADMIN_TABS = ["data", "production", "translations", "users", "profiles", "
 export default function AdminUpload() {
   const navigate = useNavigate();
   const { t } = useLang();
+  const { theme, toggle } = useTheme();
   // ?tab=users deep-links a specific tab (used by the bot's notification button)
   const [searchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
