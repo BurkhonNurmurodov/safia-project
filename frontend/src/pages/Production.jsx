@@ -371,6 +371,7 @@ function RawView({ fileType, date, managerParam }) {
 export default function Production() {
   const { auth } = useAuth();
   const { t } = useLang();
+  const { tl } = useTranslit();
   const qc = useQueryClient();
   const [date, setDate] = useState(todayISO());
   const [view, setView] = useState("zagruzka"); // zagruzka | faza | zaga
