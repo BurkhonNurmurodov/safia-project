@@ -61,8 +61,9 @@ def build_metrics_list(
     plan_data: dict[str, dict[str, float]] = {}
     actual_data: dict[str, dict[str, float]] = {}
     for r in prod_rows:
-        plan_data.setdefault(r.manager_name, {})[r.date] = float(r.prod_plan or 0)
-        actual_data.setdefault(r.manager_name, {})[r.date] = float(r.prod_actual or 0)
+        canon = alias.get(r.manager_name, r.manager_name)
+        plan_data.setdefault(canon, {})[r.date] = float(r.prod_plan or 0)
+        actual_data.setdefault(canon, {})[r.date] = float(r.prod_actual or 0)
 
     # Headcount data from DB
     hc_rows = db.query(HeadcountData).filter(
@@ -71,7 +72,8 @@ def build_metrics_list(
     ).all()
     hc_data: dict[str, dict[str, float]] = {}
     for r in hc_rows:
-        hc_data.setdefault(r.manager_name, {})[r.date] = float(r.official_hc or 0)
+        canon = alias.get(r.manager_name, r.manager_name)
+        hc_data.setdefault(canon, {})[r.date] = float(r.official_hc or 0)
 
     # Downtime data from DB
     dt_rows = db.query(DowntimeData).filter(
@@ -81,8 +83,9 @@ def build_metrics_list(
     dt_total: dict[str, dict[str, float]] = {}
     dt_by_cat: dict[str, dict[str, dict]] = {}
     for r in dt_rows:
-        dt_total.setdefault(r.manager_name, {})[r.date] = float(r.total_minutes or 0)
-        dt_by_cat.setdefault(r.manager_name, {})[r.date] = r.by_category or {}
+        canon = alias.get(r.manager_name, r.manager_name)
+        dt_total.setdefault(canon, {})[r.date] = float(r.total_minutes or 0)
+        dt_by_cat.setdefault(canon, {})[r.date] = r.by_category or {}
 
     # Gate: only include days the supervisor has closed. When use_confirmed_only=True
     # (used for individual profile pages) we additionally require all requests to
