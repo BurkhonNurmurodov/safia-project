@@ -490,6 +490,13 @@ export default function Concerns() {
     queryFn: () => api.get("/api/concerns/top-managers").then((r) => r.data),
     enabled: needsTopPick || formNeedsTop,
   });
+  // Cell picker source — every production cell in the caller's scope with the
+  // leader(s) assigned to it. Fetched only while the create/edit modal is open.
+  const { data: cells = [] } = useQuery({
+    queryKey: ["concern-cells"],
+    queryFn: () => api.get("/api/concerns/cells").then((r) => r.data),
+    enabled: modalOpen && !readOnly,
+  });
 
   // Concern list ─────────────────────────────────────────────────────────────
   // The backend returns only the caller's scope (admin/top-manager: all,
