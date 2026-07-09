@@ -44,6 +44,7 @@ from app.models import (
 from app.permissions import require_page
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
+from app.services.name_map import sheet_name_map
 
 router = APIRouter(tags=["production"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
