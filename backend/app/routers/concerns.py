@@ -155,6 +155,13 @@ def _serialize(
         "brigadir_manager_id": c.brigadir_manager_id,
         "brigadir_name": c.brigadir_name,
         "cell_code": c.cell_code,
+        # The leader currently assigned to this concern's cell, resolved live
+        # (falls back to the leader-name snapshot for legacy leader-logged rows).
+        "cell_leader_name": (
+            (cell_leaders or {}).get((c.cell_code or "").strip())
+            or (c.leader_name or None)
+        ) if (c.cell_code or c.leader_name) else None,
+        "category": c.category,
         "concern_owner": c.concern_owner,
         "owner_name": owner_name or c.concern_owner,
         "owner_role": c.owner_role if owner_name else None,
