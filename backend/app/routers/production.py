@@ -452,7 +452,7 @@ def get_raw(
 ):
     if file_type not in ("faza", "zaga"):
         raise HTTPException(status_code=400, detail="file_type must be faza|zaga")
-    mid = _resolve_manager_id(payload, manager_id)
+    mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(date)
     up = db.query(PPUpload).filter(
         PPUpload.manager_id == mid, PPUpload.date == day,
