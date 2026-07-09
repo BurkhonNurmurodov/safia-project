@@ -1416,7 +1416,7 @@ export default function Concerns() {
                   </tr>
                 ))}
                 {!isLoading && sorted.length === 0 && (
-                  <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  <tr><td colSpan={9} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                     {t("concerns.empty")}
                   </td></tr>
                 )}
