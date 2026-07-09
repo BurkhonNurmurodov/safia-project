@@ -142,6 +142,10 @@ def get_headcount(
         both = [(days[d], off[d]) for d in days if d in off]
         m["days"] = len(days)
         m["avg_daily_hc"] = round(sum(days.values()) / len(days), 1) if days else 0
+        # Per-day present count feeds the supervisor×day attendance heatmap on
+        # the frontend. Only confirmed days appear; the grid greys the rest.
+        m["daily"] = [{"date": d.strftime("%d.%m.%Y"), "hc": hc}
+                      for d, hc in sorted(days.items())]
         if both:
             avg_vfx = sum(v for v, _ in both) / len(both)
             avg_off = sum(o for _, o in both) / len(both)

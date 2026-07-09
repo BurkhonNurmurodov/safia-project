@@ -41,3 +41,11 @@ Other UI conventions:
 - Never build/commit/push manually — the Edit/Write hook builds `frontend/dist` and auto-commits+pushes. A failed build silently aborts the commit, so verify builds with `cd frontend && npx vite build` when in doubt.
 - Backend changes need a Passenger restart on prod; startup migrations go in BOTH the FastAPI lifespan and `passenger_wsgi.py`.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.
+
+## Context discipline
+
+- Read only the files needed for the task. Don't sweep the tree or open files "to understand the codebase" — this document is the map. Use the UI-template table above to find the right component instead of grepping for it.
+- When the user names a file or component, edit that one. Follow imports/types only as far as needed to make the edit correct, not to survey the project.
+- Prefer targeted `Grep` for a specific symbol over reading whole files. Read the minimal region of a large file, not the entire file.
+- If you think you need to read beyond the files the user named, ask first (one line) rather than exploring on your own.
+- Reading a file immediately before editing it is expected and fine — the goal is to cut *exploratory* reads, not necessary ones.
