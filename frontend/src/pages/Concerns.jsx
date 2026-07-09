@@ -1422,7 +1422,7 @@ export default function Concerns() {
                 )}
                 {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
-                  const colSpan = 7;
+                  const colSpan = 9;
                   // Per-row rights come from the backend (responsibility moves up
                   // the chain): a row with no actions at all stays inert.
                   const hasActions =
