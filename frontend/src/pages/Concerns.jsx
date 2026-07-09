@@ -1443,6 +1443,24 @@ export default function Concerns() {
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
+                        {/* Cell (the "Ячейка номер") + the leader currently
+                            assigned to it — the concern's subject at a glance */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {r.cell_code ? (
+                            <>
+                              <div className="font-semibold" style={{ color: "var(--text-1)" }}>{r.cell_code}</div>
+                              {r.cell_leader_name && (
+                                <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }} title={tl(r.cell_leader_name)}>
+                                  {shortOwner(r.cell_leader_name)}
+                                </div>
+                              )}
+                            </>
+                          ) : <span style={{ color: "var(--text-4)" }}>—</span>}
+                        </td>
+                        {/* Department category */}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <CategoryChip category={r.category} label={categoryLabel(r.category)} />
+                        </td>
                         {/* Owner = whoever created the concern; the line under
                             the name is their position */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
