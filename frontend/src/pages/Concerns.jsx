@@ -1397,6 +1397,8 @@ export default function Concerns() {
               <thead>
                 <tr>
                   <Th icon={CalendarClock} label={t("concerns.colDate")}     k="date"     sort={sort} onSort={onSort} />
+                  <Th icon={LayoutGrid}    label={t("concerns.colCell")}     k="cell"     sort={sort} onSort={onSort} />
+                  <Th icon={Tag}           label={t("concerns.colCategory")} k="category" sort={sort} onSort={onSort} />
                   <Th icon={UserRound}     label={t("concerns.colOwner")}    k="owner"    sort={sort} onSort={onSort} />
                   <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
                   <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
