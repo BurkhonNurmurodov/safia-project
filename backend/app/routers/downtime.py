@@ -52,8 +52,9 @@ def get_downtime(
     dt_by_cat: dict[str, dict[str, dict]] = {}
     cat_names_set: set[str] = set()
     for r in dt_rows:
-        dt_total.setdefault(r.manager_name, {})[r.date] = float(r.total_minutes or 0)
-        dt_by_cat.setdefault(r.manager_name, {})[r.date] = r.by_category or {}
+        canon = alias.get(r.manager_name, r.manager_name)
+        dt_total.setdefault(canon, {})[r.date] = float(r.total_minutes or 0)
+        dt_by_cat.setdefault(canon, {})[r.date] = r.by_category or {}
         cat_names_set.update((r.by_category or {}).keys())
 
     cat_names = sorted(cat_names_set)
