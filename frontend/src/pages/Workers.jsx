@@ -379,40 +379,35 @@ export default function Workers() {
             )}
           </div>
 
-          {/* Composition treemap + role radar */}
+          {/* Composition donut + attendance trend (compact pair) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.composition")}>
+            <ChartCard icon={PieChart} title={t("workers.composition")} info={t("workers.info.composition")}>
               {isLoading ? <SkeletonChart className="h-72" />
-                : treemapSeries.length ? <ReactApexChart type="treemap" series={treemapSeries} options={treemapOptions} height={330} />
+                : roleTotals.some((n) => n > 0) ? <ReactApexChart type="donut" series={roleTotals} options={donutOptions} height={330} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
             </ChartCard>
 
-            <ChartCard icon={RadarIcon} title={t("workers.roleMix")} info={t("workers.info.roleMix")}
-              right={supOptions.length > 1 && (
-                <StyledSelect value={selSup} onChange={setRadarSup} options={supOptions}
-                  triggerClassName="px-2.5 py-1.5 text-xs" />
-              )}>
-              {isLoading ? <SkeletonChart className="h-72" />
-                : radarSeries.length ? <ReactApexChart type="radar" series={radarSeries} options={radarOptions} height={330} />
-                : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
-            </ChartCard>
-          </div>
-
-          {/* Trend + heatmap */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
             <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}>
               {!trend ? <SkeletonChart className="h-72" />
                 : trend?.dates?.length ? <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={330} />
                 : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
             </ChartCard>
-
-            <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")}>
-              {isLoading ? <SkeletonChart className="h-72" />
-                : heatSeries.length && heatDates.length
-                  ? <ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} />
-                  : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
-            </ChartCard>
           </div>
+
+          {/* Roster vs present — the attendance gap per brigadir (full width) */}
+          <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={t("workers.info.rosterVsPresent")} className="mb-6">
+            {isLoading ? <SkeletonChart className="h-72" />
+              : headcount.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={chartH} />
+              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
+          </ChartCard>
+
+          {/* Attendance heatmap (full width) */}
+          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6">
+            {isLoading ? <SkeletonChart className="h-72" />
+              : heatSeries.length && heatDates.length
+                ? <ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} />
+                : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
+          </ChartCard>
 
           {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
           <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-8"
