@@ -93,6 +93,23 @@ def _sm_names(db: Session) -> dict:
     }
 
 
+def _cell_leaders(db: Session) -> dict:
+    """cell → leader name(s) currently assigned to it. Each leader carries their
+    production cell on the profile (role_profiles.cell); the Concerns table shows
+    the leader who owns a concern's cell, resolved live so re-assignments stay
+    current. Several leaders on one cell render comma-joined."""
+    by_cell: dict = {}
+    for prof in (
+        db.query(RoleProfile)
+        .filter(RoleProfile.role == "leader", RoleProfile.cell.isnot(None))
+        .order_by(RoleProfile.name)
+    ):
+        cell = (prof.cell or "").strip()
+        if cell:
+            by_cell.setdefault(cell, []).append(prof.name)
+    return {cell: ", ".join(names) for cell, names in by_cell.items()}
+
+
 def _level(c: LeaderConcern) -> str:
     """Normalized escalation level — pre-migration 'leader' rows read as the
     new base of the chain."""
