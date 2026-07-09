@@ -258,7 +258,7 @@ export default function ProfilesManagement() {
         {isLoading ? (
           <div className="space-y-2 py-2">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-9 rounded-lg animate-pulse bg-white/[0.04]" />
+              <div key={i} className="h-9 rounded-lg animate-pulse bg-[var(--bg-inner)]" />
             ))}
           </div>
         ) : items.length === 0 ? (
@@ -267,7 +267,7 @@ export default function ProfilesManagement() {
           <div className="overflow-x-auto -mx-1">
             <table className="w-full text-xs min-w-[640px]">
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   {[
                     t("admin.profiles.colName"),
                     ...(type === "shift-manager" || type === "supervisor" ? [t("admin.profiles.colShift")] : []),
@@ -285,8 +285,8 @@ export default function ProfilesManagement() {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id}
-                      style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-                      className="hover:bg-white/[0.02] transition-colors">
+                      style={{ borderBottom: "1px solid var(--border)" }}
+                      className="hover:bg-[var(--hover-bg)] transition-colors">
                     <td className="py-2.5 px-3 font-medium text-[var(--text-1)] whitespace-nowrap">
                       {tl(item.name)}
                       {type === "supervisor" && item.archived && (

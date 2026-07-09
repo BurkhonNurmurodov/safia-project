@@ -241,7 +241,7 @@ export default function TranslationsEditor() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-[var(--text-3)]" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr className="text-left text-[var(--text-3)]" style={{ borderBottom: "1px solid var(--border)" }}>
                   <th className="px-3 py-2 font-semibold sticky left-0 bg-[var(--bg-card)] min-w-[180px]">{t("admin.tr.key")}</th>
                   {languages.map((l) => (
                     <th key={l.code} className="px-3 py-2 font-semibold min-w-[200px]">
@@ -252,7 +252,7 @@ export default function TranslationsEditor() {
               </thead>
               <tbody>
                 {initLoading && Array.from({ length: 10 }).map((_, i) => (
-                  <tr key={`sk-${i}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <tr key={`sk-${i}`} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td className="px-3 py-2 sticky left-0 bg-[var(--bg-card)]"><SkeletonBlock className="h-4 w-32" /></td>
                     {languages.map((l) => (
                       <td key={l.code} className="px-2 py-2"><SkeletonBlock className="h-7 w-full" /></td>
@@ -263,7 +263,7 @@ export default function TranslationsEditor() {
                   <tr><td colSpan={1 + languages.length} className="px-3 py-8 text-center text-[var(--text-3)]">{t("admin.tr.noKeys")}</td></tr>
                 )}
                 {!initLoading && rows.slice(0, MAX_ROWS).map(({ key, label, rawName }) => (
-                  <tr key={key} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <tr key={key} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td className="px-3 py-1.5 font-mono text-[11px] text-[var(--text-2)] sticky left-0 bg-[var(--bg-card)] align-top">{label}</td>
                     {languages.map((l) => {
                       const ek = `${l.code}|${key}`;

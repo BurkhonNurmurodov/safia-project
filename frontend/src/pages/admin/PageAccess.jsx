@@ -92,7 +92,7 @@ export default function PageAccess() {
           <div className="overflow-x-auto -mx-1">
             <table className="w-full text-xs min-w-[520px]">
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   <th className="text-left py-2 px-3 text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
                     {t("admin.access.colPage")}
                   </th>
@@ -113,8 +113,8 @@ export default function PageAccess() {
                 {PAGES.map((p) => (
                   <tr
                     key={p.key}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-                    className="hover:bg-white/[0.02] transition-colors"
+                    style={{ borderBottom: "1px solid var(--border)" }}
+                    className="hover:bg-[var(--hover-bg)] transition-colors"
                   >
                     <td className="py-2.5 px-3 font-medium text-[var(--text-1)] whitespace-nowrap">
                       {t(p.labelKey)}
@@ -136,7 +136,7 @@ export default function PageAccess() {
                                     borderColor: "transparent",
                                     cursor: locked ? "not-allowed" : "pointer" }
                                 : { background: "transparent",
-                                    borderColor: "rgba(255,255,255,0.15)",
+                                    borderColor: "var(--border-md)",
                                     cursor: "pointer" }
                             }
                           >

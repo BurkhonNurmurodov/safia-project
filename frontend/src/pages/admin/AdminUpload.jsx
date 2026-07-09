@@ -156,7 +156,7 @@ function SegmentBar({ segments, setSegments, rangeMin, rangeMax }) {
               onClick={(e) => e.stopPropagation()}
             >
               <div style={{ width: 4, height: "100%", background: "var(--bg-base)", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ width: 2, height: "40%", background: "rgba(255,255,255,.5)", borderRadius: 1 }} />
+                <div style={{ width: 2, height: "40%", background: "var(--text-3)", borderRadius: 1 }} />
               </div>
             </div>
           );
