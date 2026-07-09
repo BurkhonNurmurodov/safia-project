@@ -289,6 +289,23 @@ def add_profiles_columns() -> None:
         db.close()
 
 
+def add_leader_cell_column() -> None:
+    """Add the production-cell column to leader profiles (idempotent). Nullable
+    at the DB level so legacy leaders (created before cells existed) survive the
+    rollout and can be assigned a cell later; the create endpoint requires it for
+    new leaders. Cells are just the distinct values already assigned — a new one
+    is 'created' the moment a leader is saved with it."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS cell VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader cell column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
