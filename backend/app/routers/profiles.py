@@ -281,6 +281,7 @@ class CreateProfilePayload(BaseModel):
     name:       str
     shift:      Optional[int] = None   # shift-manager | supervisor
     manager_id: Optional[int] = None   # leader → supervisor unit
+    cell:       Optional[str] = None   # leader → production cell (required)
     verifix_id: Optional[int] = None   # supervisor → managers.id
 
 
