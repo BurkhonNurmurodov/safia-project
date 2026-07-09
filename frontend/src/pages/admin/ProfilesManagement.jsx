@@ -117,7 +117,7 @@ export default function ProfilesManagement() {
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
 
   function openAdd() {
-    setForm({ name: "", shift: 1, manager_id: "", verifix_id: "" });
+    setForm({ name: "", shift: 1, manager_id: "", cell: "", cellNew: "", verifix_id: "" });
     setFormError("");
     setModal({ mode: "add" });
   }
