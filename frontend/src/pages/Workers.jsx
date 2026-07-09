@@ -332,10 +332,10 @@ export default function Workers() {
     chart: { ...baseChart, type: "heatmap" },
     dataLabels: { enabled: true, style: { fontSize: "10px", colors: ["#1e293b"] } },
     plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: TRANS_RANGES } } },
-    xaxis: { categories: toRoles.map(tl), labels: axisLabels, position: "top" },
+    xaxis: { type: "category", labels: axisLabels, position: "top" },
     yaxis: { labels: axisLabelsMd },
     legend: { show: false },
-    stroke: { width: 2, colors: ["var(--bg-card)"] },
+    stroke: { width: 2, colors: [gridColor] },
     tooltip: {
       theme: tooltipTheme,
       y: { formatter: (v) => `${v} ${t("workers.req.workers")}` },
