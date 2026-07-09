@@ -1144,6 +1144,18 @@ export default function Concerns() {
 
             {/* labelled facts — fixed positions, no guessing which name is which */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <MobField label={t("concerns.colCell")}>
+                {r.cell_code || "—"}
+                {r.cell_leader_name && (
+                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(r.cell_leader_name)}</div>
+                )}
+              </MobField>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  {t("concerns.colCategory")}
+                </div>
+                <CategoryChip category={r.category} label={categoryLabel(r.category)} />
+              </div>
               <MobField label={t("concerns.colOwner")}>
                 {shortOwner(r.owner_name)}
                 {r.owner_role && (
