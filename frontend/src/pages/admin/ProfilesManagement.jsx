@@ -197,6 +197,7 @@ export default function ProfilesManagement() {
     const body = { name, overrides: { ...form.overrides, uz: "" } };
     if (type === "shift-manager" || type === "supervisor") body.shift = Number(form.shift);
     if (type === "leader" && form.manager_id) body.manager_id = Number(form.manager_id);
+    if (type === "leader" && cellVal) body.cell = cellVal;
     if (type === "supervisor" && Number(form.verifix_id) !== modal.item.id) {
       body.new_verifix_id = Number(form.verifix_id);
     }
