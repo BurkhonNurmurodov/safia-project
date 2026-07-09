@@ -153,44 +153,39 @@ export default function Workers() {
   const gridCfg      = { borderColor: gridColor, strokeDashArray: 3 };
   const chartH       = Math.max(300, headcount.length * 28 + 60);
 
-  // Workforce treemap — blocks sized by worker count, grouped/coloured by role.
-  const treemapSeries = ROLES.map((r) => ({
-    name: roleLabel(r),
-    data: headcount.map((m) => ({ x: tl(m.name), y: m.by_role[r] || 0 })).filter((d) => d.y > 0),
-  })).filter((s) => s.data.length);
-  const treemapOptions = {
-    chart: { ...baseChart, type: "treemap" },
+  // Workforce composition donut — each role's share of the whole workforce.
+  const roleTotals = ROLES.map((r) => headcount.reduce((s, m) => s + (m.by_role[r] || 0), 0));
+  const donutOptions = {
+    chart: { ...baseChart, type: "donut" },
+    labels: ROLES.map(roleLabel),
     colors: ROLES.map((r) => ROLE_COLORS[r]),
-    legend: legendCfg,
-    dataLabels: {
-      enabled: true, style: { fontSize: "11px", fontWeight: 600 },
-      formatter: (text, op) => [text, op.value],
-    },
-    plotOptions: { treemap: { distributed: false, enableShades: false } },
+    legend: { ...legendCfg, position: "bottom" },
+    dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%`, style: { fontSize: "11px" } },
+    stroke: { width: 0 },
+    plotOptions: { pie: { donut: { size: "64%", labels: {
+      show: true,
+      value: { color: legendColor },
+      total: { show: true, label: t("workers.total"), color: legendColor, formatter: () => String(totalWorkers) },
+    } } } },
     tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
     theme: chartTheme,
   };
 
-  // Role-mix radar — a chosen supervisor vs the shift/overall average.
-  const supOptions = headcount.map((m) => ({ value: String(m.manager_id), label: tl(m.name) }));
-  const selSup = radarSup || (headcount[0] && String(headcount[0].manager_id));
-  const selRow = headcount.find((m) => String(m.manager_id) === selSup);
-  const roleAvg = ROLES.map((r) =>
-    headcount.length ? Math.round((headcount.reduce((s, m) => s + (m.by_role[r] || 0), 0) / headcount.length) * 10) / 10 : 0);
-  const radarSeries = selRow ? [
-    { name: tl(selRow.name), data: ROLES.map((r) => selRow.by_role[r] || 0) },
-    { name: t("workers.average"), data: roleAvg },
-  ] : [];
-  const radarOptions = {
-    chart: { ...baseChart, type: "radar" },
-    colors: ["#3b82f6", "#94a3b8"],
-    xaxis: { categories: ROLES.map(roleLabel), labels: { style: { colors: ROLES.map(() => legendColor) } } },
-    yaxis: { show: false },
-    fill: { opacity: [0.35, 0.15] },
-    stroke: { width: 2 },
-    markers: { size: 3 },
+  // Roster vs present — grouped horizontal bars per brigadir (the attendance gap).
+  const rvpSeries = [
+    { name: t("workers.roster"),  data: headcount.map((m) => m.total) },
+    { name: t("workers.present"), data: headcount.map((m) => m.avg_daily_hc || 0) },
+  ];
+  const rvpOptions = {
+    chart: { ...baseChart, type: "bar" },
+    plotOptions: { bar: { horizontal: true, barHeight: "78%", borderRadius: 2 } },
+    colors: [OFFICIAL_COLOR, PRESENT_COLOR],
+    dataLabels: { enabled: false },
+    xaxis: { categories: headcount.map((m) => tl(m.name)), labels: axisLabels },
+    yaxis: { labels: axisLabelsMd },
     legend: legendCfg,
-    tooltip: { theme: tooltipTheme },
+    grid: gridCfg,
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => fmt1(v) } },
     theme: chartTheme,
   };
 
