@@ -884,6 +884,8 @@ export default function Concerns() {
       ...emptyForm(),
       id: r.id,
       leader_name: r.leader_name || "",
+      cell_code: r.cell_code || "",
+      category: r.category || "",
       concern_text: r.concern_text || "",
       status: r.status || "todo",
       deadline_days: r.deadline_days ?? "",
