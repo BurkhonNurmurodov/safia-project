@@ -443,6 +443,7 @@ export default function Concerns() {
   const [statusSel, setStatusSel] = useState([]);       // [] = all statuses
   const [ownerSel, setOwnerSel] = useState([]);         // [] = all owners
   const [levelSel, setLevelSel] = useState([]);         // [] = all levels
+  const [categorySel, setCategorySel] = useState([]);   // [] = all categories
   const [deadlineMin, setDeadlineMin] = useState("");
   const [deadlineMax, setDeadlineMax] = useState("");
   const [onlyMyLevel, setOnlyMyLevel] = useState(false); // toolbar toggle (chain roles), default OFF
