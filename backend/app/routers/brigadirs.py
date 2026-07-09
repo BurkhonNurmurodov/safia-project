@@ -8,6 +8,7 @@ from app.permissions import require_page
 from app.models import Manager, Attendance, ProductionData, HeadcountData, DowntimeData, DayApproval
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
+from app.services.name_map import sheet_name_map
 
 router = APIRouter(prefix="/api", tags=["brigadirs"])
 
