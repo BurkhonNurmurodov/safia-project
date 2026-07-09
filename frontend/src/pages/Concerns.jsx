@@ -30,6 +30,23 @@ import { padChartFrom } from "../utils/chartRange";
 
 const STATUSES = ["todo", "doing", "done"];
 
+// Department categories ("по отделам") a concern is bucketed into. Keys are
+// stable; labels render per-language via concerns.category.<key>. Keep in sync
+// with CATEGORIES in backend/app/routers/concerns.py.
+const CATEGORIES = [
+  "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
+  "it", "washing", "plan", "hr", "technologist", "raw_material",
+];
+
+// Per-category identity hue for the category chip — deliberately NOT the
+// traffic-light palette (category is a bucket, not a status). A fixed spread of
+// distinct tints keyed by the category so each department reads consistently.
+const CATEGORY_COLOR = {
+  ars: "#6366f1", inventory: "#0ea5e9", warehouse: "#14b8a6", fridge: "#06b6d4",
+  procurement: "#8b5cf6", logistics: "#f97316", it: "#3b82f6", washing: "#10b981",
+  plan: "#a855f7", hr: "#ec4899", technologist: "#f59e0b", raw_material: "#84cc16",
+};
+
 // Escalation chain, bottom → top. A concern starts at "supervisor" and is
 // uplifted one step at a time by whoever can't solve it (see the uplift/
 // send-back actions); the level column shows who currently holds it. Leaders
