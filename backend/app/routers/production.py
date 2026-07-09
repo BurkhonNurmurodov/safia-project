@@ -40,6 +40,7 @@ from app.database import get_db
 from app.models import (
     Manager, AppSetting, ProductionData, PPProduct, PPWorkCenter, PPDaily,
     PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser, TelegramUserRole,
+    RoleProfile,
 )
 from app.permissions import require_page
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
