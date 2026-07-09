@@ -147,6 +147,9 @@ export default function ProfilesManagement() {
   const roleChanged = modal?.mode === "edit" && form.role && form.role !== type;
   const effType = roleChanged ? form.role : type;
 
+  // "Other" in the cell picker reveals a text input; its typed value wins.
+  const cellVal = (form.cell === CELL_OTHER ? form.cellNew : form.cell || "").trim();
+
   function submit() {
     setFormError("");
 
@@ -158,7 +161,9 @@ export default function ProfilesManagement() {
       }
       if (form.role === "leader") {
         if (!form.manager_id) { setFormError(t("admin.profiles.supervisorRequired")); return; }
+        if (!cellVal) { setFormError(t("admin.profiles.cellRequired")); return; }
         body.manager_id = Number(form.manager_id);
+        body.cell = cellVal;
       }
       if (form.role === "supervisor") {
         if (!form.verifix_id) { setFormError(t("admin.profiles.verifixRequired")); return; }
