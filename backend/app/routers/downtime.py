@@ -32,8 +32,10 @@ def get_downtime(
     if manager_id:
         managers = managers.filter(Manager.id.in_(manager_id))
     managers = managers.all()
-    manager_names = {m.name for m in managers}
-    name_to_shift = {m.name: m.shift for m in managers}
+    # DowntimeData is keyed by the brigadir's Cyrillic sheet spelling (the
+    # uz_cyrl profile override), not the canonical Latin Manager.name.
+    sheet_of = sheet_name_map(db, (m.name for m in managers))
+    manager_names = set(sheet_of.values())
 
     cur = date_from
     dates = []
