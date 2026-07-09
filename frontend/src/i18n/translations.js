@@ -3492,6 +3492,7 @@ const t = {
     "admin.tabUsers":        "Пользователи",
     "admin.tabAccess":       "Доступ",
     "admin.tabProfiles":     "Профили",
+    "admin.tabProduction":   "Производство",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
     "admin.profiles.title":          "Профили",
