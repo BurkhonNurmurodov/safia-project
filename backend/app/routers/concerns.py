@@ -1090,7 +1090,8 @@ def escalate_concern(
     if sent:
         db.commit()
 
-    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id), _sm_names(db), _owner_names(db, [c]))
+    return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
+                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db))
 
 
 @router.get("/{concern_id}/history")
