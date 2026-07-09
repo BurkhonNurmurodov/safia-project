@@ -393,8 +393,34 @@ export default function Production() {
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
   const stripRef = useRef(null);                   // revealed action strip → scroll into view
 
-  // Admins preview the pilot brigadir (manager 5) until a picker lands.
-  const managerParam = auth?.role === "admin" ? { manager_id: 5 } : {};
+  // Supervisors are pinned to their own unit (the backend derives it from the
+  // JWT). Everyone above them picks a configured brigadir: shift-managers within
+  // their own shift, top-managers and admins across every unit.
+  const canPickManager = ["admin", "top-manager", "shift-manager"].includes(auth?.role);
+  const [selManager, setSelManager] = useState(null);
+
+  const { data: mgrData } = useQuery({
+    queryKey: ["production-managers"],
+    queryFn: () => api.get("/api/production/managers").then((r) => r.data),
+    enabled: canPickManager,
+  });
+  const managers = mgrData?.managers ?? [];
+  // Default to the first configured brigadir, and re-sync if the current pick
+  // falls out of the list (list just loaded, or a shift-manager's scope narrows).
+  useEffect(() => {
+    if (!canPickManager) return;
+    if (managers.length && (selManager == null || !managers.some((m) => m.manager_id === selManager))) {
+      setSelManager(managers[0].manager_id);
+    }
+  }, [managers, canPickManager]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const managerParam = canPickManager && selManager != null ? { manager_id: selManager } : {};
+  // A picker role hasn't resolved a unit yet (list still loading) → hold the
+  // manager-scoped queries so they don't 400 on the missing id.
+  const managerReady = !canPickManager || selManager != null;
+  // Picker role, list loaded, nothing in scope → no brigadir has production set up.
+  const noManagers = canPickManager && mgrData != null && managers.length === 0;
+
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
   // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
   const canEditCatalog = auth?.role === "admin";
@@ -403,6 +429,7 @@ export default function Production() {
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/dashboard", { params: { date, ...managerParam } }).then((r) => r.data),
     placeholderData: keepPreviousData,
+    enabled: managerReady,
   });
   // True on first load AND while a freshly-picked date is still fetching (its data
   // isn't cached yet, so keepPreviousData hands back the old date's snapshot). Drives
