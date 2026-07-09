@@ -221,7 +221,7 @@ def get_dates(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    mid = _resolve_manager_id(payload, manager_id)
+    mid = _resolve_manager_id(payload, manager_id, db)
     rows = (
         db.query(PPDaily.date)
         .filter(PPDaily.manager_id == mid)
