@@ -2193,6 +2193,7 @@ const t = {
     "admin.tabUsers":        "Фойдаланувчилар",
     "admin.tabAccess":       "Рухсатлар",
     "admin.tabProfiles":     "Профиллар",
+    "admin.tabProduction":   "Ишлаб чиқариш",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
     "admin.profiles.title":          "Профиллар",
