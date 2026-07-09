@@ -9,7 +9,8 @@ import { Loader2 } from "lucide-react";
  *               "secondary" (neutral card bg — cancel / less important)
  *               "danger" (red — destructive confirm)
  *               "ghost" (borderless, subdued — inline/toolbar actions)
- *   size      – "md" (default, px-4 py-2 text-sm) | "sm" (px-3 py-1.5 text-xs)
+ *   size      – "md" (default, compact px-3 py-1.5 text-xs ≈ 30px)
+ *               | "sm" (px-2.5 py-1 text-xs ≈ 26px)
  *   icon      – optional lucide icon element rendered before the label
  *   loading   – overlays a centered Loader2 spinner (label kept in place to
  *               reserve width, so the button never reflows) and disables
@@ -35,9 +36,9 @@ export default function Button({
     ghost:     { background: "transparent",     color: "var(--text-3)", border: "1px solid transparent" },
   }[variant];
 
-  const sizing = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
+  const sizing = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-xs";
   const isDisabled = disabled || loading;
-  const spinner = <Loader2 size={size === "sm" ? 13 : 14} className="animate-spin" />;
+  const spinner = <Loader2 size={size === "sm" ? 12 : 13} className="animate-spin" />;
 
   return (
     <button

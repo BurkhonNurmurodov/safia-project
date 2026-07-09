@@ -10,8 +10,8 @@
  * "view tabs" (Production view switch, Staff Workers/Requests) — same
  * component, not a hand-rolled copy. Never hand-roll this bar — use this so
  * every toggle shares the app's button height. Outer heights mirror Button:
- *   size="md" (default) → ≈ 38px  (Button md / toolbar baseline)
- *   size="sm"           → ≈ 30px  (Button sm)
+ *   size="md" (default) → ≈ 30px  (Button md — compact)
+ *   size="sm"           → ≈ 26px  (Button sm)
  *
  * Props:
  *   value     – the currently selected option value (compared with ===)
@@ -35,10 +35,10 @@ export default function SegmentedToggle({
   fill = false,
   className = "",
 }) {
-  // Segment padding keeps the OUTER height at 38px (md) / 30px (sm) once the
-  // 3px track inset is added, so the toggle still lines up with SearchInput,
-  // Button md and the FilterPanel trigger in toolbars.
-  const seg = size === "sm" ? "px-2.5 py-[3px] text-xs" : "px-3 py-[5px] text-sm";
+  // Segment padding keeps the OUTER height at 30px (md) / 26px (sm) once the
+  // 3px track inset is added, so the compact toggle still lines up with
+  // Button md/sm (the white StyledSelect dropdowns stay taller by design).
+  const seg = size === "sm" ? "px-2 py-[1px] text-xs" : "px-2.5 py-[3px] text-xs";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
