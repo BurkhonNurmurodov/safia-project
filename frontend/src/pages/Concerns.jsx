@@ -327,6 +327,8 @@ const isoDiffDays = (a, b) =>
 const emptyForm = () => ({
   id: null,
   leader_name: "",          // display-only, kept for legacy rows shown on edit
+  cell_code: "",            // the production cell the concern is about (required)
+  category: "",             // department bucket (required)
   concern_text: "",
   status: "todo",
   deadline_days: "",
