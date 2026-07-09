@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check, Trash2 } from "lucide-react";
+import { ChevronDown, Check, Trash2, Search } from "lucide-react";
 
 /**
  * Styled custom select — dropdown is rendered via createPortal so it is never
