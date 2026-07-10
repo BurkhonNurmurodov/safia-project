@@ -34,12 +34,29 @@ const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
 const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#a78bfa" };
 
-// Per-supervisor identity hues for the treemap (same family as Kaizen's
-// ProjectIcon) — deliberately off the traffic-light status palette so identity
-// never reads as state. Cycles when there are more brigadirs than hues.
+// Per-supervisor identity hues for the treemap — a full-spectrum categorical
+// palette (every block is coloured, so hues read as identity, not status).
+// Ordered so consecutive brigadirs land on contrasting hues, and large enough
+// that colours stay unique for the realistic brigadir count (cycles past 18).
 const SUP_COLORS = [
-  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ec4899", "#06b6d4",
-  "#6366f1", "#f43f5e", "#0ea5e9", "#a855f7", "#C8973F", "#d946ef",
+  "#2563eb", // blue
+  "#22c55e", // green
+  "#f97316", // orange
+  "#8b5cf6", // violet
+  "#eab308", // yellow
+  "#ec4899", // pink
+  "#0d9488", // teal
+  "#ef4444", // red
+  "#0ea5e9", // sky
+  "#65a30d", // lime
+  "#d946ef", // fuchsia
+  "#C8973F", // gold
+  "#6366f1", // indigo
+  "#b45309", // brown
+  "#06b6d4", // cyan
+  "#6d28d9", // deep violet
+  "#64748b", // slate
+  "#15803d", // dark green
 ];
 
 // Sequential ramps for the two heatmaps (green = attendance, violet = changes).
