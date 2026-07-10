@@ -34,27 +34,28 @@ export function fmtDateLabel(isoDate) {
   return `${d}.${m}.${y}`;
 }
 
-// "1st June, 2026 · 14:32" (en) / "1-iyun, 2026" (uz) / "1 июня, 2026" (ru)
-export function fmtCreatedAt(iso, t, lang) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+// "1st June, 2026" (en) / "1-iyun, 2026" (uz) / "1 июня, 2026" (ru)
+export function fmtLongDate(d, t, lang) {
   const day   = d.getDate();
   const month = t(`cal.mg${d.getMonth()}`);
   const year  = d.getFullYear();
-  const time  = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  let datePart;
   if (lang === "en") {
     const v = day % 100;
     const sfx = v >= 11 && v <= 13 ? "th"
       : day % 10 === 1 ? "st" : day % 10 === 2 ? "nd" : day % 10 === 3 ? "rd" : "th";
-    datePart = `${day}${sfx} ${month}, ${year}`;
-  } else if (lang === "uz" || lang === "uz_cyrl") {
-    datePart = `${day}-${month}, ${year}`;
-  } else {
-    datePart = `${day} ${month}, ${year}`;
+    return `${day}${sfx} ${month}, ${year}`;
   }
-  return `${datePart} · ${time}`;
+  if (lang === "uz" || lang === "uz_cyrl") return `${day}-${month}, ${year}`;
+  return `${day} ${month}, ${year}`;
+}
+
+// "1st June, 2026 · 14:32" — fmtLongDate plus the clock time.
+export function fmtCreatedAt(iso, t, lang) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${fmtLongDate(d, t, lang)} · ${time}`;
 }
 
 
