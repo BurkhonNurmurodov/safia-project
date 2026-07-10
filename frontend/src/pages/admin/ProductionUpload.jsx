@@ -154,7 +154,20 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
 
 // ── фаза upload ───────────────────────────────────────────────────────────────
 export default function ProductionUpload() {
-  const [managerId, setManagerId] = useState(BRIGADIRS[0].id);
+  // All active brigadir units — an admin can configure/upload for any of them
+  // (was hardcoded to the manager-5 pilot, so nobody else could be set up).
+  const { data: brigadirs = [] } = useQuery({
+    queryKey: ["managers-all"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+  });
+  const [managerId, setManagerId] = useState(null);
+  // Default to the first unit once the list loads; keep the pick valid.
+  useEffect(() => {
+    if (brigadirs.length && (managerId == null || !brigadirs.some((b) => b.manager_id === managerId))) {
+      setManagerId(brigadirs[0].manager_id);
+    }
+  }, [brigadirs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [date, setDate] = useState(todayISO());
   const [mode, setMode] = useState("both");
   const [fileType, setFileType] = useState("auto"); // auto | faza | zaga

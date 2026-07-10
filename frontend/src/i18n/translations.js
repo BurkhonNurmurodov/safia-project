@@ -5353,6 +5353,7 @@ const t = {
     "workers.days":              "Days",
     "workers.delta":             "Diff",
     "workers.roleOther":         "Other",
+    "workers.othersFold":        "Others",
     "workers.mismatchDays":      "mismatch days",
     "workers.headcount":         "Headcount",
     "workers.requests":          "Requests",
