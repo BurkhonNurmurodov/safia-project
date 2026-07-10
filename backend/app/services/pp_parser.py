@@ -35,6 +35,7 @@ ZAGA_COLUMNS = ["Заказ", "SKU", "Завод", "Кол-во заказа", "
 
 _SAP_RE = re.compile(r"^[A-Za-z]\d{5,}$")    # material / SKU: F00002310, S00000101
 _WC4_RE = re.compile(r"^[A-Za-z]\d{4}$")      # work center: A1431, A2682 (plant W001 = 3 digits, excluded)
+_ERR_RE = re.compile(r"^0x[0-9A-Fa-f]{1,2}$")  # pyxlsb renders a formula error as its code ('0x17' = #REF!)
 
 
 def _str(v) -> str:
