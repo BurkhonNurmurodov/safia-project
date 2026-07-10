@@ -1242,6 +1242,8 @@ const t = {
     "workers.req.posted":            "Tasdiqlangan",
     "workers.req.pending":           "Kutilmoqda",
     "workers.req.task":              "vazifa",
+    "workers.req.tgtSupervisors":    "Supervayzerlar",
+    "workers.req.tgtTasks":          "Vazifalar",
     "workers.req.topTarget":         "Asosiy yo'nalish",
     "workers.req.topRole":           "Asosiy lavozim",
     "workers.req.from":              "Avvalgi lavozim",
