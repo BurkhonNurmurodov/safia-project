@@ -2605,6 +2605,8 @@ const t = {
     "workers.req.posted":            "Тасдиқланган",
     "workers.req.pending":           "Кутилмоқда",
     "workers.req.task":              "вазифа",
+    "workers.req.tgtSupervisors":    "Супервайзерлар",
+    "workers.req.tgtTasks":          "Вазифалар",
     "workers.req.topTarget":         "Асосий йўналиш",
     "workers.req.topRole":           "Асосий лавозим",
     "workers.req.from":              "Аввалги лавозим",
