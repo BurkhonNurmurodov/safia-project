@@ -25,7 +25,7 @@ export default function Downtime() {
   const { params, unit, ready } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
-  const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
+  const { chartTheme, gridColor, labelColor, tooltipTheme, legendColor } = useChartTheme();
   const [chartView, setChartView] = useState("total"); // "total" | "category"
   const [selectedCats, setSelectedCats] = useState([]); // categories chosen via doughnut clicks → filter the left chart
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
