@@ -3968,6 +3968,8 @@ const t = {
     "workers.req.posted":            "Проведено",
     "workers.req.pending":           "Ожидает",
     "workers.req.task":              "задача",
+    "workers.req.tgtSupervisors":    "Супервайзеры",
+    "workers.req.tgtTasks":          "Задачи",
     "workers.req.topTarget":         "Основное направление",
     "workers.req.topRole":           "Основная должность",
     "workers.req.from":              "Прежняя должность",
