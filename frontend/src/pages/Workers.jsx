@@ -632,6 +632,10 @@ export default function Workers() {
                         options={reqTgtOptions} height={reqTgtChartH} />
                     : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
                 </ChartCard>
+              </div>
+
+              {/* Compact new-roles chart beside the transition matrix it summarizes */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6 items-start">
                 <ChartCard icon={Repeat} title={t("workers.req.roles")}>
                   {!req ? <SkeletonChart className="h-72" />
                     : reqRoles.length ? <ReactApexChart type="bar"
