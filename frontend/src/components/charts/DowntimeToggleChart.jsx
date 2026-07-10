@@ -156,10 +156,10 @@ export default function DowntimeToggleChart({
           categories,
           min: 0,
           max: axisMax,
-          labels: { style: { colors: "#6b7280", fontSize: "10px" } },
+          labels: { style: { colors: axisLabel, fontSize: "10px" } },
         },
-        yaxis: { labels: { style: { colors: "#9ca3af", fontSize: "11px" } } },
-        grid: { borderColor: "#1e2235", padding: { right: 28 } },
+        yaxis: { labels: { style: { colors: axisLabel, fontSize: "11px" } } },
+        grid: { borderColor: grid, padding: { right: 28 } },
         legend: { show: false },
         annotations: {
           xaxis: [{ x: 50, borderColor: "#C8973F", strokeDashArray: 4,
