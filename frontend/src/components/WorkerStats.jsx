@@ -259,7 +259,7 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
         <Kpi primary label={t.kpiMean} value={`${intl(overall.mean_daily_total_workers)}`} sub={t.workers} icon={Gauge} accent="var(--brand-text)" />
         <Kpi label={t.kpiTopSup} value={overall.most_predictable_supervisor ? tl(overall.most_predictable_supervisor) : "—"}
           sub={bySupSorted[0]?.mean_cv != null ? `CV ${fmtCV(bySupSorted[0].mean_cv)}` : undefined} icon={Award} accent="#22c55e" />
-        <Kpi label={t.kpiTopWd} value={overall.most_predictable_weekday != null ? wd[overall.most_predictable_weekday] : "—"} icon={CalendarDays} />
+        <Kpi label={t.kpiTopWd} value={overall.most_predictable_weekday != null ? wdFull[overall.most_predictable_weekday] : "—"} icon={CalendarDays} />
         <Kpi label={t.kpiDriver}
           value={driver.winner === "month_phase" ? t.driverPhase : t.driverWd}
           sub={`η² ${driver.winner === "month_phase" ? (driver.month_phase ?? "—") : (driver.weekday ?? "—")}`}

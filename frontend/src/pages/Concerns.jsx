@@ -240,13 +240,29 @@ function LevelChip({ level, label, title }) {
 function CategoryChip({ category, label }) {
   if (!category) return <span style={{ color: "var(--text-4)" }}>—</span>;
   const color = CATEGORY_COLOR[category] || "var(--text-3)";
+  const Icon  = CATEGORY_ICON[category] || Tag;
   return (
     <span
       className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
       style={{ background: `${color}24`, color }}
     >
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+      <Icon size={11} strokeWidth={2.5} className="flex-shrink-0" />
       {label}
+    </span>
+  );
+}
+
+// Department icon in a soft tint square (mirrors ProjectIcon in Kaizen.jsx) —
+// used next to the label in the category picker and the category filter.
+function CategoryIconChip({ category, size = 24 }) {
+  const color = CATEGORY_COLOR[category] || "var(--text-3)";
+  const Icon  = CATEGORY_ICON[category] || Tag;
+  return (
+    <span
+      className="grid place-items-center flex-shrink-0 rounded-md"
+      style={{ width: size, height: size, background: `${color}21`, color }}
+    >
+      <Icon size={Math.round(size * 0.54)} strokeWidth={2.4} />
     </span>
   );
 }
