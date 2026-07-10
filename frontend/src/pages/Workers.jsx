@@ -126,6 +126,7 @@ export default function Workers() {
   const [roleMode, setRoleMode] = useState("all");    // role charts: "all" roles | "zagruzka" subset
   const [sort, setSort] = useState({ key: null, dir: "asc" });
   const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
+  const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
 
