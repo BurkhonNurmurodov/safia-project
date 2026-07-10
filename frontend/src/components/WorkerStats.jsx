@@ -250,7 +250,7 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
               cursor: effDirty ? "pointer" : "default", opacity: effDirty ? 1 : 0.6,
             }}
           >{t.apply}</button>
-          {cap != null && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t.capNote(Math.round(cap))}</span>}
+          {cap != null && <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-4)" }}>{t.capNote(Math.round(cap))}</span>}
         </div>
       </div>
 
