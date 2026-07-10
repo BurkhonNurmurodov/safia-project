@@ -125,8 +125,8 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
           <input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="Sheet1 Торт" className={input} />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className={label}>Файл (.xlsx)</span>
-          <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)}
+          <span className={label}>Файл (.xlsx / .xlsb)</span>
+          <input type="file" accept=".xlsx,.xlsb" onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold" />
         </label>
       </div>
