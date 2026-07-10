@@ -111,9 +111,13 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
         <FormField label="Бригадир">
           <StyledSelect
-            value={String(managerId)}
+            value={managerId != null ? String(managerId) : ""}
             onChange={(v) => setManagerId(Number(v))}
-            options={BRIGADIRS.map((b) => ({ value: String(b.id), label: b.name }))}
+            options={brigadirs.map((b) => ({
+              value: String(b.manager_id),
+              label: b.name + (b.shift ? ` · Смена ${b.shift}` : ""),
+            }))}
+            placeholder="Выберите бригадира"
           />
         </FormField>
         <label className="flex flex-col gap-1.5">
