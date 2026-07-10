@@ -324,6 +324,7 @@ function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
     setError(null);
     api.post("/api/production/trudoyomkost/call-notify", {
       date: data.date,
+      capacity_pct: effPct,
       items: selected.map((r) => ({
         manager_id: r.manager_id,
         workers: numOf(r.manager_id),
