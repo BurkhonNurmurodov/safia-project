@@ -113,9 +113,9 @@ function HeadCell({ label, tip, sortKey, sort, onSort, align = "right", classNam
 }
 
 export default function Overview() {
-  const { params, unit, ready, dateFrom, dateTo } = useFilters();
+  const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds } = useFilters();
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const hcLabel = t("overview.diffUnitHc"); // localized name for the HC (headcount) diff unit
   const navigate = useNavigate();
   const [filters, setFilters] = useState(INIT_FILTERS);
