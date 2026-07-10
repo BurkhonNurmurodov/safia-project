@@ -295,6 +295,12 @@ export default function Workers() {
     ? activeRoles.filter((r) => (trend.series[r] || []).some((v) => v > 0))
     : [];
   const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
+  // Stable chip order for the breakdown strip — sorted ONCE by window total (desc),
+  // never per-day, so chips keep their positions as you hover across days.
+  const trendRoleOrder = [...trendRoles].sort((a, b) => {
+    const sum = (r) => (trend.series[r] || []).reduce((n, v) => n + (v || 0), 0);
+    return sum(b) - sum(a);
+  });
   // The trend tooltip renders BELOW the chart (see .att-trend CSS) so it never
   // covers the plot. This builds the day's breakdown as a full-width horizontal
   // strip — date, colored role chips (zero-value roles dropped, sorted desc),
