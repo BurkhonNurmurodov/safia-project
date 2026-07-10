@@ -217,7 +217,9 @@ def get_role_trend(
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        .filter(CALC_ROWS_FILTER)
+        # Present workers of ANY job title — extra titles feed the "all roles"
+        # view; the frontend toggle filters back to the zagruzka roles.
+        .filter(Attendance.hours_worked > 0)
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
@@ -230,19 +232,25 @@ def get_role_trend(
     rows = q.all()
 
     trend: dict[str, dict[str, int]] = {}
+    seen_roles: set[str] = set()
     for d, job_title, cnt in rows:
         d_str = d.strftime("%d.%m.%Y")
         role = normalize_role(job_title or "")
-        trend.setdefault(d_str, {"Konditer": 0, "Fasovshik": 0, "Zagatovitel": 0, "Other": 0})
+        seen_roles.add(role)
+        trend.setdefault(d_str, {})
         trend[d_str][role] = trend[d_str].get(role, 0) + cnt
 
     from datetime import datetime as dt
     dates = sorted(trend.keys(), key=lambda s: dt.strptime(s, "%d.%m.%Y"))
+    # Zagruzka roles always present (even at 0); extra roles appended, count-sorted.
+    extra = sorted(seen_roles - set(ZAGRUZKA_ROLES),
+                   key=lambda r: -sum(trend.get(d, {}).get(r, 0) for d in dates))
+    role_keys = list(ZAGRUZKA_ROLES) + extra
     return {
         "dates": dates,
         "series": {
             role: [trend.get(d, {}).get(role, 0) for d in dates]
-            for role in ["Konditer", "Fasovshik", "Zagatovitel", "Other"]
+            for role in role_keys
         },
     }
 
