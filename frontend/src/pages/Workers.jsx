@@ -350,7 +350,7 @@ export default function Workers() {
       categories: req?.by_day?.dates || [],
       labels: {
         ...axisLabels, rotate: 0, hideOverlappingLabels: true,
-        formatter: (v) => (typeof v === "string" ? v.slice(0, 5) : v),
+        formatter: (v) => (typeof v === "string" ? v.replace(/\.\d{4}$/, "") : v),
       },
     },
     yaxis: { labels: axisLabels },
