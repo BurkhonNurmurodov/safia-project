@@ -162,6 +162,7 @@ def get_headcount(
         off  = official.get(m["name"], {})
         both = [(days[d], off[d]) for d in days if d in off]
         m["days"] = len(days)
+        m["total_all"] = total_all.get(m["manager_id"], m["total"])
         m["avg_daily_hc"] = round(sum(days.values()) / len(days), 1) if days else 0
         # Per-day present count feeds the supervisor×day attendance heatmap on
         # the frontend. Only confirmed days appear; the grid greys the rest.
