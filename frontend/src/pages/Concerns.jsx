@@ -1670,7 +1670,15 @@ export default function Concerns() {
                 <StyledSelect
                   value={form.category}
                   onChange={(v) => setForm((f) => ({ ...f, category: v }))}
-                  options={CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) }))}
+                  options={CATEGORIES.map((c) => ({
+                    value: c,
+                    label: (
+                      <span className="inline-flex items-center gap-2.5">
+                        <CategoryIconChip category={c} />
+                        {categoryLabel(c)}
+                      </span>
+                    ),
+                  }))}
                   placeholder={t("concerns.pickCategory")}
                 />
               </Field>

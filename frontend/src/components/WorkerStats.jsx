@@ -135,7 +135,7 @@ function Kpi({ label, value, sub, icon: Icon, accent, primary }) {
         <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{label}</span>
         {Icon && <Icon size={15} style={{ color: accent || "var(--text-4)", opacity: 0.85 }} />}
       </div>
-      <div className="text-xl font-bold tabular-nums leading-tight" style={{ color: accent || "var(--text-1)" }}>{value}</div>
+      <div className="text-xl font-bold tabular-nums leading-tight break-words" style={{ color: accent || "var(--text-1)" }}>{value}</div>
       {sub && <div className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>{sub}</div>}
     </div>
   );
