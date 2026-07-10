@@ -283,21 +283,25 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Exchange targets (where moved workers go).
+  // Exchange targets (where moved workers go) — split into receiving-supervisor
+  // (→) and task destinations, switched via the header toggle.
+  const reqTargetsView = reqTargets.filter((g) =>
+    tgtTab === "task" ? g.type === "task" : g.type !== "task"
+  );
   const reqTgtOptions = {
     chart: { ...baseChart, type: "bar" },
     plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, distributed: true } },
     colors: ["#3b82f6", "#06b6d4", "#14b8a6", "#0ea5e9", "#6366f1", "#8b5cf6"],
     dataLabels: { enabled: false },
     xaxis: {
-      categories: reqTargets.map((g) => (g.type === "task" ? `${tl(g.label)} · ${t("workers.req.task")}` : `→ ${tl(g.label)}`)),
+      categories: reqTargetsView.map((g) => (tgtTab === "task" ? tl(g.label) : `→ ${tl(g.label)}`)),
       labels: axisLabels,
     },
     yaxis: { labels: axisLabelsMd },
     legend: { show: false }, grid: gridCfg,
     tooltip: {
       theme: tooltipTheme,
-      y: { formatter: (v, { dataPointIndex }) => `${v} ${t("workers.req.workers")} · ${reqTargets[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
+      y: { formatter: (v, { dataPointIndex }) => `${v} ${t("workers.req.workers")} · ${reqTargetsView[dataPointIndex]?.docs ?? 0} ${t("workers.req.docs")}` },
     },
     theme: chartTheme,
   };
