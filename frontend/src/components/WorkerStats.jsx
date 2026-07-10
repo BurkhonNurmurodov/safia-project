@@ -242,7 +242,7 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
           </div>
           <button
             type="button" onClick={applyEff} disabled={!effDirty}
-            className="text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-opacity"
+            className="text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-opacity shrink-0 whitespace-nowrap"
             style={{
               background: effDirty ? "var(--brand)" : "var(--bg-inner)",
               color: effDirty ? "var(--brand-contrast, #fff)" : "var(--text-4)",
