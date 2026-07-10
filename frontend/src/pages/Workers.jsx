@@ -75,6 +75,7 @@ export default function Workers() {
   const { tl } = useTranslit();
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = useState("attendance");   // "attendance" | "movements"
+  const [tgtTab, setTgtTab] = useState("supervisor"); // exchange-targets chart: "supervisor" | "task"
   const [sort, setSort] = useState({ key: null, dir: "asc" });
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
@@ -201,7 +202,7 @@ export default function Workers() {
     chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
     stroke: { curve: "smooth", width: 2 },
     fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
-    colors: [ROLE_COLORS.Konditer, ROLE_COLORS.Fasovshik, ROLE_COLORS.Zagatovitel],
+    colors: trendRoles.map((r) => ROLE_COLORS[r]),
     xaxis: {
       categories: trend?.dates || [], labels: { ...axisLabels, rotate: -45 },
       tickAmount: Math.min(trend?.dates?.length || 0, 10),
