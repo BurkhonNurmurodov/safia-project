@@ -346,7 +346,7 @@ export default function Workers() {
   };
 
   const reqSupChartH  = Math.max(220, reqSups.length * 30 + 80);
-  const reqTgtChartH  = Math.max(200, reqTargets.length * 28 + 60);
+  const reqTgtChartH  = Math.max(200, reqTargetsView.length * 28 + 60);
   const reqRoleChartH = Math.max(200, reqRoles.length * 28 + 60);
   const transH        = Math.max(240, fromRoles.length * 46 + 90);
 
