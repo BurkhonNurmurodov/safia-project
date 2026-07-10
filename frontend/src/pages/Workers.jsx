@@ -341,10 +341,18 @@ export default function Workers() {
   ];
   const reqDayOptions = {
     chart: { ...baseChart, type: "bar", stacked: true },
-    plotOptions: { bar: { columnWidth: "55%", borderRadius: 3 } },
+    plotOptions: { bar: { columnWidth: "40%", borderRadius: 3 } },
     colors: [REQ_COLORS.exchange, REQ_COLORS.roleChange],
     dataLabels: { enabled: false },
-    xaxis: { categories: req?.by_day?.dates || [], labels: { ...axisLabels, rotate: -45 } },
+    // Horizontal dd.MM ticks — the year on every label is noise, rotated text
+    // reads slower; the tooltip keeps the full date.
+    xaxis: {
+      categories: req?.by_day?.dates || [],
+      labels: {
+        ...axisLabels, rotate: 0, hideOverlappingLabels: true,
+        formatter: (v) => (typeof v === "string" ? v.slice(0, 5) : v),
+      },
+    },
     yaxis: { labels: axisLabels },
     legend: legendCfg, grid: gridCfg,
     tooltip: {
