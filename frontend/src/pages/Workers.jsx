@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
-  ClipboardList, Grid3x3, PieChart, Repeat, TrendingUp,
+  ClipboardList, Grid3x3, LayoutGrid, PieChart, Repeat, TrendingUp,
   UserCheck, UserMinus, Users,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
