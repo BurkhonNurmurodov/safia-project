@@ -234,7 +234,7 @@ export default function ComparisonTable({
             <button
               onClick={onToggleFullscreen}
               title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
-              className="flex-shrink-0 h-[38px] w-[38px] flex items-center justify-center rounded-lg transition-colors"
+              className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
               style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
             >
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
