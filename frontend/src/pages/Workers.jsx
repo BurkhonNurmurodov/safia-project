@@ -330,10 +330,14 @@ export default function Workers() {
   // its size and nothing below shifts when you hover across days.
   const trendTipHtml = (idx) => {
     if (idx == null || !trend?.dates?.length) return "";
-    const date = trend.dates[idx] ?? "";
-    const items = trendRoleOrder.map((r) => ({
+    const dateStr = trend.dates[idx] ?? "";
+    // Long formatted date in plain ink — the old brand-gold DD.MM.YYYY read as a
+    // link; this is a state readout ("which day am I looking at"), not a control.
+    const date = dateStr ? fmtLongDate(parseDate(dateStr), t, lang) : "";
+    const items = keptRoles.map((r) => ({
       name: roleLabel(r), color: roleColor(r), val: (trend.series[r] || [])[idx] ?? 0,
     }));
+    if (foldData) items.push({ name: t("workers.othersFold"), color: FOLD_COLOR, val: foldData[idx] ?? 0 });
     const total = items.reduce((n, it) => n + it.val, 0);
     const num = (v, w) => `<b style="color:var(--text-1);display:inline-block;min-width:${w};text-align:right;font-variant-numeric:tabular-nums">${v}</b>`;
     const chips = items.map((it) => `
@@ -341,7 +345,12 @@ export default function Workers() {
         <span style="width:9px;height:9px;border-radius:2px;background:${it.color};flex:none"></span>
         <span style="color:var(--text-3)">${it.name}</span>
         ${num(it.val, "2.4em")}</span>`).join("");
-    return `<span style="color:var(--brand);font-weight:600">${date}</span>${chips}
+    // Muted per-role detail of the folded tail — same roles every day and each
+    // value width-pinned, so the strip keeps the no-reflow contract on hover.
+    const foldDetail = foldRoles.length ? `
+      <span style="color:var(--text-4)">${foldRoles.map((r) =>
+        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${(trend.series[r] || [])[idx] ?? 0}</span>`).join(" · ")}</span>` : "";
+    return `<span style="color:var(--text-1);font-weight:600">${date}</span>${chips}${foldDetail}
       <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(total, "2.8em")}</span>`;
   };
   const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
