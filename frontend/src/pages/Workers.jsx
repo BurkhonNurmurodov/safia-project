@@ -190,9 +190,13 @@ export default function Workers() {
   };
 
   // Attendance trend by role (stacked area, min-7-day window).
-  const trendSeries = trend
-    ? ROLES.filter((r) => r !== "Other").map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }))
+  // Drop roles that are all-zero across the window: a zero top-of-stack series
+  // still paints its translucent gradient down to the baseline, tinting the whole
+  // chart its colour ("green shadow everywhere" when Zagatovitel has no attendance).
+  const trendRoles = trend
+    ? ROLES.filter((r) => r !== "Other" && (trend.series[r] || []).some((v) => v > 0))
     : [];
+  const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
   const trendOptions = {
     chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
     stroke: { curve: "smooth", width: 2 },
