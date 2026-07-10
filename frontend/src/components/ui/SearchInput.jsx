@@ -9,7 +9,8 @@ import { Search, X } from "lucide-react";
  *   placeholder      – pass the page's translation
  *   className        – wrapper classes (widths etc.)
  *   inputClassName   – override input sizing (default "text-sm pl-8 pr-7 py-2",
- *                      same height as the FilterPanel trigger / md Button)
+ *                      38px — the toolbar baseline: FilterPanel trigger,
+ *                      SegmentedToggle md, Button lg)
  *   clearable        – show the X button when there is text (default true)
  */
 export default function SearchInput({
