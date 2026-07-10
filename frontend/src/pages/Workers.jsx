@@ -116,6 +116,7 @@ export default function Workers() {
   const [view, setView] = useState("attendance");   // "attendance" | "movements"
   const [tgtTab, setTgtTab] = useState("supervisor"); // exchange-targets chart: "supervisor" | "task"
   const [treeMode, setTreeMode] = useState("all");    // treemap metric: "all" | "zagruzka"
+  const [roleMode, setRoleMode] = useState("all");    // role charts: "all" roles | "zagruzka" subset
   const [sort, setSort] = useState({ key: null, dir: "asc" });
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
