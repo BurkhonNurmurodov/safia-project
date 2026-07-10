@@ -24,7 +24,7 @@ export default function PageLoader({ overlay = false }) {
       style={{ background: "var(--bg-base)" }}
     >
       <img
-        src={logoSrc}
+        src={LOGO_SRC}
         alt="Safia"
         className="w-24 h-24 rounded-full object-cover animate-pulse"
         style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}
