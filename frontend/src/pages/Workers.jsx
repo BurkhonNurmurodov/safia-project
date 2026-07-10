@@ -19,6 +19,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { padChartParams } from "../utils/chartRange";
+import { fmtLongDate } from "./Staff";
 import api from "../utils/api";
 
 // ── palette ──────────────────────────────────────────────────────────────────
