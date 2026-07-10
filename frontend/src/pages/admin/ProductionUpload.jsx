@@ -239,7 +239,7 @@ export default function ProductionUpload() {
           className="block w-full text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
         />
         <div className="text-[11px] text-[var(--text-4)] mt-1">
-          Выберите оба файла: «фаза» (операции) и «заголовок» (заказы→SKU). Тип определяется автоматически; соединяются по номеру заказа.
+          Выберите оба файла: «фаза» (операции) и «заголовок» (заказы→SKU). Тип определяется автоматически; соединяются по номеру заказа. Файл общий — загрузка применяется ко всем бригадирам (каждый по своему каталогу).
         </div>
 
         <button
