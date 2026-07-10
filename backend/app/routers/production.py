@@ -335,34 +335,17 @@ def _upsert_upload(db, manager_id, day, file_type, columns, rows, filename):
 
 
 def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
-                        faza_ops: list[dict], order_sku: dict, order_deliv: dict,
-                        zaga_rows_all: list, zaga_cols, faza_present: bool,
-                        zaga_present: bool, faza_file, zaga_file) -> int:
-    """Write ONE brigadir's scoped view from the globally-parsed slices of an
-    upload: filter фаза ops to their work centers, join → SKU (catalog-filtered),
-    aggregate ПЛАН/ФАКТ into PPDaily, and store the raw фаза/заголовок slices.
-    Returns the number of PPDaily rows written. The SAP export is one plant-wide
-    file, so upload_phase parses it once and calls this per configured brigadir."""
+                        faza_ops: list[dict], order_sku: dict, order_deliv: dict) -> int:
+    """Write ONE brigadir's PPDaily snapshot from the globally-parsed slices of
+    an upload: filter фаза ops to their work centers, join → SKU
+    (catalog-filtered), aggregate ПЛАН/ФАКТ. Returns rows written. The SAP
+    export is one plant-wide file — upload_phase parses it once, stores the raw
+    slices globally, and calls this per configured brigadir."""
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
     products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
         PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
     catalog_skus = {p.sap_code for p in products}
-
-    # фаза-only upload: fill order→SKU from this brigadir's stored заголовок, so
-    # SKUs still resolve (stored zaga rows: [order, sku, plant, ordqty, deliv, …]).
-    o_sku, o_deliv = order_sku, order_deliv
-    if faza_present and not zaga_present:
-        stored_zaga = db.query(PPUpload).filter(
-            PPUpload.manager_id == manager_id, PPUpload.date == day,
-            PPUpload.file_type == "zaga").first()
-        if stored_zaga:
-            o_sku, o_deliv = dict(order_sku), dict(order_deliv)
-            for r in (stored_zaga.rows or []):
-                if len(r) >= 2 and r[0] and r[1]:
-                    o_sku.setdefault(str(r[0]), str(r[1]))
-                    if len(r) > 4:
-                        o_deliv.setdefault(str(r[0]), float(r[4] or 0))
 
     # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
     #   ПЛАН  = Σ «Кол-во операции» over the matching operations          (Excel col F)
@@ -370,17 +353,14 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     # «Поставлено» is order-level and repeats per operation, exactly like the
     # Excel SUMIFS over «План пост» — so we add it once per matching фаза row.
     faza_agg: dict[tuple[str, str], dict] = {}
-    faza_rows: list[list] = []
     for op in faza_ops:
         if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
             continue
-        sku = o_sku.get(op["order"])
+        sku = order_sku.get(op["order"])
         if sku and (not catalog_skus or sku in catalog_skus):
             a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
             a["plan_qty"] += op["plan"]
-            a["actual_qty"] += o_deliv.get(op["order"], 0.0)
-        faza_rows.append([op["order"], op["op"], op["wc"], sku or "—", op["name"],
-                          op["plan"], op["status"], op["date"], op["conf"]])
+            a["actual_qty"] += order_deliv.get(op["order"], 0.0)
 
     updated = 0
     if faza_agg:
