@@ -10,8 +10,8 @@
  * "view tabs" (Production view switch, Staff Workers/Requests) — same
  * component, not a hand-rolled copy. Never hand-roll this bar — use this so
  * every toggle shares the app's button height. Outer heights mirror Button:
- *   size="md" (default) → ≈ 32px  (compact Button md + a touch of inset)
- *   size="sm"           → ≈ 28px  (compact Button sm + a touch of inset)
+ *   size="md" (default) → 38px  (= Button md / toolbar baseline)
+ *   size="sm"           → 30px  (= Button sm)
  *
  * Props:
  *   value     – the currently selected option value (compared with ===)
