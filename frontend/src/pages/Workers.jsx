@@ -287,6 +287,7 @@ export default function Workers() {
   const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
   const trendOptions = {
     chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
+    dataLabels: { enabled: false },
     stroke: { curve: "smooth", width: 2 },
     fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
     colors: trendRoles.map(roleColor),
