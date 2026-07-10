@@ -442,6 +442,31 @@ async def upload_phase(
             detail="Не удалось распознать тип файла автоматически. Выберите «Тип файла» (Фаза или Заголовок) и загрузите снова.",
         )
 
+    # A фаза-only upload still needs order→SKU: fall back to the заголовок
+    # already stored for this date — the global row first, then any legacy
+    # per-brigadir slices (order→SKU/«Поставлено» pairs are global truth).
+    if faza_present and not zaga_present:
+        stored = db.query(PPUpload).filter(
+            PPUpload.date == day, PPUpload.file_type == "zaga",
+        ).order_by(PPUpload.manager_id.isnot(None)).all()
+        for up in stored:
+            # stored zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
+            for r in (up.rows or []):
+                if len(r) >= 2 and r[0] and r[1]:
+                    order_sku.setdefault(str(r[0]), str(r[1]))
+                    if len(r) > 4:
+                        order_deliv.setdefault(str(r[0]), float(r[4] or 0))
+
+    # Store the raw slices ONCE, globally (manager_id NULL) — the file is
+    # plant-wide; the raw views scope it to a brigadir at read time.
+    if faza_present:
+        faza_rows = [[op["order"], op["op"], op["wc"], order_sku.get(op["order"]) or "—",
+                      op["name"], op["plan"], op["status"], op["date"], op["conf"]]
+                     for op in faza_ops]
+        _upsert_upload(db, None, day, "faza", FAZA_COLUMNS, faza_rows, faza_file)
+    if zaga_present:
+        _upsert_upload(db, None, day, "zaga", zaga_cols, zaga_rows_all, zaga_file)
+
     # Target: a specific brigadir if requested, else every configured one.
     if manager_id is not None:
         if not db.query(Manager).filter(Manager.id == manager_id).first():
