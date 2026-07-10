@@ -37,9 +37,9 @@ export default function SegmentedToggle({
 }) {
   // A 4px track inset gives the selected pill a little breathing room from the
   // track border on every side; with the segment padding below the OUTER height
-  // lands at ~32px (md) / ~28px (sm) — a hair taller than compact Button md/sm
-  // by design (the white StyledSelect dropdowns stay taller too).
-  const seg = size === "sm" ? "px-2.5 py-[1px] text-xs" : "px-3 py-[3px] text-xs";
+  // lands exactly on Button md 38px / Button sm 30px so toggles align with the
+  // rest of the toolbar controls.
+  const seg = size === "sm" ? "px-2.5 py-[2px] text-xs" : "px-3 py-[6px] text-xs";
   const items = options.map((o) =>
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
