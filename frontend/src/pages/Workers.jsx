@@ -271,54 +271,29 @@ export default function Workers() {
     legend: legendCfg, grid: gridCfg, tooltip: { theme: tooltipTheme }, theme: chartTheme,
   };
 
-  // Attendance heatmap — supervisor (rows) × day (cols), cell = workers present.
+  // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
+  // cols). Each cell is the per-day attendance rate present/roster (same metric
+  // as the `rate` column). HeatmapChart reads `net_util` as a 0–1 fraction and
+  // renders it as a %; missing days stay null → shown as "—".
   const heatDates = useMemo(() => {
     const set = new Set();
     headcount.forEach((m) => (m.daily || []).forEach((d) => set.add(d.date)));
     return [...set].sort((a, b) => parseDate(a) - parseDate(b));
   }, [headcount]);
-  const heatSeries = headcount.map((m) => {
-    const map = Object.fromEntries((m.daily || []).map((d) => [d.date, d.hc]));
-    return { name: tl(m.name), data: heatDates.map((dt) => ({ x: dt.slice(0, 5), y: dt in map ? map[dt] : -1 })) };
-  });
-  // Present / roster → the per-day attendance rate (same metric as the `rate`
-  // column and the fleet heatmap's cell %). Cell colour stays keyed to the raw
-  // count; the label shows the %.
-  const heatPct = (v, seriesIndex) => {
-    const roster = headcount[seriesIndex]?.total;
-    return roster ? Math.round((v / roster) * 100) : null;
-  };
-  const heatOptions = {
-    chart: { ...baseChart, type: "heatmap" },
-    // Per-cell % labels like the fleet heatmap. No dropShadow — an SVG filter
-    // per cell locks ApexCharts into a render loop and freezes weak clients.
-    // Leaving `style.colors` unset lets ApexCharts auto-contrast the text.
-    dataLabels: {
-      enabled: true,
-      formatter: (v, { seriesIndex }) => {
-        if (v < 0) return "";
-        const p = heatPct(v, seriesIndex);
-        return p == null ? String(v) : `${p}%`;
-      },
-      style: { fontSize: "11px", fontWeight: 700 },
-    },
-    plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: ATT_RANGES } } },
-    xaxis: { type: "category", labels: { ...axisLabels, rotate: -45 } },
-    yaxis: { labels: axisLabelsMd },
-    legend: { show: false },
-    stroke: { width: 2, colors: [gridColor] },
-    tooltip: {
-      theme: tooltipTheme,
-      y: { formatter: (v, { seriesIndex }) => {
-        if (v < 0) return t("workers.hm.none");
-        const p = heatPct(v, seriesIndex);
-        const pct = p == null ? "" : ` · ${p}%`;
-        return `${v} ${t("workers.present").toLowerCase()}${pct}`;
-      } },
-    },
-    theme: chartTheme,
-  };
-  const heatH = Math.max(260, headcount.length * 30 + 80);
+  const heatManagers = useMemo(() => headcount.map((m) => m.name), [headcount]);
+  const heatData = useMemo(() => {
+    const out = {};
+    headcount.forEach((m) => {
+      const byDate = Object.fromEntries((m.daily || []).map((d) => [d.date, d.hc]));
+      const row = {};
+      heatDates.forEach((dt) => {
+        const hc = dt in byDate ? byDate[dt] : null;
+        row[dt] = { net_util: hc != null && m.total ? hc / m.total : null };
+      });
+      out[m.name] = row;
+    });
+    return out;
+  }, [headcount, heatDates]);
 
   // Movements by day (stacked columns).
   const reqDaySeries = [
