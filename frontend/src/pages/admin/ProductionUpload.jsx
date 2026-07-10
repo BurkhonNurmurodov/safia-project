@@ -133,7 +133,7 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
       <div className="text-[11px] text-[var(--text-4)] mb-3">
         Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Снимки данных не затрагиваются.
       </div>
-      <button onClick={doImport} disabled={!file || state.status === "uploading"}
+      <button onClick={doImport} disabled={!file || managerId == null || state.status === "uploading"}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50">
         {state.status === "uploading" ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />}
         Импортировать
