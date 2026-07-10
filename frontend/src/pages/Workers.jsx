@@ -294,8 +294,35 @@ export default function Workers() {
     ? activeRoles.filter((r) => (trend.series[r] || []).some((v) => v > 0))
     : [];
   const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
+  // The trend tooltip renders BELOW the chart (see .att-trend CSS) so it never
+  // covers the plot. This builds the day's breakdown as a full-width horizontal
+  // strip — date, colored role chips (zero-value roles dropped, sorted desc),
+  // then the day total — for a given x-index. Colors come from CSS vars so it
+  // adapts to theme. Reused by the hover callback and the idle/leave default.
+  const trendTipHtml = (idx) => {
+    if (idx == null || !trend?.dates?.length) return "";
+    const date = trend.dates[idx] ?? "";
+    const items = trendRoles
+      .map((r) => ({ name: roleLabel(r), color: roleColor(r), val: (trend.series[r] || [])[idx] ?? 0 }))
+      .filter((it) => it.val > 0)
+      .sort((a, b) => b.val - a.val);
+    const total = items.reduce((n, it) => n + it.val, 0);
+    const chips = items.map((it) => `
+      <span style="display:inline-flex;align-items:center;gap:5px">
+        <span style="width:9px;height:9px;border-radius:2px;background:${it.color};flex:none"></span>
+        <span style="color:var(--text-3)">${it.name}</span>
+        <b style="color:var(--text-1)">${it.val}</b></span>`).join("");
+    return `<span style="color:var(--brand);font-weight:600">${date}</span>${chips}
+      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;<b style="color:var(--text-1)">${total}</b></span>`;
+  };
+  const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
+  const trendDefaultHtml = trendTipHtml(trendDefaultIdx >= 0 ? trendDefaultIdx : null);
   const trendOptions = {
-    chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
+    chart: {
+      ...baseChart, type: "area", stacked: true, zoom: { enabled: false },
+      // On mouse-out restore the panel to the latest day so it's never blank.
+      events: { mouseLeave: () => { if (trendTip.current) trendTip.current.innerHTML = trendDefaultHtml; } },
+    },
     dataLabels: { enabled: false },
     stroke: { curve: "smooth", width: 2 },
     fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
@@ -306,35 +333,14 @@ export default function Workers() {
     },
     yaxis: { labels: axisLabels },
     legend: legendCfg, grid: gridCfg, theme: chartTheme,
-    // 9–10 roles overflow ApexCharts' default tooltip past the 330px chart and
-    // clip on the card's overflow-hidden. Pin it to a fixed corner (no cursor
-    // clipping) AND render a compact tooltip that drops the day's zero-value
-    // roles, sorts the rest desc, and closes with a total — short enough to fit.
+    // Apex's own tooltip box is hidden via .att-trend CSS; this callback is used
+    // only as the hover-index source — it writes the breakdown into the panel
+    // under the chart and returns nothing visible.
     tooltip: {
       theme: tooltipTheme,
-      fixed: { enabled: true, position: "bottomLeft", offsetX: 0, offsetY: 0 },
-      custom: ({ series, dataPointIndex, w }) => {
-        const dark = tooltipTheme === "dark";
-        const bg = dark ? "#1a1d27" : "#ffffff";
-        const bd = dark ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.1)";
-        const muted = dark ? "#9ca3af" : "#6b7280";
-        const strong = dark ? "#f3f4f6" : "#111827";
-        const date = w.config.xaxis.categories?.[dataPointIndex] ?? "";
-        const items = series
-          .map((s, i) => ({ name: w.globals.seriesNames[i], color: w.globals.colors[i], val: s[dataPointIndex] ?? 0 }))
-          .filter((it) => it.val > 0)
-          .sort((a, b) => b.val - a.val);
-        const total = items.reduce((n, it) => n + it.val, 0);
-        const rows = items.map((it) => `
-          <div style="display:flex;align-items:center;gap:6px;padding:1px 0">
-            <span style="width:8px;height:8px;border-radius:2px;background:${it.color};flex:none"></span>
-            <span style="color:${muted}">${it.name}</span>
-            <b style="color:${strong};margin-left:auto">${it.val}</b></div>`).join("");
-        return `<div style="padding:8px 10px;background:${bg};border:1px solid ${bd};border-radius:8px;font-size:11px;min-width:190px">
-          <div style="color:#C8973F;font-weight:600;margin-bottom:5px">${date}</div>${rows}
-          <div style="display:flex;align-items:center;gap:6px;padding-top:4px;margin-top:4px;border-top:1px solid ${bd}">
-            <span style="color:${muted}">${t("workers.total")}</span>
-            <b style="color:${strong};margin-left:auto">${total}</b></div></div>`;
+      custom: ({ dataPointIndex }) => {
+        if (trendTip.current) trendTip.current.innerHTML = trendTipHtml(dataPointIndex);
+        return "";
       },
     },
   };
