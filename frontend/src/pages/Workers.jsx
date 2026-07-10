@@ -195,19 +195,37 @@ export default function Workers() {
   const gridCfg      = { borderColor: gridColor, strokeDashArray: 3 };
   const chartH       = Math.max(300, headcount.length * 28 + 60);
 
+  // Dynamic role set for the role-share donut + attendance trend. `by_role` now
+  // carries every present job title; the toggle switches between all roles and
+  // the zagruzka subset (removing/adding the non-zagruzka roles). Extra roles are
+  // count-sorted so their identity hue stays stable across mode switches.
+  const roleTotalsMap = useMemo(() => {
+    const acc = {};
+    headcount.forEach((m) => Object.entries(m.by_role || {}).forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
+    return acc;
+  }, [headcount]);
+  const extraRoles = useMemo(
+    () => Object.keys(roleTotalsMap).filter((r) => !ROLES.includes(r)).sort((a, b) => roleTotalsMap[b] - roleTotalsMap[a]),
+    [roleTotalsMap],
+  );
+  const roleColor = (r) => ROLE_COLORS[r] ?? ROLE_EXTRA_COLORS[Math.max(0, extraRoles.indexOf(r)) % ROLE_EXTRA_COLORS.length];
+  const activeRoles = roleMode === "all" ? [...ROLES, ...extraRoles] : ROLES;
+
   // Workforce composition donut — each role's share of the whole workforce.
-  const roleTotals = ROLES.map((r) => headcount.reduce((s, m) => s + (m.by_role[r] || 0), 0));
+  const donutRoles = activeRoles.filter((r) => (roleTotalsMap[r] || 0) > 0);
+  const roleTotals = donutRoles.map((r) => roleTotalsMap[r] || 0);
+  const donutTotal = roleTotals.reduce((s, n) => s + n, 0);
   const donutOptions = {
     chart: { ...baseChart, type: "donut" },
-    labels: ROLES.map(roleLabel),
-    colors: ROLES.map((r) => ROLE_COLORS[r]),
+    labels: donutRoles.map(roleLabel),
+    colors: donutRoles.map(roleColor),
     legend: { ...legendCfg, position: "bottom" },
     dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%`, style: { fontSize: "11px" } },
     stroke: { width: 0 },
     plotOptions: { pie: { donut: { size: "64%", labels: {
       show: true,
       value: { color: legendColor },
-      total: { show: true, label: t("workers.total"), color: legendColor, formatter: () => String(totalWorkers) },
+      total: { show: true, label: t("workers.total"), color: legendColor, formatter: () => String(donutTotal) },
     } } } },
     tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
     theme: chartTheme,
