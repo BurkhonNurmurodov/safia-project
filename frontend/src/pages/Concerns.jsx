@@ -1007,7 +1007,17 @@ export default function Concerns() {
       active: categorySel.length > 0,
       display: `${categorySel.length} ${t("filter.selected2")}`,
       render: () => (
-        <OptsFilter opts={CATEGORIES} sel={categorySel} onChange={setCategorySel} render={(c) => categoryLabel(c)} />
+        <OptsFilter
+          opts={CATEGORIES}
+          sel={categorySel}
+          onChange={setCategorySel}
+          render={(c) => (
+            <span className="inline-flex items-center gap-1.5">
+              <CategoryIconChip category={c} size={18} />
+              {categoryLabel(c)}
+            </span>
+          )}
+        />
       ),
     },
     {
