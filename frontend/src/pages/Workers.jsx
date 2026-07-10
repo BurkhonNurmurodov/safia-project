@@ -416,8 +416,8 @@ export default function Workers() {
   // New-role distribution.
   const reqRoleOptions = {
     chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, distributed: true } },
-    colors: ["#a78bfa", "#ec4899", "#f472b6", "#c084fc", "#8b5cf6", "#d946ef"],
+    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
+    colors: [REQ_COLORS.roleChange],
     dataLabels: { enabled: false },
     xaxis: { categories: reqRoles.map((r) => tl(r.role)), labels: axisLabels },
     yaxis: { labels: axisLabelsMd },
