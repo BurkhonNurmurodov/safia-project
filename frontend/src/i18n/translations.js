@@ -3978,6 +3978,7 @@ const t = {
     "workers.days":              "Дней",
     "workers.delta":             "Разница",
     "workers.roleOther":         "Прочие",
+    "workers.othersFold":        "Остальные",
     "workers.mismatchDays":      "дн. с расхождением",
     "workers.headcount":         "Штат",
     "workers.requests":          "Запросы",
