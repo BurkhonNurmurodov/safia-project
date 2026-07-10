@@ -49,6 +49,15 @@ const CATEGORY_COLOR = {
   plan: "#a855f7", hr: "#ec4899", technologist: "#f59e0b", raw_material: "#84cc16",
 };
 
+// Icon per department — same visual language as the downtime category legend
+// (Wrench = repair service, Warehouse, Truck = logistics, FlaskConical =
+// technologist), extended to the departments the legend doesn't cover.
+const CATEGORY_ICON = {
+  ars: Wrench, inventory: Boxes, warehouse: Warehouse, fridge: Refrigerator,
+  procurement: ShoppingCart, logistics: Truck, it: MonitorCog, washing: Droplets,
+  plan: CalendarRange, hr: Users, technologist: FlaskConical, raw_material: Wheat,
+};
+
 // Escalation chain, bottom → top. A concern starts at "supervisor" and is
 // uplifted one step at a time by whoever can't solve it (see the uplift/
 // send-back actions); the level column shows who currently holds it. Leaders
