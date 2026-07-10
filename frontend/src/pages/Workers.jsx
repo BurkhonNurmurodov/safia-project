@@ -483,7 +483,7 @@ export default function Workers() {
           <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
               : heatSeries.length && heatDates.length
-                ? <ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} />
+                ? <div className="att-heat"><ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} /></div>
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
           </ChartCard>
 
