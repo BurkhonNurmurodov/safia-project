@@ -815,7 +815,7 @@ export default function Concerns() {
   // requires the concern fields) with just the status swapped. Completion date is
   // left to the backend, which stamps today when a row flips to "done".
   const statusMutation = useMutation({
-    mutationFn: ({ row, status }) =>
+    mutationFn: ({ row, status, solution }) =>
       api
         .put(`/api/concerns/${row.id}`, {
           cell_code: row.cell_code || null,
@@ -825,11 +825,33 @@ export default function Concerns() {
           deadline_days: row.deadline_days ?? null,
           entry_date: row.entry_date || null,
           completion_date: status === "done" ? row.completion_date || null : null,
-          solution: row.solution || null,
+          // `solution` is passed through only for the note-prompted "done" flow;
+          // plain status swaps keep whatever the row already had.
+          solution: solution !== undefined ? solution || null : row.solution || null,
         })
         .then((r) => r.data),
-    onSuccess: () => invalidate(),
+    onSuccess: () => {
+      invalidate();
+      setResolveRow(null);
+    },
+    onError: (e) => setResolveError(e?.response?.data?.detail || t("concerns.saveError")),
   });
+
+  // Inline pill → "done" opens the note prompt (pre-filled with any existing
+  // solution); every other status applies immediately.
+  function requestStatusChange(row, status) {
+    if (status === "done") {
+      setResolveRow(row);
+      setResolveNote(row.solution || "");
+      setResolveError("");
+    } else {
+      statusMutation.mutate({ row, status });
+    }
+  }
+  function submitResolve() {
+    if (!resolveNote.trim()) return setResolveError(t("concerns.noteRequired"));
+    statusMutation.mutate({ row: resolveRow, status: "done", solution: resolveNote.trim() });
+  }
   const savingStatusId = statusMutation.isPending ? statusMutation.variables?.row?.id : null;
 
   // ── escalation (uplift / send back one step, reason mandatory) ─────────────
