@@ -643,63 +643,63 @@ export default function Workers() {
                         options={reqRoleOptions} height={reqRoleChartH} />
                     : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
                 </ChartCard>
-              </div>
 
-              {/* Role-transition matrix — binned single-hue grid, biggest flows first */}
-              <ChartCard icon={Grid3x3} title={t("workers.req.transitionMatrix")} info={t("workers.info.transitions")} className="mb-6">
-                {!req ? <SkeletonChart className="h-64" />
-                  : transRows.length ? (
-                    <>
-                      <div className="overflow-x-auto">
-                        <div className="grid gap-[2px] min-w-[460px] max-w-[660px]"
-                          style={{ gridTemplateColumns: `minmax(130px,190px) repeat(${toRoles.length}, minmax(64px,1fr)) 56px` }}>
-                          <div />
-                          <div className="text-center text-[11px] pb-0.5" style={{ color: "var(--text-4)", gridColumn: `2 / span ${toRoles.length}` }}>
-                            {t("workers.req.toRole")} →
+                {/* Role-transition matrix — binned single-hue grid, biggest flows first */}
+                <ChartCard icon={Grid3x3} title={t("workers.req.transitionMatrix")} info={t("workers.info.transitions")} className="lg:col-span-2">
+                  {!req ? <SkeletonChart className="h-64" />
+                    : transRows.length ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <div className="grid gap-[2px] min-w-[460px] max-w-[660px]"
+                            style={{ gridTemplateColumns: `minmax(130px,190px) repeat(${toRoles.length}, minmax(64px,1fr)) 56px` }}>
+                            <div />
+                            <div className="text-center text-[11px] pb-0.5" style={{ color: "var(--text-4)", gridColumn: `2 / span ${toRoles.length}` }}>
+                              {t("workers.req.toRole")} →
+                            </div>
+                            <div />
+                            <div className="flex items-end justify-end text-right pr-2.5 pb-1 text-[11px] leading-tight" style={{ color: "var(--text-4)" }}>
+                              {t("workers.req.fromRole")} ↓
+                            </div>
+                            {toRoles.map((to) => (
+                              <div key={to} className="self-end text-center text-xs font-medium pb-1" style={{ color: "var(--text-2)" }}>{tl(to)}</div>
+                            ))}
+                            <div className="self-end text-right text-[11px] pr-1.5 pb-1" style={{ color: "var(--text-4)" }}>{t("workers.total")}</div>
+                            {transRows.map((row) => (
+                              <Fragment key={row.from}>
+                                <div className="flex items-center justify-end text-right pr-2.5 text-xs leading-tight" style={{ color: "var(--text-2)" }}>
+                                  {transRoleLabel(row.from)}
+                                </div>
+                                {row.cells.map((v, i) => {
+                                  const b = transBin(v);
+                                  return (
+                                    <div key={toRoles[i]} title={`${transRoleLabel(row.from)} → ${tl(toRoles[i])}: ${v}`}
+                                      className="h-[34px] rounded flex items-center justify-center text-[13px] font-medium tabular-nums"
+                                      style={b ? { background: b.bg, color: b.fg } : { background: "var(--bg-inner)", color: "var(--text-4)" }}>
+                                      {b ? v : "·"}
+                                    </div>
+                                  );
+                                })}
+                                <div className="flex items-center justify-end pr-1.5 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{row.total}</div>
+                              </Fragment>
+                            ))}
                           </div>
-                          <div />
-                          <div className="flex items-end justify-end text-right pr-2.5 pb-1 text-[11px] leading-tight" style={{ color: "var(--text-4)" }}>
-                            {t("workers.req.fromRole")} ↓
-                          </div>
-                          {toRoles.map((to) => (
-                            <div key={to} className="self-end text-center text-xs font-medium pb-1" style={{ color: "var(--text-2)" }}>{tl(to)}</div>
-                          ))}
-                          <div className="self-end text-right text-[11px] pr-1.5 pb-1" style={{ color: "var(--text-4)" }}>{t("workers.total")}</div>
-                          {transRows.map((row) => (
-                            <Fragment key={row.from}>
-                              <div className="flex items-center justify-end text-right pr-2.5 text-xs leading-tight" style={{ color: "var(--text-2)" }}>
-                                {transRoleLabel(row.from)}
-                              </div>
-                              {row.cells.map((v, i) => {
-                                const b = transBin(v);
-                                return (
-                                  <div key={toRoles[i]} title={`${transRoleLabel(row.from)} → ${tl(toRoles[i])}: ${v}`}
-                                    className="h-[34px] rounded flex items-center justify-center text-[13px] font-medium tabular-nums"
-                                    style={b ? { background: b.bg, color: b.fg } : { background: "var(--bg-inner)", color: "var(--text-4)" }}>
-                                    {b ? v : "·"}
-                                  </div>
-                                );
-                              })}
-                              <div className="flex items-center justify-end pr-1.5 text-xs tabular-nums" style={{ color: "var(--text-3)" }}>{row.total}</div>
-                            </Fragment>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 mt-3.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="w-[11px] h-[11px] rounded-[2px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }} />0
+                          </span>
+                          {TRANS_BINS.map((b) => (
+                            <span key={b.from} className="inline-flex items-center gap-1.5">
+                              <span className="w-[11px] h-[11px] rounded-[2px]" style={{ background: b.bg }} />
+                              {b.to === Infinity ? `${b.from}+` : `${b.from}–${b.to}`}
+                            </span>
                           ))}
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 mt-3.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-[11px] h-[11px] rounded-[2px]" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }} />0
-                        </span>
-                        {TRANS_BINS.map((b) => (
-                          <span key={b.from} className="inline-flex items-center gap-1.5">
-                            <span className="w-[11px] h-[11px] rounded-[2px]" style={{ background: b.bg }} />
-                            {b.to === Infinity ? `${b.from}+` : `${b.from}–${b.to}`}
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  )
-                  : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
-              </ChartCard>
+                      </>
+                    )
+                    : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
+                </ChartCard>
+              </div>
 
               {/* Supervisor summary table */}
               <TableCard icon={ClipboardList} title={t("workers.req.supervisorSummary")} className="mb-6"
