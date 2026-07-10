@@ -298,13 +298,27 @@ export default function Workers() {
   const trendRoles = trend
     ? activeRoles.filter((r) => (trend.series[r] || []).some((v) => v > 0))
     : [];
-  const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
-  // Stable chip order for the breakdown strip — sorted ONCE by window total (desc),
-  // never per-day, so chips keep their positions as you hover across days.
+  // ONE order everywhere — window total (desc), computed ONCE (never per-day):
+  // it is the stack order (largest band sits on the stable baseline), the legend
+  // order and the chip order, so nothing has to be re-searched between them and
+  // chips keep their positions as you hover across days.
   const trendRoleOrder = [...trendRoles].sort((a, b) => {
     const sum = (r) => (trend.series[r] || []).reduce((n, v) => n + (v || 0), 0);
     return sum(b) - sum(a);
   });
+  // Past ~5 bands the top ribbons are a few px tall — unreadable ink. Keep the
+  // top 4 and fold the tail into one slate "others" band; the folded roles keep
+  // their numbers in the panel's muted breakdown and in the role-share donut.
+  const foldRoles = trendRoleOrder.length > 5 ? trendRoleOrder.slice(4) : [];
+  const keptRoles = foldRoles.length ? trendRoleOrder.slice(0, 4) : trendRoleOrder;
+  const foldData = foldRoles.length
+    ? (trend?.dates || []).map((_, i) => foldRoles.reduce((n, r) => n + ((trend.series[r] || [])[i] || 0), 0))
+    : null;
+  const trendSeries = [
+    ...keptRoles.map((r) => ({ name: roleLabel(r), data: trend?.series[r] || [] })),
+    ...(foldData ? [{ name: t("workers.othersFold"), data: foldData }] : []),
+  ];
+  const trendColors = [...keptRoles.map(roleColor), ...(foldData ? [FOLD_COLOR] : [])];
   // The trend tooltip renders BELOW the chart (see .att-trend CSS) so it never
   // covers the plot. This builds the day's breakdown as a full-width horizontal
   // strip — date, colored role chips (zero-value roles dropped, sorted desc),
