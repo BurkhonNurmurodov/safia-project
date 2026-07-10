@@ -8,6 +8,8 @@ import {
   CalendarClock, UserRound, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
   Layers, ArrowUp, ArrowDown, ArrowRight, History, LayoutGrid, Tag,
+  Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
+  Droplets, CalendarRange, Users, FlaskConical, Wheat,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
