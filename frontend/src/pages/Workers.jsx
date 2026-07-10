@@ -240,9 +240,27 @@ export default function Workers() {
     const map = Object.fromEntries((m.daily || []).map((d) => [d.date, d.hc]));
     return { name: tl(m.name), data: heatDates.map((dt) => ({ x: dt.slice(0, 5), y: dt in map ? map[dt] : -1 })) };
   });
+  // Present / roster → the per-day attendance rate (same metric as the `rate`
+  // column and the fleet heatmap's cell %). Cell colour stays keyed to the raw
+  // count; the label shows the %.
+  const heatPct = (v, seriesIndex) => {
+    const roster = headcount[seriesIndex]?.total;
+    return roster ? Math.round((v / roster) * 100) : null;
+  };
   const heatOptions = {
     chart: { ...baseChart, type: "heatmap" },
-    dataLabels: { enabled: false },
+    // Per-cell % labels like the fleet heatmap. No dropShadow — an SVG filter
+    // per cell locks ApexCharts into a render loop and freezes weak clients.
+    // Leaving `style.colors` unset lets ApexCharts auto-contrast the text.
+    dataLabels: {
+      enabled: true,
+      formatter: (v, { seriesIndex }) => {
+        if (v < 0) return "";
+        const p = heatPct(v, seriesIndex);
+        return p == null ? String(v) : `${p}%`;
+      },
+      style: { fontSize: "11px", fontWeight: 700 },
+    },
     plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: ATT_RANGES } } },
     xaxis: { type: "category", labels: { ...axisLabels, rotate: -45 } },
     yaxis: { labels: axisLabelsMd },
@@ -250,7 +268,12 @@ export default function Workers() {
     stroke: { width: 2, colors: [gridColor] },
     tooltip: {
       theme: tooltipTheme,
-      y: { formatter: (v) => (v < 0 ? t("workers.hm.none") : `${v} ${t("workers.present").toLowerCase()}`) },
+      y: { formatter: (v, { seriesIndex }) => {
+        if (v < 0) return t("workers.hm.none");
+        const p = heatPct(v, seriesIndex);
+        const pct = p == null ? "" : ` · ${p}%`;
+        return `${v} ${t("workers.present").toLowerCase()}${pct}`;
+      } },
     },
     theme: chartTheme,
   };
