@@ -306,21 +306,25 @@ export default function Workers() {
   // strip — date, colored role chips (zero-value roles dropped, sorted desc),
   // then the day total — for a given x-index. Colors come from CSS vars so it
   // adapts to theme. Reused by the hover callback and the idle/leave default.
+  // ONE fixed template — same chips, same order, every day; only the numbers
+  // change. Every role in `trendRoleOrder` is always shown (0 included) and each
+  // value is pinned to a fixed width, so the strip never reflows → the card keeps
+  // its size and nothing below shifts when you hover across days.
   const trendTipHtml = (idx) => {
     if (idx == null || !trend?.dates?.length) return "";
     const date = trend.dates[idx] ?? "";
-    const items = trendRoles
-      .map((r) => ({ name: roleLabel(r), color: roleColor(r), val: (trend.series[r] || [])[idx] ?? 0 }))
-      .filter((it) => it.val > 0)
-      .sort((a, b) => b.val - a.val);
+    const items = trendRoleOrder.map((r) => ({
+      name: roleLabel(r), color: roleColor(r), val: (trend.series[r] || [])[idx] ?? 0,
+    }));
     const total = items.reduce((n, it) => n + it.val, 0);
+    const num = (v, w) => `<b style="color:var(--text-1);display:inline-block;min-width:${w};text-align:right;font-variant-numeric:tabular-nums">${v}</b>`;
     const chips = items.map((it) => `
       <span style="display:inline-flex;align-items:center;gap:5px">
         <span style="width:9px;height:9px;border-radius:2px;background:${it.color};flex:none"></span>
         <span style="color:var(--text-3)">${it.name}</span>
-        <b style="color:var(--text-1)">${it.val}</b></span>`).join("");
+        ${num(it.val, "2.4em")}</span>`).join("");
     return `<span style="color:var(--brand);font-weight:600">${date}</span>${chips}
-      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;<b style="color:var(--text-1)">${total}</b></span>`;
+      <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(total, "2.8em")}</span>`;
   };
   const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
   const trendDefaultHtml = trendTipHtml(trendDefaultIdx >= 0 ? trendDefaultIdx : null);
