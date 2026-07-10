@@ -623,9 +623,6 @@ export default function Workers() {
                   {!req ? <SkeletonChart className="h-72" />
                     : <ReactApexChart type="bar" series={reqSupSeries} options={reqSupOptions} height={reqSupChartH} />}
                 </ChartCard>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
                 <ChartCard icon={ArrowLeftRight} title={t("workers.req.targets")} info={t("workers.info.targets")}
                   right={<SegmentedToggle size="sm" value={tgtTab} onChange={setTgtTab}
                     options={[["supervisor", t("workers.req.tgtSupervisors")], ["task", t("workers.req.tgtTasks")]]} />}>
