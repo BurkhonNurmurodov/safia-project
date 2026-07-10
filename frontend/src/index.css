@@ -160,3 +160,17 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   box-shadow: none !important;
   overflow: visible !important;
 }
+
+/* ── Attendance heatmap cell % labels ────────────────────────────────────────
+   ApexCharts paints heatmap data labels white with no per-cell contrast, so on
+   the light-green (small-brigade) cells the % washes out. A dark SVG text
+   outline keeps white legible across the whole light→dark green ramp. Uses
+   paint-order stroke — NOT a dropShadow filter, which locks the heatmap into a
+   render loop and freezes weak clients. */
+.att-heat .apexcharts-datalabels text,
+.att-heat text.apexcharts-datalabel {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
