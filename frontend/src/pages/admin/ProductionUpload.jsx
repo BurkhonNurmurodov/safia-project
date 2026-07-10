@@ -254,13 +254,10 @@ export default function ProductionUpload() {
         {state.status === "ok" && (
           <div className="mt-4 bg-[var(--bg-inner)] rounded-lg p-4 text-sm">
             <div className="flex items-center gap-2 text-green-400 font-semibold mb-2">
-              <CheckCircle2 size={14} /> Записано строк (SKU×команда): {state.data.rows_written}
+              <CheckCircle2 size={14} /> Обновлено бригадиров: {state.data.brigadirs} · строк (SKU×команда): {state.data.rows_written}
             </div>
             <div className="text-xs text-[var(--text-2)]">
               Операций «фаза»: {state.data.faza_operations} · Заказов в карте: {state.data.zaga_orders}
-              {state.data.unmapped_operations > 0 && (
-                <span className="text-yellow-500"> · без SKU: {state.data.unmapped_operations} (загрузите «заголовок»)</span>
-              )}
             </div>
             {state.data.files?.map((f, i) => (
               <div key={i} className="text-xs text-[var(--text-3)] mt-1 font-mono">
