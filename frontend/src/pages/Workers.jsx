@@ -42,6 +42,9 @@ const ROLE_EXTRA_COLORS = [
 ];
 const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
+// Folded small-role band in the attendance trend — de-emphasis slate, not an
+// identity hue: "everything else" is a bucket, so it must not compete for one.
+const FOLD_COLOR     = "#94a3b8";
 // roleChange is a deepened brand-gold chart step: blue+violet collapses under
 // red-green colorblindness (violet reads as blue), and lavender sat below 3:1
 // contrast on the light surface. Blue+gold clears both.
