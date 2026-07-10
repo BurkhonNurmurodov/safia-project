@@ -222,14 +222,13 @@ def get_dates(
     db: Session = Depends(get_db),
 ):
     mid = _resolve_manager_id(payload, manager_id, db)
-    rows = (
-        db.query(PPDaily.date)
-        .filter(PPDaily.manager_id == mid)
-        .distinct()
-        .order_by(PPDaily.date.desc())
-        .all()
-    )
-    return {"dates": [r[0].isoformat() for r in rows]}
+    own = db.query(PPDaily.date).filter(PPDaily.manager_id == mid).distinct().all()
+    # Dates with a stored GLOBAL SAP file count for every brigadir — the raw
+    # фаза/заголовок views have content even when this unit got no PPDaily
+    # rows out of that day's join.
+    glob = db.query(PPUpload.date).filter(PPUpload.manager_id.is_(None)).distinct().all()
+    dates = sorted({r[0] for r in own} | {r[0] for r in glob}, reverse=True)
+    return {"dates": [d.isoformat() for d in dates]}
 
 
 @router.get("/api/production/managers")
