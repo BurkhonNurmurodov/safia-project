@@ -611,11 +611,14 @@ export default function Workers() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-                <ChartCard icon={CalendarDays} title={t("workers.req.byDay")} info={t("workers.info.byDay")}>
-                  {!req ? <SkeletonChart className="h-72" />
-                    : <ReactApexChart type="bar" series={reqDaySeries} options={reqDayOptions} height={320} />}
-                </ChartCard>
+              {/* Daily trend on its own full-width row — the 29-day axis needs the width */}
+              <ChartCard icon={CalendarDays} title={t("workers.req.byDay")} info={t("workers.info.byDay")} className="mb-6">
+                {!req ? <SkeletonChart className="h-72" />
+                  : <ReactApexChart type="bar" series={reqDaySeries} options={reqDayOptions} height={320} />}
+              </ChartCard>
+
+              {/* The two supervisor-ranked lists pair up — same row count, equal heights */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6 items-start">
                 <ChartCard icon={Users} title={t("workers.req.bySupervisor")}>
                   {!req ? <SkeletonChart className="h-72" />
                     : <ReactApexChart type="bar" series={reqSupSeries} options={reqSupOptions} height={reqSupChartH} />}
