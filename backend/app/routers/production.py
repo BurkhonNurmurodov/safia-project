@@ -383,12 +383,6 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
                 row.actual_qty = agg["actual_qty"]
                 row.actual_override = None
             updated += 1
-
-    if faza_present:
-        _upsert_upload(db, manager_id, day, "faza", FAZA_COLUMNS, faza_rows, faza_file)
-    if zaga_present:
-        rows = [r for r in zaga_rows_all if not catalog_skus or (len(r) > 1 and r[1] in catalog_skus)]
-        _upsert_upload(db, manager_id, day, "zaga", zaga_cols, rows, zaga_file)
     return updated
 
 
