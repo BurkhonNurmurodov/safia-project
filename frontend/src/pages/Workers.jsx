@@ -311,7 +311,7 @@ export default function Workers() {
     // roles, sorts the rest desc, and closes with a total — short enough to fit.
     tooltip: {
       theme: tooltipTheme,
-      fixed: { enabled: true, position: "topLeft", offsetX: 0, offsetY: 0 },
+      fixed: { enabled: true, position: "bottomLeft", offsetX: 0, offsetY: 0 },
       custom: ({ series, dataPointIndex, w }) => {
         const dark = tooltipTheme === "dark";
         const bg = dark ? "#1a1d27" : "#ffffff";
