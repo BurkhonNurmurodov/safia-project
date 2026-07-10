@@ -157,6 +157,7 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
   const { dateFrom, dateTo, brigadirIds, shift, ready } = useFilters();
   const t = T[lang] || T.uz;
   const wd = WD[lang] || WD.uz;
+  const wdFull = WD_FULL[lang] || WD_FULL.uz;
   const [selSup, setSelSup] = useState(null);
   // applied productive % is owned by the parent (Trudoyomkost) so the forecast
   // table shares it; the draft is committed to it on Apply / Enter.
