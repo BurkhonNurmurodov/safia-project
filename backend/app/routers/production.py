@@ -507,14 +507,37 @@ def get_raw(
         raise HTTPException(status_code=400, detail="file_type must be faza|zaga")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(date)
+    # Global row first (manager_id NULL = the plant-wide file), else the
+    # brigadir's own legacy slice from before global storage.
     up = db.query(PPUpload).filter(
-        PPUpload.manager_id == mid, PPUpload.date == day,
+        PPUpload.manager_id.is_(None), PPUpload.date == day,
         PPUpload.file_type == file_type).first()
+    is_global = up is not None
+    if not up:
+        up = db.query(PPUpload).filter(
+            PPUpload.manager_id == mid, PPUpload.date == day,
+            PPUpload.file_type == file_type).first()
     if not up:
         return {"present": False, "columns": [], "rows": [], "file_type": file_type, "date": day.isoformat()}
+    rows = up.rows or []
+    if is_global:
+        # Scope the plant-wide file to this brigadir at read time — the same
+        # filters legacy slices had baked in at upload time.
+        products = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+        if file_type == "faza":
+            # faza row: [order, op, wc, sku, name, plan, status, date, conf]
+            own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
+                PPWorkCenter.manager_id == mid).all()} | {p.work_center for p in products}
+            if own_wcs:
+                rows = [r for r in rows if len(r) > 2 and r[2] in own_wcs]
+        else:
+            # zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
+            catalog_skus = {p.sap_code for p in products}
+            if catalog_skus:
+                rows = [r for r in rows if len(r) > 1 and r[1] in catalog_skus]
     return {
         "present": True, "file_type": file_type, "date": day.isoformat(),
-        "columns": up.columns, "rows": up.rows, "row_count": up.row_count,
+        "columns": up.columns, "rows": rows, "row_count": len(rows),
         "filename": up.filename,
         "uploaded_at": up.uploaded_at.isoformat() if up.uploaded_at else None,
     }
