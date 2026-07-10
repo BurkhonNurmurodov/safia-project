@@ -92,6 +92,27 @@ def get_headcount(
         agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + cnt
         agg[mgr_id]["total"] += cnt
 
+    # Full-roster count per manager — every distinct worker who appears in the
+    # verifix data for the period, any job title, including no-shows (hours 0).
+    # Backs the treemap's "all workers" mode; `total` above stays the
+    # zagruzka-counted set (CALC_ROWS_FILTER).
+    all_q = (
+        db.query(
+            Attendance.manager_id,
+            func.count(func.distinct(Attendance.worker_name)).label("cnt"),
+        )
+        .join(Manager, Manager.id == Attendance.manager_id)
+        .filter(Attendance.date >= date_from, Attendance.date <= date_to)
+        .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
+        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
+    )
+    if shift:
+        all_q = all_q.filter(Manager.shift == shift)
+    if manager_id:
+        all_q = all_q.filter(Attendance.manager_id.in_(manager_id))
+    total_all = dict(all_q.group_by(Attendance.manager_id).all())
+
     # Per-day verifix HC (distinct workers present per confirmed day) — the number
     # official_hc is actually comparable to. `total` above counts unique workers
     # across the whole period, which grows with range length and would flag every
