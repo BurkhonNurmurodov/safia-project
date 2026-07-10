@@ -473,17 +473,22 @@ export default function Workers() {
             )}
           </div>
 
-          {/* Role-share donut + attendance trend (compact pair) */}
+          {/* Role-share donut + attendance trend (compact pair). The shared
+              toggle adds/removes the non-zagruzka roles on both charts. */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            <ChartCard icon={PieChart} title={t("workers.roleShare")} info={t("workers.info.composition")}>
+            <ChartCard icon={PieChart} title={t("workers.roleShare")} info={t("workers.info.composition")}
+              right={<SegmentedToggle size="sm" value={roleMode} onChange={setRoleMode}
+                options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
               {isLoading ? <SkeletonChart className="h-72" />
-                : roleTotals.some((n) => n > 0) ? <ReactApexChart type="donut" series={roleTotals} options={donutOptions} height={330} />
+                : roleTotals.some((n) => n > 0) ? <ReactApexChart key={roleMode} type="donut" series={roleTotals} options={donutOptions} height={330} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
             </ChartCard>
 
-            <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}>
+            <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}
+              right={<SegmentedToggle size="sm" value={roleMode} onChange={setRoleMode}
+                options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
               {!trend ? <SkeletonChart className="h-72" />
-                : trend?.dates?.length ? <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={330} />
+                : trend?.dates?.length ? <ReactApexChart key={roleMode} type="area" series={trendSeries} options={trendOptions} height={330} />
                 : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
             </ChartCard>
           </div>
