@@ -2603,6 +2603,7 @@ const t = {
     "workers.days":              "Кунлар",
     "workers.delta":             "Фарқ",
     "workers.roleOther":         "Бошқа",
+    "workers.othersFold":        "Бошқалар",
     "workers.mismatchDays":      "номувофиқ кун",
     "workers.headcount":         "Ходимлар сони",
     "workers.requests":          "Сўровлар",
