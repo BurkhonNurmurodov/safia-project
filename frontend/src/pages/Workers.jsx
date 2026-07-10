@@ -393,10 +393,12 @@ export default function Workers() {
   const reqTargetsView = reqTargets.filter((g) =>
     tgtTab === "task" ? g.type === "task" : g.type !== "task"
   );
+  // Single series color (the exchange measure) — per-bar rainbow coloring
+  // encoded nothing and made the ranking read as unrelated categories.
   const reqTgtOptions = {
     chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, distributed: true } },
-    colors: ["#3b82f6", "#06b6d4", "#14b8a6", "#0ea5e9", "#6366f1", "#8b5cf6"],
+    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3 } },
+    colors: [REQ_COLORS.exchange],
     dataLabels: { enabled: false },
     xaxis: {
       categories: reqTargetsView.map((g) => (tgtTab === "task" ? tl(g.label) : `→ ${tl(g.label)}`)),
