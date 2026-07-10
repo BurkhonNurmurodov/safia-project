@@ -241,10 +241,7 @@ export default function FleetLineChart({
     },
     stroke: { curve: "smooth", width: strokeWidths, dashArray: dashArrays },
     dataLabels: { enabled: false },
-    fill: {
-      type: "gradient",
-      gradient: { shadeIntensity: 1, opacityFrom: 0.65, opacityTo: 0.02, stops: [0, 85, 100] },
-    },
+    fill: { type: "solid", opacity: 0.15 },
     colors,
 
     xaxis: {
