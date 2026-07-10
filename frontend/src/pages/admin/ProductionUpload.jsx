@@ -244,7 +244,7 @@ export default function ProductionUpload() {
 
         <button
           onClick={doUpload}
-          disabled={!files.length || managerId == null || state.status === "uploading"}
+          disabled={!files.length || state.status === "uploading"}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50"
         >
           {state.status === "uploading" ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
