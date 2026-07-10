@@ -199,7 +199,8 @@ export default function Workers() {
   const axisLabels   = { style: { colors: labelColor, fontSize: "10px" } };
   const axisLabelsMd = { style: { colors: legendColor, fontSize: "11px" } };
   const legendCfg    = { labels: { colors: legendColor }, fontSize: "11px", position: "top" };
-  const gridCfg      = { borderColor: gridColor, strokeDashArray: 3 };
+  // Solid hairline grid — dashed gridlines read as thresholds/projections.
+  const gridCfg      = { borderColor: gridColor, strokeDashArray: 0 };
   const chartH       = Math.max(300, headcount.length * 28 + 60);
 
   // Dynamic role set for the role-share donut + attendance trend. `by_role` now
