@@ -166,15 +166,15 @@ export default function DowntimeToggleChart({
             label: { text: thresholdText, borderColor: "#C8973F", style: { color: "#fff", background: "#C8973F", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } } }],
         },
         tooltip: {
-          theme: "dark",
+          theme: tipTheme,
           shared: false,
           intersect: true,
           y: { formatter: (v) => (unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`) },
         },
-        theme: { mode: "dark" },
+        theme: { mode: themeMode },
       };
     },
-    [categories, axisMax, unit, minLabel, hrsLabel, thresholdText, catColors],
+    [categories, axisMax, unit, minLabel, hrsLabel, thresholdText, catColors, themeMode, grid, axisLabel, tipTheme, outsideLabel],
   );
 
   return <ReactApexChart type="bar" series={series} options={options} height={height} />;
