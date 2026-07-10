@@ -1802,6 +1802,42 @@ export default function Concerns() {
         </Modal>
       )}
 
+      {/* Resolution-note prompt — flipping a concern to "done" from the inline
+          pill first asks how it was resolved; the note is saved as the solution. */}
+      {resolveRow && (
+        <Modal
+          onClose={() => setResolveRow(null)}
+          title={t("concerns.resolveTitle")}
+          subtitle={tl(resolveRow.concern_text || "").slice(0, 90)}
+          icon={<Check size={16} />}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setResolveRow(null)}>{t("concerns.cancel")}</Button>
+              <Button loading={statusMutation.isPending} onClick={submitResolve}>
+                {t("concerns.status.done")}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t("concerns.fieldSolution")} required>
+            <textarea
+              value={resolveNote}
+              onChange={(e) => setResolveNote(e.target.value)}
+              rows={3}
+              placeholder={t("concerns.noteHint")}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+            />
+          </Field>
+
+          {resolveError && (
+            <div className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertTriangle size={13} /> {resolveError}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Escalation history modal — the trail lives here (not inline in the
           table) so row heights stay uniform. */}
       {historyRow && (
