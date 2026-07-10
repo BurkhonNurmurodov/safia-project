@@ -15,6 +15,8 @@ export default defineConfig({
     cssTarget: 'chrome87',
   },
   server: {
+    // Claude Code preview assigns a free port via PORT when 5173 is taken
+    port: Number(process.env.PORT) || 5173,
     allowedHosts: true,
     proxy: {
       '/api': 'http://localhost:8000',
