@@ -28,7 +28,7 @@ or copy-paste its markup into a page.
 Other UI conventions:
 
 - Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100.
-- Table-toolbar controls share ONE height — the `FilterPanel` trigger (`px-3 py-2 text-sm` + border = 38px). `SearchInput` default and `Button` md match it; use md (not `sm`) buttons in toolbars. All `Button` variants carry a border (transparent on borderless ones) so heights line up — don't strip it.
+- Table-toolbar controls share ONE height — 38px, the `FilterPanel` trigger (`px-3 py-2 text-sm` + border). `SearchInput` default and `SegmentedToggle` md are also 38px. `Button` is the exception: md/sm are compact (≈30/26px) for modals & inline actions, so a toolbar action button must use **`size="lg"`** (38px) to line up with the filter/search controls next to it. All `Button` variants carry a border (transparent on borderless ones) so heights line up — don't strip it.
 - `FilterPanel` adapts to space: on md+ it unfolds into one dropdown per filter while the WHOLE toolbar row fits on a single line, else it collapses to the grouped «Filtrlar» button (below md: bottom sheet). Keep it a DIRECT child of the toolbar flex row — the fit check measures that row's children (flex-grow spacers count as 0).
 - All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
 - No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
