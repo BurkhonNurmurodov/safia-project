@@ -334,79 +334,35 @@ def _upsert_upload(db, manager_id, day, file_type, columns, rows, filename):
     up.filename = filename
 
 
-@router.post("/admin/production/upload")
-async def upload_phase(
-    files: list[UploadFile] = File(...),
-    manager_id: int = Form(...),
-    date: str = Form(...),
-    mode: str = Form("both"),           # 'plan' | 'actual' | 'both'
-    file_type: Optional[str] = Form(None),  # 'faza' | 'zaga' | None (auto-detect)
-    _: dict = Depends(_verify_admin),
-    db: Session = Depends(get_db),
-):
-    if mode not in ("plan", "actual", "both"):
-        raise HTTPException(status_code=400, detail="mode must be plan|actual|both")
-    force_type = file_type if file_type in ("faza", "zaga") else None
-    day = _parse_date(date)
-    if not db.query(Manager).filter(Manager.id == manager_id).first():
-        raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
-
+def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
+                        faza_ops: list[dict], order_sku: dict, order_deliv: dict,
+                        zaga_rows_all: list, zaga_cols, faza_present: bool,
+                        zaga_present: bool, faza_file, zaga_file) -> int:
+    """Write ONE brigadir's scoped view from the globally-parsed slices of an
+    upload: filter фаза ops to their work centers, join → SKU (catalog-filtered),
+    aggregate ПЛАН/ФАКТ into PPDaily, and store the raw фаза/заголовок slices.
+    Returns the number of PPDaily rows written. The SAP export is one plant-wide
+    file, so upload_phase parses it once and calls this per configured brigadir."""
     # Scope to this brigadir: own work centers (config ∪ catalog) and catalog SKUs.
     products = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
     own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
         PPWorkCenter.manager_id == manager_id).all()} | {p.work_center for p in products}
     catalog_skus = {p.sap_code for p in products}
 
-    faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
-    faza_dates: set = set()
-    order_sku: dict[str, str] = {}     # order → SKU, from заголовок
-    order_deliv: dict[str, float] = {} # order → «Поставлено» (= Excel «План пост»), drives «Факт»
-    zaga_rows: list[list] = []
-    zaga_cols = None
-    faza_present = zaga_present = False
-    faza_file = zaga_file = None
-    file_reports = []
-
-    for f in files:
-        slices = read_workbook_slices(await f.read(), day, own_wcs, catalog_skus, force_type=force_type)
-        rep = {"file": f.filename, "faza": None, "zaga": None}
-        fz = slices.get("faza")
-        if fz is not None:
-            faza_present = True
-            faza_ops += fz["raw"]
-            faza_dates.update(fz["dates"])
-            faza_file = f.filename
-            rep["faza"] = {"operations": len(fz["raw"]), "dates": [d.isoformat() for d in fz["dates"]]}
-        zg = slices.get("zaga")
-        if zg is not None:
-            zaga_present = True
-            order_sku.update(zg["order_sku"])
-            order_deliv.update(zg.get("order_deliv", {}))
-            zaga_rows += zg["rows"]
-            zaga_cols = zg["columns"]
-            zaga_file = f.filename
-            rep["zaga"] = {"orders": len(zg["order_sku"]), "rows": len(zg["rows"])}
-        file_reports.append(rep)
-
-    if not faza_present and not zaga_present:
-        raise HTTPException(
-            status_code=400,
-            detail="Не удалось распознать тип файла автоматически. Выберите «Тип файла» (Фаза или Заголовок) и загрузите снова.",
-        )
-
-    # Supplement order→SKU with the заголовок already stored for this date, so a
-    # фаза-only upload can still resolve SKUs (stored zaga rows: [order, sku, …]).
-    if faza_present:
+    # фаза-only upload: fill order→SKU from this brigadir's stored заголовок, so
+    # SKUs still resolve (stored zaga rows: [order, sku, plant, ordqty, deliv, …]).
+    o_sku, o_deliv = order_sku, order_deliv
+    if faza_present and not zaga_present:
         stored_zaga = db.query(PPUpload).filter(
             PPUpload.manager_id == manager_id, PPUpload.date == day,
             PPUpload.file_type == "zaga").first()
         if stored_zaga:
-            # stored zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
+            o_sku, o_deliv = dict(order_sku), dict(order_deliv)
             for r in (stored_zaga.rows or []):
                 if len(r) >= 2 and r[0] and r[1]:
-                    order_sku.setdefault(str(r[0]), str(r[1]))
+                    o_sku.setdefault(str(r[0]), str(r[1]))
                     if len(r) > 4:
-                        order_deliv.setdefault(str(r[0]), float(r[4] or 0))
+                        o_deliv.setdefault(str(r[0]), float(r[4] or 0))
 
     # Join фаза operations → SKU, aggregate plan/actual by (SKU, work center).
     #   ПЛАН  = Σ «Кол-во операции» over the matching operations          (Excel col F)
@@ -415,15 +371,14 @@ async def upload_phase(
     # Excel SUMIFS over «План пост» — so we add it once per matching фаза row.
     faza_agg: dict[tuple[str, str], dict] = {}
     faza_rows: list[list] = []
-    unmapped = 0
     for op in faza_ops:
-        sku = order_sku.get(op["order"])
+        if own_wcs and op["wc"] not in own_wcs:   # not this brigadir's work center
+            continue
+        sku = o_sku.get(op["order"])
         if sku and (not catalog_skus or sku in catalog_skus):
             a = faza_agg.setdefault((sku, op["wc"]), {"plan_qty": 0.0, "actual_qty": 0.0})
             a["plan_qty"] += op["plan"]
-            a["actual_qty"] += order_deliv.get(op["order"], 0.0)
-        elif not sku:
-            unmapped += 1
+            a["actual_qty"] += o_deliv.get(op["order"], 0.0)
         faza_rows.append([op["order"], op["op"], op["wc"], sku or "—", op["name"],
                           op["plan"], op["status"], op["date"], op["conf"]])
 
@@ -452,14 +407,92 @@ async def upload_phase(
     if faza_present:
         _upsert_upload(db, manager_id, day, "faza", FAZA_COLUMNS, faza_rows, faza_file)
     if zaga_present:
-        _upsert_upload(db, manager_id, day, "zaga", zaga_cols, zaga_rows, zaga_file)
+        rows = [r for r in zaga_rows_all if not catalog_skus or (len(r) > 1 and r[1] in catalog_skus)]
+        _upsert_upload(db, manager_id, day, "zaga", zaga_cols, rows, zaga_file)
+    return updated
 
+
+@router.post("/admin/production/upload")
+async def upload_phase(
+    files: list[UploadFile] = File(...),
+    manager_id: Optional[int] = Form(None),  # None → fan out to every configured brigadir
+    date: str = Form(...),
+    mode: str = Form("both"),           # 'plan' | 'actual' | 'both'
+    file_type: Optional[str] = Form(None),  # 'faza' | 'zaga' | None (auto-detect)
+    _: dict = Depends(_verify_admin),
+    db: Session = Depends(get_db),
+):
+    if mode not in ("plan", "actual", "both"):
+        raise HTTPException(status_code=400, detail="mode must be plan|actual|both")
+    force_type = file_type if file_type in ("faza", "zaga") else None
+    day = _parse_date(date)
+
+    # The SAP фаза/заголовок export is ONE plant-wide file, so parse it once
+    # (unfiltered — empty scope sets skip the per-brigadir filter) into global
+    # slices, then fan out to each configured brigadir below.
+    blobs = [(f.filename, await f.read()) for f in files]
+    faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
+    faza_dates: set = set()
+    order_sku: dict[str, str] = {}     # order → SKU, from заголовок (global)
+    order_deliv: dict[str, float] = {} # order → «Поставлено» (= Excel «План пост»), drives «Факт»
+    zaga_rows_all: list[list] = []
+    zaga_cols = None
+    faza_present = zaga_present = False
+    faza_file = zaga_file = None
+    file_reports = []
+
+    for name, content in blobs:
+        slices = read_workbook_slices(content, day, set(), set(), force_type=force_type)
+        rep = {"file": name, "faza": None, "zaga": None}
+        fz = slices.get("faza")
+        if fz is not None:
+            faza_present = True
+            faza_ops += fz["raw"]
+            faza_dates.update(fz["dates"])
+            faza_file = name
+            rep["faza"] = {"operations": len(fz["raw"]), "dates": [d.isoformat() for d in fz["dates"]]}
+        zg = slices.get("zaga")
+        if zg is not None:
+            zaga_present = True
+            order_sku.update(zg["order_sku"])
+            order_deliv.update(zg.get("order_deliv", {}))
+            zaga_rows_all += zg["rows"]
+            zaga_cols = zg["columns"]
+            zaga_file = name
+            rep["zaga"] = {"orders": len(zg["order_sku"]), "rows": len(zg["rows"])}
+        file_reports.append(rep)
+
+    if not faza_present and not zaga_present:
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось распознать тип файла автоматически. Выберите «Тип файла» (Фаза или Заголовок) и загрузите снова.",
+        )
+
+    # Target: a specific brigadir if requested, else every configured one.
+    if manager_id is not None:
+        if not db.query(Manager).filter(Manager.id == manager_id).first():
+            raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
+        targets = [manager_id]
+    else:
+        targets = sorted(_configured_manager_ids(db))
+        if not targets:
+            raise HTTPException(
+                status_code=400,
+                detail="Нет настроенных бригадиров — сначала импортируйте каталог хотя бы одному.",
+            )
+
+    total_rows = 0
+    for mid in targets:
+        total_rows += _ingest_for_manager(
+            db, mid, day, mode, faza_ops=faza_ops, order_sku=order_sku,
+            order_deliv=order_deliv, zaga_rows_all=zaga_rows_all, zaga_cols=zaga_cols,
+            faza_present=faza_present, zaga_present=zaga_present,
+            faza_file=faza_file, zaga_file=zaga_file)
     db.commit()
     return {
-        "status": "ok", "manager_id": manager_id, "date": day.isoformat(), "mode": mode,
-        "rows_written": updated,
+        "status": "ok", "date": day.isoformat(), "mode": mode,
+        "brigadirs": len(targets), "rows_written": total_rows,
         "faza_operations": len(faza_ops) if faza_present else 0,
-        "unmapped_operations": unmapped,
         "zaga_orders": len(order_sku),
         "files": file_reports,
     }
