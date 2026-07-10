@@ -508,10 +508,12 @@ export default function Workers() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-                <ChartCard icon={ArrowLeftRight} title={t("workers.req.targets")} info={t("workers.info.targets")}>
+                <ChartCard icon={ArrowLeftRight} title={t("workers.req.targets")} info={t("workers.info.targets")}
+                  right={<SegmentedToggle size="sm" value={tgtTab} onChange={setTgtTab}
+                    options={[["supervisor", t("workers.req.tgtSupervisors")], ["task", t("workers.req.tgtTasks")]]} />}>
                   {!req ? <SkeletonChart className="h-72" />
-                    : reqTargets.length ? <ReactApexChart type="bar"
-                        series={[{ name: t("workers.req.workersExchanged"), data: reqTargets.map((g) => g.workers) }]}
+                    : reqTargetsView.length ? <ReactApexChart type="bar"
+                        series={[{ name: t("workers.req.workersExchanged"), data: reqTargetsView.map((g) => g.workers) }]}
                         options={reqTgtOptions} height={reqTgtChartH} />
                     : <EmptyState title={t("workers.req.noData")} message={t("workers.req.noDataMsg")} showUploadLink={false} />}
                 </ChartCard>
