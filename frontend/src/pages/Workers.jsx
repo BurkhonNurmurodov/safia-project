@@ -125,6 +125,7 @@ export default function Workers() {
   const [treeMode, setTreeMode] = useState("all");    // treemap metric: "all" | "zagruzka"
   const [roleMode, setRoleMode] = useState("all");    // role charts: "all" roles | "zagruzka" subset
   const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
 
