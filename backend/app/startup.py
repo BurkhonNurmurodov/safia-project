@@ -942,6 +942,22 @@ def seed_production_pilot() -> None:
         db.close()
 
 
+def relax_pp_upload_manager() -> None:
+    """pp_uploads.manager_id becomes nullable: a NULL row holds the GLOBAL
+    plant-wide фаза/заголовок slice for a date (the SAP export is one file for
+    everyone; brigadir views filter it at read time). Existing per-brigadir
+    rows stay as legacy history."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE pp_uploads ALTER COLUMN manager_id DROP NOT NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] pp_uploads manager_id relax skipped: {exc}")
+    finally:
+        db.close()
+
+
 PP_ACTUAL_DELIV_FLAG = "pp_actual_from_deliv_v1"
 
 
