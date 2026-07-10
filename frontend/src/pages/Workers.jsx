@@ -318,11 +318,12 @@ export default function Workers() {
   };
   const trendDefaultIdx = (trend?.dates?.length || 0) - 1;  // idle panel = latest day
   const trendDefaultHtml = trendTipHtml(trendDefaultIdx >= 0 ? trendDefaultIdx : null);
+  trendDefault.current = trendDefaultHtml;                  // keep the leave-handler current
   const trendOptions = {
     chart: {
       ...baseChart, type: "area", stacked: true, zoom: { enabled: false },
       // On mouse-out restore the panel to the latest day so it's never blank.
-      events: { mouseLeave: () => { if (trendTip.current) trendTip.current.innerHTML = trendDefaultHtml; } },
+      events: { mouseLeave: () => { if (trendTip.current) trendTip.current.innerHTML = trendDefault.current; } },
     },
     dataLabels: { enabled: false },
     stroke: { curve: "smooth", width: 2 },
