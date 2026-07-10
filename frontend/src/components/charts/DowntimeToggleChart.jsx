@@ -149,8 +149,8 @@ export default function DowntimeToggleChart({
         grid: { borderColor: "#1e2235", padding: { right: 28 } },
         legend: { show: false },
         annotations: {
-          xaxis: [{ x: 50, borderColor: "#fff", strokeDashArray: 4,
-            label: { text: thresholdText, borderColor: "#ef4444", style: { color: "#ef4444", background: "#fff", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } } }],
+          xaxis: [{ x: 50, borderColor: "#C8973F", strokeDashArray: 4,
+            label: { text: thresholdText, borderColor: "#C8973F", style: { color: "#fff", background: "#C8973F", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } } }],
         },
         tooltip: {
           theme: "dark",
