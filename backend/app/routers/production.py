@@ -1324,6 +1324,7 @@ class CallNotifyItem(BaseModel):
 
 class CallNotifyRequest(BaseModel):
     date: str                      # the tomorrow the client showed — guards midnight rollover
+    capacity_pct: float = 100.0    # page "Smena unumi" — shown in the DM as "Zagruzka foizi"
     items: list[CallNotifyItem]
 
 
