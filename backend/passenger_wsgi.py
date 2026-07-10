@@ -77,6 +77,7 @@ try:
     seed_exchange_tasks()
     seed_production_pilot()
     resync_production_catalog()
+    relax_pp_upload_manager()
     backfill_pp_actual_from_deliv()
     backfill_day_approvals()
     backfill_day_closures()
