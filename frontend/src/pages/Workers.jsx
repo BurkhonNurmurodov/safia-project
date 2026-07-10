@@ -81,13 +81,17 @@ const ATT_SEGMENTS = [
   { from: 80, color: "#16a34a" }, // 80–89%
   { from: 90, color: "#15803d" }, // ≥ 90%  → darkest green
 ];
-const TRANS_RANGES = [
-  { from: 0,  to: 0,   color: "#e2e8f0" },
-  { from: 1,  to: 2,   color: "#ddd6fe" },
-  { from: 3,  to: 5,   color: "#c4b5fd" },
-  { from: 6,  to: 10,  color: "#a78bfa" },
-  { from: 11, to: 999, color: "#7c3aed" },
+// Role-transition matrix bins — single violet hue on log-ish breaks so the top
+// flow is unmistakably darkest (a flat 11+ band rendered 35 and 543 identical).
+// fg is the in-cell label color; zero cells recede to bg-inner and skip the fill.
+const TRANS_BINS = [
+  { from: 1,   to: 9,        bg: "#ede9fe", fg: "#5b21b6" },
+  { from: 10,  to: 49,       bg: "#c4b5fd", fg: "#4c1d95" },
+  { from: 50,  to: 99,       bg: "#a78bfa", fg: "#2e1065" },
+  { from: 100, to: 199,      bg: "#7c3aed", fg: "#ffffff" },
+  { from: 200, to: Infinity, bg: "#4c1d95", fg: "#ede9fe" },
 ];
+const transBin = (v) => TRANS_BINS.find((b) => v >= b.from && v <= b.to);
 
 const fmt1 = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : v.toFixed(1));
 const parseDate = (s) => { const [d, m, y] = s.split("."); return new Date(+y, +m - 1, +d); };
