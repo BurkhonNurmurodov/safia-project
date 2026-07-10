@@ -30,7 +30,15 @@ const ROLE_COLORS = {
   Zagatovitel: "#22c55e",
   Other:       "#94a3b8",
 };
-const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"];
+const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-counted roles
+// Extra (non-zagruzka) roles — every other real job title — get identity hues
+// from this full-spectrum palette, chosen to stay distinct from the four
+// zagruzka role colours above. Used only by the role-share donut + trend.
+const ROLE_EXTRA_COLORS = [
+  "#2563eb", "#8b5cf6", "#ec4899", "#0d9488", "#0ea5e9",
+  "#d946ef", "#6366f1", "#eab308", "#15803d", "#b45309",
+  "#06b6d4", "#6d28d9",
+];
 const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
 const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#a78bfa" };
