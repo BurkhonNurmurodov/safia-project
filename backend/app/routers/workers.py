@@ -77,7 +77,9 @@ def get_headcount(
         .join(Attendance, Attendance.manager_id == Manager.id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        .filter(CALC_ROWS_FILTER)
+        # Present workers of ANY job title — the extra (non-zagruzka) titles feed
+        # the "all roles" view; `total` below stays the zagruzka-counted subset.
+        .filter(Attendance.hours_worked > 0)
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
@@ -96,7 +98,8 @@ def get_headcount(
                            "total": 0, "by_role": {"Konditer": 0, "Fasovshik": 0, "Zagatovitel": 0, "Other": 0}}
         role = normalize_role(job_title or "")
         agg[mgr_id]["by_role"][role] = agg[mgr_id]["by_role"].get(role, 0) + cnt
-        agg[mgr_id]["total"] += cnt
+        if role in ZAGRUZKA_ROLES:
+            agg[mgr_id]["total"] += cnt
 
     # Full-roster count per manager — every distinct worker who appears in the
     # verifix data for the period, any job title, including no-shows (hours 0).
