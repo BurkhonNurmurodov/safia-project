@@ -687,6 +687,8 @@ const t = {
     "workers.hm.none":         "tasdiqlangan kun yo'q",
     "workers.info.composition":"Har bir bo'lak — bitta lavozimning butun ishchi kuchidagi ulushi; markazda umumiy ishchilar soni. Brigadir bo'yicha lavozim sonlari quyidagi jadvalda.",
     "workers.rosterVsPresent": "Ro'yxat va kelgan",
+    "workers.roleShare":       "Lavozimlar ulushi",
+    "workers.info.treemap":    "Har bir blok — bitta brigadir; o'lchami uning ishchilari soniga qarab, rangi esa lavozim bo'yicha (oltin — Konditer, to'q sariq — Fasovshik, yashil — Zagatovitel, kulrang — boshqa). Katta blok = ko'proq ishchi.",
     "workers.info.rosterVsPresent":"Har bir brigadir uchun ikki ustun: kulrang — ro'yxat (davrda uning nomi ostida ko'rilgan barcha ishchilar), yashil — kuniga o'rtacha haqiqatda kelgan. Ustunlar orasidagi farq — davomatdagi yetishmovchilik.",
     "workers.info.roleMix":    "Har bir nur — bitta lavozim. To'ldirilgan shakl tanlangan brigadirning lavozimlar soni; kulrang shakl — barcha brigadirlar bo'yicha o'rtacha. Ikki shaklni solishtiring.",
     "workers.info.trend":      "Har kuni ishga kelgan ishchilar, lavozim bo'yicha ajratilgan va ustma-ust joylashgan. Oyna doim kamida 7 kun.",
