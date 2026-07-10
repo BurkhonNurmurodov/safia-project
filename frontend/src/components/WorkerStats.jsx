@@ -227,9 +227,9 @@ export default function WorkerStats({ effPct = 100, setEffPct }) {
       <div className="flex items-center gap-2 mb-3 mt-2 flex-wrap">
         <Sparkles size={16} style={{ color: "var(--brand-text)" }} />
         <h3 className="text-sm font-bold" style={{ color: "var(--text-1)" }}>{t.title}</h3>
-        <div className="ml-auto flex items-center gap-2">
-          <label className="text-[11px] font-medium" style={{ color: "var(--text-3)" }}>{t.effLabel}</label>
-          <div className="inline-flex items-center rounded-lg overflow-hidden" style={{ border: "1px solid var(--border-md)" }}>
+        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+          <label className="text-[11px] font-medium whitespace-nowrap" style={{ color: "var(--text-3)" }}>{t.effLabel}</label>
+          <div className="inline-flex items-center rounded-lg overflow-hidden shrink-0" style={{ border: "1px solid var(--border-md)" }}>
             <input
               type="number" min={1} max={100} step={5} value={effDraft}
               onChange={(e) => setEffDraft(e.target.value)}
