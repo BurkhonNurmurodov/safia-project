@@ -1423,6 +1423,7 @@ export default function Concerns() {
             />
             {!readOnly && (
               <Button
+                size="lg"
                 className="flex-1 sm:flex-none whitespace-nowrap"
                 icon={<Plus size={14} />}
                 onClick={openCreate}
