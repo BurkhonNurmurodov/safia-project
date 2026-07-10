@@ -121,9 +121,9 @@ function ChartCard({ icon, title, info, right, children, className = "" }) {
 
 export default function Workers() {
   const { params, ready } = useFilters();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
-  const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
+  const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = useState("attendance");   // "attendance" | "movements"
   const [tgtTab, setTgtTab] = useState("supervisor"); // exchange-targets chart: "supervisor" | "task"
   const [treeMode, setTreeMode] = useState("all");    // treemap metric: "all" | "zagruzka"
