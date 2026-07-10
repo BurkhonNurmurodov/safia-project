@@ -484,9 +484,7 @@ async def upload_phase(
     for mid in targets:
         total_rows += _ingest_for_manager(
             db, mid, day, mode, faza_ops=faza_ops, order_sku=order_sku,
-            order_deliv=order_deliv, zaga_rows_all=zaga_rows_all, zaga_cols=zaga_cols,
-            faza_present=faza_present, zaga_present=zaga_present,
-            faza_file=faza_file, zaga_file=zaga_file)
+            order_deliv=order_deliv)
     db.commit()
     return {
         "status": "ok", "date": day.isoformat(), "mode": mode,
