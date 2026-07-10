@@ -84,6 +84,7 @@ export default function Workers() {
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = useState("attendance");   // "attendance" | "movements"
   const [tgtTab, setTgtTab] = useState("supervisor"); // exchange-targets chart: "supervisor" | "task"
+  const [treeMode, setTreeMode] = useState("all");    // treemap metric: "all" | "zagruzka"
   const [sort, setSort] = useState({ key: null, dir: "asc" });
 
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
