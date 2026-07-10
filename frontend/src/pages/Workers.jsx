@@ -296,7 +296,10 @@ export default function Workers() {
       tickAmount: Math.min(trend?.dates?.length || 0, 10),
     },
     yaxis: { labels: axisLabels },
-    legend: legendCfg, grid: gridCfg, tooltip: { theme: tooltipTheme }, theme: chartTheme,
+    legend: legendCfg, grid: gridCfg, theme: chartTheme,
+    // 9 roles make the tooltip tall; pin it to a fixed corner so it never gets
+    // clipped by the card's overflow-hidden (cursor-following clips at edges).
+    tooltip: { theme: tooltipTheme, fixed: { enabled: true, position: "topLeft", offsetX: 0, offsetY: 0 } },
   };
 
   // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
