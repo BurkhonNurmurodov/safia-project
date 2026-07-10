@@ -191,77 +191,147 @@ def _pick_catalog_sheet(wb, sheet_name: str | None):
     return None
 
 
-def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dict:
-    """Parse a brigadir's catalog from a 'Sheet1 …' dashboard sheet:
-    products (SKU, name, labor, work center) + work centers (штатка, capacity).
-    Junk rows (blank / '0' SAP code) are dropped."""
-    import openpyxl
+def _is_xlsb(content: bytes) -> bool:
+    """True for a binary .xlsb workbook. Both .xlsx and .xlsb are ZIP containers,
+    but only .xlsb carries ``xl/workbook.bin`` — and openpyxl can't read .xlsb, so
+    those uploads are routed to pyxlsb instead."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as z:
+            return "xl/workbook.bin" in z.namelist()
+    except zipfile.BadZipFile:
+        return False
 
+
+def _xlsb_val(v):
+    """Normalise a pyxlsb cell value: pyxlsb renders a formula error as its code
+    ('0x17' = #REF!). Blank those out so an error cell can't be mistaken for a SKU
+    or name — matching how openpyxl surfaces errors as empty in data_only mode."""
+    if isinstance(v, str) and _ERR_RE.match(v):
+        return None
+    return v
+
+
+def _pick_xlsb_sheet(wb, sheet_name: str | None):
+    """.xlsb twin of _pick_catalog_sheet: exact title match if given, else the
+    first sheet whose header row mentions «Трудоёмкость»."""
+    if sheet_name:
+        for n in wb.sheets:
+            if n.strip().lower() == sheet_name.strip().lower():
+                return n
+    for n in wb.sheets:
+        with wb.get_sheet(n) as sheet:
+            for i, r in enumerate(sheet.rows()):
+                if i > 4:
+                    break
+                if any("трудо" in _str(_xlsb_val(c.v)).lower() for c in r):
+                    return n
+    return None
+
+
+def _xlsb_catalog_rows(content: bytes, sheet_name: str | None) -> tuple[str | None, list]:
+    """Read the catalog sheet of an .xlsb upload with pyxlsb, returning dense,
+    0-based value rows so the shared parsing sees the same shape openpyxl's
+    ``iter_rows(values_only=True)`` yields for .xlsx (pyxlsb skips blank cells, so
+    each row is rebuilt by column index)."""
+    from pyxlsb import open_workbook  # lazy — only .xlsb uploads need it
+    with open_workbook(BytesIO(content)) as wb:
+        title = _pick_xlsb_sheet(wb, sheet_name)
+        if title is None:
+            return None, []
+        rows: list = []
+        with wb.get_sheet(title) as sheet:
+            for r in sheet.rows():
+                if not r:
+                    rows.append(())
+                    continue
+                dense = [None] * (max(c.c for c in r) + 1)
+                for cell in r:
+                    dense[cell.c] = _xlsb_val(cell.v)
+                rows.append(dense)
+        return title, rows
+
+
+def _catalog_rows(content: bytes, sheet_name: str | None) -> tuple[str | None, list]:
+    """Pick the catalog sheet and return ``(title, rows)`` from either an .xlsx
+    (openpyxl) or .xlsb (pyxlsb) upload — dense, 0-based value rows either way."""
+    if _is_xlsb(content):
+        return _xlsb_catalog_rows(content, sheet_name)
+    import openpyxl  # lazy — heavy import
     wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
     try:
         ws = _pick_catalog_sheet(wb, sheet_name)
         if ws is None:
-            return {"products": [], "work_centers": [], "sheet": None}
-
-        # header row = the one mentioning Трудоёмкость; data starts after it
-        header_i = 0
-        rows = list(ws.iter_rows(values_only=True))
-        for i, row in enumerate(rows[:6]):
-            if any("трудо" in _str(c).lower() for c in row):
-                header_i = i
-                break
-
-        products = []
-        order = 0
-        blanks = 0
-        for row in rows[header_i + 1:]:
-            sku = _str(_get(row, CAT_SKU))
-            if not sku:
-                blanks += 1
-                if blanks > 4:
-                    break
-                continue
-            blanks = 0
-            if sku == "0":          # junk row with no real SAP code
-                continue
-            labor = _get(row, CAT_LABOR)
-            products.append({
-                "sap_code": sku,
-                "name": _str(_get(row, CAT_NAME)),
-                "work_center": _str(_get(row, CAT_WC)),
-                "labor_time": (_num(labor) if isinstance(labor, (int, float)) else None),
-                "sort_order": order,
-            })
-            order += 1
-
-        # staffing block — work centers may be listed more than once; keep the
-        # first occurrence that carries a real штатка.
-        wc_by_code: dict[str, dict] = {}
-        so = 0
-        for row in rows:
-            code = _str(_get(row, CAT_WCM))
-            if not _WC4_RE.match(code):
-                continue
-            cap = _get(row, CAT_CAP)
-            sht = _get(row, CAT_SHT)
-            entry = {
-                "code": code,
-                "shtatka": int(_num(sht)) if isinstance(sht, (int, float)) else 0,
-                "capacity": (_num(cap) if isinstance(cap, (int, float)) else None),
-                "sort_order": so,
-            }
-            prev = wc_by_code.get(code)
-            if prev is None or (prev["shtatka"] == 0 and entry["shtatka"] > 0):
-                if prev is None:
-                    so += 1
-                else:
-                    entry["sort_order"] = prev["sort_order"]
-                wc_by_code[code] = entry
-
-        work_centers = sorted(wc_by_code.values(), key=lambda x: x["sort_order"])
-        return {"products": products, "work_centers": work_centers, "sheet": ws.title}
+            return None, []
+        return ws.title, list(ws.iter_rows(values_only=True))
     finally:
         wb.close()
+
+
+def parse_catalog_workbook(content: bytes, sheet_name: str | None = None) -> dict:
+    """Parse a brigadir's catalog from a 'Sheet1 …' dashboard sheet:
+    products (SKU, name, labor, work center) + work centers (штатка, capacity).
+    Junk rows (blank / '0' SAP code) are dropped. Reads .xlsx and .xlsb uploads."""
+    title, rows = _catalog_rows(content, sheet_name)
+    if title is None:
+        return {"products": [], "work_centers": [], "sheet": None}
+
+    # header row = the one mentioning Трудоёмкость; data starts after it
+    header_i = 0
+    for i, row in enumerate(rows[:6]):
+        if any("трудо" in _str(c).lower() for c in row):
+            header_i = i
+            break
+
+    products = []
+    order = 0
+    blanks = 0
+    for row in rows[header_i + 1:]:
+        sku = _str(_get(row, CAT_SKU))
+        if not sku:
+            blanks += 1
+            if blanks > 4:
+                break
+            continue
+        blanks = 0
+        if sku == "0":          # junk row with no real SAP code
+            continue
+        labor = _get(row, CAT_LABOR)
+        products.append({
+            "sap_code": sku,
+            "name": _str(_get(row, CAT_NAME)),
+            "work_center": _str(_get(row, CAT_WC)),
+            "labor_time": (_num(labor) if isinstance(labor, (int, float)) else None),
+            "sort_order": order,
+        })
+        order += 1
+
+    # staffing block — work centers may be listed more than once; keep the
+    # first occurrence that carries a real штатка.
+    wc_by_code: dict[str, dict] = {}
+    so = 0
+    for row in rows:
+        code = _str(_get(row, CAT_WCM))
+        if not _WC4_RE.match(code):
+            continue
+        cap = _get(row, CAT_CAP)
+        sht = _get(row, CAT_SHT)
+        entry = {
+            "code": code,
+            "shtatka": int(_num(sht)) if isinstance(sht, (int, float)) else 0,
+            "capacity": (_num(cap) if isinstance(cap, (int, float)) else None),
+            "sort_order": so,
+        }
+        prev = wc_by_code.get(code)
+        if prev is None or (prev["shtatka"] == 0 and entry["shtatka"] > 0):
+            if prev is None:
+                so += 1
+            else:
+                entry["sort_order"] = prev["sort_order"]
+            wc_by_code[code] = entry
+
+    work_centers = sorted(wc_by_code.values(), key=lambda x: x["sort_order"])
+    return {"products": products, "work_centers": work_centers, "sheet": title}
 
 
 def read_workbook_slices(content: bytes, target_date: date | None,
