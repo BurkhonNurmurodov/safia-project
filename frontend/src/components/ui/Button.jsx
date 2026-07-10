@@ -40,9 +40,12 @@ export default function Button({
     ghost:     { background: "transparent",     color: "var(--text-3)", border: "1px solid transparent" },
   }[variant];
 
-  const sizing = size === "sm" ? "px-3 py-1 text-xs" : "px-3.5 py-1.5 text-xs";
+  const sizing =
+    size === "sm" ? "px-3 py-1 text-xs"      // ≈26px
+    : size === "lg" ? "px-4 py-2 text-sm"    // 38px — toolbar baseline
+    : "px-3.5 py-1.5 text-xs";               // md, ≈30px
   const isDisabled = disabled || loading;
-  const spinner = <Loader2 size={size === "sm" ? 12 : 13} className="animate-spin" />;
+  const spinner = <Loader2 size={size === "sm" ? 12 : size === "lg" ? 14 : 13} className="animate-spin" />;
 
   return (
     <button
