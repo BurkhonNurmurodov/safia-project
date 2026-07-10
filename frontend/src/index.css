@@ -174,3 +174,11 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   stroke-width: 2px;
   stroke-linejoin: round;
 }
+
+/* ── Attendance-trend: tooltip rendered BELOW the chart ───────────────────────
+   9–10 stacked roles make the tooltip tall enough to cover the plot wherever
+   Apex pins it (the card is overflow-hidden, so it can't escape upward either).
+   Suppress Apex's own tooltip box entirely and let the custom callback write the
+   day's breakdown into an external panel under the chart (.att-trend-panel).
+   The crosshair still tracks the hovered day. */
+.att-trend .apexcharts-tooltip { display: none !important; }
