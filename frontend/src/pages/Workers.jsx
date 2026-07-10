@@ -199,22 +199,31 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Workforce treemap — one block per brigadir, size = worker count, colour = role.
-  const treemapSeries = ROLES.map((r) => ({
-    name: roleLabel(r),
-    data: headcount.map((m) => ({ x: tl(m.name), y: m.by_role[r] || 0 })).filter((d) => d.y > 0),
-  })).filter((s) => s.data.length);
+  // Workforce treemap — one block per brigadir in their own identity hue; the
+  // toggle picks the metric (all workers on the roster vs zagruzka-counted).
+  // Hue is keyed to the brigadir's position in the stable backend order so it
+  // survives mode switches; data is value-sorted for a tidier layout.
+  // `total_all` needs the updated backend — fall back to `total` until then.
+  const treePoints = headcount
+    .map((m, i) => ({
+      x: tl(m.name),
+      y: treeMode === "all" ? (m.total_all ?? m.total) : m.total,
+      color: SUP_COLORS[i % SUP_COLORS.length],
+    }))
+    .filter((d) => d.y > 0)
+    .sort((a, b) => b.y - a.y);
+  const treemapSeries = [{ data: treePoints.map(({ x, y }) => ({ x, y })) }];
   const treemapOptions = {
     chart: { ...baseChart, type: "treemap" },
-    colors: ROLES.map((r) => ROLE_COLORS[r]),
-    legend: { ...legendCfg, position: "top" },
+    colors: treePoints.map((d) => d.color),
+    legend: { show: false },
     dataLabels: {
       enabled: true,
       style: { fontSize: "13px", fontWeight: 600, colors: ["#fff"] },
       formatter: (text, op) => [text, String(op.value)],
     },
-    plotOptions: { treemap: { distributed: false, enableShades: false } },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
+    plotOptions: { treemap: { distributed: true, enableShades: false } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.tmUnit")}` } },
     theme: chartTheme,
   };
 
