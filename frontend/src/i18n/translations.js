@@ -5331,6 +5331,8 @@ const t = {
     "workers.req.posted":            "Posted",
     "workers.req.pending":           "Pending",
     "workers.req.task":              "task",
+    "workers.req.tgtSupervisors":    "Supervisors",
+    "workers.req.tgtTasks":          "Tasks",
     "workers.req.topTarget":         "Top target",
     "workers.req.topRole":           "Top role",
     "workers.req.from":              "Old role",
