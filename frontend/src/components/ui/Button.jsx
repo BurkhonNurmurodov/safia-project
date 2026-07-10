@@ -11,6 +11,10 @@ import { Loader2 } from "lucide-react";
  *               "ghost" (borderless, subdued — inline/toolbar actions)
  *   size      – "md" (default, compact px-3.5 py-1.5 text-xs ≈ 30px)
  *               | "sm" (px-3 py-1 text-xs ≈ 26px)
+ *               | "lg" (px-4 py-2 text-sm = 38px) — the toolbar height; use in
+ *                 table toolbars so the button lines up with the filter/search
+ *                 controls (SearchInput / FilterPanel / SegmentedToggle md,
+ *                 all 38px). md/sm stay compact for modals and inline actions.
  *   icon      – optional lucide icon element rendered before the label
  *   loading   – overlays a centered Loader2 spinner (label kept in place to
  *               reserve width, so the button never reflows) and disables
