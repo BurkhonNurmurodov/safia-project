@@ -22,6 +22,7 @@ function WorkCenters({ managerId }) {
   const { data = [] } = useQuery({
     queryKey: ["pp-wc", managerId],
     queryFn: () => api.get("/admin/production/work-centers", { params: { manager_id: managerId } }).then((r) => r.data),
+    enabled: managerId != null,
   });
   const save = useMutation({
     mutationFn: ({ id, body }) => api.put(`/admin/production/work-centers/${id}`, body),

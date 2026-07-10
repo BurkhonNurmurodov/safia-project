@@ -1228,6 +1228,7 @@ const t = {
     "workers.days":              "Kunlar",
     "workers.delta":             "Farq",
     "workers.roleOther":         "Boshqa",
+    "workers.othersFold":        "Boshqalar",
     "workers.mismatchDays":      "nomuvofiq kun",
     "workers.headcount":         "Xodimlar soni",
     "workers.requests":          "So'rovlar",
