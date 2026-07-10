@@ -80,7 +80,7 @@ function WorkCenters({ managerId }) {
 }
 
 // ── catalog import (Sheet1 …) ────────────────────────────────────────────────
-function CatalogImport({ managerId, setManagerId }) {
+function CatalogImport({ managerId, setManagerId, brigadirs }) {
   const qc = useQueryClient();
   const [sheet, setSheet] = useState("Sheet1 Торт");
   const [file, setFile] = useState(null);
