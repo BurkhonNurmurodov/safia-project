@@ -484,7 +484,7 @@ export default function Tasks() {
   const [fLeader, setFLeader] = useState("All"); // admin + supervisor
   const [search, setSearch] = useState("");
   const [statusSel, setStatusSel] = useState([]);
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [sort, setSort] = useState({ key: "priority", dir: "asc" });
 
   const [expandedId, setExpandedId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
