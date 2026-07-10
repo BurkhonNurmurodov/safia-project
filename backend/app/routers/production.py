@@ -1344,6 +1344,7 @@ def trudoyomkost_call_notify(
         raise HTTPException(400, "No supervisors selected")
 
     actor = int(payload["sub"])
+    eff = int(round(req.capacity_pct))   # Zagruzka % the counts were computed at
     by_id = {m.id: m for m in db.query(Manager).filter(
         Manager.id.in_([i.manager_id for i in req.items]),
         Manager.archived.is_(False),
