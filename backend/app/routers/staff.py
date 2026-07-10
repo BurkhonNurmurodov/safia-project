@@ -280,19 +280,23 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # ``_mk_notif_tg``). Keep the two structurally in sync.
     "call_forecast": {
         "uz": ("Ertangi kunga xodim chaqirish uchun prognozlar:",
-               "📅 Sana: {date}\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
+               "📅 Sana: {date}\n📊 Zagruzka foizi: {eff}%\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
+               "Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
                "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!"),
         "uz_cyrl": ("Эртанги кунга ходим чақириш учун прогнозлар:",
-                    "📅 Сана: {date}\n🧑‍🍳 Чақириш тавсия қилинади: {count} нафар\n⚠️ Максимум: {max} нафар\n\n"
+                    "📅 Сана: {date}\n📊 Загрузка фоизи: {eff}%\n🧑‍🍳 Чақириш тавсия қилинади: {count} нафар\n⚠️ Максимум: {max} нафар\n\n"
+                    "Кўрсатилган сонлар фақат загрузка ҳисобига киритиладиган ишчилар сони — бу барча ишчиларнинг умумий сони эмас.\n\n"
                     "Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
                     "Шу сабабли, амалдаги вазият ва бошқа омилларни ҳам инобатга олиб, керакли миқдорда одам чақиришингизни сўраймиз!"),
         "ru": ("Прогноз по вызову сотрудников на завтра:",
-               "📅 Дата: {date}\n🧑‍🍳 Рекомендуется вызвать: {count} чел.\n⚠️ Максимум: {max} чел.\n\n"
+               "📅 Дата: {date}\n📊 Процент загрузки: {eff}%\n🧑‍🍳 Рекомендуется вызвать: {count} чел.\n⚠️ Максимум: {max} чел.\n\n"
+               "Указанные числа — это количество работников, учитываемых в загрузке, а не общее число всех работников.\n\n"
                "Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
                "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!"),
         "en": ("Tomorrow's staff call forecast:",
-               "📅 Date: {date}\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
+               "📅 Date: {date}\n📊 Load percentage: {eff}%\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
+               "The numbers shown are the count of workers included in the Zagruzka (load) calculation — not the total number of all workers.\n\n"
                "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!"),
     },
