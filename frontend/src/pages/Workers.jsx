@@ -34,6 +34,14 @@ const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
 const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#a78bfa" };
 
+// Per-supervisor identity hues for the treemap (same family as Kaizen's
+// ProjectIcon) — deliberately off the traffic-light status palette so identity
+// never reads as state. Cycles when there are more brigadirs than hues.
+const SUP_COLORS = [
+  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ec4899", "#06b6d4",
+  "#6366f1", "#f43f5e", "#0ea5e9", "#a855f7", "#C8973F", "#d946ef",
+];
+
 // Sequential ramps for the two heatmaps (green = attendance, violet = changes).
 const ATT_RANGES = [
   { from: -1, to: 0,   color: "#e2e8f0" },
