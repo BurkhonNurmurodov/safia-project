@@ -343,6 +343,10 @@ export default function Downtime() {
               hrsLabel={hrsLabel}
               thresholdText={t("downtime.threshold")}
               catColors={CAT_COLORS}
+              chartTheme={chartTheme}
+              gridColor={gridColor}
+              labelColor={labelColor}
+              tooltipTheme={tooltipTheme}
             />
           ) : (
             <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} />
