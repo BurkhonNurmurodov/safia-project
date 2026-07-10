@@ -539,7 +539,18 @@ export default function Workers() {
               right={<SegmentedToggle size="sm" value={roleMode} onChange={setRoleMode}
                 options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
               {!trend ? <SkeletonChart className="h-72" />
-                : trend?.dates?.length ? <ReactApexChart key={roleMode} type="area" series={trendSeries} options={trendOptions} height={330} />
+                : trend?.dates?.length ? (
+                  <>
+                    <div className="att-trend">
+                      <ReactApexChart key={roleMode} type="area" series={trendSeries} options={trendOptions} height={330} />
+                    </div>
+                    {/* Hover breakdown lives here — under the chart, never over it. */}
+                    <div key={roleMode} ref={trendTip}
+                      className="att-trend-panel flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-3 mt-1 text-xs"
+                      style={{ borderColor: "var(--border)" }}
+                      dangerouslySetInnerHTML={{ __html: trendDefaultHtml }} />
+                  </>
+                )
                 : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
             </ChartCard>
           </div>
