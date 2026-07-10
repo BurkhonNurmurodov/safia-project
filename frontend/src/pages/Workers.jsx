@@ -407,9 +407,9 @@ export default function Workers() {
             )}
           </div>
 
-          {/* Composition donut + attendance trend (compact pair) */}
+          {/* Role-share donut + attendance trend (compact pair) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-            <ChartCard icon={PieChart} title={t("workers.composition")} info={t("workers.info.composition")}>
+            <ChartCard icon={PieChart} title={t("workers.roleShare")} info={t("workers.info.composition")}>
               {isLoading ? <SkeletonChart className="h-72" />
                 : roleTotals.some((n) => n > 0) ? <ReactApexChart type="donut" series={roleTotals} options={donutOptions} height={330} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
@@ -421,6 +421,13 @@ export default function Workers() {
                 : <EmptyState title={t("workers.noTrend")} message={t("workers.noTrendMsg")} />}
             </ChartCard>
           </div>
+
+          {/* Workforce treemap — full width, big & readable (one block per brigadir) */}
+          <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.treemap")} className="mb-6">
+            {isLoading ? <SkeletonChart className="h-96" />
+              : treemapSeries.length ? <ReactApexChart type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
+              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
+          </ChartCard>
 
           {/* Roster vs present — the attendance gap per brigadir (full width) */}
           <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={t("workers.info.rosterVsPresent")} className="mb-6">
