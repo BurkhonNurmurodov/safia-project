@@ -282,14 +282,14 @@ export default function Workers() {
   // still paints its translucent gradient down to the baseline, tinting the whole
   // chart its colour ("green shadow everywhere" when Zagatovitel has no attendance).
   const trendRoles = trend
-    ? ROLES.filter((r) => r !== "Other" && (trend.series[r] || []).some((v) => v > 0))
+    ? activeRoles.filter((r) => (trend.series[r] || []).some((v) => v > 0))
     : [];
   const trendSeries = trendRoles.map((r) => ({ name: roleLabel(r), data: trend.series[r] || [] }));
   const trendOptions = {
     chart: { ...baseChart, type: "area", stacked: true, zoom: { enabled: false } },
     stroke: { curve: "smooth", width: 2 },
     fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
-    colors: trendRoles.map((r) => ROLE_COLORS[r]),
+    colors: trendRoles.map(roleColor),
     xaxis: {
       categories: trend?.dates || [], labels: { ...axisLabels, rotate: -45 },
       tickAmount: Math.min(trend?.dates?.length || 0, 10),
