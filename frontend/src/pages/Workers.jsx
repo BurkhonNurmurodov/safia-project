@@ -363,12 +363,19 @@ export default function Workers() {
       events: { mouseLeave: () => { if (trendTip.current) trendTip.current.innerHTML = trendDefault.current; } },
     },
     dataLabels: { enabled: false },
-    stroke: { curve: "smooth", width: 2 },
-    fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0.05 } },
-    colors: trendRoles.map(roleColor),
+    // Solid bands with a card-colour seam between neighbours. Stacked bands
+    // never overlap, so translucent gradients bought nothing and multiplied
+    // into a grey-brown wash that matched no legend swatch; the 2px seam (not
+    // a coloured stroke) is what separates adjacent bands.
+    stroke: { curve: "smooth", width: 2, colors: [cardBg] },
+    fill: { type: "solid", opacity: 1 },
+    colors: trendColors,
     xaxis: {
-      categories: trend?.dates || [], labels: { ...axisLabels, rotate: -45 },
-      tickAmount: Math.min(trend?.dates?.length || 0, 10),
+      // Horizontal short ticks (DD.MM) — rotated full dates cost more reading
+      // effort than the year, which the panel date already carries, adds.
+      categories: trend?.dates || [],
+      labels: { ...axisLabels, rotate: 0, formatter: (val) => String(val || "").slice(0, 5) },
+      tickAmount: Math.min(trend?.dates?.length || 0, 6),
     },
     yaxis: { labels: axisLabels },
     legend: legendCfg, grid: gridCfg, theme: chartTheme,
