@@ -445,8 +445,10 @@ export default function Workers() {
     .sort((a, b) => b.total - a.total);
   const transRoleLabel = (name) => (!name || name === "-" || name === "—" ? t("workers.req.unspecified") : tl(name));
 
+  // Same per-row height for the two side-by-side supervisor lists so the
+  // paired cards come out near-equal.
   const reqSupChartH  = Math.max(220, reqSups.length * 30 + 80);
-  const reqTgtChartH  = Math.max(200, reqTargetsView.length * 28 + 60);
+  const reqTgtChartH  = Math.max(220, reqTargetsView.length * 30 + 80);
   const reqRoleChartH = Math.max(200, reqRoles.length * 28 + 60);
 
   const numCell = "px-3 py-2 text-right tabular-nums";
