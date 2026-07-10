@@ -477,11 +477,11 @@ export default function Workers() {
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
           </ChartCard>
 
-          {/* Attendance heatmap (full width) */}
+          {/* Attendance heatmap (full width) — same component as the fleet heatmap */}
           <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
-              : heatSeries.length && heatDates.length
-                ? <div className="att-heat"><ReactApexChart type="heatmap" series={heatSeries} options={heatOptions} height={heatH} /></div>
+              : heatManagers.length && heatDates.length
+                ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData} mode="actual" segments={ATT_SEGMENTS} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
           </ChartCard>
 
