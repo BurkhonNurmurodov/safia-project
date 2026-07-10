@@ -1149,7 +1149,7 @@ export default function Concerns() {
                   saving={savingStatusId === r.id}
                   disabled={!r.can_set_status}
                   options={STATUSES}
-                  onChange={(s) => statusMutation.mutate({ row: r, status: s })}
+                  onChange={(s) => requestStatusChange(r, s)}
                 />
               </span>
             </div>
