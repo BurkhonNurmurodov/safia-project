@@ -382,20 +382,24 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
 _NOTIF_TG_HTML = {
     "call_forecast": {
         "uz": ("<b>Ertangi kunga xodim chaqirish uchun prognozlar:</b>\n\n"
-               "📅 <b>Sana:</b> {date}\n🧑‍🍳 <b>Chaqirish tavsiya qilinadi:</b> {count} nafar\n⚠️ <b>Maksimum:</b> {max} nafar\n\n"
-               "<blockquote>Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
+               "📅 <b>Sana:</b> {date}\n📊 <b>Zagruzka foizi:</b> {eff}%\n🧑‍🍳 <b>Chaqirish tavsiya qilinadi:</b> {count} nafar\n⚠️ <b>Maksimum:</b> {max} nafar\n\n"
+               "<blockquote>Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
+               "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
                "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!</blockquote>"),
         "uz_cyrl": ("<b>Эртанги кунга ходим чақириш учун прогнозлар:</b>\n\n"
-                    "📅 <b>Сана:</b> {date}\n🧑‍🍳 <b>Чақириш тавсия қилинади:</b> {count} нафар\n⚠️ <b>Максимум:</b> {max} нафар\n\n"
-                    "<blockquote>Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
+                    "📅 <b>Сана:</b> {date}\n📊 <b>Загрузка фоизи:</b> {eff}%\n🧑‍🍳 <b>Чақириш тавсия қилинади:</b> {count} нафар\n⚠️ <b>Максимум:</b> {max} нафар\n\n"
+                    "<blockquote>Кўрсатилган сонлар фақат загрузка ҳисобига киритиладиган ишчилар сони — бу барча ишчиларнинг умумий сони эмас.\n\n"
+                    "Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
                     "Шу сабабли, амалдаги вазият ва бошқа омилларни ҳам инобатга олиб, керакли миқдорда одам чақиришингизни сўраймиз!</blockquote>"),
         "ru": ("<b>Прогноз по вызову сотрудников на завтра:</b>\n\n"
-               "📅 <b>Дата:</b> {date}\n🧑‍🍳 <b>Рекомендуется вызвать:</b> {count} чел.\n⚠️ <b>Максимум:</b> {max} чел.\n\n"
-               "<blockquote>Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
+               "📅 <b>Дата:</b> {date}\n📊 <b>Процент загрузки:</b> {eff}%\n🧑‍🍳 <b>Рекомендуется вызвать:</b> {count} чел.\n⚠️ <b>Максимум:</b> {max} чел.\n\n"
+               "<blockquote>Указанные числа — это количество работников, учитываемых в загрузке, а не общее число всех работников.\n\n"
+               "Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
                "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!</blockquote>"),
         "en": ("<b>Tomorrow's staff call forecast:</b>\n\n"
-               "📅 <b>Date:</b> {date}\n🧑‍🍳 <b>Recommended to call:</b> {count} workers\n⚠️ <b>Maximum:</b> {max} workers\n\n"
-               "<blockquote>This forecast is based only on historical data from previous days. "
+               "📅 <b>Date:</b> {date}\n📊 <b>Load percentage:</b> {eff}%\n🧑‍🍳 <b>Recommended to call:</b> {count} workers\n⚠️ <b>Maximum:</b> {max} workers\n\n"
+               "<blockquote>The numbers shown are the count of workers included in the Zagruzka (load) calculation — not the total number of all workers.\n\n"
+               "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!</blockquote>"),
     },
 }
