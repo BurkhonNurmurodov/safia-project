@@ -19,6 +19,15 @@ const WD = {
   en:      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
 };
 
+// full weekday names — used where the layout has room (KPI cards) so the value
+// doesn't read like a truncated stub ("Cho"); tables keep the compact WD above.
+const WD_FULL = {
+  uz:      ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"],
+  uz_cyrl: ["Душанба", "Сешанба", "Чоршанба", "Пайшанба", "Жума", "Шанба", "Якшанба"],
+  ru:      ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"],
+  en:      ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+};
+
 const T = {
   uz: {
     title: "Ishchilar bashorati va statistikasi", workers: "ishchi",
