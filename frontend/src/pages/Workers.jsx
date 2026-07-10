@@ -60,13 +60,18 @@ const SUP_COLORS = [
   "#15803d", // dark green
 ];
 
-// Sequential ramps for the two heatmaps (green = attendance, violet = changes).
-const ATT_RANGES = [
-  { from: -1, to: 0,   color: "#e2e8f0" },
-  { from: 1,  to: 6,   color: "#bbf7d0" },
-  { from: 7,  to: 12,  color: "#4ade80" },
-  { from: 13, to: 20,  color: "#22c55e" },
-  { from: 21, to: 999, color: "#15803d" },
+// The attendance heatmap reuses the fleet HeatmapChart, so it takes the same
+// banded {from,color} segments — but a single-hue sequential green ramp (shades
+// of green) instead of the fleet's traffic-light scale. Bands are keyed to the
+// attendance % (0–100); HeatmapChart auto-contrasts the label text per band.
+const ATT_SEGMENTS = [
+  { from: 0,  color: "#dcfce7" }, // < 40%  → lightest green
+  { from: 40, color: "#bbf7d0" }, // 40–49%
+  { from: 50, color: "#86efac" }, // 50–59%
+  { from: 60, color: "#4ade80" }, // 60–69%
+  { from: 70, color: "#22c55e" }, // 70–79%
+  { from: 80, color: "#16a34a" }, // 80–89%
+  { from: 90, color: "#15803d" }, // ≥ 90%  → darkest green
 ];
 const TRANS_RANGES = [
   { from: 0,  to: 0,   color: "#e2e8f0" },
