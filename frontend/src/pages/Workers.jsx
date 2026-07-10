@@ -41,7 +41,10 @@ const ROLE_EXTRA_COLORS = [
 ];
 const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
-const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#a78bfa" };
+// roleChange is a deepened brand-gold chart step: blue+violet collapses under
+// red-green colorblindness (violet reads as blue), and lavender sat below 3:1
+// contrast on the light surface. Blue+gold clears both.
+const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#b58434" };
 
 // Per-supervisor identity hues for the treemap — a full-spectrum categorical
 // palette (every block is coloured, so hues read as identity, not status).
