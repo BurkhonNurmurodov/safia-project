@@ -50,7 +50,20 @@ export default function DowntimeToggleChart({
   hrsLabel,
   thresholdText,
   catColors,
+  chartTheme,
+  gridColor,
+  labelColor,
+  tooltipTheme,
+  outsideLabelColor,
 }) {
+  // Theme-aware fallbacks (dark) so the chart still renders if a caller omits them.
+  const themeMode = (chartTheme && chartTheme.mode) || "dark";
+  const grid = gridColor || "#1e2235";
+  const axisLabel = labelColor || "#9ca3af";
+  const tipTheme = tooltipTheme || "dark";
+  // Outside labels sit on the card background (not on a coloured bar), so they must flip
+  // with the theme — a near-white value was invisible on the light surface.
+  const outsideLabel = outsideLabelColor || (themeMode === "dark" ? "#e5e7eb" : "#374151");
   // tl() only varies with `lang` / name overrides, so key on lang (not the closure).
   const categories = useMemo(
     () => summary.map((s) => tl(s.manager_name)),
