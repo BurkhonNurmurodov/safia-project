@@ -190,6 +190,25 @@ export default function Workers() {
     theme: chartTheme,
   };
 
+  // Workforce treemap — one block per brigadir, size = worker count, colour = role.
+  const treemapSeries = ROLES.map((r) => ({
+    name: roleLabel(r),
+    data: headcount.map((m) => ({ x: tl(m.name), y: m.by_role[r] || 0 })).filter((d) => d.y > 0),
+  })).filter((s) => s.data.length);
+  const treemapOptions = {
+    chart: { ...baseChart, type: "treemap" },
+    colors: ROLES.map((r) => ROLE_COLORS[r]),
+    legend: { ...legendCfg, position: "top" },
+    dataLabels: {
+      enabled: true,
+      style: { fontSize: "13px", fontWeight: 600, colors: ["#fff"] },
+      formatter: (text, op) => [text, String(op.value)],
+    },
+    plotOptions: { treemap: { distributed: false, enableShades: false } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
+    theme: chartTheme,
+  };
+
   // Attendance trend by role (stacked area, min-7-day window).
   // Drop roles that are all-zero across the window: a zero top-of-stack series
   // still paints its translucent gradient down to the baseline, tinting the whole
