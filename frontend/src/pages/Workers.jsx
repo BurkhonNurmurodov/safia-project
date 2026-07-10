@@ -591,10 +591,10 @@ export default function Workers() {
               <>
                 <KPICard icon={ClipboardList} color="#8b5cf6" label={t("workers.req.totalRequests")}
                   value={reqKpi.total} tooltip={t("workers.req.tip.totalRequests")} />
-                <KPICard icon={ArrowLeftRight} color="#3b82f6" label={t("workers.req.workersExchanged")}
+                <KPICard icon={ArrowLeftRight} color={REQ_COLORS.exchange} label={t("workers.req.workersExchanged")}
                   value={reqKpi.workers_moved} sub={`${reqKpi.exchanges} ${t("workers.req.exchanges").toLowerCase()}`}
                   tooltip={t("workers.req.tip.workersExchanged")} />
-                <KPICard icon={Repeat} color="#ec4899" label={t("workers.req.workersReassigned")}
+                <KPICard icon={Repeat} color={REQ_COLORS.roleChange} label={t("workers.req.workersReassigned")}
                   value={reqKpi.workers_reassigned} sub={`${reqKpi.role_changes} ${t("workers.req.roleChanges").toLowerCase()}`}
                   tooltip={t("workers.req.tip.workersReassigned")} />
                 <KPICard icon={CheckCircle2} color="#22c55e" label={t("workers.req.postedRate")}
