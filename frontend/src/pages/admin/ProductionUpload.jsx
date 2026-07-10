@@ -179,7 +179,8 @@ export default function ProductionUpload() {
     setState({ status: "uploading" });
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
-    form.append("manager_id", managerId);
+    // No manager_id → the SAP file is global; the backend fans it out to every
+    // configured brigadir (each filtered by their own catalog).
     form.append("date", date);
     form.append("mode", mode);
     if (fileType !== "auto") form.append("file_type", fileType);
