@@ -464,9 +464,11 @@ export default function Workers() {
           </div>
 
           {/* Workforce treemap — full width, big & readable (one block per brigadir) */}
-          <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.treemap")} className="mb-6">
+          <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.treemap")} className="mb-6"
+            right={<SegmentedToggle size="sm" value={treeMode} onChange={setTreeMode}
+              options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
             {isLoading ? <SkeletonChart className="h-96" />
-              : treemapSeries.length ? <ReactApexChart type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
+              : treePoints.length ? <ReactApexChart key={treeMode} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
           </ChartCard>
 
