@@ -415,28 +415,21 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Role-transition matrix heatmap — old role (rows) × new role (cols).
-  const fromRoles = [...new Set(reqTrans.map((r) => r.from))];
-  const toRoles   = [...new Set(reqTrans.map((r) => r.to))];
-  const transMap  = Object.fromEntries(reqTrans.map((r) => [`${r.from}|${r.to}`, r.workers]));
-  const transSeries = fromRoles.map((fr) => ({
-    name: tl(fr),
-    data: toRoles.map((tr) => ({ x: tl(tr), y: transMap[`${fr}|${tr}`] || 0 })),
-  }));
-  const transOptions = {
-    chart: { ...baseChart, type: "heatmap" },
-    dataLabels: { enabled: true, style: { fontSize: "10px", colors: ["#1e293b"] } },
-    plotOptions: { heatmap: { radius: 3, enableShades: false, colorScale: { ranges: TRANS_RANGES } } },
-    xaxis: { type: "category", labels: axisLabels, position: "top" },
-    yaxis: { labels: axisLabelsMd },
-    legend: { show: false },
-    stroke: { width: 2, colors: [gridColor] },
-    tooltip: {
-      theme: tooltipTheme,
-      y: { formatter: (v) => `${v} ${t("workers.req.workers")}` },
-    },
-    theme: chartTheme,
-  };
+  // Role-transition matrix — old role (rows) × new role (cols), rendered as a
+  // plain CSS grid instead of an Apex heatmap (Apex can't do receding zeros,
+  // wrapped row labels, axis captions or an uncolored totals column). Rows and
+  // columns sort by volume so the biggest flows read first.
+  const transMap = Object.fromEntries(reqTrans.map((r) => [`${r.from}|${r.to}`, r.workers]));
+  const transColTotals = {};
+  reqTrans.forEach((r) => { transColTotals[r.to] = (transColTotals[r.to] || 0) + r.workers; });
+  const toRoles = [...new Set(reqTrans.map((r) => r.to))].sort((a, b) => transColTotals[b] - transColTotals[a]);
+  const transRows = [...new Set(reqTrans.map((r) => r.from))]
+    .map((from) => {
+      const cells = toRoles.map((to) => transMap[`${from}|${to}`] || 0);
+      return { from, cells, total: cells.reduce((s, v) => s + v, 0) };
+    })
+    .sort((a, b) => b.total - a.total);
+  const transRoleLabel = (name) => (!name || name === "-" || name === "—" ? t("workers.req.unspecified") : tl(name));
 
   const reqSupChartH  = Math.max(220, reqSups.length * 30 + 80);
   const reqTgtChartH  = Math.max(200, reqTargetsView.length * 28 + 60);
