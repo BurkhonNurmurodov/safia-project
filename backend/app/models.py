@@ -531,12 +531,13 @@ class PPUpload(Base):
 
     file_type: 'faza' (План … фаза — operations detail, drives the dashboard)
                'zaga' (План заголовок — order headers, reference only).
-    columns/rows store a render-ready table scoped to this brigadir+date
-    (faza → the brigadir's work centers on that date; zaga → catalog SKUs)."""
+    manager_id NULL = the GLOBAL plant-wide file for that date (the SAP export
+    is one file for everyone; brigadir views filter it at read time). Non-NULL
+    rows are legacy per-brigadir slices from before global storage."""
     __tablename__ = "pp_uploads"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
-    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
     date        = Column(Date, nullable=False, index=True)
     file_type   = Column(String, nullable=False)   # 'faza' | 'zaga'
     filename    = Column(String, nullable=True)
