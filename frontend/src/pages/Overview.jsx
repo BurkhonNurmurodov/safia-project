@@ -161,6 +161,22 @@ export default function Overview() {
     enabled: ready,
   });
 
+  // Full (period-independent) supervisor list for the inline picker — shares the
+  // cache with the header Filters drawer so it's effectively free.
+  const { data: allSupervisors = [] } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const supOptions = useMemo(
+    () => [...allSupervisors]
+      .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
+      .map((b) => ({ value: String(b.manager_id), label: tl(b.name) })),
+    [allSupervisors, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The inline dropdown mirrors the global brigadir filter: a single pick maps to
+  // one id, "All" clears it. A multi-select made in the drawer shows as "All".
+  const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
+
   // Fleet-trend window: never chart fewer than MIN_CHART_DAYS days — a short
   // selection is padded back (n..n+4 charts as n-2..n+4). KPIs/table above
   // keep the exact selected range. include_pending: uploaded-but-unclosed
