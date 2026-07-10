@@ -125,7 +125,7 @@ export default function DowntimeToggleChart({
               total: {
                 enabled: true,
                 offsetX: 6,
-                style: { fontSize: "11px", fontWeight: 600, color: "#e5e7eb" },
+                style: { fontSize: "11px", fontWeight: 600, color: outsideLabel },
                 formatter: (val, opts) => {
                   if (!val || val <= 0 || !isTotalBar(opts)) return "";
                   const text = fmtVal(val);
