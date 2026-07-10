@@ -28,6 +28,11 @@ _KNOWN_TITLES = or_(
 )
 CALC_ROWS_FILTER = and_(_KNOWN_TITLES, Attendance.hours_worked > 0)
 
+# Roles that count towards the zagruzka staffing calculation (the CALC set).
+# Everything else is a real job title that keeps its own role slice so the
+# "all roles" view can add/remove them via the toggle.
+ZAGRUZKA_ROLES = ("Konditer", "Fasovshik", "Zagatovitel", "Other")
+
 
 def normalize_role(job_title: str) -> str:
     if not job_title or job_title in ("nan", "NaN", ""):
@@ -38,7 +43,8 @@ def normalize_role(job_title: str) -> str:
         return "Fasovshik"
     if job_title == ZAGATOVITEL:
         return "Zagatovitel"
-    return "Other"
+    # Non-zagruzka titles keep their raw name so each shows as its own role.
+    return job_title
 
 
 @router.get("/workers/headcount")
