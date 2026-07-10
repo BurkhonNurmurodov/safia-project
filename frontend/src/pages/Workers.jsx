@@ -305,9 +305,37 @@ export default function Workers() {
     },
     yaxis: { labels: axisLabels },
     legend: legendCfg, grid: gridCfg, theme: chartTheme,
-    // 9 roles make the tooltip tall; pin it to a fixed corner so it never gets
-    // clipped by the card's overflow-hidden (cursor-following clips at edges).
-    tooltip: { theme: tooltipTheme, fixed: { enabled: true, position: "topLeft", offsetX: 0, offsetY: 0 } },
+    // 9–10 roles overflow ApexCharts' default tooltip past the 330px chart and
+    // clip on the card's overflow-hidden. Pin it to a fixed corner (no cursor
+    // clipping) AND render a compact tooltip that drops the day's zero-value
+    // roles, sorts the rest desc, and closes with a total — short enough to fit.
+    tooltip: {
+      theme: tooltipTheme,
+      fixed: { enabled: true, position: "topLeft", offsetX: 0, offsetY: 0 },
+      custom: ({ series, dataPointIndex, w }) => {
+        const dark = tooltipTheme === "dark";
+        const bg = dark ? "#1a1d27" : "#ffffff";
+        const bd = dark ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.1)";
+        const muted = dark ? "#9ca3af" : "#6b7280";
+        const strong = dark ? "#f3f4f6" : "#111827";
+        const date = w.config.xaxis.categories?.[dataPointIndex] ?? "";
+        const items = series
+          .map((s, i) => ({ name: w.globals.seriesNames[i], color: w.globals.colors[i], val: s[dataPointIndex] ?? 0 }))
+          .filter((it) => it.val > 0)
+          .sort((a, b) => b.val - a.val);
+        const total = items.reduce((n, it) => n + it.val, 0);
+        const rows = items.map((it) => `
+          <div style="display:flex;align-items:center;gap:6px;padding:1px 0">
+            <span style="width:8px;height:8px;border-radius:2px;background:${it.color};flex:none"></span>
+            <span style="color:${muted}">${it.name}</span>
+            <b style="color:${strong};margin-left:auto">${it.val}</b></div>`).join("");
+        return `<div style="padding:8px 10px;background:${bg};border:1px solid ${bd};border-radius:8px;font-size:11px;min-width:190px">
+          <div style="color:#C8973F;font-weight:600;margin-bottom:5px">${date}</div>${rows}
+          <div style="display:flex;align-items:center;gap:6px;padding-top:4px;margin-top:4px;border-top:1px solid ${bd}">
+            <span style="color:${muted}">${t("workers.total")}</span>
+            <b style="color:${strong};margin-left:auto">${total}</b></div></div>`;
+      },
+    },
   };
 
   // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
