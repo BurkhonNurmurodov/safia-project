@@ -464,6 +464,11 @@ export default function Concerns() {
   const [escSM, setEscSM] = useState(null);             // shift-manager profile_id (up from supervisor)
   const [escError, setEscError] = useState("");
   const [historyRow, setHistoryRow] = useState(null);   // row whose escalation trail is open
+  // Inline "done" needs a resolution note first — this holds the row whose pill
+  // was flipped to done until the note is entered.
+  const [resolveRow, setResolveRow] = useState(null);
+  const [resolveNote, setResolveNote] = useState("");
+  const [resolveError, setResolveError] = useState("");
 
   // A new concern is raised to the step above the creator; the holder at that
   // step is named on the form (supervisor/admin → a shift-manager, shift-manager
