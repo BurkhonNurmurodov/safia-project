@@ -989,7 +989,7 @@ export default function Tasks() {
               onClearAll={() => setStatusSel([])}
             />
             {canCreate && (
-              <Button icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>
+              <Button size="lg" icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>
             )}
           </>
         }
