@@ -12,6 +12,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Tooltip from "../components/ui/Tooltip";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
+import HeatmapChart from "../components/charts/HeatmapChart";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
