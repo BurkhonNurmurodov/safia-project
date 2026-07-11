@@ -247,176 +247,176 @@ export default function ProfilesManagement() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-8">
-      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <IdCard size={15} className="text-[var(--brand-text)]" />
-            <span className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
-              {t("admin.profiles.title")}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
+      {/* Canonical POSITIONS-style TableCard: count in the head, type pills +
+          actions in the toolbar, per-column sort. */}
+      <TableCard
+        icon={IdCard}
+        title={t("admin.profiles.title")}
+        wrap
+        right={
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+            {items.length}
+          </span>
+        }
+        toolbar={
+          <>
+            {/* Type pills — the shared segmented-toggle template (scroll for phones) */}
+            <div className="no-scrollbar max-w-full overflow-x-auto">
+              <SegmentedToggle
+                value={type}
+                onChange={(v) => { setType(v); setSort({ key: null, dir: "asc" }); }}
+                options={TYPES.map(({ key, tKey, icon: Icon, listKey }) => ({
+                  value: key,
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon size={12} /> {t(tKey)}
+                      <span className="px-1 rounded text-[10px] font-mono"
+                        style={{ background: type === key ? "rgba(255,255,255,0.2)" : "var(--bg-card)" }}>
+                        {data?.[listKey]?.length ?? 0}
+                      </span>
+                    </span>
+                  ),
+                }))}
+              />
+            </div>
             {type !== "guest" && (
-              <button
-                onClick={openAdd}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                style={{ background: "var(--brand)" }}
-              >
-                <Plus size={13} /> {t("admin.profiles.add")}
-              </button>
+              <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
+                {t("admin.profiles.add")}
+              </Button>
             )}
-            <button
+            <Button
+              size="lg"
+              variant="secondary"
+              icon={<RefreshCw size={14} />}
+              loading={isFetching}
               onClick={() => refetch()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)] transition-colors"
+              className="whitespace-nowrap"
             >
-              {isFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               {t("admin.refresh")}
-            </button>
-          </div>
-        </div>
-
-        {/* Type pills — the shared segmented-toggle template (scroll for phones) */}
-        <div className="no-scrollbar mb-5 overflow-x-auto">
-          <SegmentedToggle
-            value={type}
-            onChange={setType}
-            options={TYPES.map(({ key, tKey, icon: Icon, listKey }) => ({
-              value: key,
-              label: (
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon size={12} /> {t(tKey)}
-                  <span className="px-1 rounded text-[10px] font-mono"
-                    style={{ background: type === key ? "rgba(255,255,255,0.2)" : "var(--bg-card)" }}>
-                    {data?.[listKey]?.length ?? 0}
+            </Button>
+          </>
+        }
+      >
+        <thead>
+          <tr>
+            <Th icon={UserRound} label={t("admin.profiles.colName")} k="name" sort={sort} onSort={onSort} />
+            {(type === "shift-manager" || type === "supervisor") && (
+              <Th icon={Clock} label={t("admin.profiles.colShift")} k="shift" sort={sort} onSort={onSort} />
+            )}
+            {type === "leader" && (
+              <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} />
+            )}
+            {type === "leader" && (
+              <Th icon={LayoutGrid} label={t("admin.profiles.colCell")} k="cell" sort={sort} onSort={onSort} />
+            )}
+            {type === "supervisor" && (
+              <Th icon={Hash} label={t("admin.profiles.colVerifix")} k="verifix" sort={sort} onSort={onSort} />
+            )}
+            <Th icon={Link2} label={t("admin.profiles.colHolders")} />
+            <Th icon={Settings2} label={t("admin.profiles.colActions")} />
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading && Array.from({ length: 6 }).map((_, i) => (
+            <tr key={`sk-${i}`}>
+              {Array.from({ length: colSpan }).map((_, j) => (
+                <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+              ))}
+            </tr>
+          ))}
+          {!isLoading && sorted.length === 0 && (
+            <tr>
+              <td colSpan={colSpan} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                {t("admin.profiles.empty")}
+              </td>
+            </tr>
+          )}
+          {!isLoading && sorted.map((item) => (
+            <tr key={item.id}>
+              <td className="px-3 py-2 font-medium text-[var(--text-1)] whitespace-nowrap">
+                {tl(item.name)}
+                {type === "supervisor" && item.archived && (
+                  <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
+                    style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}>
+                    {t("admin.profiles.archived")}
                   </span>
-                </span>
-              ),
-            }))}
-          />
-        </div>
+                )}
+              </td>
 
-        {/* Table */}
-        {isLoading ? (
-          <div className="space-y-2 py-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-9 rounded-lg animate-pulse bg-[var(--bg-inner)]" />
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-12 text-center text-sm text-[var(--text-3)]">{t("admin.profiles.empty")}</div>
-        ) : (
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs min-w-[640px]">
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {[
-                    t("admin.profiles.colName"),
-                    ...(type === "shift-manager" || type === "supervisor" ? [t("admin.profiles.colShift")] : []),
-                    ...(type === "leader" ? [t("admin.profiles.colSupervisor"), t("admin.profiles.colCell")] : []),
-                    ...(type === "supervisor" ? [t("admin.profiles.colVerifix")] : []),
-                    t("admin.profiles.colHolders"),
-                    t("admin.profiles.colActions"),
-                  ].map((h) => (
-                    <th key={h} className="text-left py-2 px-3 text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id}
-                      style={{ borderBottom: "1px solid var(--border)" }}
-                      className="hover:bg-[var(--hover-bg)] transition-colors">
-                    <td className="py-2.5 px-3 font-medium text-[var(--text-1)] whitespace-nowrap">
-                      {tl(item.name)}
-                      {type === "supervisor" && item.archived && (
-                        <span className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
-                          style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}>
-                          {t("admin.profiles.archived")}
-                        </span>
-                      )}
-                    </td>
+              {(type === "shift-manager" || type === "supervisor") && (
+                <td className="px-3 py-2 text-[var(--text-2)] whitespace-nowrap">
+                  {item.shift ?? "—"}
+                </td>
+              )}
+              {type === "leader" && (
+                <td className="px-3 py-2 text-[var(--text-2)] whitespace-nowrap">
+                  {tl(item.supervisor) || "—"}
+                </td>
+              )}
+              {type === "leader" && (
+                <td className="px-3 py-2 text-[var(--text-2)] whitespace-nowrap">
+                  {item.cell || "—"}
+                </td>
+              )}
+              {type === "supervisor" && (
+                <td className="px-3 py-2 text-[var(--text-2)] font-mono whitespace-nowrap">{item.id}</td>
+              )}
 
-                    {(type === "shift-manager" || type === "supervisor") && (
-                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
-                        {item.shift ?? "—"}
-                      </td>
-                    )}
-                    {type === "leader" && (
-                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
-                        {tl(item.supervisor) || "—"}
-                      </td>
-                    )}
-                    {type === "leader" && (
-                      <td className="py-2.5 px-3 text-[var(--text-2)] whitespace-nowrap">
-                        {item.cell || "—"}
-                      </td>
-                    )}
-                    {type === "supervisor" && (
-                      <td className="py-2.5 px-3 text-[var(--text-2)] font-mono whitespace-nowrap">{item.id}</td>
-                    )}
+              <td className="px-3 py-2">
+                {item.bindings?.length ? (
+                  <div className="flex flex-wrap gap-1">
+                    {item.bindings.map((b, i) => (
+                      <HolderChip
+                        key={i}
+                        b={b}
+                        disabled={unassignMut.isPending}
+                        onUnassign={() => setConfirmUnassign({ item, binding: b })}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[var(--text-4)]">{t("admin.profiles.noHolders")}</span>
+                )}
+              </td>
 
-                    <td className="py-2.5 px-3">
-                      {item.bindings?.length ? (
-                        <div className="flex flex-wrap gap-1">
-                          {item.bindings.map((b, i) => (
-                            <HolderChip
-                              key={i}
-                              b={b}
-                              disabled={unassignMut.isPending}
-                              onUnassign={() => setConfirmUnassign({ item, binding: b })}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-[var(--text-4)]">{t("admin.profiles.noHolders")}</span>
-                      )}
-                    </td>
-
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openEdit(item)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                          style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
-                        >
-                          <Pencil size={10} /> {t("admin.profiles.edit")}
-                        </button>
-                        {type === "supervisor" && item.archived ? (
-                          <button
-                            onClick={() => toggleArchive(item)}
-                            disabled={updateMut.isPending}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                            style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
-                          >
-                            <ArchiveRestore size={10} /> {t("admin.profiles.unarchive")}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDelete(item)}
-                            disabled={deleteMut.isPending}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                            style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; e.currentTarget.style.color = "#ef4444"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; }}
-                          >
-                            {type === "supervisor" && item.has_data
-                              ? <><Archive size={10} /> {t("admin.profiles.archive")}</>
-                              : <><Trash2 size={10} /> {t("admin.profiles.delete")}</>}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                    style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
+                  >
+                    <Pencil size={10} /> {t("admin.profiles.edit")}
+                  </button>
+                  {type === "supervisor" && item.archived ? (
+                    <button
+                      onClick={() => toggleArchive(item)}
+                      disabled={updateMut.isPending}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                      style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
+                    >
+                      <ArchiveRestore size={10} /> {t("admin.profiles.unarchive")}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(item)}
+                      disabled={deleteMut.isPending}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                      style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; e.currentTarget.style.color = "#ef4444"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; }}
+                    >
+                      {type === "supervisor" && item.has_data
+                        ? <><Archive size={10} /> {t("admin.profiles.archive")}</>
+                        : <><Trash2 size={10} /> {t("admin.profiles.delete")}</>}
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </TableCard>
 
       {/* Add / edit modal */}
       {modal && (
