@@ -5,8 +5,10 @@ Data source: «Copy of Рекрутинг Safia.xlsx», sheet "Liders" (2026-07-
 Title-Case full FIO with apostrophes normalized to ' and Cyrillic Х homoglyphs
 fixed; cell = Verifix cell code(s), comma-joined when a leader runs several.
 Excluded per Burkhon's decisions: Abduvaxitov/Burxonov groups (units not in
-the system), Umarov Komiljon (closed cell 0631), O'rozov Asqar & Ochilov
-Murodali as leaders of O'rozov's cells.
+the system), O'rozov Asqar & Ochilov Murodali as leaders of O'rozov's cells,
+and every «ёпиқ ячейка» (closed) cell — Umarov Komiljon skipped entirely
+(his only cell 0631 is closed) and 5012 dropped from Ruziyeva Iqbol's list.
+Re-running also reconciles the cell value of an already-created profile.
 
 Usage (from the backend/ directory):
     python3 seed_leader_profiles.py --dry-run   # report only, nothing written
