@@ -286,21 +286,21 @@ function DistributionStrips({ sups, selectedId, onSelect, catMeta, st, onTip }) 
 function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
   const cell = (s, place) => {
     const first = place === 1;
+    const medal = MEDAL[place];
     return (
       <button
         key={s.id}
         onClick={() => onSelect(s.id)}
         className="relative flex flex-col items-center gap-2 rounded-2xl text-center transition-colors"
         style={{
-          background: first ? `linear-gradient(180deg, var(--brand-bg), var(--bg-card) 55%)` : "var(--bg-card)",
-          border: `1px solid ${first ? "var(--brand-border)" : "var(--border)"}`,
+          background: hexA(medal, 0.16),
+          border: `1px solid ${hexA(medal, 0.42)}`,
           padding: first ? "24px 16px 22px" : "18px 16px 16px",
           boxShadow: s.id === selectedId ? "0 0 0 2px var(--brand-ring)" : "none",
         }}
       >
-        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: first ? "var(--brand)" : "var(--bg-inner)", color: first ? "#fff" : "var(--text-3)", border: first ? "1px solid transparent" : "1px solid var(--border-md)" }}>{s.rank}</span>
-        {first && <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 12, right: 12, width: 26, height: 26, background: "var(--brand-bg)", color: "var(--brand-text)" }}><Crown size={14} /></span>}
-        {!first && place === 3 && <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 12, right: 12, width: 26, height: 26, color: "var(--text-4)" }}><Medal size={15} /></span>}
+        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", border: "1px solid transparent" }}>{s.rank}</span>
+        <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 12, right: 12, width: 26, height: 26, color: medal }}>{first ? <Crown size={14} /> : <Medal size={15} />}</span>
         <Avatar sup={s} size={first ? 54 : 44} />
         <div style={{ fontWeight: 700, fontSize: 15 }}>{s.name}</div>
         <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{s.unit}</div>
