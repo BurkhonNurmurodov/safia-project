@@ -421,7 +421,8 @@ def _mk_notif_tg(nkey: str, params: dict, lang: str) -> str | None:
     localized = {k: transliterate(v, lang) for k, v in params.items()}
     if "date" in params:
         localized["date"] = _fmt_date(params["date"], lang)
-    localized.setdefault("eff", "—")  # see _mk_notif — old call_forecast rows lack it
+    localized.setdefault("eff", "—")   # see _mk_notif — old call_forecast rows lack it
+    localized.setdefault("name", "—")  # same: pre-name notices
     return tmpl.format(**localized)
 
 
