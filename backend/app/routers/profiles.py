@@ -710,10 +710,13 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
                                                       manager_id=payload.pid).all():
                 for r in _bound_role_rows(db, "leader", lp.id):
                     _remove_role_row(db, r)
+                _release_leader_cells(db, lp.id)
                 db.delete(lp)
             db.flush()
             db.delete(mgr)
     elif new_role == "supervisor":
+        if ptype == "leader":
+            _release_leader_cells(db, p.id)
         db.delete(p)  # the identity now lives in the managers row
 
     db.commit()
