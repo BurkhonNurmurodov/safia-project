@@ -37,7 +37,7 @@ const T = {
     netW: "sof", cardOutSub: "brigadir oraliqdan tashqarida",
     pickDateHint: "Sana ustunini bosing", noCompare: "Bu kun uchun hali haqiqiy yo'q",
     allDays: "Butun hafta", pickDay: "Kun tanlash",
-    callBtn: "Ertangi chaqiruv", callTitle: "Ertangi smenaga chaqirish",
+    callBtn: "Ertangi chaqiruv", callTitle: "Smenaga chaqirish", shiftLabel: (n) => `${n}-smena`,
     callDisclaimer: "Sonlar tarix asosida avtomatik hisoblangan taxmin — noaniq bo'lishi mumkin. Yuborishdan oldin tekshirib, kerak bo'lsa tahrirlang.",
     selectAll: "Hammasi", notRegistered: "Ro'yxatdan o'tmagan", noForecast: "Bashorat yo'q",
     sentLabel: "Yuborilgan", sendBtn: (n) => `Yuborish (${n})`, cancel: "Bekor qilish",
