@@ -321,13 +321,18 @@ export default function FleetLineChart({
   };
 
   // ── render ──────────────────────────────────────────────────────────────────
+  // w-full + min-w-0 wrapper: the width the ResizeObserver watches, and a hard
+  // stop so a momentarily-oversized SVG can never push the page into horizontal
+  // scroll before the re-fit lands.
   return (
-    <ReactApexChart
-      key={mode}
-      type="area"
-      series={series}
-      options={options}
-      height={height}
-    />
+    <div ref={wrapRef} className="w-full min-w-0">
+      <ReactApexChart
+        key={mode}
+        type="area"
+        series={series}
+        options={options}
+        height={height}
+      />
+    </div>
   );
 }
