@@ -162,8 +162,8 @@ export default function ProfilesManagement() {
       name: item.name,
       shift: item.shift ?? 1,
       manager_id: item.manager_id ?? "",
-      cell: item.cell ?? "",
-      cellNew: "",
+      cells: item.cells ?? [],
+      cellInput: "",
       verifix_id: type === "supervisor" ? item.id : "",
       overrides: ov,
     });
