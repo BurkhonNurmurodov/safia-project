@@ -361,9 +361,11 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     localized = {k: transliterate(v, lang) for k, v in params.items()}
     if "date" in params:
         localized["date"] = _fmt_date(params["date"], lang)
-    # Back-compat: call_forecast gained an ``eff`` (Zagruzka %) field after some
-    # notices were already stored; fall back so those old rows still render.
+    # Back-compat: call_forecast gained ``eff`` (Zagruzka %) then ``name``
+    # (supervisor) fields after some notices were already stored; fall back so
+    # those old rows still render at view time.
     localized.setdefault("eff", "—")
+    localized.setdefault("name", "—")
     # Language-derived params: resolve from the raw value so the label localises
     # to the *viewer's* language, not the creator's (doc_type → doc_label).
     if "doc_type" in params:
