@@ -60,6 +60,18 @@ function buildSeries(name, dates, data, mode) {
   return { name, data: dates.map((d) => getValue(data[name]?.[d], mode)) };
 }
 
+// How many horizontal "DD.MM" date labels fit in a chart of the given width.
+// A DD.MM label + comfortable gap needs ~52px; ~46px is reserved for the y-axis
+// gutter. Cap at 12 so a wide desktop axis stays clean, floor at 2. Returns
+// undefined (→ show every label) when they already fit, so short ranges are
+// untouched. This is what makes the axis responsive: ~5 labels on a phone,
+// ~12 on desktop — instead of one fixed count that overlaps on small screens.
+function ticksForWidth(width, count) {
+  if (!width) return undefined;
+  const fit = Math.min(12, Math.max(2, Math.floor((width - 46) / 52)));
+  return count > fit ? fit : undefined;
+}
+
 // ─── manager picker ───────────────────────────────────────────────────────────
 
 // The fleet-trend supervisor picker. Lives in the chart CARD HEADER (see
