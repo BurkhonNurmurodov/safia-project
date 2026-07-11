@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, ".")
 
 from app.database import SessionLocal
-from app.models import Manager, RoleProfile
+from app.models import Cell, Manager, RoleProfile
 
 # {managers.id: (expected supervisor name (informational), [(leader, cells)])}
 LEADERS = {
