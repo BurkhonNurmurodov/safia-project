@@ -287,44 +287,68 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
   const cell = (s, place) => {
     const first = place === 1;
     const medal = MEDAL[place];
+    const sel = s.id === selectedId;
+    /* Colored elevation = the "aura". #1 sits highest and glows hardest. */
+    const lift = first ? 16 : place === 2 ? 4 : 0;
+    const glow = first
+      ? `0 26px 60px -16px ${hexA(medal, 0.62)}, 0 6px 18px -8px ${hexA(medal, 0.45)}`
+      : place === 2
+      ? `0 18px 44px -18px ${hexA(medal, 0.52)}`
+      : `0 16px 40px -20px ${hexA(medal, 0.46)}`;
     return (
       <button
         key={s.id}
         onClick={() => onSelect(s.id)}
-        className="relative flex flex-col items-center gap-2 rounded-2xl text-center transition-colors"
+        className={`podium-card${first ? " podium-champ" : ""} relative flex flex-col rounded-2xl text-center overflow-hidden`}
         style={{
-          background: hexA(medal, 0.16),
-          border: `1px solid ${hexA(medal, 0.42)}`,
-          padding: first ? "24px 16px 22px" : "18px 16px 16px",
-          boxShadow: s.id === selectedId ? "0 0 0 2px var(--brand-ring)" : "none",
+          background: "var(--bg-card)",
+          border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}`,
+          boxShadow: sel ? `${glow}, 0 0 0 3px var(--brand-ring)` : glow,
+          transform: `translateY(-${lift}px)`,
         }}
       >
-        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", border: "1px solid transparent" }}>{s.rank}</span>
-        <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 12, right: 12, width: 26, height: 26, color: medal }}>{first ? <Crown size={14} /> : <Medal size={15} />}</span>
-        <Avatar sup={s} size={first ? 54 : 44} />
-        <div style={{ fontWeight: 700, fontSize: 15 }}>{s.name}</div>
-        <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{s.unit}</div>
-        <ScoreRing score={s.comp} color={bandFill(st, s.comp)} label="ball" />
-        <DeltaChip v={s.scoreDelta} unit="ball" st={st} />
-        <div className="flex gap-1.5 mt-1.5">
-          {CATS.map((c) => {
-            const v = s.s[c.key];
-            return (
-              <span key={c.key} className="flex flex-col items-center gap-1" style={{ width: 30 }}>
-                <span className="relative w-full overflow-hidden rounded" style={{ height: 26, background: "var(--bg-inner)" }}>
-                  <span className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${v ?? 0}%`, background: catMeta[c.key].hue }} />
+        {/* metallic wash pouring from the top edge */}
+        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
+        {/* bright shine line across the top */}
+        <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
+        {/* giant ghost rank numeral for sheer weight */}
+        <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
+        {/* champion halo — a slow breathing glow behind the crest */}
+        {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "-24% 14% auto 14%", height: "70%", background: `radial-gradient(circle at 50% 40%, ${hexA(medal, 0.55)} 0%, transparent 62%)` }} />}
+
+        <div className="relative flex flex-col items-center gap-2" style={{ padding: first ? "30px 16px 22px" : "22px 16px 16px" }}>
+          <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 0, left: 0, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}` }}>{s.rank}</span>
+          <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 0, right: 0, width: 28, height: 28, color: "#fff", background: medal, boxShadow: `0 3px 12px -2px ${hexA(medal, 0.75)}` }}>{first ? <Crown size={15} /> : <Medal size={15} />}</span>
+          <Avatar sup={s} size={first ? 56 : 44} />
+          <div style={{ fontWeight: 700, fontSize: first ? 16 : 15 }}>{s.name}</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{s.unit}</div>
+          <ScoreRing score={s.comp} color={bandFill(st, s.comp)} label="ball" />
+          <DeltaChip v={s.scoreDelta} unit="ball" st={st} />
+          <div className="flex gap-1.5 mt-1.5">
+            {CATS.map((c) => {
+              const v = s.s[c.key];
+              return (
+                <span key={c.key} className="flex flex-col items-center gap-1" style={{ width: 30 }}>
+                  <span className="relative w-full overflow-hidden rounded" style={{ height: 26, background: "var(--bg-inner)" }}>
+                    <span className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${v ?? 0}%`, background: catMeta[c.key].hue }} />
+                  </span>
+                  <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--text-4)", textTransform: "uppercase" }}>{catMeta[c.key].short.slice(0, 3)}</span>
                 </span>
-                <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--text-4)", textTransform: "uppercase" }}>{catMeta[c.key].short.slice(0, 3)}</span>
-              </span>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </button>
     );
   };
   const [p1, p2, p3] = byRank;
   return (
-    <div className="grid gap-3 items-end" style={{ gridTemplateColumns: "1fr 1.15fr 1fr" }}>
+    <div className="grid gap-3 items-end pt-4" style={{ gridTemplateColumns: "1fr 1.16fr 1fr" }}>
+      <style>{`
+        @keyframes podiumHalo { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:.95; transform:scale(1.09); } }
+        .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .podium-halo { animation: none; opacity:.7; } }
+      `}</style>
       {cell(p2, 2)}{cell(p1, 1)}{cell(p3, 3)}
     </div>
   );
