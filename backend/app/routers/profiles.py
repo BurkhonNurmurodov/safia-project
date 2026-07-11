@@ -640,8 +640,13 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             target_profile.role = new_role
         target_profile.shift = payload.shift if new_role == "shift-manager" else None
         target_profile.manager_id = payload.manager_id if new_role == "leader" else None
-        target_profile.cell = (payload.cell or "").strip() if new_role == "leader" else None
         db.flush()
+        if new_role == "leader":
+            if payload.cells:
+                _set_leader_cells(db, target_profile.id, payload.cells)
+        else:
+            # Leaving the leader role frees the profile's cells.
+            _release_leader_cells(db, target_profile.id)
         target_role_id = payload.manager_id if new_role == "leader" else target_profile.id
 
     # ── migrate holders ──
