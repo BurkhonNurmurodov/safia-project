@@ -211,33 +211,37 @@ export default function FleetLineChart({
   const { t } = useLang();
   const apexRef = useRef(null);
   const wrapRef = useRef(null);
+  const [wrapW, setWrapW] = useState(0);
 
-  // ── responsive re-fit ─────────────────────────────────────────────────────────
-  // ApexCharts bakes a fixed pixel width into its SVG at mount time. In the
-  // Telegram WebView the first mount can happen before the layout has settled to
-  // the real phone width, so the chart locks a too-wide value and never corrects
-  // it — the whole page then scrolls sideways and the y-axis slides off-screen.
-  // redrawOnParentResize/WindowResize are off (kept off on purpose), so we drive
-  // the re-fit ourselves: watch the wrapper and, whenever its width actually
-  // changes, ask Apex to re-measure via updateOptions (the only call proven to
-  // re-fit the canvas). Guarded by last-width + rAF so it never loops.
-  useEffect(() => {
+  // ── responsive width tracking ─────────────────────────────────────────────────
+  // Measure the wrapper (before paint) and keep it in sync via a ResizeObserver.
+  // This one number drives BOTH fixes below: the label count and the SVG re-fit.
+  useLayoutEffect(() => {
     const el = wrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    let lastW = Math.round(el.getBoundingClientRect().width);
+    if (!el) return;
+    const measure = () => setWrapW(Math.round(el.getBoundingClientRect().width));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
     let raf = 0;
-    const ro = new ResizeObserver((entries) => {
-      const w = Math.round(entries[0].contentRect.width);
-      if (w === lastW || w === 0) return;
-      lastW = w;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        try { apexRef.current?.updateOptions({}, false, false); } catch { /* chart torn down */ }
-      });
-    });
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); });
     ro.observe(el);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
+
+  // ApexCharts bakes a fixed pixel width into its SVG at mount and won't re-fit
+  // when the container later changes size (redraw-on-resize is off, on purpose).
+  // In the Telegram WebView the first mount can happen before the layout settles
+  // to the phone width, so the chart locks a too-wide value → the page scrolls
+  // sideways and the y-axis slides off-screen. On every width change we force a
+  // re-measure via updateOptions (the only call proven to re-fit the canvas) and
+  // apply the width-appropriate label count in the same shot. Runs on width OR
+  // date-count change; guarded so a dead chart can't throw.
+  useEffect(() => {
+    if (!wrapW || !apexRef.current) return;
+    try {
+      apexRef.current.updateOptions({ xaxis: { tickAmount: ticksForWidth(wrapW, dates.length) } }, false, false);
+    } catch { /* chart torn down */ }
+  }, [wrapW, dates.length]);
 
   // ── series ──────────────────────────────────────────────────────────────────
 
