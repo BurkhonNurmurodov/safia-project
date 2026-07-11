@@ -1295,13 +1295,15 @@ def trudoyomkost_forecast(
 
 
 # --------------------------------------------------------------------------- #
-# Call-tomorrow modal — one row per brigadir with tomorrow's forecast, whether
-# the supervisor profile is claimed (can receive a Telegram DM), and the latest
-# notice already sent for that date (resend guard). Deliberately UNfiltered on
-# brigadir/shift: every active unit is listed, regardless of the page filters,
-# so nobody is silently left out of the call. The forecast counts DO follow the
-# page's "Smena unumi" (shift-efficiency) setting via capacity_pct, so the
-# numbers sent to supervisors match what the forecast/stats tables show.
+# Call modal — one row per brigadir with the forecast for a target date (default
+# tomorrow, any date pickable per shift section), whether the supervisor profile
+# is claimed (can receive a Telegram DM), and the latest notice already sent for
+# that date (resend guard). Deliberately UNfiltered on the page's brigadir
+# filters so nobody is silently left out of the call; the ``shift`` param only
+# serves the modal's per-shift sections, which together still cover everyone.
+# The forecast counts DO follow the page's "Smena unumi" (shift-efficiency)
+# setting via capacity_pct, so the numbers sent to supervisors match what the
+# forecast/stats tables show.
 # --------------------------------------------------------------------------- #
 def _tomorrow() -> date:
     return date.today() + timedelta(days=1)
