@@ -1310,15 +1310,26 @@ def _tomorrow() -> date:
 @router.get("/api/production/trudoyomkost/call-tomorrow")
 def trudoyomkost_call_tomorrow(
     capacity_pct: float = Query(100.0, ge=1, le=100, description="Productive % of the 480-min shift one worker covers"),
+    for_date: Optional[str] = Query(None, description="ISO target date; defaults to tomorrow"),
+    shift: Optional[int] = Query(None, ge=1, le=2, description="Limit rows to one shift (the modal fetches per-shift sections)"),
     payload: dict = Depends(require_page(ANALYSIS_PAGE, PAGE)),
     db: Session = Depends(get_db),
 ):
-    target = _tomorrow()
+    if for_date:
+        try:
+            target = date.fromisoformat(for_date)
+        except ValueError:
+            raise HTTPException(400, "Bad for_date")
+    else:
+        target = _tomorrow()
     cap_min = _capacity_min(capacity_pct)
     hist_start = target - timedelta(days=7 * FORECAST_WEEKS)
-    loaded = _load_plan_by_manager(db, [], None, hist_start, target)
+    loaded = _load_plan_by_manager(db, [], shift, hist_start, target)
 
-    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    mq = db.query(Manager).filter(Manager.archived.is_(False))
+    if shift is not None:
+        mq = mq.filter(Manager.shift == shift)
+    managers = mq.all()
     ids = [m.id for m in managers]
     # claimed supervisor profiles → a Telegram DM can actually reach someone
     claimed = {
