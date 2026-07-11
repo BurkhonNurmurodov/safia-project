@@ -176,8 +176,20 @@ export default function ProfilesManagement() {
   const roleChanged = modal?.mode === "edit" && form.role && form.role !== type;
   const effType = roleChanged ? form.role : type;
 
-  // "Other" in the cell picker reveals a text input; its typed value wins.
-  const cellVal = (form.cell === CELL_OTHER ? form.cellNew : form.cell || "").trim();
+  // Owned cell codes to submit — the badge chips plus any code still sitting
+  // in the input (so a typed-but-not-added code isn't silently dropped).
+  const pendingCell = (form.cellInput || "").trim();
+  const cellList = pendingCell && !(form.cells || []).includes(pendingCell)
+    ? [...(form.cells || []), pendingCell]
+    : (form.cells || []);
+
+  function addCell() {
+    const code = (form.cellInput || "").trim();
+    if (!code) return;
+    setForm((f) => (f.cells || []).includes(code)
+      ? { ...f, cellInput: "" }
+      : { ...f, cells: [...(f.cells || []), code], cellInput: "" });
+  }
 
   function submit() {
     setFormError("");
