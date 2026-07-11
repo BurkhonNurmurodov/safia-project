@@ -290,11 +290,11 @@ export default function FleetLineChart({
 
     xaxis: {
       categories: dates.map((d) => d.slice(0, 5)),
-      // Dense date axis: keep labels horizontal (never Apex's default -45°
-      // slant), thin them to ~10 evenly-spaced anchors for long ranges, and let
-      // Apex drop any that still collide on narrow screens. Full DD.MM stays in
-      // the tooltip, so no precision is lost — only the crammed ribbon.
-      tickAmount: dates.length > 12 ? Math.min(10, dates.length) : undefined,
+      // Dense date axis: keep labels horizontal (never Apex's default -45° slant)
+      // and thin them to only what the current width fits (see ticksForWidth) —
+      // ~5 anchors on a phone, ~12 on desktop. hideOverlappingLabels is the last
+      // safety net. Full DD.MM stays in the tooltip, so no precision is lost.
+      tickAmount: ticksForWidth(wrapW, dates.length),
       tickPlacement: "on",
       labels: {
         rotate: 0,
