@@ -1424,10 +1424,11 @@ def trudoyomkost_call_notify(
         Manager.archived.is_(False),
     )}
     sent = []
-    for item in req.items:
+    for i, item in enumerate(req.items):
         mgr = by_id.get(item.manager_id)
         if mgr is None or item.workers < 0:
             continue
+        target = targets[i]
         # bell row keyed to the supervisor PROFILE (seen by every account holding
         # it) + a Telegram DM to EVERY holder of that profile, each in their own
         # language; an unclaimed profile queues the bell row for whoever claims it
@@ -1443,4 +1444,4 @@ def trudoyomkost_call_notify(
                                   workers=item.workers, sent_by=actor))
         sent.append(mgr.id)
     db.commit()
-    return {"date": target.isoformat(), "sent": len(sent), "manager_ids": sent}
+    return {"sent": len(sent), "manager_ids": sent}
