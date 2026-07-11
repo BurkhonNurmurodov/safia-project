@@ -2952,6 +2952,25 @@ def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = 
     return {"ok": True, "status": doc.status}
 
 
+@router.post("/documents/{doc_id}/reject")
+def reject_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
+    """Reject a pending (draft) document — the webapp counterpart of the
+    Telegram ❌ button. The record stays visible with a rejected status."""
+    doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not _may_reject_doc(doc, caller, db):
+        raise HTTPException(status_code=403, detail="Not authorised to reject this document")
+    _reject_document(doc, caller, db)
+    db.commit()
+    try:
+        from app.approvals import edit_admin_notices
+        edit_admin_notices("hr_document", str(doc_id), "rejected", caller.get("full_name", ""))
+    except Exception:
+        pass
+    return {"ok": True, "status": doc.status}
+
+
 @router.post("/documents/{doc_id}/cancel")
 def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
