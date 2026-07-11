@@ -146,7 +146,7 @@ export default function ProfilesManagement() {
   const colSpan = 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
 
   function openAdd() {
-    setForm({ name: "", shift: 1, manager_id: "", cell: "", cellNew: "", verifix_id: "" });
+    setForm({ name: "", shift: 1, manager_id: "", cells: [], cellInput: "", verifix_id: "" });
     setFormError("");
     setModal({ mode: "add" });
   }
