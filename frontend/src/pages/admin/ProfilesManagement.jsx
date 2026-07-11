@@ -130,7 +130,7 @@ export default function ProfilesManagement() {
       switch (sort.key) {
         case "shift":      return it.shift ?? 0;
         case "supervisor": return tl(it.supervisor) || "";
-        case "cell":       return it.cell || "";
+        case "cell":       return (it.cells || []).join(", ");
         case "verifix":    return it.id;
         default:           return tl(it.name) || "";
       }
