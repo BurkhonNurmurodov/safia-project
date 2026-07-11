@@ -2399,7 +2399,7 @@ def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool 
         "manager_id":       doc.manager_id,
         "supervisor_name":  doc.supervisor_name or mgr_name,
         "date":             doc.date.isoformat() if doc.date else None,
-        "status":           doc.status,                       # draft | approved
+        "status":           doc.status,                       # draft | approved | rejected
         "approved":         doc.status == "approved",         # → Да / Нет
         "new_role":         payload.get("new_role"),
         "target_type":          payload.get("target_type"),
