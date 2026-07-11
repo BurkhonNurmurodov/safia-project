@@ -321,9 +321,10 @@ export default function FleetLineChart({
   };
 
   // ── render ──────────────────────────────────────────────────────────────────
-  // w-full + min-w-0 wrapper: the width the ResizeObserver watches, and a hard
-  // stop so a momentarily-oversized SVG can never push the page into horizontal
-  // scroll before the re-fit lands.
+  // w-full + min-w-0 wrapper: this is the element the ResizeObserver watches, and
+  // min-w-0 lets it (and the chart) shrink inside any flex/grid parent instead of
+  // being forced to the SVG's baked width. The actual anti-overflow cure is the
+  // updateOptions re-fit above.
   return (
     <div ref={wrapRef} className="w-full min-w-0">
       <ReactApexChart
