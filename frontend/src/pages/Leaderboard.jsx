@@ -281,7 +281,7 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
     const sel = s.id === selectedId;
     const pin = pinned.has(s.id);
     const mv = s.prevRank - s.rank;
-    const H = first ? 320 : 300;
+    const H = first ? 274 : 258;
     const lift = first ? 16 : place === 2 ? 4 : 0;
     const glow = first
       ? `0 26px 60px -16px ${hexA(medal, 0.62)}, 0 6px 18px -8px ${hexA(medal, 0.45)}`
@@ -289,13 +289,16 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
       ? `0 18px 44px -18px ${hexA(medal, 0.52)}`
       : `0 16px 40px -20px ${hexA(medal, 0.46)}`;
 
-    /* one card face — `back` swaps the content but keeps the medal chrome. */
+    /* shared face chrome: top wash + hairline sheen (no rank chip — the crest
+     * carries the placing on the front; the back gets its own chip below). */
     const faceChrome = (
       <>
-        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
+        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -20%, ${hexA(medal, first ? 0.4 : 0.3)} 0%, ${hexA(medal, 0.1)} 42%, transparent 72%)` }} />
         <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
-        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}`, zIndex: 2 }}>{s.rank}</span>
       </>
+    );
+    const rankChip = (
+      <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}`, zIndex: 2 }}>{s.rank}</span>
     );
 
     const strong = CATS.filter((c) => s.s[c.key] != null).sort((a, b) => s.s[b.key] - s.s[a.key]).slice(0, 2);
