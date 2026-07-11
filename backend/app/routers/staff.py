@@ -284,7 +284,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
                "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!"),
-        "uz_cyrl": ("Эртанги кунга ходим чақириш учун прогнозлар:",
+        "uz_cyrl": ("Ходим чақириш учун прогнозлар:",
                     "📅 Сана: {date}\n📊 Загрузка фоизи: {eff}%\n🧑‍🍳 Чақириш тавсия қилинади: {count} нафар\n⚠️ Максимум: {max} нафар\n\n"
                     "Кўрсатилган сонлар фақат загрузка ҳисобига киритиладиган ишчилар сони — бу барча ишчиларнинг умумий сони эмас.\n\n"
                     "Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
