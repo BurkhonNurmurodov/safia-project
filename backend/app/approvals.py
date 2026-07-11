@@ -556,7 +556,7 @@ def _decide_hr_document(doc_id: int, status: str, call) -> None:
                 staff._approve_doc(doc, caller, db)
                 if doc.doc_type == "people_exchange":
                     staff._notify_exchange(db, doc, "approved", int(caller["sub"]))
-            else:  # rejected → delete the draft
+            else:  # rejected → keep the draft as a rejected record
                 staff._reject_document(doc, caller, db)
         except staff.ExchangeTargetNoData:
             # Not a stale tap: the target unit's verifix data isn't uploaded yet.
