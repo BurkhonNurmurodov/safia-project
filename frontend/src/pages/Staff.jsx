@@ -2811,6 +2811,9 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                               {canCancel  && <ActionBtn icon={Ban}    label={t("staff.unpost")} color="#d97706"
                                 loading={busyKey === `${rowKey(doc)}:unpost`} disabled={!!busyKey}
                                 onClick={() => runAction(`${rowKey(doc)}:unpost`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: "reject"  }) : single(doc.id, "cancel"))} />}
+                              {canReject  && <ActionBtn icon={Trash2} label={t("staff.reject")} color="#ef4444"
+                                loading={busyKey === `${rowKey(doc)}:reject`} disabled={!!busyKey}
+                                onClick={() => runAction(`${rowKey(doc)}:reject`, () => single(doc.id, "reject"))} />}
                               {canDelete  && <ActionBtn icon={Trash2} label={t("staff.delete")} color="#ef4444"
                                 loading={busyKey === `${rowKey(doc)}:delete`} disabled={!!busyKey}
                                 onClick={() => runAction(`${rowKey(doc)}:delete`, () => isDeletion ? batchMutation.mutateAsync({ batchId: (doc.batch_id || `solo-${doc.id}`), action: isCreatorRole ? "withdraw" : "reject" }) : single(doc.id, "delete"))} />}
