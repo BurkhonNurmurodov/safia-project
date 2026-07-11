@@ -2992,26 +2992,29 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=404, detail="Document not found")
 
     is_creator = doc.created_by_telegram_id == int(caller["sub"])
-    was_draft  = doc.status == "draft"
     # Approved docs may only be removed by an approver (reverts effects first).
     if doc.status == "approved":
         if not _can_approve_doc(doc, caller, db):
             raise HTTPException(status_code=403, detail="Approved documents can only be deleted by an approver")
         _revert_doc_effects(db, doc)
-    elif caller.get("role") not in ("admin", "shift-manager") and not is_creator:
-        raise HTTPException(status_code=403, detail="Not allowed to delete this document")
-
-    db.delete(doc)
-    db.commit()
-    # Deleting a draft is the rejection of a pending request — clear the admins'
-    # Telegram buttons. (Approved-doc deletes already dropped their notices on
-    # approval, so this is a no-op for them.)
-    if was_draft:
+    elif doc.status == "draft":
+        # Deleting a pending draft IS its rejection — keep the record instead of
+        # erasing it, same as the Telegram ❌ button. Clears the admins' buttons.
+        if not _may_reject_doc(doc, caller, db):
+            raise HTTPException(status_code=403, detail="Not allowed to reject this document")
+        _reject_document(doc, caller, db)
+        db.commit()
         try:
             from app.approvals import edit_admin_notices
             edit_admin_notices("hr_document", str(doc_id), "rejected", caller.get("full_name", ""))
         except Exception:
             pass
+        return {"ok": True, "status": doc.status}
+    elif caller.get("role") not in ("admin", "shift-manager") and not is_creator:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this document")
+
+    db.delete(doc)
+    db.commit()
     return {"ok": True}
 
 
