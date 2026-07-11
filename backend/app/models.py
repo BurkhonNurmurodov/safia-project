@@ -329,7 +329,7 @@ class HrDocument(Base):
     supervisor_name         = Column(String, nullable=True)   # display name of the unit / supervisor
     date                    = Column(Date, nullable=False)     # effective / selected date
     payload                 = Column(JSONB, nullable=False, default=dict)
-    status                  = Column(String, nullable=False, default="draft")  # draft | approved
+    status                  = Column(String, nullable=False, default="draft")  # draft | approved | rejected
     created_by_telegram_id  = Column(BigInteger, nullable=True)
     created_by_name         = Column(String, nullable=True)
     created_by_role         = Column(String, nullable=True)
