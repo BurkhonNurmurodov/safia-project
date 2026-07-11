@@ -314,6 +314,8 @@ class HrDocument(Base):
     status:
       draft     → "Нет" (not posted, no effect on attendance)
       approved  → "Да"  (posted, effects applied to attendance)
+      rejected  → declined while draft (bot ❌ / webapp reject); kept as a
+                  visible record, never applied, cannot be posted afterwards
 
     payload (role_change):
       { "new_role": str,
