@@ -236,7 +236,8 @@ export default function ProfilesManagement() {
     const body = { name, overrides: { ...form.overrides, uz: "" } };
     if (type === "shift-manager" || type === "supervisor") body.shift = Number(form.shift);
     if (type === "leader" && form.manager_id) body.manager_id = Number(form.manager_id);
-    if (type === "leader" && cellVal) body.cell = cellVal;
+    // Always send the full list on edit — removals must reach the server too.
+    if (type === "leader") body.cells = cellList;
     if (type === "supervisor" && Number(form.verifix_id) !== modal.item.id) {
       body.new_verifix_id = Number(form.verifix_id);
     }
