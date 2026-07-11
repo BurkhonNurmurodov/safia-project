@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Admin, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
+    Admin, Cell, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
     TelegramUserRole, Translation,
 )
 from app.reg_token import validate_reg_token
