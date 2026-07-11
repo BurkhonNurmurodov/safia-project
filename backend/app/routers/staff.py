@@ -295,7 +295,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "Этот прогноз сформирован только на основе исторических данных за предыдущие дни. "
                "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!"),
         "en": ("Staff call forecast:",
-               "📅 Date: {date}\n📊 Load percentage: {eff}%\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
+               "👤 Supervisor: {name}\n📅 Date: {date}\n📊 Load percentage: {eff}%\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
                "The numbers shown are the count of workers included in the Zagruzka (load) calculation — not the total number of all workers.\n\n"
                "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!"),
