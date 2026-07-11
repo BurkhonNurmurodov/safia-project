@@ -1645,7 +1645,7 @@ export function DocumentViewModal({ docId, onClose }) {
               <Field label={t("staff.fType")}        value={DOC_TYPE_TKEY[doc.doc_type] ? t(DOC_TYPE_TKEY[doc.doc_type]) : doc.doc_type_label} />
               <Field label={t("staff.fDate")}        value={fmtDateLabel(doc.date)} />
               <Field label={t("staff.fUnit")}        value={tl(doc.supervisor_name) || "—"} />
-              <Field label={t("staff.fStatus")}      value={doc.approved ? t("staff.posted") : t("staff.draft")} />
+              <Field label={t("staff.fStatus")}      value={doc.approved ? t("staff.posted") : doc.status === "rejected" ? t("staff.rejected") : t("staff.draft")} />
               <Field label={t("staff.fCreatedBy")}   value={tl(doc.created_by_name) || "—"} />
               <Field label={t("staff.fApprovedBy")}  value={tl(doc.approved_by_name) || "—"} />
             </div>
