@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  IdCard, Plus, RefreshCw, Loader2, Trash2, Pencil, X,
+  IdCard, Plus, RefreshCw, Trash2, Pencil, X,
   Star, UserCog, Users, Flag, Shield, Archive, ArchiveRestore, Languages,
-  UserRound,
+  UserRound, Clock, LayoutGrid, Hash, Link2, Settings2,
 } from "lucide-react";
 import api from "../../utils/api";
 import Modal from "../../components/ui/Modal";
@@ -12,6 +12,8 @@ import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import TableCard, { Th } from "../../components/ui/DataTable";
+import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
