@@ -3,12 +3,13 @@
 Data source: «Copy of Рекрутинг Safia.xlsx», sheet "Liders" (2026-07-11) —
 93 leaders across 18 supervisor units, keyed by prod managers.id. Names are
 Title-Case full FIO with apostrophes normalized to ' and Cyrillic Х homoglyphs
-fixed; cell = Verifix cell code(s), comma-joined when a leader runs several.
+fixed. Cells are first-class rows now (`cells`: code UNIQUE + leader_id):
+each leader profile is created first, then one cells row per Verifix code.
 Excluded per Burkhon's decisions: Abduvaxitov/Burxonov groups (units not in
 the system), O'rozov Asqar & Ochilov Murodali as leaders of O'rozov's cells,
 and every «ёпиқ ячейка» (closed) cell — Umarov Komiljon skipped entirely
 (his only cell 0631 is closed) and 5012 dropped from Ruziyeva Iqbol's list.
-Re-running also reconciles the cell value of an already-created profile.
+Re-running also reconciles an existing profile's owned cells to the file.
 
 Usage (from the backend/ directory):
     python3 seed_leader_profiles.py --dry-run   # report only, nothing written
