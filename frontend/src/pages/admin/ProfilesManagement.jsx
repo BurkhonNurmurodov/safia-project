@@ -122,6 +122,33 @@ export default function ProfilesManagement() {
   const items = data?.[activeType.listKey] ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
 
+  // Per-column sort — key:null keeps the server order until a header is clicked.
+  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const onSort = (k) =>
+    setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
+
+  const sorted = useMemo(() => {
+    if (!sort.key) return items;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const val = (it) => {
+      switch (sort.key) {
+        case "shift":      return it.shift ?? 0;
+        case "supervisor": return tl(it.supervisor) || "";
+        case "cell":       return it.cell || "";
+        case "verifix":    return it.id;
+        default:           return tl(it.name) || "";
+      }
+    };
+    return [...items].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
+    });
+  }, [items, sort, tl]);
+
+  // name + holders + actions, plus the per-type extras.
+  const colSpan = 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
+
   function openAdd() {
     setForm({ name: "", shift: 1, manager_id: "", cell: "", cellNew: "", verifix_id: "" });
     setFormError("");
