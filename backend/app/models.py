@@ -353,7 +353,7 @@ class HrDocumentHistory(Base):
 
     id                = Column(Integer, primary_key=True, autoincrement=True)
     document_id       = Column(Integer, ForeignKey("hr_documents.id", ondelete="CASCADE"), nullable=False)
-    action            = Column(String, nullable=False)   # created | edited | approved | cancelled
+    action            = Column(String, nullable=False)   # created | edited | approved | cancelled | rejected
     actor_telegram_id = Column(BigInteger, nullable=True)
     actor_name        = Column(String, nullable=True)
     detail            = Column(JSONB, nullable=True)      # snapshot / note
