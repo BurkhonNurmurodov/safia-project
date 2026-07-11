@@ -94,20 +94,17 @@ def _sm_names(db: Session) -> dict:
 
 
 def _cell_leaders(db: Session) -> dict:
-    """cell → leader name(s) currently assigned to it. Each leader carries their
-    production cell on the profile (role_profiles.cell); the Concerns table shows
-    the leader who owns a concern's cell, resolved live so re-assignments stay
-    current. Several leaders on one cell render comma-joined."""
-    by_cell: dict = {}
-    for prof in (
-        db.query(RoleProfile)
-        .filter(RoleProfile.role == "leader", RoleProfile.cell.isnot(None))
-        .order_by(RoleProfile.name)
-    ):
-        cell = (prof.cell or "").strip()
-        if cell:
-            by_cell.setdefault(cell, []).append(prof.name)
-    return {cell: ", ".join(names) for cell, names in by_cell.items()}
+    """cell code → owning leader's name. Cells are first-class rows (cells.code
+    UNIQUE + leader_id → role_profiles.id); the Concerns table shows the leader
+    who owns a concern's cell, resolved live so re-assignments stay current."""
+    return {
+        code: name
+        for code, name in (
+            db.query(Cell.code, RoleProfile.name)
+            .join(RoleProfile, RoleProfile.id == Cell.leader_id)
+            .filter(RoleProfile.role == "leader")
+        )
+    }
 
 
 def _level(c: LeaderConcern) -> str:
