@@ -361,8 +361,17 @@ export default function ProfilesManagement() {
                 </td>
               )}
               {type === "leader" && (
-                <td className="px-3 py-2 text-[var(--text-2)] whitespace-nowrap">
-                  {item.cell || "—"}
+                <td className="px-3 py-2 text-[var(--text-2)]">
+                  {item.cells?.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {item.cells.map((c) => (
+                        <span key={c} className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
+                          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  ) : "—"}
                 </td>
               )}
               {type === "supervisor" && (
