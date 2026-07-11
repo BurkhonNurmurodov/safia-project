@@ -232,16 +232,15 @@ export default function FleetLineChart({
   // when the container later changes size (redraw-on-resize is off, on purpose).
   // In the Telegram WebView the first mount can happen before the layout settles
   // to the phone width, so the chart locks a too-wide value → the page scrolls
-  // sideways and the y-axis slides off-screen. On every width change we force a
-  // re-measure via updateOptions (the only call proven to re-fit the canvas) and
-  // apply the width-appropriate label count in the same shot. Runs on width OR
-  // date-count change; guarded so a dead chart can't throw.
+  // sideways and the y-axis slides off-screen. On every width change force a
+  // re-measure. This MUST be a bare updateOptions({}): a partial {xaxis:{…}} here
+  // would drop categories and revert the axis to bare numbers. The responsive
+  // label count rides along declaratively via options.xaxis (full, categories
+  // intact) — react-apexcharts re-applies it whenever the tick bucket changes.
   useEffect(() => {
     if (!wrapW || !apexRef.current) return;
-    try {
-      apexRef.current.updateOptions({ xaxis: { tickAmount: ticksForWidth(wrapW, dates.length) } }, false, false);
-    } catch { /* chart torn down */ }
-  }, [wrapW, dates.length]);
+    try { apexRef.current.updateOptions({}, false, false); } catch { /* chart torn down */ }
+  }, [wrapW]);
 
   // ── series ──────────────────────────────────────────────────────────────────
 
