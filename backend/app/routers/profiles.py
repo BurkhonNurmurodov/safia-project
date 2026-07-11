@@ -313,11 +313,8 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
             out["admins"].append(item)
 
     out["assigned_admin_count"] = sum(1 for a in admin_rows)
-    # Pre-created cells the leader form offers = every cell already in use, sorted.
-    out["cells"] = sorted(
-        {(p.cell or "").strip() for p in profiles if p.role == "leader" and (p.cell or "").strip()},
-        key=lambda c: (c.lower(), c),
-    )
+    # Every known cell code, sorted — informational for the admin UI.
+    out["cells"] = [c.code for c in cell_rows]
     return out
 
 
