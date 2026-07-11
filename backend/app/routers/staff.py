@@ -390,7 +390,7 @@ _NOTIF_TG_HTML = {
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
                "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!</blockquote>"),
         "uz_cyrl": ("<b>Ходим чақириш учун прогнозлар:</b>\n\n"
-                    "📅 <b>Сана:</b> {date}\n📊 <b>Загрузка фоизи:</b> {eff}%\n🧑‍🍳 <b>Чақириш тавсия қилинади:</b> {count} нафар\n⚠️ <b>Максимум:</b> {max} нафар\n\n"
+                    "👤 <b>Бригадир:</b> {name}\n📅 <b>Сана:</b> {date}\n📊 <b>Загрузка фоизи:</b> {eff}%\n🧑‍🍳 <b>Чақириш тавсия қилинади:</b> {count} нафар\n⚠️ <b>Максимум:</b> {max} нафар\n\n"
                     "<blockquote>Кўрсатилган сонлар фақат загрузка ҳисобига киритиладиган ишчилар сони — бу барча ишчиларнинг умумий сони эмас.\n\n"
                     "Ушбу прогноз фақат олдинги кунларнинг тарихий маълумотлари асосида шакллантирилган. "
                     "Шу сабабли, амалдаги вазият ва бошқа омилларни ҳам инобатга олиб, керакли миқдорда одам чақиришингизни сўраймиз!</blockquote>"),
