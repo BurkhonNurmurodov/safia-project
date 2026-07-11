@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { UserRound } from "lucide-react";
+import { UserRound, ChevronDown } from "lucide-react";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
