@@ -291,7 +291,7 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
         elif p.role == "leader":
             item["manager_id"] = p.manager_id
             item["supervisor"] = mgr_names.get(p.manager_id)
-            item["cell"] = p.cell
+            item["cells"] = cells_by_leader.get(p.id, [])
             item["bindings"] = [
                 binding(r) for r in by_key.get(("leader", p.manager_id), [])
                 if r.full_name == p.name
