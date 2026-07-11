@@ -489,11 +489,11 @@ class SwitchRolePayload(BaseModel):
     ptype:      str                    # current type
     pid:        int                    # current id (managers.id for supervisor)
     new_role:   str
-    shift:      Optional[int] = None   # → shift-manager | supervisor
-    manager_id: Optional[int] = None   # → leader (unit)
-    cell:       Optional[str] = None   # → leader (production cell, required)
-    verifix_id: Optional[int] = None   # → supervisor (new managers.id)
-    confirm:    bool = False           # acknowledge the impacts from the 409
+    shift:      Optional[int] = None        # → shift-manager | supervisor
+    manager_id: Optional[int] = None        # → leader (unit)
+    cells:      Optional[list[str]] = None  # → leader (owned cell codes, optional)
+    verifix_id: Optional[int] = None        # → supervisor (new managers.id)
+    confirm:    bool = False                # acknowledge the impacts from the 409
 
 
 def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
