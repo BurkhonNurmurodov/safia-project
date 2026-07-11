@@ -452,10 +452,8 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         for r in _bound_role_rows(db, "leader", pid):
             r.role_id = payload.manager_id
         p.manager_id = payload.manager_id
-    if ptype == "leader" and payload.cell is not None:
-        cell = payload.cell.strip()
-        if cell:
-            p.cell = cell
+    if ptype == "leader" and payload.cells is not None:
+        _set_leader_cells(db, pid, payload.cells)
     if payload.overrides:
         _apply_overrides(db, p.name, payload.overrides)
     db.commit()
