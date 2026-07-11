@@ -1385,10 +1385,11 @@ class CallNotifyItem(BaseModel):
     manager_id: int
     workers: int                   # recommended count (editable in the modal)
     max_workers: int | None = None # upper band (band_hi) shown as "Maksimum"
+    date: str | None = None        # per-item target date (shift sections pick their own); falls back to request date
 
 
 class CallNotifyRequest(BaseModel):
-    date: str                      # the tomorrow the client showed — guards midnight rollover
+    date: str | None = None        # fallback target date for items without their own
     capacity_pct: float = 100.0    # page "Smena unumi" — shown in the DM as "Zagruzka foizi"
     items: list[CallNotifyItem]
 
@@ -1402,11 +1403,19 @@ def trudoyomkost_call_notify(
     # function-level import: staff.py is heavy and imports would be circular-prone
     from app.routers.staff import _notify_supervisor_all
 
-    target = _tomorrow()
-    if req.date != target.isoformat():
-        raise HTTPException(409, "The forecast date is no longer tomorrow — reopen the dialog to refresh")
     if not req.items:
         raise HTTPException(400, "No supervisors selected")
+    # each item's date comes from its shift section's picker (explicit, so no
+    # midnight-rollover guard needed); any calendar date is allowed by design
+    targets: dict[int, date] = {}
+    for i, item in enumerate(req.items):
+        raw = item.date or req.date
+        if not raw:
+            raise HTTPException(400, "Missing date")
+        try:
+            targets[i] = date.fromisoformat(raw)
+        except ValueError:
+            raise HTTPException(400, "Bad date")
 
     actor = int(payload["sub"])
     eff = int(round(req.capacity_pct))   # Zagruzka % the counts were computed at
