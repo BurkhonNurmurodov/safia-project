@@ -2733,18 +2733,23 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                       ? (role === "admin" || isExchangeReceiver)
                       : (role === "admin" || role === "shift-manager"))
                   : isManager;
-                const canApprove = isDeletion ? (isManager && hasPending) : (canApproveDoc && !doc.approved);
-                const canCancel  = isDeletion ? (isManager && hasPending) : (canApproveDoc && doc.approved);
+                const st = docStatus(doc);   // pending | approved | rejected (both sources)
+                const canApprove = isDeletion ? (isManager && hasPending) : (canApproveDoc && st === "pending");
+                const canCancel  = isDeletion ? (isManager && hasPending) : (canApproveDoc && st === "approved");
                 const canEdit    = isDeletion
                   ? (isCreatorRole && hasPending)
                   : isExchange
-                    ? (!doc.approved && (canApproveDoc || isCreator))
-                    : (!doc.approved && (isManager || isCreatorRole));
+                    ? (st === "pending" && (canApproveDoc || isCreator))
+                    : (st === "pending" && (isManager || isCreatorRole));
+                // Pending documents are REJECTED (record kept, like the bot's ❌);
+                // hard delete only remains for approved (revert) / rejected (cleanup).
+                const canReject  = !isDeletion && st === "pending"
+                  && (isExchange ? (canApproveDoc || isManager || isCreator) : (isManager || isCreatorRole));
                 const canDelete  = isDeletion
                   ? ((isCreatorRole && hasPending) || (isManager && hasPending))
-                  : isExchange
-                    ? (canApproveDoc || (isCreator && !doc.approved))
-                    : (isManager || (isCreatorRole && !doc.approved));
+                  : st === "approved"
+                    ? (isExchange ? canApproveDoc : isManager)
+                    : st === "rejected" && (isManager || isCreator);
                 const rKey    = rowKey(doc);
                 const expanded   = expandedId === rKey;
                 const colSpan = isManager ? 7 : 6;
