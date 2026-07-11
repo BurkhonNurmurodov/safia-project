@@ -3033,7 +3033,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         # Approval authority is per-document (e.g. a receiving supervisor may
         # post their own incoming exchange but not someone else's role change).
         if body.action == "approve":
-            if not _can_approve_doc(doc, caller, db):
+            if doc.status == "rejected" or not _can_approve_doc(doc, caller, db):
                 continue
             _approve_doc(doc, caller, db)
             if doc.doc_type == "people_exchange":
