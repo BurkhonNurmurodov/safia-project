@@ -532,29 +532,40 @@ export default function ProfilesManagement() {
               )}
 
               {effType === "leader" && (
-                <FormField label={t("admin.profiles.cellLabel")}
-                           required={modal.mode === "add" || roleChanged}>
-                  <StyledSelect
-                    value={String(form.cell ?? "")}
-                    onChange={(v) => setForm((f) => ({ ...f, cell: v, cellNew: "" }))}
-                    // "Other…" on top, then the pre-created cells sorted below.
-                    options={[
-                      { value: CELL_OTHER, label: t("admin.profiles.cellOther") },
-                      ...(data?.cells ?? []).map((c) => ({ value: c, label: c })),
-                    ]}
-                    placeholder={t("admin.users.selectPlaceholder")}
-                  />
-                  {form.cell === CELL_OTHER && (
+                <FormField label={t("admin.profiles.cellLabel")}>
+                  {/* Owned cells as removable badges; the input below adds codes. */}
+                  {(form.cells || []).length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {form.cells.map((c) => (
+                        <span key={c} className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded-full"
+                          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                          {c}
+                          <button
+                            type="button"
+                            className="opacity-60 hover:opacity-100"
+                            onClick={() => setForm((f) => ({ ...f, cells: (f.cells || []).filter((x) => x !== c) }))}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-stretch gap-1.5">
                     <input
                       type="text"
-                      value={form.cellNew}
-                      onChange={(e) => setForm((f) => ({ ...f, cellNew: e.target.value }))}
+                      value={form.cellInput || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, cellInput: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCell(); } }}
                       placeholder={t("admin.profiles.cellNewPlaceholder")}
-                      className={inputCls}
+                      className={inputCls + " mt-0 flex-1"}
                       style={inputStyle}
-                      autoFocus
                     />
-                  )}
+                    <Button variant="secondary" size="md" onClick={addCell}
+                            disabled={!(form.cellInput || "").trim()}>
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </FormField>
               )}
 
