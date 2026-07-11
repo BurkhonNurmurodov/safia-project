@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import webhook as webhook_router
@@ -177,6 +177,7 @@ app.include_router(activity.router)
 app.include_router(concerns.router)
 app.include_router(tasks.router)
 app.include_router(profiles.router)
+app.include_router(leaderboard.router)
 
 
 @app.get("/health")
