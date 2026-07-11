@@ -3483,10 +3483,10 @@ export default function Staff() {
     refetchInterval: 30_000,
   });
 
-  // Rejected deletion batches also have approved=false — they are processed,
-  // so they must not trigger the badge (mirrors the "pending" status filter)
+  // Rejected items also have approved=false — they are processed, so they
+  // must not trigger the badge (mirrors the "pending" status filter)
   const pendingCount        = documents.filter(d =>
-    d._source === "deletion" ? d.status === "pending" : !d.approved).length;
+    d._source === "deletion" ? d.status === "pending" : d.status === "draft").length;
   const supervisorManagerId = role === "supervisor" ? auth?.role_id : selectedManagerId;
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
