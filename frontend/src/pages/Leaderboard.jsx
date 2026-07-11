@@ -165,20 +165,43 @@ function Spark({ arr, w, h, color, cardVar = "var(--bg-card)" }) {
   );
 }
 
-/* Circular score ring. */
-function ScoreRing({ score, color, label }) {
-  const r = 38, c = 2 * Math.PI * r;
+/* A hung medal — ribbon + disc — that rests on the ring's lower edge ("neck"). */
+function MedalBadge({ medal, size }) {
+  const d = Math.round(size * 0.25);
   return (
-    <div className="relative" style={{ width: 92, height: 92 }}>
-      <svg width="92" height="92" viewBox="0 0 92 92">
-        <circle cx="46" cy="46" r={r} fill="none" stroke="var(--bg-inner)" strokeWidth="7" />
-        <circle cx="46" cy="46" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - score / 100)} transform="rotate(-90 46 46)" />
+    <span className="absolute left-1/2 flex flex-col items-center" style={{ bottom: -d * 0.46, transform: "translateX(-50%)", zIndex: 3 }}>
+      <span className="flex" style={{ marginBottom: -d * 0.44 }}>
+        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.92), transform: "skewX(15deg)", borderRadius: 2 }} />
+        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.55), transform: "skewX(-15deg)", borderRadius: 2, marginLeft: -2 }} />
+      </span>
+      <span className="flex items-center justify-center rounded-full" style={{ width: d, height: d, background: medal, color: "#fff", border: "2px solid rgba(255,255,255,0.55)", boxShadow: `0 3px 11px -2px ${hexA(medal, 0.85)}` }}>
+        <Medal size={Math.round(d * 0.52)} />
+      </span>
+    </span>
+  );
+}
+
+/* The honour crest: circular avatar wrapped by a medal-coloured score arc,
+ * crowned (1st) or medalled (2nd/3rd). `score` fills the arc 0–100. */
+function Crest({ sup, score, medal, size, first }) {
+  const stroke = first ? 7 : 6;
+  const cx = size / 2, r = cx - stroke / 2 - 2, c = 2 * Math.PI * r;
+  const avD = size - stroke * 2 - 16;
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={hexA(medal, 0.2)} strokeWidth={stroke} />
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={medal} strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - clamp(score, 0, 100) / 100)} transform={`rotate(-90 ${cx} ${cx})`} />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <b className="tabular-nums" style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt1(score)}</b>
-        <span style={{ fontSize: 9.5, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-      </div>
+      <span className="absolute inset-0 flex items-center justify-center">
+        <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ width: avD, height: avD, fontSize: Math.round(avD * 0.34), background: hexA(sup.color, 0.18), color: sup.color, border: `2px solid ${hexA(sup.color, 0.4)}` }}>
+          {initials(sup.name)}
+        </span>
+      </span>
+      {first
+        ? <Crown size={size >= 128 ? 32 : 28} style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", color: medal, filter: `drop-shadow(0 3px 6px ${hexA(medal, 0.7)})`, zIndex: 3 }} />
+        : <MedalBadge medal={medal} size={size} />}
     </div>
   );
 }
