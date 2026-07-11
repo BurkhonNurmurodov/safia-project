@@ -358,38 +358,36 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
     catch { return ""; }
   };
 
-  return (
-    <>
-      <Modal
-        onClose={sending ? null : onClose}
-        dismissable={!sending}
-        title={t.callTitle}
-        subtitle={dateSub}
-        icon={<Send size={16} style={{ color: "var(--brand-text)" }} />}
-        maxWidth="max-w-md"
-        bodyClassName="px-5 py-4 space-y-2"
-        footer={
-          <>
-            <Button variant="secondary" onClick={onClose} disabled={sending}>{t.cancel}</Button>
-            <Button icon={<Send size={14} />} loading={sending} disabled={!selected.length} onClick={trySend}>
-              {t.sendBtn(selected.length)}
-            </Button>
-          </>
-        }
-      >
-        {/* the forecast is an automatic estimate — say so up front */}
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[12px] leading-snug"
-          style={{ background: "#f59e0b14", border: "1px solid #f59e0b40", color: "var(--text-2)" }}>
-          <AlertTriangle size={14} style={{ color: "#d97706", flexShrink: 0, marginTop: 1 }} />
-          <span>{t.callDisclaimer}</span>
+  // one collapsible-free section per shift: its own date picker + select-all + rows
+  const renderSection = (shift, q) => {
+    const rows = rowsOf(q);
+    const selectable = selectableOf(q);
+    const sel = selectedOf(q);
+    const allOn = selectable.length > 0 && sel.length === selectable.length;
+    return (
+      <div key={shift} className={`space-y-1.5${shift === 2 ? " pt-3" : ""}`}
+        style={shift === 2 ? { borderTop: "1px solid var(--border)" } : undefined}>
+        {/* section head — shift name + this section's own target-date picker */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--brand-text)" }}>
+            {t.shiftLabel(shift)}
+          </span>
+          <DateRangePicker
+            single
+            weekday
+            dateFrom={dates[shift]}
+            dateTo={dates[shift]}
+            setDateFrom={(d) => { if (d) setDates((m) => ({ ...m, [shift]: d })); }}
+            setDateTo={() => {}}
+          />
         </div>
 
-        {isLoading ? (
-          <div className="space-y-2 pt-1">
-            {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-11 w-full" />)}
+        {q.isLoading ? (
+          <div className="space-y-1.5">
+            {Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} className="h-11 w-full" />)}
           </div>
-        ) : isError || !rows.length ? (
-          <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{t.noData}</div>
+        ) : q.isError || !rows.length ? (
+          <div className="py-4 text-center text-sm" style={{ color: "var(--text-4)" }}>{t.noData}</div>
         ) : (
           <>
             <label className="flex items-center gap-2.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider select-none"
@@ -408,7 +406,7 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
                 style={{ accentColor: "var(--brand)" }}
               />
               {t.selectAll}
-              <span className="ml-auto normal-case font-normal tabular-nums">{selected.length}/{rows.length}</span>
+              <span className="ml-auto normal-case font-normal tabular-nums">{sel.length}/{rows.length}</span>
             </label>
 
             <div className="space-y-1.5">
@@ -471,11 +469,42 @@ function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
                 );
               })}
             </div>
-
-            {error && (
-              <div className="text-[12px] px-1 pt-1" style={{ color: "#ef4444" }}>{error}</div>
-            )}
           </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <Modal
+        onClose={sending ? null : onClose}
+        dismissable={!sending}
+        title={t.callTitle}
+        icon={<Send size={16} style={{ color: "var(--brand-text)" }} />}
+        maxWidth="max-w-md"
+        bodyClassName="px-5 py-4 space-y-3"
+        footer={
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={sending}>{t.cancel}</Button>
+            <Button icon={<Send size={14} />} loading={sending} disabled={!selected.length} onClick={trySend}>
+              {t.sendBtn(selected.length)}
+            </Button>
+          </>
+        }
+      >
+        {/* the forecast is an automatic estimate — say so up front */}
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[12px] leading-snug"
+          style={{ background: "#f59e0b14", border: "1px solid #f59e0b40", color: "var(--text-2)" }}>
+          <AlertTriangle size={14} style={{ color: "#d97706", flexShrink: 0, marginTop: 1 }} />
+          <span>{t.callDisclaimer}</span>
+        </div>
+
+        {renderSection(1, q1)}
+        {renderSection(2, q2)}
+
+        {error && (
+          <div className="text-[12px] px-1 pt-1" style={{ color: "#ef4444" }}>{error}</div>
         )}
       </Modal>
 
