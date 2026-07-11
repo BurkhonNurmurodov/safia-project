@@ -202,8 +202,8 @@ try:
             print(f"  + {name}  → {cells}")
             created += 1
 
-    print(f"\n{created} to create, {skipped} exact duplicates skipped, "
-          f"{warned} near-duplicates skipped (review the ! lines).")
+    print(f"\n{created} to create, {updated} cells updated, {skipped} exact duplicates "
+          f"skipped, {warned} near-duplicates skipped (review the ! lines).")
     if dry_run:
         db.rollback()
         print("Dry run — rolled back, nothing written.")
