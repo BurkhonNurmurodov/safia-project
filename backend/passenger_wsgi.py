@@ -58,7 +58,7 @@ try:
     add_notification_recipient_profile()
     add_admin_language_column()
     add_profiles_columns()
-    add_leader_cell_column()
+    migrate_cells_table()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()
