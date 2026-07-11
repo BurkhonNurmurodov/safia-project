@@ -746,6 +746,7 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
         for lp in db.query(RoleProfile).filter_by(role="leader", manager_id=pid).all():
             for r in _bound_role_rows(db, "leader", lp.id):
                 _remove_role_row(db, r)
+            _release_leader_cells(db, lp.id)
             db.delete(lp)
         db.delete(mgr)
         db.commit()
