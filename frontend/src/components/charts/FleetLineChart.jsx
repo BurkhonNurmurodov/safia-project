@@ -198,6 +198,34 @@ export default function FleetLineChart({
   const { chartTheme, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const { t } = useLang();
   const apexRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  // ── responsive re-fit ─────────────────────────────────────────────────────────
+  // ApexCharts bakes a fixed pixel width into its SVG at mount time. In the
+  // Telegram WebView the first mount can happen before the layout has settled to
+  // the real phone width, so the chart locks a too-wide value and never corrects
+  // it — the whole page then scrolls sideways and the y-axis slides off-screen.
+  // redrawOnParentResize/WindowResize are off (kept off on purpose), so we drive
+  // the re-fit ourselves: watch the wrapper and, whenever its width actually
+  // changes, ask Apex to re-measure via updateOptions (the only call proven to
+  // re-fit the canvas). Guarded by last-width + rAF so it never loops.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let lastW = Math.round(el.getBoundingClientRect().width);
+    let raf = 0;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w === lastW || w === 0) return;
+      lastW = w;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        try { apexRef.current?.updateOptions({}, false, false); } catch { /* chart torn down */ }
+      });
+    });
+    ro.observe(el);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
 
   // ── series ──────────────────────────────────────────────────────────────────
 
