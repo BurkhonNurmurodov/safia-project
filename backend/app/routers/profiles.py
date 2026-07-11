@@ -387,10 +387,10 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
 class UpdateProfilePayload(BaseModel):
     name:           Optional[str] = None
     shift:          Optional[int] = None
-    manager_id:     Optional[int] = None   # leader → move to another unit
-    cell:           Optional[str] = None   # leader → reassign production cell
-    new_verifix_id: Optional[int] = None   # supervisor → re-key managers.id
-    archived:       Optional[bool] = None  # supervisor only
+    manager_id:     Optional[int] = None        # leader → move to another unit
+    cells:          Optional[list[str]] = None  # leader → replace owned cell codes
+    new_verifix_id: Optional[int] = None        # supervisor → re-key managers.id
+    archived:       Optional[bool] = None       # supervisor only
     overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
 
 
