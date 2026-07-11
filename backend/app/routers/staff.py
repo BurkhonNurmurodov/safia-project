@@ -280,7 +280,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # ``_mk_notif_tg``). Keep the two structurally in sync.
     "call_forecast": {
         "uz": ("Xodim chaqirish uchun prognozlar:",
-               "📅 Sana: {date}\n📊 Zagruzka foizi: {eff}%\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
+               "👤 Brigadir: {name}\n📅 Sana: {date}\n📊 Zagruzka foizi: {eff}%\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
                "Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
                "Shu sababli, amaldagi vaziyat va boshqa omillarni ham inobatga olib, kerakli miqdorda odam chaqirishingizni so'raymiz!"),
