@@ -279,7 +279,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
     # the Telegram DM gets an HTML variant with a real blockquote (see
     # ``_mk_notif_tg``). Keep the two structurally in sync.
     "call_forecast": {
-        "uz": ("Ertangi kunga xodim chaqirish uchun prognozlar:",
+        "uz": ("Xodim chaqirish uchun prognozlar:",
                "📅 Sana: {date}\n📊 Zagruzka foizi: {eff}%\n🧑‍🍳 Chaqirish tavsiya qilinadi: {count} nafar\n⚠️ Maksimum: {max} nafar\n\n"
                "Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
