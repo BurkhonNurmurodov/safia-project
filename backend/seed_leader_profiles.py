@@ -25,8 +25,14 @@ import re
 import sys
 sys.path.insert(0, ".")
 
-from app.database import SessionLocal
+from app.database import engine, Base, SessionLocal
 from app.models import Cell, Manager, RoleProfile
+from app.startup import migrate_cells_table
+
+# Self-bootstrap: make sure the cells table exists and the old role_profiles.cell
+# column (if any) is split into rows — safe to run before the Passenger restart.
+Base.metadata.create_all(bind=engine)
+migrate_cells_table()
 
 # {managers.id: (expected supervisor name (informational), [(leader, cells)])}
 LEADERS = {
