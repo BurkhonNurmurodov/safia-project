@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import {
   Trophy, Crown, Medal, Gauge, ClipboardCheck, Lightbulb, ShieldCheck,
   UserCheck, ListOrdered, TrendingUp, Activity, ArrowUp, ArrowDown, Minus,
@@ -11,7 +11,6 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import Button from "../components/ui/Button";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
-import api from "../utils/api";
 
 /* ══════════════════════════════════════════════════════════════════════
  * Leaderboard — brigadir ranking across every platform statistic.
@@ -47,6 +46,10 @@ const STATUS = {
 };
 
 /* Per-brigadir identity colours — the Workers.jsx SUP_COLORS spectrum. */
+const SUP_COLORS = [
+  "#2563eb", "#22c55e", "#f97316", "#8b5cf6", "#eab308", "#ec4899",
+  "#0d9488", "#ef4444", "#0ea5e9", "#65a30d", "#d946ef", "#C8973F",
+];
 
 /* Podium medal palette — gold / silver / bronze, keyed by finishing place.
  * A decoration set (like SUP_COLORS), not chrome: translucent overlays of the
@@ -56,16 +59,73 @@ const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
 const WEEKS = ["04.05", "11.05", "18.05", "25.05", "01.06", "08.06", "15.06", "22.06"];
 
 /* ────────────────────────── dummy data ──────────────────────────────── */
+const RAW = [
+  { name: "Malika Qodirova",   unit: "2-uchastka",  s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
+  { name: "Dilshod Karimov",   unit: "5-uchastka",  s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
+  { name: "Aziza Tosheva",     unit: "1-uchastka",  s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
+  { name: "Murodali Ochilov",  unit: "7-uchastka",  s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
+  { name: "Sherzod Aliyev",    unit: "3-uchastka",  s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
+  { name: "Nodira Yusupova",   unit: "4-uchastka",  s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
+  { name: "Jasur Rahimov",     unit: "9-uchastka",  s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
+  { name: "Gulnora Ismoilova", unit: "8-uchastka",  s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
+  { name: "Bekzod Tursunov",   unit: "6-uchastka",  s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
+  { name: "Kamola Ergasheva",  unit: "11-uchastka", s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
+  { name: "Rustam Nazarov",    unit: "10-uchastka", s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
+  { name: "Sardor Xolmatov",   unit: "12-uchastka", s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
+];
 
-
-
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-
+function composite(s) {
+  let num = 0, den = 0;
+  CATS.forEach((c) => { if (s[c.key] != null) { num += s[c.key] * c.weight; den += c.weight; } });
+  return den ? num / den : 0;
+}
 
 /* Build the whole dataset for a period. A different seed per period makes the
  * mock feel live — switching Hafta/Oy/Chorak reshuffles scores and ranks. */
+function buildData(period) {
+  const seed = period === "week" ? 7 : period === "quarter" ? 91 : 30;
+  const sups = RAW.map((r, i) => {
+    const rnd = mulberry32(seed * 1000 + i * 77);
+    const s = {};
+    CATS.forEach((c) => {
+      const base = r.s[c.key];
+      s[c.key] = base == null ? null : clamp(Math.round(base + (rnd() - 0.5) * 8), 20, 99);
+    });
+    const comp = composite(s);
+    const trend = (rnd() - 0.45) * 2.2;
+    const hist = [];
+    for (let w = 0; w < 8; w++) hist.push(w === 7 ? comp : comp - trend * (7 - w) + (rnd() - 0.5) * 6);
+    const sparks = {};
+    CATS.forEach((c) => {
+      const v = s[c.key];
+      if (v == null) { sparks[c.key] = null; return; }
+      const arr = [];
+      for (let w = 0; w < 8; w++) arr.push(w === 7 ? v : clamp(Math.round(v - trend * (7 - w) * 0.8 + (rnd() - 0.5) * 9), 8, 99));
+      sparks[c.key] = arr;
+    });
+    return { id: i, name: r.name, unit: r.unit, color: SUP_COLORS[i], s, comp, hist, sparks, scoreDelta: +(trend * 1.6 + (rnd() - 0.5)).toFixed(1) };
+  });
 
+  const rankHist = sups.map(() => []);
+  for (let w = 0; w < 8; w++) {
+    sups.map((s) => ({ id: s.id, v: s.hist[w] }))
+      .sort((a, b) => b.v - a.v)
+      .forEach((o, pos) => { rankHist[o.id][w] = pos + 1; });
+  }
+  sups.forEach((s) => { s.rankHist = rankHist[s.id]; s.rank = rankHist[s.id][7]; s.prevRank = rankHist[s.id][6]; });
+  const byRank = [...sups].sort((a, b) => a.rank - b.rank);
+  return { sups, byRank };
+}
 
 /* ────────────────────────── helpers ─────────────────────────────────── */
 const fmt = (v) => (v == null ? "—" : String(Math.round(v)));
@@ -105,64 +165,43 @@ function Spark({ arr, w, h, color, cardVar = "var(--bg-card)" }) {
   );
 }
 
-/* Blend a hex toward a target (t=0→hex, 1→target) — for metallic sheen stops. */
-function mix(hex, target, t) {
-  const a = parseInt(hex.slice(1), 16), b = parseInt(target.slice(1), 16);
-  const ch = (sh) => { const x = (a >> sh) & 255, y = (b >> sh) & 255; return Math.round(x + (y - x) * t); };
-  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
-}
-
-/* An award medallion hung on the crest's lower edge — a chevron ribbon behind a
- * bezelled metal disc struck with the placing. Reads instantly as 2nd / 3rd. */
-function MedalBadge({ medal, size, rank }) {
-  const d = Math.round(size * 0.34);
-  const light = mix(medal, "#ffffff", 0.5), dark = mix(medal, "#000000", 0.3);
-  const band = (rot, g, ml) => (
-    <span style={{ width: d * 0.3, height: d * 0.95, background: g, transform: `rotate(${rot}deg)`, transformOrigin: "top center", borderRadius: 2, marginLeft: ml }} />
-  );
+/* A hung medal — ribbon + disc — that rests on the ring's lower edge ("neck"). */
+function MedalBadge({ medal, size }) {
+  const d = Math.round(size * 0.25);
   return (
-    <span aria-hidden className="absolute left-1/2 flex flex-col items-center pointer-events-none" style={{ bottom: -d * 0.5, transform: "translateX(-50%)", zIndex: 3 }}>
-      <span className="flex justify-center" style={{ marginBottom: -d * 0.62 }}>
-        {band(16, `linear-gradient(${light}, ${medal})`, 0)}
-        {band(-16, `linear-gradient(${dark}, ${medal})`, -d * 0.14)}
+    <span className="absolute left-1/2 flex flex-col items-center" style={{ bottom: -d * 0.46, transform: "translateX(-50%)", zIndex: 3 }}>
+      <span className="flex" style={{ marginBottom: -d * 0.44 }}>
+        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.92), transform: "skewX(15deg)", borderRadius: 2 }} />
+        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.55), transform: "skewX(-15deg)", borderRadius: 2, marginLeft: -2 }} />
       </span>
-      <span className="flex items-center justify-center rounded-full" style={{ width: d, height: d, background: `radial-gradient(circle at 38% 30%, ${light}, ${medal} 54%, ${dark})`, boxShadow: `inset 0 0 0 ${Math.max(1.5, d * 0.055)}px ${hexA("#ffffff", 0.5)}, 0 5px 14px -3px ${hexA(medal, 0.9)}` }}>
-        <span className="font-black tabular-nums leading-none" style={{ fontSize: d * 0.5, color: "#fff", textShadow: `0 1px 1px ${hexA("#000000", 0.35)}` }}>{rank}</span>
+      <span className="flex items-center justify-center rounded-full" style={{ width: d, height: d, background: medal, color: "#fff", border: "2px solid rgba(255,255,255,0.55)", boxShadow: `0 3px 11px -2px ${hexA(medal, 0.85)}` }}>
+        <Medal size={Math.round(d * 0.52)} />
       </span>
     </span>
   );
 }
 
-/* The honour crest: a bezelled avatar hugged by a metallic score ring, crowned
- * (1st) or medalled (2nd/3rd). `score` fills the arc 0–100. */
-function Crest({ sup, score, medal, size, first, rank }) {
-  const stroke = first ? 9 : 8;
-  const cx = size / 2, r = cx - stroke / 2 - 1, c = 2 * Math.PI * r;
-  const avD = size - stroke * 2 - 8;                 // small moat → the ring hugs
-  const gid = `crest-${medal.slice(1)}-${size}`;
-  const light = mix(medal, "#ffffff", 0.5), dark = mix(medal, "#000000", 0.26);
+/* The honour crest: circular avatar wrapped by a medal-coloured score arc,
+ * crowned (1st) or medalled (2nd/3rd). `score` fills the arc 0–100. */
+function Crest({ sup, score, medal, size, first }) {
+  const stroke = first ? 7 : 6;
+  const cx = size / 2, r = cx - stroke / 2 - 2, c = 2 * Math.PI * r;
+  const avD = size - stroke * 2 - 16;
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block", transform: "rotate(-90deg)" }}>
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={light} />
-            <stop offset="52%" stopColor={medal} />
-            <stop offset="100%" stopColor={dark} />
-          </linearGradient>
-        </defs>
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke={hexA(medal, 0.16)} strokeWidth={stroke} />
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke} strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - clamp(score, 0, 100) / 100)} style={{ filter: `drop-shadow(0 0 4px ${hexA(medal, 0.5)})` }} />
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={hexA(medal, 0.2)} strokeWidth={stroke} />
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={medal} strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - clamp(score, 0, 100) / 100)} transform={`rotate(-90 ${cx} ${cx})`} />
       </svg>
       <span className="absolute inset-0 flex items-center justify-center">
-        <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ width: avD, height: avD, fontSize: Math.round(avD * 0.34), background: hexA(sup.color, 0.16), color: sup.color, boxShadow: `inset 0 0 0 2px ${hexA(sup.color, 0.32)}, 0 2px 10px -3px ${hexA(sup.color, 0.5)}` }}>
+        <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ width: avD, height: avD, fontSize: Math.round(avD * 0.34), background: hexA(sup.color, 0.18), color: sup.color, border: `2px solid ${hexA(sup.color, 0.4)}` }}>
           {initials(sup.name)}
         </span>
       </span>
       {first
-        ? <Crown size={size >= 128 ? 42 : 36} strokeWidth={1.8} style={{ position: "absolute", top: -size * 0.15, left: "50%", transform: "translateX(-50%)", color: medal, fill: hexA(medal, 0.28), filter: `drop-shadow(0 4px 8px ${hexA(medal, 0.6)})`, zIndex: 3 }} />
-        : <MedalBadge medal={medal} size={size} rank={rank} />}
+        ? <Crown size={size >= 128 ? 32 : 28} style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", color: medal, filter: `drop-shadow(0 3px 6px ${hexA(medal, 0.7)})`, zIndex: 3 }} />
+        : <MedalBadge medal={medal} size={size} />}
     </div>
   );
 }
@@ -178,7 +217,7 @@ function DeltaChip({ v, unit, st }) {
 }
 
 /* ═══════════════════════ rank-trajectory bump chart ═══════════════════ */
-function BumpChart({ sups, selectedId, onSelect, onTip }) {
+function BumpChart({ sups, byRank, selectedId, onSelect, hues, onTip }) {
   const [hoverId, setHoverId] = useState(null);
   const W = 620, H = 320, padL = 34, padR = 150, padT = 18, padB = 30;
   const n = sups.length;
@@ -221,7 +260,7 @@ function BumpChart({ sups, selectedId, onSelect, onTip }) {
 }
 
 /* ═══════════════════════ distribution strips ═════════════════════════ */
-function DistributionStrips({ sups, selectedId, onSelect, catMeta, onTip }) {
+function DistributionStrips({ sups, selectedId, onSelect, catMeta, st, onTip }) {
   const W = 430, H = 34;
   const px = (v) => 8 + (v / 100) * (W - 16);
   const sel = sups.find((s) => s.id === selectedId);
@@ -281,7 +320,7 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
     const sel = s.id === selectedId;
     const pin = pinned.has(s.id);
     const mv = s.prevRank - s.rank;
-    const H = first ? 274 : 258;
+    const H = first ? 320 : 300;
     const lift = first ? 16 : place === 2 ? 4 : 0;
     const glow = first
       ? `0 26px 60px -16px ${hexA(medal, 0.62)}, 0 6px 18px -8px ${hexA(medal, 0.45)}`
@@ -289,16 +328,13 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
       ? `0 18px 44px -18px ${hexA(medal, 0.52)}`
       : `0 16px 40px -20px ${hexA(medal, 0.46)}`;
 
-    /* shared face chrome: top wash + hairline sheen (no rank chip — the crest
-     * carries the placing on the front; the back gets its own chip below). */
+    /* one card face — `back` swaps the content but keeps the medal chrome. */
     const faceChrome = (
       <>
-        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -20%, ${hexA(medal, first ? 0.4 : 0.3)} 0%, ${hexA(medal, 0.1)} 42%, transparent 72%)` }} />
+        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
         <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
+        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}`, zIndex: 2 }}>{s.rank}</span>
       </>
-    );
-    const rankChip = (
-      <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}`, zIndex: 2 }}>{s.rank}</span>
     );
 
     const strong = CATS.filter((c) => s.s[c.key] != null).sort((a, b) => s.s[b.key] - s.s[a.key]).slice(0, 2);
@@ -316,25 +352,20 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
           <div className="podium-flip-inner absolute inset-0">
 
             {/* ── FRONT: the honour crest ── */}
-            <div className="podium-face absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: `linear-gradient(180deg, ${hexA(medal, first ? 0.13 : 0.09)} 0%, var(--bg-card) 44%)`, border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}` }}>
+            <div className="podium-face absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}` }}>
               {faceChrome}
-              {/* embossed jersey numeral — outlined metal, not a grey fill */}
-              <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 8, bottom: -30, fontSize: first ? 172 : 138, letterSpacing: "-0.04em", color: "transparent", WebkitTextStroke: `2px ${hexA(medal, 0.2)}` }}>{s.rank}</span>
-              {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "8% 14% auto 14%", height: "54%", background: `radial-gradient(circle at 50% 42%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
-              <div className="relative z-[1] flex flex-1 flex-col items-center justify-center" style={{ padding: `${first ? 20 : 18}px 16px 18px` }}>
-                <Crest sup={s} score={s.comp} medal={medal} size={first ? 130 : 112} first={first} rank={s.rank} />
-                <div className="font-bold leading-tight" style={{ marginTop: first ? 16 : 24, fontSize: first ? 17 : 15.5 }}>{s.name}</div>
-                <div className="flex items-baseline gap-0.5 tabular-nums font-extrabold leading-none" style={{ marginTop: 5 }}>
-                  <span style={{ fontSize: first ? 27 : 23, color: "var(--text-1)", letterSpacing: "-0.02em" }}>{fmt1(s.comp)}</span>
-                  <span style={{ fontSize: first ? 15 : 13, fontWeight: 700, color: "var(--text-3)" }}>%</span>
-                </div>
+              <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
+              {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "6% 12% auto 12%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
+              <div className="relative z-[1] flex flex-1 flex-col items-center justify-center" style={{ padding: "18px 16px 20px" }}>
+                <Crest sup={s} score={s.comp} medal={medal} size={first ? 132 : 116} first={first} />
+                <div className="mt-5 font-bold" style={{ fontSize: first ? 16.5 : 15 }}>{s.name}</div>
+                <div className="tabular-nums font-extrabold leading-none" style={{ marginTop: 6, fontSize: first ? 24 : 21, color: bandInk(st, s.comp) }}>{fmt1(s.comp)}<span style={{ fontSize: "0.62em", fontWeight: 700 }}>%</span></div>
               </div>
             </div>
 
             {/* ── BACK: the stat detail ── */}
             <div className="podium-face podium-back absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, 0.48)}` }}>
               {faceChrome}
-              {rankChip}
               <div className="relative z-[1] flex flex-1 flex-col gap-2" style={{ padding: "14px 14px 12px" }}>
                 <div className="flex items-center gap-2 pl-7">
                   <div className="min-w-0 text-left">
@@ -404,26 +435,8 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
 
 /* ═══════════════════════ page ════════════════════════════════════════ */
 function useLeaderboardData(period) {
-  const [data, setData] = useState({ sups: [], byRank: [] });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    // eslint-disable-next-line
-    setLoading(true);
-    api.get(`/api/leaderboard?period=${period}`).then((res) => {
-      if (active) {
-        setData(res.data);
-        setLoading(false);
-      }
-    }).catch((err) => {
-      console.error("Leaderboard fetch failed", err);
-      if (active) setLoading(false);
-    });
-    return () => { active = false; };
-  }, [period]);
-
-  return { ...data, loading };
+  // DUMMY: swap this hook for a useQuery returning { sups, byRank } later.
+  return useMemo(() => buildData(period), [period]);
 }
 
 export default function Leaderboard() {
@@ -437,18 +450,10 @@ export default function Leaderboard() {
   }])), [hues, t]);
 
   const [period, setPeriod] = useState("month");
-  const { sups, byRank, loading } = useLeaderboardData(period);
+  const { sups, byRank } = useLeaderboardData(period);
 
-  const [selectedId, setSelectedId] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
-
-  useEffect(() => {
-    if (byRank.length > 0 && selectedId === null) {
-      // eslint-disable-next-line
-      setSelectedId(byRank[0].id);
-      setExpandedId(byRank[0].id);
-    }
-  }, [byRank, selectedId]);
+  const [selectedId, setSelectedId] = useState(3);
+  const [expandedId, setExpandedId] = useState(3);
   const [sortKey, setSortKey] = useState("overall");
   const [query, setQuery] = useState("");
   const [tip, setTip] = useState(null);
@@ -493,10 +498,10 @@ export default function Leaderboard() {
         </div>
 
         {/* ── podium ── */}
-        {loading ? <div className="py-20 text-center text-sm" style={{color: "var(--text-3)"}}>Yuklanmoqda...</div> : byRank.length > 0 && <Podium byRank={byRank} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} st={st} />}
+        <Podium byRank={byRank} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} st={st} />
 
         {/* ── category leaders ── */}
-        {loading || sups.length === 0 ? null : <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
             <Trophy size={14} style={{ color: "var(--brand-text)" }} />{t("leaderboard.categoryLeaders")}
           </div>
@@ -530,7 +535,7 @@ export default function Leaderboard() {
               );
             })}
           </div>
-        </div>}
+        </div>
 
         {/* ── main ranking table ── */}
         <TableCard
@@ -580,7 +585,7 @@ export default function Leaderboard() {
         <div className="text-[11px]" style={{ color: "var(--text-4)", marginTop: -6 }}>{t("leaderboard.rowHint")}</div>
 
         {/* ── charts ── */}
-        {loading || sups.length === 0 || selectedId === null ? null : <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)" }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)" }}>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={TrendingUp} title={t("leaderboard.rankDynamics")} right={<span className="text-xs" style={{ color: "var(--text-4)" }}>{t("leaderboard.rankAxis")}</span>} />
             <div className="flex gap-3.5 flex-wrap px-4 pt-2">
@@ -594,7 +599,7 @@ export default function Leaderboard() {
               </span>
             </div>
             <div className="px-4 pb-4 pt-1"><div style={{ overflowX: "auto" }}>
-              <BumpChart sups={sups} selectedId={selectedId} onSelect={selectSup} onTip={onTip} />
+              <BumpChart sups={sups} byRank={byRank} selectedId={selectedId} onSelect={selectSup} hues={hues} onTip={onTip} />
             </div></div>
           </div>
 
@@ -602,11 +607,11 @@ export default function Leaderboard() {
             <SectionHead icon={Activity} title={t("leaderboard.distribution")}
               right={<span className="inline-flex items-center gap-1.5 text-xs"><Avatar sup={sups.find((s) => s.id === selectedId)} size={20} /><span className="font-semibold" style={{ color: "var(--text-2)" }}>{shortName(sups.find((s) => s.id === selectedId).name)}</span></span>} />
             <div className="px-4 py-3">
-              <DistributionStrips sups={sups} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} onTip={onTip} />
+              <DistributionStrips sups={sups} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} st={st} onTip={onTip} />
             </div>
             <div className="text-[11px] px-4 pb-3" style={{ color: "var(--text-4)" }}>{t("leaderboard.distHint")}</div>
           </div>
-        </div>}
+        </div>
 
         {/* ── methodology ── */}
         <details className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
