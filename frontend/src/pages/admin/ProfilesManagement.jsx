@@ -459,10 +459,10 @@ export default function ProfilesManagement() {
                         ? { ...f, role: v, name: modal.item.name,
                             shift: modal.item.shift ?? 1,
                             manager_id: modal.item.manager_id ?? "",
-                            cell: modal.item.cell ?? "", cellNew: "",
+                            cells: modal.item.cells ?? [], cellInput: "",
                             verifix_id: type === "supervisor" ? modal.item.id : "" }
                         : { ...f, role: v, name: modal.item.name,
-                            shift: "", manager_id: "", cell: "", cellNew: "", verifix_id: "" });
+                            shift: "", manager_id: "", cells: [], cellInput: "", verifix_id: "" });
                     }}
                     options={TYPES.map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
                   />
