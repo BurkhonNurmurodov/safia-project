@@ -165,43 +165,20 @@ function Spark({ arr, w, h, color, cardVar = "var(--bg-card)" }) {
   );
 }
 
-/* A hung medal — ribbon + disc — that rests on the ring's lower edge ("neck"). */
-function MedalBadge({ medal, size }) {
-  const d = Math.round(size * 0.25);
+/* Circular score ring. */
+function ScoreRing({ score, color, label }) {
+  const r = 38, c = 2 * Math.PI * r;
   return (
-    <span className="absolute left-1/2 flex flex-col items-center" style={{ bottom: -d * 0.46, transform: "translateX(-50%)", zIndex: 3 }}>
-      <span className="flex" style={{ marginBottom: -d * 0.44 }}>
-        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.92), transform: "skewX(15deg)", borderRadius: 2 }} />
-        <span style={{ width: 7, height: d * 0.72, background: hexA(medal, 0.55), transform: "skewX(-15deg)", borderRadius: 2, marginLeft: -2 }} />
-      </span>
-      <span className="flex items-center justify-center rounded-full" style={{ width: d, height: d, background: medal, color: "#fff", border: "2px solid rgba(255,255,255,0.55)", boxShadow: `0 3px 11px -2px ${hexA(medal, 0.85)}` }}>
-        <Medal size={Math.round(d * 0.52)} />
-      </span>
-    </span>
-  );
-}
-
-/* The honour crest: circular avatar wrapped by a medal-coloured score arc,
- * crowned (1st) or medalled (2nd/3rd). `score` fills the arc 0–100. */
-function Crest({ sup, score, medal, size, first }) {
-  const stroke = first ? 7 : 6;
-  const cx = size / 2, r = cx - stroke / 2 - 2, c = 2 * Math.PI * r;
-  const avD = size - stroke * 2 - 16;
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke={hexA(medal, 0.2)} strokeWidth={stroke} />
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke={medal} strokeWidth={stroke} strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - clamp(score, 0, 100) / 100)} transform={`rotate(-90 ${cx} ${cx})`} />
+    <div className="relative" style={{ width: 92, height: 92 }}>
+      <svg width="92" height="92" viewBox="0 0 92 92">
+        <circle cx="46" cy="46" r={r} fill="none" stroke="var(--bg-inner)" strokeWidth="7" />
+        <circle cx="46" cy="46" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - score / 100)} transform="rotate(-90 46 46)" />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center">
-        <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ width: avD, height: avD, fontSize: Math.round(avD * 0.34), background: hexA(sup.color, 0.18), color: sup.color, border: `2px solid ${hexA(sup.color, 0.4)}` }}>
-          {initials(sup.name)}
-        </span>
-      </span>
-      {first
-        ? <Crown size={size >= 128 ? 32 : 28} style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", color: medal, filter: `drop-shadow(0 3px 6px ${hexA(medal, 0.7)})`, zIndex: 3 }} />
-        : <MedalBadge medal={medal} size={size} />}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <b className="tabular-nums" style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt1(score)}</b>
+        <span style={{ fontSize: 9.5, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+      </div>
     </div>
   );
 }
@@ -306,127 +283,71 @@ function DistributionStrips({ sups, selectedId, onSelect, catMeta, st, onTip }) 
 }
 
 /* ═══════════════════════ podium ══════════════════════════════════════ */
-/* Two-faced honour card. FRONT = the crest (ringed avatar + regalia + name +
- * score). BACK = the stat detail. Hover peeks the back; click pins it flipped
- * (and selects the supervisor). The colored aura lives on the non-rotating
- * shell so it stays put while the inner face turns. */
 function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
-  const [pinned, setPinned] = useState(() => new Set());
-  const togglePin = (id) => setPinned((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
   const cell = (s, place) => {
     const first = place === 1;
     const medal = MEDAL[place];
     const sel = s.id === selectedId;
-    const pin = pinned.has(s.id);
-    const mv = s.prevRank - s.rank;
-    const H = first ? 320 : 300;
+    /* Colored elevation = the "aura". #1 sits highest and glows hardest. */
     const lift = first ? 16 : place === 2 ? 4 : 0;
     const glow = first
       ? `0 26px 60px -16px ${hexA(medal, 0.62)}, 0 6px 18px -8px ${hexA(medal, 0.45)}`
       : place === 2
       ? `0 18px 44px -18px ${hexA(medal, 0.52)}`
       : `0 16px 40px -20px ${hexA(medal, 0.46)}`;
-
-    /* one card face — `back` swaps the content but keeps the medal chrome. */
-    const faceChrome = (
-      <>
-        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
-        <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
-        <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 12, left: 12, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}`, zIndex: 2 }}>{s.rank}</span>
-      </>
-    );
-
-    const strong = CATS.filter((c) => s.s[c.key] != null).sort((a, b) => s.s[b.key] - s.s[a.key]).slice(0, 2);
-    const weak = CATS.filter((c) => s.s[c.key] != null).sort((a, b) => s.s[a.key] - s.s[b.key]).slice(0, 2);
-
     return (
-      <div key={s.id} className={`podium-flip${pin ? " pinned" : ""}`} style={{ perspective: 1400, transform: `translateY(-${lift}px)` }}>
-        <div
-          role="button" tabIndex={0} aria-pressed={pin} aria-label={`${s.rank}. ${s.name}`}
-          onClick={() => { togglePin(s.id); onSelect(s.id); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePin(s.id); onSelect(s.id); } }}
-          className="podium-flip-outer relative cursor-pointer rounded-2xl outline-none"
-          style={{ height: H, boxShadow: sel ? `${glow}, 0 0 0 3px var(--brand-ring)` : glow }}
-        >
-          <div className="podium-flip-inner absolute inset-0">
+      <button
+        key={s.id}
+        onClick={() => onSelect(s.id)}
+        className={`podium-card${first ? " podium-champ" : ""} relative flex flex-col rounded-2xl text-center overflow-hidden`}
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}`,
+          boxShadow: sel ? `${glow}, 0 0 0 3px var(--brand-ring)` : glow,
+          transform: `translateY(-${lift}px)`,
+        }}
+      >
+        {/* metallic wash pouring from the top edge */}
+        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
+        {/* bright shine line across the top */}
+        <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
+        {/* giant ghost rank numeral for sheer weight */}
+        <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
+        {/* champion halo — a slow breathing glow behind the crest */}
+        {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "-24% 14% auto 14%", height: "70%", background: `radial-gradient(circle at 50% 40%, ${hexA(medal, 0.55)} 0%, transparent 62%)` }} />}
 
-            {/* ── FRONT: the honour crest ── */}
-            <div className="podium-face absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}` }}>
-              {faceChrome}
-              <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
-              {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "6% 12% auto 12%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
-              <div className="relative z-[1] flex flex-1 flex-col items-center justify-center" style={{ padding: "18px 16px 20px" }}>
-                <Crest sup={s} score={s.comp} medal={medal} size={first ? 132 : 116} first={first} />
-                <div className="mt-5 font-bold" style={{ fontSize: first ? 16.5 : 15 }}>{s.name}</div>
-                <div className="tabular-nums font-extrabold leading-none" style={{ marginTop: 6, fontSize: first ? 24 : 21, color: bandInk(st, s.comp) }}>{fmt1(s.comp)}<span style={{ fontSize: "0.62em", fontWeight: 700 }}>%</span></div>
-              </div>
-            </div>
-
-            {/* ── BACK: the stat detail ── */}
-            <div className="podium-face podium-back absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, 0.48)}` }}>
-              {faceChrome}
-              <div className="relative z-[1] flex flex-1 flex-col gap-2" style={{ padding: "14px 14px 12px" }}>
-                <div className="flex items-center gap-2 pl-7">
-                  <div className="min-w-0 text-left">
-                    <div className="text-[13px] font-bold leading-tight truncate">{s.name}</div>
-                    <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{s.unit}</div>
-                  </div>
-                  <span className="ml-auto flex items-center gap-1.5">
-                    <DeltaChip v={s.scoreDelta} unit="ball" st={st} />
-                    {mv !== 0
-                      ? <span className="inline-flex items-center gap-0.5 text-[11px] font-bold tabular-nums" style={{ color: mv > 0 ? st.okInk : st.badInk }}>{mv > 0 ? <ArrowUp size={11} /> : <ArrowDown size={11} />}{Math.abs(mv)}</span>
-                      : <span className="inline-flex items-center" style={{ color: "var(--text-4)" }}><Minus size={11} /></span>}
+        <div className="relative flex flex-col items-center gap-2" style={{ padding: first ? "30px 16px 22px" : "22px 16px 16px" }}>
+          <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 0, left: 0, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}` }}>{s.rank}</span>
+          <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 0, right: 0, width: 28, height: 28, color: "#fff", background: medal, boxShadow: `0 3px 12px -2px ${hexA(medal, 0.75)}` }}>{first ? <Crown size={15} /> : <Medal size={15} />}</span>
+          <Avatar sup={s} size={first ? 56 : 44} />
+          <div style={{ fontWeight: 700, fontSize: first ? 16 : 15 }}>{s.name}</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{s.unit}</div>
+          <ScoreRing score={s.comp} color={bandFill(st, s.comp)} label="ball" />
+          <DeltaChip v={s.scoreDelta} unit="ball" st={st} />
+          <div className="flex gap-1.5 mt-1.5">
+            {CATS.map((c) => {
+              const v = s.s[c.key];
+              return (
+                <span key={c.key} className="flex flex-col items-center gap-1" style={{ width: 30 }}>
+                  <span className="relative w-full overflow-hidden rounded" style={{ height: 26, background: "var(--bg-inner)" }}>
+                    <span className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${v ?? 0}%`, background: catMeta[c.key].hue }} />
                   </span>
-                </div>
-
-                <div style={{ height: 1, background: "var(--border)" }} />
-
-                <div className="flex flex-col gap-1">
-                  {CATS.map((c) => {
-                    const v = s.s[c.key];
-                    return (
-                      <div key={c.key} className="flex items-center gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ width: 30, color: "var(--text-4)" }}>{catMeta[c.key].short.slice(0, 3)}</span>
-                        <div className="flex-1 overflow-hidden rounded-full" style={{ height: 5, background: "var(--bg-inner)" }}>
-                          <i className="block h-full rounded-full" style={{ width: `${v ?? 0}%`, background: catMeta[c.key].hue }} />
-                        </div>
-                        <span className="text-[11px] font-bold tabular-nums text-right" style={{ width: 30, color: v == null ? st.none : bandInk(st, v) }}>{v == null ? "—" : `${fmt(v)}%`}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-0.5" style={{ overflow: "hidden" }}>
-                  <Spark arr={s.hist} w={first ? 300 : 288} h={30} color={s.color} />
-                </div>
-
-                <div className="flex flex-wrap gap-1 mt-auto">
-                  {strong.map((c) => <span key={c.key} className="inline-flex items-center gap-0.5 text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ color: st.okInk, background: hexA(st.ok, 0.13) }}><ArrowUp size={9} />{catMeta[c.key].short.slice(0, 3)}</span>)}
-                  {weak.map((c) => <span key={c.key} className="inline-flex items-center gap-0.5 text-[10px] font-semibold rounded-full px-2 py-0.5" style={{ color: st.badInk, background: hexA(st.bad, 0.13) }}><ArrowDown size={9} />{catMeta[c.key].short.slice(0, 3)}</span>)}
-                </div>
-              </div>
-            </div>
-
+                  <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--text-4)", textTransform: "uppercase" }}>{catMeta[c.key].short.slice(0, 3)}</span>
+                </span>
+              );
+            })}
           </div>
         </div>
-      </div>
+      </button>
     );
   };
-
   const [p1, p2, p3] = byRank;
   return (
-    <div className="grid gap-3 items-end pt-5" style={{ gridTemplateColumns: "1fr 1.16fr 1fr" }}>
+    <div className="grid gap-3 items-end pt-4" style={{ gridTemplateColumns: "1fr 1.16fr 1fr" }}>
       <style>{`
-        .podium-flip-inner { transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform .62s cubic-bezier(.2,.72,.24,1); }
-        .podium-flip-outer:hover .podium-flip-inner,
-        .podium-flip.pinned .podium-flip-inner { transform: rotateY(180deg); }
-        .podium-flip-outer:focus-visible { box-shadow: 0 0 0 3px var(--brand-ring) !important; }
-        .podium-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-        .podium-back { transform: rotateY(180deg); }
-        @keyframes podiumHalo { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:.95; transform:scale(1.08); } }
+        @keyframes podiumHalo { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:.95; transform:scale(1.09); } }
         .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) { .podium-flip-inner { transition: none; } .podium-halo { animation: none; opacity:.7; } }
+        @media (prefers-reduced-motion: reduce) { .podium-halo { animation: none; opacity:.7; } }
       `}</style>
       {cell(p2, 2)}{cell(p1, 1)}{cell(p3, 3)}
     </div>
