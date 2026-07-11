@@ -384,7 +384,7 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
 # pre-formatted date (no user free-text), so no HTML escaping is needed.
 _NOTIF_TG_HTML = {
     "call_forecast": {
-        "uz": ("<b>Ertangi kunga xodim chaqirish uchun prognozlar:</b>\n\n"
+        "uz": ("<b>Xodim chaqirish uchun prognozlar:</b>\n\n"
                "📅 <b>Sana:</b> {date}\n📊 <b>Zagruzka foizi:</b> {eff}%\n🧑‍🍳 <b>Chaqirish tavsiya qilinadi:</b> {count} nafar\n⚠️ <b>Maksimum:</b> {max} nafar\n\n"
                "<blockquote>Ko'rsatilgan sonlar faqat zagruzka hisobiga kiritiladigan ishchilar soni — bu barcha ishchilarning umumiy soni emas.\n\n"
                "Ushbu prognoz faqat oldingi kunlarning tarixiy ma'lumotlari asosida shakllantirilgan. "
