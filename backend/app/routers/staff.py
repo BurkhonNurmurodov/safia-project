@@ -3047,16 +3047,22 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
                 _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
         elif body.action == "delete":
             is_creator = doc.created_by_telegram_id == int(caller["sub"])
-            was_draft  = doc.status == "draft"
             if doc.status == "approved":
                 if not _can_approve_doc(doc, caller, db):
                     continue
                 _revert_doc_effects(db, doc)
-            elif caller.get("role") not in ("admin", "shift-manager") and not is_creator:
-                continue
-            if was_draft:
+                db.delete(doc)
+            elif doc.status == "draft":
+                # Deleting a pending draft IS its rejection — keep the record
+                # instead of erasing it, same as the Telegram ❌ button.
+                if not _may_reject_doc(doc, caller, db):
+                    continue
+                _reject_document(doc, caller, db)
                 resolved.append((doc.id, "rejected"))
-            db.delete(doc)
+            else:  # rejected — permanent cleanup of the record
+                if caller.get("role") not in ("admin", "shift-manager") and not is_creator:
+                    continue
+                db.delete(doc)
         else:
             raise HTTPException(status_code=400, detail="Unknown action")
         done += 1
