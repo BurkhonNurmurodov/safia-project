@@ -1438,7 +1438,7 @@ def trudoyomkost_call_notify(
         _notify_supervisor_all(
             db, mgr.id,
             nkey="call_forecast",
-            params={"date": target, "eff": eff, "count": item.workers, "max": max_workers},
+            params={"name": mgr.name, "date": target, "eff": eff, "count": item.workers, "max": max_workers},
         )
         db.add(ForecastCallNotice(manager_id=mgr.id, for_date=target,
                                   workers=item.workers, sent_by=actor))
