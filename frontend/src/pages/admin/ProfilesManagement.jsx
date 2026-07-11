@@ -202,9 +202,8 @@ export default function ProfilesManagement() {
       }
       if (form.role === "leader") {
         if (!form.manager_id) { setFormError(t("admin.profiles.supervisorRequired")); return; }
-        if (!cellVal) { setFormError(t("admin.profiles.cellRequired")); return; }
         body.manager_id = Number(form.manager_id);
-        body.cell = cellVal;
+        if (cellList.length) body.cells = cellList;
       }
       if (form.role === "supervisor") {
         if (!form.verifix_id) { setFormError(t("admin.profiles.verifixRequired")); return; }
