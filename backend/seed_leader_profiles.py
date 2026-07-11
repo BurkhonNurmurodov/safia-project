@@ -35,7 +35,7 @@ LEADERS = {
         ("Asqarova Muxlisa Axmadjon Qizi", "4413, 4415"),
     ]),
     2: ("Artikova Masuda Abduvaxabovna", [   # 5 leaders
-        ("Ruziyeva Iqbol Jurayevna", "7312, 7311, 5012"),
+        ("Ruziyeva Iqbol Jurayevna", "7312, 7311"),
         ("Jonnayev Asliddin Akromovich", "7314"),
         ("Jurayeva Xulkaroy Nozimjonovna", "2811, 2812"),
         ("Xidirova Zebo Karimovna", "2312"),
