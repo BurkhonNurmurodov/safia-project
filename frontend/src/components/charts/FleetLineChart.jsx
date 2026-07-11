@@ -246,7 +246,19 @@ export default function FleetLineChart({
 
     xaxis: {
       categories: dates.map((d) => d.slice(0, 5)),
-      labels: { style: { colors: labelColor, fontSize: "10px" } },
+      // Dense date axis: keep labels horizontal (never Apex's default -45°
+      // slant), thin them to ~10 evenly-spaced anchors for long ranges, and let
+      // Apex drop any that still collide on narrow screens. Full DD.MM stays in
+      // the tooltip, so no precision is lost — only the crammed ribbon.
+      tickAmount: dates.length > 12 ? Math.min(10, dates.length) : undefined,
+      tickPlacement: "on",
+      labels: {
+        rotate: 0,
+        rotateAlways: false,
+        hideOverlappingLabels: true,
+        trim: false,
+        style: { colors: labelColor, fontSize: "10px" },
+      },
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
