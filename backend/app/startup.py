@@ -289,19 +289,34 @@ def add_profiles_columns() -> None:
         db.close()
 
 
-def add_leader_cell_column() -> None:
-    """Add the production-cell column to leader profiles (idempotent). Nullable
-    at the DB level so legacy leaders (created before cells existed) survive the
-    rollout and can be assigned a cell later; the create endpoint requires it for
-    new leaders. Cells are just the distinct values already assigned — a new one
-    is 'created' the moment a leader is saved with it."""
+def migrate_cells_table() -> None:
+    """Cells become first-class rows: `cells` (code UNIQUE, leader_id →
+    role_profiles.id), one row per Verifix cell code — a leader can own several.
+    Splits the old comma-joined role_profiles.cell strings into rows, then
+    drops the column. Idempotent: the backfill+drop only run while the old
+    column still exists; the table itself comes from Base.metadata.create_all."""
     db = SessionLocal()
     try:
-        db.execute(text("ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS cell VARCHAR"))
+        old_col = db.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='role_profiles' AND column_name='cell'"
+        )).first()
+        if old_col:
+            rows = db.execute(text(
+                "SELECT id, cell FROM role_profiles "
+                "WHERE role='leader' AND cell IS NOT NULL"
+            )).all()
+            for pid, cell in rows:
+                for code in {c.strip() for c in (cell or "").split(",") if c.strip()}:
+                    db.execute(text(
+                        "INSERT INTO cells (code, leader_id) VALUES (:c, :l) "
+                        "ON CONFLICT (code) DO NOTHING"
+                    ), {"c": code, "l": pid})
+            db.execute(text("ALTER TABLE role_profiles DROP COLUMN cell"))
         db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[startup] leader cell column migration skipped: {exc}")
+        print(f"[startup] cells table migration skipped: {exc}")
     finally:
         db.close()
 
