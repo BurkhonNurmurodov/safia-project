@@ -563,8 +563,6 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
                                 detail="The unit is being removed — pick another unit")
         if not db.query(Manager).filter_by(id=payload.manager_id).first():
             raise HTTPException(status_code=400, detail="Supervisor unit not found")
-        if not (payload.cell or "").strip():
-            raise HTTPException(status_code=400, detail="Cell is required")
 
     # Registration resolves profiles by name — same duplicate rules as create
     # (guest names are not unique, so they are exempt).
