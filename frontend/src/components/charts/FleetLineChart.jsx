@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import ReactApexChart from "react-apexcharts";
 import { Users, ChevronDown } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
