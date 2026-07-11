@@ -477,40 +477,59 @@ export default function Login() {
                 <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-3)" }}>
                   {t("login.chooseSupervisor")}
                 </label>
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder={t("login.search")}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2"
-                  style={{ background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                />
-                <div
-                  className="rounded-xl overflow-y-auto"
-                  style={{ maxHeight: 180, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
-                >
-                  {loading ? (
-                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
-                  ) : !shift ? (
-                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.pickShiftFirst")}</div>
-                  ) : filteredManagers.length === 0 ? (
-                    <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
-                  ) : filteredManagers.map(name => (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => { setSupervisor(name); setFullName(""); }}
-                      className="w-full text-left px-4 py-2.5 text-sm transition-colors"
-                      style={{
-                        color: supervisor === name ? "var(--brand-text)" : "var(--text-1)",
-                        background: supervisor === name ? "var(--brand-bg)" : "transparent",
-                        borderBottom: "1px solid var(--border)",
-                      }}
+                {supervisor ? (
+                  /* Collapsed after selection — tap to reopen the list */
+                  <button
+                    type="button"
+                    onClick={() => { setSupervisor(""); setFullName(""); setSearch(""); }}
+                    className="w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-sm text-left font-medium"
+                    style={{
+                      background: "var(--brand-bg)",
+                      border: "1px solid var(--brand)",
+                      color: "var(--brand-text)",
+                    }}
+                  >
+                    <span className="truncate">{tl(supervisor)}</span>
+                    <ChevronDown size={15} className="flex-shrink-0 ml-2" />
+                  </button>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder={t("login.search")}
+                      className="w-full rounded-lg px-3 py-2 text-sm outline-none mb-2"
+                      style={{ background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+                    />
+                    <div
+                      className="rounded-xl overflow-y-auto"
+                      style={{ maxHeight: 180, border: "1px solid var(--border-md)", background: "var(--bg-inner)" }}
                     >
-                      {tl(name)}
-                    </button>
-                  ))}
-                </div>
+                      {loading ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.loading")}</div>
+                      ) : !shift ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.pickShiftFirst")}</div>
+                      ) : filteredManagers.length === 0 ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: "var(--text-3)" }}>{t("login.notFound")}</div>
+                      ) : filteredManagers.map(name => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => { setSupervisor(name); setFullName(""); setSearch(""); }}
+                          className="w-full text-left px-4 py-2.5 text-sm transition-colors"
+                          style={{
+                            color: "var(--text-1)",
+                            background: "transparent",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          {tl(name)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
