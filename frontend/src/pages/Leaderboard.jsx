@@ -334,6 +334,7 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
             {/* ── BACK: the stat detail ── */}
             <div className="podium-face podium-back absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, 0.48)}` }}>
               {faceChrome}
+              {rankChip}
               <div className="relative z-[1] flex flex-1 flex-col gap-2" style={{ padding: "14px 14px 12px" }}>
                 <div className="flex items-center gap-2 pl-7">
                   <div className="min-w-0 text-left">
