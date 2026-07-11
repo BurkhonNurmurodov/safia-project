@@ -273,17 +273,21 @@ function CellModal({ cell, supName, wdFull, t, tl, weeks, onClose }) {
 // follow the page's "Smena unumi" (shift-efficiency) setting so the numbers sent
 // match the forecast/stats tables. Numbers are editable one-offs: they go into
 // the notification only and never overwrite the stored forecast.
-function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
-  const wd = WD[lang] || WD.uz;
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["trud-call-tomorrow", effPct],
+function CallTomorrowModal({ t, tl, effPct, onClose, onSent }) {
+  // each shift section targets its own date — default tomorrow, any date pickable
+  const tomorrow = addDaysISO(todayISO(), 1);
+  const [dates, setDates] = useState({ 1: tomorrow, 2: tomorrow });
+
+  const sectionQuery = (shift) => ({
+    queryKey: ["trud-call-tomorrow", shift, dates[shift], effPct],
     queryFn: () => api.get("/api/production/trudoyomkost/call-tomorrow", {
-      params: { capacity_pct: effPct },
+      params: { capacity_pct: effPct, for_date: dates[shift], shift },
     }).then((r) => r.data),
     staleTime: 0,
     gcTime: 0,
   });
-  const rows = data?.rows ?? [];
+  const q1 = useQuery(sectionQuery(1));
+  const q2 = useQuery(sectionQuery(2));
 
   const [values, setValues] = useState({});    // manager_id → input string
   const [checked, setChecked] = useState({});  // manager_id → bool
@@ -291,26 +295,34 @@ function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
 
-  // seed once per fetch: everyone with a forecast AND a claimed profile is
-  // pre-selected; edge rows (no forecast / not registered) start unchecked
-  useEffect(() => {
+  // seed a section whenever its fetch lands (incl. after a date change, when the
+  // forecasts are recomputed): everyone with a forecast AND a claimed profile is
+  // pre-selected; edge rows (no forecast / not registered) start unchecked.
+  // Shifts never share a brigadir, so merging into the shared maps is safe.
+  const seed = (data) => {
     if (!data) return;
-    const v = {}, c = {};
-    data.rows.forEach((r) => {
-      v[r.manager_id] = r.forecast != null ? String(r.forecast) : "";
-      c[r.manager_id] = r.forecast != null && r.registered;
+    setValues((v) => {
+      const next = { ...v };
+      data.rows.forEach((r) => { next[r.manager_id] = r.forecast != null ? String(r.forecast) : ""; });
+      return next;
     });
-    setValues(v);
-    setChecked(c);
-  }, [data]);
+    setChecked((c) => {
+      const next = { ...c };
+      data.rows.forEach((r) => { next[r.manager_id] = r.forecast != null && r.registered; });
+      return next;
+    });
+  };
+  useEffect(() => { seed(q1.data); }, [q1.data]);
+  useEffect(() => { seed(q2.data); }, [q2.data]);
 
   const numOf = (id) => {
     const n = parseInt(values[id], 10);
     return Number.isFinite(n) && n >= 0 ? n : null;
   };
-  const selectable = rows.filter((r) => numOf(r.manager_id) != null);
-  const selected = selectable.filter((r) => checked[r.manager_id]);
-  const allOn = selectable.length > 0 && selected.length === selectable.length;
+  const rowsOf = (q) => q.data?.rows ?? [];
+  const selectableOf = (q) => rowsOf(q).filter((r) => numOf(r.manager_id) != null);
+  const selectedOf = (q) => selectableOf(q).filter((r) => checked[r.manager_id]);
+  const selected = [...selectedOf(q1), ...selectedOf(q2)];
 
   const setValue = (id, raw) => {
     setValues((v) => ({ ...v, [id]: raw }));
@@ -322,14 +334,15 @@ function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
   const doSend = () => {
     setSending(true);
     setError(null);
+    const itemsOf = (q, shift) => selectedOf(q).map((r) => ({
+      manager_id: r.manager_id,
+      workers: numOf(r.manager_id),
+      max_workers: r.band_hi != null ? r.band_hi : numOf(r.manager_id),
+      date: dates[shift],   // each item carries its section's target date
+    }));
     api.post("/api/production/trudoyomkost/call-notify", {
-      date: data.date,
       capacity_pct: effPct,
-      items: selected.map((r) => ({
-        manager_id: r.manager_id,
-        workers: numOf(r.manager_id),
-        max_workers: r.band_hi != null ? r.band_hi : numOf(r.manager_id),
-      })),
+      items: [...itemsOf(q1, 1), ...itemsOf(q2, 2)],
     })
       .then((res) => { onSent(res.data.sent); onClose(); })
       .catch((e) => setError(e?.response?.data?.detail || "Failed"))
@@ -340,9 +353,6 @@ function CallTomorrowModal({ t, tl, lang, effPct, onClose, onSent }) {
     else doSend();
   };
 
-  const dateSub = data
-    ? `${wd.f[(new Date(data.date + "T00:00:00").getDay() + 6) % 7]} · ${ddmm(data.date)}`
-    : "";
   const hhmm = (iso) => {
     try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
     catch { return ""; }
