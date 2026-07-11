@@ -2870,6 +2870,8 @@ def _revert_doc_effects(db: Session, doc: HrDocument):
 def _approve_doc(doc: HrDocument, caller: dict, db: Session):
     if doc.status == "approved":
         return
+    if doc.status == "rejected":
+        raise HTTPException(status_code=409, detail="Rejected documents cannot be posted")
     # A → supervisor exchange must not land in a unit whose verifix data for the
     # date isn't uploaded yet — that unit's eventual upload would wipe the
     # transferred rows. Creation already enforces this; re-check here for drafts
