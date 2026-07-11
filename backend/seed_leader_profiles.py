@@ -175,7 +175,7 @@ try:
         print(f"Manager ids not found in DB: {missing} — aborting, nothing written.")
         sys.exit(1)
 
-    created = skipped = warned = 0
+    created = skipped = warned = updated = 0
     for mid, (expected, leaders) in sorted(LEADERS.items()):
         mgr = db.query(Manager).filter_by(id=mid).first()
         print(f"\n[{mid}] {mgr.name} — shift {mgr.shift}   (file: «{expected}»)")
@@ -183,8 +183,13 @@ try:
         for name, cells in leaders:
             dup = next((p for p in existing if p.name == name), None)
             if dup:
-                print(f"  = exists, skipped: {name}")
-                skipped += 1
+                if (dup.cell or "") != cells:
+                    print(f"  ~ exists, cell updated {dup.cell!r} → {cells!r}: {name}")
+                    dup.cell = cells
+                    updated += 1
+                else:
+                    print(f"  = exists, skipped: {name}")
+                    skipped += 1
                 continue
             near = next((p for p in existing
                          if norm(p.name).startswith(norm(name)) or norm(name).startswith(norm(p.name))), None)
