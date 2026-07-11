@@ -1748,6 +1748,7 @@ function Field({ label, value }) {
 const HISTORY_TKEY = {
   created: "staff.actionCreated", edited: "staff.actionEdited",
   approved: "staff.histPosted", cancelled: "staff.histUnposted",
+  rejected: "staff.rejected",
 };
 
 function DocumentHistoryModal({ docId, onClose }) {
