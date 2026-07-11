@@ -176,6 +176,35 @@ try:
         print(f"Manager ids not found in DB: {missing} — aborting, nothing written.")
         sys.exit(1)
 
+    def sync_cells(leader_id: int, codes_str: str) -> int:
+        """Reconcile the leader's owned cells rows to the file's code list.
+        Returns the number of changes; a code owned by ANOTHER leader is
+        reported and left untouched."""
+        want = [c.strip() for c in (codes_str or "").split(",") if c.strip()]
+        owned = db.query(Cell).filter_by(leader_id=leader_id).all()
+        changes = 0
+        for row in owned:
+            if row.code not in want:
+                print(f"      - released cell {row.code}")
+                db.delete(row)
+                changes += 1
+        have = {row.code for row in owned}
+        for code in want:
+            if code in have:
+                continue
+            row = db.query(Cell).filter_by(code=code).first()
+            if row and row.leader_id and row.leader_id != leader_id:
+                other = db.query(RoleProfile).filter_by(id=row.leader_id).first()
+                print(f"      ! cell {code} already owned by "
+                      f"«{other.name if other else row.leader_id}» — left as is")
+                continue
+            if row:
+                row.leader_id = leader_id
+            else:
+                db.add(Cell(code=code, leader_id=leader_id))
+            changes += 1
+        return changes
+
     created = skipped = warned = updated = 0
     for mid, (expected, leaders) in sorted(LEADERS.items()):
         mgr = db.query(Manager).filter_by(id=mid).first()
@@ -184,9 +213,8 @@ try:
         for name, cells in leaders:
             dup = next((p for p in existing if p.name == name), None)
             if dup:
-                if (dup.cell or "") != cells:
-                    print(f"  ~ exists, cell updated {dup.cell!r} → {cells!r}: {name}")
-                    dup.cell = cells
+                if sync_cells(dup.id, cells):
+                    print(f"  ~ exists, cells synced → {cells}: {name}")
                     updated += 1
                 else:
                     print(f"  = exists, skipped: {name}")
@@ -196,15 +224,18 @@ try:
                          if norm(p.name).startswith(norm(name)) or norm(name).startswith(norm(p.name))), None)
             if near:
                 print(f"  ! SKIPPED — likely same person already exists as «{near.name}» "
-                      f"(id {near.id}, cell {near.cell!r}): {name}")
+                      f"(id {near.id}): {name}")
                 warned += 1
                 continue
-            db.add(RoleProfile(role="leader", name=name, manager_id=mid, cell=cells))
+            p = RoleProfile(role="leader", name=name, manager_id=mid)
+            db.add(p)
+            db.flush()  # leader row first — its cells need p.id
+            sync_cells(p.id, cells)
             print(f"  + {name}  → {cells}")
             created += 1
 
-    print(f"\n{created} to create, {updated} cells updated, {skipped} exact duplicates "
-          f"skipped, {warned} near-duplicates skipped (review the ! lines).")
+    print(f"\n{created} to create, {updated} cell syncs, {skipped} unchanged "
+          f"duplicates skipped, {warned} near-duplicates skipped (review the ! lines).")
     if dry_run:
         db.rollback()
         print("Dry run — rolled back, nothing written.")
