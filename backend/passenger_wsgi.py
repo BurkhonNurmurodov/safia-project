@@ -40,7 +40,7 @@ try:
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         relax_pp_upload_manager,
-        backfill_leader_page_access, add_profiles_columns, add_leader_cell_column,
+        backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_shift_manager, add_concern_category,
