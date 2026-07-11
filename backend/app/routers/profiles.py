@@ -323,10 +323,10 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
 class CreateProfilePayload(BaseModel):
     role:       str
     name:       str
-    shift:      Optional[int] = None   # shift-manager | supervisor
-    manager_id: Optional[int] = None   # leader → supervisor unit
-    cell:       Optional[str] = None   # leader → production cell (required)
-    verifix_id: Optional[int] = None   # supervisor → managers.id
+    shift:      Optional[int] = None        # shift-manager | supervisor
+    manager_id: Optional[int] = None        # leader → supervisor unit
+    cells:      Optional[list[str]] = None  # leader → owned cell codes (optional)
+    verifix_id: Optional[int] = None        # supervisor → managers.id
 
 
 @router.post("/admin")
