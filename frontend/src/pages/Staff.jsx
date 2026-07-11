@@ -2494,9 +2494,9 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
       if (typeFilter.length       && !typeFilter.includes(d.doc_type))              return false;
       if (supervisorFilter.length && !supervisorFilter.includes(d.supervisor_name)) return false;
       if (approverFilter.length   && !approverFilter.includes(d.approved_by_name))  return false;
-      if (statusFilter === "pending") return d._source === "deletion" ? d.status === "pending" : !d.approved;
-      if (statusFilter === "yes"    ) return d.approved;
-      if (statusFilter === "no"     ) return d._source === "deletion" ? d.status === "rejected" : !d.approved;
+      if (statusFilter === "pending") return docStatus(d) === "pending";
+      if (statusFilter === "yes"    ) return docStatus(d) === "approved";
+      if (statusFilter === "no"     ) return docStatus(d) === "rejected";
       return true;
     });
     r = [...r].sort((a, b) => {
