@@ -184,6 +184,42 @@ def _user_info(db: Session) -> dict[int, dict]:
     }
 
 
+def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
+    """Reconcile a leader's owned cells to exactly `codes`: release rows no
+    longer listed (deleted — the registry only holds owned cells), claim or
+    create the rest. A code owned by ANOTHER leader is a 409 — cells are
+    unique, reassign it from its current owner first."""
+    want: list[str] = []
+    for c in codes or []:
+        c = " ".join((c or "").split())
+        if c and c not in want:
+            want.append(c)
+    existing = db.query(Cell).filter_by(leader_id=leader_id).all()
+    for row in existing:
+        if row.code not in want:
+            db.delete(row)
+    have = {row.code for row in existing}
+    for code in want:
+        if code in have:
+            continue
+        row = db.query(Cell).filter_by(code=code).first()
+        if row and row.leader_id not in (None, leader_id):
+            owner = db.query(RoleProfile).filter_by(id=row.leader_id).first()
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cell {code} is already assigned to "
+                       f"{owner.name if owner else 'another leader'}")
+        if row:
+            row.leader_id = leader_id
+        else:
+            db.add(Cell(code=code, leader_id=leader_id))
+
+
+def _release_leader_cells(db: Session, leader_id: int) -> None:
+    """Drop every cell owned by the profile (delete + role switch away from leader)."""
+    db.query(Cell).filter_by(leader_id=leader_id).delete()
+
+
 def _manager_has_data(db: Session, manager_id: int) -> bool:
     for table, col in _MANAGER_ID_REFS:
         if table == "role_profiles":
