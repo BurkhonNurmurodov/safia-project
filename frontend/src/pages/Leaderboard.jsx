@@ -316,14 +316,18 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
           <div className="podium-flip-inner absolute inset-0">
 
             {/* ── FRONT: the honour crest ── */}
-            <div className="podium-face absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: "var(--bg-card)", border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}` }}>
+            <div className="podium-face absolute inset-0 flex flex-col overflow-hidden rounded-2xl" style={{ background: `linear-gradient(180deg, ${hexA(medal, first ? 0.13 : 0.09)} 0%, var(--bg-card) 44%)`, border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}` }}>
               {faceChrome}
-              <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
-              {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "6% 12% auto 12%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
-              <div className="relative z-[1] flex flex-1 flex-col items-center justify-center" style={{ padding: "18px 16px 20px" }}>
-                <Crest sup={s} score={s.comp} medal={medal} size={first ? 132 : 116} first={first} />
-                <div className="mt-5 font-bold" style={{ fontSize: first ? 16.5 : 15 }}>{s.name}</div>
-                <div className="tabular-nums font-extrabold leading-none" style={{ marginTop: 6, fontSize: first ? 24 : 21, color: bandInk(st, s.comp) }}>{fmt1(s.comp)}<span style={{ fontSize: "0.62em", fontWeight: 700 }}>%</span></div>
+              {/* embossed jersey numeral — outlined metal, not a grey fill */}
+              <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 8, bottom: -30, fontSize: first ? 172 : 138, letterSpacing: "-0.04em", color: "transparent", WebkitTextStroke: `2px ${hexA(medal, 0.2)}` }}>{s.rank}</span>
+              {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "8% 14% auto 14%", height: "54%", background: `radial-gradient(circle at 50% 42%, ${hexA(medal, 0.5)} 0%, transparent 62%)` }} />}
+              <div className="relative z-[1] flex flex-1 flex-col items-center justify-center" style={{ padding: `${first ? 20 : 18}px 16px 18px` }}>
+                <Crest sup={s} score={s.comp} medal={medal} size={first ? 130 : 112} first={first} rank={s.rank} />
+                <div className="font-bold leading-tight" style={{ marginTop: first ? 16 : 24, fontSize: first ? 17 : 15.5 }}>{s.name}</div>
+                <div className="flex items-baseline gap-0.5 tabular-nums font-extrabold leading-none" style={{ marginTop: 5 }}>
+                  <span style={{ fontSize: first ? 27 : 23, color: "var(--text-1)", letterSpacing: "-0.02em" }}>{fmt1(s.comp)}</span>
+                  <span style={{ fontSize: first ? 15 : 13, fontWeight: 700, color: "var(--text-3)" }}>%</span>
+                </div>
               </div>
             </div>
 
