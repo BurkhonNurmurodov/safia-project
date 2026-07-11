@@ -2900,11 +2900,18 @@ def _cancel_doc(doc: HrDocument, caller: dict, db: Session):
 
 
 def _reject_document(doc: HrDocument, caller: dict, db: Session):
-    """Reject a *draft* HR document — delete it and notify its creator. This is
-    the Telegram/app counterpart of approving (posting) a draft. Approved
-    documents cannot be rejected; cancel or delete them instead."""
+    """Reject a *draft* HR document — keep the row as a rejected record (the
+    processor lands in the approved_by_* columns, exactly like deletion batches
+    surface their processor) and notify its creator. This is the Telegram/app
+    counterpart of approving (posting) a draft. Approved documents cannot be
+    rejected; cancel or delete them instead."""
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft documents can be rejected")
+    doc.status                  = "rejected"
+    doc.approved_by_telegram_id = int(caller["sub"])
+    doc.approved_by_name        = caller.get("full_name", "")
+    doc.approved_at             = datetime.now(timezone.utc)
+    _record_history(db, doc, "rejected", caller)
     if doc.created_by_telegram_id and doc.created_by_telegram_id != int(caller["sub"]):
         _notify(db, doc.created_by_telegram_id, type="error",
                 nkey="document_rejected",
@@ -2913,7 +2920,15 @@ def _reject_document(doc: HrDocument, caller: dict, db: Session):
                     "doc_type":   doc.doc_type,
                     "date":       doc.date,
                 })
-    db.delete(doc)
+
+
+def _may_reject_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """Who may reject a draft: anyone with approval authority for it, an
+    admin/shift-manager (who could always delete the draft), or its creator
+    (rejecting your own draft = withdrawing it)."""
+    return (_can_approve_doc(doc, caller, db)
+            or caller.get("role") in ("admin", "shift-manager")
+            or doc.created_by_telegram_id == int(caller["sub"]))
 
 
 @router.post("/documents/{doc_id}/approve")
