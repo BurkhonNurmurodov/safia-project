@@ -15,12 +15,13 @@ export default defineConfig({
     cssTarget: 'chrome87',
   },
   server: {
-    // Claude Code preview assigns a free port via PORT when 5173 is taken
+    // Claude Code preview assigns a free port via PORT when 5173 is taken;
+    // API_PORT lets a parallel session pair with its own backend instance
     port: Number(process.env.PORT) || 5173,
     allowedHosts: true,
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/admin': 'http://localhost:8000',
+      '/api': `http://localhost:${process.env.API_PORT || 8000}`,
+      '/admin': `http://localhost:${process.env.API_PORT || 8000}`,
     },
   },
 })
