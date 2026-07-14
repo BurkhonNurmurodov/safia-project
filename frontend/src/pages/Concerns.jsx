@@ -540,6 +540,12 @@ export default function Concerns() {
     queryFn: () => api.get("/api/concerns/cells").then((r) => r.data),
     enabled: modalOpen && !readOnly,
   });
+  // Cells (and therefore brigadirs) belong to a shift: once the form names the
+  // shift the concern is raised for, only that shift's units are in play.
+  const shiftCells = useMemo(() => (
+    form.shift ? cells.filter((c) => c.supervisor_shift === Number(form.shift)) : cells
+  ), [cells, form.shift]);
+
   // When the scope has exactly one cell (e.g. a leader logging for their own
   // cell), pre-select it so they don't have to open the picker at all.
   useEffect(() => {
@@ -547,12 +553,6 @@ export default function Concerns() {
       setForm((f) => ({ ...f, cell_code: shiftCells[0].cell }));
     }
   }, [modalOpen, form.id, form.cell_code, shiftCells]);
-
-  // Cells (and therefore brigadirs) belong to a shift: once the form names the
-  // shift the concern is raised for, only that shift's units are in play.
-  const shiftCells = useMemo(() => (
-    form.shift ? cells.filter((c) => c.supervisor_shift === Number(form.shift)) : cells
-  ), [cells, form.shift]);
 
   // Brigadir pre-filter for the cell picker: the full cell list is long (100+),
   // so viewers whose scope spans several units first pick the supervisor and
