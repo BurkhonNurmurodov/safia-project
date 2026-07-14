@@ -715,8 +715,8 @@ export default function Leaders() {
 
         {/* Lowest-success task */}
         <StatCard label={T.lowTask} icon={AlertTriangle}
-          tip={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}: ${taskDetail(insights.lowTask.idx, lang).n}` : T.tipLowTask}
-          value={hasData && insights.lowTask ? `T${insights.lowTask.idx + 1}` : "—"}
+          tip={hasData && insights.lowTask ? `T${insights.lowTask.id}: ${taskDetail(insights.lowTask.id, lang).n}` : T.tipLowTask}
+          value={hasData && insights.lowTask ? `T${insights.lowTask.id}` : "—"}
           badge={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
           badgeColor={hasData && insights.lowTask ? scoreColor(insights.lowTask.val) : "var(--text-4)"} />
 
