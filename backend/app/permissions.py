@@ -67,6 +67,10 @@ DEFAULT_PAGE_ACCESS = {
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
+    # Quality register (complaints & non-conformances, synced from the QA
+    # sheet). A management view of the whole factory: admins plus the two
+    # manager tiers; supervisors/leaders can be toggled on from the Access tab.
+    "quality": ["top-manager", "shift-manager"],
     # Leader concerns ("Xavotirlar") log. Role-scoped: leaders manage their own
     # rows, supervisors their unit's leaders, shift-managers their shift's
     # units, admins everything; top-managers get a read-only view of all.
