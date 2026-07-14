@@ -145,6 +145,7 @@ const TXT = {
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
+    textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
   },
   uz_cyrl: {
     title: "Сифат ва шикоятлар", sub: "Номувофиқликлар реестри таҳлили",
@@ -175,6 +176,7 @@ const TXT = {
     mFault: "Сех/дўкон айби", mCell: "Айбдор ячейка", mReturn: "Қайтариш келди",
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
+    textFailed: "Матнли майдонларни юклаб бўлмади",
   },
   ru: {
     title: "Качество и жалобы", sub: "Аналитика реестра несоответствий",
@@ -205,6 +207,7 @@ const TXT = {
     mFault: "Вина цеха/магазина", mCell: "Виновная ячейка", mReturn: "Поступил возврат",
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
+    textFailed: "Не удалось загрузить текстовые поля",
   },
   en: {
     title: "Quality & complaints", sub: "Non-conformance register analytics",
@@ -235,6 +238,7 @@ const TXT = {
     mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received",
     close: "Close", detail: "Non-conformance", otherWord: "Other",
     loadFailed: "Could not load the register", retry: "Retry",
+    textFailed: "Could not load the text fields",
   },
 };
 
@@ -502,11 +506,15 @@ export default function Quality() {
   const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const onSort = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }));
 
-  const { data: detail, isFetching: detailLoading } = useQuery({
+  const { data: detail, isFetching: detailLoading, error: detailError } = useQuery({
     queryKey: ["quality-row", openId],
     queryFn: () => api.get(`/api/quality/${openId}`).then((r) => r.data),
     enabled: openId != null,
   });
+
+  // The clicked row, straight from the list payload — the modal paints from it
+  // without waiting on the network.
+  const openRow = useMemo(() => rows.find((r) => r.id === openId) || null, [rows, openId]);
 
   // ── filter panel ──────────────────────────────────────────────────────────
   const optFilter = (o, sel, set, group, icon) => ({
@@ -1007,57 +1015,65 @@ export default function Quality() {
         </div>
       )}
 
-      {/* ── row detail ── */}
-      {openId != null && (
+      {/* ── row detail ──
+          Everything except the three long free-text columns is already in the
+          table row, so the modal paints from that immediately. Only the text
+          block waits on /api/quality/{id} — a failure there costs the notes,
+          not the whole card. */}
+      {openRow && (
         <Modal
           open
           onClose={() => setOpenId(null)}
           title={T.detail}
-          subtitle={detail ? `${fmtDate(detail.date)}${detail.ref_no ? ` · № ${detail.ref_no}` : ""}` : ""}
+          subtitle={`${fmtDate(openRow.d)}${openRow.no ? ` · № ${openRow.no}` : ""}`}
           icon={<ClipboardList size={16} />}
           maxWidth="max-w-2xl"
           footer={<Button variant="secondary" onClick={() => setOpenId(null)}>{T.close}</Button>}
         >
-          {detailLoading || !detail ? (
-            <div className="space-y-2">
-              <SkeletonBlock className="h-4 w-40" /><SkeletonBlock className="h-16 w-full" /><SkeletonBlock className="h-12 w-full" />
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              <Chip color={SRC_COLORS[openRow.s] || C_NA} icon={SRC_ICONS[openRow.s] || CircleDot}>{L("src", openRow.s)}</Chip>
+              <Chip color={TYPE_COLORS[openRow.t] || C_NA}>{L("type", openRow.t)}</Chip>
+              {openRow.c && <Chip color={CAT_COLORS[openRow.c] || C_NA}>{L("cat", openRow.c)}</Chip>}
+              <Chip color={STATUS_COLORS[openRow.st] || C_NA}>{L("st", openRow.st)}</Chip>
+              {openRow.r && <Chip color={C_WAIT} icon={Undo2}>{T.mReturn}</Chip>}
             </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap gap-1.5">
-                <Chip color={SRC_COLORS[detail.source] || C_NA} icon={SRC_ICONS[detail.source] || CircleDot}>{L("src", detail.source)}</Chip>
-                <Chip color={TYPE_COLORS[detail.ctype] || C_NA}>{L("type", detail.ctype)}</Chip>
-                {detail.category && <Chip color={CAT_COLORS[detail.category] || C_NA}>{L("cat", detail.category)}</Chip>}
-                <Chip color={STATUS_COLORS[detail.status] || C_NA}>{L("st", detail.status)}</Chip>
-                {detail.returned && <Chip color={C_WAIT} icon={Undo2}>{T.mReturn}</Chip>}
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {[
-                  [T.colPlace, tl(detail.place || "")],
-                  [T.colProduct, tl(detail.product || "")],
-                  [T.mCell, [detail.fault_code, tl(detail.cell_name || "")].filter(Boolean).join(" · ")],
-                  [T.mFault, detail.fault == null ? "—" : detail.fault ? T.yes : T.no],
-                  [T.colBrig, tl(detail.brigadir || "")],
-                  [T.colMgr, tl(detail.manager || "")],
-                ].map(([k, v]) => (
-                  <div key={k} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-inner)" }}>
-                    <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>{k}</div>
-                    <div style={{ color: "var(--text-1)" }}>{v || "—"}</div>
-                  </div>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                [T.colPlace, tl(openRow.pl || "")],
+                [T.colProduct, tl(openRow.pr || "")],
+                [T.mCell, [openRow.fc, tl(openRow.cn || "")].filter(Boolean).join(" · ")],
+                [T.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
+                [T.colBrig, tl(openRow.b || "")],
+                [T.colMgr, tl(openRow.m || "")],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-inner)" }}>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>{k}</div>
+                  <div style={{ color: "var(--text-1)" }}>{v || "—"}</div>
+                </div>
+              ))}
+            </div>
 
-              {[[T.mDesc, detail.description], [T.mAction, detail.action], [T.mComment, detail.comment]]
+            {detailLoading && !detail ? (
+              <div className="space-y-2">
+                <SkeletonBlock className="h-3 w-28" /><SkeletonBlock className="h-14 w-full" />
+              </div>
+            ) : detailError ? (
+              <div className="rounded-xl px-3 py-2 text-[11px]" style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN }}>
+                {T.textFailed}: {detailError?.response?.status || ""} {detailError?.response?.data?.detail || detailError?.message || ""}
+              </div>
+            ) : (
+              [[T.mDesc, detail?.description], [T.mAction, detail?.action], [T.mComment, detail?.comment]]
                 .filter(([, v]) => v)
                 .map(([k, v]) => (
                   <div key={k}>
                     <div className="text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{k}</div>
                     <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{tl(v)}</p>
                   </div>
-                ))}
-            </>
-          )}
+                ))
+            )}
+          </>
         </Modal>
       )}
     </Layout>
