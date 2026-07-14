@@ -783,9 +783,20 @@ export default function Quality() {
         </div>
       </div>
 
-      {refresh.isError && (
-        <div className="rounded-2xl px-4 py-3 text-xs mb-4" style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN, border: `1px solid ${hexA(C_OPEN, 0.33)}` }}>
-          {refresh.error?.response?.data?.detail || String(refresh.error)}
+      {(refresh.isError || isError) && (
+        <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
+          style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN, border: `1px solid ${hexA(C_OPEN, 0.33)}` }}>
+          <span className="inline-flex items-center gap-1.5 min-w-0">
+            <AlertTriangle size={14} className="flex-shrink-0" />
+            <span className="min-w-0">
+              {refresh.isError
+                ? (refresh.error?.response?.data?.detail || String(refresh.error))
+                : (error?.response?.data?.detail || T.loadFailed)}
+            </span>
+          </span>
+          {isError && !refresh.isError && (
+            <Button size="sm" variant="secondary" onClick={() => refetch()}>{T.retry}</Button>
+          )}
         </div>
       )}
 
