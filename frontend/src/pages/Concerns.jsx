@@ -536,7 +536,24 @@ export default function Concerns() {
       setForm((f) => ({ ...f, cell_code: cells[0].cell }));
     }
   }, [modalOpen, form.id, form.cell_code, cells]);
-  const cellOptions = cells.map((c) => ({
+
+  // Brigadir pre-filter for the cell picker: the full cell list is long (100+),
+  // so viewers whose scope spans several units first pick the supervisor and
+  // the cell picker collapses to that unit's cells. "" = all cells.
+  const supervisorOptions = useMemo(() => {
+    const seen = new Map();
+    cells.forEach((c) => {
+      if (c.supervisor_id && !seen.has(c.supervisor_id)) seen.set(c.supervisor_id, c.supervisor || "");
+    });
+    return [...seen.entries()]
+      .map(([id, name]) => ({ value: String(id), label: tl(name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [cells, tl]);
+  const cellSupOptions = [{ value: "", label: t("concerns.allSupervisors") }, ...supervisorOptions];
+  const shownCells = cellSupervisor
+    ? cells.filter((c) => String(c.supervisor_id) === cellSupervisor)
+    : cells;
+  const cellOptions = shownCells.map((c) => ({
     value: c.cell,
     label: c.leader ? `${c.cell} · ${tl(c.leader)}` : c.cell,
   }));
