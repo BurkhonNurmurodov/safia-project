@@ -327,16 +327,23 @@ export default function Quality() {
 
   // Filter options come from the data itself, so a label the QA team adds
   // tomorrow shows up in the filters without a code change.
+  // The responsible person, under the name the platform uses. The backend
+  // matched the sheet's passport-style names against the supervisor units, so a
+  // matched row reads "Хакимов Руслан" like every other page; everyone else in
+  // the register (technologists, IT, logistics, leaders) keeps their sheet name.
+  const who = (r) => r.sup || r.b || "";
+
   const opts = useMemo(() => {
     const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))];
-    const byCount = (key) => {
+    const byCount = (fn) => {
       const c = {};
-      for (const r of rows) if (r[key]) c[r[key]] = (c[r[key]] || 0) + 1;
+      for (const r of rows) { const k = fn(r); if (k) c[k] = (c[k] || 0) + 1; }
       return Object.keys(c).sort((a, b) => c[b] - c[a]);
     };
     return {
-      src: uniq("s"), type: byCount("t"), cat: byCount("c"), status: uniq("st"),
-      brig: byCount("b"), mgr: byCount("m"),
+      src: uniq("s"), type: byCount((r) => r.t), cat: byCount((r) => r.c), status: uniq("st"),
+      brig: byCount(who), mgr: byCount((r) => r.m),
+      shift: [...new Set(rows.map((r) => r.sh).filter(Boolean))].sort(),
     };
   }, [rows]);
 
@@ -348,15 +355,16 @@ export default function Quality() {
       if (catSel.length && !catSel.includes(r.c)) return false;
       if (statusSel.length && !statusSel.includes(r.st)) return false;
       if (retSel.length && !retSel.includes(r.r ? "yes" : "no")) return false;
-      if (brigSel.length && !brigSel.includes(r.b)) return false;
+      if (brigSel.length && !brigSel.includes(who(r))) return false;
+      if (shiftSel.length && !shiftSel.includes(String(r.sh || ""))) return false;
       if (mgrSel.length && !mgrSel.includes(r.m)) return false;
       if (q) {
-        const hay = `${r.pl || ""} ${tl(r.pl || "")} ${r.pr || ""} ${tl(r.pr || "")} ${r.b || ""} ${tl(r.b || "")} ${r.cn || ""} ${r.fc || ""} ${r.no || ""}`.toLowerCase();
+        const hay = `${r.pl || ""} ${tl(r.pl || "")} ${r.pr || ""} ${tl(r.pr || "")} ${r.b || ""} ${tl(r.b || "")} ${r.sup || ""} ${tl(r.sup || "")} ${r.cn || ""} ${r.fc || ""} ${r.no || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     };
-  }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, mgrSel, tl]);
+  }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, tl]);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && matchesFilters(r)),
