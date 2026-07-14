@@ -670,10 +670,13 @@ export default function Quality() {
     plotOptions: {
       heatmap: {
         radius: 4, enableShades: false,
+        // A brand-gold sequential ramp: empty cells fade into the grid, the
+        // hot ones darken. No shades/filters — an SVG filter on a many-celled
+        // heatmap is what froze a laptop last time.
         colorScale: {
           ranges: [
-            { from: 0, to: 0.0001, color: gridColor, name: "0%" },
-            { from: 0.0001, to: 5, color: hexA(BRAND, 0.25).replace(/rgba?\(|\)|,.*$/g, "") ? "#e8d5b0" : "#e8d5b0" },
+            { from: 0, to: 0.0001, color: gridColor },
+            { from: 0.0001, to: 5, color: "#efdfc2" },
             { from: 5, to: 15, color: "#dcb977" },
             { from: 15, to: 30, color: "#C8973F" },
             { from: 30, to: 100, color: "#8c6522" },
