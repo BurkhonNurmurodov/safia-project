@@ -136,9 +136,11 @@ const TXT = {
   },
 };
 
-// 12 task descriptions, carried over from apps-script/JavaScript.html.
-// Localized into all four UI languages (uz / uz_cyrl / ru / en);
-// weights are language-independent.
+// The 13 checklist questions, in the sheet's question order (index + 1 = the
+// "N)" in its column headers). The first 12 carry over from
+// apps-script/JavaScript.html; T13 was added to the form later, which is why the
+// old T12 weight of 10% is now split 5% / 5% across the two. Localized into all
+// four UI languages; weights are language-independent and total 100%.
 const TASK_DETAILS = [
   { w: "10%",
     ru:      { n: "Фиксация ежедневной загрузки ячейки (план)", note: "фотоотчет" },
