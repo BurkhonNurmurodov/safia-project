@@ -201,8 +201,11 @@ const TASK_DETAILS = [
     uz_cyrl: { n: "Зам лидер ишини назорат қилиш", note: "Чек-лист фото ҳисоботи" },
     en:      { n: "Assistant leader work control", note: "Checklist photo report" } },
 ];
-const taskDetail = (i, lang) => {
-  const td = TASK_DETAILS[i];
+// `id` is the sheet's question number (1-based). A question that is on the form
+// but not yet described here still renders — as "Task N", with no weight.
+const taskDetail = (id, lang) => {
+  const td = TASK_DETAILS[id - 1];
+  if (!td) return { weight: "—", n: "", note: "" };
   const loc = td[lang] || td.uz || td.ru;
   return { weight: td.w, ...loc };
 };
