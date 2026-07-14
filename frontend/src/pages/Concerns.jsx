@@ -1687,10 +1687,13 @@ export default function Concerns() {
 
               {/* Brigadir — narrows the cell picker below to one unit's cells.
                   Only shown when the viewer's scope spans several supervisors
-                  (a supervisor/leader already sees just their own cells). */}
+                  (a supervisor/leader already sees just their own cells), and
+                  only unlocked once the target holder above has been named —
+                  the form is a cascade: shift → smena menejeri → brigadir. */}
               {supervisorOptions.length > 1 && (
                 <Field label={t("concerns.fieldSupervisor")}>
                   <StyledSelect
+                    disabled={!targetPicked}
                     value={cellSupervisor}
                     onChange={(v) => {
                       setCellSupervisor(v);
