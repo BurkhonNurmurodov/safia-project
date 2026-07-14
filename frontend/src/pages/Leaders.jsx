@@ -429,19 +429,40 @@ export default function Leaders() {
 
   const hasData = filtered.length > 0;
 
-  // aggregates over the selected period (KPIs, task chart, standings, table)
-  const { avg, taskRates } = useMemo(() => {
-    if (!filtered.length) return { avg: 0, taskRates: [] };
-    const taskCounts = new Array(12).fill(0); let total = 0;
+  // Aggregates over the selected period (KPIs, task chart, standings, table).
+  // Tasks are keyed by the sheet's question number, and a question nobody was
+  // asked (`answered: false` — it was added to the form after these submissions)
+  // is left out of its own rate instead of counting as a failure. Rows synced
+  // before the backend carried the flag have no `answered` key: those are real
+  // answers, so only an explicit `false` excludes one.
+  const { avg, taskStats } = useMemo(() => {
+    if (!filtered.length) return { avg: 0, taskStats: [] };
+    const acc = new Map();                                    // question id → {done, asked}
+    let total = 0;
     for (const r of filtered) {
       total += r.completion;
-      (r.tasks || []).forEach((tk, i) => { if (tk.done) taskCounts[i]++; });
+      for (const tk of r.tasks || []) {
+        const id = Number(tk.id);
+        if (!Number.isFinite(id)) continue;
+        const a = acc.get(id) || { done: 0, asked: 0 };
+        if (tk.answered !== false) { a.asked++; if (tk.done) a.done++; }
+        acc.set(id, a);
+      }
     }
     return {
       avg: Math.round(total / filtered.length),
-      taskRates: taskCounts.map((c) => Math.round((c / filtered.length) * 100)),
+      taskStats: [...acc.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([id, a]) => ({
+          id, asked: a.asked,
+          rate: a.asked ? Math.round((a.done / a.asked) * 100) : null,
+        })),
     };
   }, [filtered]);
+
+  // Only questions that were actually put to someone can be scored — an unasked
+  // one would otherwise plot as a 0% bar and win "worst task" on no evidence.
+  const chartTasks = useMemo(() => taskStats.filter((t) => t.asked > 0), [taskStats]);
 
   // Trend series — daily points for short windows; aggregates into weekly /
   // monthly buckets as the span grows so the date axis stays readable.
