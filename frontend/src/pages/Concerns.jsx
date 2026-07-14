@@ -1664,7 +1664,7 @@ export default function Concerns() {
                     onChange={(v) => {
                       setCellSupervisor("");   // re-locks the brigadir step below
                       setForm((f) => ({
-                        ...f, level: v, shift: "", shift_manager_profile_id: null, top_manager_profile_id: null,
+                        ...f, level: v, shift: "", shift_manager_profile_id: null, top_manager_profile_id: null, cell_code: "",
                       }));
                     }}
                     options={["shift-manager", "top-manager"].map((l) => ({ value: l, label: levelLabel(l) }))}
