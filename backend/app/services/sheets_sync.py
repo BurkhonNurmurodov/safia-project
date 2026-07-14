@@ -94,3 +94,27 @@ def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
 
     db.commit()
     return {"leader_rows": count}
+
+
+def sync_quality_sheet(sheet_id: str, db: Session) -> dict:
+    """Fetch the quality register («для свода») and persist. Wipe-and-reload,
+    mirroring the leaders sync — the sheet is the source of truth, rows there
+    are edited in place (status flips from «Нет» to «Да» when the corrective
+    action lands), so an append-only merge would leave stale copies behind."""
+    rows = read_quality_data(sheet_id)
+
+    db.query(QualityComplaint).delete()
+    for r in rows:
+        db.add(QualityComplaint(**r))
+
+    meta = db.query(QualitySyncMeta).filter_by(id=1).first()
+    if not meta:
+        meta = QualitySyncMeta(id=1)
+        db.add(meta)
+    meta.last_synced = datetime.now(timezone.utc)
+    meta.ok = True
+    meta.message = None
+    meta.row_count = len(rows)
+
+    db.commit()
+    return {"quality_rows": len(rows)}
