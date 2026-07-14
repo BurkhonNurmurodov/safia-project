@@ -200,6 +200,8 @@ const t = {
     "concerns.fieldShiftManager":"Smena menejeri",
     "concerns.pickShiftManager": "Smena menejerini tanlang",
     "concerns.pickShiftFirst":   "Avval smenani tanlang",
+    "concerns.pickShiftManagerFirst": "Avval smena menejerini tanlang",
+    "concerns.pickTopManagerFirst":   "Avval top-menejerni tanlang",
     "concerns.fieldReason":    "Sabab",
     "concerns.reasonHint":     "Nega bu darajada hal qilib bo'lmadi?",
     "concerns.reasonRequired": "Sabab kiritilishi shart",
