@@ -901,21 +901,28 @@ export default function Leaders() {
 
       {/* Detail modal */}
       {detail && (
-        <Modal maxWidth="max-w-3xl" title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`} onClose={() => setDetail(null)}>
+        <Modal maxWidth="max-w-3xl" title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`}
+          subtitle={detail.submitted_at
+            ? `${T.submittedAt}: ${fmtDate(detail.submitted_at, lang)} ${hhmm(detail.submitted_at)}${lateDays(detail) > 0 ? ` (+${lateDays(detail)} ${T.dayAbbr})` : ""}`
+            : null}
+          onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
-              // map the task back to its description (tk.id is "1".."12"; fall back to row order)
-              const ti = Number.isFinite(Number(tk.id)) ? Number(tk.id) - 1 : i;
-              const desc = TASK_DETAILS[ti] ? taskDetail(ti, lang).n : null;
+              const id = Number(tk.id);
+              const desc = taskDetail(id, lang).n;
+              // a question the form did not put to this leader — neither pass nor fail
+              const unasked = tk.answered === false;
+              const tone = unasked ? "#94a3b8" : tk.done ? C_GOOD : C_BAD;
               return (
-                <div key={i} className="rounded-xl p-3" style={{ background: hexA(tk.done ? C_GOOD : C_BAD, 0.08), border: `1px solid ${hexA(tk.done ? C_GOOD : C_BAD, 0.25)}` }}>
+                <div key={i} className="rounded-xl p-3" style={{ background: hexA(tone, 0.08), border: `1px solid ${hexA(tone, 0.25)}` }}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
-                    {tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
+                    {unasked ? <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>
+                      : tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
                   </div>
                   {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
-                  <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>
+                  {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>}
                   {photos.map((p, pi) => (
                     <img key={pi} src={p} alt="" onClick={() => window.open(p, "_blank")} loading="lazy"
                       className="mt-2 w-full rounded-lg border cursor-zoom-in" style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
