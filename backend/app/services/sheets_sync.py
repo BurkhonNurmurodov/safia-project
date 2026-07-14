@@ -89,6 +89,8 @@ def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
             leader=r["leader"],
             completion=r["completion"],
             tasks=r["tasks"],
+            submission_id=r["submission_id"],
+            submitted_at=r["submitted_at"],
         ))
         count += 1
 
