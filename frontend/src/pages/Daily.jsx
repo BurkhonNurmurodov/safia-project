@@ -48,13 +48,48 @@ const DONUT_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e", "#8b5cf6", "#e
 // ── Single-day picker ─────────────────────────────────────────────────────────
 
 // ── Idle-by-category donut ────────────────────────────────────────────────────
+// Same order everywhere (donut slices, legend, tooltip list) so slice colours and
+// the DONUT_COLORS index line up.
+const idleEntries = (byCategory) =>
+  Object.entries(byCategory || {}).filter(([, v]) => (v || 0) > 0).sort((a, b) => b[1] - a[1]);
+
+// Info-icon content for the donut: the explanation + what each category is worth.
+function IdleTip({ byCategory }) {
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  const minLabel = t("general.min");
+  const entries = idleEntries(byCategory);
+  const total = entries.reduce((a, [, v]) => a + v, 0);
+  return (
+    <span className="block">
+      <span className="block">{t("daily.idleTip")}</span>
+      {entries.length > 0 && (
+        <span className="block mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+          <span className="block mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+            {t("daily.idleCats")}
+          </span>
+          {entries.map(([k, v], i) => (
+            <span key={k} className="flex items-center gap-1.5 py-0.5">
+              <span className="rounded-full flex-shrink-0" style={{ width: 7, height: 7, background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+              <span className="truncate" style={{ color: "var(--text-2)" }}>{tl(k)}</span>
+              <span className="ml-auto flex-shrink-0 tabular-nums" style={{ color: "var(--text-3)" }}>
+                {Math.round(v)} {minLabel} · {total ? Math.round((v / total) * 100) : 0}%
+              </span>
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function IdleDonut({ byCategory }) {
   const { theme } = useTheme();
   const { t } = useLang();
   const { tl } = useTranslit();
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
-  const entries = Object.entries(byCategory || {}).filter(([, v]) => (v || 0) > 0).sort((a, b) => b[1] - a[1]);
+  const entries = idleEntries(byCategory);
   if (!entries.length) {
     return <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("daily.noIdle")}</div>;
   }
