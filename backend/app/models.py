@@ -597,6 +597,49 @@ class KaizenSyncMeta(Base):
     task_count  = Column(Integer, default=0)
 
 
+class QualityComplaint(Base):
+    """One non-conformance / complaint from the quality register (tab «для
+    свода» of the QA workbook). Wipe-and-reload on every admin refresh, like
+    the leader checklists — the sheet stays the source of truth.
+
+    The sheet's Russian labels are normalized to stable slugs at sync time
+    (source/ctype/category/status) so the frontend can translate them into all
+    four platform languages; a value the map doesn't know is stored verbatim
+    and falls back to transliteration in the UI.
+    """
+    __tablename__ = "quality_complaints"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    date        = Column(String(10), index=True)      # ISO "YYYY-MM-DD"
+    source      = Column(String, index=True)          # production | guest | store
+    place       = Column(String)                      # store / workshop the complaint came from
+    product     = Column(String)                      # Наименование изделия
+    ctype       = Column(String, index=True)          # risk | foreign | storage | sanitation | …
+    category    = Column(String, index=True)          # hair | metal | plastic | … (foreign-object kind)
+    description = Column(Text)                        # Описание жалобы
+    fault       = Column(Boolean)                     # Есть ли вина цеха/магазина
+    fault_code  = Column(String)                      # Номер виновного цеха/магазина
+    cell_name   = Column(String)                      # code → name, from the «код производ.» tab
+    brigadir    = Column(String, index=True)          # Отв. бригадир / ТМ
+    manager     = Column(String, index=True)          # Отв. руководитель
+    returned    = Column(Boolean)                     # Поступил возврат?
+    status      = Column(String, index=True)          # done | open | not_required | repeat | waiting
+    comment     = Column(Text)                        # комментарии
+    action      = Column(Text)                        # Корректирующие действия
+    ref_no      = Column(String)                      # № не соответствия
+
+
+class QualitySyncMeta(Base):
+    """Singleton row (id=1) tracking the last quality-register sheet sync."""
+    __tablename__ = "quality_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    row_count   = Column(Integer, default=0)
+
+
 class UserActivity(Base):
     """One row per (Telegram account, calendar day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average
