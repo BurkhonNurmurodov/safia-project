@@ -4457,6 +4457,8 @@ const t = {
     "concerns.fieldShiftManager":"Shift manager",
     "concerns.pickShiftManager": "Pick a shift manager",
     "concerns.pickShiftFirst":   "Pick a shift first",
+    "concerns.pickShiftManagerFirst": "Pick a shift manager first",
+    "concerns.pickTopManagerFirst":   "Pick a top manager first",
     "concerns.fieldReason":    "Reason",
     "concerns.reasonHint":     "Why couldn't it be solved at this level?",
     "concerns.reasonRequired": "A reason is required",
