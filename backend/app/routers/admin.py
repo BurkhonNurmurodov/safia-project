@@ -135,6 +135,10 @@ def refresh_sheet(
             result = sync_leaders_sheet(src.sheet_id, db)
             return {"status": "ok", "sheet": name, **result}
 
+        if name == "quality":
+            result = sync_quality_sheet(src.sheet_id, db)
+            return {"status": "ok", "sheet": name, **result}
+
         return {"status": "ok", "sheet": name}
 
     except Exception as e:
