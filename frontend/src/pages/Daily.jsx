@@ -113,13 +113,13 @@ function IdleDonut({ byCategory }) {
 }
 
 
-function Section({ icon: Icon, title, tip, action, children }) {
+function Section({ icon: Icon, title, tip, tipWidth, action, children }) {
   return (
     <div className="rounded-xl p-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2 mb-3">
         {Icon && <Icon size={15} style={{ color: "var(--brand-text)" }} />}
         <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-2)" }}>{title}</div>
-        {tip && <Tooltip text={tip} />}
+        {tip && <Tooltip text={tip} width={tipWidth} />}
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {children}
