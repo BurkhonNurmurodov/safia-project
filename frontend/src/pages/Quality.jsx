@@ -144,6 +144,7 @@ const TXT = {
     mDesc: "Shikoyat tavsifi", mAction: "Tuzatuvchi choralar", mComment: "Izohlar",
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
+    fShift: "Smena", shift: "Smena", mSheetName: "Jadvaldagi ism",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
   },
@@ -175,6 +176,7 @@ const TXT = {
     mDesc: "Шикоят тавсифи", mAction: "Тузатувчи чоралар", mComment: "Изоҳлар",
     mFault: "Сех/дўкон айби", mCell: "Айбдор ячейка", mReturn: "Қайтариш келди",
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
+    fShift: "Смена", shift: "Смена", mSheetName: "Жадвалдаги исм",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
     textFailed: "Матнли майдонларни юклаб бўлмади",
   },
@@ -206,6 +208,7 @@ const TXT = {
     mDesc: "Описание жалобы", mAction: "Корректирующие действия", mComment: "Комментарии",
     mFault: "Вина цеха/магазина", mCell: "Виновная ячейка", mReturn: "Поступил возврат",
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
+    fShift: "Смена", shift: "Смена", mSheetName: "Имя в таблице",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     textFailed: "Не удалось загрузить текстовые поля",
   },
@@ -237,6 +240,7 @@ const TXT = {
     mDesc: "Complaint description", mAction: "Corrective actions", mComment: "Comments",
     mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received",
     close: "Close", detail: "Non-conformance", otherWord: "Other",
+    fShift: "Shift", shift: "Shift", mSheetName: "Name in the sheet",
     loadFailed: "Could not load the register", retry: "Retry",
     textFailed: "Could not load the text fields",
   },
@@ -306,6 +310,7 @@ export default function Quality() {
   const [statusSel, setStatusSel] = useState([]);
   const [retSel, setRetSel] = useState([]);
   const [brigSel, setBrigSel] = useState([]);
+  const [shiftSel, setShiftSel] = useState([]);
   const [mgrSel, setMgrSel] = useState([]);
 
   const [gran, setGran] = useState("month");
@@ -327,10 +332,11 @@ export default function Quality() {
 
   // Filter options come from the data itself, so a label the QA team adds
   // tomorrow shows up in the filters without a code change.
-  // The responsible person, under the name the platform uses. The backend
-  // matched the sheet's passport-style names against the supervisor units, so a
-  // matched row reads "Хакимов Руслан" like every other page; everyone else in
-  // the register (technologists, IT, logistics, leaders) keeps their sheet name.
+  // The responsible person, under the name the platform uses. The backend matched
+  // the sheet's passport-style names against the supervisor units, so a matched
+  // row reads "Хакимов Руслан" like every other page; everyone else in the
+  // register (technologists, IT, logistics, individual leaders) keeps their sheet
+  // name — they are genuinely not supervisors, not a failed match.
   const who = (r) => r.sup || r.b || "";
 
   const opts = useMemo(() => {
@@ -386,7 +392,7 @@ export default function Quality() {
     };
   }, [rows, dateFrom, dateTo, matchesFilters]);
 
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, mgrSel]);
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
 
   // ── analytics ─────────────────────────────────────────────────────────────
   const isCritical = (r) =>
@@ -457,17 +463,20 @@ export default function Quality() {
     }
     const topCells = Object.values(cellCounts).sort((a, b) => b.n - a.n).slice(0, 10);
 
-    // Accountability — resolution split per responsible person.
-    const accOf = (key) => {
+    // Accountability — resolution split per responsible person. Brigadir mode
+    // keys on the matched supervisor unit, so the sheet's spelling variants of
+    // one person collapse into the single unit the platform knows.
+    const accOf = (nameOf) => {
       const map = {};
       for (const r of filtered) {
-        if (!r[key] || !ACTIONABLE.includes(r.st)) continue;
-        const m = map[r[key]] || (map[r[key]] = { name: r[key], done: 0, open: 0, waiting: 0, repeat: 0, total: 0 });
+        const k = nameOf(r);
+        if (!k || !ACTIONABLE.includes(r.st)) continue;
+        const m = map[k] || (map[k] = { name: k, done: 0, open: 0, waiting: 0, repeat: 0, total: 0 });
         m[r.st]++; m.total++;
       }
       return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 12);
     };
-    const acc = accOf(accMode === "brig" ? "b" : "m");
+    const acc = accOf(accMode === "brig" ? who : (r) => r.m);
 
     // Seasonality — share of each type within its calendar month, so a window
     // that covers some months twice (18 months of data) can't inflate them.
@@ -501,7 +510,7 @@ export default function Quality() {
         case "type":    return L("type", r.t);
         case "cat":     return L("cat", r.c);
         case "cell":    return r.cn || r.fc || "";
-        case "brig":    return tl(r.b || "");
+        case "brig":    return tl(who(r));
         case "status":  return L("st", r.st);
         default:        return "";
       }
@@ -546,11 +555,12 @@ export default function Quality() {
     optFilter({ label: T.fStatus, opts: opts.status, render: (k) => L("st", k), dot: (k) => STATUS_COLORS[k] || C_NA }, statusSel, setStatusSel, "status", CircleDot),
     optFilter({ label: T.fRet, opts: ["yes", "no"], render: (k) => (k === "yes" ? T.yes : T.no) }, retSel, setRetSel, "ret", Undo2),
     optFilter({ label: T.fBrig, opts: opts.brig, render: (k) => tl(k) }, brigSel, setBrigSel, "brig", Wrench),
+    optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers),
     optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog),
   ];
-  const filterActiveCount = [srcSel, typeSel, catSel, statusSel, retSel, brigSel, mgrSel].filter((s) => s.length).length;
+  const filterActiveCount = [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel].filter((s) => s.length).length;
   const clearAllFilters = () => {
-    setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setMgrSel([]);
+    setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
   };
 
   // ── charts ────────────────────────────────────────────────────────────────
@@ -1010,7 +1020,7 @@ export default function Quality() {
                       <td className="px-3 py-2 max-w-[170px] truncate" title={tl(r.cn || r.fc || "")} style={{ color: "var(--text-3)" }}>
                         {tl(r.cn || r.fc || "") || "—"}
                       </td>
-                      <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(r.b || "") || "—"}</td>
+                      <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>
                       <td className="px-3 py-2 text-center" style={{ color: r.r ? C_WAIT : "var(--text-4)" }}>{r.r ? T.yes : "—"}</td>
                       <td className="px-3 py-2"><Chip color={STATUS_COLORS[r.st] || C_NA}>{L("st", r.st)}</Chip></td>
                     </tr>
@@ -1053,7 +1063,8 @@ export default function Quality() {
                 [T.colProduct, tl(openRow.pr || "")],
                 [T.mCell, [openRow.fc, tl(openRow.cn || "")].filter(Boolean).join(" · ")],
                 [T.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
-                [T.colBrig, tl(openRow.b || "")],
+                [T.colBrig, tl(who(openRow))],
+                ...(openRow.sup ? [[T.mSheetName, tl(openRow.b || "")]] : []),
                 [T.colMgr, tl(openRow.m || "")],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-inner)" }}>
