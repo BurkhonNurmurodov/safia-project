@@ -65,10 +65,11 @@ export default function Tooltip({ text, size = 11, width = "14rem" }) {
         createPortal(
           <span
             ref={tipRef}
-            className="fixed z-[9999] w-56 text-[11px] rounded-lg px-2.5 py-2 shadow-xl leading-snug whitespace-pre-line pointer-events-none"
+            className="fixed z-[9999] text-[11px] rounded-lg px-2.5 py-2 shadow-xl leading-snug whitespace-pre-line pointer-events-none"
             style={{
               top: pos.top,
               left: pos.left,
+              width,
               visibility: pos.visible ? "visible" : "hidden",
               background: "var(--bg-card)",
               border: "1px solid var(--border-md)",
