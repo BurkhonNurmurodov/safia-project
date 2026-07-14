@@ -951,6 +951,7 @@ export default function Concerns() {
   function openCreate() {
     setForm(emptyForm());
     setFormError("");
+    setCellSupervisor("");
     setModalOpen(true);
   }
   function openEdit(r) {
