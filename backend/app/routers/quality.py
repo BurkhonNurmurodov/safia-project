@@ -44,18 +44,33 @@ def get_quality(
         .all()
     )
 
+    # The register writes the responsible person in full passport form; resolve
+    # the ones who are supervisor units on the platform so the page speaks the
+    # same names as the rest of the dashboard. Everyone else (technologists, IT,
+    # logistics, individual leaders) stays under their sheet name.
+    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    sup = supervisor_match(managers, {r.brigadir for r in rows if r.brigadir})
+
     return {
         "can_refresh": payload.get("role") == "admin",
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "ok": meta.ok if meta else None,
         "message": meta.message if meta else None,
+        "supervisors": sorted(
+            ({"name": m.name, "id": m.id, "shift": m.shift} for m in managers),
+            key=lambda m: m["name"],
+        ),
         # Short keys: this array carries ~12k rows.
+        # sup / sh = the matched supervisor unit and its shift (absent when the
+        # responsible person isn't a supervisor).
         "rows": [
             {
                 "id": r.id, "d": r.date, "s": r.source, "pl": r.place, "pr": r.product,
                 "t": r.ctype, "c": r.category, "f": r.fault, "fc": r.fault_code,
                 "cn": r.cell_name, "b": r.brigadir, "m": r.manager, "r": r.returned,
                 "st": r.status, "no": r.ref_no,
+                "sup": (sup.get(r.brigadir) or {}).get("name", ""),
+                "sh": (sup.get(r.brigadir) or {}).get("shift"),
             }
             for r in rows
         ],
