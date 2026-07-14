@@ -970,12 +970,14 @@ export default function Concerns() {
       can_set_status: !!r.can_set_status,
     });
     setFormError("");
+    setCellSupervisor("");
     setModalOpen(true);
   }
   function closeModal() {
     setModalOpen(false);
     setForm(emptyForm());
     setFormError("");
+    setCellSupervisor("");
   }
   function submit() {
     if (!form.id && formLevel === "shift-manager" && !form.shift_manager_profile_id) return setFormError(t("concerns.pickShiftManager"));
