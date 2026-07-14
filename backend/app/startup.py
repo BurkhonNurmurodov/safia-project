@@ -37,6 +37,8 @@ MANAGERS = [
 SHEET_SOURCES = [
     ("source", "1q-4PTcnGNNsGzXmXAIa5HE2Ze0f6hQ-7dKagvHSH2eI"),
     ("shift_report", "1qCntFNUhy5GdSHhByK5gtVd9T8hqp6Dn4oPbrCujZQ8"),
+    # Quality register (complaints & non-conformances) — tab «для свода».
+    ("quality", "1DtQxGyc8IByew_Hakj0HX3ZL0MigphWON8CNkjZFE3k"),
 ]
 
 
