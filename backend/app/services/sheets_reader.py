@@ -201,21 +201,118 @@ def _leader_parse_pct(val) -> float:
     return round(v, 2)
 
 
+def _leader_parse_dt(val) -> Optional[datetime]:
+    """Parse the form's «Submission time» cell into a naive datetime. The export
+    does not zero-pad the hour ("2026-04-08 7:22:58"), which %H accepts."""
+    s = str(val).strip().replace("T", " ")
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+                "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    try:  # raw Google Sheets serial — the fraction carries the time of day
+        n = float(s)
+        if n > 30000:
+            return datetime(1899, 12, 30) + timedelta(days=n)
+    except ValueError:
+        pass
+    return None
+
+
 _LEADER_DONE_TOKENS = {"ҳа", "ha", "yes", "true", "1", "да", "✓", "✔"}
+
+# Header labels of the leaders form export, matched case-insensitively with
+# whitespace collapsed (see _norm_hdr).
+_HDR_SUBMISSION_ID = "submission id"
+_HDR_SUBMITTED_AT = "submission time"
+_HDR_DATE = "дата"
+_HDR_SUPERVISOR = "бригадир фио"
+_HDR_LEADER = "name"           # resolved leader — the branch columns merged by the form
+_HDR_LEADER_BRANCH = "лидер фио"  # prefix: «Лидер ФИО (Арипова Манзура)», one per brigadir
+_HDR_COMPLETION = "completion"
+
+# A task block is three columns sharing one question number: «7) Қилинди ?»
+# (done), «7) Расм ?» (photo), «7) Сабаб?» (failure reason).
+_TASK_HDR_RE = re.compile(r"^\s*(\d+)\s*\)\s*(.+?)\s*\??\s*$")
+_TASK_HDR_FIELDS = {"қилинди": "done", "расм": "photo", "сабаб": "reason"}
+
+
+def _norm_hdr(val) -> str:
+    return re.sub(r"\s+", " ", str(val or "")).strip().lower()
+
+
+class LeaderLayout(NamedTuple):
+    date: int
+    supervisor: int
+    completion: int
+    leader: Optional[int]
+    leader_branch: list[int]
+    submission_id: Optional[int]
+    submitted_at: Optional[int]
+    tasks: list[dict]            # [{id, done, photo, reason}], in question order
+
+
+def _leader_layout(header: list) -> LeaderLayout:
+    """Locate every column by its HEADER rather than a fixed offset.
+
+    The form grows: a 13th question was inserted ahead of «Completion», shifting
+    it from BA to BD. Fixed offsets kept reading BA — an empty cell — and scored
+    every submission 0%. Reading the header instead absorbs that, and a missing
+    mandatory column now fails the sync loudly instead of importing zeros.
+    """
+    date = supervisor = completion = leader = sub_id = sub_at = None
+    branch: list[int] = []
+    task_cols: dict[int, dict] = {}
+
+    for i, raw in enumerate(header):
+        h = _norm_hdr(raw)
+        if not h:
+            continue
+        if h == _HDR_DATE:
+            date = i
+        elif h == _HDR_SUPERVISOR:
+            supervisor = i
+        elif h == _HDR_COMPLETION:
+            completion = i
+        elif h == _HDR_LEADER:
+            leader = i
+        elif h.startswith(_HDR_LEADER_BRANCH):
+            branch.append(i)
+        elif h == _HDR_SUBMISSION_ID:
+            sub_id = i
+        elif h == _HDR_SUBMITTED_AT:
+            sub_at = i
+        else:
+            m = _TASK_HDR_RE.match(h)
+            field = _TASK_HDR_FIELDS.get(m.group(2)) if m else None
+            if field:
+                task_cols.setdefault(int(m.group(1)), {})[field] = i
+
+    missing = [n for n, v in (("Дата", date), ("Бригадир ФИО", supervisor),
+                              ("Completion", completion)) if v is None]
+    if missing:
+        raise ValueError("Leaders sheet: column(s) not found in the header: "
+                         + ", ".join(missing))
+    if not task_cols:
+        raise ValueError("Leaders sheet: no «N) Қилинди?» task columns in the header")
+
+    tasks = [{"id": n, **cols} for n, cols in sorted(task_cols.items())]
+    return LeaderLayout(date, supervisor, completion, leader, branch,
+                        sub_id, sub_at, tasks)
 
 
 def read_leader_data(sheet_id: str, tab: str = "Data") -> list[dict]:
-    """Read the leaders checklist sheet using the fixed layout from
-    apps-script/Code.gs (0-indexed, header row dropped):
+    """Read the leaders checklist sheet (columns resolved by _leader_layout).
 
-        col 2  (C)      = date
-        col 3  (D)      = brigadir / supervisor
-        cols 4–15 (E–P) = leader name (first non-empty wins)
-        cols 16–51      = 12 tasks × 3  (done, photo, reason)
-        col 52 (BA)     = completion %
+    Returns one dict per submission row: {submission_id, submitted_at, date,
+    supervisor, leader, completion, tasks:[{id, done, answered, photo, reason}]}.
 
-    Returns one dict per submission row: {date, supervisor, leader,
-    completion, tasks:[{id, done, photo, reason}]}.
+    `answered` separates "the leader answered no" from "the question was not put
+    to them": a question added to the form today is blank on every historical
+    row, and counting those blanks as failures would sink the task's score.
     """
     try:
         gc = get_client()
@@ -229,52 +326,43 @@ def read_leader_data(sheet_id: str, tab: str = "Data") -> list[dict]:
         _reset_client()
         raise
 
-    if rows:
-        rows = rows[1:]  # drop the header row
-
-    DATE_COL, SUP_COL = 2, 3
-    LEADER_COLS = range(4, 16)
-    TASK_START, TASK_COUNT = 16, 12
-    COMPLETION_COL = 52
+    if not rows:
+        return []
+    lay = _leader_layout(rows[0])
 
     def cell(row, i):
-        return str(row[i]).strip() if i < len(row) else ""
+        return str(row[i]).strip() if (i is not None and i < len(row)) else ""
 
     out: list[dict] = []
-    for row in rows:
-        # Skip blank rows (Code.gs: skip when col 0 and date are both empty).
-        if not (cell(row, 0) or cell(row, DATE_COL)):
-            continue
-        date_str = _leader_parse_date(cell(row, DATE_COL))
+    for row in rows[1:]:
+        date_str = _leader_parse_date(cell(row, lay.date))
         if not date_str:
             continue
 
-        supervisor = cell(row, SUP_COL) or "N/A"
-        leader = "N/A"
-        for c in LEADER_COLS:
-            v = cell(row, c)
-            if v:
-                leader = v
-                break
-
-        completion = _leader_parse_pct(cell(row, COMPLETION_COL))
+        # The form resolves the per-brigadir branch answers into one «Name»
+        # column; older exports only carry the branches.
+        leader = cell(row, lay.leader)
+        if not leader:
+            leader = next((cell(row, c) for c in lay.leader_branch if cell(row, c)), "")
 
         tasks = []
-        for i in range(TASK_COUNT):
-            base = TASK_START + i * 3
-            done_raw = cell(row, base)
+        for t in lay.tasks:
+            done_raw = cell(row, t.get("done"))
             tasks.append({
-                "id": i + 1,
+                "id": t["id"],
                 "done": done_raw.lower() in _LEADER_DONE_TOKENS,
-                "photo": cell(row, base + 1),
-                "reason": cell(row, base + 2),
+                "answered": bool(done_raw),
+                "photo": cell(row, t.get("photo")),
+                "reason": cell(row, t.get("reason")),
             })
 
         out.append({
+            "submission_id": cell(row, lay.submission_id) or None,
+            "submitted_at": _leader_parse_dt(cell(row, lay.submitted_at)),
             "date": date_str,
-            "supervisor": supervisor,
-            "leader": leader,
-            "completion": completion,
+            "supervisor": cell(row, lay.supervisor) or "N/A",
+            "leader": leader or "N/A",
+            "completion": _leader_parse_pct(cell(row, lay.completion)),
             "tasks": tasks,
         })
 
