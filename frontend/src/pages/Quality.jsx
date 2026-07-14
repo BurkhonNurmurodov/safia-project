@@ -360,11 +360,18 @@ export default function Quality() {
   );
 
   // Same filters, the equally long window immediately before — the KPI deltas.
-  const prev = useMemo(() => {
+  // If that window reaches back past the register's first record, the register
+  // simply didn't exist yet: comparing against it would invent a +138% "rise"
+  // out of missing history, so the deltas are suppressed instead.
+  const { prev, prevComparable } = useMemo(() => {
     const span = daysBetween(dateFrom, dateTo) + 1;
     const pTo = addDays(dateFrom, -1);
     const pFrom = addDays(pTo, -(span - 1));
-    return rows.filter((r) => r.d >= pFrom && r.d <= pTo && matchesFilters(r));
+    const earliest = rows.length ? rows.reduce((m, r) => (r.d < m ? r.d : m), rows[0].d) : null;
+    return {
+      prev: rows.filter((r) => r.d >= pFrom && r.d <= pTo && matchesFilters(r)),
+      prevComparable: !!earliest && pFrom >= earliest,
+    };
   }, [rows, dateFrom, dateTo, matchesFilters]);
 
   useEffect(() => { setPage(1); }, [dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, mgrSel]);
