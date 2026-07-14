@@ -4529,6 +4529,7 @@ const t = {
     "daily.colHours":      "Hours",
     "daily.idleTitle":     "Idle time by category",
     "daily.idleTip":       "Distribution of idle (waiting) time by category for the selected day. Percentages are relative to the total idle time.",
+    "daily.idleCats":      "Categories",
     "daily.total":         "total",
     "daily.noIdle":        "No idle time recorded for this day.",
     "daily.donutTotal":    "Total",
