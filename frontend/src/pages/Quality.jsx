@@ -397,12 +397,12 @@ export default function Quality() {
     };
     const cur = sum(filtered);
     const old = sum(prev);
-    const delta = (a, b) => (b ? Math.round(((a - b) / b) * 100) : null);
+    const delta = (a, b) => (prevComparable && b ? Math.round(((a - b) / b) * 100) : null);
     return {
       ...cur,
       dTotal: delta(cur.total, old.total),
       dGuest: delta(cur.guest, old.guest),
-      dResolved: old.actionable ? cur.resolved - old.resolved : null,
+      dResolved: prevComparable && old.actionable ? cur.resolved - old.resolved : null,
       dOpen: delta(cur.open, old.open),
       dReturns: delta(cur.returns, old.returns),
       dCritical: delta(cur.critical, old.critical),
