@@ -409,7 +409,7 @@ export default function Quality() {
       guestPct: cur.total ? Math.round((cur.guest / cur.total) * 100) : 0,
       returnPct: cur.total ? Math.round((cur.returns / cur.total) * 100) : 0,
     };
-  }, [filtered, prev]);
+  }, [filtered, prev, prevComparable]);
 
   const A = useMemo(() => {
     // Trend — one bucket per month or per ISO week, stacked by source.
@@ -685,21 +685,31 @@ export default function Quality() {
   const heatOpts = {
     chart: { ...baseChart, type: "heatmap" },
     theme: chartTheme,
-    dataLabels: { enabled: false },
+    // The share itself is the point of the cell, so print it. Apex won't
+    // contrast the text against the cell, hence the .att-heat outline class.
+    dataLabels: {
+      enabled: true,
+      formatter: (v) => (v >= 1 ? `${Math.round(v)}%` : ""),
+      style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
+      dropShadow: { enabled: false },   // an SVG filter here once froze a laptop
+    },
     stroke: { width: 2, colors: [cardBg] },
     plotOptions: {
       heatmap: {
         radius: 4, enableShades: false,
-        // A brand-gold sequential ramp: empty cells fade into the grid, the
-        // hot ones darken. No shades/filters — an SVG filter on a many-celled
-        // heatmap is what froze a laptop last time.
+        // Brand-gold ramp. The steps are tight at the bottom because most
+        // type-months land under 20% — coarse buckets flattened the whole
+        // matrix into one shade of gold and hid the seasonality.
         colorScale: {
           ranges: [
             { from: 0, to: 0.0001, color: gridColor },
-            { from: 0.0001, to: 5, color: "#efdfc2" },
-            { from: 5, to: 15, color: "#dcb977" },
-            { from: 15, to: 30, color: "#C8973F" },
-            { from: 30, to: 100, color: "#8c6522" },
+            { from: 0.0001, to: 3, color: "#f6ecd9" },
+            { from: 3, to: 7, color: "#eddcb9" },
+            { from: 7, to: 12, color: "#e0c48c" },
+            { from: 12, to: 18, color: "#d3ac60" },
+            { from: 18, to: 25, color: "#C8973F" },
+            { from: 25, to: 35, color: "#a87c2f" },
+            { from: 35, to: 100, color: "#7d5c21" },
           ],
         },
       },
