@@ -96,16 +96,23 @@ class DowntimeData(Base):
 
 class LeaderChecklist(Base):
     """One leader's daily checklist submission, parsed from the leaders Google
-    Sheet ("Data" tab) using the fixed layout from apps-script/Code.gs. The whole
-    table is wiped and reloaded on each admin refresh, so no unique constraint."""
+    Sheet ("Data" tab); columns are resolved by header in sheets_reader, because
+    the form gains questions and shifts everything to their right. The whole
+    table is wiped and reloaded on each admin refresh, so no unique constraint —
+    a leader may legitimately submit twice for the same day, and both rows count."""
     __tablename__ = "leader_checklists"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(String(10), nullable=False, index=True)   # ISO "YYYY-MM-DD"
-    supervisor = Column(String, nullable=False, index=True)  # brigadir (col D)
-    leader = Column(String, nullable=False, index=True)      # first non-empty of cols E–P
-    completion = Column(Numeric(6, 2), default=0.0)          # 0–100 (col BA)
-    tasks = Column(JSONB, default=list)                      # [{id, done, photo, reason}] ×12
+    date = Column(String(10), nullable=False, index=True)   # ISO "YYYY-MM-DD" — the day reported on
+    supervisor = Column(String, nullable=False, index=True)  # brigadir («Бригадир ФИО»)
+    leader = Column(String, nullable=False, index=True)      # («Name», else the brigadir's branch column)
+    completion = Column(Numeric(6, 2), default=0.0)          # 0–100, weighted score straight from the sheet
+    tasks = Column(JSONB, default=list)                      # [{id, done, answered, photo, reason}]
+    # The form's own submission identity. submitted_at is the wall-clock moment the
+    # leader filed the checklist — compared against `date`, it exposes the ones
+    # backfilled a day or more after the shift they describe.
+    submission_id = Column(String, nullable=True, index=True)
+    submitted_at = Column(DateTime, nullable=True)
 
 
 class AppSetting(Base):
