@@ -9,6 +9,7 @@ import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
+  MessageSquareWarning,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -29,6 +30,7 @@ const ALL_LINKS = [
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
+  { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },

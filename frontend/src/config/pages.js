@@ -39,6 +39,7 @@ export const PAGES = [
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
+  { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
@@ -60,6 +61,8 @@ export const DEFAULT_PAGE_ACCESS = {
   trudoyomkost: ["top-manager", "shift-manager"], // analyst roles; supervisor toggleable
   leaders: [], // pilot: admin-only until enabled from the Access tab
   kaizen: [], // Kaizen project analytics (Notion) — admin-only until enabled
+  // Quality register (complaints & non-conformances) — a factory-wide management view
+  quality: ["top-manager", "shift-manager"],
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,
   // supervisors their unit, shift-managers their shift, top-managers read-only all.
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],

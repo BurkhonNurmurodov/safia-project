@@ -13,7 +13,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import Pagination from "../components/ui/Pagination";
-import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
+import TableCard, { Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -142,7 +142,7 @@ const TXT = {
     yes: "Ha", no: "Yo‘q", rows: "yozuv", vsPrev: "oldingi davrga nisbatan",
     mDesc: "Shikoyat tavsifi", mAction: "Tuzatuvchi choralar", mComment: "Izohlar",
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
-    close: "Yopish", detail: "Nomuvofiqlik",
+    close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
   },
   uz_cyrl: {
     title: "Сифат ва шикоятлар", sub: "Номувофиқликлар реестри таҳлили",
@@ -171,7 +171,7 @@ const TXT = {
     yes: "Ҳа", no: "Йўқ", rows: "ёзув", vsPrev: "олдинги даврга нисбатан",
     mDesc: "Шикоят тавсифи", mAction: "Тузатувчи чоралар", mComment: "Изоҳлар",
     mFault: "Сех/дўкон айби", mCell: "Айбдор ячейка", mReturn: "Қайтариш келди",
-    close: "Ёпиш", detail: "Номувофиқлик",
+    close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
   },
   ru: {
     title: "Качество и жалобы", sub: "Аналитика реестра несоответствий",
@@ -200,7 +200,7 @@ const TXT = {
     yes: "Да", no: "Нет", rows: "записей", vsPrev: "к прошлому периоду",
     mDesc: "Описание жалобы", mAction: "Корректирующие действия", mComment: "Комментарии",
     mFault: "Вина цеха/магазина", mCell: "Виновная ячейка", mReturn: "Поступил возврат",
-    close: "Закрыть", detail: "Несоответствие",
+    close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
   },
   en: {
     title: "Quality & complaints", sub: "Non-conformance register analytics",
@@ -229,7 +229,7 @@ const TXT = {
     yes: "Yes", no: "No", rows: "records", vsPrev: "vs previous period",
     mDesc: "Complaint description", mAction: "Corrective actions", mComment: "Comments",
     mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received",
-    close: "Close", detail: "Non-conformance",
+    close: "Close", detail: "Non-conformance", otherWord: "Other",
   },
 };
 

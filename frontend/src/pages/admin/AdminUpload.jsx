@@ -291,6 +291,8 @@ function SheetSourceEditor() {
         ? `${data.production_rows ?? 0} production rows, ${data.headcount_rows ?? 0} headcount rows saved`
         : name === "leaders"
         ? `${data.leader_rows ?? 0} leader rows saved`
+        : name === "quality"
+        ? `${data.quality_rows ?? 0} quality rows saved`
         : `${data.downtime_rows ?? 0} downtime rows saved (${data.managers_synced ?? 0} managers)`;
       setRefreshState ((p) => ({ ...p, [name]: "ok" }));
       setRefreshMsg   ((p) => ({ ...p, [name]: detail }));
@@ -343,7 +345,7 @@ function SheetSourceEditor() {
       )}
 
       <div className="space-y-4">
-        {["source", "shift_report", "leaders"].map((name) => {
+        {["source", "shift_report", "leaders", "quality"].map((name) => {
           const current = sources.find((s) => s.name === name)?.sheet_id || "";
           const rs    = refreshState[name] || "idle";
           const msg   = refreshMsg[name]   || "";
@@ -351,7 +353,10 @@ function SheetSourceEditor() {
           return (
             <div key={name}>
               <div className="text-[11px] text-[var(--text-3)] mb-1 capitalize">
-                {name === "source" ? t("admin.source") : name === "leaders" ? t("admin.leadersSheet") : t("admin.shiftReport")}
+                {name === "source" ? t("admin.source")
+                  : name === "leaders" ? t("admin.leadersSheet")
+                  : name === "quality" ? t("admin.qualitySheet")
+                  : t("admin.shiftReport")}
               </div>
               <div className="flex gap-2">
                 <input
