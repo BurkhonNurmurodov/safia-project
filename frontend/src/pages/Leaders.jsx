@@ -212,6 +212,17 @@ const taskDetail = (id, lang) => {
 
 const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
+// "2026-04-08T07:22:58" → "07:22"
+const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "");
+// Days between the day a checklist was filed and the day it reports on. > 0 means
+// it was written up after the fact, which is what the "late" chip calls out.
+const lateDays = (row) => {
+  if (!row.submitted_at) return 0;
+  const filed = String(row.submitted_at).slice(0, 10);
+  const covers = String(row.date).slice(0, 10);
+  if (!filed || !covers) return 0;
+  return Math.round((new Date(`${filed}T00:00:00`) - new Date(`${covers}T00:00:00`)) / DAY);
+};
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const todayISO = () => localISO(new Date());
 const isoShift = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); };
