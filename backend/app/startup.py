@@ -258,6 +258,23 @@ def add_task_comment_author_ref() -> None:
         db.close()
 
 
+def add_leader_submission_columns() -> None:
+    """Add submission_id / submitted_at to leader_checklists (idempotent). The
+    leaders form export now carries a «Submission ID» and a «Submission time»;
+    the timestamp is what the dashboard flags late-filed checklists with. The
+    table is wipe-and-reloaded, so the columns fill on the next sheet refresh."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE leader_checklists ADD COLUMN IF NOT EXISTS submission_id VARCHAR"))
+        db.execute(text("ALTER TABLE leader_checklists ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_checklists submission columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_admin_language_column() -> None:
     """Add a language column to admins (idempotent). Seeded admins have no
     telegram_users row, so this is where their bot-DM language is stored, kept in
