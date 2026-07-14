@@ -256,6 +256,7 @@ const fmtDateTime = (iso8601) => {
 
 export default function Quality() {
   const { lang, t } = useLang();
+  const { auth } = useAuth();
   const tl = useTranslit();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
