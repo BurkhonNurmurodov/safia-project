@@ -673,8 +673,16 @@ def list_cells(
         q = q.filter(RoleProfile.id == (prof.id if prof else 0))
 
     return [
-        {"cell": code, "leader": name, "supervisor_id": mid, "supervisor": mname}
-        for code, name, mid, mname in sorted(q.all(), key=lambda r: (r[0] or "").lower())
+        {
+            "cell": code,
+            "leader": name,
+            "supervisor_id": mid,
+            "supervisor": mname,
+            # The unit's shift — the form narrows the brigadir (and therefore
+            # the cell) list to the shift the concern is being raised for.
+            "supervisor_shift": shift,
+        }
+        for code, name, mid, mname, shift in sorted(q.all(), key=lambda r: (r[0] or "").lower())
     ]
 
 
