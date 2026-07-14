@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import QualityComplaint, QualitySyncMeta, SheetSource
+from app.models import Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
+from app.services.name_map import supervisor_match
 from app.services.sheets_sync import sync_quality_sheet
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
