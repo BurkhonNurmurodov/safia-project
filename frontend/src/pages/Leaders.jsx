@@ -511,7 +511,7 @@ export default function Leaders() {
   // Insight cards: the worst task plus the worst-performing supervisor / leader.
   const insights = useMemo(() => {
     let lowTask = null;
-    taskRates.forEach((v, i) => { if (lowTask == null || v < lowTask.val) lowTask = { idx: i, val: v }; });
+    chartTasks.forEach((t) => { if (lowTask == null || t.rate < lowTask.val) lowTask = { id: t.id, val: t.rate }; });
 
     const worst = (keyFn) => {
       const map = {};
