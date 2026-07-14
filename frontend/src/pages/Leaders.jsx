@@ -79,6 +79,8 @@ const TXT = {
     toggleLeader: "Лидер", toggleSup: "Бригадир",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
+    thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун",
+    notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
     task: "Вазифа", noData: "Маълумот йўқ", taskInfoTitle: "Вазифалар мазмуни ва талаблари",
