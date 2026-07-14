@@ -529,12 +529,17 @@ export default function Leaders() {
       return lo;
     };
     return { lowTask, lowSup: worst((r) => r.supervisor), lowLeader: worst((r) => r.leader) };
-  }, [filtered, taskRates]);
+  }, [filtered, chartTasks]);
 
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
     const q = tSearch.trim().toLowerCase();
-    let arr = filtered.map((r) => ({ ...r, _failed: (r.tasks || []).filter((tk) => !tk.done).length }));
+    let arr = filtered.map((r) => ({
+      ...r,
+      // an unasked question is not a missed one
+      _failed: (r.tasks || []).filter((tk) => tk.answered !== false && !tk.done).length,
+      _late: lateDays(r),
+    }));
     if (q) arr = arr.filter((r) => `${tl(r.leader)} ${r.leader}`.toLowerCase().includes(q));
     if (tBand !== "all") arr = arr.filter((r) => {
       const v = r.completion;
@@ -545,6 +550,12 @@ export default function Leaders() {
       if (tSort.key === "date") return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
       if (tSort.key === "leader") return tl(a.leader).localeCompare(tl(b.leader)) * dir;
       if (tSort.key === "failed") return (a._failed - b._failed) * dir;
+      // submissions with no timestamp (pre-form-change rows) sort to the bottom
+      if (tSort.key === "submitted") {
+        const av = a.submitted_at || "", bv = b.submitted_at || "";
+        if (!av || !bv) return !av && !bv ? 0 : !av ? 1 : -1;
+        return av < bv ? -dir : av > bv ? dir : 0;
+      }
       return (a.completion - b.completion) * dir;          // score
     });
     return arr;
