@@ -652,13 +652,16 @@ def list_cells(
     payload: dict = Depends(require_page("concerns")),
 ):
     """Cell picker for the create/edit form: every production cell in the
-    caller's scope with the leader(s) currently assigned to it. Scope mirrors
-    the concern list — admins/top-managers see all cells, shift-managers their
-    shift's units, supervisors their own unit, and a leader only their own."""
+    caller's scope with the leader(s) currently assigned to it, plus the
+    supervisor (unit) that leader belongs to so the form can narrow the cell
+    list by brigadir. Scope mirrors the concern list — admins/top-managers see
+    all cells, shift-managers their shift's units, supervisors their own unit,
+    and a leader only their own."""
     role = payload.get("role")
     q = (
-        db.query(Cell.code, RoleProfile.name)
+        db.query(Cell.code, RoleProfile.name, Manager.id, Manager.name)
         .join(RoleProfile, RoleProfile.id == Cell.leader_id)
+        .outerjoin(Manager, Manager.id == RoleProfile.manager_id)
         .filter(RoleProfile.role == "leader")
     )
     if role == "shift-manager":
@@ -670,8 +673,8 @@ def list_cells(
         q = q.filter(RoleProfile.id == (prof.id if prof else 0))
 
     return [
-        {"cell": code, "leader": name}
-        for code, name in sorted(q.all(), key=lambda kv: kv[0].lower())
+        {"cell": code, "leader": name, "supervisor_id": mid, "supervisor": mname}
+        for code, name, mid, mname in sorted(q.all(), key=lambda r: (r[0] or "").lower())
     ]
 
 
