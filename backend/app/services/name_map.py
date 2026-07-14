@@ -124,8 +124,14 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
         tokens = _name_tokens(raw)
         if len(tokens) < 2:            # "Технологи", "IT отдел", "АХО" …
             continue
+        # Best candidate, not the first acceptable one: two supervisors can both
+        # clear the bar (TALIPOVA MAMURA also half-resembles Арипова Манзура),
+        # and the register hands those rows to the wrong unit if order decides.
+        best, best_score = None, 0.0
         for m, ctok in canon:
-            if _same_person(tokens, ctok):
-                out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
-                break
+            score = _pair_score(tokens, ctok)
+            if score > best_score:
+                best, best_score = m, score
+        if best is not None:
+            out[raw] = {"name": best.name, "id": best.id, "shift": best.shift}
     return out
