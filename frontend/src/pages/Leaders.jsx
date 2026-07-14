@@ -614,8 +614,9 @@ export default function Leaders() {
   const taskOptions = {
     chart: { ...chartBase, type: "bar" },
     plotOptions: { bar: { distributed: true, borderRadius: 6, borderRadiusApplication: "end", columnWidth: "56%" } },
-    colors: chartTasks.map((t) => scoreColor(t.rate)),
-    fill: { type: "gradient", gradient: { type: "vertical", gradientToColors: chartTasks.map((t) => mix(scoreColor(t.rate), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    // an unanswered question carries no colour — its slot stays empty
+    colors: chartTasks.map((t) => (t.rate == null ? "transparent" : scoreColor(t.rate))),
+    fill: { type: "gradient", gradient: { type: "vertical", gradientToColors: chartTasks.map((t) => (t.rate == null ? "transparent" : mix(scoreColor(t.rate), -0.24))), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
     states: { hover: { filter: { type: "lighten", value: 0.08 } } },
     dataLabels: { enabled: false },
     legend: { show: false },
@@ -624,6 +625,7 @@ export default function Leaders() {
     yaxis: { min: 0, max: 100, tickAmount: 4, labels: axisLabel },
     tooltip: { custom: ({ dataPointIndex }) => {
       const t = chartTasks[dataPointIndex];
+      if (t.rate == null) return tipHTML(`${T.task} ${t.id}`, T.notAsked, "#94a3b8");
       return tipHTML(`${T.task} ${t.id}`, `${t.rate}%`, scoreColor(t.rate));
     } },
   };
