@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import re
 import gspread
 from google.oauth2.service_account import Credentials
 from app.config import settings
@@ -320,3 +321,172 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
                     pass
 
     return downtime_total, downtime_by_cat, cat_names
+
+
+# ─── Quality register («для свода» tab of the QA workbook) ────────────────────
+#
+# The register is a flat log: one row per non-conformance / complaint. Its
+# labels are free-typed Russian, so every categorical column is mapped to a
+# stable slug here — the frontend owns the four-language wording. An unmapped
+# value is passed through verbatim (the UI transliterates it), so a new label
+# in the sheet degrades gracefully instead of vanishing.
+
+QUALITY_TAB = "для свода"
+QUALITY_CODES_TAB = "код производ."
+
+_Q_SOURCE = {
+    "производство": "production",
+    "гость": "guest",
+    "магазин": "store",
+}
+
+_Q_TYPE = {
+    "риск": "risk",
+    "инородный предмет": "foreign",
+    "хранение": "storage",
+    "санпин": "sanitation",
+    "техкарта": "recipe",
+    "отзыв": "review",
+    "маркировка": "labeling",
+    "плесень": "mold",
+    "спецзаказ": "special_order",
+    "стандарт": "standard",
+    "отравление": "poisoning",
+    "фасовка": "packing",
+    "повреждение": "damage",
+    "документация": "documentation",
+    "списание": "writeoff",
+}
+
+_Q_CATEGORY = {
+    "волос": "hair",
+    "полиэтилен": "polyethylene",
+    "металл": "metal",
+    "пластик": "plastic",
+    "бумага": "paper",
+    "органика": "organic",
+    "грязь и мусор": "dirt",
+    "дерево": "wood",
+    "сырьё": "raw",
+    "сырье": "raw",
+    "насекомое": "insect",
+    "стекло": "glass",
+    "другое": "other",
+}
+
+# статус: "Да" = the corrective action was carried out, "Нет" = still open.
+_Q_STATUS = {
+    "да": "done",
+    "нет": "open",
+    "не требуется мера": "not_required",
+    "повторяющееся несоответствие": "repeat",
+    "% в ожидании оплаты, доставки и т.п.": "waiting",
+}
+
+# Placeholders the sheet writes when a column doesn't apply / no match was
+# found by its lookup formulas. They carry no information — drop them.
+_Q_BLANKS = {
+    "", "-", "—", "нет данных", "не требуется", "не требуется мера",
+    "ячейка не найдена", "лидер ячейки не найден", "группа не найдена",
+    "не проиводство", "не производство", "#n/a", "#н/д", "nan",
+}
+
+
+def _q_clean(val) -> str:
+    """Collapse whitespace; drop the sheet's 'not found' placeholders."""
+    s = re.sub(r"\s+", " ", str(val or "")).strip()
+    return "" if s.lower() in _Q_BLANKS else s
+
+
+def _q_slug(val, table: dict) -> str:
+    """Map a Russian label to its slug, or pass the cleaned label through."""
+    s = re.sub(r"\s+", " ", str(val or "")).strip()
+    if not s:
+        return ""
+    return table.get(s.lower(), s)
+
+
+def _q_bool(val) -> Optional[bool]:
+    s = re.sub(r"\s+", " ", str(val or "")).strip().lower()
+    if s in ("да", "yes", "ha"):
+        return True
+    if s in ("нет", "no", "yo'q", "yoq"):
+        return False
+    return None
+
+
+def _read_cell_names(sh) -> dict:
+    """code → cell name, from the «код производ.» tab (cols: brigadir, code,
+    cell name, verifix leader). Codes are keyed both raw and zero-stripped so
+    '0111' in the register still finds '111' in the reference tab."""
+    try:
+        ws = sh.worksheet(QUALITY_CODES_TAB)
+        rows = ws.get_all_values()[1:]
+    except Exception:
+        return {}
+
+    out: dict[str, str] = {}
+    for row in rows:
+        if len(row) < 3:
+            continue
+        code = re.sub(r"\s+", "", str(row[1]))
+        name = _q_clean(row[2])
+        if not code or not name:
+            continue
+        for key in {code, code.lstrip("0"), code.upper()}:
+            out.setdefault(key, name)
+    return out
+
+
+def read_quality_data(sheet_id: str) -> list[dict]:
+    """Read the quality register. Row 0 is a column-number ruler, row 1 the
+    header, so data starts at row 2. Columns are addressed positionally (the
+    layout is fixed and several headers are near-duplicates)."""
+    try:
+        gc = get_client()
+        sh = gc.open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(QUALITY_TAB)
+        except Exception:
+            ws = sh.get_worksheet(0)
+        rows = ws.get_all_values()
+        cell_names = _read_cell_names(sh)
+    except Exception:
+        _reset_client()
+        raise
+
+    (C_DATE, C_PLACE, C_SRC, C_PRODUCT, _C_PART, _C_UNIT, _C_QTY, C_TYPE, C_CAT,
+     C_DESC, C_FAULT, C_CODE, C_BRIG, C_RET, C_COMMENT, C_ACTION, C_STATUS,
+     _C_CELL, _C_BRIG2, C_REF, _C_WEEK, C_MGR) = range(22)
+
+    def cell(row, i):
+        return row[i] if i < len(row) else ""
+
+    out: list[dict] = []
+    for row in rows[2:]:
+        date = _leader_parse_date(cell(row, C_DATE))
+        if not date:
+            continue  # blank spacer / totals row
+
+        code = _q_clean(cell(row, C_CODE))
+        code_key = re.sub(r"\s+", "", code)
+        out.append({
+            "date":        date,
+            "source":      _q_slug(cell(row, C_SRC), _Q_SOURCE),
+            "place":       _q_clean(cell(row, C_PLACE)),
+            "product":     _q_clean(cell(row, C_PRODUCT)),
+            "ctype":       _q_slug(cell(row, C_TYPE), _Q_TYPE),
+            "category":    _q_slug(cell(row, C_CAT), _Q_CATEGORY),
+            "description": _q_clean(cell(row, C_DESC)),
+            "fault":       _q_bool(cell(row, C_FAULT)),
+            "fault_code":  code,
+            "cell_name":   cell_names.get(code_key) or cell_names.get(code_key.lstrip("0"), ""),
+            "brigadir":    _q_clean(cell(row, C_BRIG)),
+            "manager":     _q_clean(cell(row, C_MGR)),
+            "returned":    _q_bool(cell(row, C_RET)),
+            "status":      _q_slug(cell(row, C_STATUS), _Q_STATUS),
+            "comment":     _q_clean(cell(row, C_COMMENT)),
+            "action":      _q_clean(cell(row, C_ACTION)),
+            "ref_no":      _q_clean(cell(row, C_REF)),
+        })
+    return out
