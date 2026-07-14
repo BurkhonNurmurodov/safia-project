@@ -506,6 +506,14 @@ export default function Concerns() {
   const formLevel = isAdmin ? form.level : createLevel;
   const formNeedsSM = modalOpen && !form.id && formLevel === "shift-manager";
   const formNeedsTop = modalOpen && !form.id && formLevel === "top-manager";
+  // The brigadir step of the cell cascade stays locked until the concern's
+  // target holder is named above it (shift → smena menejeri → brigadir → cell).
+  // Editing an existing concern has no target step, so it is always unlocked.
+  const targetPicked = !!form.id || (
+    formLevel === "shift-manager" ? !!form.shift_manager_profile_id
+      : formLevel === "top-manager" ? !!form.top_manager_profile_id
+      : true
+  );
   // Escalation up-steps that must name the receiving holder.
   const escLvl = escalate ? (escalate.row.level || "supervisor") : null;
   const needsSMPick = escalate?.direction === "up" && escLvl === "supervisor";       // → shift-manager
