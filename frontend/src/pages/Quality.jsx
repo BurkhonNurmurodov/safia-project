@@ -643,8 +643,13 @@ export default function Quality() {
   });
 
   // The resolution rate rides in the axis label — the number this chart exists
-  // for, kept next to the name instead of floated over the plot area.
-  const accCats = A.acc.map((x) => `${tl(x.name)} · ${x.total ? Math.round((x.done / x.total) * 100) : 0}%`);
+  // for. Full names ("SULTONOV ABROR ALISHEROVICH") blow past the axis width and
+  // truncate the % away, so they collapse to surname + initials.
+  const shortName = (n) => {
+    const parts = tl(n).trim().split(/\s+/);
+    return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((p) => p[0] + ".").join("")}`;
+  };
+  const accCats = A.acc.map((x) => `${shortName(x.name)} · ${x.total ? Math.round((x.done / x.total) * 100) : 0}%`);
   const accSeries = ACTIONABLE.map((st) => ({
     name: L("st", st),
     data: A.acc.map((x) => x[st]),
