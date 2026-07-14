@@ -12,7 +12,9 @@ from app.config import settings
 from app.database import get_db
 from app.models import Manager, Attendance, RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole
 from app.services.verifix_parser import parse_verifix_file
-from app.services.sheets_sync import sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet
+from app.services.sheets_sync import (
+    sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
+)
 from app.permissions import get_page_access, set_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
 from app.routers.auth import VALID_ROLES
 
