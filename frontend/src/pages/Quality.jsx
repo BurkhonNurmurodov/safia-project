@@ -564,7 +564,7 @@ export default function Quality() {
 
   const topTypes = A.types.slice(0, 8);
   const otherTypes = A.types.slice(8).reduce((s, x) => s + x.n, 0);
-  const donutLabels = [...topTypes.map((x) => L("type", x.k)), ...(otherTypes ? [t("common.other") || "…"] : [])];
+  const donutLabels = [...topTypes.map((x) => L("type", x.k)), ...(otherTypes ? [T.otherWord] : [])];
   const donutSeries = [...topTypes.map((x) => x.n), ...(otherTypes ? [otherTypes] : [])];
   const donutOpts = {
     chart: { ...baseChart, type: "donut" },
