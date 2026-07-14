@@ -195,11 +195,16 @@ const TASK_DETAILS = [
     uz:      { n: "Ish jadvalini grafika tuzish", note: "Foto hisobot" },
     uz_cyrl: { n: "Иш жадвалини графика тузиш", note: "Фото ҳисобот" },
     en:      { n: "Scheduling", note: "Photo report" } },
-  { w: "10%",
+  { w: "5%",
     ru:      { n: "Контроль работы зам лидера", note: "Фотоотчет чек листа" },
     uz:      { n: "Zam lider ishini nazorat qilish", note: "Chek-list foto hisoboti" },
     uz_cyrl: { n: "Зам лидер ишини назорат қилиш", note: "Чек-лист фото ҳисоботи" },
     en:      { n: "Assistant leader work control", note: "Checklist photo report" } },
+  { w: "5%",
+    ru:      { n: "Сменный отчёт лидера", note: "" },
+    uz:      { n: "Liderning smena hisoboti", note: "" },
+    uz_cyrl: { n: "Лидернинг смена отчёти", note: "" },
+    en:      { n: "Leader's shift report", note: "" } },
 ];
 // `id` is the sheet's question number (1-based). A question that is on the form
 // but not yet described here still renders — as "Task N", with no weight.
