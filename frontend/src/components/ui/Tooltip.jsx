@@ -12,7 +12,7 @@ import { Info } from "lucide-react";
  * icon, flips below when there isn't room (e.g. near the navbar), and is
  * clamped horizontally so it stays inside the viewport.
  */
-export default function Tooltip({ text, size = 11 }) {
+export default function Tooltip({ text, size = 11, width = "14rem" }) {
   const [show, setShow] = useState(false);
   const triggerRef = useRef(null);
   const tipRef = useRef(null);
