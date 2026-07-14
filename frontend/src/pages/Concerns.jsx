@@ -1706,7 +1706,9 @@ export default function Concerns() {
                       });
                     }}
                     options={cellSupOptions}
-                    placeholder={t("concerns.allSupervisors")}
+                    placeholder={targetPicked
+                      ? t("concerns.allSupervisors")
+                      : t(formLevel === "top-manager" ? "concerns.pickTopManagerFirst" : "concerns.pickShiftManagerFirst")}
                     searchable
                     searchPlaceholder={t("concerns.searchSupervisor")}
                   />
