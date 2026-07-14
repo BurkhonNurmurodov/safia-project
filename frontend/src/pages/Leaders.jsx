@@ -825,7 +825,7 @@ export default function Leaders() {
           ) : (<>
             {/* desktop / tablet: sortable table (canonical POSITIONS-style) */}
             <div className="hidden sm:block overflow-auto" style={{ maxHeight: 460 }}>
-              <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 560 }}>
+              <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 680 }}>
                 <thead>
                   <tr>
                     <Th label={T.thDate}      k="date"      sort={tSort} onSort={toggleSort} />
