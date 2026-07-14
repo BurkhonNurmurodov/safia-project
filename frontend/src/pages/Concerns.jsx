@@ -1685,8 +1685,34 @@ export default function Concerns() {
                 </Field>
               )}
 
-              {/* Cell — the "Ячейка номер"; a searchable picker over every cell
-                  in scope (each labelled with the leader assigned to it). */}
+              {/* Brigadir — narrows the cell picker below to one unit's cells.
+                  Only shown when the viewer's scope spans several supervisors
+                  (a supervisor/leader already sees just their own cells). */}
+              {supervisorOptions.length > 1 && (
+                <Field label={t("concerns.fieldSupervisor")}>
+                  <StyledSelect
+                    value={cellSupervisor}
+                    onChange={(v) => {
+                      setCellSupervisor(v);
+                      // Drop a cell that no longer belongs to the picked unit.
+                      setForm((f) => {
+                        const keep = !v || cells.some(
+                          (c) => c.cell === f.cell_code && String(c.supervisor_id) === v,
+                        );
+                        return keep ? f : { ...f, cell_code: "" };
+                      });
+                    }}
+                    options={cellSupOptions}
+                    placeholder={t("concerns.allSupervisors")}
+                    searchable
+                    searchPlaceholder={t("concerns.searchSupervisor")}
+                  />
+                </Field>
+              )}
+
+              {/* Cell — the "Ячейка номер"; a searchable picker over the cells
+                  in scope (each labelled with the leader assigned to it),
+                  narrowed to the brigadir picked above. */}
               <Field label={t("concerns.fieldCell")} required>
                 <StyledSelect
                   value={form.cell_code}
