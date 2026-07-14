@@ -1669,7 +1669,10 @@ export default function Concerns() {
                 <Field label={t("concerns.fieldShift")} required>
                   <StyledSelect
                     value={form.shift ? String(form.shift) : ""}
-                    onChange={(v) => setForm((f) => ({ ...f, shift: v ? Number(v) : "", shift_manager_profile_id: null }))}
+                    onChange={(v) => {
+                      setCellSupervisor("");   // the holder below resets → so does the brigadir step
+                      setForm((f) => ({ ...f, shift: v ? Number(v) : "", shift_manager_profile_id: null }));
+                    }}
                     options={[{ value: "1", label: t("concerns.shift1") }, { value: "2", label: t("concerns.shift2") }]}
                     placeholder={t("concerns.pickShift")}
                   />
