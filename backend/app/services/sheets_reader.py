@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import NamedTuple, Optional
 import re
 import gspread
 from google.oauth2.service_account import Credentials
