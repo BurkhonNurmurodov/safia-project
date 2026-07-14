@@ -308,6 +308,18 @@ function FitText({ full, short, max = 24, min = 13, className = "", style = {} }
 // quirks): muted label + iconed chip on top, big value below, and the score %
 // as a soft-tinted pill so colour stays an *indicator* — never a slab of neon.
 // `accent` lights a hairline glow across the top and tints the chip (hero card).
+// "+2 kun" — a checklist filed this many days after the day it reports on.
+function LateChip({ days, T }) {
+  return (
+    <span
+      title={T.lateTitle}
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums"
+      style={{ background: hexA(C_BAD, 0.12), border: `1px solid ${hexA(C_BAD, 0.3)}`, color: C_BAD }}>
+      <Clock size={10} />+{days} {T.dayAbbr}
+    </span>
+  );
+}
+
 function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit }) {
   // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
   // the card width (abbreviating to "Surname G." only if it still won't fit).
