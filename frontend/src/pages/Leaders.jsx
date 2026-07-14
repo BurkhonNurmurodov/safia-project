@@ -816,10 +816,11 @@ export default function Leaders() {
               <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 560 }}>
                 <thead>
                   <tr>
-                    <Th label={T.thDate}   k="date"   sort={tSort} onSort={toggleSort} />
-                    <Th label={T.thLeader} k="leader" sort={tSort} onSort={toggleSort} />
-                    <Th label={T.thScore}  k="score"  sort={tSort} onSort={toggleSort} align="center" />
-                    <Th label={T.thFailed} k="failed" sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thDate}      k="date"      sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thSubmitted} k="submitted" sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thLeader}    k="leader"    sort={tSort} onSort={toggleSort} />
+                    <Th label={T.thScore}     k="score"     sort={tSort} onSort={toggleSort} align="center" />
+                    <Th label={T.thFailed}    k="failed"    sort={tSort} onSort={toggleSort} />
                     <Th label={T.thAction} align="right" />
                   </tr>
                 </thead>
@@ -827,6 +828,14 @@ export default function Leaders() {
                   {displayRows.map((r) => (
                     <tr key={r.uid}>
                       <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>
+                        {r.submitted_at ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="tabular-nums">{hhmm(r.submitted_at)}</span>
+                            {r._late > 0 && <LateChip days={r._late} T={T} />}
+                          </span>
+                        ) : "—"}
+                      </td>
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</td>
                       <td className="px-3 py-2 text-center">
                         <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
