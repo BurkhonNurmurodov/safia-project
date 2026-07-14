@@ -659,7 +659,7 @@ def list_cells(
     and a leader only their own."""
     role = payload.get("role")
     q = (
-        db.query(Cell.code, RoleProfile.name, Manager.id, Manager.name)
+        db.query(Cell.code, RoleProfile.name, Manager.id, Manager.name, Manager.shift)
         .join(RoleProfile, RoleProfile.id == Cell.leader_id)
         .outerjoin(Manager, Manager.id == RoleProfile.manager_id)
         .filter(RoleProfile.role == "leader")
