@@ -943,7 +943,9 @@ export default function Quality() {
           {/* ── seasonality ── */}
           <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason} subtitle={T.seasonSub}
             empty={A.season.length === 0} height={280}>
-            <ReactApexChart options={heatOpts} series={heatSeries} type="heatmap" height={280} />
+            <div className="att-heat">
+              <ReactApexChart options={heatOpts} series={heatSeries} type="heatmap" height={280} />
+            </div>
           </ChartCard>
 
           {/* ── register ── */}
