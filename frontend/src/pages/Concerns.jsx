@@ -480,6 +480,9 @@ export default function Concerns() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [formError, setFormError] = useState("");
+  // Cell-picker brigadir filter (form-local, never sent — it only narrows the
+  // cell list to one supervisor's cells). "" = every cell in scope.
+  const [cellSupervisor, setCellSupervisor] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Escalation UI: the uplift/send-back modal ({ row, direction }) with its
