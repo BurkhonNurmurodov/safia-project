@@ -100,6 +100,8 @@ const TXT = {
     toggleLeader: "Лидер", toggleSup: "Бригадир",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
+    thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.",
+    notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
     task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
