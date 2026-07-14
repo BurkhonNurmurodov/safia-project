@@ -1676,8 +1676,12 @@ export default function Concerns() {
                   <StyledSelect
                     value={form.shift ? String(form.shift) : ""}
                     onChange={(v) => {
-                      setCellSupervisor("");   // the holder below resets → so does the brigadir step
-                      setForm((f) => ({ ...f, shift: v ? Number(v) : "", shift_manager_profile_id: null }));
+                      // A new shift means new units: the holder, the brigadir and
+                      // the cell all belonged to the old one.
+                      setCellSupervisor("");
+                      setForm((f) => ({
+                        ...f, shift: v ? Number(v) : "", shift_manager_profile_id: null, cell_code: "",
+                      }));
                     }}
                     options={[{ value: "1", label: t("concerns.shift1") }, { value: "2", label: t("concerns.shift2") }]}
                     placeholder={t("concerns.pickShift")}
