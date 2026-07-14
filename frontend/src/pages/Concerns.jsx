@@ -543,10 +543,10 @@ export default function Concerns() {
   // When the scope has exactly one cell (e.g. a leader logging for their own
   // cell), pre-select it so they don't have to open the picker at all.
   useEffect(() => {
-    if (modalOpen && !form.id && !form.cell_code && cells.length === 1) {
-      setForm((f) => ({ ...f, cell_code: cells[0].cell }));
+    if (modalOpen && !form.id && !form.cell_code && shiftCells.length === 1) {
+      setForm((f) => ({ ...f, cell_code: shiftCells[0].cell }));
     }
-  }, [modalOpen, form.id, form.cell_code, cells]);
+  }, [modalOpen, form.id, form.cell_code, shiftCells]);
 
   // Cells (and therefore brigadirs) belong to a shift: once the form names the
   // shift the concern is raised for, only that shift's units are in play.
