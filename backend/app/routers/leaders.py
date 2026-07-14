@@ -49,8 +49,11 @@ def get_leaders(
         "role": role,
         "data": [
             {
-                "uid": f"row-{r.id}",
+                # The form's submission id when we have it — unlike the row id it
+                # survives the wipe-and-reload of every sheet refresh.
+                "uid": r.submission_id or f"row-{r.id}",
                 "date": r.date,
+                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
                 "supervisor": r.supervisor,
                 "leader": r.leader,
                 "completion": float(r.completion or 0),
