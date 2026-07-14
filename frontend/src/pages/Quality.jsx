@@ -144,6 +144,7 @@ const TXT = {
     mDesc: "Shikoyat tavsifi", mAction: "Tuzatuvchi choralar", mComment: "Izohlar",
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
+    loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
   },
   uz_cyrl: {
     title: "Сифат ва шикоятлар", sub: "Номувофиқликлар реестри таҳлили",
@@ -173,6 +174,7 @@ const TXT = {
     mDesc: "Шикоят тавсифи", mAction: "Тузатувчи чоралар", mComment: "Изоҳлар",
     mFault: "Сех/дўкон айби", mCell: "Айбдор ячейка", mReturn: "Қайтариш келди",
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
+    loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
   },
   ru: {
     title: "Качество и жалобы", sub: "Аналитика реестра несоответствий",
@@ -202,6 +204,7 @@ const TXT = {
     mDesc: "Описание жалобы", mAction: "Корректирующие действия", mComment: "Комментарии",
     mFault: "Вина цеха/магазина", mCell: "Виновная ячейка", mReturn: "Поступил возврат",
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
+    loadFailed: "Не удалось загрузить данные", retry: "Повторить",
   },
   en: {
     title: "Quality & complaints", sub: "Non-conformance register analytics",
@@ -231,6 +234,7 @@ const TXT = {
     mDesc: "Complaint description", mAction: "Corrective actions", mComment: "Comments",
     mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received",
     close: "Close", detail: "Non-conformance", otherWord: "Other",
+    loadFailed: "Could not load the register", retry: "Retry",
   },
 };
 
@@ -257,7 +261,7 @@ const fmtDateTime = (iso8601) => {
 export default function Quality() {
   const { lang, t } = useLang();
   const { auth } = useAuth();
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
   const T = TXT[lang] || TXT.ru;
