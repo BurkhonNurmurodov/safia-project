@@ -893,21 +893,7 @@ export default function Quality() {
               empty={A.acc.length === 0} height={330}
               right={<SegmentedToggle size="sm" value={accMode} onChange={setAccMode}
                 options={[["brig", T.accBrig], ["mgr", T.accMgr]]} />}>
-              <div className="relative">
-                <ReactApexChart options={accOpts} series={accSeries} type="bar" height={330} />
-                {/* resolution % next to each bar — the number the chart is really about */}
-                <div className="absolute right-2 top-[46px] bottom-[26px] flex flex-col justify-around pointer-events-none">
-                  {A.acc.map((x) => {
-                    const pct = x.total ? Math.round((x.done / x.total) * 100) : 0;
-                    return (
-                      <span key={x.name} className="text-[10px] font-bold tabular-nums leading-none"
-                        style={{ color: pct >= 90 ? C_DONE : pct >= 75 ? C_WAIT : C_OPEN }}>
-                        {pct}%
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
+              <ReactApexChart options={accOpts} series={accSeries} type="bar" height={330} />
             </ChartCard>
           </div>
 
