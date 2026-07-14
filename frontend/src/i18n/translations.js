@@ -3038,6 +3038,8 @@ const t = {
     "concerns.fieldShiftManager":"Менеджер смены",
     "concerns.pickShiftManager": "Выберите менеджера смены",
     "concerns.pickShiftFirst":   "Сначала выберите смену",
+    "concerns.pickShiftManagerFirst": "Сначала выберите менеджера смены",
+    "concerns.pickTopManagerFirst":   "Сначала выберите топ-менеджера",
     "concerns.fieldReason":    "Причина",
     "concerns.reasonHint":     "Почему не удалось решить на этом уровне?",
     "concerns.reasonRequired": "Укажите причину",
