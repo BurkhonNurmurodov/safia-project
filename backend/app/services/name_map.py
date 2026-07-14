@@ -86,20 +86,26 @@ def _skeleton(word: str) -> str:
     return "".join(c for c in word if c not in _VOWELS)
 
 
-def _same_person(sheet: list[str], canon: list[str]) -> bool:
+def _pair_score(sheet: list[str], canon: list[str]) -> float:
+    """0 when the two names can't be the same person, else how well they agree.
+    Never a hit on the surname alone: 'SULTONOV ABROR' and 'Султонова Умида'
+    share a surname stem and are two different people."""
     if len(sheet) < 2 or len(canon) < 2:
-        return False
+        return 0.0
     s_sur, s_first = sheet[0], sheet[1]
     c_sur, c_first = canon[0], canon[1]
 
-    sur_ok = (difflib.SequenceMatcher(None, s_sur, c_sur).ratio() >= 0.75
-              or _skeleton(s_sur) == _skeleton(c_sur))
-    # The first name is what tells two same-surname people apart, so accept it
-    # only on a strong match or a clear short-form prefix (SANJAR ⊂ SANJARBEK).
-    first_ok = (difflib.SequenceMatcher(None, s_first, c_first).ratio() >= 0.70
-                or (min(len(s_first), len(c_first)) >= 4
-                    and (s_first.startswith(c_first) or c_first.startswith(s_first))))
-    return sur_ok and first_ok
+    sur = difflib.SequenceMatcher(None, s_sur, c_sur).ratio()
+    first = difflib.SequenceMatcher(None, s_first, c_first).ratio()
+
+    sur_ok = sur >= 0.75 or _skeleton(s_sur) == _skeleton(c_sur)   # O'ROZOV ≡ Уразов
+    # A clear short-form prefix counts as a full first-name hit (SANJAR ⊂ SANJARBEK).
+    prefix = (min(len(s_first), len(c_first)) >= 4
+              and (s_first.startswith(c_first) or c_first.startswith(s_first)))
+    first_ok = first >= 0.70 or prefix
+    if not (sur_ok and first_ok):
+        return 0.0
+    return 0.5 * sur + 0.5 * (1.0 if prefix else first)
 
 
 def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict]:
