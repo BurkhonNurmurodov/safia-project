@@ -1619,6 +1619,8 @@ const t = {
     "concerns.fieldShiftManager":"Смена менежери",
     "concerns.pickShiftManager": "Смена менежерини танланг",
     "concerns.pickShiftFirst":   "Аввал сменани танланг",
+    "concerns.pickShiftManagerFirst": "Аввал смена менежерини танланг",
+    "concerns.pickTopManagerFirst":   "Аввал топ-менежерни танланг",
     "concerns.fieldReason":    "Сабаб",
     "concerns.reasonHint":     "Нега бу даражада ҳал қилиб бўлмади?",
     "concerns.reasonRequired": "Сабаб киритилиши шарт",
