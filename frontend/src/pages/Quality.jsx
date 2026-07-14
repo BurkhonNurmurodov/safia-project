@@ -565,7 +565,17 @@ export default function Quality() {
 
   // ── charts ────────────────────────────────────────────────────────────────
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
-  const baseChart = { fontFamily: "inherit", toolbar: { show: false }, background: "transparent", animations: { enabled: false } };
+  // zoom/selection off: Apex turns a drag on an area chart into a zoom-selection
+  // box, which does nothing useful here (the date range is the toolbar's job) and
+  // just leaves the chart stuck in a zoomed state with no toolbar to reset it.
+  const baseChart = {
+    fontFamily: "inherit",
+    toolbar: { show: false },
+    background: "transparent",
+    animations: { enabled: false },
+    zoom: { enabled: false },
+    selection: { enabled: false },
+  };
 
   // Stacked area — solid fills with a 2px card-coloured seam between bands
   // (translucent fills multiply into mud where they overlap).
