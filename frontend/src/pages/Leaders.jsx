@@ -121,6 +121,8 @@ const TXT = {
     toggleLeader: "Leader", toggleSup: "Supervisor",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
+    thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
+    notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
     task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
