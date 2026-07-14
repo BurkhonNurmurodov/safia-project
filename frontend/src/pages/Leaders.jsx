@@ -948,7 +948,7 @@ export default function Leaders() {
             </thead>
             <tbody>
               {TASK_DETAILS.map((_, i) => {
-                const d = taskDetail(i, lang);
+                const d = taskDetail(i + 1, lang);
                 return (
                   <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
                     <td className="px-3 py-2 font-bold text-xs" style={{ color: "var(--text-4)" }}>T{i + 1}</td>
