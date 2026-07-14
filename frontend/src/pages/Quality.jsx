@@ -270,7 +270,7 @@ export default function Quality() {
     return Array.from({ length: 12 }, (_, m) => f.format(new Date(2025, m, 1)).replace(".", ""));
   }, [lang]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["quality"],
     queryFn: () => api.get("/api/quality").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
