@@ -472,9 +472,11 @@ export default function Leaders() {
     };
   }, [filtered]);
 
-  // Only questions that were actually put to someone can be scored — an unasked
-  // one would otherwise plot as a 0% bar and win "worst task" on no evidence.
-  const chartTasks = useMemo(() => taskStats.filter((t) => t.asked > 0), [taskStats]);
+  // Every question on the form keeps its slot on the axis, but one nobody has
+  // answered plots as null — an empty space under its label, not a 0% bar. A 0%
+  // bar would read as "the leaders never do this", when in truth they were never
+  // asked, and it would take the worst-task card on no evidence.
+  const chartTasks = taskStats;
 
   // Trend series — daily points for short windows; aggregates into weekly /
   // monthly buckets as the span grows so the date axis stays readable.
