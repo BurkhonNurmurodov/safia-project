@@ -548,22 +548,28 @@ export default function Concerns() {
     }
   }, [modalOpen, form.id, form.cell_code, cells]);
 
+  // Cells (and therefore brigadirs) belong to a shift: once the form names the
+  // shift the concern is raised for, only that shift's units are in play.
+  const shiftCells = useMemo(() => (
+    form.shift ? cells.filter((c) => c.supervisor_shift === Number(form.shift)) : cells
+  ), [cells, form.shift]);
+
   // Brigadir pre-filter for the cell picker: the full cell list is long (100+),
   // so viewers whose scope spans several units first pick the supervisor and
-  // the cell picker collapses to that unit's cells. "" = all cells.
+  // the cell picker collapses to that unit's cells. "" = every cell in scope.
   const supervisorOptions = useMemo(() => {
     const seen = new Map();
-    cells.forEach((c) => {
+    shiftCells.forEach((c) => {
       if (c.supervisor_id && !seen.has(c.supervisor_id)) seen.set(c.supervisor_id, c.supervisor || "");
     });
     return [...seen.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [cells, tl]);
+  }, [shiftCells, tl]);
   const cellSupOptions = [{ value: "", label: t("concerns.allSupervisors") }, ...supervisorOptions];
   const shownCells = cellSupervisor
-    ? cells.filter((c) => String(c.supervisor_id) === cellSupervisor)
-    : cells;
+    ? shiftCells.filter((c) => String(c.supervisor_id) === cellSupervisor)
+    : shiftCells;
   const cellOptions = shownCells.map((c) => ({
     value: c.cell,
     label: c.leader ? `${c.cell} · ${tl(c.leader)}` : c.cell,
