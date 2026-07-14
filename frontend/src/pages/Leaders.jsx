@@ -596,15 +596,18 @@ export default function Leaders() {
   const taskOptions = {
     chart: { ...chartBase, type: "bar" },
     plotOptions: { bar: { distributed: true, borderRadius: 6, borderRadiusApplication: "end", columnWidth: "56%" } },
-    colors: taskRates.map(scoreColor),
-    fill: { type: "gradient", gradient: { type: "vertical", gradientToColors: taskRates.map((v) => mix(scoreColor(v), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
+    colors: chartTasks.map((t) => scoreColor(t.rate)),
+    fill: { type: "gradient", gradient: { type: "vertical", gradientToColors: chartTasks.map((t) => mix(scoreColor(t.rate), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
     states: { hover: { filter: { type: "lighten", value: 0.08 } } },
     dataLabels: { enabled: false },
     legend: { show: false },
     grid: grid("y"),
-    xaxis: { categories: taskRates.map((_, i) => `T${i + 1}`), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    xaxis: { categories: chartTasks.map((t) => `T${t.id}`), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
     yaxis: { min: 0, max: 100, tickAmount: 4, labels: axisLabel },
-    tooltip: { custom: ({ dataPointIndex }) => tipHTML(`${T.task} ${dataPointIndex + 1}`, `${taskRates[dataPointIndex]}%`, scoreColor(taskRates[dataPointIndex])) },
+    tooltip: { custom: ({ dataPointIndex }) => {
+      const t = chartTasks[dataPointIndex];
+      return tipHTML(`${T.task} ${t.id}`, `${t.rate}%`, scoreColor(t.rate));
+    } },
   };
 
   const standHeight = Math.max(220, standings.length * 30 + 36);
