@@ -1655,9 +1655,12 @@ export default function Concerns() {
                 <Field label={t("concerns.colLevel")}>
                   <StyledSelect
                     value={form.level}
-                    onChange={(v) => setForm((f) => ({
-                      ...f, level: v, shift: "", shift_manager_profile_id: null, top_manager_profile_id: null,
-                    }))}
+                    onChange={(v) => {
+                      setCellSupervisor("");   // re-locks the brigadir step below
+                      setForm((f) => ({
+                        ...f, level: v, shift: "", shift_manager_profile_id: null, top_manager_profile_id: null,
+                      }));
+                    }}
                     options={["shift-manager", "top-manager"].map((l) => ({ value: l, label: levelLabel(l) }))}
                   />
                 </Field>
