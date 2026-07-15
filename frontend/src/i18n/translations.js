@@ -5538,6 +5538,7 @@ const t = {
     "error.title":   "Something went wrong",
     "error.message": "Reload the page. If the problem persists, contact your administrator.",
     "error.reload":  "Reload",
+    "error.details": "Technical details",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Official HC vs Verifix HC",
