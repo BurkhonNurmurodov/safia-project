@@ -679,7 +679,7 @@ export default function Quality() {
   const supOpts = useMemo(() => {
     const c = {};
     for (const r of rows) {
-      if (!(r.s === "production" && r.sup)) continue;
+      if (!r.sup) continue;
       if (shiftTab !== "all" && String(r.sh ?? "") !== shiftTab) continue;
       const k = who(r);
       if (k) c[k] = (c[k] || 0) + 1;
