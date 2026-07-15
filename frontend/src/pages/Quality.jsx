@@ -624,10 +624,20 @@ export default function Quality() {
     optFilter({ label: T.fStatus, opts: opts.status, render: (k) => L("st", k), dot: (k) => STATUS_COLORS[k] || C_NA }, statusSel, setStatusSel, "status", CircleDot),
     optFilter({ label: T.fRet, opts: ["yes", "no"], render: (k) => (k === "yes" ? T.yes : T.no) }, retSel, setRetSel, "ret", Undo2),
     optFilter({ label: T.fBrig, opts: opts.brig, render: (k) => tl(k) }, brigSel, setBrigSel, "brig", Wrench),
-    optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers),
+    // Shift lives in the panel on Overall; the Production tab surfaces it as a
+    // dedicated segmented toggle on the toolbar instead, so drop it here.
+    ...(!isProd ? [optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers)] : []),
     optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog),
   ];
-  const filterActiveCount = [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel].filter((s) => s.length).length;
+  // On Production the shift toggle lives outside the panel, so it doesn't count
+  // toward the panel's active-filter badge.
+  const filterActiveCount = (isProd
+    ? [typeSel, catSel, statusSel, retSel, brigSel, mgrSel]
+    : [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]
+  ).filter((s) => s.length).length;
+  // The Production tab's shift control: a 3-way All / Shift 1 / Shift 2 toggle that
+  // drives the same shiftSel state the panel filter uses on Overall.
+  const shiftTab = shiftSel.length === 1 && ["1", "2"].includes(shiftSel[0]) ? shiftSel[0] : "all";
   const clearAllFilters = () => {
     setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
   };
