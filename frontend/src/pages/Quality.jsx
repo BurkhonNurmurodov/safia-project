@@ -375,7 +375,11 @@ export default function Quality() {
     };
   }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, tl]);
 
-  const inView = (r) => (view === "production" ? r.s === "production" : true);
+  // Production view: источник = «Производство» AND the responsible «Отв. бригадир/ТМ»
+  // matched a real supervisor unit on our system (r.sup is set only on a match;
+  // technologists / IT / individual leaders keep their sheet name in r.b and are
+  // excluded here).
+  const inView = (r) => (view === "production" ? r.s === "production" && !!r.sup : true);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
