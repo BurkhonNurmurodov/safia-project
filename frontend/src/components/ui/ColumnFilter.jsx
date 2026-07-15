@@ -436,6 +436,9 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   // No deps: re-measures on every render so label/sibling changes are picked up;
   // the setState bail-out keeps it loop-free.
   useLayoutEffect(() => {
+    // Callers can pin the grouped button (e.g. filters parked on the right of a
+    // toolbar whose left side already carries its own controls) — skip the unfold.
+    if (forceGroup) { if (!collapsed) setCollapsed(true); return; }
     const wrap = wrapRef.current;
     const parent = wrap?.parentElement;
     if (!parent) return;
