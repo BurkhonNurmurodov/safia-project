@@ -1138,9 +1138,9 @@ export default function Quality() {
           </div>
 
           {/* ── per-supervisor status matrix (Brigadirs tab only) ──
-                 done → resolved · open+waiting → not solved · repeat → recurring.
-                 Numbers/percent toggle: percentages are row-wise, so each
-                 supervisor's three status columns sum to 100% and «Resolved» reads
+                 done → resolved · open → not solved · waiting → waiting · repeat →
+                 recurring. Numbers/percent toggle: percentages are row-wise, so each
+                 supervisor's four status columns sum to 100% and «Resolved» reads
                  as that supervisor's own resolution rate; the Total column stays a
                  raw actionable count to anchor the percentages. ── */}
           {isProd && (
