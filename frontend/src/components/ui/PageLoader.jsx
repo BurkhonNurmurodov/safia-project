@@ -1,10 +1,7 @@
-// Stable public path (frontend/public/logo.png), NOT the content-hashed
-// `import ... from assets/logo.png`. The hashed URL changes every build and,
-// right after a redeploy, the Engintron microcache can serve a stale/negative
-// entry for the new /assets/logo-<hash>.png while the long-lived /logo.png
-// stays warm in every client + cache. This is the same asset the ES5 boot
-// overlay in index.html uses, so all three loaders share one warm file.
-const LOGO_SRC = "/logo.png";
+// Inlined base64 logo baked into the JS bundle — no network fetch, so it can
+// never get stuck on a poisoned cache entry for the stable /logo.png URL. See
+// assets/logoChrome.js for the full rationale.
+import LOGO_SRC from "../../assets/logoChrome.js";
 
 /**
  * Branded loading state — Safia logo + spinner.
