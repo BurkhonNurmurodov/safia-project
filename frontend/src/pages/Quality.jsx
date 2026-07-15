@@ -204,7 +204,7 @@ const TXT = {
     trendSubProd: "бригадирлар кесимида",
     secProducts: "Муаммоли маҳсулотлар", prodSub: "номувофиқликлар сони бўйича",
     secTrend: "Номувофиқликлар динамикаси", trendSub: "манба кесимида",
-    byMonth: "Ой", byWeek: "Ҳафта",
+    byMonth: "Ой", byWeek: "Ҳафта", byYear: "Йил",
     secTypes: "Номувофиқлик турлари", secForeign: "Ёт жисмлар", foreignSub: "тоифалар бўйича",
     secTop: "Шикоят марказлари", topProducts: "Маҳсулотлар", topPlaces: "Савдо нуқталари",
     topSub: "меҳмон шикоятлари бўйича энг кўпи",
