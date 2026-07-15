@@ -718,7 +718,7 @@ export default function Trudoyomkost() {
 
           <div className="px-2 py-2">
             {trend.series.length > 0 && trend.cats.length > 0 ? (
-              <ReactApexChart type="line" series={trend.series.map(({ name, data }) => ({ name, data }))} options={trendOptions} height={300} />
+              <ReactApexChart className="apx-bare-tip" type="line" series={trend.series.map(({ name, data }) => ({ name, data }))} options={trendOptions} height={300} />
             ) : (
               <div className="py-16 text-center text-sm" style={{ color: "var(--text-4)" }}>{T.noSelection}</div>
             )}
