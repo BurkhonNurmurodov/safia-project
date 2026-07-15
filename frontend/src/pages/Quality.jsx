@@ -661,8 +661,8 @@ export default function Quality() {
     tooltip: { theme: chartTheme.mode, shared: true, intersect: false },
   };
   const areaSeries = trendOrder.map((x) => ({
-    name: L("src", x.k),
-    data: A.trend.map((b) => b[x.k]),
+    name: trendName(x.k),
+    data: A.trend.map((b) => b[x.k] || 0),
   }));
 
   const topTypes = A.types.slice(0, 8);
