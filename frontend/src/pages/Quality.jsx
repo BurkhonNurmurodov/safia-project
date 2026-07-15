@@ -635,8 +635,8 @@ export default function Quality() {
       switch (sort.key) {
         case "date":    return r.d || "";
         case "src":     return L("src", r.s);
-        case "place":   return tl(r.pl || "");
-        case "product": return tl(r.pr || "");
+        case "place":   return r.pl || "";
+        case "product": return r.pr || "";
         case "type":    return L("type", r.t);
         case "cat":     return L("cat", r.c);
         case "cell":    return r.cn || r.fc || "";
