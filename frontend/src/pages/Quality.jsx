@@ -313,6 +313,9 @@ export default function Quality() {
   const [shiftSel, setShiftSel] = useState([]);
   const [mgrSel, setMgrSel] = useState([]);
 
+  // Page-level view switch: "overall" = the whole register; "production" narrows
+  // every KPI/chart/table row to источник = «Производство» (r.s === "production").
+  const [view, setView] = useState("overall");
   const [gran, setGran] = useState("month");
   const [topMode, setTopMode] = useState("product");
   const [accMode, setAccMode] = useState("brig");
