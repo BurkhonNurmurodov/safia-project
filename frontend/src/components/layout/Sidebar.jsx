@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-// Stable public path (frontend/public/logo.png), not the content-hashed asset
-// import — the hashed /assets/logo-<hash>.png can get a stale/negative entry in
-// the Engintron microcache right after a redeploy, while /logo.png stays warm.
-const logoSrc = "/logo.png";
+// Inlined base64 logo baked into the JS bundle — no network fetch, so it can
+// never get stuck on a poisoned cache entry for the stable /logo.png URL. See
+// assets/logoChrome.js for the full rationale.
+import logoSrc from "../../assets/logoChrome.js";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
