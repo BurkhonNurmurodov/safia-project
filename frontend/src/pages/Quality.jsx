@@ -719,7 +719,7 @@ export default function Quality() {
     tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v} ${T.rows}` } },
   };
 
-  const topData = topMode === "product" ? A.topProducts : A.topPlaces;
+  const topData = (isProd || topMode === "product") ? A.topProducts : A.topPlaces;
   const barOpts = (cats, color, horizontal = true) => ({
     chart: { ...baseChart, type: "bar" },
     theme: chartTheme,
