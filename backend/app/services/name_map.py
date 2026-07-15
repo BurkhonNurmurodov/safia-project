@@ -142,12 +142,21 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
     so renaming a unit in the Profiles tab takes effect without a re-sync.
     """
     canon = [(m, _name_tokens(m.name)) for m in managers]
+    by_norm = {" ".join(ctok): m for m, ctok in canon}
     out: dict[str, dict] = {}
     for raw in names:
         if not raw:
             continue
         tokens = _name_tokens(raw)
         if len(tokens) < 2:            # "Технологи", "IT отдел", "АХО" …
+            continue
+        # Explicit override wins over the score when the register spelling can't
+        # be reached by fuzzy matching (see _OVERRIDES). Falls through to the
+        # scorer when the pinned unit isn't in this manager set.
+        forced = _OVERRIDES.get(" ".join(tokens))
+        if forced and forced in by_norm:
+            m = by_norm[forced]
+            out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
             continue
         # Best candidate, not the first acceptable one: two supervisors can both
         # clear the bar (TALIPOVA MAMURA also half-resembles Арипова Манзура),
