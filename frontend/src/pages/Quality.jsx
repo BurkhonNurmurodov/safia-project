@@ -1284,7 +1284,8 @@ export default function Quality() {
                       options={[["year", T.byYear], ["week", T.byWeek]]} />
                   </div>
                 }>
-                <div ref={seasonScrollRef} className="overflow-x-auto px-3 pb-1">
+                <div className="px-3">
+                <div ref={seasonScrollRef} className="overflow-x-auto pb-1">
                   <table className="season-heat" style={{ borderCollapse: "collapse", width: scroll ? 134 + real * COLW : "100%", minWidth: scroll ? undefined : 760, tableLayout: "fixed" }}>
                     <colgroup>
                       <col style={{ width: 134 }} />
@@ -1347,6 +1348,7 @@ export default function Quality() {
                       ))}
                     </tbody>
                   </table>
+                </div>
                 </div>
               </ChartCard>
             );
