@@ -384,7 +384,7 @@ function ClearAllBtn({ onClick, title }) {
   );
 }
 
-export function FilterPanel({ sections, activeCount, anyActive, onClearAll }) {
+export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forceGroup = false }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);        // grouped dropdown
   const [sheetOpen, setSheetOpen] = useState(false);
