@@ -181,6 +181,7 @@ app.include_router(tasks.router)
 app.include_router(profiles.router)
 app.include_router(leaderboard.router)
 app.include_router(quality.router)
+app.include_router(boot.router)
 
 
 @app.get("/health")
