@@ -151,9 +151,16 @@ input[type="checkbox"].cb-danger { --cb-color: #ef4444; }
 input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,68,68,0.40); }
 
 /* ── Charts with self-styled (glassy) custom tooltips ─────────────────────────
-   ApexCharts wraps custom tooltip HTML in its own themed box (light background,
-   border, shadow), which rings the glassy container. Charts marked
-   .apx-bare-tip draw the tooltip container themselves, so strip the wrapper. */
+   ApexCharts wraps custom tooltip HTML (any `tooltip: { custom: … }`) in its own
+   themed box — light background + border + shadow — which rings the glassy
+   container with the tell-tale white halo/extra layer.
+   FIX / RULE FOR EVERY FUTURE CHART: any ApexChart whose tooltip is a custom
+   HTML string MUST carry the `apx-bare-tip` class on an ancestor so this rule
+   strips the wrapper. Put it on the chart itself —
+   `<ReactApexChart className="apx-bare-tip" … />` (react-apexcharts forwards
+   className to the container div) — or on a wrapper div if one already exists
+   (e.g. a `px-3 pb-3 apx-bare-tip` padding div). A default `theme`-only tooltip
+   does NOT need it; only custom ones do. */
 .apx-bare-tip .apexcharts-tooltip {
   background: transparent !important;
   border: none !important;
