@@ -323,7 +323,6 @@ export default function Quality() {
   const [dateFrom, setDateFrom] = useState(addDays(today, -364));
   const [dateTo, setDateTo] = useState(today);
 
-  const [search, setSearch] = useState("");
   const [srcSel, setSrcSel] = useState([]);
   const [typeSel, setTypeSel] = useState([]);
   const [catSel, setCatSel] = useState([]);
