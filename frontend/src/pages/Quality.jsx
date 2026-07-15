@@ -397,7 +397,7 @@ export default function Quality() {
     };
   }, [rows, dateFrom, dateTo, view, matchesFilters]);
 
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
+  useEffect(() => { setPage(1); }, [view, dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
 
   // ── analytics ─────────────────────────────────────────────────────────────
   const isCritical = (r) =>
