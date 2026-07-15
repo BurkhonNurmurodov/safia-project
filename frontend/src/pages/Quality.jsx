@@ -960,9 +960,15 @@ export default function Quality() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <Kpi icon={ClipboardList} color={BRAND} label={T.kTotal}
               value={kpi.total.toLocaleString("ru-RU")} delta={<Delta v={kpi.dTotal} />} />
-            <Kpi icon={MessageSquareWarning} color={SRC_COLORS.guest} label={T.kGuest}
-              value={kpi.guest.toLocaleString("ru-RU")} hint={`${kpi.guestPct}% ${T.kTotal.toLowerCase()}`}
-              delta={<Delta v={kpi.dGuest} />} />
+            {isProd ? (
+              <Kpi icon={Bug} color={TYPE_COLORS.foreign} label={T.kForeign}
+                value={kpi.foreign.toLocaleString("ru-RU")} hint={`${kpi.foreignPct}% ${T.kTotal.toLowerCase()}`}
+                delta={<Delta v={kpi.dForeign} />} />
+            ) : (
+              <Kpi icon={MessageSquareWarning} color={SRC_COLORS.guest} label={T.kGuest}
+                value={kpi.guest.toLocaleString("ru-RU")} hint={`${kpi.guestPct}% ${T.kTotal.toLowerCase()}`}
+                delta={<Delta v={kpi.dGuest} />} />
+            )}
             <Kpi icon={ShieldCheck} color={C_DONE} label={T.kResolved}
               value={`${kpi.resolved}%`} hint={T.kResolvedHint}
               delta={<Delta v={kpi.dResolved} invert={false} suffix=" п.п." />} />
