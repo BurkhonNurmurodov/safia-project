@@ -1156,13 +1156,14 @@ export default function Quality() {
                   <Th label={T.stResolved} align="right" />
                   <Th label={T.stNotSolved} align="right" />
                   <Th label={T.stRecurring} align="right" />
+                  <Th label={T.stWaiting} align="right" />
                   <Th label={T.stTotal} align="right" />
                 </tr>
               </thead>
               <tbody>
                 {supStatus.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                    <td colSpan={6} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 ) : supStatus.map((s) => {
                   const cell = (v, color) => {
