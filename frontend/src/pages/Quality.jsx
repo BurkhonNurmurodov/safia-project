@@ -370,19 +370,29 @@ export default function Quality() {
     return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((p) => p[0] + ".").join("")}`;
   };
 
+  // Production view: источник = «Производство» AND the responsible «Отв. бригадир/ТМ»
+  // matched a real supervisor unit on our system (r.sup is set only on a match;
+  // technologists / IT / individual leaders keep their sheet name in r.b and are
+  // excluded here).
+  const inView = (r) => (isProd ? r.s === "production" && !!r.sup : true);
+
+  // Selectable filter options are scoped to the rows the active tab can actually
+  // show — so the Production tab's Brigadir list holds only matched supervisors,
+  // not «Torgovaya tochka» / «IT oldel» / unmatched people that live only in Overall.
   const opts = useMemo(() => {
-    const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))];
+    const scope = rows.filter(inView);
+    const uniq = (key) => [...new Set(scope.map((r) => r[key]).filter(Boolean))];
     const byCount = (fn) => {
       const c = {};
-      for (const r of rows) { const k = fn(r); if (k) c[k] = (c[k] || 0) + 1; }
+      for (const r of scope) { const k = fn(r); if (k) c[k] = (c[k] || 0) + 1; }
       return Object.keys(c).sort((a, b) => c[b] - c[a]);
     };
     return {
       src: uniq("s"), type: byCount((r) => r.t), cat: byCount((r) => r.c), status: uniq("st"),
       brig: byCount(who), mgr: byCount((r) => r.m),
-      shift: [...new Set(rows.map((r) => r.sh).filter(Boolean))].sort(),
+      shift: [...new Set(scope.map((r) => r.sh).filter(Boolean))].sort(),
     };
-  }, [rows]);
+  }, [rows, view]);
 
   const matchesFilters = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -402,12 +412,6 @@ export default function Quality() {
       return true;
     };
   }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, tl]);
-
-  // Production view: источник = «Производство» AND the responsible «Отв. бригадир/ТМ»
-  // matched a real supervisor unit on our system (r.sup is set only on a match;
-  // technologists / IT / individual leaders keep their sheet name in r.b and are
-  // excluded here).
-  const inView = (r) => (isProd ? r.s === "production" && !!r.sup : true);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
