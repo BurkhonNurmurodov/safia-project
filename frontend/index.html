@@ -108,23 +108,8 @@
           // this screen looks like the app, not a raw dark box. Fully
           // self-contained: assumes NONE of the bundle's CSS is available (its
           // hashed stylesheet may be stale too), so colors + keyframes are inline.
-          var theme = 'dark';
-          try {
-            theme = localStorage.getItem('theme') ||
-              document.documentElement.getAttribute('data-theme') || 'dark';
-          } catch (e) {}
-          var p = theme === 'light'
-            ? { bg: '#faf8f5', text1: '#111827', text3: '#6b7280', brand: '#B07828' }
-            : { bg: '#0f1117', text1: '#f3f4f6', text3: '#6b7280', brand: '#C8973F' };
-
-          if (!document.getElementById('safia-boot-anims')) {
-            var st = document.createElement('style');
-            st.id = 'safia-boot-anims';
-            st.textContent =
-              '@keyframes safia-spin{to{transform:rotate(360deg)}}' +
-              '@keyframes safia-pulse{0%,100%{opacity:1}50%{opacity:.5}}';
-            (document.head || document.documentElement).appendChild(st);
-          }
+          var p = palette();
+          ensureAnims();
 
           // Branded logo loader mirroring components/ui/PageLoader.jsx: 96px
           // pulsing circular logo + a 24px brand spinner (gap on the right).
