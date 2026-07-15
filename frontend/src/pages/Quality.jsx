@@ -954,6 +954,11 @@ export default function Quality() {
           max={today} triggerClassName="px-3 py-2 text-sm" />
         <FilterPanel sections={filterSections} activeCount={filterActiveCount}
           anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} />
+        {isProd && (
+          <SegmentedToggle value={shiftTab}
+            onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
+            options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
+        )}
         <SearchInput value={search} onChange={setSearch} placeholder={T.searchPh} className="w-full sm:w-72 sm:ml-auto" />
       </div>
 
