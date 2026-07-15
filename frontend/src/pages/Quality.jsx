@@ -1086,11 +1086,67 @@ export default function Quality() {
             </ChartCard>
           </div>
 
-          {/* ── seasonality ── */}
+          {/* ── seasonality — native grid heatmap, styled after the fleet HeatmapChart:
+                 brand-gold header, solid ramp cells with auto-contrast labels,
+                 collapsed 1px borders, sticky type-name column ── */}
           <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason} subtitle={T.seasonSub}
             empty={A.season.length === 0} height={280}>
-            <div className="att-heat">
-              <ReactApexChart options={heatOpts} series={heatSeries} type="heatmap" height={280} />
+            <div className="overflow-x-auto px-3 pb-1">
+              <table className="season-heat" style={{ borderCollapse: "collapse", width: "100%", minWidth: 760, tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: 134 }} />
+                  {MONTHS.map((_, m) => <col key={m} />)}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={{ ...seasonTh, position: "sticky", left: 0, zIndex: 2, textAlign: "left", paddingLeft: 12 }}>
+                      {T.colType}
+                    </th>
+                    {MONTHS.map((mo, m) => (
+                      <th key={m} style={{ ...seasonTh, textAlign: "center", opacity: A.monthTotals[m] ? 1 : 0.5 }}>{mo}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {A.season.map((s) => (
+                    <tr key={s.k}>
+                      <td
+                        title={L("type", s.k)}
+                        style={{
+                          position: "sticky", left: 0, zIndex: 1,
+                          background: "var(--bg-card)",
+                          borderRight: "2px solid var(--border-md)",
+                          borderBottom: "1px solid var(--border)",
+                          padding: "0 10px", height: 40, whiteSpace: "nowrap",
+                          fontSize: 12, fontWeight: 600, color: "var(--text-2)",
+                        }}
+                      >
+                        <span className="block truncate" style={{ maxWidth: 114 }}>{L("type", s.k)}</span>
+                      </td>
+                      {s.data.map((v, m) => {
+                        const noData = A.monthTotals[m] === 0;
+                        const bg = noData ? null : seasonColor(v);
+                        return (
+                          <td
+                            key={m}
+                            title={noData ? undefined : `${L("type", s.k)} · ${MONTHS[m]} — ${v}%`}
+                            style={{
+                              height: 40, textAlign: "center",
+                              fontSize: 11, fontWeight: 700, letterSpacing: "-0.2px",
+                              border: "1px solid var(--border)",
+                              background: bg || "var(--bg-inner)",
+                              color: bg ? contrastText(bg) : "var(--text-4)",
+                              cursor: bg ? "default" : "default",
+                            }}
+                          >
+                            {noData || !bg ? "" : v >= 1 ? `${Math.round(v)}%` : "<1%"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </ChartCard>
 
