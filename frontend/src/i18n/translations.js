@@ -1260,6 +1260,7 @@ const t = {
     "error.title":   "Nimadir xato ketdi",
     "error.message": "Sahifani qayta yuklang. Muammo takrorlansa, administrator bilan bog'laning.",
     "error.reload":  "Qayta yuklash",
+    "error.details": "Texnik ma'lumot",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Rasmiy Xodimlar soni va Verifix Xodimlar soni",
