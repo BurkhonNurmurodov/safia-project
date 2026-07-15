@@ -10,6 +10,7 @@ import Layout from "../components/layout/Layout";
 import SearchInput from "../components/ui/SearchInput";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import StyledSelect from "../components/ui/StyledSelect";
 import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import Pagination from "../components/ui/Pagination";
