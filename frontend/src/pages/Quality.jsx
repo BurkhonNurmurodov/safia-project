@@ -394,7 +394,6 @@ export default function Quality() {
   }, [rows, view]);
 
   const matchesFilters = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return (r) => {
       if (srcSel.length && !srcSel.includes(r.s)) return false;
       if (typeSel.length && !typeSel.includes(r.t)) return false;
@@ -404,13 +403,9 @@ export default function Quality() {
       if (brigSel.length && !brigSel.includes(who(r))) return false;
       if (shiftSel.length && !shiftSel.includes(String(r.sh || ""))) return false;
       if (mgrSel.length && !mgrSel.includes(r.m)) return false;
-      if (q) {
-        const hay = `${r.pl || ""} ${tl(r.pl || "")} ${r.pr || ""} ${tl(r.pr || "")} ${r.b || ""} ${tl(r.b || "")} ${r.sup || ""} ${tl(r.sup || "")} ${r.cn || ""} ${r.fc || ""} ${r.no || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
       return true;
     };
-  }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, tl]);
+  }, [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
