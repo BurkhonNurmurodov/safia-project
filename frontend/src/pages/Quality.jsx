@@ -1174,7 +1174,7 @@ export default function Quality() {
             <ChartCard icon={<Factory size={13} />} title={T.secCells} subtitle={T.cellsSub}
               empty={A.topCells.length === 0} height={330}>
               <ReactApexChart
-                options={barOpts(A.topCells.map((x) => tl(x.k)), SRC_COLORS.production)}
+                options={barOpts(A.topCells.map((x) => x.k), SRC_COLORS.production)}
                 series={[{ name: T.rows, data: A.topCells.map((x) => x.n) }]}
                 type="bar" height={330} />
             </ChartCard>
