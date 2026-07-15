@@ -1143,7 +1143,6 @@ export default function Quality() {
                               border: "1px solid var(--border)",
                               background: bg || "var(--bg-inner)",
                               color: bg ? contrastText(bg) : "var(--text-4)",
-                              cursor: bg ? "default" : "default",
                             }}
                           >
                             {noData || !bg ? "" : v >= 1 ? `${Math.round(v)}%` : "<1%"}
