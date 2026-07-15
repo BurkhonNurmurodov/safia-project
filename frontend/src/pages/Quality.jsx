@@ -597,7 +597,9 @@ export default function Quality() {
   });
 
   const filterSections = [
-    optFilter({ label: T.fSrc, opts: opts.src, render: (k) => L("src", k), dot: (k) => SRC_COLORS[k] || C_NA }, srcSel, setSrcSel, "src", Layers),
+    // Source is a single constant on the Production tab (always «Производство») —
+    // drop the filter there.
+    ...(!isProd ? [optFilter({ label: T.fSrc, opts: opts.src, render: (k) => L("src", k), dot: (k) => SRC_COLORS[k] || C_NA }, srcSel, setSrcSel, "src", Layers)] : []),
     optFilter({ label: T.fType, opts: opts.type, render: (k) => L("type", k), dot: (k) => TYPE_COLORS[k] || C_NA }, typeSel, setTypeSel, "type", Tag),
     optFilter({ label: T.fCat, opts: opts.cat, render: (k) => L("cat", k), dot: (k) => CAT_COLORS[k] || C_NA }, catSel, setCatSel, "cat", Bug),
     optFilter({ label: T.fStatus, opts: opts.status, render: (k) => L("st", k), dot: (k) => STATUS_COLORS[k] || C_NA }, statusSel, setStatusSel, "status", CircleDot),
