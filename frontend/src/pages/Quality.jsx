@@ -176,6 +176,7 @@ const TXT = {
     stResolved: "Bartaraf etilgan", stNotSolved: "Bartaraf etilmagan", stRecurring: "Takrorlanuvchi",
     stTotal: "Jami", tglCount: "Soni", tglPct: "%",
     secSeason: "Mavsumiylik", seasonSub: "tur ulushi, oy ichidagi % hisobida",
+    seasonSubWeek: "tur ulushi, hafta ichidagi % hisobida",
     secTable: "Nomuvofiqliklar reyestri", searchPh: "Nuqta, mahsulot, brigadir, № …",
     colDate: "Sana", colSrc: "Manba", colPlace: "Nuqta / sex", colProduct: "Mahsulot",
     colType: "Turi", colCat: "Toifa", colCell: "Aybdor yacheyka", colBrig: "Mas’ul brigadir",
