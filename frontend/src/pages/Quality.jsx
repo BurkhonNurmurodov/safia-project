@@ -1078,7 +1078,7 @@ export default function Quality() {
               <tbody>
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                    <td colSpan={isProd ? 9 : 10} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 ) : pageRows.map((r) => {
                   const SrcIcon = SRC_ICONS[r.s] || CircleDot;
