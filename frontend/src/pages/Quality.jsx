@@ -191,7 +191,7 @@ const TXT = {
     mDesc: "Шикоят тавсифи", mAction: "Тузатувчи чоралар", mComment: "Изоҳлар",
     mFault: "Сех/дўкон айби", mCell: "Айбдор ячейка", mReturn: "Қайтариш келди",
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
-    fShift: "Смена", shift: "Смена", shiftAll: "Барчаси", mSheetName: "Жадвалдаги исм",
+    fShift: "Смена", shift: "Смена", shiftAll: "Барчаси", allBrig: "Барча бригадирлар", mSheetName: "Жадвалдаги исм",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
     textFailed: "Матнли майдонларни юклаб бўлмади",
   },
