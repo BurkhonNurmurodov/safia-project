@@ -923,7 +923,7 @@ export default function Quality() {
     colors: [color],
     plotOptions: { bar: { horizontal, borderRadius: 5, barHeight: "68%", columnWidth: "55%", distributed: false } },
     dataLabels: {
-      enabled: true, offsetX: 18, style: { fontSize: "10px", fontWeight: 700, colors: [legendColor] },
+      enabled: true, offsetX: 18, style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
       dropShadow: { enabled: false },
     },
     xaxis: {
