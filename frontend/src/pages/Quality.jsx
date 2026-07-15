@@ -1067,6 +1067,59 @@ export default function Quality() {
               value={kpi.critical.toLocaleString("ru-RU")} hint={isProd ? T.kCriticalHintProd : T.kCriticalHint} delta={<Delta v={kpi.dCritical} />} />
           </div>
 
+          {/* ── per-supervisor status matrix (Brigadirs tab only) ──
+                 done → resolved · open+waiting → not solved · repeat → recurring.
+                 Numbers/percent toggle: percentages are row-wise, so each
+                 supervisor's three status columns sum to 100% and «Resolved» reads
+                 as that supervisor's own resolution rate; the Total column stays a
+                 raw actionable count to anchor the percentages. ── */}
+          {isProd && (
+            <TableCard
+              icon={ShieldCheck}
+              title={T.secSupStatus}
+              right={<SegmentedToggle size="sm" value={supStatMode} onChange={setSupStatMode}
+                options={[["count", T.tglCount], ["pct", T.tglPct]]} />}
+            >
+              <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
+                <tr>
+                  <Th label={T.colBrig} k="sup" />
+                  <Th label={T.stResolved} align="right" />
+                  <Th label={T.stNotSolved} align="right" />
+                  <Th label={T.stRecurring} align="right" />
+                  <Th label={T.stTotal} align="right" />
+                </tr>
+              </thead>
+              <tbody>
+                {supStatus.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                  </tr>
+                ) : supStatus.map((s) => {
+                  const cell = (v, color) => {
+                    const text = supStatMode === "pct"
+                      ? `${s.total ? Math.round((v / s.total) * 100) : 0}%`
+                      : v.toLocaleString("ru-RU");
+                    return (
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold"
+                        style={{ color: v === 0 ? "var(--text-4)" : color }}>{text}</td>
+                    );
+                  };
+                  return (
+                    <tr key={s.name}>
+                      <td className="px-3 py-2 max-w-[220px] truncate" title={tl(s.name)} style={{ color: "var(--text-2)" }}>{tl(s.name)}</td>
+                      {cell(s.resolved, C_DONE)}
+                      {cell(s.notSolved, C_OPEN)}
+                      {cell(s.recurring, C_REPEAT)}
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>
+                        {s.total.toLocaleString("ru-RU")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </TableCard>
+          )}
+
           {/* ── trend + type mix ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
