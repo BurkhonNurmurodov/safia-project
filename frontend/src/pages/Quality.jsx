@@ -670,7 +670,7 @@ export default function Quality() {
   // from the other shift can be dropped.
   const supShift = useMemo(() => {
     const m = {};
-    for (const r of rows) if (r.s === "production" && r.sup) m[who(r)] = String(r.sh ?? "");
+    for (const r of rows) if (r.sup) m[who(r)] = String(r.sh ?? "");
     return m;
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
