@@ -991,6 +991,13 @@ export default function Quality() {
             onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
             options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
         )}
+        {isProd && (
+          <StyledSelect value={brigSel[0] || ""}
+            onChange={(v) => setBrigSel(v ? [v] : [])}
+            options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
+            searchable searchPlaceholder={T.fBrig}
+            className="w-full sm:w-56" />
+        )}
         <SearchInput value={search} onChange={setSearch} placeholder={T.searchPh} className="w-full sm:w-72 sm:ml-auto" />
       </div>
 
