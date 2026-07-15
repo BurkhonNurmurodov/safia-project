@@ -597,6 +597,74 @@ export default function Quality() {
     return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc };
   }, [filtered, gran, accMode, isProd]);
 
+  // ── Seasonality card, its own time axis (independent of the page filters that
+  // still narrow every row): yearly = 12 calendar months of a chosen year;
+  // weekly = one column per ISO week across the page date range. Fixed 12 data
+  // columns wide — scroll past 12, blank-pad under 12 (see the render).
+  const [seasonMode, setSeasonMode] = useState("year");
+  const [seasonYear, setSeasonYear] = useState(null);
+  const seasonScrollRef = useRef(null);
+
+  const seasonYears = useMemo(() => {
+    const ys = new Set();
+    for (const r of rows) if (r.d) ys.add(r.d.slice(0, 4));
+    return [...ys].sort((a, b) => b.localeCompare(a));
+  }, [rows]);
+
+  useEffect(() => {
+    if (seasonYear == null && seasonYears.length) {
+      const cur = String(new Date().getFullYear());
+      setSeasonYear(seasonYears.includes(cur) ? cur : seasonYears[0]);
+    }
+  }, [seasonYears, seasonYear]);
+
+  const season = useMemo(() => {
+    const base = rows.filter((r) => inView(r) && matchesFilters(r));
+    let labels, indexOf, scoped;
+    if (seasonMode === "week") {
+      // Every ISO week (Mon-start) in the page range gets a column — including
+      // weeks with zero findings, so the axis reads as a continuous timeline.
+      scoped = base.filter((r) => r.d >= dateFrom && r.d <= dateTo);
+      const keys = [];
+      const endW = weekStart(dateTo);
+      for (let w = weekStart(dateFrom); w <= endW; w = addDays(w, 7)) keys.push(w);
+      const pos = new Map(keys.map((k, i) => [k, i]));
+      labels = keys.map((k) => `${ddmm(k)}–${ddmm(addDays(k, 6))}`);
+      indexOf = (r) => pos.get(weekStart(r.d)) ?? -1;
+    } else {
+      scoped = seasonYear ? base.filter((r) => r.d.slice(0, 4) === seasonYear) : base;
+      labels = MONTHS;
+      indexOf = (r) => parseInt(r.d.slice(5, 7), 10) - 1;
+    }
+    const n = labels.length;
+    const colTotals = Array(n).fill(0);
+    const typeCol = {};
+    const typeCount = {};
+    for (const r of scoped) {
+      const c = indexOf(r);
+      if (c < 0 || c >= n) continue;
+      colTotals[c]++;
+      if (!r.t) continue;
+      typeCount[r.t] = (typeCount[r.t] || 0) + 1;
+      (typeCol[r.t] || (typeCol[r.t] = Array(n).fill(0)))[c]++;
+    }
+    // Rows = the seven most common types within this card's own scope.
+    const rowTypes = Object.keys(typeCount).sort((a, b) => typeCount[b] - typeCount[a]).slice(0, 7);
+    const matrix = rowTypes.map((k) => ({
+      k,
+      data: (typeCol[k] || Array(n).fill(0)).map((cnt, c) =>
+        colTotals[c] ? Math.round((cnt / colTotals[c]) * 1000) / 10 : 0
+      ),
+    }));
+    return { labels, colTotals, matrix };
+  }, [rows, view, matchesFilters, seasonMode, seasonYear, dateFrom, dateTo, MONTHS]);
+
+  // Weekly axis is long — land on the most recent weeks, not the oldest.
+  useEffect(() => {
+    const el = seasonScrollRef.current;
+    if (el && seasonMode === "week") el.scrollLeft = el.scrollWidth;
+  }, [seasonMode, season.labels.length, chartsReady]);
+
   // Brigadirs tab — per-supervisor resolution matrix for the status table that
   // sits under the KPI strip. The four actionable statuses fold into the three
   // columns the table shows (done → resolved, open+waiting → not solved, repeat →
