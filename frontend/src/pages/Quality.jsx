@@ -295,6 +295,7 @@ const TXT = {
     accSub: "records needing action; % = share resolved",
     secSupStatus: "Status by supervisor",
     stResolved: "Resolved", stNotSolved: "Not solved", stRecurring: "Recurring",
+    stWaiting: "Awaiting payment, delivery, etc.",
     stTotal: "Total", tglCount: "Count", tglPct: "%",
     secSeason: "Seasonality", seasonSub: "type share, % of that month’s findings",
     seasonSubWeek: "type share, % of that week’s findings",
