@@ -261,7 +261,7 @@ const TXT = {
     title: "Quality & complaints", sub: "Non-conformance register analytics",
     refresh: "Refresh", refreshing: "Refreshing…", lastSynced: "Last synced", never: "never",
     emptyTitle: "No data yet", emptyNote: "Hit “Refresh” to pull the register from Google Sheets.",
-    noMatch: "No records match the filters", vOverall: "Overall",
+    noMatch: "No records match the filters", vOverall: "Overall", vSup: "Brigadirs",
     kTotal: "Total findings", kGuest: "Guest complaints", kResolved: "Resolved",
     kOpen: "Open", kReturn: "Returns", kCritical: "Critical",
     kResolvedHint: "of those needing action", kCriticalHint: "poisoning · mold · foreign object at guest",
