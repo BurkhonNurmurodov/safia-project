@@ -333,6 +333,10 @@ export default function Quality() {
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
   const T = TXT[lang] || TXT.ru;
+  // The detail modal describes a Russian-language register, so its field labels
+  // stay Russian in every UI language — the translated/transliterated variants
+  // (e.g. Uzbek Cyrillic) read badly next to the Russian data they sit above.
+  const RU = TXT.ru;
   const li = LI[lang] ?? LI.ru;
 
   // A sheet label the dictionary doesn't know (a new type the QA team typed
