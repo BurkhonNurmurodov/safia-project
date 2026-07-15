@@ -624,21 +624,52 @@ export default function Quality() {
     optFilter({ label: T.fCat, opts: opts.cat, render: (k) => L("cat", k), dot: (k) => CAT_COLORS[k] || C_NA }, catSel, setCatSel, "cat", Bug),
     optFilter({ label: T.fStatus, opts: opts.status, render: (k) => L("st", k), dot: (k) => STATUS_COLORS[k] || C_NA }, statusSel, setStatusSel, "status", CircleDot),
     optFilter({ label: T.fRet, opts: ["yes", "no"], render: (k) => (k === "yes" ? T.yes : T.no) }, retSel, setRetSel, "ret", Undo2),
-    optFilter({ label: T.fBrig, opts: opts.brig, render: (k) => tl(k) }, brigSel, setBrigSel, "brig", Wrench),
-    // Shift lives in the panel on Overall; the Production tab surfaces it as a
-    // dedicated segmented toggle on the toolbar instead, so drop it here.
+    // Brigadir lives in the panel on Overall; the Production tab surfaces it as a
+    // standalone supervisor dropdown on the toolbar (scoped to the shift), so drop
+    // it here alongside the shift filter.
+    ...(!isProd ? [optFilter({ label: T.fBrig, opts: opts.brig, render: (k) => tl(k) }, brigSel, setBrigSel, "brig", Wrench)] : []),
     ...(!isProd ? [optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers)] : []),
     optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog),
   ];
-  // On Production the shift toggle lives outside the panel, so it doesn't count
-  // toward the panel's active-filter badge.
+  // On Production the shift toggle and supervisor dropdown live outside the panel,
+  // so they don't count toward the panel's active-filter badge.
   const filterActiveCount = (isProd
-    ? [typeSel, catSel, statusSel, retSel, brigSel, mgrSel]
+    ? [typeSel, catSel, statusSel, retSel, mgrSel]
     : [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]
   ).filter((s) => s.length).length;
   // The Production tab's shift control: a 3-way All / Shift 1 / Shift 2 toggle that
   // drives the same shiftSel state the panel filter uses on Overall.
   const shiftTab = shiftSel.length === 1 && ["1", "2"].includes(shiftSel[0]) ? shiftSel[0] : "all";
+
+  // Supervisor → shift is 1:1 (a unit sits on one shift). Map it once so the
+  // toolbar dropdown can scope itself to the picked shift, and so a stale pick
+  // from the other shift can be dropped.
+  const supShift = useMemo(() => {
+    const m = {};
+    for (const r of rows) if (r.s === "production" && r.sup) m[who(r)] = String(r.sh ?? "");
+    return m;
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Supervisors available in the Production dropdown, most-active first and
+  // narrowed to the selected shift (All = every matched supervisor).
+  const supOpts = useMemo(() => {
+    const c = {};
+    for (const r of rows) {
+      if (!(r.s === "production" && r.sup)) continue;
+      if (shiftTab !== "all" && String(r.sh ?? "") !== shiftTab) continue;
+      const k = who(r);
+      if (k) c[k] = (c[k] || 0) + 1;
+    }
+    return Object.keys(c).sort((a, b) => c[b] - c[a]);
+  }, [rows, shiftTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching shift strands a supervisor pick from the other shift (0 rows, and it
+  // vanishes from the scoped dropdown) — drop it when it no longer fits the shift.
+  useEffect(() => {
+    if (!isProd || shiftTab === "all" || !brigSel.length) return;
+    const kept = brigSel.filter((b) => supShift[b] === shiftTab);
+    if (kept.length !== brigSel.length) setBrigSel(kept);
+  }, [shiftTab, isProd]); // eslint-disable-line react-hooks/exhaustive-deps
   const clearAllFilters = () => {
     setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
   };
