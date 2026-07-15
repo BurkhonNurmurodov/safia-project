@@ -847,53 +847,6 @@ export default function Quality() {
     tooltip: { theme: chartTheme.mode, shared: true, intersect: false },
   };
 
-  const heatSeries = A.season.map((s) => ({
-    name: L("type", s.k),
-    data: s.data.map((v, m) => ({ x: MONTHS[m], y: A.monthTotals[m] ? v : 0 })),
-  })).reverse();
-  const heatOpts = {
-    chart: { ...baseChart, type: "heatmap" },
-    theme: chartTheme,
-    // The share itself is the point of the cell, so print it. Apex won't
-    // contrast the text against the cell, hence the .att-heat outline class.
-    dataLabels: {
-      enabled: true,
-      formatter: (v) => (v >= 1 ? `${Math.round(v)}%` : ""),
-      style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
-      dropShadow: { enabled: false },   // an SVG filter here once froze a laptop
-    },
-    stroke: { width: 2, colors: [cardBg] },
-    plotOptions: {
-      heatmap: {
-        radius: 4, enableShades: false,
-        // Brand-gold ramp. The steps are tight at the bottom because most
-        // type-months land under 20% — coarse buckets flattened the whole
-        // matrix into one shade of gold and hid the seasonality.
-        colorScale: {
-          ranges: [
-            { from: 0, to: 0.0001, color: gridColor },
-            { from: 0.0001, to: 3, color: "#f6ecd9" },
-            { from: 3, to: 7, color: "#eddcb9" },
-            { from: 7, to: 12, color: "#e0c48c" },
-            { from: 12, to: 18, color: "#d3ac60" },
-            { from: 18, to: 25, color: "#C8973F" },
-            { from: 25, to: 35, color: "#a87c2f" },
-            { from: 35, to: 100, color: "#7d5c21" },
-          ],
-        },
-      },
-    },
-    xaxis: {
-      type: "category",
-      labels: { style: { colors: labelColor, fontSize: "10px" } },
-      axisBorder: { show: false }, axisTicks: { show: false },
-    },
-    yaxis: { labels: { style: { colors: labelColor, fontSize: "11px" }, maxWidth: 150 } },
-    grid: { padding: { right: 8 } },
-    legend: { show: false },
-    tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v}%` } },
-  };
-
   // ── chips ─────────────────────────────────────────────────────────────────
   const Chip = ({ color, children, icon: Icon }) => (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium whitespace-nowrap"
