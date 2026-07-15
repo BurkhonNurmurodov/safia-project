@@ -392,10 +392,10 @@ export default function Quality() {
     const pFrom = addDays(pTo, -(span - 1));
     const earliest = rows.length ? rows.reduce((m, r) => (r.d < m ? r.d : m), rows[0].d) : null;
     return {
-      prev: rows.filter((r) => r.d >= pFrom && r.d <= pTo && matchesFilters(r)),
+      prev: rows.filter((r) => r.d >= pFrom && r.d <= pTo && inView(r) && matchesFilters(r)),
       prevComparable: !!earliest && pFrom >= earliest,
     };
-  }, [rows, dateFrom, dateTo, matchesFilters]);
+  }, [rows, dateFrom, dateTo, view, matchesFilters]);
 
   useEffect(() => { setPage(1); }, [dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
 
