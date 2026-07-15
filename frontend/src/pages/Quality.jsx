@@ -351,6 +351,13 @@ export default function Quality() {
   // name — they are genuinely not supervisors, not a failed match.
   const who = (r) => r.sup || r.b || "";
 
+  // Surname + initials — full passport names ("SULTONOV ABROR ALISHEROVICH")
+  // overflow chart axes and legends, so responsible people collapse to this.
+  const shortName = (n) => {
+    const parts = tl(n).trim().split(/\s+/);
+    return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((p) => p[0] + ".").join("")}`;
+  };
+
   const opts = useMemo(() => {
     const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))];
     const byCount = (fn) => {
@@ -388,7 +395,7 @@ export default function Quality() {
   // matched a real supervisor unit on our system (r.sup is set only on a match;
   // technologists / IT / individual leaders keep their sheet name in r.b and are
   // excluded here).
-  const inView = (r) => (view === "production" ? r.s === "production" && !!r.sup : true);
+  const inView = (r) => (isProd ? r.s === "production" && !!r.sup : true);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
@@ -430,6 +437,7 @@ export default function Quality() {
         resolved: actionable.length ? Math.round((done / actionable.length) * 100) : 0,
         open: arr.filter((r) => OPEN_STATES.includes(r.st)).length,
         returns: arr.filter((r) => r.r).length,
+        foreign: arr.filter((r) => r.t === "foreign").length,
         critical: arr.filter(isCritical).length,
       };
     };
@@ -444,18 +452,36 @@ export default function Quality() {
       dOpen: delta(cur.open, old.open),
       dReturns: delta(cur.returns, old.returns),
       dCritical: delta(cur.critical, old.critical),
+      dForeign: delta(cur.foreign, old.foreign),
       guestPct: cur.total ? Math.round((cur.guest / cur.total) * 100) : 0,
       returnPct: cur.total ? Math.round((cur.returns / cur.total) * 100) : 0,
+      foreignPct: cur.total ? Math.round((cur.foreign / cur.total) * 100) : 0,
     };
   }, [filtered, prev, prevComparable]);
 
   const A = useMemo(() => {
-    // Trend — one bucket per month or per ISO week, stacked by source.
+    // Trend — one bucket per month or per ISO week. Overall stacks by source;
+    // the Production tab stacks by responsible supervisor (top-6 by volume, the
+    // rest folded into a single «Прочие» band).
+    const trendKeyOf = isProd ? who : (r) => r.s;
+    let trendKeys;
+    if (isProd) {
+      const totals = {};
+      for (const r of filtered) { const k = who(r); if (k) totals[k] = (totals[k] || 0) + 1; }
+      const ranked = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+      const top = ranked.slice(0, 6);
+      trendKeys = ranked.length > top.length ? [...top, OTHER_KEY] : top;
+    } else {
+      trendKeys = ["production", "guest", "store"];
+    }
+    const trendTop = new Set(trendKeys);
     const buckets = {};
     for (const r of filtered) {
       const key = gran === "month" ? r.d.slice(0, 7) : weekStart(r.d);
-      const b = buckets[key] || (buckets[key] = { key, production: 0, guest: 0, store: 0 });
-      if (b[r.s] != null) b[r.s]++;
+      const b = buckets[key] || (buckets[key] = { key });
+      let k = trendKeyOf(r);
+      if (isProd) { if (!k) continue; if (!trendTop.has(k)) k = OTHER_KEY; }
+      if (k && trendTop.has(k)) b[k] = (b[k] || 0) + 1;
     }
     const trend = Object.values(buckets).sort((a, b) => a.key.localeCompare(b.key));
 
@@ -468,9 +494,11 @@ export default function Quality() {
     const types = count(filtered, "t");
     const cats = count(filtered.filter((r) => r.c), "c");
 
-    const guest = filtered.filter((r) => r.s === "guest");
-    const topProducts = count(guest, "pr").slice(0, 10);
-    const topPlaces = count(guest, "pl").slice(0, 10);
+    // Hotspots: guest complaints on Overall; on Production it's the most
+    // defect-prone produced items (all production rows, stores don't apply).
+    const hotBase = isProd ? filtered : filtered.filter((r) => r.s === "guest");
+    const topProducts = count(hotBase, "pr").slice(0, 10);
+    const topPlaces = count(hotBase, "pl").slice(0, 10);
 
     // Cells at fault: only rows the QA team actually pinned on a production
     // cell (a fault code that resolved to a cell name).
@@ -516,8 +544,8 @@ export default function Quality() {
       ),
     }));
 
-    return { trend, types, cats, topProducts, topPlaces, topCells, acc, season, monthTotals };
-  }, [filtered, gran, accMode]);
+    return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc, season, monthTotals };
+  }, [filtered, gran, accMode, isProd]);
 
   // ── table ─────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
@@ -705,13 +733,8 @@ export default function Quality() {
     tooltip: { custom: ({ dataPointIndex, series, seriesIndex }) => tipHTML(cats[dataPointIndex] ?? "", `${series[seriesIndex][dataPointIndex]} ${T.rows}`, color) },
   });
 
-  // The resolution rate rides in the axis label — the number this chart exists
-  // for. Full names ("SULTONOV ABROR ALISHEROVICH") blow past the axis width and
-  // truncate the % away, so they collapse to surname + initials.
-  const shortName = (n) => {
-    const parts = tl(n).trim().split(/\s+/);
-    return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((p) => p[0] + ".").join("")}`;
-  };
+  // The resolution rate rides in the axis label (shortName, defined up top, keeps
+  // full passport names from overflowing and truncating the % away).
   const accCats = A.acc.map((x) => `${shortName(x.name)} · ${x.total ? Math.round((x.done / x.total) * 100) : 0}%`);
   const accSeries = ACTIONABLE.map((st) => ({
     name: L("st", st),
