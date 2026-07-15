@@ -1335,11 +1335,16 @@ export default function Quality() {
               {openRow.r && <Chip color={C_WAIT} icon={Undo2}>{T.mReturn}</Chip>}
             </div>
 
+            {/* The register is Russian. Descriptive fields (store, product, cell)
+                are words — transliterating them to Latin just mangles them, so
+                they render verbatim (their original Russian). People's names
+                (brigadir, manager, sheet name) still go through tl: a name reads
+                fine transliterated. rawWord() below keeps the same split. */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
-                [RU.colPlace, tl(openRow.pl || "")],
-                [RU.colProduct, tl(openRow.pr || "")],
-                [RU.mCell, [openRow.fc, tl(openRow.cn || "")].filter(Boolean).join(" · ")],
+                [RU.colPlace, openRow.pl || ""],
+                [RU.colProduct, openRow.pr || ""],
+                [RU.mCell, [openRow.fc, openRow.cn || ""].filter(Boolean).join(" · ")],
                 [RU.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
                 [RU.colBrig, tl(who(openRow))],
                 ...(openRow.sup ? [[RU.mSheetName, tl(openRow.b || "")]] : []),
