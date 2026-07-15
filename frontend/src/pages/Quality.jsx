@@ -255,6 +255,7 @@ const TXT = {
     accSub: "записи, требующие меры; % — доля устранённых",
     secSupStatus: "Статусы по бригадирам",
     stResolved: "Устранено", stNotSolved: "Не устранено", stRecurring: "Повторяющееся",
+    stWaiting: "В ожидании оплаты, доставки и т.п.",
     stTotal: "Всего", tglCount: "Кол-во", tglPct: "%",
     secSeason: "Сезонность", seasonSub: "доля типа, % от несоответствий месяца",
     seasonSubWeek: "доля типа, % от несоответствий недели",
