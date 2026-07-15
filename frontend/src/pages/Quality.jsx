@@ -1071,8 +1071,6 @@ export default function Quality() {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
           max={today} triggerClassName="px-3 py-2 text-sm" />
-        <FilterPanel sections={filterSections} activeCount={filterActiveCount}
-          anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} />
         {isProd && (
           <SegmentedToggle value={shiftTab}
             onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
@@ -1085,6 +1083,10 @@ export default function Quality() {
             searchable searchPlaceholder={T.fBrig}
             className="w-full sm:w-56" />
         )}
+        {/* all remaining filters live in one grouped button, parked on the right */}
+        <div className="ml-auto" />
+        <FilterPanel sections={filterSections} activeCount={filterActiveCount}
+          anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} forceGroup />
       </div>
 
       {isLoading ? (
