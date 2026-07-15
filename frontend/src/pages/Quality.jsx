@@ -375,8 +375,9 @@ export default function Quality() {
   // Page-level view switch: "overall" = the whole register; "production" (the
   // «Brigadirs» tab) narrows every KPI/chart/table row to the ones the QA team
   // pinned on a matched supervisor unit (r.sup set) — regardless of source, so
-  // производство, торговые точки and guest complaints all count.
-  const [view, setView] = useState("overall");
+  // производство, торговые точки and guest complaints all count. Brigadirs is
+  // the default landing tab.
+  const [view, setView] = useState("production");
   const isProd = view === "production";
   const [gran, setGran] = useState("month");
   const [topMode, setTopMode] = useState("product");
