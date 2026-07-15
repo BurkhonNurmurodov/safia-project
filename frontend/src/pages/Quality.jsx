@@ -641,6 +641,7 @@ export default function Quality() {
         case "cat":     return L("cat", r.c);
         case "cell":    return r.cn || r.fc || "";
         case "brig":    return tl(who(r));
+        case "ret":     return r.r ? "1" : "0";
         case "status":  return L("st", r.st);
         default:        return "";
       }
