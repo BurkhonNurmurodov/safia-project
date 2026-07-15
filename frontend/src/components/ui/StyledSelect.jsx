@@ -66,15 +66,23 @@ export default function StyledSelect({
   function computeDropStyle() {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return {};
+    const vw         = window.innerWidth;
     const vh         = window.innerHeight;
     const spaceBelow = vh - rect.bottom - 8;
     const spaceAbove = rect.top - 8;
     const maxH       = Math.min(300, Math.max(spaceBelow, spaceAbove, 120));
     const openUp     = spaceBelow < 160 && spaceAbove > spaceBelow;
+    // Grow to fit the option rows (label + radio dot) instead of being locked to
+    // a narrow trigger — a 4-char select like a year picker would otherwise clip
+    // its rows. Never narrower than the trigger; anchor to whichever edge keeps
+    // the menu on-screen (right-anchor once the trigger is past the midline).
+    const rightAnchored = rect.left > vw / 2;
     return {
       position:  "fixed",
-      left:      rect.left,
-      width:     rect.width,
+      ...(rightAnchored ? { right: vw - rect.right } : { left: rect.left }),
+      minWidth:  rect.width,
+      width:     "max-content",
+      maxWidth:  Math.min(340, vw - 16),
       zIndex:    9999,
       maxHeight: maxH,
       ...(openUp
