@@ -941,7 +941,7 @@ export default function Quality() {
       {/* page-level view switch — Production narrows everything to источник = «Производство» */}
       <div className="mb-4">
         <SegmentedToggle value={view} onChange={setView}
-          options={[["production", L("src", "production")], ["overall", T.vOverall]]} />
+          options={[["production", T.vSup], ["overall", T.vOverall]]} />
       </div>
 
       {(refresh.isError || isError) && (
