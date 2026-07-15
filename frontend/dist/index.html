@@ -163,6 +163,9 @@
         }
         window.addEventListener('error', function (e) {
           if (e.target && e.target.tagName) {
+            // A broken <img> is content, never a boot failure — the app handles
+            // it inline (retry placeholder). Don't hijack the screen for it.
+            if (e.target.tagName === 'IMG') return;
             var url = e.target.src || e.target.href || '';
             if (/\/assets\/[^?#]+\.js(\?|#|$)/.test(url)) {
               staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
