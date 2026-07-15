@@ -27,6 +27,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 // identity palettes (source / type / category) are full-spectrum and unique
 // per item, since these are many-category sets, not status encodings.
 const C_DONE = "#22c55e", C_OPEN = "#ef4444", C_WAIT = "#eab308", C_REPEAT = "#f97316", C_NA = "#94a3b8";
+const C_WAITCOL = "#8b5cf6"; // "waiting" (awaiting payment/delivery) status column — deliberate purple, per request
 const BRAND = "#C8973F";
 
 const SRC_COLORS = { production: "#6366f1", guest: "#f97316", store: "#14b8a6" };
