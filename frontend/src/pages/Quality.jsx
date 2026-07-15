@@ -594,25 +594,7 @@ export default function Quality() {
     };
     const acc = accOf(accMode === "brig" ? who : (r) => r.m);
 
-    // Seasonality — share of each type within its calendar month, so a window
-    // that covers some months twice (18 months of data) can't inflate them.
-    const monthTotals = Array(12).fill(0);
-    const typeMonth = {};
-    for (const r of filtered) {
-      const m = parseInt(r.d.slice(5, 7), 10) - 1;
-      monthTotals[m]++;
-      if (!r.t) continue;
-      (typeMonth[r.t] || (typeMonth[r.t] = Array(12).fill(0)))[m]++;
-    }
-    const seasonTypes = types.slice(0, 7).map((x) => x.k);
-    const season = seasonTypes.map((k) => ({
-      k,
-      data: (typeMonth[k] || Array(12).fill(0)).map((n, m) =>
-        monthTotals[m] ? Math.round((n / monthTotals[m]) * 1000) / 10 : 0
-      ),
-    }));
-
-    return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc, season, monthTotals };
+    return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc };
   }, [filtered, gran, accMode, isProd]);
 
   // Brigadirs tab — per-supervisor resolution matrix for the status table that
