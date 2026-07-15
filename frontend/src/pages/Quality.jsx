@@ -324,6 +324,7 @@ export default function Quality() {
   // Page-level view switch: "overall" = the whole register; "production" narrows
   // every KPI/chart/table row to источник = «Производство» (r.s === "production").
   const [view, setView] = useState("overall");
+  const isProd = view === "production";
   const [gran, setGran] = useState("month");
   const [topMode, setTopMode] = useState("product");
   const [accMode, setAccMode] = useState("brig");
