@@ -850,6 +850,12 @@ export default function Quality() {
         </div>
       </div>
 
+      {/* page-level view switch — Production narrows everything to источник = «Производство» */}
+      <div className="mb-4">
+        <SegmentedToggle value={view} onChange={setView}
+          options={[["production", L("src", "production")], ["overall", T.vOverall]]} />
+      </div>
+
       {(refresh.isError || isError) && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
           style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN, border: `1px solid ${hexA(C_OPEN, 0.33)}` }}>
