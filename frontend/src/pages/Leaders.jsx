@@ -361,6 +361,36 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   );
 }
 
+// A report photo that keeps its own load state: on failure it shows a compact
+// "failed to load + retry" placeholder in the image's place instead of letting
+// the broken <img> bubble up to the boot-diagnostics error overlay in index.html.
+function ReportPhoto({ src, T }) {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  if (failed) {
+    return (
+      <div className="mt-2 w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center"
+        style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
+        <ImageOff size={22} color="var(--text-4)" />
+        <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
+        <button type="button" onClick={() => { setFailed(false); setAttempt((a) => a + 1); }}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md"
+          style={{ color: "var(--brand)", background: hexA("#C8973F", 0.12) }}>
+          <RefreshCw size={13} /> {T.retry}
+        </button>
+      </div>
+    );
+  }
+  // Bumping the query string on retry defeats the browser's cached failed response.
+  const url = attempt ? src + (src.includes("?") ? "&" : "?") + "_retry=" + attempt : src;
+  return (
+    <img src={url} alt="" onClick={() => window.open(src, "_blank")} loading="lazy"
+      onError={() => setFailed(true)}
+      className="mt-2 w-full rounded-lg border cursor-zoom-in"
+      style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function Leaders() {
   const { auth } = useAuth();
