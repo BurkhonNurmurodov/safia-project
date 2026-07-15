@@ -107,6 +107,31 @@ def _cell_leaders(db: Session) -> dict:
     }
 
 
+def _cell_leader_recipient(db: Session, cell_code: str):
+    """(telegram_id, profile_key, leader_name) for the leader who owns
+    ``cell_code`` — the person a concern is *about*. On create they get a
+    "concern added for you" bell/DM. telegram_id None = the leader profile is
+    unclaimed, so the bell row queues on the profile and is inherited on
+    registration. Returns None when the cell has no owning leader."""
+    code = (cell_code or "").strip()
+    if not code:
+        return None
+    row = (
+        db.query(Cell.leader_id, RoleProfile.name)
+        .join(RoleProfile, RoleProfile.id == Cell.leader_id)
+        .filter(Cell.code == code, RoleProfile.role == "leader")
+        .first()
+    )
+    if not row:
+        return None
+    leader_id, leader_name = row
+    claim = db.query(TelegramUserRole).filter_by(
+        role="leader", role_id=leader_id, status="approved",
+    ).first()
+    return (claim.telegram_id if claim else None,
+            _profile_key("leader", leader_id), leader_name or "")
+
+
 def _level(c: LeaderConcern) -> str:
     """Normalized escalation level — pre-migration 'leader' rows read as the
     new base of the chain."""
