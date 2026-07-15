@@ -1248,66 +1248,99 @@ export default function Quality() {
 
           {/* ── seasonality — native grid heatmap, styled after the fleet HeatmapChart:
                  brand-gold header, solid ramp cells with auto-contrast labels,
-                 collapsed 1px borders, sticky type-name column ── */}
-          <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason} subtitle={T.seasonSub}
-            empty={A.season.length === 0} height={280}>
-            <div className="overflow-x-auto px-3 pb-1">
-              <table className="season-heat" style={{ borderCollapse: "collapse", width: "100%", minWidth: 760, tableLayout: "fixed" }}>
-                <colgroup>
-                  <col style={{ width: 134 }} />
-                  {MONTHS.map((_, m) => <col key={m} />)}
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th style={{ ...seasonTh, position: "sticky", left: 0, zIndex: 2, textAlign: "left", paddingLeft: 12 }}>
-                      {T.colType}
-                    </th>
-                    {MONTHS.map((mo, m) => (
-                      <th key={m} style={{ ...seasonTh, textAlign: "center", opacity: A.monthTotals[m] ? 1 : 0.5 }}>{mo}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {A.season.map((s) => (
-                    <tr key={s.k}>
-                      <td
-                        title={L("type", s.k)}
-                        style={{
-                          position: "sticky", left: 0, zIndex: 1,
-                          background: "var(--bg-card)",
-                          borderRight: "2px solid var(--border-md)",
-                          borderBottom: "1px solid var(--border)",
-                          padding: "0 10px", height: 40, whiteSpace: "nowrap",
-                          fontSize: 12, fontWeight: 600, color: "var(--text-2)",
-                        }}
-                      >
-                        <span className="block truncate" style={{ maxWidth: 114 }}>{L("type", s.k)}</span>
-                      </td>
-                      {s.data.map((v, m) => {
-                        const noData = A.monthTotals[m] === 0;
-                        const bg = noData ? null : seasonColor(v);
-                        return (
+                 collapsed 1px borders, sticky type-name column. Yearly = 12 month
+                 columns of the chosen year; weekly = one column per ISO week over
+                 the page date range, held to 12 data columns (scroll past 12,
+                 blank-pad under 12) so the card never resizes between modes. ── */}
+          {(() => {
+            const COLS = 12, COLW = 96;
+            const real = season.labels.length;
+            const scroll = real > COLS;
+            const pad = scroll ? 0 : Math.max(0, COLS - real);
+            const totalCols = scroll ? real : COLS;
+            const blankHead = { ...seasonTh, background: "var(--bg-inner)", borderColor: "var(--border)" };
+            return (
+              <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason}
+                subtitle={seasonMode === "week" ? T.seasonSubWeek : T.seasonSub}
+                empty={season.matrix.length === 0} height={280}
+                right={
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {seasonMode === "year" && (
+                      <StyledSelect value={seasonYear || ""} onChange={setSeasonYear}
+                        options={seasonYears.map((y) => ({ value: y, label: y }))}
+                        triggerClassName="px-2.5 py-1.5 text-xs" />
+                    )}
+                    <SegmentedToggle size="sm" value={seasonMode} onChange={setSeasonMode}
+                      options={[["year", T.byYear], ["week", T.byWeek]]} />
+                  </div>
+                }>
+                <div ref={seasonScrollRef} className="overflow-x-auto px-3 pb-1">
+                  <table className="season-heat" style={{ borderCollapse: "collapse", width: scroll ? 134 + real * COLW : "100%", minWidth: scroll ? undefined : 760, tableLayout: "fixed" }}>
+                    <colgroup>
+                      <col style={{ width: 134 }} />
+                      {Array.from({ length: totalCols }).map((_, i) => (
+                        <col key={i} style={scroll ? { width: COLW } : undefined} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th style={{ ...seasonTh, position: "sticky", left: 0, zIndex: 2, textAlign: "left", paddingLeft: 12 }}>
+                          {T.colType}
+                        </th>
+                        {season.labels.map((lb, m) => (
+                          <th key={m} style={{ ...seasonTh, textAlign: "center", opacity: season.colTotals[m] ? 1 : 0.5 }}>{lb}</th>
+                        ))}
+                        {Array.from({ length: pad }).map((_, i) => (
+                          <th key={`p${i}`} style={blankHead} />
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {season.matrix.map((s) => (
+                        <tr key={s.k}>
                           <td
-                            key={m}
-                            title={noData ? undefined : `${L("type", s.k)} · ${MONTHS[m]} — ${v}%`}
+                            title={L("type", s.k)}
                             style={{
-                              height: 40, textAlign: "center",
-                              fontSize: 11, fontWeight: 700, letterSpacing: "-0.2px",
-                              border: "1px solid var(--border)",
-                              background: bg || "var(--bg-inner)",
-                              color: bg ? contrastText(bg) : "var(--text-4)",
+                              position: "sticky", left: 0, zIndex: 1,
+                              background: "var(--bg-card)",
+                              borderRight: "2px solid var(--border-md)",
+                              borderBottom: "1px solid var(--border)",
+                              padding: "0 10px", height: 40, whiteSpace: "nowrap",
+                              fontSize: 12, fontWeight: 600, color: "var(--text-2)",
                             }}
                           >
-                            {noData || !bg ? "" : v >= 1 ? `${Math.round(v)}%` : "<1%"}
+                            <span className="block truncate" style={{ maxWidth: 114 }}>{L("type", s.k)}</span>
                           </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </ChartCard>
+                          {s.data.map((v, m) => {
+                            const noData = season.colTotals[m] === 0;
+                            const bg = noData ? null : seasonColor(v);
+                            return (
+                              <td
+                                key={m}
+                                title={noData ? undefined : `${L("type", s.k)} · ${season.labels[m]} — ${v}%`}
+                                style={{
+                                  height: 40, textAlign: "center",
+                                  fontSize: 11, fontWeight: 700, letterSpacing: "-0.2px",
+                                  border: "1px solid var(--border)",
+                                  background: bg || "var(--bg-inner)",
+                                  color: bg ? contrastText(bg) : "var(--text-4)",
+                                }}
+                              >
+                                {noData || !bg ? "" : v >= 1 ? `${Math.round(v)}%` : "<1%"}
+                              </td>
+                            );
+                          })}
+                          {Array.from({ length: pad }).map((_, i) => (
+                            <td key={`p${i}`} style={{ height: 40, border: "1px solid var(--border)", background: "var(--bg-inner)" }} />
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </ChartCard>
+            );
+          })()}
 
           {/* ── register ── */}
           <div>
