@@ -293,6 +293,7 @@ const TXT = {
     stResolved: "Resolved", stNotSolved: "Not solved", stRecurring: "Recurring",
     stTotal: "Total", tglCount: "Count", tglPct: "%",
     secSeason: "Seasonality", seasonSub: "type share, % of that month’s findings",
+    seasonSubWeek: "type share, % of that week’s findings",
     secTable: "Non-conformance register", searchPh: "Store, product, brigadir, no. …",
     colDate: "Date", colSrc: "Source", colPlace: "Store / shop", colProduct: "Product",
     colType: "Type", colCat: "Category", colCell: "Cell at fault", colBrig: "Brigadir",
