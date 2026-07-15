@@ -413,8 +413,10 @@ export default function Quality() {
   useEffect(() => { setPage(1); }, [view, dateFrom, dateTo, search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
 
   // ── analytics ─────────────────────────────────────────────────────────────
+  // A foreign object is critical when it reached a guest — or, on the Production
+  // tab (guest rows are excluded there), whenever it's found in a produced item.
   const isCritical = (r) =>
-    r.t === "poisoning" || r.t === "mold" || (r.t === "foreign" && r.s === "guest");
+    r.t === "poisoning" || r.t === "mold" || (r.t === "foreign" && (r.s === "guest" || isProd));
 
   const kpi = useMemo(() => {
     const sum = (arr) => {
