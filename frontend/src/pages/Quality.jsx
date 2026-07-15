@@ -978,7 +978,7 @@ export default function Quality() {
               value={kpi.returns.toLocaleString("ru-RU")} hint={`${kpi.returnPct}% ${T.kTotal.toLowerCase()}`}
               delta={<Delta v={kpi.dReturns} />} />
             <Kpi icon={Siren} color="#dc2626" label={T.kCritical}
-              value={kpi.critical.toLocaleString("ru-RU")} hint={T.kCriticalHint} delta={<Delta v={kpi.dCritical} />} />
+              value={kpi.critical.toLocaleString("ru-RU")} hint={isProd ? T.kCriticalHintProd : T.kCriticalHint} delta={<Delta v={kpi.dCritical} />} />
           </div>
 
           {/* ── trend + type mix ── */}
