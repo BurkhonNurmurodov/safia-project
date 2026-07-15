@@ -136,6 +136,7 @@ const TXT = {
     tipLowLeader: "Leader with the lowest average score",
     searchPh: "Search leader…", bandAll: "All", noMatch: "No submissions match the filters",
     refresh: "Refresh", refreshing: "Refreshing…", refreshed: "Refreshed",
+    photoFailed: "Failed to load image", retry: "Retry",
   },
 };
 
