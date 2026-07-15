@@ -1337,13 +1337,13 @@ export default function Quality() {
 
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
-                [T.colPlace, tl(openRow.pl || "")],
-                [T.colProduct, tl(openRow.pr || "")],
-                [T.mCell, [openRow.fc, tl(openRow.cn || "")].filter(Boolean).join(" · ")],
-                [T.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
-                [T.colBrig, tl(who(openRow))],
-                ...(openRow.sup ? [[T.mSheetName, tl(openRow.b || "")]] : []),
-                [T.colMgr, tl(openRow.m || "")],
+                [RU.colPlace, tl(openRow.pl || "")],
+                [RU.colProduct, tl(openRow.pr || "")],
+                [RU.mCell, [openRow.fc, tl(openRow.cn || "")].filter(Boolean).join(" · ")],
+                [RU.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
+                [RU.colBrig, tl(who(openRow))],
+                ...(openRow.sup ? [[RU.mSheetName, tl(openRow.b || "")]] : []),
+                [RU.colMgr, tl(openRow.m || "")],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl px-3 py-2" style={{ background: "var(--bg-inner)" }}>
                   <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>{k}</div>
