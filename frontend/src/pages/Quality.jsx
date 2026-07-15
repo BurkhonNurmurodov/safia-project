@@ -1181,6 +1181,7 @@ export default function Quality() {
                       {cell(s.resolved, C_DONE)}
                       {cell(s.notSolved, C_OPEN)}
                       {cell(s.recurring, C_REPEAT)}
+                      {cell(s.waiting, C_WAITCOL)}
                       <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>
                         {s.total.toLocaleString("ru-RU")}
                       </td>
