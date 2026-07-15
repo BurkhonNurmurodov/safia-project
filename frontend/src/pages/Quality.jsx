@@ -319,6 +319,8 @@ const weekStart = (s) => {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return iso(d);
 };
+// "2026-06-09" → "09.06" (day.month) for compact week-column labels.
+const ddmm = (s) => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
 
 const fmtDateTime = (iso8601) => {
   if (!iso8601) return "";
