@@ -645,7 +645,7 @@ export default function Leaders() {
   // white with a soft shadow so it stays legible on any bar length.
   const standOptions = {
     chart: { ...chartBase, type: "bar" },
-    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 5, borderRadiusApplication: "end", barHeight: "44%" } },
+    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 5, borderRadiusApplication: "end", barHeight: "88%" } },
     colors: standings.map((e) => scoreColor(e.val)),
     fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: standings.map((e) => mix(scoreColor(e.val), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
     states: { hover: { filter: { type: "lighten", value: 0.08 } } },
