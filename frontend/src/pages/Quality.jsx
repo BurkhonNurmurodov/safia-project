@@ -998,7 +998,6 @@ export default function Quality() {
             searchable searchPlaceholder={T.fBrig}
             className="w-full sm:w-56" />
         )}
-        <SearchInput value={search} onChange={setSearch} placeholder={T.searchPh} className="w-full sm:w-72 sm:ml-auto" />
       </div>
 
       {isLoading ? (
