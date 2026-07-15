@@ -381,6 +381,7 @@ export default function Quality() {
   const [gran, setGran] = useState("month");
   const [topMode, setTopMode] = useState("product");
   const [accMode, setAccMode] = useState("brig");
+  const [supStatMode, setSupStatMode] = useState("count");
   const [sort, setSort] = useState({ key: "date", dir: "desc" });
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState(null);
