@@ -1361,7 +1361,7 @@ export default function Quality() {
                 {T.textFailed}: {detailError?.response?.status || ""} {detailError?.response?.data?.detail || detailError?.message || ""}
               </div>
             ) : (
-              [[T.mDesc, detail?.description], [T.mAction, detail?.action], [T.mComment, detail?.comment]]
+              [[RU.mDesc, detail?.description], [RU.mAction, detail?.action], [RU.mComment, detail?.comment]]
                 .filter(([, v]) => v)
                 .map(([k, v]) => (
                   <div key={k}>
