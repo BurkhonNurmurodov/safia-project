@@ -65,6 +65,34 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
+// ── Seasonality heatmap (native grid, styled after the fleet HeatmapChart) ──
+// Brand-gold ramp for a type's share of a month's findings. The low buckets are
+// tight because most type-months sit under 20%; coarse buckets flattened the
+// whole matrix into one shade of gold and hid the seasonality. Ordered high→low
+// for a first-match lookup.
+const SEASON_RAMP = [
+  { from: 35,     color: "#7d5c21" },
+  { from: 25,     color: "#a87c2f" },
+  { from: 18,     color: "#C8973F" },
+  { from: 12,     color: "#d3ac60" },
+  { from: 7,      color: "#e0c48c" },
+  { from: 3,      color: "#eddcb9" },
+  { from: 0.0001, color: "#f6ecd9" },
+];
+const seasonColor = (v) => {
+  for (const s of SEASON_RAMP) if (v >= s.from) return s.color;
+  return null; // 0% / no share → neutral cell, no fill
+};
+// Black or white label so the % stays legible across the whole light→dark ramp
+// (WCAG perceived-luminance split) — the fleet heatmap's contrast trick, which
+// beats forcing one text colour on every cell.
+const contrastText = (hex) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#3d2c10" : "#ffffff";
+};
+
 const tipHTML = (label, val, color) => `
   <div style="padding:8px 12px;background:rgba(18,21,31,0.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.10);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);">
     <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;margin-bottom:3px;">${label}</div>
