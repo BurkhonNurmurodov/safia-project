@@ -1289,8 +1289,8 @@ export default function Quality() {
                           <Chip color={SRC_COLORS[r.s] || C_NA} icon={SrcIcon}>{L("src", r.s)}</Chip>
                         </td>
                       )}
-                      <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.pl || "")} style={{ color: "var(--text-2)" }}>{tl(r.pl || "") || "—"}</td>
-                      <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.pr || "")} style={{ color: "var(--text-2)" }}>{tl(r.pr || "") || "—"}</td>
+                      <td className="px-3 py-2 max-w-[190px] truncate" title={r.pl || ""} style={{ color: "var(--text-2)" }}>{r.pl || "—"}</td>
+                      <td className="px-3 py-2 max-w-[190px] truncate" title={r.pr || ""} style={{ color: "var(--text-2)" }}>{r.pr || "—"}</td>
                       <td className="px-3 py-2"><Chip color={TYPE_COLORS[r.t] || C_NA}>{L("type", r.t)}</Chip></td>
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                         {r.c ? <Chip color={CAT_COLORS[r.c] || C_NA}>{L("cat", r.c)}</Chip> : "—"}
