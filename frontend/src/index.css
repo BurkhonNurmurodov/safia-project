@@ -161,18 +161,13 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   overflow: visible !important;
 }
 
-/* ── Attendance heatmap cell % labels ────────────────────────────────────────
-   ApexCharts paints heatmap data labels white with no per-cell contrast, so on
-   the light-green (small-brigade) cells the % washes out. A dark SVG text
-   outline keeps white legible across the whole light→dark green ramp. Uses
-   paint-order stroke — NOT a dropShadow filter, which locks the heatmap into a
-   render loop and freezes weak clients. */
-.att-heat .apexcharts-data-labels text,
-.att-heat text.apexcharts-datalabel {
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.45);
-  stroke-width: 2px;
-  stroke-linejoin: round;
+/* ── Seasonality grid heatmap — cell hover ───────────────────────────────────
+   Native <table> heatmap (styled after the fleet HeatmapChart). Brighten a
+   filled cell on hover so the pointer has a target, mirroring the fleet grid's
+   hover feel. Empty (no-share / no-data) cells are left inert. */
+.season-heat tbody td:hover {
+  filter: brightness(1.12);
+  position: relative;
 }
 
 /* ── Attendance-trend: tooltip rendered BELOW the chart ───────────────────────
