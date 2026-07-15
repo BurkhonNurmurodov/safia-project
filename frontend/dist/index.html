@@ -45,6 +45,57 @@
           } catch (e) { info.push('WebApp probe failed: ' + e.message); }
           return info.join('\n');
         }
+        // Shared chrome for the boot screens below (recovery + stale-version),
+        // kept vanilla + self-contained so it renders even when the bundle/CSS
+        // never loaded. Theme mirrors the in-app localStorage 'theme'.
+        function palette() {
+          var theme = 'dark';
+          try {
+            theme = localStorage.getItem('theme') ||
+              document.documentElement.getAttribute('data-theme') || 'dark';
+          } catch (e) {}
+          return theme === 'light'
+            ? { bg: '#faf8f5', text1: '#111827', text3: '#6b7280', brand: '#B07828',
+                onBrand: '#ffffff', border: 'rgba(0,0,0,0.10)', techBg: '#f3f0ea' }
+            : { bg: '#0f1117', text1: '#f3f4f6', text3: '#9ca3af', brand: '#C8973F',
+                onBrand: '#1a1206', border: 'rgba(255,255,255,0.10)', techBg: '#0a0c11' };
+        }
+        function ensureAnims() {
+          if (document.getElementById('safia-boot-anims')) return;
+          var st = document.createElement('style');
+          st.id = 'safia-boot-anims';
+          st.textContent =
+            '@keyframes safia-spin{to{transform:rotate(360deg)}}' +
+            '@keyframes safia-pulse{0%,100%{opacity:1}50%{opacity:.5}}';
+          (document.head || document.documentElement).appendChild(st);
+        }
+        function hardReload() {
+          // Cache-buster defeats an intermediate cache re-serving a broken asset.
+          location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+        }
+        // Plain-language recovery copy in the 4 app languages (no exception
+        // strings shown to the user — those live behind "technical details").
+        var BOOT_STRINGS = {
+          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot" },
+          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот" },
+          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали" },
+          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details" }
+        };
+        function bootLang() {
+          var l = '';
+          try { l = localStorage.getItem('lang') || ''; } catch (e) {}
+          if (BOOT_STRINGS[l]) return l;
+          var code = '';
+          try {
+            var u = window.Telegram && window.Telegram.WebApp &&
+              window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user;
+            code = (u && u.language_code) || navigator.language || '';
+          } catch (e) {}
+          code = String(code).toLowerCase();
+          if (code.indexOf('ru') === 0) return 'ru';
+          if (code.indexOf('en') === 0) return 'en';
+          return 'uz';
+        }
         // A content-hashed asset chunk 404'd — this client is running a stale
         // build after a redeploy (old index.html/bundle references hashes the
         // server has already pruned). Instead of the scary red diagnostics,
