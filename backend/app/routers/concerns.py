@@ -898,6 +898,29 @@ def create_concern(
             profile=prof_key,
         )
         sent = True
+
+    # Also tell the leader this concern is *about* — the owner of the cell it
+    # was logged against ("a concern was added for you"). Skip the author (a
+    # leader logging on their own cell) and never DM one account twice.
+    rec = _cell_leader_recipient(db, c.cell_code)
+    if rec is not None:
+        tg, prof_key, _ = rec
+        if tg != author:
+            dm = tg is not None and tg not in dmed
+            if dm:
+                dmed.add(tg)
+            _notify(
+                db, tg, type="info", dm=dm, nkey="concern_assigned",
+                params={
+                    "actor_name": payload.get("full_name") or "",
+                    "owner": c.concern_owner,
+                    "date": entry,
+                    "concern": snippet,
+                },
+                profile=prof_key,
+            )
+            sent = True
+
     if sent:
         db.commit()
 
