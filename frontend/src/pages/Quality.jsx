@@ -1271,7 +1271,7 @@ export default function Quality() {
                   <Th label={T.colCat} k="cat" sort={sort} onSort={onSort} />
                   <Th label={T.colCell} k="cell" sort={sort} onSort={onSort} />
                   <Th label={T.colBrig} k="brig" sort={sort} onSort={onSort} />
-                  <Th label={T.colRet} k="ret" align="center" />
+                  <Th label={T.colRet} k="ret" align="center" sort={sort} onSort={onSort} />
                   <Th label={T.colStatus} k="status" sort={sort} onSort={onSort} />
                 </tr>
               </thead>
