@@ -170,7 +170,7 @@ const TXT = {
     secTop: "Shikoyat markazlari", topProducts: "Mahsulotlar", topPlaces: "Savdo nuqtalari",
     topSub: "mehmon shikoyatlari bo‘yicha eng ko‘pi",
     secCells: "Aybdor yacheykalar", cellsSub: "ishlab chiqarish nomuvofiqliklari",
-    secAcc: "Mas’uliyat va bartaraf etish", accBrig: "Brigadirlar", accMgr: "Rahbarlar",
+    secAcc: "Mas’uliyat va bartaraf etish", accBrig: "Brigadirlar/TM", accMgr: "Rahbarlar",
     accSub: "chora talab etilgan yozuvlar; % — bartaraf etilgan ulushi",
     secSupStatus: "Brigadirlar bo‘yicha holat",
     stResolved: "Bartaraf etilgan", stNotSolved: "Bartaraf etilmagan", stRecurring: "Takrorlanuvchi",
