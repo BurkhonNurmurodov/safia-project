@@ -108,6 +108,31 @@ def _pair_score(sheet: list[str], canon: list[str]) -> float:
     return 0.5 * sur + 0.5 * (1.0 if prefix else first)
 
 
+def _norm(name: str) -> str:
+    """The folded token skeleton used as a lookup key on both sides of a match."""
+    return " ".join(_name_tokens(name))
+
+
+# ─── Manual sheet-name → unit overrides ──────────────────────────────────────
+# Two real cases the fuzzy scorer above can't handle:
+#   • the register names someone in a form unrelated to their unit's profile
+#     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit shown as "Suvonov Elshod OF",
+#     which scores 0 against it and would drop every one of that unit's rows;
+#   • two units share the same surname+first name, so every candidate ties on
+#     the two-token score and iteration order alone would decide the winner —
+#     "SUVONOV ELSHOD VALIJON O'G'LI" scores 1.0 for BOTH "Suvonov Elshod" and
+#     "Suvonov Elshod OF" and must be pinned to the former.
+# Keyed and valued on the folded skeleton (via _norm) so alphabet/spelling drift
+# on either the sheet or the profile name still resolves.
+_OVERRIDES = {
+    _norm(sheet): _norm(unit)
+    for sheet, unit in {
+        "SUVONOV ELSHOD VALIJON O'G'LI": "Suvonov Elshod",
+        "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod OF",
+    }.items()
+}
+
+
 def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict]:
     """Map each sheet name to the supervisor unit it belongs to.
 
