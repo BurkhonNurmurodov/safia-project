@@ -243,7 +243,7 @@ const TXT = {
     trendSubProd: "в разрезе бригадиров",
     secProducts: "Проблемные изделия", prodSub: "по числу несоответствий",
     secTrend: "Динамика несоответствий", trendSub: "в разрезе источника",
-    byMonth: "Месяц", byWeek: "Неделя",
+    byMonth: "Месяц", byWeek: "Неделя", byYear: "Год",
     secTypes: "Типы несоответствий", secForeign: "Инородные предметы", foreignSub: "по категориям",
     secTop: "Очаги жалоб", topProducts: "Изделия", topPlaces: "Точки продаж",
     topSub: "лидеры по жалобам гостей",
