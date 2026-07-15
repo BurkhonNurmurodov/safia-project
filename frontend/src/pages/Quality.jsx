@@ -1064,7 +1064,7 @@ export default function Quality() {
               <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
                 <tr>
                   <Th label={T.colDate} k="date" sort={sort} onSort={onSort} />
-                  <Th label={T.colSrc} k="src" sort={sort} onSort={onSort} />
+                  {!isProd && <Th label={T.colSrc} k="src" sort={sort} onSort={onSort} />}
                   <Th label={T.colPlace} k="place" sort={sort} onSort={onSort} />
                   <Th label={T.colProduct} k="product" sort={sort} onSort={onSort} />
                   <Th label={T.colType} k="type" sort={sort} onSort={onSort} />
