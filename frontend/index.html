@@ -180,19 +180,95 @@
         window.__staleReload = staleReload;
         function report() {
           if (window.__staleReloadStarted) return; // stale-version overlay owns the screen
-          var el = document.getElementById('boot-debug');
-          if (!el) {
-            el = document.createElement('div');
-            el.id = 'boot-debug';
-            el.setAttribute('style',
-              'position:fixed;left:0;right:0;bottom:0;z-index:99999;' +
-              'background:#7f1d1d;color:#fff;font:12px/1.5 monospace;' +
-              'padding:10px 12px;white-space:pre-wrap;word-break:break-word;' +
-              'max-height:45%;overflow:auto');
-            document.body.appendChild(el);
-          }
-          el.textContent = 'App failed to start.\n\n' + errors.join('\n') +
+          var details = 'App failed to start.\n\n' + errors.join('\n') +
             '\n\n' + envInfo() + '\n\nEngine: ' + navigator.userAgent;
+          // Already painted — just refresh the (hidden) technical details so a
+          // later error/rejection doesn't reset the user's buttons or logo.
+          var existingTech = document.getElementById('boot-tech');
+          if (existingTech) { existingTech.textContent = details; return; }
+
+          var p = palette();
+          ensureAnims();
+          var S = BOOT_STRINGS[bootLang()];
+          var box = document.getElementById('boot-debug');
+          if (!box) {
+            box = document.createElement('div');
+            box.id = 'boot-debug';
+            document.body.appendChild(box);
+          }
+          box.setAttribute('style',
+            'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;overflow:auto;' +
+            'display:flex;align-items:center;justify-content:center;padding:24px;' +
+            'background:' + p.bg + ';color:' + p.text1 + ';' +
+            "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
+          box.innerHTML =
+            '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;' +
+            'align-items:center;text-align:center;gap:16px">' +
+              '<img src="/logo.png" alt="Safia" style="width:76px;height:76px;' +
+              'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18)"/>' +
+              '<div>' +
+                '<div style="font-size:17px;font-weight:600;color:' + p.text1 + '">' + S.title + '</div>' +
+                '<div style="margin-top:8px;font-size:14px;line-height:1.6;color:' + p.text3 + '">' +
+                  S.msg + '</div>' +
+              '</div>' +
+              '<button id="boot-retry" type="button" style="width:100%;padding:12px;border:none;' +
+              'border-radius:12px;background:' + p.brand + ';color:' + p.onBrand + ';font-size:14px;' +
+              'font-weight:600;cursor:pointer">' + S.retry + '</button>' +
+              '<button id="boot-reopen" type="button" style="width:100%;padding:11px;' +
+              'border:1px solid ' + p.border + ';border-radius:12px;background:transparent;color:' +
+              p.text1 + ';font-size:14px;font-weight:500;cursor:pointer">' + S.reopen + '</button>' +
+              '<button id="boot-report" type="button" style="width:100%;padding:8px;border:none;' +
+              'background:transparent;color:' + p.text3 + ';font-size:13px;cursor:pointer">' +
+                S.report + '</button>' +
+              '<button id="boot-toggle" type="button" style="background:none;border:none;color:' +
+              p.text3 + ';font-size:12px;cursor:pointer;opacity:.75">' + S.details + '</button>' +
+              '<pre id="boot-tech" style="display:none;width:100%;margin:0;text-align:left;background:' +
+              p.techBg + ';border:1px solid ' + p.border + ';border-radius:10px;padding:10px 12px;' +
+              'font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:' + p.text3 + ';' +
+              'white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto"></pre>' +
+            '</div>';
+          document.getElementById('boot-tech').textContent = details;
+
+          document.getElementById('boot-retry').onclick = hardReload;
+          document.getElementById('boot-reopen').onclick = function () {
+            try {
+              var wa = window.Telegram && window.Telegram.WebApp;
+              if (wa && typeof wa.close === 'function') { wa.close(); return; }
+            } catch (e) {}
+            hardReload(); // not in Telegram — a fresh load is the next best thing
+          };
+          var tech = document.getElementById('boot-tech');
+          document.getElementById('boot-toggle').onclick = function () {
+            tech.style.display = tech.style.display === 'none' ? 'block' : 'none';
+          };
+          // One-tap report: POST diagnostics to the backend (which forwards them
+          // to the support Telegram chat). Until that endpoint exists it 404s and
+          // we fall back to copying the details to the clipboard, so the button is
+          // always useful and lights up automatically once the backend is wired.
+          document.getElementById('boot-report').onclick = function () {
+            var btn = this;
+            btn.disabled = true; btn.style.opacity = '0.6';
+            var sent = function () { btn.textContent = S.sent; btn.style.color = '#22c55e'; btn.style.opacity = '1'; };
+            var copied = function () { btn.textContent = S.copied; btn.style.color = p.text1; btn.style.opacity = '1'; };
+            var reset = function () { btn.disabled = false; btn.style.opacity = '1'; };
+            var copy = function () {
+              try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(details).then(copied, reset); return;
+                }
+              } catch (e) {}
+              reset();
+            };
+            var initData = '';
+            try { var wa = window.Telegram && window.Telegram.WebApp; initData = (wa && wa.initData) || ''; } catch (e) {}
+            try {
+              fetch('/api/boot-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stage: window.__bootStage || '', ua: navigator.userAgent, details: details, initData: initData })
+              }).then(function (r) { if (r && r.ok) { sent(); } else { copy(); } }, copy);
+            } catch (e) { copy(); }
+          };
         }
         window.addEventListener('error', function (e) {
           if (e.target && e.target.tagName) {
