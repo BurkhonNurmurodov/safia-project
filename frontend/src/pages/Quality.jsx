@@ -7,7 +7,6 @@ import {
   MapPin, Wrench, UserCog, TrendingUp, TrendingDown, ClipboardList, Bug,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
-import SearchInput from "../components/ui/SearchInput";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
