@@ -976,8 +976,7 @@ export default function Leaders() {
                   {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
                   {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>}
                   {photos.map((p, pi) => (
-                    <img key={pi} src={p} alt="" onClick={() => window.open(p, "_blank")} loading="lazy"
-                      className="mt-2 w-full rounded-lg border cursor-zoom-in" style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
+                    <ReportPhoto key={pi} src={p} T={T} />
                   ))}
                 </div>
               );
