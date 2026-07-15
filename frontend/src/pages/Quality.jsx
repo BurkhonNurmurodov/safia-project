@@ -32,6 +32,14 @@ const BRAND = "#C8973F";
 const SRC_COLORS = { production: "#6366f1", guest: "#f97316", store: "#14b8a6" };
 const SRC_ICONS  = { production: Factory,   guest: UserRound,  store: Store };
 
+// Supervisor identity palette for the Production-tab trend (stacked by responsible
+// supervisor). Full-spectrum and distinct per band; the folded tail is slate.
+const SUP_PALETTE = [
+  "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#3b82f6", "#84cc16",
+  "#a855f7", "#eab308", "#06b6d4", "#8b5cf6", "#f43f5e", "#10b981",
+];
+const OTHER_KEY = "__other__";
+
 const TYPE_COLORS = {
   risk: "#6366f1", foreign: "#ef4444", storage: "#f97316", sanitation: "#06b6d4",
   recipe: "#8b5cf6", review: "#14b8a6", labeling: "#3b82f6", mold: "#84cc16",
