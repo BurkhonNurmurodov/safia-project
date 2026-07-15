@@ -399,11 +399,12 @@ export default function Quality() {
     return parts.length < 2 ? parts[0] : `${parts[0]} ${parts.slice(1).map((p) => p[0] + ".").join("")}`;
   };
 
-  // Production view: источник = «Производство» AND the responsible «Отв. бригадир/ТМ»
-  // matched a real supervisor unit on our system (r.sup is set only on a match;
-  // technologists / IT / individual leaders keep their sheet name in r.b and are
-  // excluded here).
-  const inView = (r) => (isProd ? r.s === "production" && !!r.sup : true);
+  // Brigadirs view: the responsible «Отв. бригадир/ТМ» matched a real supervisor
+  // unit on our system (r.sup is set only on a match; technologists / IT /
+  // individual leaders keep their sheet name in r.b and are excluded here). Source
+  // is NOT restricted — a matched supervisor's rows count whether they came from
+  // производство, a торговая точка or a guest complaint.
+  const inView = (r) => (isProd ? !!r.sup : true);
 
   // Selectable filter options are scoped to the rows the active tab can actually
   // show — so the Production tab's Brigadir list holds only matched supervisors,
