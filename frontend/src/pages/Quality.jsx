@@ -215,6 +215,7 @@ const TXT = {
     stResolved: "Бартараф этилган", stNotSolved: "Бартараф этилмаган", stRecurring: "Такрорланувчи",
     stTotal: "Жами", tglCount: "Сони", tglPct: "%",
     secSeason: "Мавсумийлик", seasonSub: "тур улуши, ой ичидаги % ҳисобида",
+    seasonSubWeek: "тур улуши, ҳафта ичидаги % ҳисобида",
     secTable: "Номувофиқликлар реестри", searchPh: "Нуқта, маҳсулот, бригадир, № …",
     colDate: "Сана", colSrc: "Манба", colPlace: "Нуқта / сех", colProduct: "Маҳсулот",
     colType: "Тури", colCat: "Тоифа", colCell: "Айбдор ячейка", colBrig: "Масъул бригадир",
