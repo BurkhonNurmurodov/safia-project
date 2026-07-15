@@ -646,9 +646,9 @@ export default function Quality() {
   const areaOpts = {
     chart: { ...baseChart, type: "area", stacked: true, theme: chartTheme },
     theme: chartTheme,
-    colors: trendOrder.map((x) => SRC_COLORS[x.k]),
+    colors: trendOrder.map((x, i) => trendColorAt(x.k, i)),
     fill: { type: "solid", opacity: 1 },
-    stroke: { curve: "smooth", width: 2, colors: [cardBg, cardBg, cardBg] },
+    stroke: { curve: "smooth", width: 2, colors: trendOrder.map(() => cardBg) },
     dataLabels: { enabled: false },
     xaxis: {
       categories: trendLabels,
