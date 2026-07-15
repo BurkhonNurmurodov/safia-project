@@ -1085,9 +1085,11 @@ export default function Quality() {
                   return (
                     <tr key={r.id} className="cursor-pointer" onClick={() => setOpenId(r.id)}>
                       <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDate(r.d)}</td>
-                      <td className="px-3 py-2">
-                        <Chip color={SRC_COLORS[r.s] || C_NA} icon={SrcIcon}>{L("src", r.s)}</Chip>
-                      </td>
+                      {!isProd && (
+                        <td className="px-3 py-2">
+                          <Chip color={SRC_COLORS[r.s] || C_NA} icon={SrcIcon}>{L("src", r.s)}</Chip>
+                        </td>
+                      )}
                       <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.pl || "")} style={{ color: "var(--text-2)" }}>{tl(r.pl || "") || "—"}</td>
                       <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.pr || "")} style={{ color: "var(--text-2)" }}>{tl(r.pr || "") || "—"}</td>
                       <td className="px-3 py-2"><Chip color={TYPE_COLORS[r.t] || C_NA}>{L("type", r.t)}</Chip></td>
