@@ -1008,12 +1008,13 @@ export default function Quality() {
 
           {/* ── hotspots + foreign objects ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard icon={topMode === "product" ? <Boxes size={13} /> : <MapPin size={13} />}
-              title={T.secTop} subtitle={T.topSub} empty={topData.length === 0} height={320}
-              right={<SegmentedToggle size="sm" value={topMode} onChange={setTopMode}
+            <ChartCard icon={(!isProd && topMode === "place") ? <MapPin size={13} /> : <Boxes size={13} />}
+              title={isProd ? T.secProducts : T.secTop} subtitle={isProd ? T.prodSub : T.topSub}
+              empty={topData.length === 0} height={320}
+              right={isProd ? null : <SegmentedToggle size="sm" value={topMode} onChange={setTopMode}
                 options={[["product", T.topProducts], ["place", T.topPlaces]]} />}>
               <ReactApexChart
-                options={barOpts(topData.map((x) => tl(x.k)), SRC_COLORS.guest)}
+                options={barOpts(topData.map((x) => tl(x.k)), isProd ? SRC_COLORS.production : SRC_COLORS.guest)}
                 series={[{ name: T.rows, data: topData.map((x) => x.n) }]}
                 type="bar" height={320} />
             </ChartCard>
