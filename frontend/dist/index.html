@@ -273,11 +273,19 @@
             } catch (e) { copy(); }
           };
         }
+        // True once React has painted something into #root. After that the app
+        // is running: the React error boundary owns render failures, so a stray
+        // window error/rejection must not throw up the full recovery screen.
+        function appMounted() {
+          var root = document.getElementById('root');
+          return !!(root && root.childNodes.length);
+        }
         window.addEventListener('error', function (e) {
           if (e.target && e.target.tagName) {
-            // A broken <img> is content, never a boot failure — the app handles
-            // it inline (retry placeholder). Don't hijack the screen for it.
-            if (e.target.tagName === 'IMG') return;
+            // A broken <img> (content) or <link> (a blocked font stylesheet /
+            // favicon) is never a boot failure — the bundle still runs. Images
+            // are handled inline; ignore both here instead of hijacking the screen.
+            if (e.target.tagName === 'IMG' || e.target.tagName === 'LINK') return;
             var url = e.target.src || e.target.href || '';
             if (/\/assets\/[^?#]+\.js(\?|#|$)/.test(url)) {
               staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
@@ -285,12 +293,14 @@
             }
             errors.push('Failed to load: ' + (url || e.target.tagName));
           } else {
+            if (appMounted()) return; // running app — let the error boundary/console handle it
             errors.push((e.message || 'script error') +
               (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
           }
           report();
         }, true);
         window.addEventListener('unhandledrejection', function (e) {
+          if (appMounted()) return; // a stray rejection in a running app isn't a boot failure
           var r = e.reason;
           errors.push('unhandled rejection: ' + (r && (r.message || String(r))));
           report();
