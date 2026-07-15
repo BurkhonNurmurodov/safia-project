@@ -1339,7 +1339,8 @@ export default function Quality() {
                 are words — transliterating them to Latin just mangles them, so
                 they render verbatim (their original Russian). People's names
                 (brigadir, manager, sheet name) still go through tl: a name reads
-                fine transliterated. rawWord() below keeps the same split. */}
+                fine transliterated. The table cells and word-charts follow the
+                same split. */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 [RU.colPlace, openRow.pl || ""],
