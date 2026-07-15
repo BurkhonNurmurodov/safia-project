@@ -1176,6 +1176,7 @@ export default function Quality() {
             <ChartCard icon={<Factory size={13} />} title={T.secCells} subtitle={T.cellsSub}
               empty={A.topCells.length === 0} height={330}>
               <ReactApexChart
+                className="apx-bare-tip"
                 options={barOpts(A.topCells.map((x) => (x.code && x.code !== x.k ? `${x.code} · ${x.k}` : x.k)), SRC_COLORS.production)}
                 series={[{ name: T.rows, data: A.topCells.map((x) => x.n) }]}
                 type="bar" height={330} />
