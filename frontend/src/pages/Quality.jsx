@@ -165,7 +165,7 @@ const TXT = {
     trendSubProd: "brigadirlar kesimida",
     secProducts: "Muammoli mahsulotlar", prodSub: "nomuvofiqliklar soni bo‘yicha",
     secTrend: "Nomuvofiqliklar dinamikasi", trendSub: "manba kesimida",
-    byMonth: "Oy", byWeek: "Hafta",
+    byMonth: "Oy", byWeek: "Hafta", byYear: "Yil",
     secTypes: "Nomuvofiqlik turlari", secForeign: "Yot jismlar", foreignSub: "toifalar bo‘yicha",
     secTop: "Shikoyat markazlari", topProducts: "Mahsulotlar", topPlaces: "Savdo nuqtalari",
     topSub: "mehmon shikoyatlari bo‘yicha eng ko‘pi",
