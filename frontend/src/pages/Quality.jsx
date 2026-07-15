@@ -284,7 +284,7 @@ const TXT = {
     secTop: "Complaint hotspots", topProducts: "Products", topPlaces: "Stores",
     topSub: "most complained about by guests",
     secCells: "Cells at fault", cellsSub: "production non-conformances",
-    secAcc: "Accountability & resolution", accBrig: "Brigadirs", accMgr: "Managers",
+    secAcc: "Accountability & resolution", accBrig: "Brigadirs/TM", accMgr: "Managers",
     accSub: "records needing action; % = share resolved",
     secSupStatus: "Status by supervisor",
     stResolved: "Resolved", stNotSolved: "Not solved", stRecurring: "Recurring",
