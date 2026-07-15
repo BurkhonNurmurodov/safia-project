@@ -604,6 +604,26 @@ export default function Quality() {
     return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc, season, monthTotals };
   }, [filtered, gran, accMode, isProd]);
 
+  // Brigadirs tab — per-supervisor resolution matrix for the status table that
+  // sits under the KPI strip. The four actionable statuses fold into the three
+  // columns the table shows (done → resolved, open+waiting → not solved, repeat →
+  // recurring); «мера не требуется» rows are excluded, as everywhere resolution
+  // is measured. Rows are alphabetical by the platform (transliterated) name.
+  const supStatus = useMemo(() => {
+    if (!isProd) return [];
+    const map = {};
+    for (const r of filtered) {
+      const k = who(r);
+      if (!k || !ACTIONABLE.includes(r.st)) continue;
+      const m = map[k] || (map[k] = { name: k, resolved: 0, notSolved: 0, recurring: 0, total: 0 });
+      if (r.st === "done") m.resolved++;
+      else if (r.st === "repeat") m.recurring++;
+      else m.notSolved++; // open | waiting
+      m.total++;
+    }
+    return Object.values(map).sort((a, b) => tl(a.name).localeCompare(tl(b.name)));
+  }, [filtered, isProd, tl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── table ─────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
     const val = (r) => {
