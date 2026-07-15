@@ -373,6 +373,9 @@ export default function Leaders() {
   const isSupervisor = auth?.role === "supervisor";
   // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
   const isAdmin = auth?.role === "admin";
+  // Supervisors can re-sync the leaders sheet from their own unit, so they get
+  // the refresh button too (the backend allows the "leaders" sheet for them).
+  const canRefresh = isAdmin || isSupervisor;
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
@@ -676,7 +679,7 @@ export default function Leaders() {
               triggerClassName="w-full px-3 py-2 text-sm"
             />
           </div>
-          {isAdmin && (
+          {canRefresh && (
             <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
               aria-label={T.refresh} title={T.refresh}
               className="sm:hidden flex-shrink-0 p-2.5 rounded-lg transition-colors"
@@ -707,9 +710,9 @@ export default function Leaders() {
         </div>
       </div>
 
-      {/* Re-sync the leaders sheet without leaving the page (admins only, sm+ —
-          on mobile the icon button next to the date picker replaces this) */}
-      {isAdmin && (
+      {/* Re-sync the leaders sheet without leaving the page (admins + supervisors,
+          sm+ — on mobile the icon button next to the date picker replaces this) */}
+      {canRefresh && (
         <div className="hidden sm:block flex-shrink-0">
           <div className="text-[10px] font-semibold block mb-1 select-none" aria-hidden="true">&nbsp;</div>
           <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}

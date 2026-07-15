@@ -32,6 +32,19 @@ def verify_admin(token: Annotated[str, Depends(oauth2_scheme)]):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+def verify_refresh_access(name: str, token: Annotated[str, Depends(oauth2_scheme)]):
+    """Sheet re-sync is admin-only, except the leaders sheet: supervisors may
+    refresh it too, since they re-sync their own unit from the Leaders page."""
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    role = payload.get("role")
+    if role == "admin" or (role == "supervisor" and name == "leaders"):
+        return payload
+    raise HTTPException(status_code=403, detail="Admin access required")
+
+
 @router.post("/upload")
 async def upload_verifix(
     files: list[UploadFile] = File(...),
@@ -118,7 +131,7 @@ def update_sheet_source(
 def refresh_sheet(
     name: str,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(verify_refresh_access),
 ):
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
     if not src:
