@@ -175,6 +175,7 @@ const TXT = {
     accSub: "chora talab etilgan yozuvlar; % — bartaraf etilgan ulushi",
     secSupStatus: "Brigadirlar bo‘yicha holat",
     stResolved: "Bartaraf etilgan", stNotSolved: "Bartaraf etilmagan", stRecurring: "Takrorlanuvchi",
+    stWaiting: "To‘lov, yetkazish va h.k. kutilmoqda",
     stTotal: "Jami", tglCount: "Soni", tglPct: "%",
     secSeason: "Mavsumiylik", seasonSub: "tur ulushi, oy ichidagi % hisobida",
     seasonSubWeek: "tur ulushi, hafta ichidagi % hisobida",
