@@ -286,7 +286,7 @@ const TXT = {
     trendSubProd: "by brigadir",
     secProducts: "Problem products", prodSub: "by non-conformance count",
     secTrend: "Findings over time", trendSub: "by source",
-    byMonth: "Month", byWeek: "Week",
+    byMonth: "Month", byWeek: "Week", byYear: "Year",
     secTypes: "Finding types", secForeign: "Foreign objects", foreignSub: "by category",
     secTop: "Complaint hotspots", topProducts: "Products", topPlaces: "Stores",
     topSub: "most complained about by guests",
