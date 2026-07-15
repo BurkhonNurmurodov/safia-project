@@ -254,6 +254,7 @@ const TXT = {
     stResolved: "Устранено", stNotSolved: "Не устранено", stRecurring: "Повторяющееся",
     stTotal: "Всего", tglCount: "Кол-во", tglPct: "%",
     secSeason: "Сезонность", seasonSub: "доля типа, % от несоответствий месяца",
+    seasonSubWeek: "доля типа, % от несоответствий недели",
     secTable: "Реестр несоответствий", searchPh: "Точка, изделие, бригадир, № …",
     colDate: "Дата", colSrc: "Источник", colPlace: "Точка / цех", colProduct: "Изделие",
     colType: "Тип", colCat: "Категория", colCell: "Виновная ячейка", colBrig: "Отв. бригадир",
