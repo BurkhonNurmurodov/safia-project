@@ -244,10 +244,10 @@
           document.getElementById('boot-toggle').onclick = function () {
             tech.style.display = tech.style.display === 'none' ? 'block' : 'none';
           };
-          // One-tap report: POST diagnostics to the backend (which forwards them
-          // to the support Telegram chat). Until that endpoint exists it 404s and
-          // we fall back to copying the details to the clipboard, so the button is
-          // always useful and lights up automatically once the backend is wired.
+          // One-tap report: POST diagnostics to /api/boot-report, which forwards
+          // them to the support Telegram chat. If that fails (offline, endpoint
+          // unreachable) we fall back to copying the details to the clipboard so
+          // the button is always useful.
           document.getElementById('boot-report').onclick = function () {
             var btn = this;
             btn.disabled = true; btn.style.opacity = '0.6';
