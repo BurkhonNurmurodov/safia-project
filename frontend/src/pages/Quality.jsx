@@ -225,7 +225,7 @@ const TXT = {
     mDesc: "Описание жалобы", mAction: "Корректирующие действия", mComment: "Комментарии",
     mFault: "Вина цеха/магазина", mCell: "Виновная ячейка", mReturn: "Поступил возврат",
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
-    fShift: "Смена", shift: "Смена", mSheetName: "Имя в таблице",
+    fShift: "Смена", shift: "Смена", shiftAll: "Все", mSheetName: "Имя в таблице",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     textFailed: "Не удалось загрузить текстовые поля",
   },
