@@ -155,7 +155,7 @@ const TXT = {
     mDesc: "Shikoyat tavsifi", mAction: "Tuzatuvchi choralar", mComment: "Izohlar",
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
-    fShift: "Smena", shift: "Smena", mSheetName: "Jadvaldagi ism",
+    fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", mSheetName: "Jadvaldagi ism",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
   },
