@@ -666,20 +666,23 @@ export default function Quality() {
   }, [seasonMode, season.labels.length, chartsReady]);
 
   // Brigadirs tab — per-supervisor resolution matrix for the status table that
-  // sits under the KPI strip. The four actionable statuses fold into the three
-  // columns the table shows (done → resolved, open+waiting → not solved, repeat →
-  // recurring); «мера не требуется» rows are excluded, as everywhere resolution
-  // is measured. Rows are alphabetical by the platform (transliterated) name.
+  // sits under the KPI strip. The four actionable statuses map one-to-one onto
+  // the four columns the table shows (done → resolved, open → not solved,
+  // waiting → waiting, repeat → recurring); «мера не требуется» rows are
+  // excluded, as everywhere resolution is measured. The four status columns are
+  // non-overlapping and sum to Total. Rows are alphabetical by the platform
+  // (transliterated) name.
   const supStatus = useMemo(() => {
     if (!isProd) return [];
     const map = {};
     for (const r of filtered) {
       const k = who(r);
       if (!k || !ACTIONABLE.includes(r.st)) continue;
-      const m = map[k] || (map[k] = { name: k, resolved: 0, notSolved: 0, recurring: 0, total: 0 });
+      const m = map[k] || (map[k] = { name: k, resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 });
       if (r.st === "done") m.resolved++;
       else if (r.st === "repeat") m.recurring++;
-      else m.notSolved++; // open | waiting
+      else if (r.st === "waiting") m.waiting++;
+      else m.notSolved++; // open
       m.total++;
     }
     return Object.values(map).sort((a, b) => tl(a.name).localeCompare(tl(b.name)));
