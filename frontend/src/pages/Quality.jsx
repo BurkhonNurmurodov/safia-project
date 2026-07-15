@@ -626,11 +626,17 @@ export default function Quality() {
   };
 
   // Stacked area — solid fills with a 2px card-coloured seam between bands
-  // (translucent fills multiply into mud where they overlap).
-  const trendOrder = ["production", "guest", "store"]
-    .map((k) => ({ k, n: A.trend.reduce((s, b) => s + b[k], 0) }))
+  // (translucent fills multiply into mud where they overlap). Overall stacks by
+  // source; Production stacks by responsible supervisor, «Прочие» pinned last.
+  const trendOrder = A.trendKeys
+    .map((k) => ({ k, n: A.trend.reduce((s, b) => s + (b[k] || 0), 0) }))
     .filter((x) => x.n > 0)
-    .sort((a, b) => b.n - a.n);
+    .sort((a, b) => (a.k === OTHER_KEY ? 1 : b.k === OTHER_KEY ? -1 : b.n - a.n));
+
+  const trendColorAt = (k, i) =>
+    !isProd ? (SRC_COLORS[k] || C_NA) : (k === OTHER_KEY ? C_NA : SUP_PALETTE[i % SUP_PALETTE.length]);
+  const trendName = (k) =>
+    !isProd ? L("src", k) : (k === OTHER_KEY ? T.otherWord : shortName(k));
 
   const trendLabels = A.trend.map((b) =>
     gran === "month"
