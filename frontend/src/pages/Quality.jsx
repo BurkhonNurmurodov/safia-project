@@ -1362,7 +1362,10 @@ export default function Quality() {
                 .map(([k, v]) => (
                   <div key={k}>
                     <div className="text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{k}</div>
-                    <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{tl(v)}</p>
+                    {/* Free-text the QA team typed by hand — show it verbatim, as
+                        entered. Transliterating a whole comment/description/action
+                        paragraph (tl) just garbles what a person actually wrote. */}
+                    <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{v}</p>
                   </div>
                 ))
             )}
