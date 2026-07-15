@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Notion internal-integration token for the Kaizen project analytics page.
     # Loaded from backend/.env; blank disables the integration.
     notion_token: str = ""
+    # Telegram chat that receives boot-failure reports (the "Report the problem"
+    # button on the recovery screen). Blank → falls back to the admins table.
+    support_chat_id: str = ""
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
