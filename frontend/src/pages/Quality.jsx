@@ -1295,8 +1295,8 @@ export default function Quality() {
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
                         {r.c ? <Chip color={CAT_COLORS[r.c] || C_NA}>{L("cat", r.c)}</Chip> : "—"}
                       </td>
-                      <td className="px-3 py-2 max-w-[170px] truncate" title={tl(r.cn || r.fc || "")} style={{ color: "var(--text-3)" }}>
-                        {tl(r.cn || r.fc || "") || "—"}
+                      <td className="px-3 py-2 max-w-[170px] truncate" title={r.cn || r.fc || ""} style={{ color: "var(--text-3)" }}>
+                        {r.cn || r.fc || "—"}
                       </td>
                       <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>
                       <td className="px-3 py-2 text-center" style={{ color: r.r ? C_WAIT : "var(--text-4)" }}>{r.r ? T.yes : "—"}</td>
