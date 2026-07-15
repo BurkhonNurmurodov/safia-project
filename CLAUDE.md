@@ -35,6 +35,7 @@ Other UI conventions:
 - No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
 - Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
 - Date-axis line/area charts never show fewer than 7 days — use `utils/chartRange.js`.
+- ApexCharts custom tooltips (`tooltip: { custom: … }`) draw their own glassy box, but ApexCharts still wraps them in a themed box → a white halo / extra layer around the tooltip. EVERY such chart MUST carry `apx-bare-tip` on an ancestor to strip that wrapper: `<ReactApexChart className="apx-bare-tip" … />` (react-apexcharts forwards `className` to the container div), or on an existing wrapper div. Default `theme`-only tooltips don't need it. See the `.apx-bare-tip` rule in `index.css`.
 
 ## Workflow
 
