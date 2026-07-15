@@ -1159,6 +1159,7 @@ export default function Quality() {
               right={isProd ? null : <SegmentedToggle size="sm" value={topMode} onChange={setTopMode}
                 options={[["product", T.topProducts], ["place", T.topPlaces]]} />}>
               <ReactApexChart
+                className="apx-bare-tip"
                 options={barOpts(topData.map((x) => x.k), isProd ? SRC_COLORS.production : SRC_COLORS.guest)}
                 series={[{ name: T.rows, data: topData.map((x) => x.n) }]}
                 type="bar" height={320} />
