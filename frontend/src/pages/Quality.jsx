@@ -375,9 +375,11 @@ export default function Quality() {
     };
   }, [search, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, tl]);
 
+  const inView = (r) => (view === "production" ? r.s === "production" : true);
+
   const filtered = useMemo(
-    () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && matchesFilters(r)),
-    [rows, dateFrom, dateTo, matchesFilters]
+    () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
+    [rows, dateFrom, dateTo, view, matchesFilters]
   );
 
   // Same filters, the equally long window immediately before — the KPI deltas.
