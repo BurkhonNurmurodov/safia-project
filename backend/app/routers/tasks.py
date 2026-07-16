@@ -175,10 +175,20 @@ def list_tasks(
         .group_by(LeaderTaskComment.task_id)
         .all()
     )
+    # Supervisor → shift, so the client can offer a shift filter that also narrows
+    # the supervisor picker. Attached to the list rows only (mutation responses
+    # trigger a full list refetch, which carries the shift).
+    mgr_shift = {m.id: m.shift for m in db.query(Manager).all()}
+
+    def _row(r):
+        d = _serialize(r, counts.get(r.id, 0), payload)
+        d["supervisor_shift"] = mgr_shift.get(r.supervisor_manager_id)
+        return d
+
     return {
         "role": role,
         "can_create": role in ("admin", "supervisor"),
-        "data": [_serialize(r, counts.get(r.id, 0), payload) for r in rows],
+        "data": [_row(r) for r in rows],
     }
 
 
