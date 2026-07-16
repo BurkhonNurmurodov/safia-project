@@ -341,22 +341,24 @@ export default function ComparisonTable({
                 }} />
               ))}
 
-              <th
-                colSpan={2}
-                onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
-                style={{
-                  ...thBase,
-                  ...stickySum,
-                  zIndex: 5,
-                  textAlign: "center",
-                  borderLeft: "2px solid var(--border-md)",
-                  cursor: "pointer", userSelect: "none",
-                  color: "#fff",
-                }}
-                title={t("comparison.cycleTooltip")}
-              >
-                {summaryMode.toUpperCase()}
-              </th>
+              {!isMobile && (
+                <th
+                  colSpan={2}
+                  onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
+                  style={{
+                    ...thBase,
+                    ...stickySum,
+                    zIndex: 5,
+                    textAlign: "center",
+                    borderLeft: "2px solid var(--border-md)",
+                    cursor: "pointer", userSelect: "none",
+                    color: "#fff",
+                  }}
+                  title={t("comparison.cycleTooltip")}
+                >
+                  {summaryMode.toUpperCase()}
+                </th>
+              )}
             </tr>
 
             {/* P / A|D sub-header — animated internally */}

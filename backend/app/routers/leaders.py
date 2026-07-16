@@ -9,13 +9,6 @@ from app.services.name_map import _norm as _fold_name, supervisor_match
 router = APIRouter(prefix="/api", tags=["leaders"])
 
 
-def _norm(name: str | None) -> str:
-    """Normalize a person/unit name for tolerant matching across the two source
-    sheets (manager unit names vs the leaders sheet's brigadir column): uppercase
-    and collapse internal whitespace."""
-    return re.sub(r"\s+", " ", (name or "").strip()).upper()
-
-
 # Leaders-form supervisor relabels. The checklist form tags some rows with a
 # person's name that doesn't match the supervisor unit those rows belong to;
 # correct them on read so the dashboard groups, scopes and ranks them under the
