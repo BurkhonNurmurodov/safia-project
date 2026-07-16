@@ -851,7 +851,7 @@ export default function Production() {
               variant="secondary"
               icon={<Download size={14} />}
               loading={exporting}
-              disabled={loading || rows.length === 0}
+              disabled={loading || viewRows.length === 0}
               onClick={exportExcel}
               className="whitespace-nowrap"
             >
