@@ -65,7 +65,7 @@ LEADERS = {
         ("Baymenov Qaxramon Baxti O'g'li", "6811"),
         ("Giyasova Xilola Taxirdjanovna", "7211, 7212"),
     ]),
-    5: ("Suvonov Elshod Of", [   # 7 leaders
+    5: ("Suvonov Elshod Ofr.", [   # 7 leaders
         ("Abdumalikova Ziyoda Azim Qizi", "4313"),
         ("Butabekov Aleksey Sergeyevich", "4314"),
         ("Abdug'ofirova Nilufar Abdulaziz Qizi", "4311"),
