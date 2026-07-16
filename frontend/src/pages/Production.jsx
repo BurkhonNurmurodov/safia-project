@@ -80,6 +80,11 @@ const COLS = [
   { key: "pareto", labelKey: "production.col.pareto", align: "center", hintKey: "production.col.paretoHint" },
 ];
 
+// Notion-style column picker for the Positions table: per-profile pref key and
+// the columns that can never be hidden (the row's identity).
+const COL_PREF_KEY = "production.positions.cols";
+const LOCKED_COLS = new Set(["name"]);
+
 // Sort accessor per column — mirrors how each cell derives its value, so a header
 // click sorts on exactly what the row shows. Returns null for "missing" cells
 // (no labour / no plan) so they sink to the bottom regardless of direction.
