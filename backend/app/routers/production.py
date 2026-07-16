@@ -285,8 +285,10 @@ def export_positions(
 ):
     """Excel export of the Positions table — styled to mirror the on-screen table
     and delivered to the caller's private Telegram chat. Rows are rendered in the
-    exact order the client sends (`body.order`), so the file matches what the user
-    saw — current search, team filter and sort — when they pressed the button."""
+    exact order the client sends (`body.order`) and columns as the visible subset
+    it sends (`body.columns`, column picker), so the file matches what the user
+    saw — current search, team filter, sort and columns — when they pressed the
+    button."""
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
