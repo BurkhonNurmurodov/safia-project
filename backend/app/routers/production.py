@@ -272,6 +272,9 @@ class PositionsExportBody(BaseModel):
     # PPProduct ids in the EXACT on-screen order (post search/team-filter/sort)
     # at the moment the button was pressed. Empty → full default SAP order.
     order: list[int] = []
+    # Visible column keys in on-screen order (column picker). Unknown keys are
+    # dropped; empty → every column in canonical order.
+    columns: list[str] = []
 
 
 @router.post("/api/production/export.xlsx")
