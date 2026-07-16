@@ -1,1 +1,0 @@
-import{i as o}from"./transliterate-DxW4pfee.js";var e=[["path",{d:"m18 15-6-6-6 6",key:"153udz"}]],n=o("chevron-up",e),r=[["path",{d:"m7 15 5 5 5-5",key:"1hf1tw"}],["path",{d:"m7 9 5-5 5 5",key:"sgt6xg"}]],p=o("chevrons-up-down",r);export{n,p as t};
