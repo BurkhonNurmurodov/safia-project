@@ -665,6 +665,7 @@ export default function Production() {
         ...managerParam,
         lang,
         order: viewRows.map((r) => r.id),
+        columns: visibleCols.map((c) => c.key),
       });
       setExportDone(true);
       setTimeout(() => setExportDone(false), 4000);
