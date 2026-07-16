@@ -884,6 +884,20 @@ export default function Tasks() {
           />
         </div>
 
+        {/* Shift — narrows the supervisor picker (and all data) to one shift. Admin
+            only, mirroring the supervisor filter (supervisors are pinned to one). */}
+        {isAdmin && (
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+            <SegmentedToggle
+              fill
+              value={fShift}
+              onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
+              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+            />
+          </div>
+        )}
+
         {isAdmin && (
           <div className="min-w-0">
             <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
