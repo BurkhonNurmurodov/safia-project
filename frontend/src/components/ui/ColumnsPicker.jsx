@@ -1,7 +1,9 @@
-// Notion-style column visibility & order picker — THE template for showing/
-// hiding table columns. 38px square trigger (toolbar baseline) + a portaled
-// panel with "shown / hidden" groups, eye toggles, hide-all/show-all links and
-// drag-to-reorder that only arms via the explicit reorder button.
+// Column visibility & order picker — THE template for showing/hiding table
+// columns. 38px square trigger (toolbar baseline) + a portaled panel listing
+// every column IN TABLE ORDER: hidden ones stay in place (dimmed, eye-off)
+// instead of moving to a bottom group, so toggling never loses a column's
+// slot. Hide all / Show all links, and drag-to-reorder that only arms via the
+// explicit reorder button.
 //
 // Controlled component:
 //   columns  — [{ key, label, locked }] full catalog (locked = never hideable)
@@ -15,7 +17,7 @@ import { useLang } from "../../context/LangContext";
 
 const PANEL_WIDTH = 272;
 
-function Row({ col, reorderMode, dragging, onToggle, onDragStart, rowRef, hiddenGroup }) {
+function Row({ col, isHidden, reorderMode, dragging, onToggle, onDragStart, rowRef }) {
   return (
     <div
       ref={rowRef}
@@ -25,7 +27,7 @@ function Row({ col, reorderMode, dragging, onToggle, onDragStart, rowRef, hidden
         opacity: dragging ? 0.75 : 1,
       }}
     >
-      {reorderMode && !hiddenGroup && (
+      {reorderMode && (
         <span
           onPointerDown={(e) => onDragStart(e, col.key)}
           className="flex-shrink-0 cursor-grab active:cursor-grabbing"
@@ -36,7 +38,7 @@ function Row({ col, reorderMode, dragging, onToggle, onDragStart, rowRef, hidden
       )}
       <span
         className="flex-1 text-[13px] truncate"
-        style={{ color: hiddenGroup ? "var(--text-4)" : "var(--text-2)" }}
+        style={{ color: isHidden ? "var(--text-4)" : "var(--text-2)" }}
       >
         {col.label}
       </span>
@@ -48,28 +50,9 @@ function Row({ col, reorderMode, dragging, onToggle, onDragStart, rowRef, hidden
         <button
           onClick={() => onToggle(col.key)}
           className="flex-shrink-0 p-1 rounded transition-colors"
-          style={{ color: hiddenGroup ? "var(--text-4)" : "var(--text-3)" }}
+          style={{ color: isHidden ? "var(--text-4)" : "var(--text-3)" }}
         >
-          {hiddenGroup ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function GroupHead({ label, action, onAction }) {
-  return (
-    <div className="flex items-center justify-between px-2 pt-2 pb-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-        {label}
-      </span>
-      {action && (
-        <button
-          onClick={onAction}
-          className="text-[11px] font-medium transition-colors"
-          style={{ color: "var(--brand-text)" }}
-        >
-          {action}
+          {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
       )}
     </div>
@@ -81,18 +64,18 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const [reorderMode, setReorderMode] = useState(false);
-  // Live order of the SHOWN keys while a drag is in flight (null = no drag).
-  const [dragShown, setDragShown] = useState(null);
+  // Live order while a drag is in flight (null = no drag).
+  const [dragOrder, setDragOrder] = useState(null);
   const [dragKey, setDragKey] = useState(null);
   const ref = useRef(null);     // trigger wrapper
   const popRef = useRef(null);  // portaled panel
-  const rowRefs = useRef({});   // shown-row key → element (drag hit-testing)
+  const rowRefs = useRef({});   // row key → element (drag hit-testing)
 
   const byKey = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, c])), [columns]);
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
-  const shownKeys = order.filter((k) => byKey[k] && !hiddenSet.has(k));
-  const hiddenKeys = order.filter((k) => byKey[k] && hiddenSet.has(k));
-  const liveShown = dragShown ?? shownKeys;
+  const listKeys = (dragOrder ?? order).filter((k) => byKey[k]);
+  const nHidden = hidden.filter((k) => byKey[k]).length;
+  const anyHideable = listKeys.some((k) => !byKey[k].locked && !hiddenSet.has(k));
 
   // Close on click outside the trigger or the portaled panel.
   useEffect(() => {
@@ -127,16 +110,6 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
 
   useEffect(() => { if (!open) setReorderMode(false); }, [open]);
 
-  // Rebuild the FULL order from a new shown sequence: hidden keys keep their
-  // absolute slots, shown keys fill the remaining slots in the new sequence.
-  const mergeOrder = (newShown) => {
-    const res = new Array(order.length);
-    order.forEach((k, i) => { if (hiddenSet.has(k)) res[i] = k; });
-    let j = 0;
-    for (let i = 0; i < res.length; i++) if (res[i] === undefined) res[i] = newShown[j++];
-    return res;
-  };
-
   const toggle = (key) => {
     const col = byKey[key];
     if (!col || col.locked) return;
@@ -149,13 +122,14 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
 
   // Pointer-based drag (works for mouse AND touch, unlike HTML5 dnd): the
   // handle captures the pointer, rows re-sort live against row midpoints,
-  // pointerup commits the merged full order.
+  // pointerup commits the new order. Hidden rows drag too — they keep a
+  // real slot, so their position matters when re-shown.
   const onDragStart = (e, key) => {
     e.preventDefault();
-    const startShown = shownKeys;
+    const start = listKeys;
     setDragKey(key);
-    setDragShown(startShown);
-    let current = startShown;
+    setDragOrder(start);
+    let current = start;
 
     const onMove = (ev) => {
       const y = ev.clientY;
@@ -170,7 +144,7 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
       const next = [...others.slice(0, idx), key, ...others.slice(idx)];
       if (next.join() !== current.join()) {
         current = next;
-        setDragShown(next);
+        setDragOrder(next);
       }
     };
     const onUp = () => {
@@ -178,15 +152,13 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
       setDragKey(null);
-      setDragShown(null);
-      if (current.join() !== startShown.join()) onChange({ order: mergeOrder(current), hidden });
+      setDragOrder(null);
+      if (current.join() !== start.join()) onChange({ order: current, hidden });
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
   };
-
-  const nHidden = hiddenKeys.length;
 
   return (
     <div ref={ref} className={`relative flex-shrink-0 ${className}`}>
@@ -242,15 +214,32 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
             </button>
           </div>
 
-          <GroupHead
-            label={t("cols.shown")}
-            action={liveShown.some((k) => !byKey[k].locked) ? t("cols.hideAll") : null}
-            onAction={hideAll}
-          />
-          {liveShown.map((k) => (
+          <div className="flex items-center justify-end gap-3 px-2 pb-1">
+            {anyHideable && (
+              <button
+                onClick={hideAll}
+                className="text-[11px] font-medium transition-colors"
+                style={{ color: "var(--brand-text)" }}
+              >
+                {t("cols.hideAll")}
+              </button>
+            )}
+            {nHidden > 0 && (
+              <button
+                onClick={showAll}
+                className="text-[11px] font-medium transition-colors"
+                style={{ color: "var(--brand-text)" }}
+              >
+                {t("cols.showAll")}
+              </button>
+            )}
+          </div>
+
+          {listKeys.map((k) => (
             <Row
               key={k}
               col={byKey[k]}
+              isHidden={hiddenSet.has(k)}
               reorderMode={reorderMode}
               dragging={dragKey === k}
               onToggle={toggle}
@@ -258,15 +247,6 @@ export default function ColumnsPicker({ columns, order, hidden, onChange, classN
               rowRef={(el) => { rowRefs.current[k] = el; }}
             />
           ))}
-
-          {hiddenKeys.length > 0 && (
-            <>
-              <GroupHead label={t("cols.hidden")} action={t("cols.showAll")} onAction={showAll} />
-              {hiddenKeys.map((k) => (
-                <Row key={k} col={byKey[k]} hiddenGroup onToggle={toggle} />
-              ))}
-            </>
-          )}
         </div>,
         document.body
       )}
