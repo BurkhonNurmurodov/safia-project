@@ -161,10 +161,11 @@ function SingleGrid({
   // BASIS_DAYS fill the container (clamped to a CELL_W minimum on narrow views).
   const padCount   = Math.max(0, BASIS_DAYS - dates.length);
   const effDays    = Math.max(BASIS_DAYS, dates.length);
+  const avgW       = isMobile ? 0 : AVG_W;  // summary column is dropped on phones
   const cellW      = containerW > 0
-    ? Math.max(CELL_W, Math.floor((containerW - LABEL_W - AVG_W) / BASIS_DAYS))
+    ? Math.max(CELL_W, Math.floor((containerW - LABEL_W - avgW) / BASIS_DAYS))
     : CELL_W;
-  const tableWidth = LABEL_W + effDays * cellW + AVG_W;
+  const tableWidth = LABEL_W + effDays * cellW + avgW;
   const pads       = Array.from({ length: padCount });
 
   // Summary column is pinned to the right edge; data scrolls underneath it.
