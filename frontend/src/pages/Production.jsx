@@ -551,6 +551,24 @@ export default function Production() {
   const saveOverride = (row, field) => (value) =>
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
 
+  // Excel export of the Positions table → user's private Telegram chat (never a
+  // browser download; the backend styles the sheet to match the on-screen table).
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await api.get("/api/production/export.xlsx", {
+        params: { date, ...managerParam, lang, send: 1 },
+      });
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 4000);
+    } catch (e) {
+      console.error("export failed", e);
+      alert(e?.response?.data?.detail || "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // Row-select toggle: a click anywhere on a catalog row (admin) opens/closes its
   // action strip. A second click on the same row collapses it (like the other
   // reveal-action tables).
