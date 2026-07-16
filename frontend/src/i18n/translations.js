@@ -2810,6 +2810,7 @@ const t = {
     "production.minUnit":          "мин",
     "production.noUnits":          "Ячейкалар йўқ",
     "production.positions":        "Позициялар",
+    "production.exportExcel":      "Excelга экспорт",
     "production.noDataForDate":    "Бу сана учун маълумот йўқ",
     "production.col.sapCode":      "SAP код",
     "production.col.op":           "Фаза",
