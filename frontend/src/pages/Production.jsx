@@ -374,7 +374,7 @@ function RawView({ fileType, date, managerParam, ready = true }) {
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const [date, setDate] = useState(todayISO());
