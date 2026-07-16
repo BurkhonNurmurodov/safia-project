@@ -448,6 +448,39 @@ export default function Production() {
   // skeletons so stale numbers don't linger after the user switches dates.
   const loading = isLoading || isPlaceholderData;
 
+  // Positions-table column visibility/order — Notion-style picker, persisted
+  // per ACTIVE profile via /api/ui-prefs (follows the user across devices).
+  const { data: savedCols } = useQuery({
+    queryKey: ["ui-pref", COL_PREF_KEY],
+    queryFn: () => api.get(`/api/ui-prefs/${COL_PREF_KEY}`).then((r) => r.data?.value),
+    staleTime: Infinity,
+  });
+  const [colsLocal, setColsLocal] = useState(null); // user edits this session — wins over the fetch
+  const colCfg = useMemo(() => {
+    // Reconcile the saved pref against the current catalog: drop keys that no
+    // longer exist, append new columns at the end, never let a locked one hide.
+    const saved = colsLocal ?? savedCols;
+    const keys = COLS.map((c) => c.key);
+    const savedOrder = Array.isArray(saved?.order) ? saved.order.filter((k) => keys.includes(k)) : [];
+    const order = [...savedOrder, ...keys.filter((k) => !savedOrder.includes(k))];
+    const hidden = Array.isArray(saved?.hidden)
+      ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
+      : [];
+    return { order, hidden };
+  }, [colsLocal, savedCols]);
+  const saveCols = useMutation({
+    mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
+  });
+  const onColsChange = (value) => {
+    setColsLocal(value);
+    qc.setQueryData(["ui-pref", COL_PREF_KEY], value);
+    saveCols.mutate(value);
+  };
+  const visibleCols = useMemo(() => {
+    const hiddenSet = new Set(colCfg.hidden);
+    return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
+  }, [colCfg]);
+
   const override = useMutation({
     mutationFn: (body) => api.post("/api/production/override", body, { params: managerParam }),
     onSuccess: () => {
