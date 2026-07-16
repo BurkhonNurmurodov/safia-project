@@ -561,17 +561,18 @@ export default function Tasks() {
 
   const createdDay = (r) => (r.created_at || "").slice(0, 10);
 
-  // Period + supervisor + leader scope.
+  // Period + shift + supervisor + leader scope.
   const scoped = useMemo(() => {
     return rows.filter((r) => {
       const day = createdDay(r);
       if (startDate && !(day && day >= startDate)) return false;
       if (endDate && !(day && day <= endDate)) return false;
+      if (fShift != null && r.supervisor_shift !== fShift) return false;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
       if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
       return true;
     });
-  }, [rows, startDate, endDate, fSup, fLeader]);
+  }, [rows, startDate, endDate, fShift, fSup, fLeader]);
 
   // Trend-chart scope: same filters with the period start pulled back so the
   // chart never spans fewer than 7 days (n..n+4 charts as n-2..n+4). KPIs,
