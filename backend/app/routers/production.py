@@ -354,19 +354,13 @@ def export_positions(
     wb.save(bio)
     bio.seek(0)
     fname = f"positions_{day.isoformat()}.xlsx"
-    if send:
-        from app.telegram_bot import bot
-        caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
-        try:
-            bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-        return {"ok": True}
-    return StreamingResponse(
-        bio,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    from app.telegram_bot import bot
+    caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
+    try:
+        bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    return {"ok": True}
 
 
 @router.get("/api/production/dates")
