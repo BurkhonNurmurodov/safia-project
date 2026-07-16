@@ -61,19 +61,22 @@ def get_leaders(
         rows = [r for r in rows if _norm(_relabel(r.supervisor)) in names]
 
     # Each row's (relabeled) supervisor resolves to a shift via the Manager table.
-    # The leaders sheet spells brigadirs in either alphabet (its «Бригадир ФИО»
-    # column is stored raw) while Manager.name is the canonical Latin name — so we
-    # resolve through sheet_alias_map (every known spelling → canonical), exactly
-    # like the downtime / brigadirs / production loaders, then fold on _norm so
-    # case/whitespace drift doesn't matter either. A plain _norm match would miss
-    # every Cyrillic sheet name. This lets the client offer a shift filter without
-    # a separate, auth-gated /api/staff/supervisors round-trip (top-managers can't
-    # call it). Names with no known spelling (or a manager with no shift set) carry
-    # a null shift.
+    # The leaders sheet's «Бригадир ФИО» column is a FULL passport-form name in
+    # either alphabet ("XAKIMOV RUSLAN ..."), while Manager.name is the short
+    # canonical unit name ("Хакимов Руслан") — so the fuzzy supervisor_match (the
+    # same matcher the QA register uses) is what bridges the alphabet + short-vs-
+    # full-form gap and returns each unit's shift. A short-name matcher like
+    # sheet_alias_map only catches the few rows already in short form, which is why
+    # the mismatched majority collapsed onto one shift. Lets the client offer a
+    # shift filter without a separate, auth-gated /api/staff/supervisors round-trip
+    # (top-managers can't call it). Unmatched names carry a null shift.
     managers = db.query(Manager).all()
-    name_shift = {m.name: m.shift for m in managers}
-    alias = sheet_alias_map(db, name_shift.keys())
-    mgr_shift = {_norm(spelling): name_shift.get(canon) for spelling, canon in alias.items()}
+    sup_shift = {
+        name: info["shift"]
+        for name, info in supervisor_match(
+            managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
+        ).items()
+    }
 
     return {
         "role": role,
