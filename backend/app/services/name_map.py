@@ -121,7 +121,7 @@ def _norm(name: str) -> str:
 #   • two units share the same surname+first name, so every candidate ties on
 #     the two-token score and iteration order alone would decide the winner —
 #     "SUVONOV ELSHOD VALIJON O'G'LI" scores 1.0 for BOTH "Suvonov Elshod" and
-#     "Suvonov Elshod OF" and must be pinned to the former.
+#     "Suvonov Elshod Ofr." and must be pinned to the former.
 # Keyed and valued on the folded skeleton (via _norm) so alphabet/spelling drift
 # on either the sheet or the profile name still resolves.
 _OVERRIDES = {
