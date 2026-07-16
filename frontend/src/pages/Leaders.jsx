@@ -95,7 +95,7 @@ const TXT = {
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
   },
   ru: {
-    title: "Контроль лидеров", avgSuccess: "Средний успех", timePeriod: "Период",
+    title: "Контроль лидеров", avgSuccess: "Средний успех", timePeriod: "Период", shift: "Смена",
     supervisor: "Бригадир", allSups: "Все бригадиры", leader: "Лидер", allLeaders: "Все лидеры",
     trend: "Тренд выполнения", taskTitle: "Успех по задачам",
     standing: "Рейтинг лидеров", supStanding: "Рейтинг бригадиров",
