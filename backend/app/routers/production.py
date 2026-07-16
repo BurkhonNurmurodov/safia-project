@@ -251,22 +251,33 @@ def get_dashboard(
     return _build_dashboard(db, mid, _parse_date(date))
 
 
-@router.get("/api/production/export.xlsx")
+class PositionsExportBody(BaseModel):
+    date: Optional[str] = None
+    manager_id: Optional[int] = None
+    lang: str = "ru"
+    # PPProduct ids in the EXACT on-screen order (post search/team-filter/sort)
+    # at the moment the button was pressed. Empty → full default SAP order.
+    order: list[int] = []
+
+
+@router.post("/api/production/export.xlsx")
 def export_positions(
-    date: Optional[str] = Query(None),
-    manager_id: Optional[int] = Query(None),
-    lang: str = Query("ru"),
-    send: int = Query(0),           # 1 = send to caller's Telegram chat instead of streaming
+    body: PositionsExportBody,
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    """Excel export of the Positions table — same rows/columns/order as the
-    dashboard, styled to mirror the on-screen table, delivered to the caller's
-    private Telegram chat (send=1)."""
-    mid = _resolve_manager_id(payload, manager_id, db)
-    day = _parse_date(date)
+    """Excel export of the Positions table — styled to mirror the on-screen table
+    and delivered to the caller's private Telegram chat. Rows are rendered in the
+    exact order the client sends (`body.order`), so the file matches what the user
+    saw — current search, team filter and sort — when they pressed the button."""
+    lang = body.lang
+    mid = _resolve_manager_id(payload, body.manager_id, db)
+    day = _parse_date(body.date)
     dash = _build_dashboard(db, mid, day)
     rows = dash["rows"]
+    if body.order:
+        by_id = {r.get("id"): r for r in rows}
+        rows = [by_id[i] for i in body.order if i in by_id]
 
     headers = POSITIONS_HEADERS.get(lang, POSITIONS_HEADERS["ru"])
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
