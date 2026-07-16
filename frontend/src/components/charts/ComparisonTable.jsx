@@ -666,7 +666,8 @@ export default function ComparisonTable({
                     }} />
                   ))}
 
-                  {/* Summary column — mirrors a date cell, pinned right */}
+                  {/* Summary column — mirrors a date cell, pinned right (hidden on phones) */}
+                  {!isMobile && (
                   <td colSpan={2} style={{
                     ...stickySum,
                     zIndex: 4,
@@ -756,6 +757,7 @@ export default function ComparisonTable({
                       }
                     </div>
                   </td>
+                  )}
                 </tr>
               );
             })}
