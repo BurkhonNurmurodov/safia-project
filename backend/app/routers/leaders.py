@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import LeaderChecklist, Manager
 from app.permissions import require_page
-from app.services.name_map import _norm as _fold_name, sheet_alias_map
+from app.services.name_map import _norm as _fold_name, supervisor_match
 
 router = APIRouter(prefix="/api", tags=["leaders"])
 
