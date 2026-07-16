@@ -58,7 +58,7 @@ def get_leaders(
         if mgr:
             names.add(_norm(mgr.name))
         names.discard("")
-        rows = [r for r in rows if _norm(r.supervisor) in names]
+        rows = [r for r in rows if _norm(_relabel(r.supervisor)) in names]
 
     return {
         "role": role,
