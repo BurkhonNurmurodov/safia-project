@@ -753,6 +753,17 @@ export default function Leaders() {
           )}
         </div>
 
+        {/* Shift — narrows the supervisor picker (and all data) to one shift.
+            Hidden for supervisors, who are locked to their own unit/shift. */}
+        {!isSupervisor && (
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.shift}</label>
+            <SegmentedToggle fill value={fShift}
+              onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
+              options={[[null, T.bandAll], [1, "S1"], [2, "S2"]]} />
+          </div>
+        )}
+
         {/* Supervisor — shift-managers / admins only; supervisors are locked to their own unit */}
         {!isSupervisor && (
           <div className="min-w-0">
