@@ -116,7 +116,7 @@ def _norm(name: str) -> str:
 # ─── Manual sheet-name → unit overrides ──────────────────────────────────────
 # Two real cases the fuzzy scorer above can't handle:
 #   • the register names someone in a form unrelated to their unit's profile
-#     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit shown as "Suvonov Elshod OF",
+#     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit shown as "Suvonov Elshod Ofr.",
 #     which scores 0 against it and would drop every one of that unit's rows;
 #   • two units share the same surname+first name, so every candidate ties on
 #     the two-token score and iteration order alone would decide the winner —
