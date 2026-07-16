@@ -128,7 +128,7 @@ _OVERRIDES = {
     _norm(sheet): _norm(unit)
     for sheet, unit in {
         "SUVONOV ELSHOD VALIJON O'G'LI": "Suvonov Elshod",
-        "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod OF",
+        "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod Ofr.",
     }.items()
 }
 
