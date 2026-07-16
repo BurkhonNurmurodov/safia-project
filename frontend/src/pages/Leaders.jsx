@@ -415,6 +415,7 @@ export default function Leaders() {
   // filters (presets + calendar popover). Defaults to the last 7 days.
   const [startDate, setStartDate] = useState(() => isoShift(todayISO(), -6));
   const [endDate, setEndDate] = useState(() => todayISO());
+  const [fShift, setFShift] = useState(null);                // null = all shifts | 1 | 2
   const [fSup, setFSup] = useState("All");
   const [fLeader, setFLeader] = useState("All");
   const [standMode, setStandMode] = useState("leader");
