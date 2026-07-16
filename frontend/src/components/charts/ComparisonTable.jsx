@@ -109,6 +109,7 @@ export default function ComparisonTable({
   onToggleFullscreen,
 }) {
   const { labelColor } = useChartTheme();
+  const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
   const { t } = useLang();
   const { tl } = useTranslit();
   const [mode, setMode]           = useState("compare"); // "compare" | "diff"
