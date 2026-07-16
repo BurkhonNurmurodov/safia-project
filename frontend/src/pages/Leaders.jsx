@@ -724,7 +724,7 @@ export default function Leaders() {
     <Layout title={T.title} showFilters={false}>
       {/* Filters + admin refresh */}
       <div className="flex flex-wrap items-start gap-3 mb-3">
-      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
+      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
         {/* Period — same range picker as the global filters (presets + calendar).
             Mobile: full row, labels hidden (controls are self-describing), admin
             refresh collapses to an icon button beside the picker. */}
