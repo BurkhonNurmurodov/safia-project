@@ -590,6 +590,69 @@ export default function Production() {
   const saveOverride = (row, field) => (value) =>
     override.mutate({ date, sap_code: row.sap_code, work_center: row.work_center, field, value });
 
+  // One renderer per column so the picker can hide/reorder freely — each case
+  // is the exact cell markup the table previously hard-coded in SAP order.
+  const posCell = (key, r, vyp, wc) => {
+    switch (key) {
+      case "sap_code":
+        return <td key={key} className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>;
+      case "op":
+        return <td key={key} className="px-3 py-2 text-center font-mono" style={{ color: "var(--text-3)" }}>{r.op ?? "—"}</td>;
+      case "name":
+        return (
+          <td key={key} className="px-3 py-2 text-left max-w-[220px]">
+            <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
+          </td>
+        );
+      case "labor":
+        return (
+          <td key={key} className="px-3 py-2 text-center tabular-nums">
+            {r.has_labor ? fmt(r.labor_time, 2)
+              : <span className="inline-flex items-center gap-1" style={{ color: "#a16207" }}><AlertTriangle size={11} />—</span>}
+          </td>
+        );
+      case "wc":
+        return (
+          <td key={key} className="px-3 py-2 text-center">
+            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
+          </td>
+        );
+      case "people":
+        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.people, 0)}</td>;
+      case "vyp":
+        return <td key={key} className="px-3 py-2 text-center"><VypCell value={vyp} /></td>;
+      case "fact":
+        return (
+          <td key={key} className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+            <QtyCell value={r.actual_qty} overridden={r.actual_overridden} onSave={saveOverride(r, "actual")} />
+          </td>
+        );
+      case "plan":
+        return (
+          <td key={key} className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+            <QtyCell value={r.plan_qty} overridden={r.plan_overridden} onSave={saveOverride(r, "plan")} />
+          </td>
+        );
+      case "actual_labor":
+        return <td key={key} className="px-3 py-2 text-center tabular-nums">{fmt(r.actual_labor, 1)}</td>;
+      case "labor_total":
+        return <td key={key} className="px-3 py-2 text-center tabular-nums font-medium">{fmt(r.total_labor, 1)}</td>;
+      case "minutes":
+        return <td key={key} className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>{fmt(r.minutes, 1)}</td>;
+      case "pareto":
+        return (
+          <td key={key} className="px-3 py-2 text-center">
+            <div className="flex items-center gap-2 justify-center">
+              <div className="w-8 hidden sm:block"><Bar value={(r.pareto || 0) / maxPareto} color="var(--brand)" height={4} /></div>
+              <span className="tabular-nums" style={{ color: "var(--text-3)", minWidth: 34, textAlign: "right" }}>{pct(r.pareto)}</span>
+            </div>
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
+
   // Excel export of the Positions table → user's private Telegram chat (never a
   // browser download; the backend styles the sheet to match the on-screen table).
   // `order` = the ids of the rows exactly as displayed (current search / team
