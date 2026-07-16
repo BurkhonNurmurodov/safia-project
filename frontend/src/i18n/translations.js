@@ -5668,6 +5668,7 @@ const t = {
     "production.minUnit":          "min",
     "production.noUnits":          "No units",
     "production.positions":        "Positions",
+    "production.exportExcel":      "Export to Excel",
     "production.noDataForDate":    "No data for this date",
     "production.col.sapCode":      "SAP code",
     "production.col.op":           "Phase",
