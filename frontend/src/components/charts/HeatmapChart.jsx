@@ -396,26 +396,28 @@ function SingleGrid({
                   }} />
                 ))}
 
-                {/* AVG / MAX / MIN cell — pinned right */}
-                <td style={{
-                  ...buildCellStyle({
-                    color:      statColor,
-                    grayed:     thisGray,
-                    rowHovered: false,
-                    colHovered: false,
-                    cellHovered: false,
-                    width: AVG_W,
-                  }),
-                  ...stickyAvg,
-                  zIndex:       4,
-                  minWidth:     AVG_W,
-                  background:   statColor.noData ? "var(--bg-card)" : statColor.bg,
-                  borderLeft:   "2px solid var(--border-md)",
-                  fontWeight:   700,
-                  cursor:       "default",
-                }}>
-                  {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
-                </td>
+                {/* AVG / MAX / MIN cell — pinned right (hidden on phones) */}
+                {!isMobile && (
+                  <td style={{
+                    ...buildCellStyle({
+                      color:      statColor,
+                      grayed:     thisGray,
+                      rowHovered: false,
+                      colHovered: false,
+                      cellHovered: false,
+                      width: AVG_W,
+                    }),
+                    ...stickyAvg,
+                    zIndex:       4,
+                    minWidth:     AVG_W,
+                    background:   statColor.noData ? "var(--bg-card)" : statColor.bg,
+                    borderLeft:   "2px solid var(--border-md)",
+                    fontWeight:   700,
+                    cursor:       "default",
+                  }}>
+                    {stat !== null ? `${stat}%` : <span style={{ opacity: 0.25 }}>—</span>}
+                  </td>
+                )}
               </tr>
             );
           })}
