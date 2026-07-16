@@ -24,7 +24,7 @@ def _norm(name: str | None) -> str:
 # right unit (no re-sync needed). Keyed on the folded name skeleton so any
 # alphabet/spelling of the source resolves to the same entry.
 _SUPERVISOR_RELABEL = {
-    _fold_name("Abdugamitov Muhammad"): "Suvonov Elshod Ofr.",
+    _fold_name("Abdugamitov Muhammad"): "Suvonov Elshod OF",
 }
 
 
