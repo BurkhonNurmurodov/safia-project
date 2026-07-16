@@ -410,35 +410,37 @@ export default function ComparisonTable({
                 }} />
               ))}
 
-              <th colSpan={2} style={{
-                ...stickySum,
-                zIndex: 5,
-                padding: 0, height: 24,
-                border: "1px solid var(--border)", background: HDR_BG,
-                borderLeft: "2px solid var(--border-md)",
-                overflow: "hidden",
-              }}>
-                <div style={{
-                  position: "absolute", left: 0, top: 0, bottom: 0,
-                  width: isDiff ? "0%" : "50%",
-                  transition: `width ${DUR} ${EASE}`,
+              {!isMobile && (
+                <th colSpan={2} style={{
+                  ...stickySum,
+                  zIndex: 5,
+                  padding: 0, height: 24,
+                  border: "1px solid var(--border)", background: HDR_BG,
+                  borderLeft: "2px solid var(--border-md)",
                   overflow: "hidden",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
-                  borderRight: "1px solid var(--border)",
-                  boxSizing: "border-box",
-                }}>P</div>
-                <div style={{
-                  position: "absolute", right: 0, top: 0, bottom: 0,
-                  width: isDiff ? "100%" : "50%",
-                  transition: `width ${DUR} ${EASE}`,
-                  overflow: "hidden",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
                 }}>
-                  {isDiff ? "D" : "A"}
-                </div>
-              </th>
+                  <div style={{
+                    position: "absolute", left: 0, top: 0, bottom: 0,
+                    width: isDiff ? "0%" : "50%",
+                    transition: `width ${DUR} ${EASE}`,
+                    overflow: "hidden",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.75)", letterSpacing: ".5px",
+                    borderRight: "1px solid var(--border)",
+                    boxSizing: "border-box",
+                  }}>P</div>
+                  <div style={{
+                    position: "absolute", right: 0, top: 0, bottom: 0,
+                    width: isDiff ? "100%" : "50%",
+                    transition: `width ${DUR} ${EASE}`,
+                    overflow: "hidden",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: ".5px",
+                  }}>
+                    {isDiff ? "D" : "A"}
+                  </div>
+                </th>
+              )}
             </tr>
           </thead>
 
