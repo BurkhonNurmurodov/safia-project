@@ -975,6 +975,12 @@ export default function Production() {
               anyActive={wcSel.length > 0}
               onClearAll={() => setWcSel([])}
             />
+            <ColumnsPicker
+              columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
+              order={colCfg.order}
+              hidden={colCfg.hidden}
+              onChange={onColsChange}
+            />
             {canEditCatalog && (
               <Button
                 size="lg"
