@@ -230,6 +230,12 @@ export default function DateRangePicker({
     ? `${t(`cal.d${(new Date(dateFrom + "T00:00:00").getDay() + 6) % 7}`)}, ${fmtRange(dateFrom, dateFrom, t)}`
     : fmtRange(dateFrom, dateTo, t);
 
+  // Numeric fallback for compact toolbars: "16.07.25 – 16.07.26" (dd.mm.yy).
+  const short = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y.slice(2)}`; };
+  const compactRange = !dateFrom
+    ? t("filter.selectDates")
+    : (!dateTo || dateFrom === dateTo) ? short(dateFrom) : `${short(dateFrom)} – ${short(dateTo)}`;
+
   const btnStyle = (active) => ({
     background: active ? "var(--brand)" : "transparent",
     color:      active ? "#fff"         : "var(--text-2)",
