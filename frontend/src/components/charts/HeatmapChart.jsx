@@ -276,26 +276,28 @@ function SingleGrid({
               }} />
             ))}
 
-            {/* AVG / MAX / MIN header — clickable to cycle, pinned right */}
-            <th
-              onClick={e => { e.stopPropagation(); onCycleAvg(); }}
-              style={{
-                ...thBase,
-                ...stickyAvg,
-                zIndex:      5,
-                textAlign:   "center",
-                width:       AVG_W,
-                minWidth:    AVG_W,
-                cursor:      "pointer",
-                userSelect:  "none",
-                borderLeft:  "2px solid var(--border-md)",
-                paddingLeft: 4,
-                paddingRight: 4,
-              }}
-            >
-              {t(`zagruzka.stat${avgMode.charAt(0).toUpperCase() + avgMode.slice(1)}`)}
-              <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>↕</span>
-            </th>
+            {/* AVG / MAX / MIN header — clickable to cycle, pinned right (hidden on phones) */}
+            {!isMobile && (
+              <th
+                onClick={e => { e.stopPropagation(); onCycleAvg(); }}
+                style={{
+                  ...thBase,
+                  ...stickyAvg,
+                  zIndex:      5,
+                  textAlign:   "center",
+                  width:       AVG_W,
+                  minWidth:    AVG_W,
+                  cursor:      "pointer",
+                  userSelect:  "none",
+                  borderLeft:  "2px solid var(--border-md)",
+                  paddingLeft: 4,
+                  paddingRight: 4,
+                }}
+              >
+                {t(`zagruzka.stat${avgMode.charAt(0).toUpperCase() + avgMode.slice(1)}`)}
+                <span style={{ fontSize: 8, opacity: 0.5, marginLeft: 2 }}>↕</span>
+              </th>
+            )}
           </tr>
         </thead>
 
