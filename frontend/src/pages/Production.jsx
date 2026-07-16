@@ -1011,7 +1011,7 @@ export default function Production() {
                 </tr>
               ))}
               {!loading && viewRows.length === 0 && (
-                <tr><td colSpan={COLS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                <tr><td colSpan={visibleCols.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                   {rows.length === 0 ? t("production.noDataForDate") : t("production.noMatch")}
                 </td></tr>
               )}
@@ -1062,7 +1062,7 @@ export default function Production() {
                   </tr>
                   {selected && (
                     <tr ref={stripRef} style={{ background: "var(--bg-inner)" }}>
-                      <td colSpan={COLS.length} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <td colSpan={visibleCols.length} className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
                           <ActionBtn icon={Pencil} label={t("production.editRow")} onClick={() => startCatEdit(r)} />
                           <ActionBtn icon={Trash2} label={t("production.deleteRow")} color="#ef4444" onClick={() => setConfirmDel(r)} />
