@@ -278,8 +278,8 @@ export default function ComparisonTable({
               <col key={`cg-pad-${i}-1`} style={{ width: colW }} />,
               <col key={`cg-pad-${i}-2`} style={{ width: colW }} />,
             ])}
-            <col style={{ width: colW }} />
-            <col style={{ width: colW }} />
+            {!isMobile && <col style={{ width: colW }} />}
+            {!isMobile && <col style={{ width: colW }} />}
           </colgroup>
 
           <thead>
