@@ -504,9 +504,10 @@ export default function Leaders() {
   const trendRows = useMemo(() => rows.filter((r) => {
     const d = String(r.date).slice(0, 10);
     return (!trendFrom || d >= trendFrom) && (!endDate || d <= endDate)
+      && (fShift == null || r.shift === fShift)
       && (fSup === "All" || r.supervisor === fSup)
       && (fLeader === "All" || r.leader === fLeader);
-  }), [rows, trendFrom, endDate, fSup, fLeader]);
+  }), [rows, trendFrom, endDate, fShift, fSup, fLeader]);
 
   const hasData = filtered.length > 0;
 
