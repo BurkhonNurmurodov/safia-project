@@ -182,6 +182,7 @@ app.include_router(profiles.router)
 app.include_router(leaderboard.router)
 app.include_router(quality.router)
 app.include_router(boot.router)
+app.include_router(ui_prefs.router)
 
 
 @app.get("/health")
