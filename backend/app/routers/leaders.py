@@ -60,6 +60,13 @@ def get_leaders(
         names.discard("")
         rows = [r for r in rows if _norm(_relabel(r.supervisor)) in names]
 
+    # Each row's (relabeled) supervisor resolves to a shift via the Manager table,
+    # matched with the same tolerant _norm as the supervisor scoping above. Lets
+    # the client offer a shift filter without a separate, auth-gated
+    # /api/staff/supervisors round-trip (top-managers can't call it). Unmatched
+    # names carry a null shift.
+    mgr_shift = {_norm(m.name): m.shift for m in db.query(Manager).all()}
+
     return {
         "role": role,
         "data": [
@@ -70,6 +77,7 @@ def get_leaders(
                 "date": r.date,
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
                 "supervisor": _relabel(r.supervisor),
+                "shift": mgr_shift.get(_norm(_relabel(r.supervisor))),
                 "leader": r.leader,
                 "completion": float(r.completion or 0),
                 "tasks": r.tasks or [],
