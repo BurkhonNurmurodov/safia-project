@@ -531,29 +531,33 @@ export default function Tasks() {
     return m;
   }, [rows]);
 
-  // Supervisor → leader cascade options, built from the fetched rows.
+  // Supervisor → leader cascade options, built from the fetched rows. The shift
+  // filter (from the row the backend tags with Manager.shift) narrows the
+  // supervisor list; a supervisor with no shift drops out once a shift is chosen.
   const supOptions = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
       if (r.supervisor_manager_id == null) continue;
+      if (fShift != null && r.supervisor_shift !== fShift) continue;
       if (!m.has(r.supervisor_manager_id)) m.set(r.supervisor_manager_id, r.supervisor_name || "—");
     }
     return [...m.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, tl]);
+  }, [rows, fShift, tl]);
 
   const leaderFilterOptions = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
       if (r.leader_role_ref == null) continue;
+      if (fShift != null && r.supervisor_shift !== fShift) continue;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) continue;
       if (!m.has(r.leader_role_ref)) m.set(r.leader_role_ref, r.leader_name || "—");
     }
     return [...m.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows, fSup, tl]);
+  }, [rows, fShift, fSup, tl]);
 
   const createdDay = (r) => (r.created_at || "").slice(0, 10);
 
