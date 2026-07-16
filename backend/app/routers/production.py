@@ -296,7 +296,10 @@ def export_positions(
         by_id = {r.get("id"): r for r in rows}
         rows = [by_id[i] for i in body.order if i in by_id]
 
-    headers = POSITIONS_HEADERS.get(lang, POSITIONS_HEADERS["ru"])
+    all_headers = POSITIONS_HEADERS.get(lang, POSITIONS_HEADERS["ru"])
+    header_by_key = dict(zip(POSITIONS_COL_KEYS, all_headers))
+    col_keys = [k for k in body.columns if k in header_by_key] or list(POSITIONS_COL_KEYS)
+    headers = [header_by_key[k] for k in col_keys]
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
     mgr_name = dash.get("manager_name") or ""
     day_h = day.strftime("%d.%m.%Y")
