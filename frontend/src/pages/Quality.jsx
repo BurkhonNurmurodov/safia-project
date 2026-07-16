@@ -1074,26 +1074,34 @@ export default function Quality() {
         </div>
       )}
 
-      {/* one filter zone for the whole page — charts and table read the same state */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
-          max={today} triggerClassName="px-3 py-2 text-sm" />
-        {isProd && (
-          <SegmentedToggle value={shiftTab}
-            onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
-            options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
-        )}
-        {isProd && (
-          <StyledSelect value={brigSel[0] || ""}
-            onChange={(v) => setBrigSel(v ? [v] : [])}
-            options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
-            searchable searchPlaceholder={T.fBrig}
-            className="w-full sm:w-56" />
-        )}
-        {/* all remaining filters live in one grouped button, parked on the right */}
-        <div className="ml-auto" />
-        <FilterPanel sections={filterSections} activeCount={filterActiveCount}
-          anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} forceGroup />
+      {/* one filter zone for the whole page — charts and table read the same state.
+          On phones it breaks into two tidy rows (date + shift · supervisor + filters);
+          sm:contents dissolves the row wrappers so desktop keeps one aligned line. */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
+        {/* row 3 — date + shift */}
+        <div className="flex items-center gap-2 sm:contents">
+          <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
+            max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
+          {isProd && (
+            <SegmentedToggle value={shiftTab}
+              onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
+              options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
+          )}
+        </div>
+        {/* row 4 — supervisor + filters */}
+        <div className="flex items-center gap-2 sm:contents">
+          {isProd && (
+            <StyledSelect value={brigSel[0] || ""}
+              onChange={(v) => setBrigSel(v ? [v] : [])}
+              options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
+              searchable searchPlaceholder={T.fBrig}
+              className="flex-1 min-w-0 sm:w-56 sm:flex-none" />
+          )}
+          {/* all remaining filters live in one grouped button, parked on the right */}
+          <div className="hidden sm:block sm:ml-auto" />
+          <FilterPanel sections={filterSections} activeCount={filterActiveCount}
+            anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} forceGroup />
+        </div>
       </div>
 
       {isLoading ? (
