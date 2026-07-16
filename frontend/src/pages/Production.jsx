@@ -553,11 +553,16 @@ export default function Production() {
 
   // Excel export of the Positions table → user's private Telegram chat (never a
   // browser download; the backend styles the sheet to match the on-screen table).
+  // `order` = the ids of the rows exactly as displayed (current search / team
+  // filter / sort), so the file mirrors what's on screen when the button is hit.
   async function exportExcel() {
     setExporting(true);
     try {
-      await api.get("/api/production/export.xlsx", {
-        params: { date, ...managerParam, lang, send: 1 },
+      await api.post("/api/production/export.xlsx", {
+        date,
+        ...managerParam,
+        lang,
+        order: viewRows.map((r) => r.id),
       });
       setExportDone(true);
       setTimeout(() => setExportDone(false), 4000);
