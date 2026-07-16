@@ -67,6 +67,20 @@ POSITIONS_HEADERS = {
 }
 POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru": "Позиции", "en": "Positions"}
 
+# Canonical column keys — index-aligned with every POSITIONS_HEADERS list and
+# identical to the frontend COLS keys. The export request sends the VISIBLE
+# subset in on-screen order (column picker), so formats/widths are keyed here
+# rather than by fixed position.
+POSITIONS_COL_KEYS = ["sap_code", "op", "name", "labor", "wc", "people", "vyp",
+                      "fact", "plan", "actual_labor", "labor_total", "minutes", "pareto"]
+POSITIONS_COL_FMT = {"labor": "0.##", "people": "0", "vyp": "0%", "fact": "0.##", "plan": "0.##",
+                     "actual_labor": "#,##0.#", "labor_total": "#,##0.#", "minutes": "#,##0.#",
+                     "pareto": "0%"}
+POSITIONS_COL_LEFT = {"sap_code", "name"}
+POSITIONS_COL_WIDTH = {"sap_code": 14, "op": 8, "name": 34, "labor": 8, "wc": 10, "people": 9,
+                       "vyp": 10, "fact": 9, "plan": 9, "actual_labor": 11, "labor_total": 12,
+                       "minutes": 9, "pareto": 9}
+
 
 # --------------------------------------------------------------------------- #
 # helpers
