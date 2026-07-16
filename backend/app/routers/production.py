@@ -186,6 +186,27 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
     catalog_keys = {(p.sap_code, p.work_center) for p in products}
     unknown = sorted({k for k in quantities if k not in catalog_keys})
 
+    # Operation / phase code («Опер.») per (SKU, work center), surfaced from the
+    # day's GLOBAL фаза upload (manager_id NULL) so the Positions table can show
+    # it. The op lives only in the raw фаза rows ([order, op, wc, sku, …]); the
+    # daily snapshot drops it. Distinct ops for one pair are joined with " / ".
+    faza_up = db.query(PPUpload).filter(
+        PPUpload.manager_id.is_(None), PPUpload.date == day,
+        PPUpload.file_type == "faza").first()
+    op_sets: dict[tuple[str, str], list[str]] = {}
+    for fr in (faza_up.rows if faza_up else []):
+        if len(fr) < 4:
+            continue
+        op, wc, sku = str(fr[1] or "").strip(), str(fr[2] or ""), str(fr[3] or "")
+        if not op or not sku or sku == "—":
+            continue
+        ops = op_sets.setdefault((sku, wc), [])
+        if op not in ops:
+            ops.append(op)
+    op_by_key = {k: " / ".join(sorted(v)) for k, v in op_sets.items()}
+    for prow in result["rows"]:
+        prow["op"] = op_by_key.get((prow["sap_code"], prow["work_center"]))
+
     recon = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == manager_id, PPReconciliation.date == day).first()
 

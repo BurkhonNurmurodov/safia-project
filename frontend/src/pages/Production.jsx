@@ -64,6 +64,7 @@ const hexToRgba = (hex, a) => {
 // Order matches the ABC Excel ("Sheet1 ...").
 const COLS = [
   { key: "sap_code", labelKey: "production.col.sapCode", align: "left" },
+  { key: "op", labelKey: "production.col.op", align: "center", hintKey: "production.col.opHint" },
   { key: "name", labelKey: "production.col.name", align: "left" },
   { key: "labor", labelKey: "production.col.labor", align: "center", hintKey: "production.col.laborHint" },
   { key: "wc", labelKey: "production.col.wc", align: "center" },
@@ -83,6 +84,7 @@ const COLS = [
 const sortVal = (r, key) => {
   switch (key) {
     case "sap_code":     return r.sap_code;
+    case "op":           return r.op ?? null;
     case "name":         return r.name;
     case "labor":        return r.has_labor ? r.labor_time : null;
     case "wc":           return r.work_center;
@@ -872,6 +874,7 @@ export default function Production() {
                       cursor: selectable ? "pointer" : undefined,
                     }}>
                     <td className="px-3 py-2 text-left font-mono" style={{ color: "var(--text-3)" }}>{r.sap_code}</td>
+                    <td className="px-3 py-2 text-center font-mono" style={{ color: "var(--text-3)" }}>{r.op ?? "—"}</td>
                     <td className="px-3 py-2 text-left max-w-[220px]">
                       <span className="block max-w-[200px] truncate" title={r.name}>{r.name}</span>
                     </td>
