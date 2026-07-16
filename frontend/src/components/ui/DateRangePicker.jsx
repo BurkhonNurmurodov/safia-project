@@ -117,6 +117,9 @@ export default function DateRangePicker({
   single = false,
   max = null,          // ISO upper bound — days after it are muted/unpickable
   weekday = false,     // single mode: prefix the trigger label with the weekday
+  compactLabel = false, // show a numeric dd.mm.yy label below sm, verbose above —
+                        // for tight mobile toolbars where the spelled-out month
+                        // range can't share a row with another control
   triggerClassName = "px-2.5 py-1.5 text-xs",
 }) {
   const { t } = useLang();
