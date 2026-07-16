@@ -20,6 +20,17 @@ from app.models import Translation
 # Display overrides that may carry a Cyrillic sheet spelling of a brigadir's name.
 SHEET_LANGS = ("ru", "uz_cyrl")
 
+# Sheet spellings that no longer equal a unit's canonical name because the profile
+# was renamed. sheet_alias_map matches production/headcount/downtime rows to a unit
+# by EXACT name (canonical + Cyrillic overrides), so renaming the canonical orphans
+# every row the sheets still spell the old way. Pin the old sheet spelling to the
+# new canonical here; applied only when that unit is in the requested manager set.
+#   • "Suvonov Elshod OF" → "Suvonov Elshod Ofr." — the "OF" disambiguator suffix
+#     was part of the sheet join key; the profile was relabelled to "Ofr.".
+_SHEET_ALIAS_PINS = {
+    "Suvonov Elshod OF": "Suvonov Elshod Ofr.",
+}
+
 
 def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
     """Return ``{sheet_spelling: canonical_name}`` covering every known spelling
@@ -38,6 +49,10 @@ def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
         val = (t.value or "").strip()
         if val:
             alias[val] = key_to_canon[t.key]
+    # Renamed-unit pins: keep the old sheet spelling resolving to the new canonical.
+    for sheet_spelling, pinned in _SHEET_ALIAS_PINS.items():
+        if pinned in canon:
+            alias[sheet_spelling] = pinned
     return alias
 
 
