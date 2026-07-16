@@ -69,7 +69,7 @@ def get_leaders(
                 "uid": r.submission_id or f"row-{r.id}",
                 "date": r.date,
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
-                "supervisor": r.supervisor,
+                "supervisor": _relabel(r.supervisor),
                 "leader": r.leader,
                 "completion": float(r.completion or 0),
                 "tasks": r.tasks or [],
