@@ -335,28 +335,27 @@ def export_positions(
         tl = r.get("total_labor")
         al = r.get("actual_labor")
         vyp = (al / tl) if (tl and al is not None) else None
-        ws.append([
-            r.get("sap_code") or "",
-            r.get("op") or dash_ch,
-            r.get("name") or "",
-            _num(r.get("labor_time")) if r.get("has_labor") else dash_ch,
-            r.get("work_center") or "",
-            _num(r.get("people"), missing_dash=False),
-            _num(vyp),
-            _num(r.get("actual_qty"), missing_dash=False),
-            _num(r.get("plan_qty"), missing_dash=False),
-            _num(al),
-            _num(tl),
-            _num(r.get("minutes")),
-            _num(r.get("pareto"), missing_dash=False),
-        ])
+        vals = {
+            "sap_code": r.get("sap_code") or "",
+            "op": r.get("op") or dash_ch,
+            "name": r.get("name") or "",
+            "labor": _num(r.get("labor_time")) if r.get("has_labor") else dash_ch,
+            "wc": r.get("work_center") or "",
+            "people": _num(r.get("people"), missing_dash=False),
+            "vyp": _num(vyp),
+            "fact": _num(r.get("actual_qty"), missing_dash=False),
+            "plan": _num(r.get("plan_qty"), missing_dash=False),
+            "actual_labor": _num(al),
+            "labor_total": _num(tl),
+            "minutes": _num(r.get("minutes")),
+            "pareto": _num(r.get("pareto"), missing_dash=False),
+        }
+        ws.append([vals[k] for k in col_keys])
 
-    # Per-column number formats + alignment — mirror the UI's precision.
-    #  A sap  B op  C name  D labor  E team  F people  G vyp  H fact  I plan
-    #  J actL  K totL  L min  M pareto
-    fmts = {4: "0.##", 6: "0", 7: "0%", 8: "0.##", 9: "0.##",
-            10: "#,##0.#", 11: "#,##0.#", 12: "#,##0.#", 13: "0%"}
-    left_cols = {1, 3}
+    # Per-column number formats + alignment — mirror the UI's precision, keyed
+    # like the frontend columns so a hidden/reordered subset stays correct.
+    fmts = {i: POSITIONS_COL_FMT[k] for i, k in enumerate(col_keys, start=1) if k in POSITIONS_COL_FMT}
+    left_cols = {i for i, k in enumerate(col_keys, start=1) if k in POSITIONS_COL_LEFT}
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ncols):
         for c in row:
             c.border = border
@@ -365,10 +364,15 @@ def export_positions(
             if nf and isinstance(c.value, (int, float)):
                 c.number_format = nf
 
-    widths = [14, 8, 34, 8, 10, 9, 10, 9, 9, 11, 12, 9, 9]
-    for i, w in enumerate(widths[:ncols], start=1):
-        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = w
-    ws.freeze_panes = "D3"
+    for i, k in enumerate(col_keys, start=1):
+        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = POSITIONS_COL_WIDTH.get(k, 10)
+    # Freeze the two header rows; keep the identity columns frozen too while
+    # Name still sits within the first three columns (it can be dragged away).
+    name_idx = col_keys.index("name") + 1 if "name" in col_keys else 0
+    if 0 < name_idx <= 3 and name_idx < ncols:
+        ws.freeze_panes = ws.cell(row=3, column=name_idx + 1).coordinate
+    else:
+        ws.freeze_panes = "A3"
 
     bio = BytesIO()
     wb.save(bio)
