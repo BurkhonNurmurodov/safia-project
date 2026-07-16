@@ -41,33 +41,33 @@ def get_leaders(
         .all()
     )
 
-    if role == "supervisor":
-        # full_name on a supervisor's JWT is the role-scoped unit (manager) name;
-        # fall back to the Manager row by role_id in case the token is older.
-        names = {_norm(payload.get("full_name"))}
-        mgr = db.query(Manager).filter_by(id=payload.get("role_id")).first()
-        if mgr:
-            names.add(_norm(mgr.name))
-        names.discard("")
-        rows = [r for r in rows if _norm(_relabel(r.supervisor)) in names]
-
-    # Each row's (relabeled) supervisor resolves to a shift via the Manager table.
+    # Each row's (relabeled) supervisor resolves to a unit via the Manager table.
     # The leaders sheet's «Бригадир ФИО» column is a FULL passport-form name in
     # either alphabet ("XAKIMOV RUSLAN ..."), while Manager.name is the short
     # canonical unit name ("Хакимов Руслан") — so the fuzzy supervisor_match (the
     # same matcher the QA register uses) is what bridges the alphabet + short-vs-
-    # full-form gap and returns each unit's shift. A short-name matcher like
-    # sheet_alias_map only catches the few rows already in short form, which is why
-    # the mismatched majority collapsed onto one shift. Lets the client offer a
-    # shift filter without a separate, auth-gated /api/staff/supervisors round-trip
-    # (top-managers can't call it). Unmatched names carry a null shift.
+    # full-form gap. Both the supervisor scoping below and the shift tagging hang
+    # off this one map; a short-name matcher like sheet_alias_map only catches the
+    # few rows already in short form. Lets the client offer a shift filter without
+    # a separate, auth-gated /api/staff/supervisors round-trip (top-managers can't
+    # call it). Unmatched names carry a null shift.
     managers = db.query(Manager).all()
-    sup_shift = {
-        name: info["shift"]
-        for name, info in supervisor_match(
-            managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
-        ).items()
-    }
+    sup_match = supervisor_match(
+        managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
+    )
+
+    if role == "supervisor":
+        # Scope by the matched unit id, not name equality: the sheet name never
+        # string-equals the JWT/Manager short canonical name (alphabet + patronymic
+        # + spelling drift), which used to drop every row for supervisors.
+        rows = [
+            r
+            for r in rows
+            if (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
+            == payload.get("role_id")
+        ]
+
+    sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
     return {
         "role": role,
