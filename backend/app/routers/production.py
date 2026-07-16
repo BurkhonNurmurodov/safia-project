@@ -251,6 +251,113 @@ def get_dashboard(
     return _build_dashboard(db, mid, _parse_date(date))
 
 
+@router.get("/api/production/export.xlsx")
+def export_positions(
+    date: Optional[str] = Query(None),
+    manager_id: Optional[int] = Query(None),
+    lang: str = Query("ru"),
+    send: int = Query(0),           # 1 = send to caller's Telegram chat instead of streaming
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """Excel export of the Positions table — same rows/columns/order as the
+    dashboard, styled to mirror the on-screen table, delivered to the caller's
+    private Telegram chat (send=1)."""
+    mid = _resolve_manager_id(payload, manager_id, db)
+    day = _parse_date(date)
+    dash = _build_dashboard(db, mid, day)
+    rows = dash["rows"]
+
+    headers = POSITIONS_HEADERS.get(lang, POSITIONS_HEADERS["ru"])
+    title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
+    mgr_name = dash.get("manager_name") or ""
+    day_h = day.strftime("%d.%m.%Y")
+    dash_ch = "—"  # em-dash for missing cells, matches the UI
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title_word[:31]
+
+    gold = PatternFill("solid", fgColor="C8973F")
+    head_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="D9D9D9")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+    left = Alignment(horizontal="left", vertical="center")
+    ncols = len(headers)
+
+    # Row 1: title (merged across all columns). Row 2: gold header. Data from row 3.
+    ws.append([f"{title_word} — {mgr_name}  ·  {day_h}" if mgr_name else f"{title_word}  ·  {day_h}"])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    ws["A1"].font = Font(bold=True, size=12)
+    ws["A1"].alignment = left
+
+    ws.append(headers)
+    for c in ws[2]:
+        c.fill, c.font, c.alignment, c.border = gold, head_font, center, border
+
+    def _num(v, missing_dash=True):
+        """Numeric value, or the em-dash for None (matches the UI's '—')."""
+        return v if v is not None else (dash_ch if missing_dash else 0)
+
+    for r in rows:
+        tl = r.get("total_labor")
+        al = r.get("actual_labor")
+        vyp = (al / tl) if (tl and al is not None) else None
+        ws.append([
+            r.get("sap_code") or "",
+            r.get("op") or dash_ch,
+            r.get("name") or "",
+            _num(r.get("labor_time")) if r.get("has_labor") else dash_ch,
+            r.get("work_center") or "",
+            _num(r.get("people"), missing_dash=False),
+            _num(vyp),
+            _num(r.get("actual_qty"), missing_dash=False),
+            _num(r.get("plan_qty"), missing_dash=False),
+            _num(al),
+            _num(tl),
+            _num(r.get("minutes")),
+            _num(r.get("pareto"), missing_dash=False),
+        ])
+
+    # Per-column number formats + alignment — mirror the UI's precision.
+    #  A sap  B op  C name  D labor  E team  F people  G vyp  H fact  I plan
+    #  J actL  K totL  L min  M pareto
+    fmts = {4: "0.##", 6: "0", 7: "0%", 8: "0.##", 9: "0.##",
+            10: "#,##0.#", 11: "#,##0.#", 12: "#,##0.#", 13: "0%"}
+    left_cols = {1, 3}
+    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ncols):
+        for c in row:
+            c.border = border
+            c.alignment = left if c.column in left_cols else center
+            nf = fmts.get(c.column)
+            if nf and isinstance(c.value, (int, float)):
+                c.number_format = nf
+
+    widths = [14, 8, 34, 8, 10, 9, 10, 9, 9, 11, 12, 9, 9]
+    for i, w in enumerate(widths[:ncols], start=1):
+        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = w
+    ws.freeze_panes = "D3"
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    fname = f"positions_{day.isoformat()}.xlsx"
+    if send:
+        from app.telegram_bot import bot
+        caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
+        try:
+            bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+        return {"ok": True}
+    return StreamingResponse(
+        bio,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.get("/api/production/dates")
 def get_dates(
     manager_id: Optional[int] = Query(None),
