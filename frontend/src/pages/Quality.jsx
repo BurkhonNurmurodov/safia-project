@@ -1170,7 +1170,7 @@ export default function Quality() {
                 ) : supStatus.map((s) => {
                   const cell = (v, color) => {
                     const text = supStatMode === "pct"
-                      ? `${s.total ? Math.round((v / s.total) * 100) : 0}%`
+                      ? `${s.total ? ((v / s.total) * 100).toFixed(2) : "0.00"}%`
                       : v.toLocaleString("ru-RU");
                     return (
                       <td className="px-3 py-2 text-right tabular-nums font-semibold"
