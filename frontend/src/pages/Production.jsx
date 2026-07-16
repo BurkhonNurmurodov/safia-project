@@ -827,9 +827,22 @@ export default function Production() {
         icon={Boxes}
         title={t("production.positions")}
         right={
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-            {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+              {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Download size={14} />}
+              loading={exporting}
+              disabled={loading || rows.length === 0}
+              onClick={exportExcel}
+              className="whitespace-nowrap"
+            >
+              {t("production.exportExcel")}
+            </Button>
+          </div>
         }
         toolbar={!loading && (
           <>
