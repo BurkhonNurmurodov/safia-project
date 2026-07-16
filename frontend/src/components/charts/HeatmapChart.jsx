@@ -123,6 +123,7 @@ function SingleGrid({
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
+  const isMobile = useIsMobile(); // phones: hide the pinned AVG/MAX/MIN column
   const [hoveredRow,  setHoveredRow]  = useState(null);
   const [hoveredCol,  setHoveredCol]  = useState(null);
   const [hoveredCell, setHoveredCell] = useState(null);
