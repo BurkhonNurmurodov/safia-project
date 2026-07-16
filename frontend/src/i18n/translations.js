@@ -1381,6 +1381,7 @@ const t = {
     "production.minUnit":          "min",
     "production.noUnits":          "Yacheykalar yo'q",
     "production.positions":        "Pozitsiyalar",
+    "production.exportExcel":      "Excelga eksport",
     "production.noDataForDate":    "Bu sana uchun ma'lumot yo'q",
     "production.col.sapCode":      "SAP kod",
     "production.col.op":           "Faza",
