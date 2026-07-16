@@ -60,12 +60,20 @@ def get_leaders(
         names.discard("")
         rows = [r for r in rows if _norm(_relabel(r.supervisor)) in names]
 
-    # Each row's (relabeled) supervisor resolves to a shift via the Manager table,
-    # matched with the same tolerant _norm as the supervisor scoping above. Lets
-    # the client offer a shift filter without a separate, auth-gated
-    # /api/staff/supervisors round-trip (top-managers can't call it). Unmatched
-    # names carry a null shift.
-    mgr_shift = {_norm(m.name): m.shift for m in db.query(Manager).all()}
+    # Each row's (relabeled) supervisor resolves to a shift via the Manager table.
+    # The leaders sheet spells brigadirs in either alphabet (its «Бригадир ФИО»
+    # column is stored raw) while Manager.name is the canonical Latin name — so we
+    # resolve through sheet_alias_map (every known spelling → canonical), exactly
+    # like the downtime / brigadirs / production loaders, then fold on _norm so
+    # case/whitespace drift doesn't matter either. A plain _norm match would miss
+    # every Cyrillic sheet name. This lets the client offer a shift filter without
+    # a separate, auth-gated /api/staff/supervisors round-trip (top-managers can't
+    # call it). Names with no known spelling (or a manager with no shift set) carry
+    # a null shift.
+    managers = db.query(Manager).all()
+    name_shift = {m.name: m.shift for m in managers}
+    alias = sheet_alias_map(db, name_shift.keys())
+    mgr_shift = {_norm(spelling): name_shift.get(canon) for spelling, canon in alias.items()}
 
     return {
         "role": role,
