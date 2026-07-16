@@ -480,6 +480,7 @@ export default function Tasks() {
   // (presets + calendar popover); defaults to the last 7 days.
   const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = useState(() => localTodayIso());
+  const [fShift, setFShift] = useState(null);    // admin only — null = all shifts | 1 | 2
   const [fSup, setFSup] = useState("All");       // admin only
   const [fLeader, setFLeader] = useState("All"); // admin + supervisor
   const [search, setSearch] = useState("");
