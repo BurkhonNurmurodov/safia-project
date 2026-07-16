@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Maximize2, Minimize2, Info } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
+import useIsMobile from "../../hooks/useIsMobile";
 import { orderedSegments } from "../../utils/segments";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
