@@ -1005,7 +1005,7 @@ export default function Production() {
             <tbody>
               {loading && Array.from({ length: 8 }).map((_, i) => (
                 <tr key={`sk-${i}`}>
-                  {COLS.map((c, j) => (
+                  {visibleCols.map((c, j) => (
                     <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                   ))}
                 </tr>
