@@ -459,16 +459,40 @@ export default function Leaders() {
     }
     return map;
   }, [rows]);
-  const supervisors = useMemo(() => Object.keys(supLeaderMap).filter((s) => s !== "All").sort(), [supLeaderMap]);
-  const leaderOptions = useMemo(() => [...(supLeaderMap[fSup] || [])].sort(), [supLeaderMap, fSup]);
+  // supervisor → shift (from the row the backend tags with Manager.shift), so a
+  // shift filter can also narrow the supervisor picker. An unmatched supervisor
+  // has no shift and drops out once a shift is chosen.
+  const supShift = useMemo(() => {
+    const m = {};
+    for (const r of rows) if (r.supervisor && r.supervisor !== "N/A") m[r.supervisor] = r.shift;
+    return m;
+  }, [rows]);
+  const supervisors = useMemo(
+    () => Object.keys(supLeaderMap)
+      .filter((s) => s !== "All" && (fShift == null || supShift[s] === fShift))
+      .sort(),
+    [supLeaderMap, supShift, fShift]);
+  // Leader options track the active supervisor AND shift so the picker never
+  // offers a leader whose rows aren't in the current scope.
+  const leaderOptions = useMemo(() => {
+    const set = new Set();
+    for (const r of rows) {
+      if (!r.leader || r.leader === "N/A") continue;
+      if (fShift != null && r.shift !== fShift) continue;
+      if (fSup !== "All" && r.supervisor !== fSup) continue;
+      set.add(r.leader);
+    }
+    return [...set].sort();
+  }, [rows, fShift, fSup]);
 
   // date-period bounds — plain ISO-string comparison (rows carry "YYYY-MM-DD")
   const filtered = useMemo(() => rows.filter((r) => {
     const d = String(r.date).slice(0, 10);
     return (!startDate || d >= startDate) && (!endDate || d <= endDate)
+      && (fShift == null || r.shift === fShift)
       && (fSup === "All" || r.supervisor === fSup)
       && (fLeader === "All" || r.leader === fLeader);
-  }), [rows, startDate, endDate, fSup, fLeader]);
+  }), [rows, startDate, endDate, fShift, fSup, fLeader]);
 
   // The trend chart uses a window widened to at least the last 7 days (ending
   // at the selected end date), so short periods still draw a meaningful line.
