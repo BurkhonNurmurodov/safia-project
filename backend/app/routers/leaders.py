@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import LeaderChecklist, Manager
 from app.permissions import require_page
+from app.services.name_map import _norm as _fold_name
 
 router = APIRouter(prefix="/api", tags=["leaders"])
 
@@ -15,6 +16,20 @@ def _norm(name: str | None) -> str:
     sheets (manager unit names vs the leaders sheet's brigadir column): uppercase
     and collapse internal whitespace."""
     return re.sub(r"\s+", " ", (name or "").strip()).upper()
+
+
+# Leaders-form supervisor relabels. The checklist form tags some rows with a
+# person's name that doesn't match the supervisor unit those rows belong to;
+# correct them on read so the dashboard groups, scopes and ranks them under the
+# right unit (no re-sync needed). Keyed on the folded name skeleton so any
+# alphabet/spelling of the source resolves to the same entry.
+_SUPERVISOR_RELABEL = {
+    _fold_name("Abdugamitov Muhammad"): "Suvonov Elshod OF",
+}
+
+
+def _relabel(name: str | None) -> str:
+    return _SUPERVISOR_RELABEL.get(_fold_name(name or ""), name)
 
 
 @router.get("/leaders")
