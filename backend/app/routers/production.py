@@ -52,6 +52,21 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 PAGE = "production"
 
+# Positions-table column headers + sheet title per language — mirror the
+# frontend production.col.* / production.positions keys so the Excel export
+# reads exactly like the on-screen table.
+POSITIONS_HEADERS = {
+    "uz":      ["SAP kod", "Faza", "Nomi", "Mehnat", "Jamoa", "ODAMLAR", "Bajarish %",
+                "Fakt", "REJA", "Fakt mehnat", "Umumiy mehnat", "Daqiqa", "Pareto"],
+    "uz_cyrl": ["SAP код", "Фаза", "Номи", "Меҳнат", "Жамоа", "ОДАМЛАР", "Бажариш %",
+                "Факт", "РЕЖА", "Факт меҳнат", "Умумий меҳнат", "Дақиқа", "Парето"],
+    "ru":      ["Сап код", "Опер.", "Наименование", "Труд.", "Команда", "ЛЮДИ", "Вып %",
+                "Факт", "ПЛАН", "Факт труд.", "Общ. труд.", "Минут", "Парето"],
+    "en":      ["SAP code", "Phase", "Name", "Labor", "Team", "PEOPLE", "Compl. %",
+                "Actual", "PLAN", "Actual labor", "Total labor", "Minutes", "Pareto"],
+}
+POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru": "Позиции", "en": "Positions"}
+
 
 # --------------------------------------------------------------------------- #
 # helpers
