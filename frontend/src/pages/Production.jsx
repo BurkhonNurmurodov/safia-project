@@ -996,7 +996,7 @@ export default function Production() {
       >
             <thead>
               <tr>
-                {COLS.map((c) => (
+                {visibleCols.map((c) => (
                   <Th key={c.key} label={t(c.labelKey)} k={c.key} sort={sort} onSort={toggleSort}
                     align={c.align} hint={c.hintKey ? t(c.hintKey) : undefined} />
                 ))}
