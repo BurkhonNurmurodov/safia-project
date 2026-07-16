@@ -73,7 +73,7 @@ const TXT = {
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
   },
   uz_cyrl: {
-    title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр",
+    title: "Лидер назорати", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр", shift: "Смена",
     supervisor: "Бригадир", allSups: "Барча бригадирлар", leader: "Лидер", allLeaders: "Барча лидерлар",
     trend: "Бажарилиш динамикаси", taskTitle: "Вазифалар кесимида муваффақият",
     standing: "Лидерлар рейтинги", supStanding: "Бригадирлар рейтинги",
