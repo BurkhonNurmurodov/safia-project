@@ -640,6 +640,16 @@ export default function Production() {
 
   return (
     <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
+      {/* Export success toast — fixed top-right, outside normal flow */}
+      {exportDone && (
+        <div
+          className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: "#22c55e", color: "#fff", maxWidth: 320, boxShadow: "0 8px 24px rgba(34,197,94,0.35)" }}
+        >
+          <CheckCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{t("staff.exportToast")}</span>
+        </div>
+      )}
       {/* brigadir picker — supervisors are pinned to their own unit (no picker);
           shift-managers pick within their shift, top-managers/admins across all */}
       {canPickManager && (
