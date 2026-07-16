@@ -4239,6 +4239,7 @@ const t = {
     "production.minUnit":          "мин",
     "production.noUnits":          "Нет участков",
     "production.positions":        "Позиции",
+    "production.exportExcel":      "Экспорт в Excel",
     "production.noDataForDate":    "Нет данных за эту дату",
     "production.col.sapCode":      "Сап код",
     "production.col.op":           "Опер.",
