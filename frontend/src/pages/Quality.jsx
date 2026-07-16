@@ -1003,7 +1003,8 @@ export default function Quality() {
     <Button size="lg" variant="secondary" loading={refresh.isPending}
       icon={!refresh.isPending ? <RefreshCw size={14} /> : null}
       onClick={() => refresh.mutate()}>
-      {refresh.isPending ? T.refreshing : T.refresh}
+      {/* icon-only on phones — the label returns at sm+ where the toolbar has room */}
+      <span className="hidden sm:inline">{refresh.isPending ? T.refreshing : T.refresh}</span>
     </Button>
   );
 
