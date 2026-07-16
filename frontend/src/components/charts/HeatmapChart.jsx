@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useChartTheme } from "../../hooks/useChartTheme";
+import useIsMobile from "../../hooks/useIsMobile";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import PendingInfoModal from "../ui/PendingInfoModal";
