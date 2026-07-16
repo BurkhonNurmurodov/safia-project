@@ -88,7 +88,7 @@ def get_leaders(
                 "date": r.date,
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
                 "supervisor": _relabel(r.supervisor),
-                "shift": mgr_shift.get(_norm(_relabel(r.supervisor))),
+                "shift": sup_shift.get(_relabel(r.supervisor)),
                 "leader": r.leader,
                 "completion": float(r.completion or 0),
                 "tasks": r.tasks or [],
