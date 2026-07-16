@@ -584,11 +584,12 @@ export default function Tasks() {
       const day = createdDay(r);
       if (chartStart && !(day && day >= chartStart)) return false;
       if (endDate && !(day && day <= endDate)) return false;
+      if (fShift != null && r.supervisor_shift !== fShift) return false;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
       if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
       return true;
     });
-  }, [rows, scoped, chartStart, startDate, endDate, fSup, fLeader]);
+  }, [rows, scoped, chartStart, startDate, endDate, fShift, fSup, fLeader]);
 
   // Table filters (status multi-select + free text) over the scoped rows.
   const tableFilterPred = useMemo(() => {
