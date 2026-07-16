@@ -122,6 +122,17 @@ class AppSetting(Base):
     value = Column(String, nullable=False)
 
 
+class UiPref(Base):
+    """Per-profile UI preferences (table column visibility/order, …). Keyed by
+    the viewer's ACTIVE profile key ("role:id"); accounts without a bound
+    profile degrade to "acct:<telegram id>" so persistence still works."""
+    __tablename__ = "ui_prefs"
+
+    profile_key = Column(String, primary_key=True)
+    pref_key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)  # JSON blob
+
+
 class Admin(Base):
     """Telegram IDs with admin rights. Seeded once from ADMIN_TELEGRAM_ID in
     .env (comma-separated); after that the table is the source of truth and
