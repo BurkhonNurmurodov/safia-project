@@ -174,11 +174,12 @@ export default function ComparisonTable({
   // pair (P + A) of two equal sub-columns; the summary is one more pair.
   const padCount   = Math.max(0, BASIS_DAYS - dates.length);
   const effDays    = Math.max(BASIS_DAYS, dates.length);
+  const sumPairs   = isMobile ? 0 : 1;  // summary pair is dropped on phones
   const pairW      = containerW > 0
-    ? Math.max(CELL_W * 2, 2 * Math.floor((containerW - LABEL_W) / (2 * (BASIS_DAYS + 1))))
+    ? Math.max(CELL_W * 2, 2 * Math.floor((containerW - LABEL_W) / (2 * (BASIS_DAYS + sumPairs))))
     : CELL_W * 2;
   const colW       = pairW / 2;   // width of one P or A sub-column (integer)
-  const tableWidth = LABEL_W + (effDays + 1) * pairW;
+  const tableWidth = LABEL_W + (effDays + sumPairs) * pairW;
   const pads       = Array.from({ length: padCount });
 
   // Summary column pinned to the right; data scrolls underneath it.
