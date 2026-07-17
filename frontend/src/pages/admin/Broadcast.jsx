@@ -139,7 +139,6 @@ export default function Broadcast() {
   };
 
   const AttachIcon = attachment ? ATTACH_ICONS[attachKind(attachment)] : null;
-  const sendingRow = history?.find((r) => r.status === "sending");
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-8 space-y-6">
