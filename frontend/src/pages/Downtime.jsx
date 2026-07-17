@@ -50,6 +50,22 @@ export default function Downtime() {
     enabled: ready,
   });
 
+  // Full (period-independent) supervisor list for the inline picker — shares the
+  // cache with the header Filters drawer so it's effectively free.
+  const { data: allSupervisors = [] } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const supOptions = useMemo(
+    () => [...allSupervisors]
+      .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
+      .map((b) => ({ value: String(b.manager_id), label: tl(b.name) })),
+    [allSupervisors, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The inline dropdown mirrors the global brigadir filter: a single pick maps to
+  // one id, "All" clears it. A multi-select made in the drawer shows as "All".
+  const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
+
   const summary     = data?.summary || [];
   const catNames    = data?.cat_names || [];
   const flaggedCount  = summary.filter((s) => s.flagged_days > 0).length;
