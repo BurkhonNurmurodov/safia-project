@@ -8,6 +8,7 @@ const t = {
     "nav.planFulfillment": "Plan Bajarish",
     "nav.idleTime":        "Ojidaniya",
     "nav.admin":           "Admin",
+    "nav.support":         "Qo'llab-quvvatlash bilan bog'lanish",
     "nav.staff":           "Verifix to'g'irlash",
     "nav.daily":           "Kunlik",
     "nav.production":      "Ishlab chiqarish",
