@@ -463,20 +463,46 @@ export default function Leaderboard() {
     <Layout title={t("leaderboard.subtitle")} showFilters={false}>
       <div className="flex flex-col gap-4 max-w-[1200px] mx-auto">
 
-        {/* ── page toolbar (single filter zone) ── */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <SegmentedToggle
-            value={period}
-            onChange={setPeriod}
-            options={[["week", t("leaderboard.period.week")], ["month", t("leaderboard.period.month")], ["quarter", t("leaderboard.period.quarter")]]}
-          />
-          <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ color: "var(--brand-text)", background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
-            {t("leaderboard.demoBadge")}
-          </span>
-          <div className="flex-1" />
-          <Button size="lg" icon={<Download size={14} />} title={t("leaderboard.exportHint")} onClick={() => onDemoExport(setTip)}>
-            {t("leaderboard.export")}
-          </Button>
+        {/* ── page toolbar (single filter zone): the standard inline period +
+            shift + supervisor selectors, plus demo badge + export on the right ── */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <div className="sm:w-72">
+            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
+            <DateRangePicker
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              setDateFrom={setDateFrom}
+              setDateTo={setDateTo}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+            <SegmentedToggle
+              value={shiftF}
+              onChange={setShiftF}
+              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+            />
+          </div>
+          <div className="sm:w-64 min-w-0">
+            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
+            <StyledSelect
+              value={supSel}
+              onChange={(v) => setSupF(v === "All" ? null : Number(v))}
+              options={supFilterOptions}
+              searchable
+              searchPlaceholder={t("filter.searchBrigadirs")}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-2.5 sm:ml-auto sm:self-end">
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ color: "var(--brand-text)", background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+              {t("leaderboard.demoBadge")}
+            </span>
+            <Button size="lg" icon={<Download size={14} />} title={t("leaderboard.exportHint")} onClick={() => onDemoExport(setTip)}>
+              {t("leaderboard.export")}
+            </Button>
+          </div>
         </div>
 
         {/* ── podium ── */}
