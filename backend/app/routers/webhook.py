@@ -53,6 +53,9 @@ async def telegram_webhook(request: Request):
             logger.warning("Duplicate update_id %s — skipped", update.update_id)
             return {"ok": True}
 
+        if _is_non_private(update):
+            return {"ok": True}
+
         bot.process_new_updates([update])
 
     except Exception:
