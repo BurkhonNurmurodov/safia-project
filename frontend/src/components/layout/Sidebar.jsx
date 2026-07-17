@@ -251,7 +251,14 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               href="https://t.me/burkhon_n"
               target="_blank"
               rel="noopener noreferrer"
-              onClick={onClose}
+              onClick={(e) => {
+                const tg = window.Telegram?.WebApp;
+                if (tg?.openTelegramLink) {
+                  e.preventDefault();
+                  tg.openTelegramLink("https://t.me/burkhon_n");
+                }
+                onClose?.();
+              }}
               title={!expanded ? t("nav.support") : undefined}
               className="flex items-center rounded-lg text-sm transition-colors"
               style={{
