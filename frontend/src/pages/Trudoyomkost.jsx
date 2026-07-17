@@ -140,7 +140,7 @@ function Kpi({ label, value, sub, icon: Icon, accent, primary, subColor }) {
 export default function Trudoyomkost() {
   const { lang, t } = useLang();
   const { tl } = useTranslit();
-  const { dateFrom, dateTo, brigadirIds, shift, unit, setUnit, ready } = useFilters();
+  const { dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift, unit, setUnit, ready } = useFilters();
   const { gridColor, labelColor, legendColor } = useChartTheme();
 
   const T = TXT[lang] || TXT.uz;
