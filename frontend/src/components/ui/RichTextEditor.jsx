@@ -39,13 +39,30 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Inline-CSS formats: when formats are combined, execCommand often styles the
+// EXISTING element instead of nesting a new tag (e.g. bold over an <i>
+// selection yields <i style="font-weight:bold">) — read those styles as
+// entities too, or the second format silently disappears from the DM.
+function styleFormats(node) {
+  const st = node.style;
+  if (!st || !st.length) return [];
+  const out = [];
+  const fw = st.fontWeight;
+  if (fw === "bold" || fw === "bolder" || parseInt(fw, 10) >= 600) out.push("b");
+  if (st.fontStyle === "italic" || st.fontStyle === "oblique") out.push("i");
+  const td = `${st.textDecorationLine || st.textDecoration || ""}`;
+  if (td.includes("underline")) out.push("u");
+  if (td.includes("line-through")) out.push("s");
+  return out;
+}
+
 // DOM → { html, text }: Telegram HTML with real newlines + entity-free text.
 export function serializeTelegram(root) {
   let html = "", text = "", atLineStart = true;
   const nl = () => {
     if (!atLineStart && (html || text)) { html += "\n"; text += "\n"; atLineStart = true; }
   };
-  const walk = (node) => {
+  const walk = (node, active) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const v = node.nodeValue;
       if (!v) return;
@@ -56,44 +73,42 @@ export function serializeTelegram(root) {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = node.tagName.toLowerCase();
     if (tag === "br") { html += "\n"; text += "\n"; atLineStart = true; return; }
+
+    // Every entity this element contributes: its tag + its inline styles,
+    // minus what an ancestor already opened.
     const spoiler = tag === "tg-spoiler" || (tag === "span" && node.classList.contains("tg-spoiler"));
-    const inline = spoiler ? "tg-spoiler" : INLINE_TAGS[tag];
-    if (inline) {
-      html += `<${inline}>`;
-      node.childNodes.forEach(walk);
-      html += `</${inline}>`;
-      return;
-    }
-    if (tag === "a") {
-      const href = (node.getAttribute("href") || "").trim();
-      if (/^(https?|tg):/i.test(href)) {
-        html += `<a href="${escapeHtml(href).replace(/"/g, "&quot;")}">`;
-        node.childNodes.forEach(walk);
-        html += "</a>";
-      } else {
-        node.childNodes.forEach(walk);
-      }
-      return;
-    }
+    const fmts = [];
+    const tagFmt = spoiler ? "tg-spoiler" : INLINE_TAGS[tag];
+    if (tagFmt) fmts.push(tagFmt);
+    for (const f of styleFormats(node)) if (!fmts.includes(f)) fmts.push(f);
+    const opened = fmts.filter((f) => !active.has(f));
+    const nextActive = opened.length ? new Set([...active, ...opened]) : active;
+    const open = () => { for (const f of opened) html += `<${f}>`; };
+    const close = () => { for (const f of [...opened].reverse()) html += `</${f}>`; };
+
+    const isBlock = tag === "div" || tag === "p" || tag === "pre" || tag === "blockquote";
+    if (isBlock) nl();
     if (tag === "pre" || tag === "blockquote") {
-      nl();
       html += `<${tag}>`;
       atLineStart = true; // the opening tag itself starts the block's line
-      node.childNodes.forEach(walk);
-      html += `</${tag}>`;
-      nl();
-      return;
     }
-    if (tag === "div" || tag === "p") {
-      nl();
-      node.childNodes.forEach(walk);
-      nl();
-      return;
+
+    let href = null;
+    if (tag === "a") {
+      const h = (node.getAttribute("href") || "").trim();
+      if (/^(https?|tg):/i.test(h)) href = h;
     }
-    // Unknown wrapper (span, font, …) — keep its text, drop the tag.
-    node.childNodes.forEach(walk);
+
+    open();
+    if (href) html += `<a href="${escapeHtml(href).replace(/"/g, "&quot;")}">`;
+    node.childNodes.forEach((c) => walk(c, nextActive));
+    if (href) html += "</a>";
+    close();
+
+    if (tag === "pre" || tag === "blockquote") html += `</${tag}>`;
+    if (isBlock) nl();
   };
-  root.childNodes.forEach(walk);
+  root.childNodes.forEach((c) => walk(c, new Set()));
   html = html.replace(/\n+$/, "");
   text = text.replace(/\n+$/, "");
   return { html, text };
