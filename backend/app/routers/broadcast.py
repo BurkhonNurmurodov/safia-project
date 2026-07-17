@@ -463,7 +463,10 @@ def _run_broadcast(bid: int, recipients: list[tuple[int, str]], html: str,
 async def send_broadcast(
     text: str = Form(...),
     targets: str = Form(...),
+    mode: str = Form("normal"),
+    media_meta: str = Form("[]"),
     file: UploadFile | None = File(None),
+    media_files: list[UploadFile] | None = File(None),
     payload: dict = Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
@@ -472,25 +475,60 @@ async def send_broadcast(
         assert isinstance(keys, list)
     except Exception:
         raise HTTPException(status_code=422, detail="targets must be a JSON list")
-
-    html, plain = sanitize_telegram_html(text)
-    if not plain:
-        raise HTTPException(status_code=422, detail="Message text is empty")
+    if mode not in ("normal", "rich"):
+        raise HTTPException(status_code=422, detail="mode must be normal or rich")
 
     kind = data = filename = None
-    if file is not None and file.filename:
-        data = await file.read()
-        ct = (file.content_type or "").lower()
-        kind = "photo" if ct.startswith("image/") else \
-               "video" if ct.startswith("video/") else "document"
-        limit = MAX_PHOTO_BYTES if kind == "photo" else MAX_FILE_BYTES
-        if len(data) > limit:
-            raise HTTPException(status_code=413, detail="Attachment too large")
-        filename = file.filename
+    media_items: list[dict] = []
 
-    max_len = MAX_CAPTION_LEN if kind else MAX_TEXT_LEN
-    if _utf16_len(plain) > max_len:
-        raise HTTPException(status_code=422, detail=f"Message exceeds {max_len} characters")
+    if mode == "rich":
+        html, plain, referenced = sanitize_rich_html(text)
+        if not plain and not referenced:
+            raise HTTPException(status_code=422, detail="Message text is empty")
+        if _utf16_len(plain) > MAX_RICH_TEXT_LEN:
+            raise HTTPException(status_code=422, detail=f"Message exceeds {MAX_RICH_TEXT_LEN} characters")
+        # Bind uploaded files to the tg://…?id= references, in document order.
+        try:
+            meta = json.loads(media_meta)
+            assert isinstance(meta, list)
+        except Exception:
+            raise HTTPException(status_code=422, detail="media_meta must be a JSON list")
+        uploads = [f for f in (media_files or []) if f.filename]
+        if len(uploads) != len(meta):
+            raise HTTPException(status_code=422, detail="media_meta and media_files mismatch")
+        if len(uploads) > MAX_RICH_MEDIA:
+            raise HTTPException(status_code=422, detail=f"At most {MAX_RICH_MEDIA} media files")
+        by_id = {}
+        for m, f in zip(meta, uploads):
+            blob = await f.read()
+            limit = MAX_PHOTO_BYTES if m.get("kind") == "photo" else MAX_FILE_BYTES
+            if len(blob) > limit:
+                raise HTTPException(status_code=413, detail=f"{f.filename} is too large")
+            by_id[str(m.get("id"))] = {"id": str(m.get("id")), "kind": m.get("kind"),
+                                       "filename": f.filename, "data": blob}
+        # keep only media the markup actually references, in document order
+        for _, mid in referenced:
+            if mid in by_id and by_id[mid] not in media_items:
+                media_items.append(by_id[mid])
+        missing = [mid for _, mid in referenced if mid not in by_id]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Missing media upload(s): {', '.join(missing)}")
+    else:
+        html, plain = sanitize_telegram_html(text)
+        if not plain:
+            raise HTTPException(status_code=422, detail="Message text is empty")
+        if file is not None and file.filename:
+            data = await file.read()
+            ct = (file.content_type or "").lower()
+            kind = "photo" if ct.startswith("image/") else \
+                   "video" if ct.startswith("video/") else "document"
+            limit = MAX_PHOTO_BYTES if kind == "photo" else MAX_FILE_BYTES
+            if len(data) > limit:
+                raise HTTPException(status_code=413, detail="Attachment too large")
+            filename = file.filename
+        max_len = MAX_CAPTION_LEN if kind else MAX_TEXT_LEN
+        if _utf16_len(plain) > max_len:
+            raise HTTPException(status_code=422, detail=f"Message exceeds {max_len} characters")
 
     recipients = _resolve_targets(db, keys)
     if not recipients:
@@ -501,8 +539,10 @@ async def send_broadcast(
     row = Broadcast(
         sender_telegram_id=sender_tid,
         sender_name=admin_profile_name(sender_tid),
+        mode=mode,
         text_html=html, text_plain=plain,
         attachment_kind=kind, attachment_name=filename,
+        media_names=[m["filename"] for m in media_items],
         target_keys=keys, recipient_total=len(recipients),
         sent_count=0, failed_count=0, failed_names=[], status="sending",
     )
@@ -510,11 +550,18 @@ async def send_broadcast(
     db.commit()
     db.refresh(row)
 
-    threading.Thread(
-        target=_run_broadcast,
-        args=(row.id, sorted(recipients.items()), html, kind, data, filename),
-        daemon=True,
-    ).start()
+    if mode == "rich":
+        threading.Thread(
+            target=_run_broadcast_rich,
+            args=(row.id, sorted(recipients.items()), html, media_items),
+            daemon=True,
+        ).start()
+    else:
+        threading.Thread(
+            target=_run_broadcast,
+            args=(row.id, sorted(recipients.items()), html, kind, data, filename),
+            daemon=True,
+        ).start()
     return {"id": row.id, "recipients": len(recipients)}
 
 
