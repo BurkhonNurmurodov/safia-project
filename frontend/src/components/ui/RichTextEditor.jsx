@@ -587,9 +587,11 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     const { rows, cols, header, bordered, striped } = tableCfg;
     const r = Math.min(Math.max(1, rows | 0), 30);
     const c = Math.min(Math.max(1, cols | 0), 20);
+    // the requested row count INCLUDES the header row (3×3 = header + 2)
+    const bodyRows = Math.max(header ? r - 1 : r, 1);
     let out = `<table${bordered ? " bordered" : ""}${striped ? " striped" : ""}>`;
     if (header) out += `<tr>${'<th><br></th>'.repeat(c)}</tr>`;
-    out += `<tr>${'<td><br></td>'.repeat(c)}</tr>`.repeat(r);
+    out += `<tr>${'<td><br></td>'.repeat(c)}</tr>`.repeat(bodyRows);
     out += "</table><div><br></div>";
     insertHtmlAtCursor(out);
   };
