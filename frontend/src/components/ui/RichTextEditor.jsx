@@ -469,6 +469,10 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
 
   const exec = (cmd, val = null) => {
     ref.current?.focus();
+    // <th> is intrinsically bold (in the editor AND in Telegram's render), so
+    // execCommand('bold') there only injects font-weight:normal spans that
+    // look like the button is dead — treat header-cell bold as a no-op.
+    if (cmd === "bold" && ancestor((el) => el.tagName === "TH")) return;
     document.execCommand(cmd, false, val);
     refreshStates(); emit();
   };
