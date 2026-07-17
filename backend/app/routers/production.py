@@ -52,34 +52,21 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 PAGE = "production"
 
-# Positions-table column headers + sheet title per language — mirror the
-# frontend production.col.* / production.positions keys so the Excel export
-# reads exactly like the on-screen table.
-POSITIONS_HEADERS = {
-    "uz":      ["SAP kod", "Faza", "Nomi", "Mehnat", "Jamoa", "ODAMLAR", "Bajarish %",
-                "Fakt", "REJA", "Fakt mehnat", "Umumiy mehnat", "Daqiqa", "Pareto"],
-    "uz_cyrl": ["SAP код", "Фаза", "Номи", "Меҳнат", "Жамоа", "ОДАМЛАР", "Бажариш %",
-                "Факт", "РЕЖА", "Факт меҳнат", "Умумий меҳнат", "Дақиқа", "Парето"],
-    "ru":      ["Сап код", "Опер.", "Наименование", "Труд.", "Команда", "ЛЮДИ", "Вып %",
-                "Факт", "ПЛАН", "Факт труд.", "Общ. труд.", "Минут", "Парето"],
-    "en":      ["SAP code", "Phase", "Name", "Labor", "Team", "PEOPLE", "Compl. %",
-                "Actual", "PLAN", "Actual labor", "Total labor", "Minutes", "Pareto"],
-}
 POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru": "Позиции", "en": "Positions"}
 
-# Canonical column keys — index-aligned with every POSITIONS_HEADERS list and
-# identical to the frontend COLS keys. The export request sends the VISIBLE
-# subset in on-screen order (column picker), so formats/widths are keyed here
-# rather than by fixed position.
-POSITIONS_COL_KEYS = ["sap_code", "op", "name", "labor", "wc", "people", "vyp",
-                      "fact", "plan", "actual_labor", "labor_total", "minutes", "pareto"]
-POSITIONS_COL_FMT = {"labor": "0.##", "people": "0", "vyp": "0%", "fact": "0.##", "plan": "0.##",
-                     "actual_labor": "#,##0.#", "labor_total": "#,##0.#", "minutes": "#,##0.#",
-                     "pareto": "0%"}
-POSITIONS_COL_LEFT = {"sap_code", "name"}
-POSITIONS_COL_WIDTH = {"sap_code": 14, "op": 8, "name": 34, "labor": 8, "wc": 10, "people": 9,
-                       "vyp": 10, "fact": 9, "plan": 9, "actual_labor": 11, "labor_total": 12,
-                       "minutes": 9, "pareto": 9}
+# «Загрузка» workbook layout — the Excel export reproduces the brigadirs' manual
+# working file («DD.MM.YYYY загрузка <имя>.xlsx») verbatim: fixed columns A–L
+# with live formulas, a per-team loading block (N:Q), the indicator block (R:S)
+# and the staffing block (T:U). Labels stay in the template's original mixed
+# ru/uz wording regardless of UI language — it is their real production form.
+ZAGRUZKA_HEADERS = ["Махсулот САП коди", "SKU", "Трудоемкость", "Команда", "ЛЮДИ",
+                    "Команда (САП) ячейка", "План(Смена бошида)", "План(Смена охирида)",
+                    "Общ.трудаёмкост", "Общ.трудаёмкост", "Минут", "Парето"]
+ZAGRUZKA_WIDTHS = {"A": 15.7, "B": 50, "C": 14, "D": 11, "E": 6.4, "F": 15.7, "G": 19.3,
+                   "H": 19.9, "I": 16.4, "J": 16.4, "K": 7.1, "L": 9, "M": 0.9, "N": 9,
+                   "O": 7.7, "P": 14.6, "Q": 8.6, "R": 51.6, "S": 12.6, "T": 25, "U": 9}
+ZAGRUZKA_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
+ZAGRUZKA_SIDE_MIN_ROWS = 15  # minimum bordered rows in the N:Q team block
 
 
 # --------------------------------------------------------------------------- #
