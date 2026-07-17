@@ -103,22 +103,30 @@ export default function Broadcast() {
     [groups],
   );
 
-  const maxLen = attachment ? 1024 : 4096;
+  const rich = mode === "rich";
+  const maxLen = rich ? 32768 : attachment ? 1024 : 4096;
   const len = msg.text.length;
   const over = len > maxLen;
-  const canSend = !!msg.text.trim() && selected.length > 0 && !over;
+  const canSend = (!!msg.text.trim() || (rich && msg.media.length > 0)) &&
+    selected.length > 0 && !over;
 
   const sendMut = useMutation({
     mutationFn: () => {
       const form = new FormData();
       form.append("text", msg.html);
       form.append("targets", JSON.stringify(selected));
-      if (attachment) form.append("file", attachment);
+      form.append("mode", mode);
+      if (rich) {
+        form.append("media_meta", JSON.stringify(msg.media.map(({ id, kind }) => ({ id, kind }))));
+        msg.media.forEach((m) => form.append("media_files", m.file, m.name));
+      } else if (attachment) {
+        form.append("file", attachment);
+      }
       return api.post("/api/broadcast/send", form);
     },
     onSuccess: () => {
       setConfirmOpen(false);
-      setMsg({ html: "", text: "" });
+      setMsg({ html: "", text: "", media: [] });
       setEditorKey((k) => k + 1);
       setAttachment(null);
       setSelected([]);
