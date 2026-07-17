@@ -844,10 +844,13 @@ class Broadcast(Base):
     id                 = Column(Integer, primary_key=True, autoincrement=True)
     sender_telegram_id = Column(BigInteger, nullable=False)
     sender_name        = Column(String, nullable=True)      # admin profile name snapshot
+    # normal → sendMessage/HTML parse mode; rich → sendRichMessage (Bot API 10.1+)
+    mode               = Column(String, nullable=False, server_default="normal")
     text_html          = Column(Text, nullable=False)       # sanitized Telegram HTML
     text_plain         = Column(Text, nullable=False)       # entity-stripped text (snippets/length)
-    attachment_kind    = Column(String, nullable=True)      # photo | video | document
+    attachment_kind    = Column(String, nullable=True)      # normal mode: photo | video | document
     attachment_name    = Column(String, nullable=True)
+    media_names        = Column(JSONB, nullable=False, server_default="[]")  # rich mode: embedded media file names
     target_keys        = Column(JSONB, nullable=False, default=list)  # ["role:id", …] as selected
     recipient_total    = Column(Integer, nullable=False, default=0)   # deduped Telegram accounts
     sent_count         = Column(Integer, nullable=False, default=0)
