@@ -22,18 +22,18 @@ SUP_COLORS = [
 ]
 
 RAW = [
-    {"name": "Malika Qodirova",   "unit": "2-uchastka",  "s": {"zag": 92, "naz": 88, "kai": 90, "xav": 84, "kir": 96}},
-    {"name": "Dilshod Karimov",   "unit": "5-uchastka",  "s": {"zag": 90, "naz": 92, "kai": 78, "xav": 88, "kir": 91}},
-    {"name": "Aziza Tosheva",     "unit": "1-uchastka",  "s": {"zag": 87, "naz": 74, "kai": 92, "xav": 90, "kir": 88}},
-    {"name": "Murodali Ochilov",  "unit": "7-uchastka",  "s": {"zag": 84, "naz": 81, "kai": 70, "xav": 76, "kir": 90}},
-    {"name": "Sherzod Aliyev",    "unit": "3-uchastka",  "s": {"zag": 86, "naz": 70, "kai": 75, "xav": 72, "kir": 84}},
-    {"name": "Nodira Yusupova",   "unit": "4-uchastka",  "s": {"zag": 78, "naz": 85, "kai": 80, "xav": 74, "kir": 81}},
-    {"name": "Jasur Rahimov",     "unit": "9-uchastka",  "s": {"zag": 83, "naz": 62, "kai": 68, "xav": 80, "kir": 77}},
-    {"name": "Gulnora Ismoilova", "unit": "8-uchastka",  "s": {"zag": 71, "naz": 78, "kai": 74, "xav": 70, "kir": 79}},
-    {"name": "Bekzod Tursunov",   "unit": "6-uchastka",  "s": {"zag": 74, "naz": 66, "kai": None, "xav": 72, "kir": 76}},
-    {"name": "Kamola Ergasheva",  "unit": "11-uchastka", "s": {"zag": 69, "naz": 72, "kai": 60, "xav": 66, "kir": 74}},
-    {"name": "Rustam Nazarov",    "unit": "10-uchastka", "s": {"zag": 66, "naz": 58, "kai": 55, "xav": 62, "kir": 70}},
-    {"name": "Sardor Xolmatov",   "unit": "12-uchastka", "s": {"zag": 58, "naz": 52, "kai": 48, "xav": 60, "kir": 63}},
+    {"name": "Malika Qodirova",   "unit": "2-uchastka",  "image": "/images/supervisors/female_template.jpg", "s": {"zag": 92, "naz": 88, "kai": 90, "xav": 84, "kir": 96}},
+    {"name": "Dilshod Karimov",   "unit": "5-uchastka",  "image": "/images/supervisors/male_template.jpg", "s": {"zag": 90, "naz": 92, "kai": 78, "xav": 88, "kir": 91}},
+    {"name": "Aziza Tosheva",     "unit": "1-uchastka",  "image": "/images/supervisors/female_template.jpg", "s": {"zag": 87, "naz": 74, "kai": 92, "xav": 90, "kir": 88}},
+    {"name": "Murodali Ochilov",  "unit": "7-uchastka",  "image": "/images/supervisors/male_template.jpg", "s": {"zag": 84, "naz": 81, "kai": 70, "xav": 76, "kir": 90}},
+    {"name": "Sherzod Aliyev",    "unit": "3-uchastka",  "image": "/images/supervisors/male_template.jpg", "s": {"zag": 86, "naz": 70, "kai": 75, "xav": 72, "kir": 84}},
+    {"name": "Nodira Yusupova",   "unit": "4-uchastka",  "image": "/images/supervisors/female_template.jpg", "s": {"zag": 78, "naz": 85, "kai": 80, "xav": 74, "kir": 81}},
+    {"name": "Jasur Rahimov",     "unit": "9-uchastka",  "image": "/images/supervisors/male_template.jpg", "s": {"zag": 83, "naz": 62, "kai": 68, "xav": 80, "kir": 77}},
+    {"name": "Gulnora Ismoilova", "unit": "8-uchastka",  "image": "/images/supervisors/female_template.jpg", "s": {"zag": 71, "naz": 78, "kai": 74, "xav": 70, "kir": 79}},
+    {"name": "Bekzod Tursunov",   "unit": "6-uchastka",  "image": "/images/supervisors/male_template.jpg", "s": {"zag": 74, "naz": 66, "kai": None, "xav": 72, "kir": 76}},
+    {"name": "Kamola Ergasheva",  "unit": "11-uchastka", "image": "/images/supervisors/female_template.jpg", "s": {"zag": 69, "naz": 72, "kai": 60, "xav": 66, "kir": 74}},
+    {"name": "Rustam Nazarov",    "unit": "10-uchastka", "image": "/images/supervisors/male_template.jpg", "s": {"zag": 66, "naz": 58, "kai": 55, "xav": 62, "kir": 70}},
+    {"name": "Sardor Xolmatov",   "unit": "12-uchastka", "image": "/images/supervisors/male_template.jpg", "s": {"zag": 58, "naz": 52, "kai": 48, "xav": 60, "kir": 63}},
 ]
 
 def clamp(v, lo, hi):
@@ -107,6 +107,7 @@ def get_leaderboard(
             "id": i,
             "name": r["name"],
             "unit": r["unit"],
+            "image": r.get("image"),
             "color": SUP_COLORS[i % len(SUP_COLORS)],
             "s": s,
             "comp": comp,
