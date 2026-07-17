@@ -409,14 +409,36 @@ export default function Leaderboard() {
     hue: hues[c.key], name: t(`leaderboard.cat.${c.key}`), short: t(`leaderboard.cat.${c.key}Short`), icon: c.icon, weight: c.weight,
   }])), [hues, t]);
 
-  const [period, setPeriod] = useState("month");
-  const { sups, byRank } = useLeaderboardData(period);
+  // Page-local period + shift + supervisor filters (the standard top-row set).
+  // Local, NOT the global FilterContext: dummy ids must never leak into the
+  // shared filter state other pages send to real endpoints.
+  const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 13); return isoDay(d); });
+  const [dateTo, setDateTo] = useState(() => isoDay(new Date()));
+  const [shiftF, setShiftF] = useState(null); // null = all | 1 | 2
+  const [supF, setSupF] = useState(null);     // brigadir id | null = all
+  const { sups, byRank } = useLeaderboardData(dateFrom, dateTo, shiftF, supF);
 
   const [selectedId, setSelectedId] = useState(3);
   const [expandedId, setExpandedId] = useState(3);
   const [sortKey, setSortKey] = useState("overall");
   const [query, setQuery] = useState("");
   const [tip, setTip] = useState(null);
+
+  // Supervisor picker options track the active shift so the list never offers
+  // a pick the pool would ignore.
+  const supFilterOptions = useMemo(() => [
+    { value: "All", label: t("tasks.allSupervisors") },
+    ...RAW.map((r, i) => ({ id: i, name: r.name, shift: unitShift(r.unit) }))
+      .filter((o) => !shiftF || o.shift === shiftF)
+      .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
+      .map((o) => ({ value: String(o.id), label: tl(o.name) })),
+  ], [shiftF, t, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  const supSel = supF != null && supFilterOptions.some((o) => o.value === String(supF)) ? String(supF) : "All";
+
+  // Selection survives filtering: if the selected brigadir left the pool,
+  // spotlight the current leader instead (charts always need a selection).
+  const effSelectedId = sups.some((s) => s.id === selectedId) ? selectedId : byRank[0]?.id;
+  const selectedSup = sups.find((s) => s.id === effSelectedId);
 
   function onTip(e, title, sub) {
     if (!e) { setTip(null); return; }
