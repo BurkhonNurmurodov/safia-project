@@ -831,3 +831,28 @@ class LeaderTaskComment(Base):
     text               = Column(Text, nullable=False)
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
+
+
+class Broadcast(Base):
+    """One admin broadcast delivered to selected profiles as Telegram DMs.
+    The row is created up-front with status 'sending'; a background thread
+    performs the sends (routers/broadcast.py) and bumps sent/failed counts as
+    it goes, flipping status to 'done' at the end — the admin history table
+    polls this row to show live progress."""
+    __tablename__ = "broadcasts"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    sender_telegram_id = Column(BigInteger, nullable=False)
+    sender_name        = Column(String, nullable=True)      # admin profile name snapshot
+    text_html          = Column(Text, nullable=False)       # sanitized Telegram HTML
+    text_plain         = Column(Text, nullable=False)       # entity-stripped text (snippets/length)
+    attachment_kind    = Column(String, nullable=True)      # photo | video | document
+    attachment_name    = Column(String, nullable=True)
+    target_keys        = Column(JSONB, nullable=False, default=list)  # ["role:id", …] as selected
+    recipient_total    = Column(Integer, nullable=False, default=0)   # deduped Telegram accounts
+    sent_count         = Column(Integer, nullable=False, default=0)
+    failed_count       = Column(Integer, nullable=False, default=0)
+    failed_names       = Column(JSONB, nullable=False, default=list)  # profile names whose DM failed
+    status             = Column(String, nullable=False, default="sending")  # sending | done
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at        = Column(DateTime(timezone=True), nullable=True)
