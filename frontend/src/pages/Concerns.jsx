@@ -638,15 +638,16 @@ export default function Concerns() {
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [isLoading]);
 
-  // Period filter (client-side, over the fetched rows). Concerns are level-based
-  // now, so there's no brigadir/leader slicing here.
+  // Period + shift + supervisor filters (client-side, over the fetched rows).
   const scoped = useMemo(() => {
     return rows.filter((r) => {
       if (startDate && !(r.entry_date && r.entry_date >= startDate)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
+      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) return false;
+      if (supSel !== "All" && String(r.brigadir_manager_id) !== supSel) return false;
       return true;
     });
-  }, [rows, startDate, endDate]);
+  }, [rows, startDate, endDate, fShift, shiftOf, supSel]);
 
   // Trend-chart scope: same filter, but the period start is pulled back so the
   // chart never spans fewer than 7 days. KPIs, donut and table keep the exact
