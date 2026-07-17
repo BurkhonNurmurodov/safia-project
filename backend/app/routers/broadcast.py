@@ -586,6 +586,8 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
         "id": r.id,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "sender_name": r.sender_name,
+        "mode": r.mode or "normal",
+        "media_names": r.media_names or [],
         "text_plain": r.text_plain,
         "text_html": r.text_html,
         "attachment_kind": r.attachment_kind,
