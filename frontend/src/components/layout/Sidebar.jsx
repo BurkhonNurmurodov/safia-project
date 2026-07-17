@@ -252,20 +252,24 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
-                const tg = window.Telegram?.WebApp;
+                const tg = window?.Telegram?.WebApp;
                 const url = "https://t.me/burkhon_n";
-                // The native macOS client silently drops openTelegramLink and
-                // in-webview t.me navigation — route it through the system
-                // browser instead, which does reach the chat.
-                const broken = tg?.platform === "macos";
-                if (!broken && tg?.openTelegramLink) {
+                if (tg?.openTelegramLink || tg?.openLink) {
                   e.preventDefault();
-                  tg.openTelegramLink(url);
-                } else if (broken && tg?.openLink) {
-                  e.preventDefault();
-                  tg.openLink(url);
+                  try {
+                    if (tg.platform === "macos") {
+                      tg.openLink(url);
+                    } else if (tg.openTelegramLink) {
+                      tg.openTelegramLink(url);
+                    } else {
+                      tg.openLink(url);
+                    }
+                  } catch (err) {
+                    window.open(url, "_blank");
+                  }
                 }
-                onClose?.();
+                // Delay onClose to prevent unmounting the <a> before the browser can process target="_blank"
+                setTimeout(() => onClose?.(), 150);
               }}
               title={!expanded ? t("nav.support") : undefined}
               className="flex items-center rounded-lg text-sm transition-colors"
