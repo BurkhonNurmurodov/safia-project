@@ -673,7 +673,89 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     emit();
   };
 
+  const placeCaretIn = (el) => {
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  };
+
+  // Telegram-composer Enter semantics: Enter at the end of a heading starts a
+  // normal line; Enter in a <summary> drops into the details body; Enter on an
+  // EMPTY line inside quote / pull quote / code block / details leaves the
+  // block (contentEditable otherwise traps the caret inside forever).
+  const handleEnter = (e) => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !inEditor(sel.anchorNode)) return false;
+
+    const exitAfter = (container, removeIfEmpty) => {
+      e.preventDefault();
+      const nd = document.createElement("div");
+      nd.appendChild(document.createElement("br"));
+      container.after(nd);
+      if (removeIfEmpty && !container.textContent.trim() &&
+          !container.querySelector("[data-tg-media],img,video,audio,input")) {
+        container.remove();
+      }
+      placeCaretIn(nd);
+      refreshStates(); emit();
+      return true;
+    };
+
+    const atEndOf = (el) => {
+      const r = sel.getRangeAt(0);
+      if (!r.collapsed) return false;
+      const end = document.createRange();
+      end.selectNodeContents(el);
+      end.collapse(false);
+      return r.compareBoundaryPoints(Range.END_TO_END, end) === 0;
+    };
+
+    const h = ancestor((el) => /^H[1-6]$/.test(el.tagName));
+    if (h) return atEndOf(h) ? exitAfter(h, false) : false;
+
+    const summ = ancestorTag("summary");
+    if (summ) {
+      e.preventDefault();
+      const details = summ.parentNode;
+      let body = summ.nextElementSibling;
+      if (!body) {
+        body = document.createElement("div");
+        body.appendChild(document.createElement("br"));
+        details.appendChild(body);
+      }
+      placeCaretIn(body);
+      return true;
+    }
+
+    const container = ancestorTag("blockquote") || ancestorTag("aside") ||
+      ancestorTag("pre") || ancestorTag("details");
+    if (!container) return false;
+
+    // the caret's line = the direct child of `container` the caret sits in
+    let line = sel.anchorNode;
+    while (line && line !== container && line.parentNode !== container) line = line.parentNode;
+    if (line && line !== container && line.nodeType === Node.ELEMENT_NODE &&
+        !line.textContent.trim() &&
+        !line.querySelector("[data-tg-media],img,video,audio,input")) {
+      line.remove();
+      return exitAfter(container, container.tagName.toLowerCase() !== "details");
+    }
+    // <pre> keeps lines as raw text/<br> — exit when Enter follows a blank line
+    if (container.tagName.toLowerCase() === "pre" && atEndOf(container) &&
+        /\n\s*$/.test(container.innerText || container.textContent || "")) {
+      const last = container.lastChild;
+      if (last?.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") last.remove();
+      else if (last?.nodeType === Node.TEXT_NODE) last.nodeValue = last.nodeValue.replace(/\n\s*$/, "");
+      return exitAfter(container, true);
+    }
+    return false;
+  };
+
   const onKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey && handleEnter(e)) return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       openLink();
