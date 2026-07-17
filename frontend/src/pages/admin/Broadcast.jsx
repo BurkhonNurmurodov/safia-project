@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Users, History, Send, Paperclip, X, Image as ImageIcon, Video,
   FileText, CheckCircle, Loader2, Star, UserCog, Flag, Shield, UserRound,
-  Type, Sparkles, Music,
+  Type, Sparkles,
 } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../../components/ui/Button";
