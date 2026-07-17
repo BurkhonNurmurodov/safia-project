@@ -418,6 +418,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       h1: !!ancestorTag("h1"),
       h2: !!ancestorTag("h2"),
       h3: !!ancestorTag("h3"),
+      h4: !!ancestorTag("h4"),
+      h5: !!ancestorTag("h5"),
+      h6: !!ancestorTag("h6"),
       ul: !!ancestorTag("ul") && !ancestor((el) => el.tagName === "OL"),
       ol: !!ancestorTag("ol"),
     });
