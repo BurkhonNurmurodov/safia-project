@@ -12,6 +12,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Modal from "../../components/ui/Modal";
 import RichTextEditor from "../../components/ui/RichTextEditor";
 import CheckboxTree from "../../components/ui/CheckboxTree";
+import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
