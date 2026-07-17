@@ -24,7 +24,7 @@ const INDIGO = "#6366f1";
 const CAT_COLORS = ["#ef4444","#f97316","#eab308","#22c55e","#06b6d4", INDIGO, "#a78bfa","#ec4899","#14b8a6"];
 
 export default function Downtime() {
-  const { params, unit, ready } = useFilters();
+  const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
   const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
