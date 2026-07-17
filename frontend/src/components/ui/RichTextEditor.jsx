@@ -453,6 +453,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       h6: !!ancestorTag("h6"),
       ul: !!ancestorTag("ul") && !ancestor((el) => el.tagName === "OL"),
       ol: !!ancestorTag("ol"),
+      // Telegram table cells hold inline text only — block tools are disabled
+      // inside them (matches the Rich HTML grammar and Telegram's composer)
+      cell: !!ancestor((el) => el.tagName === "TD" || el.tagName === "TH"),
     });
   };
 
