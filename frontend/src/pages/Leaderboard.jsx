@@ -617,7 +617,7 @@ export default function Leaderboard() {
               </span>
             </div>
             <div className="px-4 pb-4 pt-1"><div style={{ overflowX: "auto" }}>
-              <BumpChart sups={sups} byRank={byRank} selectedId={selectedId} onSelect={selectSup} hues={hues} onTip={onTip} />
+              <BumpChart sups={sups} byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} hues={hues} onTip={onTip} />
             </div></div>
           </div>
 
