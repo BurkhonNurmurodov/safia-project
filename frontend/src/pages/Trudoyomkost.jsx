@@ -8,6 +8,7 @@ import {
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
+import DateRangePicker from "../components/ui/DateRangePicker";
 import { SectionHead } from "../components/ui/DataTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
