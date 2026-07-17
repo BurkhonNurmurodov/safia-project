@@ -247,22 +247,17 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           )}
 
           {!isAdmin && (
-            <button
-              type="button"
-              onClick={() => {
-                const tg = window.Telegram?.WebApp;
-                const url = "https://t.me/burkhon_n";
-                if (tg?.openTelegramLink) tg.openTelegramLink(url);
-                else window.open(url, "_blank", "noopener");
-                onClose?.();
-              }}
+            <a
+              href="https://t.me/burkhon_n"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onClose}
               title={!expanded ? t("nav.support") : undefined}
-              className="w-full flex items-center rounded-lg text-sm transition-colors"
+              className="flex items-center rounded-lg text-sm transition-colors"
               style={{
                 gap: "12px",
                 padding: "10px",
                 color: "var(--text-3)",
-                background: "transparent",
                 justifyContent: !expanded ? "center" : undefined,
               }}
             >
@@ -273,7 +268,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               >
                 {t("nav.support")}
               </span>
-            </button>
+            </a>
           )}
 
           {range?.date_to && (
