@@ -275,6 +275,22 @@ def add_leader_submission_columns() -> None:
         db.close()
 
 
+def add_broadcast_rich_columns() -> None:
+    """Add mode / media_names to broadcasts (idempotent). Rich broadcasts
+    (sendRichMessage, Bot API 10.1+) record mode='rich' and the embedded media
+    file names; pre-existing rows default to the classic 'normal' path."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS mode VARCHAR NOT NULL DEFAULT 'normal'"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS media_names JSONB NOT NULL DEFAULT '[]'"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] broadcasts rich columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_admin_language_column() -> None:
     """Add a language column to admins (idempotent). Seeded admins have no
     telegram_users row, so this is where their bot-DM language is stored, kept in
