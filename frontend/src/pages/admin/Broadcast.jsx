@@ -159,15 +159,31 @@ export default function Broadcast() {
         <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Megaphone} title={t("admin.broadcast.composeTitle")} />
           <div className="p-4 space-y-3">
+            <SegmentedToggle
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "normal", label: <span className="inline-flex items-center gap-1.5"><Type size={14} /> {t("admin.broadcast.modeNormal")}</span> },
+                { value: "rich", label: <span className="inline-flex items-center gap-1.5"><Sparkles size={14} /> {t("admin.broadcast.modeRich")}</span> },
+              ]}
+            />
+
             <RichTextEditor
               key={editorKey}
+              rich={rich}
               placeholder={t("admin.broadcast.placeholder")}
               onChange={setMsg}
             />
 
             <div className="flex items-center gap-2 flex-wrap">
               <input ref={fileRef} type="file" className="hidden" onChange={pickFile} />
-              {!attachment ? (
+              {rich ? (
+                msg.media.length > 0 && (
+                  <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                    {t("admin.broadcast.embeddedMedia").replace("{n}", msg.media.length)}
+                  </span>
+                )
+              ) : !attachment ? (
                 <Button
                   variant="secondary"
                   icon={<Paperclip size={13} />}
@@ -199,9 +215,14 @@ export default function Broadcast() {
                 {len} / {maxLen}
               </span>
             </div>
-            {attachment && (
+            {!rich && attachment && (
               <div className="text-[11px]" style={{ color: "var(--text-4)" }}>
                 {t("admin.broadcast.attachLimit")}
+              </div>
+            )}
+            {rich && (
+              <div className="text-[11px]" style={{ color: "#d97706" }}>
+                {t("admin.broadcast.richHint")}
               </div>
             )}
 
