@@ -404,7 +404,7 @@ export default function Broadcast() {
           footer={<Button variant="secondary" onClick={() => setDetail(null)}>{t("admin.broadcast.close")}</Button>}
         >
           <div
-            className="tg-msg text-sm rounded-xl px-3 py-2.5"
+            className={`tg-msg text-sm rounded-xl px-3 py-2.5${detail.mode === "rich" ? " tg-msg-rich" : ""}`}
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
             dangerouslySetInnerHTML={{ __html: detail.text_html }}
           />
@@ -412,6 +412,19 @@ export default function Broadcast() {
             <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
               <Paperclip size={12} style={{ color: "var(--brand-text)" }} />
               {detail.attachment_name}
+            </div>
+          )}
+          {detail.media_names?.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {detail.media_names.map((n, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full"
+                  style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}
+                >
+                  <Paperclip size={9} /> {n}
+                </span>
+              ))}
             </div>
           )}
           <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-3)" }}>
