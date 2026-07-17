@@ -400,6 +400,7 @@ function isoDay(d) {
 
 export default function Leaderboard() {
   const { t } = useLang();
+  const { tl, lang } = useTranslit();
   const { theme } = useTheme();
   const st = STATUS[theme] || STATUS.dark;
   const hues = CAT_HUES[theme] || CAT_HUES.dark;
