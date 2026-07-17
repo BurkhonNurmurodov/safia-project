@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
-  MessageSquareWarning,
+  MessageSquareWarning, Headset,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
