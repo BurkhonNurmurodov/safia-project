@@ -253,9 +253,17 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               rel="noopener noreferrer"
               onClick={(e) => {
                 const tg = window.Telegram?.WebApp;
-                if (tg?.openTelegramLink) {
+                const url = "https://t.me/burkhon_n";
+                // The native macOS client silently drops openTelegramLink and
+                // in-webview t.me navigation — route it through the system
+                // browser instead, which does reach the chat.
+                const broken = tg?.platform === "macos";
+                if (!broken && tg?.openTelegramLink) {
                   e.preventDefault();
-                  tg.openTelegramLink("https://t.me/burkhon_n");
+                  tg.openTelegramLink(url);
+                } else if (broken && tg?.openLink) {
+                  e.preventDefault();
+                  tg.openLink(url);
                 }
                 onClose?.();
               }}
