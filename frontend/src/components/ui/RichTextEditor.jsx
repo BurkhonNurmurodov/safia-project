@@ -229,7 +229,7 @@ export function serializeRich(root) {
   };
 
   const flushPending = () => {
-    const out = pendingMedia.join("");
+    const out = groupMedia(pendingMedia);
     pendingMedia = [];
     return out;
   };
