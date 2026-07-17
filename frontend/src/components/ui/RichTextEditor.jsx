@@ -420,28 +420,34 @@ function MenuList({ items, onAction }) {
 }
 
 function ToolbarMenu({ icon: Icon, title, items, disabled }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef(null);
+  // The panel is PORTALED to <body>: the editor wrapper and the compose card
+  // are both overflow-hidden, so an absolutely-positioned dropdown gets
+  // cropped at their borders.
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const open = !!pos;
+  const toggle = () => {
+    if (disabled) return;
+    if (pos) { setPos(null); return; }
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({ x: r.left, y: r.bottom + 4 });
+  };
   useEffect(() => {
     if (!open) return;
-    const close = (e) => { if (!wrap.current?.contains(e.target)) setOpen(false); };
-    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close);
+    const esc = (e) => { if (e.key === "Escape") setPos(null); };
     document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
-    };
+    return () => document.removeEventListener("keydown", esc);
   }, [open]);
   return (
-    <div className="relative" ref={wrap}>
+    <>
       <button
+        ref={btnRef}
         type="button"
         title={title}
         aria-label={title}
         aria-expanded={open}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        onClick={toggle}
         className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
         style={open
           ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
@@ -449,15 +455,25 @@ function ToolbarMenu({ icon: Icon, title, items, disabled }) {
       >
         <Icon size={14} />
       </button>
-      {open && (
-        <div
-          className="absolute left-0 top-8 z-[70] min-w-[210px] max-h-[320px] overflow-y-auto rounded-xl py-1"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 16px 40px rgba(0,0,0,0.35)" }}
-        >
-          <MenuList items={items} onAction={(it) => { setOpen(false); it.run(); }} />
-        </div>
+      {open && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
+          <div
+            className="absolute min-w-[210px] max-h-[340px] overflow-y-auto rounded-xl py-1"
+            style={{
+              left: Math.min(pos.x, window.innerWidth - 240),
+              top: Math.min(pos.y, window.innerHeight - 360),
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-md)",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+            }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <MenuList items={items} onAction={(it) => { setPos(null); it.run(); }} />
+          </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
