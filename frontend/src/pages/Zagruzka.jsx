@@ -101,8 +101,9 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
 }
 
 export default function Zagruzka() {
-  const { params, ready } = useFilters();
+  const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
+  const { tl, lang } = useTranslit();
   const [heatmapMode, setHeatmapMode] = useState("actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);
