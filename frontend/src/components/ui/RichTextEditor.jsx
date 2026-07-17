@@ -767,7 +767,35 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     return false;
   };
 
+  // Tab / Shift+Tab walk table cells; Tab in the last cell appends a row —
+  // the convention every table editor (Telegram's included) follows.
+  const handleTab = (e) => {
+    const cell = ancestor((el) => el.tagName === "TD" || el.tagName === "TH");
+    if (!cell) return false;
+    e.preventDefault();
+    const table = cell.closest("table");
+    const cells = [...table.querySelectorAll("th,td")];
+    const idx = cells.indexOf(cell);
+    let target = e.shiftKey ? cells[idx - 1] : cells[idx + 1];
+    if (!target && !e.shiftKey) {
+      const row = cell.parentNode;
+      const nr = document.createElement("tr");
+      for (let i = 0; i < row.cells.length; i++) {
+        const td = document.createElement("td");
+        td.appendChild(document.createElement("br"));
+        nr.appendChild(td);
+      }
+      row.parentNode.appendChild(nr);
+      target = nr.cells[0];
+      emit();
+    }
+    if (target) placeCaretIn(target);
+    refreshStates();
+    return true;
+  };
+
   const onKeyDown = (e) => {
+    if (e.key === "Tab" && handleTab(e)) return;
     if (e.key === "Enter" && !e.shiftKey && handleEnter(e)) return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
