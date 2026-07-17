@@ -246,6 +246,36 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             </NavLink>
           )}
 
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                const tg = window.Telegram?.WebApp;
+                const url = "https://t.me/burkhon_n";
+                if (tg?.openTelegramLink) tg.openTelegramLink(url);
+                else window.open(url, "_blank", "noopener");
+                onClose?.();
+              }}
+              title={!expanded ? t("nav.support") : undefined}
+              className="w-full flex items-center rounded-lg text-sm transition-colors"
+              style={{
+                gap: "12px",
+                padding: "10px",
+                color: "var(--text-3)",
+                background: "transparent",
+                justifyContent: !expanded ? "center" : undefined,
+              }}
+            >
+              <Headset size={16} className="flex-shrink-0" />
+              <span
+                className="truncate whitespace-nowrap transition-all duration-200"
+                style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden", display: "block" }}
+              >
+                {t("nav.support")}
+              </span>
+            </button>
+          )}
+
           {range?.date_to && (
             <div
               className="flex items-center rounded-lg overflow-hidden"
