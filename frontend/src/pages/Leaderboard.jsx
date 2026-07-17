@@ -212,7 +212,8 @@ function BumpChart({ sups, byRank, selectedId, onSelect, hues, onTip }) {
   const W = 620, H = 320, padL = 34, padR = 150, padT = 18, padB = 30;
   const n = sups.length;
   const x = (w) => padL + (w / 7) * (W - padL - padR);
-  const y = (rk) => padT + ((rk - 1) / (n - 1)) * (H - padT - padB);
+  // n === 1 (supervisor filter active) — a single flat line through the middle.
+  const y = (rk) => (n < 2 ? padT + (H - padT - padB) / 2 : padT + ((rk - 1) / (n - 1)) * (H - padT - padB));
   const emphasized = (s) => s.id === hoverId || s.id === selectedId || s.rank <= 3;
   const order = [...sups].sort((a, b) => (emphasized(a) ? 1 : 0) - (emphasized(b) ? 1 : 0));
 
