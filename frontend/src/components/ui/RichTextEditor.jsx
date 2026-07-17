@@ -58,7 +58,7 @@ export function serializeTelegram(root) {
     if (tag === "br") { html += "\n"; text += "\n"; atLineStart = true; return; }
     const spoiler = tag === "tg-spoiler" || (tag === "span" && node.classList.contains("tg-spoiler"));
     const inline = spoiler ? "tg-spoiler" : INLINE_TAGS[tag];
-    if (inline && tag !== "tg-spoiler" || (inline && tag === "tg-spoiler")) {
+    if (inline) {
       html += `<${inline}>`;
       node.childNodes.forEach(walk);
       html += `</${inline}>`;
