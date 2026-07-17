@@ -93,10 +93,20 @@ function composite(s) {
   return den ? num / den : 0;
 }
 
-/* Build the whole dataset for a period. A different seed per period makes the
- * mock feel live — switching Hafta/Oy/Chorak reshuffles scores and ranks. */
-function buildData(period) {
-  const seed = period === "week" ? 7 : period === "quarter" ? 91 : 30;
+/* Dummy shift assignment — odd unit numbers = S1, even = S2 (6 sups each). */
+const unitShift = (unit) => (parseInt(unit, 10) % 2 === 1 ? 1 : 2);
+
+/* Seed derived from the selected date range so a different period reshuffles
+ * scores and ranks — the mock feels live until real endpoints land. */
+function seedOf(from, to) {
+  const s = `${from}|${to}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % 100000;
+}
+
+/* Build the whole dataset for a seed. */
+function buildData(seed) {
   const sups = RAW.map((r, i) => {
     const rnd = mulberry32(seed * 1000 + i * 77);
     const s = {};
