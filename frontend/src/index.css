@@ -235,3 +235,89 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   padding: 0 2px;
 }
 .tg-editor a, .tg-msg a { color: #3b82f6; text-decoration: underline; }
+
+/* Rich dialect additions (RichTextEditor rich mode + rich history preview).
+   Tailwind's preflight zeroes list/heading styles, so restore them here. */
+.tg-editor-rich h1, .tg-msg-rich h1 { font-size: 1.35em; font-weight: 700; margin: 6px 0 2px; }
+.tg-editor-rich h2, .tg-msg-rich h2 { font-size: 1.2em;  font-weight: 700; margin: 5px 0 2px; }
+.tg-editor-rich h3, .tg-msg-rich h3 { font-size: 1.08em; font-weight: 600; margin: 4px 0 2px; }
+.tg-editor-rich h4, .tg-msg-rich h4,
+.tg-editor-rich h5, .tg-msg-rich h5,
+.tg-editor-rich h6, .tg-msg-rich h6 { font-weight: 600; margin: 3px 0 1px; }
+.tg-editor-rich ul, .tg-msg-rich ul { list-style: disc; padding-left: 1.4em; margin: 2px 0; }
+.tg-editor-rich ol, .tg-msg-rich ol { list-style: decimal; padding-left: 1.4em; margin: 2px 0; }
+.tg-editor-rich li, .tg-msg-rich li { margin: 1px 0; }
+.tg-editor-rich li input[type="checkbox"], .tg-msg-rich li input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--brand);
+}
+.tg-editor-rich hr, .tg-msg-rich hr {
+  border: none;
+  border-top: 1px solid var(--border-md);
+  margin: 8px 0;
+}
+.tg-editor-rich table, .tg-msg-rich table {
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 0.92em;
+}
+.tg-editor-rich th, .tg-editor-rich td, .tg-msg-rich th, .tg-msg-rich td {
+  border: 1px solid var(--border-md);
+  padding: 3px 8px;
+  min-width: 2.5em;
+}
+.tg-editor-rich th, .tg-msg-rich th { background: var(--bg-accent); font-weight: 600; }
+.tg-editor-rich aside, .tg-msg-rich aside {
+  margin: 4px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--text-4);
+  font-style: italic;
+  color: var(--text-2);
+}
+.tg-editor-rich details, .tg-msg-rich details {
+  margin: 4px 0;
+  padding: 4px 10px;
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tg-editor-rich summary, .tg-msg-rich summary { font-weight: 600; cursor: pointer; }
+.tg-editor-rich mark, .tg-msg-rich mark {
+  background: rgba(234, 179, 8, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.tg-editor-rich footer, .tg-msg-rich footer { color: var(--text-4); font-size: 0.9em; }
+.tg-editor .tg-math, .tg-editor .tg-math-block, .tg-msg-rich tg-math, .tg-msg-rich tg-math-block {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.tg-editor .tg-math-block, .tg-msg-rich tg-math-block { display: block; padding: 4px 8px; margin: 3px 0; }
+.tg-editor .tg-embed {
+  display: block;
+  max-height: 180px;
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+.tg-editor .tg-media-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  border: 1px solid var(--brand-border);
+  font-size: 11px;
+  white-space: nowrap;
+  user-select: none;
+}
+/* History preview receives tg://…?id= sources that browsers can't load —
+   hide them; the modal lists the file names as chips instead. */
+.tg-msg img[src^="tg://"], .tg-msg video[src^="tg://"], .tg-msg audio[src^="tg://"] { display: none; }
