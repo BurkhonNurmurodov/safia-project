@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bold, Italic, Underline, Strikethrough, EyeOff, Code, SquareCode,
   TextQuote, Link2, RemoveFormatting, Heading1, Heading2, Heading3,
-  Heading4, Heading5, Heading6,
-  List, ListOrdered, ListChecks, SeparatorHorizontal, Table as TableIcon,
-  ChevronsDownUp, Sigma, ImagePlus, Quote, Highlighter, Subscript, Superscript,
+  Heading4, Heading5, Heading6, Type, Plus, Check, ChevronLeft,
+  List, ListOrdered, ListChecks, ChevronsRight, ChevronsLeft,
+  SeparatorHorizontal, Table as TableIcon, ChevronsDownUp, Sigma,
+  Paperclip, Image as ImageIcon, Music, Quote, Highlighter,
+  Subscript, Superscript, Clipboard, CheckSquare, Eraser, Trash2,
+  AlignLeft, AlignCenter, AlignRight,
 } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
@@ -18,23 +22,30 @@ import { useLang } from "../../context/LangContext";
  * Two dialects, one component:
  *   default      – the classic Telegram entity subset (bold / italic /
  *                  underline / strikethrough / spoiler / inline code / code
- *                  block / blockquote / links). Serializes to parse_mode HTML
- *                  with real \n newlines.
- *   rich={true}  – the Bot API 10.1+ Rich HTML dialect: adds headings, lists,
- *                  task lists, tables, dividers, collapsible details, pull
- *                  quotes, mark / sub / sup, LaTeX formulas and inline
- *                  photo/video/audio embeds. Serializes to Rich HTML where
- *                  paragraphs are <p> blocks (Rich HTML collapses raw
- *                  newlines) and embedded media becomes tg://…?id= links.
+ *                  block / blockquote / links) with a flat toolbar.
+ *                  Serializes to parse_mode HTML with real \n newlines.
+ *   rich={true}  – mirrors Telegram's NATIVE rich-message composer:
+ *                  · compact menu toolbar — [+ format] [lists] [quote]
+ *                    [table] [attach] [link] [clear], formatting lives in
+ *                    menus exactly like Telegram's, not a flat button wall
+ *                  · table button drops a default 2×2 table instantly;
+ *                    everything else is done from the RIGHT-CLICK context
+ *                    menu (insert/delete rows & columns, highlight = header
+ *                    cell, per-cell alignment) plus Tab/Shift+Tab movement
+ *                  · Enter = paragraph semantics (exits an empty line in a
+ *                    quote/code/details block, ends a heading, soft-breaks
+ *                    inside table cells); Shift+Enter = soft line break
+ *                  · blockquote/pull-quote author lines via <cite>
+ *                  Serializes to Rich HTML (Bot API 10.1+): <p> paragraph
+ *                  blocks, tg://…?id= media links, adjacent media grouped
+ *                  into <tg-collage> (Telegram albums).
  *
  * Props:
- *   onChange    – ({ html, text, media }) on every edit. `media` lists the
- *                 embedded files actually present in the message:
- *                 [{ id, kind, file, name }] (always [] in classic mode).
+ *   onChange    – ({ html, text, media }) on every edit; `media` lists the
+ *                 embedded files present in the message ([] in classic mode)
  *   placeholder – muted hint shown while empty
  *   minHeight   – content area min height in px (default 180)
- *   rich        – enable the Rich HTML dialect (content survives toggling;
- *                 rich-only structure is flattened when serialized classic)
+ *   rich        – enable the rich dialect (content survives toggling)
  *
  * Uncontrolled: remount with a new `key` to clear it after a successful send.
  */
@@ -47,7 +58,7 @@ const INLINE_TAGS = {
   code: "code",
   "tg-spoiler": "tg-spoiler",
 };
-const INLINE_RICH_EXTRA = { mark: "mark", sub: "sub", sup: "sup" };
+const INLINE_RICH_EXTRA = { mark: "mark", sub: "sub", sup: "sup", cite: "cite" };
 
 const MEDIA_LIMIT = 50;
 
@@ -335,6 +346,8 @@ export function serializeRich(root) {
             let a = "";
             if (cell.colSpan > 1) a += ` colspan="${cell.colSpan}"`;
             if (cell.rowSpan > 1) a += ` rowspan="${cell.rowSpan}"`;
+            const al = (cell.getAttribute("align") || "").toLowerCase();
+            if (["left", "center", "right"].includes(al)) a += ` align="${al}"`;
             cells += `<${ct}${a}>${inlineChildren(cell, new Set())}</${ct}>`;
             textParts.push("\n");
           }
@@ -346,7 +359,7 @@ export function serializeRich(root) {
         return `<table${a}>${rows}</table>` + flushPending();
       }
       case "details": {
-        let summary = "", rest = "";
+        let summary = "";
         node.childNodes.forEach((c) => {
           if (c.nodeType === Node.ELEMENT_NODE && c.tagName.toLowerCase() === "summary") {
             summary = inlineChildren(c, new Set());
@@ -355,7 +368,7 @@ export function serializeRich(root) {
         });
         const clone = { childNodes: [...node.childNodes].filter((c) =>
           !(c.nodeType === Node.ELEMENT_NODE && c.tagName.toLowerCase() === "summary")) };
-        rest = blocks(clone);
+        const rest = blocks(clone);
         // collapsed by default on delivery — `open` only serves in-editor editing
         return `<details><summary>${summary}</summary>${rest}</details>`;
       }
@@ -374,6 +387,80 @@ export function serializeRich(root) {
   return { html, text, mediaIds };
 }
 
+// ── Menu chrome (toolbar dropdowns + context menu share the same look) ──────
+
+function MenuList({ items, onAction }) {
+  return (
+    <>
+      {items.map((it, i) =>
+        it.divider ? (
+          <div key={i} className="my-1 h-px" style={{ background: "var(--border)" }} />
+        ) : (
+          <button
+            key={it.key || i}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { if (!it.disabled) onAction(it); }}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors hover:bg-[var(--bg-inner)]"
+            style={{
+              color: it.danger ? "#ef4444" : "var(--text-2)",
+              opacity: it.disabled ? 0.4 : 1,
+              cursor: it.disabled ? "not-allowed" : "pointer",
+            }}
+          >
+            {it.icon && <it.icon size={13} className="flex-shrink-0" />}
+            <span className="flex-1 text-left whitespace-nowrap">{it.label}</span>
+            {it.check && <Check size={12} style={{ color: "var(--brand-text)" }} />}
+            {it.sub && <ChevronLeft size={12} style={{ transform: "rotate(180deg)", color: "var(--text-4)" }} />}
+          </button>
+        ),
+      )}
+    </>
+  );
+}
+
+function ToolbarMenu({ icon: Icon, title, items, disabled }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!wrap.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <div className="relative" ref={wrap}>
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+        style={open
+          ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
+          : { background: "transparent", color: "var(--text-3)", opacity: disabled ? 0.3 : 1 }}
+      >
+        <Icon size={14} />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-8 z-[70] min-w-[210px] max-h-[320px] overflow-y-auto rounded-xl py-1"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", boxShadow: "0 16px 40px rgba(0,0,0,0.35)" }}
+        >
+          <MenuList items={items} onAction={(it) => { setOpen(false); it.run(); }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function RichTextEditor({ onChange, placeholder = "", minHeight = 180, rich = false }) {
@@ -383,16 +470,16 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   const mediaReg = useRef(new Map()); // id → { file, kind, name }
   const mediaSeq = useRef(0);
   const fileRef = useRef(null);
+  const ctxCell = useRef(null);
   const [empty, setEmpty] = useState(true);
   const [states, setStates] = useState({});
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkExisting, setLinkExisting] = useState(false);
-  const [tableOpen, setTableOpen] = useState(false);
-  const [tableCfg, setTableCfg] = useState({ rows: 3, cols: 3, header: true, bordered: true, striped: false });
   const [mathOpen, setMathOpen] = useState(false);
   const [mathSrc, setMathSrc] = useState("");
   const [mathBlock, setMathBlock] = useState(false);
+  const [ctx, setCtx] = useState(null); // { x, y, page: "main" | "format" }
 
   const inEditor = (node) => node && ref.current && ref.current.contains(node);
 
@@ -431,6 +518,11 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   const refreshStates = () => {
     const sel = window.getSelection();
     if (!inEditor(sel?.anchorNode)) return;
+    const li = ancestorTag("li");
+    const list = li ? li.closest("ul,ol") : null;
+    const listType = !list ? "none"
+      : list.tagName === "OL" ? "ol"
+      : li.firstElementChild?.matches?.('input[type="checkbox"]') ? "task" : "ul";
     setStates({
       bold: document.queryCommandState("bold"),
       italic: document.queryCommandState("italic"),
@@ -445,14 +537,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       aside: !!ancestorTag("aside"),
       pre: !!ancestorTag("pre"),
       link: !!ancestorTag("a"),
-      h1: !!ancestorTag("h1"),
-      h2: !!ancestorTag("h2"),
-      h3: !!ancestorTag("h3"),
-      h4: !!ancestorTag("h4"),
-      h5: !!ancestorTag("h5"),
-      h6: !!ancestorTag("h6"),
-      ul: !!ancestorTag("ul") && !ancestor((el) => el.tagName === "OL"),
-      ol: !!ancestorTag("ol"),
+      h1: !!ancestorTag("h1"), h2: !!ancestorTag("h2"), h3: !!ancestorTag("h3"),
+      h4: !!ancestorTag("h4"), h5: !!ancestorTag("h5"), h6: !!ancestorTag("h6"),
+      listType,
       // Telegram table cells hold inline text only — block tools are disabled
       // inside them (matches the Rich HTML grammar and Telegram's composer)
       cell: !!ancestor((el) => el.tagName === "TD" || el.tagName === "TH"),
@@ -508,27 +595,50 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     refreshStates(); emit();
   };
 
-  const toggleBlock = (tag) => { // blockquote | pre | aside | h1 | h2 | h3
+  const toggleBlock = (tag) => { // blockquote | pre | aside | h1…h6
     ref.current?.focus();
     const active = !!ancestorTag(tag);
     document.execCommand("formatBlock", false, active ? "<div>" : `<${tag}>`);
     refreshStates(); emit();
   };
 
-  const toggleTask = () => {
-    ref.current?.focus();
-    if (!ancestorTag("li")) document.execCommand("insertUnorderedList");
-    const li = ancestorTag("li");
-    if (!li) return;
-    const first = li.firstElementChild;
-    if (first && first.tagName === "INPUT" && first.type === "checkbox") {
-      first.remove();
-    } else {
+  // ── Lists (Telegram list menu: None / Bullet / Numbered / Checklist) ──
+  const stripCheckboxes = (list) => {
+    list?.querySelectorAll(":scope > li > input[type=checkbox]").forEach((cb) => {
+      if (cb.nextSibling?.nodeType === Node.TEXT_NODE && !cb.nextSibling.nodeValue.trim()) {
+        cb.nextSibling.remove();
+      }
+      cb.remove();
+    });
+  };
+  const addCheckboxes = (list) => {
+    list?.querySelectorAll(":scope > li").forEach((li) => {
+      if (li.firstElementChild?.matches?.('input[type="checkbox"]')) return;
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.contentEditable = "false";
       li.insertBefore(document.createTextNode(" "), li.firstChild);
       li.insertBefore(cb, li.firstChild);
+    });
+  };
+  const currentList = () => ancestorTag("li")?.closest("ul,ol") || null;
+  const setListType = (type) => {
+    ref.current?.focus();
+    const list = currentList();
+    const cur = states.listType || "none";
+    if (type === cur) return;
+    if (type === "none") {
+      if (!list) return;
+      stripCheckboxes(list);
+      document.execCommand(list.tagName === "UL" ? "insertUnorderedList" : "insertOrderedList");
+    } else if (type === "ol") {
+      if (list) stripCheckboxes(list);
+      document.execCommand("insertOrderedList");
+    } else { // ul | task
+      if (cur === "none" || cur === "ol") document.execCommand("insertUnorderedList");
+      const nl = currentList();
+      if (type === "task") addCheckboxes(nl);
+      else stripCheckboxes(nl);
     }
     refreshStates(); emit();
   };
@@ -559,6 +669,15 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     }
     document.execCommand("insertHTML", false, fragment);
     refreshStates(); emit();
+  };
+
+  const placeCaretIn = (el) => {
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
   };
 
   // ── Link ──
@@ -592,20 +711,70 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     refreshStates(); emit();
   };
 
-  // ── Table ──
-  const insertTable = () => {
-    setTableOpen(false);
-    const { rows, cols, header, bordered, striped } = tableCfg;
-    const r = Math.min(Math.max(1, rows | 0), 30);
-    const c = Math.min(Math.max(1, cols | 0), 20);
-    // the requested row count INCLUDES the header row (3×3 = header + 2)
-    const bodyRows = Math.max(header ? r - 1 : r, 1);
-    let out = `<table${bordered ? " bordered" : ""}${striped ? " striped" : ""}>`;
-    if (header) out += `<tr>${'<th><br></th>'.repeat(c)}</tr>`;
-    out += `<tr>${'<td><br></td>'.repeat(c)}</tr>`.repeat(bodyRows);
-    out += "</table><div><br></div>";
-    insertHtmlAtCursor(out);
+  // ── Table (Telegram-style: instant default insert, edited via right-click) ──
+  const insertTableDefault = () => {
+    saveSelection();
+    insertHtmlAtCursor(
+      '<table bordered><tr><td><br></td><td><br></td></tr>' +
+      '<tr><td><br></td><td><br></td></tr></table><div><br></div>'
+    );
   };
+
+  const tableOp = (fn) => {
+    const cell = ctxCell.current;
+    if (!cell || !ref.current.contains(cell)) return;
+    ref.current?.focus();
+    fn(cell);
+    refreshStates(); emit();
+  };
+  const insertRow = (before) => tableOp((cell) => {
+    const row = cell.parentNode;
+    const nr = document.createElement("tr");
+    for (let i = 0; i < row.cells.length; i++) {
+      const c = document.createElement("td");
+      c.appendChild(document.createElement("br"));
+      nr.appendChild(c);
+    }
+    row.parentNode.insertBefore(nr, before ? row : row.nextSibling);
+    placeCaretIn(nr.cells[0]);
+  });
+  const insertCol = (before) => tableOp((cell) => {
+    const idx = cell.cellIndex;
+    const table = cell.closest("table");
+    for (const r of table.rows) {
+      const refCell = r.cells[Math.min(idx, r.cells.length - 1)];
+      const c = document.createElement(refCell?.tagName === "TH" ? "th" : "td");
+      c.appendChild(document.createElement("br"));
+      const at = r.cells[idx] || null;
+      r.insertBefore(c, before ? at : (at ? at.nextSibling : null));
+    }
+  });
+  const deleteRow = () => tableOp((cell) => {
+    const row = cell.parentNode;
+    const table = row.closest("table");
+    row.remove();
+    if (!table.rows.length) table.remove();
+  });
+  const deleteCol = () => tableOp((cell) => {
+    const idx = cell.cellIndex;
+    const table = cell.closest("table");
+    for (const r of [...table.rows]) r.cells[idx]?.remove();
+    if (![...table.rows].some((r) => r.cells.length)) table.remove();
+  });
+  // Telegram's "Highlight" = header-style cell → real <th> so the DM renders it
+  const setCellHeader = (on) => tableOp((cell) => {
+    if ((cell.tagName === "TH") === on) return;
+    const repl = document.createElement(on ? "th" : "td");
+    for (const a of cell.attributes) repl.setAttribute(a.name, a.value);
+    while (cell.firstChild) repl.appendChild(cell.firstChild);
+    cell.replaceWith(repl);
+    ctxCell.current = repl;
+    placeCaretIn(repl);
+  });
+  const setCellAlign = (dir) => tableOp((cell) => {
+    cell.setAttribute("align", dir);
+    cell.style.textAlign = dir;
+  });
 
   // ── Formula ──
   const insertMath = () => {
@@ -627,7 +796,40 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     );
   };
 
+  // ── Quote author (<cite>, the blue author line in Telegram quotes) ──
+  const makeQuoteAuthor = () => {
+    const q = ancestorTag("blockquote") || ancestorTag("aside");
+    if (!q) return;
+    ref.current?.focus();
+    const sel = window.getSelection();
+    let line = sel?.anchorNode;
+    while (line && line !== q && line.parentNode !== q) line = line.parentNode;
+    const cite = document.createElement("cite");
+    if (line && line !== q) {
+      if (line.nodeType === Node.ELEMENT_NODE) {
+        while (line.firstChild) cite.appendChild(line.firstChild);
+        line.replaceWith(cite);
+      } else {
+        cite.textContent = line.nodeValue || "";
+        line.parentNode.replaceChild(cite, line);
+      }
+    } else {
+      cite.appendChild(document.createElement("br"));
+      q.appendChild(cite);
+    }
+    if (!cite.childNodes.length) cite.appendChild(document.createElement("br"));
+    placeCaretIn(cite);
+    refreshStates(); emit();
+  };
+
   // ── Media embeds ──
+  const openMedia = (accept) => {
+    saveSelection();
+    if (fileRef.current) {
+      fileRef.current.accept = accept;
+      fileRef.current.click();
+    }
+  };
   const pickMedia = (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -662,44 +864,65 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     let el;
     while ((el = ancestorTag("code") || ancestorSpoiler() || ancestorTag("mark"))) unwrap(el);
     if (ancestorTag("blockquote") || ancestorTag("pre") || ancestorTag("aside") ||
-        ancestor((el) => /^H[1-6]$/.test(el.tagName))) {
+        ancestor((elm) => /^H[1-6]$/.test(elm.tagName))) {
       document.execCommand("formatBlock", false, "<div>");
     }
     refreshStates(); emit();
   };
 
-  const onPaste = (e) => {
-    e.preventDefault();
-    const richClip = e.clipboardData.getData("text/html");
-    if (richClip) {
-      const tmp = document.createElement("div");
-      tmp.innerHTML = richClip;
-      if (rich) {
-        const { html } = serializeRich(tmp);
-        document.execCommand("insertHTML", false, html);
-      } else {
-        const { html } = serializeTelegram(tmp);
-        document.execCommand("insertHTML", false, html.replace(/\n/g, "<br>"));
-      }
+  // ── Paste (shared by the paste event and the context-menu item) ──
+  const insertSanitizedHtml = (rawHtml) => {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = rawHtml;
+    if (rich) {
+      const { html } = serializeRich(tmp);
+      document.execCommand("insertHTML", false, html);
     } else {
-      document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+      const { html } = serializeTelegram(tmp);
+      document.execCommand("insertHTML", false, html.replace(/\n/g, "<br>"));
     }
     emit();
   };
-
-  const placeCaretIn = (el) => {
-    const sel = window.getSelection();
-    const r = document.createRange();
-    r.selectNodeContents(el);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
+  const onPaste = (e) => {
+    e.preventDefault();
+    const richClip = e.clipboardData.getData("text/html");
+    if (richClip) insertSanitizedHtml(richClip);
+    else {
+      document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+      emit();
+    }
+  };
+  const pasteFromClipboard = async () => {
+    ref.current?.focus();
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const it of items) {
+          if (it.types.includes("text/html")) {
+            insertSanitizedHtml(await (await it.getType("text/html")).text());
+            return;
+          }
+        }
+      }
+      const txt = await navigator.clipboard.readText();
+      if (txt) { document.execCommand("insertText", false, txt); emit(); }
+    } catch { /* clipboard permission denied — ⌘V still works */ }
   };
 
-  // Telegram-composer Enter semantics: Enter at the end of a heading starts a
-  // normal line; Enter in a <summary> drops into the details body; Enter on an
-  // EMPTY line inside quote / pull quote / code block / details leaves the
-  // block (contentEditable otherwise traps the caret inside forever).
+  const selectAll = () => {
+    ref.current?.focus();
+    const r = document.createRange();
+    r.selectNodeContents(ref.current);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    refreshStates();
+  };
+
+  // ── Enter semantics (Telegram composer) ──
+  // Enter on an empty line inside quote / pull quote / code / details exits
+  // the block; Enter at the end of a heading starts a normal line; Enter in a
+  // <summary> drops into the details body. Shift+Enter is always a soft <br>.
   const handleEnter = (e) => {
     const sel = window.getSelection();
     if (!sel?.rangeCount || !inEditor(sel.anchorNode)) return false;
@@ -742,6 +965,14 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       }
       placeCaretIn(body);
       return true;
+    }
+
+    // Enter at the end of a quote author line ends the quote (Telegram: the
+    // cite is the quote's last line)
+    const cite = ancestorTag("cite");
+    if (cite) {
+      const q = cite.closest("blockquote,aside");
+      if (q && atEndOf(cite)) return exitAfter(q, false);
     }
 
     const container = ancestorTag("blockquote") || ancestorTag("aside") ||
@@ -797,14 +1028,119 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
 
   const onKeyDown = (e) => {
     if (e.key === "Tab" && handleTab(e)) return;
-    if (e.key === "Enter" && !e.shiftKey && handleEnter(e)) return;
+    if (e.key === "Enter") {
+      if (e.shiftKey) return; // native soft <br>
+      // inside a table cell Enter is a soft break too — the caret must not
+      // leave the cell (Telegram keeps you in the cell)
+      if (ancestor((el) => el.tagName === "TD" || el.tagName === "TH")) {
+        e.preventDefault();
+        document.execCommand("insertLineBreak");
+        emit();
+        return;
+      }
+      if (handleEnter(e)) return;
+      return; // native paragraph behaviour
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       openLink();
     }
   };
 
-  const base = [
+  // ── Context menu (right click — mirrors Telegram's composer menu) ──
+  const onContextMenu = (e) => {
+    if (!inEditor(e.target)) return;
+    e.preventDefault();
+    ctxCell.current = e.target.closest?.("td,th");
+    if (ctxCell.current && !ref.current.contains(ctxCell.current)) ctxCell.current = null;
+    saveSelection();
+    setCtx({ x: e.clientX, y: e.clientY, page: "main" });
+  };
+  useEffect(() => {
+    if (!ctx) return;
+    const esc = (e) => { if (e.key === "Escape") setCtx(null); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [ctx]);
+
+  const fmtItems = (withBack) => [
+    ...(withBack ? [{ key: "back", icon: ChevronLeft, label: t("rte.back"), run: () => setCtx((c) => ({ ...c, page: "main" })), keepOpen: true }] : []),
+    { key: "bold", icon: Bold, label: t("rte.bold"), check: states.bold, run: () => exec("bold") },
+    { key: "italic", icon: Italic, label: t("rte.italic"), check: states.italic, run: () => exec("italic") },
+    { key: "underline", icon: Underline, label: t("rte.underline"), check: states.underline, run: () => exec("underline") },
+    { key: "strike", icon: Strikethrough, label: t("rte.strike"), check: states.strike, run: () => exec("strikeThrough") },
+    { key: "code", icon: Code, label: t("rte.code"), check: states.code, run: () => toggleInline("code") },
+    { key: "spoiler", icon: EyeOff, label: t("rte.spoiler"), check: states.spoiler, run: () => toggleInline("spoiler") },
+    ...(rich ? [
+      { key: "mark", icon: Highlighter, label: t("rte.mark"), check: states.mark, run: () => toggleInline("mark") },
+      { key: "sub", icon: Subscript, label: t("rte.sub"), check: states.sub, run: () => exec("subscript") },
+      { key: "sup", icon: Superscript, label: t("rte.sup"), check: states.sup, run: () => exec("superscript") },
+    ] : []),
+    { divider: true },
+    { key: "clear", icon: RemoveFormatting, label: t("rte.clear"), run: clearFormatting },
+  ];
+
+  const ctxItems = () => {
+    if (ctx?.page === "format") return fmtItems(true);
+    const inCell = !!ctxCell.current;
+    const isTh = ctxCell.current?.tagName === "TH";
+    const inQuote = states.quote || states.aside;
+    return [
+      { key: "paste", icon: Clipboard, label: t("rte.paste"), run: pasteFromClipboard },
+      { key: "selectAll", icon: CheckSquare, label: t("rte.selectAll"), run: selectAll },
+      { key: "format", icon: Type, label: t("rte.format"), sub: true, keepOpen: true, run: () => setCtx((c) => ({ ...c, page: "format" })) },
+      ...(inQuote ? [
+        { divider: true },
+        { key: "cite", icon: Quote, label: t("rte.quoteAuthor"), run: makeQuoteAuthor },
+      ] : []),
+      ...(inCell ? [
+        { divider: true },
+        { key: "rowUp", icon: Plus, label: t("rte.insertAbove"), run: () => insertRow(true) },
+        { key: "rowDn", icon: Plus, label: t("rte.insertBelow"), run: () => insertRow(false) },
+        { key: "colL", icon: Plus, label: t("rte.insertLeft"), run: () => insertCol(true) },
+        { key: "colR", icon: Plus, label: t("rte.insertRight"), run: () => insertCol(false) },
+        { divider: true },
+        isTh
+          ? { key: "unhl", icon: Eraser, label: t("rte.removeHighlightCell"), run: () => setCellHeader(false) }
+          : { key: "hl", icon: Highlighter, label: t("rte.highlightCell"), run: () => setCellHeader(true) },
+        { key: "alL", icon: AlignLeft, label: t("rte.alignLeft"), run: () => setCellAlign("left") },
+        { key: "alC", icon: AlignCenter, label: t("rte.alignCenter"), run: () => setCellAlign("center") },
+        { key: "alR", icon: AlignRight, label: t("rte.alignRight"), run: () => setCellAlign("right") },
+        { divider: true },
+        { key: "delRow", icon: Trash2, label: t("rte.deleteRow"), danger: true, run: deleteRow },
+        { key: "delCol", icon: Trash2, label: t("rte.deleteCol"), danger: true, run: deleteCol },
+      ] : []),
+    ];
+  };
+
+  // ── Toolbars ──
+  const flatBtn = ({ key, icon: Icon, title, block, run }) => {
+    const off = block && states.cell;
+    return (
+      <button
+        key={key}
+        type="button"
+        title={title}
+        aria-label={title}
+        aria-pressed={!!states[key]}
+        aria-disabled={off || undefined}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={off ? undefined : run}
+        className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+        style={{
+          ...(states[key] && !off
+            ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
+            : { background: "transparent", color: "var(--text-3)" }),
+          ...(off ? { opacity: 0.3, cursor: "not-allowed" } : {}),
+        }}
+      >
+        <Icon size={14} />
+      </button>
+    );
+  };
+  const divider = (i) => <div key={`d${i}`} className="w-px h-4 mx-1" style={{ background: "var(--border-md)" }} />;
+
+  const classicToolbar = [
     [
       { key: "bold", icon: Bold, title: t("rte.bold"), run: () => exec("bold") },
       { key: "italic", icon: Italic, title: t("rte.italic"), run: () => exec("italic") },
@@ -814,47 +1150,65 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     [
       { key: "spoiler", icon: EyeOff, title: t("rte.spoiler"), run: () => toggleInline("spoiler") },
       { key: "code", icon: Code, title: t("rte.code"), run: () => toggleInline("code") },
-      ...(rich ? [
-        { key: "mark", icon: Highlighter, title: t("rte.mark"), run: () => toggleInline("mark") },
-        { key: "sub", icon: Subscript, title: t("rte.sub"), run: () => exec("subscript") },
-        { key: "sup", icon: Superscript, title: t("rte.sup"), run: () => exec("superscript") },
-      ] : []),
     ],
     [
-      { key: "quote", icon: TextQuote, title: t("rte.quote"), block: true, run: () => toggleBlock("blockquote") },
-      ...(rich ? [{ key: "aside", icon: Quote, title: t("rte.pullQuote"), block: true, run: () => toggleBlock("aside") }] : []),
-      { key: "pre", icon: SquareCode, title: t("rte.codeBlock"), block: true, run: () => toggleBlock("pre") },
+      { key: "quote", icon: TextQuote, title: t("rte.quote"), run: () => toggleBlock("blockquote") },
+      { key: "pre", icon: SquareCode, title: t("rte.codeBlock"), run: () => toggleBlock("pre") },
     ],
-  ];
-  const richOnly = [
-    [
-      { key: "h1", icon: Heading1, title: t("rte.h1"), block: true, run: () => toggleBlock("h1") },
-      { key: "h2", icon: Heading2, title: t("rte.h2"), block: true, run: () => toggleBlock("h2") },
-      { key: "h3", icon: Heading3, title: t("rte.h3"), block: true, run: () => toggleBlock("h3") },
-      { key: "h4", icon: Heading4, title: t("rte.h4"), block: true, run: () => toggleBlock("h4") },
-      { key: "h5", icon: Heading5, title: t("rte.h5"), block: true, run: () => toggleBlock("h5") },
-      { key: "h6", icon: Heading6, title: t("rte.h6"), block: true, run: () => toggleBlock("h6") },
-    ],
-    [
-      { key: "ul", icon: List, title: t("rte.bulletList"), block: true, run: () => exec("insertUnorderedList") },
-      { key: "ol", icon: ListOrdered, title: t("rte.orderedList"), block: true, run: () => exec("insertOrderedList") },
-      { key: "task", icon: ListChecks, title: t("rte.taskList"), block: true, run: toggleTask },
-    ],
-    [
-      { key: "divider", icon: SeparatorHorizontal, title: t("rte.divider"), block: true, run: () => exec("insertHorizontalRule") },
-      { key: "table", icon: TableIcon, title: t("rte.table"), block: true, run: () => { saveSelection(); setTableOpen(true); } },
-      { key: "details", icon: ChevronsDownUp, title: t("rte.details"), block: true, run: insertDetails },
-      { key: "math", icon: Sigma, title: t("rte.formula"), run: () => { saveSelection(); setMathOpen(true); } },
-      { key: "media", icon: ImagePlus, title: t("rte.media"), block: true, run: () => { saveSelection(); fileRef.current?.click(); } },
-    ],
-  ];
-  const tail = [
     [
       { key: "link", icon: Link2, title: t("rte.link"), run: openLink },
       { key: "clear", icon: RemoveFormatting, title: t("rte.clear"), run: clearFormatting },
     ],
   ];
-  const groups = [...base, ...(rich ? richOnly : []), ...tail];
+
+  const anyHeading = states.h1 || states.h2 || states.h3 || states.h4 || states.h5 || states.h6;
+  const headingIcons = [Heading1, Heading2, Heading3, Heading4, Heading5, Heading6];
+  // Telegram's "+" menu: Heading levels · Text · inline styles · Formula,
+  // plus our extra blocks (divider / collapsible / pull quote) at the bottom.
+  const plusMenuItems = [
+    ...headingIcons.map((Icon, i) => ({
+      key: `h${i + 1}`, icon: Icon, label: t(`rte.h${i + 1}`),
+      check: states[`h${i + 1}`], disabled: states.cell,
+      run: () => toggleBlock(`h${i + 1}`),
+    })),
+    {
+      key: "text", icon: Type, label: t("rte.menuText"),
+      check: !anyHeading && !states.quote && !states.aside && !states.pre,
+      disabled: states.cell,
+      run: () => { if (anyHeading || states.quote || states.aside || states.pre) { ref.current?.focus(); document.execCommand("formatBlock", false, "<div>"); refreshStates(); emit(); } },
+    },
+    { divider: true },
+    { key: "bold", icon: Bold, label: t("rte.bold"), check: states.bold, run: () => exec("bold") },
+    { key: "italic", icon: Italic, label: t("rte.italic"), check: states.italic, run: () => exec("italic") },
+    { key: "underline", icon: Underline, label: t("rte.underline"), check: states.underline, run: () => exec("underline") },
+    { key: "strike", icon: Strikethrough, label: t("rte.strike"), check: states.strike, run: () => exec("strikeThrough") },
+    { key: "code", icon: Code, label: t("rte.code"), check: states.code, run: () => toggleInline("code") },
+    { key: "spoiler", icon: EyeOff, label: t("rte.spoiler"), check: states.spoiler, run: () => toggleInline("spoiler") },
+    { key: "math", icon: Sigma, label: t("rte.formula"), run: () => { saveSelection(); setMathOpen(true); } },
+    { divider: true },
+    { key: "mark", icon: Highlighter, label: t("rte.mark"), check: states.mark, run: () => toggleInline("mark") },
+    { key: "sub", icon: Subscript, label: t("rte.sub"), check: states.sub, run: () => exec("subscript") },
+    { key: "sup", icon: Superscript, label: t("rte.sup"), check: states.sup, run: () => exec("superscript") },
+    { divider: true },
+    { key: "hr", icon: SeparatorHorizontal, label: t("rte.divider"), disabled: states.cell, run: () => exec("insertHorizontalRule") },
+    { key: "details", icon: ChevronsDownUp, label: t("rte.details"), disabled: states.cell, run: insertDetails },
+    { key: "aside", icon: Quote, label: t("rte.pullQuote"), check: states.aside, disabled: states.cell, run: () => toggleBlock("aside") },
+  ];
+
+  const listMenuItems = [
+    { key: "none", icon: Type, label: t("rte.listNone"), check: states.listType === "none", disabled: states.cell, run: () => setListType("none") },
+    { key: "ul", icon: List, label: t("rte.bulletList"), check: states.listType === "ul", disabled: states.cell, run: () => setListType("ul") },
+    { key: "ol", icon: ListOrdered, label: t("rte.orderedList"), check: states.listType === "ol", disabled: states.cell, run: () => setListType("ol") },
+    { key: "task", icon: ListChecks, label: t("rte.taskList"), check: states.listType === "task", disabled: states.cell, run: () => setListType("task") },
+    { divider: true },
+    { key: "indent", icon: ChevronsRight, label: t("rte.indent"), disabled: states.cell || states.listType === "none", run: () => exec("indent") },
+    { key: "outdent", icon: ChevronsLeft, label: t("rte.outdent"), disabled: states.cell || states.listType === "none", run: () => exec("outdent") },
+  ];
+
+  const attachMenuItems = [
+    { key: "pv", icon: ImageIcon, label: t("rte.photoVideo"), disabled: states.cell, run: () => openMedia("image/*,video/*") },
+    { key: "au", icon: Music, label: t("rte.audioFile"), disabled: states.cell, run: () => openMedia("audio/*") },
+  ];
 
   return (
     <div
@@ -865,35 +1219,25 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
         className="flex flex-wrap items-center gap-0.5 px-2 py-1.5"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
-        {groups.map((g, gi) => (
-          <div key={gi} className="flex items-center gap-0.5">
-            {gi > 0 && <div className="w-px h-4 mx-1" style={{ background: "var(--border-md)" }} />}
-            {g.map(({ key, icon: Icon, title, block, run }) => {
-              const off = block && states.cell;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  title={title}
-                  aria-label={title}
-                  aria-pressed={!!states[key]}
-                  aria-disabled={off || undefined}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={off ? undefined : run}
-                  className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
-                  style={{
-                    ...(states[key] && !off
-                      ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
-                      : { background: "transparent", color: "var(--text-3)" }),
-                    ...(off ? { opacity: 0.3, cursor: "not-allowed" } : {}),
-                  }}
-                >
-                  <Icon size={14} />
-                </button>
-              );
-            })}
-          </div>
-        ))}
+        {rich ? (
+          <>
+            <ToolbarMenu icon={Plus} title={t("rte.format")} items={plusMenuItems} />
+            <ToolbarMenu icon={List} title={t("rte.bulletList")} items={listMenuItems} />
+            {flatBtn({ key: "quote", icon: TextQuote, title: t("rte.quote"), block: true, run: () => toggleBlock("blockquote") })}
+            {flatBtn({ key: "table", icon: TableIcon, title: t("rte.table"), block: true, run: insertTableDefault })}
+            <ToolbarMenu icon={Paperclip} title={t("rte.media")} items={attachMenuItems} disabled={states.cell} />
+            {divider(1)}
+            {flatBtn({ key: "link", icon: Link2, title: t("rte.link"), run: openLink })}
+            {flatBtn({ key: "clear", icon: RemoveFormatting, title: t("rte.clear"), run: clearFormatting })}
+          </>
+        ) : (
+          classicToolbar.map((g, gi) => (
+            <div key={gi} className="flex items-center gap-0.5">
+              {gi > 0 && divider(gi)}
+              {g.map(flatBtn)}
+            </div>
+          ))
+        )}
       </div>
 
       <div
@@ -910,9 +1254,33 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
         onKeyUp={refreshStates}
         onMouseUp={refreshStates}
         onClick={emit /* checkbox toggles don't fire onInput */}
+        onContextMenu={onContextMenu}
       />
 
       <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={pickMedia} />
+
+      {/* right-click context menu — Telegram-composer style */}
+      {ctx && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 130 }} onMouseDown={() => setCtx(null)} onContextMenu={(e) => { e.preventDefault(); setCtx(null); }}>
+          <div
+            className="absolute min-w-[220px] max-h-[340px] overflow-y-auto rounded-xl py-1"
+            style={{
+              left: Math.min(ctx.x, window.innerWidth - 240),
+              top: Math.min(ctx.y, window.innerHeight - 360),
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-md)",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <MenuList
+              items={ctxItems()}
+              onAction={(it) => { if (it.keepOpen) it.run(); else { setCtx(null); it.run(); } }}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
 
       <Modal
         open={linkOpen}
@@ -940,50 +1308,6 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
           />
         </FormField>
-      </Modal>
-
-      <Modal
-        open={tableOpen}
-        onClose={() => setTableOpen(false)}
-        title={t("rte.tableTitle")}
-        maxWidth="max-w-sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setTableOpen(false)}>{t("rte.linkCancel")}</Button>
-            <Button onClick={insertTable}>{t("rte.tableInsert")}</Button>
-          </>
-        }
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label={t("rte.tableRows")}>
-            <input
-              type="number" min="1" max="30" value={tableCfg.rows}
-              onChange={(e) => setTableCfg((c) => ({ ...c, rows: +e.target.value }))}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </FormField>
-          <FormField label={t("rte.tableCols")}>
-            <input
-              type="number" min="1" max="20" value={tableCfg.cols}
-              onChange={(e) => setTableCfg((c) => ({ ...c, cols: +e.target.value }))}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </FormField>
-        </div>
-        <div className="space-y-1.5 pt-1">
-          {[["header", t("rte.tableHeader")], ["bordered", t("rte.tableBordered")], ["striped", t("rte.tableStriped")]].map(([k, label]) => (
-            <label key={k} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-2)" }}>
-              <input
-                type="checkbox"
-                checked={tableCfg[k]}
-                onChange={(e) => setTableCfg((c) => ({ ...c, [k]: e.target.checked }))}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
       </Modal>
 
       <Modal
