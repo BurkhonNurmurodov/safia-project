@@ -309,6 +309,40 @@ export default function Downtime() {
 
   return (
     <Layout title={t("downtime.title")}>
+      {/* Inline period + shift + supervisor selectors — always visible, wired to
+          the global filters so they stay in sync with the header Filters drawer. */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+        <div className="sm:w-72">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+          <SegmentedToggle
+            value={shift}
+            onChange={setShift}
+            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+          />
+        </div>
+        <div className="sm:w-64 min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
+          <StyledSelect
+            value={supValue}
+            onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
+            options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+            searchable
+            searchPlaceholder={t("filter.searchBrigadirs")}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4 mb-6">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
