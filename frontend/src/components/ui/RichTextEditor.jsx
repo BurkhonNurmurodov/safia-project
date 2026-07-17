@@ -239,6 +239,10 @@ export function serializeRich(root) {
   // children of a block container → sequence of <p> lines + block elements
   const blocks = (node) => {
     let out = "", line = "";
+    let mediaRun = []; // consecutive block-level media → one collage
+    const flushMediaRun = () => {
+      if (mediaRun.length) { out += groupMedia(mediaRun); mediaRun = []; }
+    };
     const flushLine = () => {
       if (nonEmptyLine(line)) { out += `<p>${line}</p>`; textParts.push("\n"); }
       line = "";
@@ -249,17 +253,22 @@ export function serializeRich(root) {
       const tag = isEl ? c.tagName.toLowerCase() : null;
       if (isEl && c.getAttribute("data-tg-media")) {
         flushLine();
-        out += seenMedia(c);
+        mediaRun.push(seenMedia(c));
         return;
       }
+      // whitespace between adjacent media must not break the collage run
+      if (!isEl && !(c.nodeValue || "").trim() && mediaRun.length) return;
       if (isEl && (BLOCK_TAGS.has(tag) || c.classList.contains("tg-math-block"))) {
         flushLine();
+        flushMediaRun();
         out += blockNode(c);
       } else {
+        flushMediaRun();
         line += inline(c, new Set());
       }
     });
     flushLine();
+    flushMediaRun();
     return out;
   };
 
