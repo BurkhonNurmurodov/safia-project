@@ -679,6 +679,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       { key: "h1", icon: Heading1, title: t("rte.h1"), run: () => toggleBlock("h1") },
       { key: "h2", icon: Heading2, title: t("rte.h2"), run: () => toggleBlock("h2") },
       { key: "h3", icon: Heading3, title: t("rte.h3"), run: () => toggleBlock("h3") },
+      { key: "h4", icon: Heading4, title: t("rte.h4"), run: () => toggleBlock("h4") },
+      { key: "h5", icon: Heading5, title: t("rte.h5"), run: () => toggleBlock("h5") },
+      { key: "h6", icon: Heading6, title: t("rte.h6"), run: () => toggleBlock("h6") },
     ],
     [
       { key: "ul", icon: List, title: t("rte.bulletList"), run: () => exec("insertUnorderedList") },
