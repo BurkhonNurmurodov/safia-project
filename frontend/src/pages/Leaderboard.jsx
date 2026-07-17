@@ -368,9 +368,34 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
 }
 
 /* ═══════════════════════ page ════════════════════════════════════════ */
-function useLeaderboardData(period) {
-  // DUMMY: swap this hook for a useQuery returning { sups, byRank } later.
-  return useMemo(() => buildData(period), [period]);
+function useLeaderboardData(dateFrom, dateTo, shiftF, supF) {
+  // DUMMY: swap this hook for a useQuery returning { sups, byRank } later —
+  // it already takes the standard filter set (period + shift + supervisor).
+  return useMemo(() => {
+    const { sups: all } = buildData(seedOf(dateFrom, dateTo));
+    // Shift narrows the pool; the supervisor pick applies only when it belongs
+    // to that pool (a pick from the other shift is ignored, never an empty page).
+    let pool = shiftF ? all.filter((s) => s.shift === shiftF) : all;
+    if (supF != null && pool.some((s) => s.id === supF)) pool = pool.filter((s) => s.id === supF);
+    // Re-rank within the filtered pool so places stay dense (1..n).
+    const rankHist = new Map(pool.map((s) => [s.id, []]));
+    for (let w = 0; w < 8; w++) {
+      pool.map((s) => ({ id: s.id, v: s.hist[w] }))
+        .sort((a, b) => b.v - a.v)
+        .forEach((o, pos) => { rankHist.get(o.id)[w] = pos + 1; });
+    }
+    const sups = pool.map((s) => {
+      const rh = rankHist.get(s.id);
+      return { ...s, rankHist: rh, rank: rh[7], prevRank: rh[6] };
+    });
+    const byRank = [...sups].sort((a, b) => a.rank - b.rank);
+    return { sups, byRank };
+  }, [dateFrom, dateTo, shiftF, supF]);
+}
+
+/* Local YYYY-MM-DD (no UTC shift). */
+function isoDay(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export default function Leaderboard() {
