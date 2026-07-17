@@ -414,7 +414,11 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   const emit = () => {
     if (!ref.current) return;
     const out = rich ? serializeRich(ref.current) : serializeTelegram(ref.current);
-    setEmpty(!out.text.trim() && !out.mediaIds.length);
+    // structure without text (a fresh table, a divider, …) is not "empty" —
+    // the placeholder must not overlay it
+    const hasStructure = !!ref.current.querySelector(
+      "table,hr,details,ul,ol,input,[data-tg-media]");
+    setEmpty(!out.text.trim() && !out.mediaIds.length && !hasStructure);
     const media = out.mediaIds
       .map(({ id, kind }) => {
         const m = mediaReg.current.get(id);
