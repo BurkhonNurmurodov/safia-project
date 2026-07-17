@@ -184,3 +184,54 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    day's breakdown into an external panel under the chart (.att-trend-panel).
    The crosshair still tracks the hovered day. */
 .att-trend .apexcharts-tooltip { display: none !important; }
+
+/* ── Telegram rich-text (RichTextEditor + broadcast message preview) ─────────
+   Shared styling for the Telegram entity subset — the editor's contentEditable
+   (.tg-editor) and the read-only rendering of a stored broadcast (.tg-msg,
+   which receives sanitized backend HTML with real \n newlines, hence
+   pre-wrap). Spoilers appear as either <span class="tg-spoiler"> (editor DOM)
+   or <tg-spoiler> (serialized form) — style both. */
+.tg-editor { position: relative; white-space: pre-wrap; word-break: break-word; }
+.tg-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  color: var(--text-4);
+  pointer-events: none;
+}
+.tg-msg { white-space: pre-wrap; word-break: break-word; }
+.tg-editor blockquote, .tg-msg blockquote {
+  margin: 2px 0;
+  padding: 3px 10px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-bg);
+  border-radius: 0 8px 8px 0;
+}
+.tg-editor pre, .tg-msg pre {
+  margin: 2px 0;
+  padding: 6px 10px;
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.tg-editor code, .tg-msg code {
+  padding: 0 4px;
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.tg-editor pre code, .tg-msg pre code { padding: 0; background: none; border: none; }
+.tg-editor .tg-spoiler, .tg-editor tg-spoiler,
+.tg-msg .tg-spoiler, .tg-msg tg-spoiler {
+  background: var(--bg-accent);
+  border-bottom: 1px dashed var(--text-3);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.tg-editor a, .tg-msg a { color: #3b82f6; text-decoration: underline; }
