@@ -19,6 +19,19 @@ _seen_ids: deque[int] = deque()
 _seen_set: set[int] = set()
 
 
+def _is_non_private(update: telebot.types.Update) -> bool:
+    """True for updates originating in group/supergroup/channel chats.
+
+    The bot is private-chat-only for now: it may be added to groups later,
+    but until group features ship it must stay silent there — no replies to
+    messages, commands, or button taps outside private chats.
+    """
+    msg = update.message or update.edited_message
+    if msg is None and update.callback_query is not None:
+        msg = update.callback_query.message
+    return msg is not None and msg.chat.type != "private"
+
+
 def _already_seen(update_id: int) -> bool:
     if update_id in _seen_set:
         return True

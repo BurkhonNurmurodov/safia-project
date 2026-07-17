@@ -12,15 +12,18 @@ account, so a person holding several selected profiles gets one message.
 """
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from html import escape, unescape
 from html.parser import HTMLParser
 
+import requests
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import SessionLocal, get_db
 from app.models import Admin, Broadcast, Manager, RoleProfile, TelegramUserRole
 from app.routers.admin import verify_admin
@@ -35,6 +38,12 @@ MAX_TEXT_LEN = 4096
 MAX_CAPTION_LEN = 1024
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 50 * 1024 * 1024
+
+# Rich message limits (Bot API 10.1+): 32768 UTF-8 chars of text, up to 50
+# embedded media. Blocks/nesting caps (500/16) are far beyond what the editor
+# can produce, so only the two user-reachable ones are enforced here.
+MAX_RICH_TEXT_LEN = 32768
+MAX_RICH_MEDIA = 50
 
 # A 'sending' row older than this is considered interrupted (e.g. a Passenger
 # restart mid-broadcast) and is finalized at read time so it never spins forever.
