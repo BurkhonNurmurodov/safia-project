@@ -3052,6 +3052,7 @@ const t = {
     "nav.planFulfillment": "Выполнение плана",
     "nav.idleTime":        "Ожидания",
     "nav.admin":           "Админ",
+    "nav.support":         "Связаться с поддержкой",
     "nav.staff":           "Verifix правка",
     "nav.daily":           "Ежедневно",
     "nav.production":      "Производство",
