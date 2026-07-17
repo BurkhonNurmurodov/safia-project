@@ -587,7 +587,7 @@ export default function Leaderboard() {
               const rankCls = s.rank === 1 ? { background: "var(--brand)", color: "#fff", border: "1px solid transparent" }
                 : s.rank <= 3 ? { background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }
                 : { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" };
-              const isSel = s.id === selectedId;
+              const isSel = s.id === effSelectedId;
               const isExp = s.id === expandedId;
               return (
                 <FragmentRow key={s.id}
