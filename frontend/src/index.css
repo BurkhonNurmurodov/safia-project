@@ -299,11 +299,14 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
 }
 .tg-editor .tg-math-block, .tg-msg-rich tg-math-block { display: block; padding: 4px 8px; margin: 3px 0; }
 .tg-editor .tg-embed {
-  display: block;
-  max-height: 180px;
-  max-width: 100%;
+  /* inline flow — adjacent embeds stack into one row (serialized as a
+     tg-collage, Telegram's album), matching how Telegram renders them */
+  display: inline-block;
+  vertical-align: bottom;
+  max-height: 140px;
+  max-width: 48%;
   border-radius: 8px;
-  margin: 4px 0;
+  margin: 3px 6px 3px 0;
 }
 .tg-editor .tg-media-chip {
   display: inline-flex;
