@@ -18,9 +18,9 @@ import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
 
 export default function PlanFulfillment() {
-  const { params, unit, ready } = useFilters();
+  const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const [nameAsc, setNameAsc] = useState(true);
 
   const { data, isLoading } = useQuery({
