@@ -409,8 +409,6 @@ export default function Broadcast() {
           <span>{t("admin.broadcast.queuedToast")}</span>
         </div>
       )}
-      {/* Keep polling visible even after the toast fades */}
-      {!toast && sendingRow && null}
     </div>
   );
 }
