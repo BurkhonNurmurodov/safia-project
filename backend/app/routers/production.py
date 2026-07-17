@@ -270,12 +270,13 @@ def export_positions(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    """Excel export of the Positions table — styled to mirror the on-screen table
-    and delivered to the caller's private Telegram chat. Rows are rendered in the
-    exact order the client sends (`body.order`) and columns as the visible subset
-    it sends (`body.columns`, column picker), so the file matches what the user
-    saw — current search, team filter, sort and columns — when they pressed the
-    button."""
+    """Excel export = the brigadirs' working «загрузка» file, pre-filled from the
+    day's dashboard and delivered to the caller's private Telegram chat. The
+    layout mirrors their manual template exactly — live formulas (ЛЮДИ via
+    VLOOKUP into the N:O team table, Общ.трудаёмкост =C*G/60, Парето vs the I2
+    shift sum, per-team SUMIFS loading) — so the file keeps recalculating as
+    the brigadir edits plans, teams or headcounts during the shift. Rows are
+    rendered in the exact order the client sends (`body.order`)."""
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
@@ -284,89 +285,146 @@ def export_positions(
     if body.order:
         by_id = {r.get("id"): r for r in rows}
         rows = [by_id[i] for i in body.order if i in by_id]
+    wcs = dash.get("work_centers") or []
+    sm, _pm = _constants(db)
+    sm = int(sm)
 
-    all_headers = POSITIONS_HEADERS.get(lang, POSITIONS_HEADERS["ru"])
-    header_by_key = dict(zip(POSITIONS_COL_KEYS, all_headers))
-    col_keys = [k for k in body.columns if k in header_by_key] or list(POSITIONS_COL_KEYS)
-    headers = [header_by_key[k] for k in col_keys]
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
     mgr_name = dash.get("manager_name") or ""
     day_h = day.strftime("%d.%m.%Y")
-    dash_ch = "—"  # em-dash for missing cells, matches the UI
 
     wb = Workbook()
     ws = wb.active
     ws.title = title_word[:31]
 
-    gold = PatternFill("solid", fgColor="C8973F")
-    head_font = Font(color="FFFFFF", bold=True)
-    thin = Side(style="thin", color="D9D9D9")
+    green_head = PatternFill("solid", fgColor="E2EFDA")   # header band / labels
+    green_cell = PatternFill("solid", fgColor="C6E0B4")   # editable data area
+    bold = Font(bold=True)
+    thin = Side(style="thin")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     center = Alignment(horizontal="center", vertical="center")
     left = Alignment(horizontal="left", vertical="center")
-    ncols = len(headers)
+    head_al = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Row 1: title (merged across all columns). Row 2: gold header. Data from row 3.
-    ws.append([f"{title_word} — {mgr_name}  ·  {day_h}" if mgr_name else f"{title_word}  ·  {day_h}"])
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
-    ws["A1"].font = Font(bold=True, size=12)
-    ws["A1"].alignment = left
+    data_end = 3 + len(rows) + ZAGRUZKA_SPARE_ROWS          # incl. spare formula rows
+    side_end = 3 + max(len(wcs), ZAGRUZKA_SIDE_MIN_ROWS)    # N:Q team block bottom
 
-    ws.append(headers)
-    for c in ws[2]:
-        c.fill, c.font, c.alignment, c.border = gold, head_font, center, border
+    # --- rows 1-2: shift-total sums over the Общ.трудаёмкост columns --------
+    ws["I1"], ws["J1"] = "Смена Бошида", "Смена Охирида"
+    ws["I2"], ws["J2"] = f"=+SUM(I4:I{data_end})", f"=SUM(J4:J{data_end})"
+    for coord in ("I1", "J1", "I2", "J2"):
+        c = ws[coord]
+        c.border, c.alignment = border, center
+    ws["I1"].font = ws["J1"].font = bold
+    ws["I2"].number_format = ws["J2"].number_format = "#\\ ##0.00"
 
-    def _num(v, missing_dash=True):
-        """Numeric value, or the em-dash for None (matches the UI's '—')."""
-        return v if v is not None else (dash_ch if missing_dash else 0)
+    # --- row 3: main headers -------------------------------------------------
+    for i, h in enumerate(ZAGRUZKA_HEADERS, start=1):
+        c = ws.cell(row=3, column=i, value=h)
+        c.font, c.alignment, c.border = bold, head_al, border
+    ws.row_dimensions[3].height = 25.35
+    # green band over the editable columns (rows 1-3, as in the template)
+    for col in ("B", "C", "D", "G", "H"):
+        for r in (1, 2, 3):
+            ws[f"{col}{r}"].fill = green_head
 
-    for r in rows:
-        tl = r.get("total_labor")
-        al = r.get("actual_labor")
-        vyp = (al / tl) if (tl and al is not None) else None
-        vals = {
-            "sap_code": r.get("sap_code") or "",
-            "op": r.get("op") or dash_ch,
-            "name": r.get("name") or "",
-            "labor": _num(r.get("labor_time")) if r.get("has_labor") else dash_ch,
-            "wc": r.get("work_center") or "",
-            "people": _num(r.get("people"), missing_dash=False),
-            "vyp": _num(vyp),
-            "fact": _num(r.get("actual_qty"), missing_dash=False),
-            "plan": _num(r.get("plan_qty"), missing_dash=False),
-            "actual_labor": _num(al),
-            "labor_total": _num(tl),
-            "minutes": _num(r.get("minutes")),
-            "pareto": _num(r.get("pareto"), missing_dash=False),
-        }
-        ws.append([vals[k] for k in col_keys])
-
-    # Per-column number formats + alignment — mirror the UI's precision, keyed
-    # like the frontend columns so a hidden/reordered subset stays correct.
-    fmts = {i: POSITIONS_COL_FMT[k] for i, k in enumerate(col_keys, start=1) if k in POSITIONS_COL_FMT}
-    left_cols = {i for i, k in enumerate(col_keys, start=1) if k in POSITIONS_COL_LEFT}
-    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ncols):
-        for c in row:
+    # --- data rows (row 4+), then spare formula rows for hand-added SKUs -----
+    for idx, r in enumerate(rows):
+        rn = 4 + idx
+        ws.cell(row=rn, column=1, value=r.get("sap_code") or "")
+        ws.cell(row=rn, column=2, value=r.get("name") or "")
+        ws.cell(row=rn, column=3, value=r.get("labor_time") if r.get("has_labor") else None)
+        ws.cell(row=rn, column=4, value=r.get("work_center") or "")
+        ws.cell(row=rn, column=6, value=r.get("op") or None)
+        plan = r.get("plan_qty")
+        ws.cell(row=rn, column=7, value=plan if plan else None)
+    for rn in range(4, data_end + 1):
+        ws.cell(row=rn, column=5, value=f"=+VLOOKUP(D{rn},$N:$O,2,0)")
+        ws.cell(row=rn, column=9, value=f"=C{rn}*G{rn}/60")
+        ws.cell(row=rn, column=10, value=f"=C{rn}*H{rn}/60")
+        ws.cell(row=rn, column=11, value=f"=I{rn}/E{rn}")
+        ws.cell(row=rn, column=12, value=f"=+I{rn}/$I$2")
+        for cn in range(1, 13):
+            c = ws.cell(row=rn, column=cn)
             c.border = border
-            c.alignment = left if c.column in left_cols else center
-            nf = fmts.get(c.column)
-            if nf and isinstance(c.value, (int, float)):
-                c.number_format = nf
+            c.alignment = left if cn in (1, 2) else center
+            if 2 <= cn <= 8:
+                c.fill = green_cell
+        for cn, nf in ((3, "0.0"), (5, "0.0"), (9, "0.0"), (10, "0.0"), (11, "0.0"), (12, "0%")):
+            ws.cell(row=rn, column=cn).number_format = nf
 
-    for i, k in enumerate(col_keys, start=1):
-        ws.column_dimensions[ws.cell(row=2, column=i).column_letter].width = POSITIONS_COL_WIDTH.get(k, 10)
-    # Freeze the two header rows; keep the identity columns frozen too while
-    # Name still sits within the first three columns (it can be dragged away).
-    name_idx = col_keys.index("name") + 1 if "name" in col_keys else 0
-    if 0 < name_idx <= 3 and name_idx < ncols:
-        ws.freeze_panes = ws.cell(row=3, column=name_idx + 1).coordinate
-    else:
-        ws.freeze_panes = "A3"
+    # --- N:Q — per-team headcount + loading (feeds the ЛЮДИ VLOOKUP) --------
+    for i, h in enumerate(("Команда", "O. SONI", "Загруженность", "Вакти"), start=14):
+        c = ws.cell(row=3, column=i, value=h)
+        c.font, c.alignment, c.border = bold, head_al, border
+    ws["O3"].fill = green_head
+    for idx in range(side_end - 3):
+        rn = 4 + idx
+        if idx < len(wcs):
+            ws.cell(row=rn, column=14, value=wcs[idx]["work_center"])
+            ws.cell(row=rn, column=15, value=wcs[idx]["people"])
+        ws.cell(row=rn, column=16,
+                value=f"=+IFERROR(SUMIFS($I:$I,$D:$D,$N{rn})/({sm}*VLOOKUP($N{rn},$D:$E,2,0)),0)")
+        ws.cell(row=rn, column=17, value=f"=(P{rn}*{sm / 100:g})*100")
+        for cn in range(14, 18):
+            c = ws.cell(row=rn, column=cn)
+            c.border, c.alignment = border, center
+        ws.cell(row=rn, column=16).number_format = "0%"
+        ws.cell(row=rn, column=17).number_format = "0_ "
+
+    # --- R:S — indicator block ----------------------------------------------
+    indicators = [
+        ("Nechta odam keldi", f"=SUM(O4:O{side_end})", None),
+        ("Nechta odam kelishi kerak edi", None, None),                 # manual
+        ("Nechta odam kerak", f"=ROUND(I2/(0.85*{sm}),0)", None),
+        ("Bo`sh odam/kerakli odam", "=+S4-S6", None),
+        ("Kerakli odam bilan o`rtacha bandlik", f"=I2/(S6*{sm})", "0%"),
+        ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)", f"=I2/(S4*{sm})", "0%"),
+        ("% обеспеч", "=S4/S6", "0%"),
+        ("% абсетеизм", "=1-(S4/S5)", "0%"),
+        ("Hozirgi odam bilan o`rtacha bandlik(smena oxirida)", f"=J2/(S4*{sm})", "0%"),
+    ]
+    ws["R3"], ws["S3"] = "Показатель", "Количество"
+    for coord in ("R3", "S3"):
+        ws[coord].font, ws[coord].alignment, ws[coord].border = bold, head_al, border
+    for idx, (label, formula, nf) in enumerate(indicators):
+        rn = 4 + idx
+        rc = ws.cell(row=rn, column=18, value=label)
+        sc = ws.cell(row=rn, column=19, value=formula)
+        rc.font, rc.alignment, rc.border = bold, left, border
+        sc.alignment, sc.border = center, border
+        if rn != 5:  # row 5 = the manual «kelishi kerak edi» entry, left white
+            rc.fill = sc.fill = green_head
+        if nf:
+            sc.number_format = nf
+
+    # --- T:U — staffing (штатка) block; counts are filled in by hand --------
+    staffing = [
+        ("Сколько должна на штатке", sum(w.get("shtatka") or 0 for w in wcs) or None),
+        ("По штатке Факт", None),
+        ("Бригадир", None),
+        ("Лидер", None),
+        ("Мицу", None),
+        ("Отдихает", None),
+        ("Сравнение", "=U4-U5-U6-U7-U8"),
+        ("Верифекс", "=U9+U7+U6+U5"),
+    ]
+    for idx, (label, val) in enumerate(staffing):
+        rn = 3 + idx
+        tc = ws.cell(row=rn, column=20, value=label)
+        uc = ws.cell(row=rn, column=21, value=val)
+        tc.font, tc.alignment, tc.border = bold, center, border
+        uc.alignment, uc.border = center, border
+        if rn >= 4:
+            tc.fill = green_head
+
+    for col, w in ZAGRUZKA_WIDTHS.items():
+        ws.column_dimensions[col].width = w
 
     bio = BytesIO()
     wb.save(bio)
     bio.seek(0)
-    fname = f"positions_{day.isoformat()}.xlsx"
+    fname = f"{day_h} загрузка {mgr_name}.xlsx" if mgr_name else f"{day_h} загрузка.xlsx"
     from app.telegram_bot import bot
     caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
     try:
