@@ -726,6 +726,8 @@ export default function AdminUpload() {
 
       {adminTab === "access" && <PageAccess />}
 
+      {adminTab === "broadcast" && <Broadcast />}
+
       {adminTab === "data" && (
       <div className="max-w-3xl mx-auto p-4 sm:p-8 space-y-6">
         {/* Upload drop zone */}
