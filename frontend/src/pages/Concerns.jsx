@@ -464,6 +464,13 @@ export default function Concerns() {
   const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
   const [endDate, setEndDate] = useState(() => localTodayIso());
   const [search, setSearch] = useState("");
+  // Shift / supervisor top-bar filters (client-side, like the period). Hidden
+  // for single-unit viewers: a supervisor or leader only ever sees their own
+  // rows, and a shift-manager is already pinned to one shift.
+  const [fShift, setFShift] = useState(null);  // null = all | 1 | 2
+  const [fSup, setFSup] = useState("");        // "" = all | String(manager_id)
+  const canFilterShift = role === "admin" || role === "top-manager";
+  const canFilterSup = canFilterShift || role === "shift-manager";
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
   // Production/Staff tables) — status + owner multi-selects, deadline-day range.
