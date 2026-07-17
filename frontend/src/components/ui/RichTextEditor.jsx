@@ -612,7 +612,8 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     setMathOpen(false);
     const src = mathSrc.trim();
     if (!src) return;
-    const frag = mathBlock
+    // table cells hold inline content only — a block formula there degrades
+    const frag = mathBlock && !states.cell
       ? `<div class="tg-math-block" spellcheck="false">${escapeHtml(src)}</div><div><br></div>`
       : `<span class="tg-math" spellcheck="false">${escapeHtml(src)}</span>&nbsp;`;
     insertHtmlAtCursor(frag);
