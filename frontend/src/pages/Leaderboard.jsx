@@ -516,7 +516,7 @@ export default function Leaderboard() {
         </div>
 
         {/* ── podium ── */}
-        <Podium byRank={byRank} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} st={st} />
+        <Podium byRank={byRank} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} />
 
         {/* ── category leaders ── */}
         <div className="flex flex-col gap-2.5">
