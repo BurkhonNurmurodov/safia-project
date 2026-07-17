@@ -357,7 +357,7 @@ export default function Overview() {
 
   return (
     <Layout title={t("overview.title")}>
-      {/* Inline period + supervisor selectors — always visible, wired to the
+      {/* Inline period + shift + supervisor selectors — always visible, wired to the
           global filters so they stay in sync with the header Filters drawer. */}
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
         <div className="sm:w-72">
@@ -370,6 +370,14 @@ export default function Overview() {
             triggerClassName="w-full px-3 py-2 text-sm"
           />
         </div>
+        <div className="min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+          <SegmentedToggle
+            value={shift}
+            onChange={setShift}
+            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+          />
+        </div>
         <div className="sm:w-64 min-w-0">
           <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
           <StyledSelect
@@ -379,14 +387,6 @@ export default function Overview() {
             searchable
             searchPlaceholder={t("filter.searchBrigadirs")}
             triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-          <SegmentedToggle
-            value={shift}
-            onChange={setShift}
-            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
           />
         </div>
       </div>
