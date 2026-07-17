@@ -1530,6 +1530,7 @@ const t = {
     "nav.planFulfillment": "План Бажариш",
     "nav.idleTime":        "Ожидания",
     "nav.admin":           "Админ",
+    "nav.support":         "Қўллаб-қувватлаш билан боғланиш",
     "nav.staff":           "Verifix тўғрилаш",
     "nav.daily":           "Кунлик",
     "nav.production":      "Ишлаб чиқариш",
