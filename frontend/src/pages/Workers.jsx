@@ -818,10 +818,10 @@ export default function Workers() {
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(s.name)}</td>
                       <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{s.shift}</td>
                       <td className={numCell} style={{ color: REQ_COLORS.exchange }}>
-                        {s.exchanges} · {s.exchange_workers} {t("workers.req.workers")}
+                        {s.exchanges} {t("workers.req.docs")} · {s.exchange_workers} {t("workers.req.workers")}
                       </td>
                       <td className={numCell} style={{ color: REQ_COLORS.roleChange }}>
-                        {s.role_changes} · {s.role_change_workers} {t("workers.req.workers")}
+                        {s.role_changes} {t("workers.req.docs")} · {s.role_change_workers} {t("workers.req.workers")}
                       </td>
                       <td className={numCell} style={{ color: "var(--text-1)" }}>{s.posted}/{s.total}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{s.top_target ? tl(s.top_target) : "—"}</td>
