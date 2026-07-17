@@ -289,6 +289,15 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   padding: 0 1px;
 }
 .tg-editor-rich footer, .tg-msg-rich footer { color: var(--text-4); font-size: 0.9em; }
+/* quote author line (<cite>) — blue italic, own line, like Telegram's quotes */
+.tg-editor-rich blockquote cite, .tg-editor-rich aside cite,
+.tg-msg-rich blockquote cite, .tg-msg-rich aside cite {
+  display: block;
+  margin-top: 4px;
+  color: #3b82f6;
+  font-style: italic;
+  font-weight: 600;
+}
 .tg-editor .tg-math, .tg-editor .tg-math-block, .tg-msg-rich tg-math, .tg-msg-rich tg-math-block {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
