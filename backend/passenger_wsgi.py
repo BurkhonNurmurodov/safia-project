@@ -68,6 +68,7 @@ try:
     add_concern_owner_columns()
     add_task_comment_author_ref()
     add_leader_submission_columns()
+    add_broadcast_rich_columns()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
