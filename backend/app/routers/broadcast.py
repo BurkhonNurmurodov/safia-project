@@ -153,6 +153,223 @@ def _utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
+# ── Rich-HTML sanitizer (sendRichMessage, Bot API 10.1+) ─────────────────────
+# Whitelists the documented Rich HTML dialect (see Bot API "Rich HTML style"):
+# tag → allowed attributes. Boolean attributes are emitted bare; unknown tags
+# are dropped with their text kept; media src must be an http(s) URL or a
+# tg://photo|video|audio?id=… reference into InputRichMessage.media.
+
+_RICH_TAGS: dict[str, tuple[str, ...]] = {
+    "b": (), "strong": (), "i": (), "em": (), "u": (), "ins": (),
+    "s": (), "strike": (), "del": (), "code": ("class",), "mark": (),
+    "sub": (), "sup": (), "tg-spoiler": (), "cite": (),
+    "a": ("href", "name"), "tg-reference": ("name",),
+    "tg-emoji": ("emoji-id",), "tg-time": ("unix", "format"),
+    "tg-math": (), "tg-math-block": (),
+    "h1": (), "h2": (), "h3": (), "h4": (), "h5": (), "h6": (),
+    "p": (), "pre": (), "footer": (), "blockquote": (), "aside": (),
+    "ul": (), "ol": ("start", "type", "reversed"), "li": ("value", "type"),
+    "table": ("bordered", "striped"), "caption": (), "tr": (),
+    "th": ("colspan", "rowspan", "align", "valign"),
+    "td": ("colspan", "rowspan", "align", "valign"),
+    "details": ("open",), "summary": (),
+    "figure": (), "figcaption": (),
+    "video": ("src", "tg-spoiler"), "audio": ("src",),
+    "tg-collage": (), "tg-slideshow": (),
+}
+_RICH_VOID = {
+    "br": (), "hr": (),
+    "img": ("src", "alt", "tg-spoiler"),
+    "input": ("type", "checked"),
+    "tg-map": ("lat", "long", "zoom"),
+}
+_RICH_BOOL_ATTRS = {"checked", "reversed", "open", "bordered", "striped", "tg-spoiler"}
+_MEDIA_SRC_RE = re.compile(r"^tg://(photo|video|audio)\?id=([A-Za-z0-9_-]{1,64})$")
+
+
+class _RichSanitizer(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.html_out: list[str] = []
+        self.plain_out: list[str] = []
+        self.stack: list[str] = []
+        self.media_ids: list[str] = []  # tg:// ids in document order, with kind
+        self.media_kinds: list[str] = []
+
+    def _attrs_str(self, tag: str, attrs: dict, allowed: tuple[str, ...]) -> str | None:
+        """None → drop the element (invalid src)."""
+        parts = []
+        for k in allowed:
+            v = attrs.get(k)
+            if k in _RICH_BOOL_ATTRS:
+                if v is not None or k in attrs:
+                    parts.append(k)
+                continue
+            if v is None:
+                continue
+            if k == "src":
+                m = _MEDIA_SRC_RE.match(v.strip())
+                if m:
+                    self.media_kinds.append(m.group(1))
+                    self.media_ids.append(m.group(2))
+                elif not v.strip().lower().startswith(("http://", "https://")) and tag != "img":
+                    return None
+                elif tag == "img" and not (m or v.strip().lower().startswith(("http://", "https://", "tg://emoji"))):
+                    return None
+            if k == "href":
+                ok = v.strip().lower().startswith(("http://", "https://", "mailto:", "tel:", "tg://user?id=", "#"))
+                if not ok:
+                    continue
+            parts.append(f'{k}="{escape(v, quote=True)}"')
+        return (" " + " ".join(parts)) if parts else ""
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "span" and "tg-spoiler" in (attrs.get("class") or ""):
+            tag = "tg-spoiler"
+        if tag in _RICH_VOID:
+            if tag == "input" and (attrs.get("type") or "").lower() != "checkbox":
+                return
+            a = self._attrs_str(tag, attrs, _RICH_VOID[tag])
+            if a is None:
+                return
+            self.html_out.append(f"<{tag}{a}/>")
+            if tag == "br":
+                self.plain_out.append("\n")
+            return
+        if tag not in _RICH_TAGS:
+            return  # unknown wrapper — keep its text
+        a = self._attrs_str(tag, attrs, _RICH_TAGS[tag])
+        if a is None:
+            return
+        self.html_out.append(f"<{tag}{a}>")
+        self.stack.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag == "span":
+            tag = "tg-spoiler"
+        if tag in _RICH_VOID or tag not in _RICH_TAGS:
+            return
+        if tag in self.stack:
+            while self.stack:
+                top = self.stack.pop()
+                self.html_out.append(f"</{top}>")
+                if top == tag:
+                    break
+
+    def handle_data(self, data):
+        self.html_out.append(escape(data))
+        self.plain_out.append(data)
+
+    def close(self):
+        super().close()
+        while self.stack:
+            self.html_out.append(f"</{self.stack.pop()}>")
+
+
+def sanitize_rich_html(raw: str) -> tuple[str, str, list[tuple[str, str]]]:
+    """Returns (rich_html, plain_text, [(kind, media_id), …] in document order)."""
+    p = _RichSanitizer()
+    p.feed(raw or "")
+    p.close()
+    plain = unescape("".join(p.plain_out)).strip()
+    return "".join(p.html_out).strip(), plain, list(zip(p.media_kinds, p.media_ids))
+
+
+# ── Raw Bot API access ────────────────────────────────────────────────────────
+# sendRichMessage postdates the pinned pyTelegramBotAPI (4.25 < 4.35), so rich
+# sends go straight to the HTTP API — no dependency bump needed on prod.
+
+def _tg_api(method: str, data: dict, files: dict | None = None) -> dict:
+    r = requests.post(
+        f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}",
+        data=data, files=files or None, timeout=180,
+    )
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(j.get("description") or f"HTTP {r.status_code}")
+    return j["result"]
+
+
+def _harvest_file_ids(result: dict, media_items: list[dict]) -> list[dict] | None:
+    """Best-effort: walk the returned Message for uploaded media file_ids so
+    every later recipient reuses them instead of re-uploading. Collects
+    (kind, file_id) in document order and matches them per-kind against our
+    media list; any mismatch → None (callers keep re-uploading, just slower)."""
+    found: dict[str, list[str]] = {"photo": [], "video": [], "audio": []}
+
+    def walk(obj):
+        if isinstance(obj, list):
+            # a list of PhotoSize dicts is ONE photo — take the largest size
+            if obj and all(isinstance(x, dict) and "file_id" in x and "width" in x
+                           and "duration" not in x for x in obj):
+                found["photo"].append(obj[-1]["file_id"])
+                return
+            for x in obj:
+                walk(x)
+        elif isinstance(obj, dict):
+            if "file_id" in obj and "duration" in obj:
+                found["video" if "width" in obj else "audio"].append(obj["file_id"])
+                return
+            for v in obj.values():
+                walk(v)
+
+    walk(result)
+    queues = {k: list(v) for k, v in found.items()}
+    specs = []
+    for m in media_items:
+        bucket = "video" if m["kind"] in ("video", "animation") else \
+                 "audio" if m["kind"] in ("audio", "voice") else "photo"
+        if not queues.get(bucket):
+            return None
+        specs.append({"id": m["id"], "media": {"type": m["kind"], "media": queues[bucket].pop(0)}})
+    return specs
+
+
+def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
+                        media_items: list[dict]):
+    """Rich-mode delivery: sendRichMessage per recipient. The first successful
+    send uploads the embedded media via attach://; its response is mined for
+    file_ids so the rest of the fan-out reuses them."""
+    db = SessionLocal()
+    reusable: list[dict] | None = None
+    try:
+        row = db.query(Broadcast).filter_by(id=bid).first()
+        for tid, name in recipients:
+            try:
+                files = None
+                if media_items and reusable is None:
+                    specs = [{"id": m["id"], "media": {"type": m["kind"], "media": f"attach://f{i}"}}
+                             for i, m in enumerate(media_items)]
+                    files = {f"f{i}": (m["filename"], m["data"]) for i, m in enumerate(media_items)}
+                else:
+                    specs = reusable or []
+                rich: dict = {"html": html}
+                if specs:
+                    rich["media"] = specs
+                result = _tg_api("sendRichMessage",
+                                 {"chat_id": tid, "rich_message": json.dumps(rich)}, files)
+                if media_items and reusable is None:
+                    reusable = _harvest_file_ids(result, media_items)
+                row.sent_count += 1
+            except Exception as e:
+                row.failed_count += 1
+                row.failed_names = (row.failed_names or []) + [name]
+                logger.warning("Rich broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
+            db.commit()
+            time.sleep(0.05)
+        row.status = "done"
+        row.finished_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        logger.exception("Rich broadcast %s thread crashed", bid)
+    finally:
+        db.close()
+
+
 # ── Target resolution ─────────────────────────────────────────────────────────
 
 def _resolve_targets(db: Session, keys: list[str]) -> dict[int, str]:
