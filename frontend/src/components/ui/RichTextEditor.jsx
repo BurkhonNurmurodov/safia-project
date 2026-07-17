@@ -867,23 +867,30 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
         {groups.map((g, gi) => (
           <div key={gi} className="flex items-center gap-0.5">
             {gi > 0 && <div className="w-px h-4 mx-1" style={{ background: "var(--border-md)" }} />}
-            {g.map(({ key, icon: Icon, title, run }) => (
-              <button
-                key={key}
-                type="button"
-                title={title}
-                aria-label={title}
-                aria-pressed={!!states[key]}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={run}
-                className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
-                style={states[key]
-                  ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
-                  : { background: "transparent", color: "var(--text-3)" }}
-              >
-                <Icon size={14} />
-              </button>
-            ))}
+            {g.map(({ key, icon: Icon, title, block, run }) => {
+              const off = block && states.cell;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  title={title}
+                  aria-label={title}
+                  aria-pressed={!!states[key]}
+                  aria-disabled={off || undefined}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={off ? undefined : run}
+                  className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+                  style={{
+                    ...(states[key] && !off
+                      ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
+                      : { background: "transparent", color: "var(--text-3)" }),
+                    ...(off ? { opacity: 0.3, cursor: "not-allowed" } : {}),
+                  }}
+                >
+                  <Icon size={14} />
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
