@@ -328,13 +328,29 @@ export default function Broadcast() {
               <tr key={r.id} className="cursor-pointer" onClick={() => setDetail(r)}>
                 <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDT(r.created_at)}</td>
                 <td className="px-3 py-2">
-                  <span className="block max-w-[280px] truncate" title={r.text_plain}>{r.text_plain}</span>
+                  <span className="flex items-center gap-1.5 max-w-[300px]">
+                    {r.mode === "rich" && (
+                      <span
+                        className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                        style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}
+                      >
+                        <Sparkles size={9} /> {t("admin.broadcast.modeRich")}
+                      </span>
+                    )}
+                    <span className="truncate" title={r.text_plain}>{r.text_plain}</span>
+                  </span>
                 </td>
                 <td className="px-3 py-2">
                   {RowAttach ? (
                     <span className="inline-flex items-center gap-1" style={{ color: "var(--text-3)" }}>
                       <RowAttach size={12} style={{ color: "var(--brand-text)" }} />
                       <span className="max-w-[140px] truncate">{r.attachment_name}</span>
+                    </span>
+                  ) : r.media_names?.length ? (
+                    <span className="inline-flex items-center gap-1" style={{ color: "var(--text-3)" }}>
+                      <ImageIcon size={12} style={{ color: "var(--brand-text)" }} />
+                      <span className="max-w-[140px] truncate">{r.media_names[0]}</span>
+                      {r.media_names.length > 1 && <span style={{ color: "var(--text-4)" }}>+{r.media_names.length - 1}</span>}
                     </span>
                   ) : <span style={{ color: "var(--text-4)" }}>—</span>}
                 </td>
