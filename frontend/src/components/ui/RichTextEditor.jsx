@@ -820,31 +820,31 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       ] : []),
     ],
     [
-      { key: "quote", icon: TextQuote, title: t("rte.quote"), run: () => toggleBlock("blockquote") },
-      ...(rich ? [{ key: "aside", icon: Quote, title: t("rte.pullQuote"), run: () => toggleBlock("aside") }] : []),
-      { key: "pre", icon: SquareCode, title: t("rte.codeBlock"), run: () => toggleBlock("pre") },
+      { key: "quote", icon: TextQuote, title: t("rte.quote"), block: true, run: () => toggleBlock("blockquote") },
+      ...(rich ? [{ key: "aside", icon: Quote, title: t("rte.pullQuote"), block: true, run: () => toggleBlock("aside") }] : []),
+      { key: "pre", icon: SquareCode, title: t("rte.codeBlock"), block: true, run: () => toggleBlock("pre") },
     ],
   ];
   const richOnly = [
     [
-      { key: "h1", icon: Heading1, title: t("rte.h1"), run: () => toggleBlock("h1") },
-      { key: "h2", icon: Heading2, title: t("rte.h2"), run: () => toggleBlock("h2") },
-      { key: "h3", icon: Heading3, title: t("rte.h3"), run: () => toggleBlock("h3") },
-      { key: "h4", icon: Heading4, title: t("rte.h4"), run: () => toggleBlock("h4") },
-      { key: "h5", icon: Heading5, title: t("rte.h5"), run: () => toggleBlock("h5") },
-      { key: "h6", icon: Heading6, title: t("rte.h6"), run: () => toggleBlock("h6") },
+      { key: "h1", icon: Heading1, title: t("rte.h1"), block: true, run: () => toggleBlock("h1") },
+      { key: "h2", icon: Heading2, title: t("rte.h2"), block: true, run: () => toggleBlock("h2") },
+      { key: "h3", icon: Heading3, title: t("rte.h3"), block: true, run: () => toggleBlock("h3") },
+      { key: "h4", icon: Heading4, title: t("rte.h4"), block: true, run: () => toggleBlock("h4") },
+      { key: "h5", icon: Heading5, title: t("rte.h5"), block: true, run: () => toggleBlock("h5") },
+      { key: "h6", icon: Heading6, title: t("rte.h6"), block: true, run: () => toggleBlock("h6") },
     ],
     [
-      { key: "ul", icon: List, title: t("rte.bulletList"), run: () => exec("insertUnorderedList") },
-      { key: "ol", icon: ListOrdered, title: t("rte.orderedList"), run: () => exec("insertOrderedList") },
-      { key: "task", icon: ListChecks, title: t("rte.taskList"), run: toggleTask },
+      { key: "ul", icon: List, title: t("rte.bulletList"), block: true, run: () => exec("insertUnorderedList") },
+      { key: "ol", icon: ListOrdered, title: t("rte.orderedList"), block: true, run: () => exec("insertOrderedList") },
+      { key: "task", icon: ListChecks, title: t("rte.taskList"), block: true, run: toggleTask },
     ],
     [
-      { key: "divider", icon: SeparatorHorizontal, title: t("rte.divider"), run: () => exec("insertHorizontalRule") },
-      { key: "table", icon: TableIcon, title: t("rte.table"), run: () => { saveSelection(); setTableOpen(true); } },
-      { key: "details", icon: ChevronsDownUp, title: t("rte.details"), run: insertDetails },
+      { key: "divider", icon: SeparatorHorizontal, title: t("rte.divider"), block: true, run: () => exec("insertHorizontalRule") },
+      { key: "table", icon: TableIcon, title: t("rte.table"), block: true, run: () => { saveSelection(); setTableOpen(true); } },
+      { key: "details", icon: ChevronsDownUp, title: t("rte.details"), block: true, run: insertDetails },
       { key: "math", icon: Sigma, title: t("rte.formula"), run: () => { saveSelection(); setMathOpen(true); } },
-      { key: "media", icon: ImagePlus, title: t("rte.media"), run: () => { saveSelection(); fileRef.current?.click(); } },
+      { key: "media", icon: ImagePlus, title: t("rte.media"), block: true, run: () => { saveSelection(); fileRef.current?.click(); } },
     ],
   ];
   const tail = [
