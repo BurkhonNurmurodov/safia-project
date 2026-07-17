@@ -126,7 +126,7 @@ function buildData(seed) {
       for (let w = 0; w < 8; w++) arr.push(w === 7 ? v : clamp(Math.round(v - trend * (7 - w) * 0.8 + (rnd() - 0.5) * 9), 8, 99));
       sparks[c.key] = arr;
     });
-    return { id: i, name: r.name, unit: r.unit, color: SUP_COLORS[i], s, comp, hist, sparks, scoreDelta: +(trend * 1.6 + (rnd() - 0.5)).toFixed(1) };
+    return { id: i, name: r.name, unit: r.unit, shift: unitShift(r.unit), color: SUP_COLORS[i], s, comp, hist, sparks, scoreDelta: +(trend * 1.6 + (rnd() - 0.5)).toFixed(1) };
   });
 
   const rankHist = sups.map(() => []);
