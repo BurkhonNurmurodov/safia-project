@@ -613,7 +613,7 @@ export default function Leaderboard() {
                 </span>
               ))}
               <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--text-2)" }}>
-                <span className="rounded-sm" style={{ width: 14, height: 3, background: "var(--brand)" }} />{shortName(sups.find((s) => s.id === selectedId).name)} ({t("leaderboard.selected")})
+                <span className="rounded-sm" style={{ width: 14, height: 3, background: "var(--brand)" }} />{shortName(selectedSup.name)} ({t("leaderboard.selected")})
               </span>
             </div>
             <div className="px-4 pb-4 pt-1"><div style={{ overflowX: "auto" }}>
