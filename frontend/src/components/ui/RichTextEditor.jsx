@@ -632,7 +632,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     let frag;
     if (kind === "photo") {
       const url = URL.createObjectURL(f);
-      frag = `<img src="${escAttr(url)}" data-tg-media="${id}" data-kind="photo" class="tg-embed" contenteditable="false"><div><br></div>`;
+      // inline flow (no forced line break) so consecutive embeds stack into
+      // one row — adjacent media serialize into a single <tg-collage>
+      frag = `<img src="${escAttr(url)}" data-tg-media="${id}" data-kind="photo" class="tg-embed" contenteditable="false">&nbsp;`;
     } else {
       frag = `<span class="tg-media-chip" data-tg-media="${id}" data-kind="${kind}" contenteditable="false">${escapeHtml(`${kind} · ${f.name}`)}</span>&nbsp;`;
     }
