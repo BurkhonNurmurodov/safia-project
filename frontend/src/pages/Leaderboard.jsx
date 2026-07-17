@@ -356,14 +356,23 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
     );
   };
   const [p1, p2, p3] = byRank;
+  // A filtered pool can hold fewer than 3 brigadirs — render only real places,
+  // centered, instead of assuming a full podium.
   return (
-    <div className="grid gap-3 items-end pt-4" style={{ gridTemplateColumns: "1fr 1.16fr 1fr" }}>
+    <div
+      className="grid gap-3 items-end pt-4"
+      style={p3
+        ? { gridTemplateColumns: "1fr 1.16fr 1fr" }
+        : { gridTemplateColumns: `repeat(${byRank.length}, minmax(220px, 340px))`, justifyContent: "center" }}
+    >
       <style>{`
         @keyframes podiumHalo { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:.95; transform:scale(1.09); } }
         .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .podium-halo { animation: none; opacity:.7; } }
       `}</style>
-      {cell(p2, 2)}{cell(p1, 1)}{cell(p3, 3)}
+      {p3
+        ? <>{cell(p2, 2)}{cell(p1, 1)}{cell(p3, 3)}</>
+        : <>{p1 && cell(p1, 1)}{p2 && cell(p2, 2)}</>}
     </div>
   );
 }
