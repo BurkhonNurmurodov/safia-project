@@ -658,9 +658,11 @@ export default function Concerns() {
     return rows.filter((r) => {
       if (chartStart && !(r.entry_date && r.entry_date >= chartStart)) return false;
       if (endDate && !(r.entry_date && r.entry_date <= endDate)) return false;
+      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) return false;
+      if (supSel !== "All" && String(r.brigadir_manager_id) !== supSel) return false;
       return true;
     });
-  }, [rows, scoped, chartStart, startDate, endDate]);
+  }, [rows, scoped, chartStart, startDate, endDate, fShift, shiftOf, supSel]);
 
   // ── analytics (the three headline KPIs) ─────────────────────────────────────
   //  1) longest-running unresolved problem  2) slowest-resolving brigadir
