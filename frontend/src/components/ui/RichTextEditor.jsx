@@ -165,6 +165,9 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   };
 
   useEffect(() => {
+    // Prefer real tags (<b>, <i>, …) over style spans where the browser
+    // honors it; styleFormats() in the serializer covers the cases it doesn't.
+    try { document.execCommand("styleWithCSS", false, false); } catch { /* older engines */ }
     document.addEventListener("selectionchange", refreshStates);
     return () => document.removeEventListener("selectionchange", refreshStates);
   }, []);
