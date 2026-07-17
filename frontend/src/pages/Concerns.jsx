@@ -592,6 +592,37 @@ export default function Concerns() {
   });
   const rows = listResp?.data || [];
 
+  // Manager → shift map for the shift filter (rows only carry the brigadir's
+  // manager id). Shares the header-drawer cache so it's effectively free.
+  const { data: allManagers = [] } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+    enabled: canFilterSup,
+  });
+  const shiftOf = useMemo(
+    () => new Map(allManagers.map((m) => [m.manager_id, m.shift])),
+    [allManagers]);
+
+  // Supervisor picker options come from the fetched rows, so they always match
+  // the viewer's scope; the active shift narrows the list further.
+  const supFilterOptions = useMemo(() => {
+    const seen = new Map();
+    for (const r of rows) {
+      if (r.brigadir_manager_id == null || !r.brigadir_name) continue;
+      if (fShift && shiftOf.get(r.brigadir_manager_id) !== fShift) continue;
+      if (!seen.has(r.brigadir_manager_id)) seen.set(r.brigadir_manager_id, r.brigadir_name);
+    }
+    return [
+      { value: "All", label: t("tasks.allSupervisors") },
+      ...[...seen.entries()]
+        .map(([id, name]) => ({ value: String(id), label: tl(name) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+  }, [rows, fShift, shiftOf, t, tl]);
+  // A pick that fell out of the current shift is ignored, not an empty page.
+  const supSel = fSup && supFilterOptions.some((o) => o.value === fSup) ? fSup : "All";
+
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
   // the data render lands. Hold the charts back until layout has settled, then
