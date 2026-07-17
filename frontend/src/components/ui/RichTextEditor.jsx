@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bold, Italic, Underline, Strikethrough, EyeOff, Code, SquareCode,
   TextQuote, Link2, RemoveFormatting, Heading1, Heading2, Heading3,
+  Heading4, Heading5, Heading6,
   List, ListOrdered, ListChecks, SeparatorHorizontal, Table as TableIcon,
   ChevronsDownUp, Sigma, ImagePlus, Quote, Highlighter, Subscript, Superscript,
 } from "lucide-react";
