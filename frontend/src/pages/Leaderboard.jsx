@@ -623,9 +623,9 @@ export default function Leaderboard() {
 
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={Activity} title={t("leaderboard.distribution")}
-              right={<span className="inline-flex items-center gap-1.5 text-xs"><Avatar sup={sups.find((s) => s.id === selectedId)} size={20} /><span className="font-semibold" style={{ color: "var(--text-2)" }}>{shortName(sups.find((s) => s.id === selectedId).name)}</span></span>} />
+              right={<span className="inline-flex items-center gap-1.5 text-xs"><Avatar sup={selectedSup} size={20} /><span className="font-semibold" style={{ color: "var(--text-2)" }}>{shortName(selectedSup.name)}</span></span>} />
             <div className="px-4 py-3">
-              <DistributionStrips sups={sups} selectedId={selectedId} onSelect={selectSup} catMeta={catMeta} st={st} onTip={onTip} />
+              <DistributionStrips sups={sups} selectedId={effSelectedId} onSelect={selectSup} catMeta={catMeta} st={st} onTip={onTip} />
             </div>
             <div className="text-[11px] px-4 pb-3" style={{ color: "var(--text-4)" }}>{t("leaderboard.distHint")}</div>
           </div>
