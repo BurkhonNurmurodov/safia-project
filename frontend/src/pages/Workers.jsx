@@ -122,7 +122,7 @@ function ChartCard({ icon, title, info, right, children, className = "" }) {
 }
 
 export default function Workers() {
-  const { params, ready } = useFilters();
+  const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
