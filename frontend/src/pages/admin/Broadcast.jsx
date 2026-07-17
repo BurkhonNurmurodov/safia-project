@@ -49,7 +49,8 @@ export default function Broadcast() {
   const qc = useQueryClient();
   const fileRef = useRef(null);
 
-  const [msg, setMsg] = useState({ html: "", text: "" });
+  const [mode, setMode] = useState("normal");
+  const [msg, setMsg] = useState({ html: "", text: "", media: [] });
   const [editorKey, setEditorKey] = useState(0);
   const [attachment, setAttachment] = useState(null);
   const [selected, setSelected] = useState([]);
