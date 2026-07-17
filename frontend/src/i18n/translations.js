@@ -4574,6 +4574,7 @@ const t = {
     "nav.planFulfillment": "Plan Fulfillment",
     "nav.idleTime":        "Idle Time",
     "nav.admin":           "Admin",
+    "nav.support":         "Contact support",
     "nav.staff":           "Verifix edit",
     "nav.daily":           "Daily",
     "nav.production":      "Production",
