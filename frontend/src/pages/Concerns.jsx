@@ -1371,17 +1371,43 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")} showFilters={false}>
-      {/* Filter — period only. Concerns are level-based now (no brigadir/leader
-          slicing); status / owner / level live behind the Filtrlar button. */}
-      <div className="mb-3">
-        <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
-        <DateRangePicker
-          dateFrom={startDate}
-          dateTo={endDate}
-          setDateFrom={setStartDate}
-          setDateTo={setEndDate}
-          triggerClassName="w-full sm:w-auto px-3 py-2 text-sm"
-        />
+      {/* Top filter bar — the standard inline period + shift + supervisor row
+          (shift/supervisor only for multi-unit viewers); status / owner / level
+          live behind the Filtrlar button. */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3">
+        <div className="sm:w-72">
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
+          <DateRangePicker
+            dateFrom={startDate}
+            dateTo={endDate}
+            setDateFrom={setStartDate}
+            setDateTo={setEndDate}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+        {canFilterShift && (
+          <div className="min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+            <SegmentedToggle
+              value={fShift}
+              onChange={setFShift}
+              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+            />
+          </div>
+        )}
+        {canFilterSup && (
+          <div className="sm:w-64 min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
+            <StyledSelect
+              value={supSel}
+              onChange={(v) => setFSup(v === "All" ? "" : v)}
+              options={supFilterOptions}
+              searchable
+              searchPlaceholder={t("filter.searchBrigadirs")}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+        )}
       </div>
 
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
