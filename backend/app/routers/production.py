@@ -259,8 +259,8 @@ class PositionsExportBody(BaseModel):
     # PPProduct ids in the EXACT on-screen order (post search/team-filter/sort)
     # at the moment the button was pressed. Empty → full default SAP order.
     order: list[int] = []
-    # Visible column keys in on-screen order (column picker). Unknown keys are
-    # dropped; empty → every column in canonical order.
+    # Kept for wire compatibility — the export is the fixed «загрузка» template
+    # now, so the on-screen column picker no longer shapes the file.
     columns: list[str] = []
 
 
