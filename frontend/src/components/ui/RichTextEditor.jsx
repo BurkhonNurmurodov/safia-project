@@ -620,7 +620,7 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     let el;
     while ((el = ancestorTag("code") || ancestorSpoiler() || ancestorTag("mark"))) unwrap(el);
     if (ancestorTag("blockquote") || ancestorTag("pre") || ancestorTag("aside") ||
-        ancestorTag("h1") || ancestorTag("h2") || ancestorTag("h3")) {
+        ancestor((el) => /^H[1-6]$/.test(el.tagName))) {
       document.execCommand("formatBlock", false, "<div>");
     }
     refreshStates(); emit();
