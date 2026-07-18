@@ -52,7 +52,8 @@ def get_quality(
     sup = supervisor_match(managers, {r.brigadir for r in rows if r.brigadir})
 
     return {
-        "can_refresh": payload.get("role") == "admin",
+        # Refresh is offered to every profile that can open the page.
+        "can_refresh": True,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "ok": meta.ok if meta else None,
         "message": meta.message if meta else None,
