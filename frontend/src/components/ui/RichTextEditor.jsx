@@ -386,6 +386,9 @@ export function serializeRich(root) {
         const clone = { childNodes: [...node.childNodes].filter((c) =>
           !(c.nodeType === Node.ELEMENT_NODE && c.tagName.toLowerCase() === "summary")) };
         const rest = blocks(clone);
+        // Telegram won't render a collapsible without a title — a titleless
+        // details degrades to its body content
+        if (!summary.replace(/<[^>]+>/g, "").trim()) return rest;
         // collapsed by default on delivery — `open` only serves in-editor editing
         return `<details><summary>${summary}</summary>${rest}</details>`;
       }
