@@ -210,6 +210,7 @@ export function serializeRich(root) {
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
     const tag = node.tagName.toLowerCase();
     if (tag === "br") { textParts.push("\n"); return "<br/>"; }
+    if (node.hasAttribute("data-tg-cap")) return ""; // in-editor caption label
     if (node.getAttribute("data-tg-media")) {
       pendingMedia.push(seenMedia(node));
       return "";
