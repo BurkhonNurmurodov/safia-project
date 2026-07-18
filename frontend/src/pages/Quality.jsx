@@ -442,7 +442,10 @@ export default function Quality() {
   // individual leaders keep their sheet name in r.b and are excluded here). Source
   // is NOT restricted — a matched supervisor's rows count whether they came from
   // производство, a торговая точка or a guest complaint.
-  const inView = (r) => (isProd ? !!r.sup : true);
+  const inView = (r) => {
+    if (lockOwn) return who(r) === myName; // brigadir profile: own rows only
+    return isProd ? !!r.sup : true;
+  };
 
   // Selectable filter options are scoped to the rows the active tab can actually
   // show — so the Production tab's Brigadir list holds only matched supervisors,
