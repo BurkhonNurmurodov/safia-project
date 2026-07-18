@@ -1930,6 +1930,14 @@ def _revert_role_change(db: Session, doc: HrDocument):
 #                 (clock C-T, early kept); if the name leaves she is removed from the
 #                 roster and the before-T effective hours become a nameless leftover.
 #                 (A → task move with NO transfer time still marks the worker X/0.)
+#
+# Minimum bar: a MOVED (split) worker must have cleared MIN_MOVED_ZAGRUZKA_HOURS on
+# her larger/named side to count as a real worker for any unit. If she reached it on
+# neither side (e.g. sent home ~1h into the shift, an hour before-T and nothing/half
+# an hour after), she is credited to NO ONE: her name leaves the roster and each side
+# becomes a nameless hours-only leftover — the same blanking the "worked more away"
+# case already uses, just also triggered when both sides fall short.
+MIN_MOVED_ZAGRUZKA_HOURS = 2.0
 
 def _parse_hhmm(s) -> Optional[int]:
     """'08:00' / '8-00' / '08.00' / '17:04 (8.43)' → minutes from midnight, else None.
