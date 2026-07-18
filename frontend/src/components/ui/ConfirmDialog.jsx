@@ -43,12 +43,12 @@ export default function ConfirmDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className="modal-backdrop fixed inset-0 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", zIndex, paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
       onClick={() => !loading && onCancel?.()}
     >
       <div
-        className="rounded-2xl p-6 w-full max-w-md"
+        className="modal-card rounded-2xl p-6 w-full max-w-md"
         style={{
           background: "var(--bg-card)",
           border: "1px solid var(--border-md)",
