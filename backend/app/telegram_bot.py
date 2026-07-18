@@ -1164,6 +1164,146 @@ def _pending(message: types.Message):
         db.commit()
 
 
+# ── /broadcast: admin free-form broadcast (copy-to-recipients) ────────────────
+# The admin sends any message (text / media / album); we remember its message
+# id(s) and, after a review step, copy them to the recipients they pick in a
+# mini-app. State lives in the broadcast_drafts table, one row per admin.
+
+_BC_CONTENT = ["text", "photo", "video", "document", "audio", "voice",
+               "animation", "video_note"]
+
+
+def notify_broadcast_result(admin_tid: int, message_id: int, sent: int, total: int, failed: int):
+    """Edit the /broadcast picker message into a final 'sent X/Y' summary —
+    called from routers/broadcast.py once a draft send finishes."""
+    lang = _get_lang(admin_tid)
+    txt = _msg(lang, "bc_result").format(sent=sent, total=total)
+    if failed:
+        txt += "\n" + _msg(lang, "bc_result_failed").format(failed=failed)
+    try:
+        bot.edit_message_text(txt, chat_id=admin_tid, message_id=message_id)
+    except Exception:
+        try:
+            bot.send_message(admin_tid, txt)
+        except Exception:
+            pass
+
+
+def _bc_active(tid: int) -> bool:
+    """True while the admin is mid-compose (before they pick recipients) — the
+    filter that routes their next message into the draft-capture handler."""
+    with SessionLocal() as db:
+        d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+        return bool(d and d.status in ("awaiting_message", "awaiting_continue"))
+
+
+@bot.message_handler(commands=["broadcast"])
+def _broadcast_start(message: types.Message):
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    if tid not in _admin_ids():
+        bot.send_message(tid, _msg(lang, "unknown_command"))
+        return
+    # One active draft per admin — a fresh /broadcast replaces any old one.
+    with SessionLocal() as db:
+        db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).delete()
+        db.add(BroadcastDraft(
+            admin_telegram_id=tid,
+            token=secrets.token_urlsafe(18),
+            from_chat_id=message.chat.id,
+            message_ids=[],
+            status="awaiting_message",
+        ))
+        db.commit()
+    bot.send_message(tid, _msg(lang, "bc_prompt"))
+
+
+@bot.message_handler(func=lambda m: _bc_active(m.from_user.id), content_types=_BC_CONTENT)
+def _broadcast_capture(message: types.Message):
+    """Capture the message(s) to broadcast. Items sharing a media_group_id are
+    collected into one album; any other message replaces the draft (latest
+    wins). The first item raises the review warning; later album items just
+    update its collected-count line."""
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    mgid = message.media_group_id
+
+    with SessionLocal() as db:
+        d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+        if not d:
+            return
+        if mgid and d.media_group_id == mgid and d.message_ids:
+            ids = list(d.message_ids) + [message.message_id]   # same album → append
+        else:
+            ids = [message.message_id]                          # new message/album → replace
+            d.media_group_id = mgid
+        d.message_ids = ids
+        d.from_chat_id = message.chat.id
+        cap = (message.text or message.caption or "").strip()
+        if cap:
+            d.preview_text = cap[:200]
+        d.status = "awaiting_continue"
+        warn_id = d.warn_message_id
+        count = len(ids)
+        db.commit()
+
+    warn = _msg(lang, "bc_warn")
+    if count > 1:
+        warn += "\n\n" + _msg(lang, "bc_album_note").format(n=count)
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(_msg(lang, "bc_continue_btn"), callback_data="bc:cont"))
+
+    if warn_id:
+        try:
+            bot.edit_message_text(warn, chat_id=tid, message_id=warn_id, reply_markup=kb)
+        except Exception:
+            pass  # unchanged text / raced album item — harmless
+    else:
+        sent = bot.send_message(tid, warn, reply_markup=kb)
+        with SessionLocal() as db:
+            d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+            if d and d.warn_message_id is None:
+                d.warn_message_id = sent.message_id
+                db.commit()
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("bc:"))
+def _broadcast_callback(call: types.CallbackQuery):
+    """'Continue' → swap the warning for the recipient-picker mini-app button."""
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    if call.data != "bc:cont":
+        bot.answer_callback_query(call.id)
+        return
+    with SessionLocal() as db:
+        d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+        if not d or not d.message_ids:
+            bot.answer_callback_query(call.id, _msg(lang, "bc_empty"), show_alert=True)
+            return
+        d.status = "awaiting_recipients"
+        d.warn_message_id = call.message.message_id
+        token = d.token
+        db.commit()
+
+    url = f"{settings.webapp_url.rstrip('/')}/broadcast-receivers?d={token}"
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(
+        _msg(lang, "bc_choose_btn"),
+        web_app=types.WebAppInfo(url=url),
+    ))
+    try:
+        bot.edit_message_text(_msg(lang, "bc_choose"), chat_id=call.message.chat.id,
+                              message_id=call.message.message_id, reply_markup=kb)
+    except Exception:
+        sent = bot.send_message(tid, _msg(lang, "bc_choose"), reply_markup=kb)
+        with SessionLocal() as db:
+            d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+            if d:
+                d.warn_message_id = sent.message_id
+                db.commit()
+    bot.answer_callback_query(call.id)
+
+
 @bot.message_handler(func=lambda m: True)
 def _fallback(message: types.Message):
     lang = _get_lang(message.from_user.id)
