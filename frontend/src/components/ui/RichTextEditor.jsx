@@ -1452,6 +1452,30 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
           />
         </FormField>
       </Modal>
+
+      <Modal
+        open={capOpen}
+        onClose={() => setCapOpen(false)}
+        title={t("rte.captionTitle")}
+        maxWidth="max-w-sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCapOpen(false)}>{t("rte.linkCancel")}</Button>
+            <Button onClick={applyCaption}>{t("rte.linkApply")}</Button>
+          </>
+        }
+      >
+        <FormField label={t("rte.captionTitle")}>
+          <input
+            autoFocus
+            value={capVal}
+            onChange={(e) => setCapVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") applyCaption(); }}
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+          />
+        </FormField>
+      </Modal>
     </div>
   );
 }
