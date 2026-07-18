@@ -817,24 +817,6 @@ export default function Leaders() {
           </div>
         )}
       </div>
-
-      {/* Re-sync the leaders sheet without leaving the page (admins + supervisors,
-          sm+ — on mobile the icon button next to the date picker replaces this) */}
-      {canRefresh && (
-        <div className="hidden sm:block flex-shrink-0">
-          <div className="text-[10px] font-semibold block mb-1 select-none" aria-hidden="true">&nbsp;</div>
-          <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
-            style={justSynced
-              ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
-              : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
-            {refreshMut.isPending ? <Loader2 size={14} className="animate-spin" />
-              : justSynced ? <CheckCircle2 size={14} />
-              : <RefreshCw size={14} />}
-            {refreshMut.isPending ? T.refreshing : justSynced ? T.refreshed : T.refresh}
-          </button>
-        </div>
-      )}
       </div>
 
       {refreshMut.isError && (
