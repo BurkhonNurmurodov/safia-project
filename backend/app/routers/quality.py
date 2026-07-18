@@ -103,11 +103,9 @@ def refresh_quality(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("quality")),
 ):
-    """Re-pull the register from the Google Sheet. Admin-only, triggered from
-    the page header — there is no scheduled sync."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can refresh the quality register")
-
+    """Re-pull the register from the Google Sheet. Triggered from the page header
+    (there is no scheduled sync) and available to every profile that can open the
+    page (gated by ``require_page`` above)."""
     src = db.query(SheetSource).filter(SheetSource.name == SHEET_NAME).first()
     if not src:
         raise HTTPException(status_code=404, detail="Quality sheet is not configured")
