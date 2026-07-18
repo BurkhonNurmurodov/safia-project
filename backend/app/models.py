@@ -861,6 +861,33 @@ class Broadcast(Base):
     finished_at        = Column(DateTime(timezone=True), nullable=True)
 
 
+class BroadcastDraft(Base):
+    """A /broadcast in progress, keyed to the admin composing it (one active
+    draft per admin — a new /broadcast replaces the old one). The admin's own
+    message(s) stay in their private chat; we only remember their message_ids
+    and copy them to each recipient at send time (copyMessage/copyMessages),
+    so any Telegram content — rich text, media, an album — is preserved
+    exactly, and in-place edits are picked up automatically.
+
+    Flow / status: awaiting_message → awaiting_continue (message captured, the
+    "review & continue" warning is up) → awaiting_recipients (the mini-app
+    picker button is shown) → sent. `warn_message_id` is the bot message that
+    is edited across those steps (warning → picker → final "sent X/Y")."""
+    __tablename__ = "broadcast_drafts"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    admin_telegram_id = Column(BigInteger, nullable=False, unique=True, index=True)
+    token             = Column(String, nullable=False, unique=True, index=True)  # opaque, → mini-app URL
+    from_chat_id      = Column(BigInteger, nullable=False)                        # where the message(s) live (the admin's chat)
+    message_ids       = Column(JSONB, nullable=False, default=list)              # captured message id(s), in order
+    media_group_id    = Column(String, nullable=True)                            # set when the draft is an album
+    preview_text      = Column(Text, nullable=True)                             # first text/caption, for the history row
+    warn_message_id   = Column(BigInteger, nullable=True)                        # bot message edited through the flow
+    status            = Column(String, nullable=False, default="awaiting_message")
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class SetupTime(Base):
     """Average changeover («переналадка») time of one production cell, as
     reported by its supervisor. Seeded once from the «периналадка» workbook
