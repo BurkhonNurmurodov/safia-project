@@ -13,6 +13,7 @@ import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import PageAccess from "./PageAccess";
 import ProductionUpload from "./ProductionUpload";
 import Broadcast from "./Broadcast";
+import AttendanceCleanup from "./AttendanceCleanup";
 import { fillDescs } from "../../utils/segments";
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
