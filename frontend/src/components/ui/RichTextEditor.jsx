@@ -516,6 +516,10 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   const [mathSrc, setMathSrc] = useState("");
   const [mathBlock, setMathBlock] = useState(false);
   const [ctx, setCtx] = useState(null); // { x, y, page: "main" | "format" }
+  const ctxMedia = useRef(null);
+  const capTarget = useRef(null);
+  const [capOpen, setCapOpen] = useState(false);
+  const [capVal, setCapVal] = useState("");
 
   const inEditor = (node) => node && ref.current && ref.current.contains(node);
 
