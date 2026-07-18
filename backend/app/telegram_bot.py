@@ -1218,12 +1218,27 @@ def _broadcast_start(message: types.Message):
     bot.send_message(tid, _msg(lang, "bc_prompt"))
 
 
+def _bc_warn_text(lang: str, count: int) -> str:
+    txt = _msg(lang, "bc_warn")
+    if count > 1:
+        txt += "\n\n" + _msg(lang, "bc_album_note").format(n=count)
+    return txt
+
+
+def _bc_count(tid: int) -> int:
+    with SessionLocal() as db:
+        d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
+        return len(d.message_ids or []) if d else 0
+
+
 @bot.message_handler(func=lambda m: _bc_active(m.from_user.id), content_types=_BC_CONTENT)
 def _broadcast_capture(message: types.Message):
     """Capture the message(s) to broadcast. Items sharing a media_group_id are
     collected into one album; any other message replaces the draft (latest
-    wins). The first item raises the review warning; later album items just
-    update its collected-count line."""
+    wins). There is exactly ONE review warning per draft — telebot dispatches
+    each album item to a worker thread, so the right to POST the warning is
+    claimed atomically (NULL→0, row-locked, one winner across threads AND
+    processes); every other item just edits it with the new collected count."""
     tid = message.from_user.id
     lang = _get_lang(tid)
     mgid = message.media_group_id
@@ -1233,38 +1248,53 @@ def _broadcast_capture(message: types.Message):
         if not d:
             return
         if mgid and d.media_group_id == mgid and d.message_ids:
-            ids = list(d.message_ids) + [message.message_id]   # same album → append
+            d.message_ids = list(d.message_ids) + [message.message_id]  # same album → append
         else:
-            ids = [message.message_id]                          # new message/album → replace
+            d.message_ids = [message.message_id]                        # new message/album → replace
             d.media_group_id = mgid
-        d.message_ids = ids
         d.from_chat_id = message.chat.id
         cap = (message.text or message.caption or "").strip()
         if cap:
             d.preview_text = cap[:200]
         d.status = "awaiting_continue"
-        warn_id = d.warn_message_id
-        count = len(ids)
         db.commit()
 
-    warn = _msg(lang, "bc_warn")
-    if count > 1:
-        warn += "\n\n" + _msg(lang, "bc_album_note").format(n=count)
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(_msg(lang, "bc_continue_btn"), callback_data="bc:cont"))
 
-    if warn_id:
+    # Claim the warning: only the transaction that flips warn_message_id from
+    # NULL to the 0 sentinel wins the right to send it.
+    with SessionLocal() as db:
+        claimed = db.query(BroadcastDraft).filter(
+            BroadcastDraft.admin_telegram_id == tid,
+            BroadcastDraft.warn_message_id.is_(None),
+        ).update({BroadcastDraft.warn_message_id: 0}, synchronize_session=False) == 1
+        db.commit()
+
+    if claimed:
         try:
-            bot.edit_message_text(warn, chat_id=tid, message_id=warn_id, reply_markup=kb)
+            sent = bot.send_message(tid, _bc_warn_text(lang, _bc_count(tid)), reply_markup=kb)
         except Exception:
-            pass  # unchanged text / raced album item — harmless
+            # Roll the claim back so a later item can retry the send.
+            with SessionLocal() as db:
+                db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).update(
+                    {BroadcastDraft.warn_message_id: None}, synchronize_session=False)
+                db.commit()
+            return
+        with SessionLocal() as db:
+            db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).update(
+                {BroadcastDraft.warn_message_id: sent.message_id}, synchronize_session=False)
+            db.commit()
     else:
-        sent = bot.send_message(tid, warn, reply_markup=kb)
         with SessionLocal() as db:
             d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
-            if d and d.warn_message_id is None:
-                d.warn_message_id = sent.message_id
-                db.commit()
+            wid = d.warn_message_id if d else None
+        if wid and wid > 0:  # a real message exists (0 = another item is still sending it)
+            try:
+                bot.edit_message_text(_bc_warn_text(lang, _bc_count(tid)), chat_id=tid,
+                                      message_id=wid, reply_markup=kb)
+            except Exception:
+                pass  # unchanged text / pending winner — harmless
 
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("bc:"))
