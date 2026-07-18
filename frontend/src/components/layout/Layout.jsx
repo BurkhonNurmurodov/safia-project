@@ -43,6 +43,7 @@ function UserProfile() {
   const { tl } = useTranslit();
   const { theme, toggle } = useTheme();
   const { ghost, toggleGhost } = useGhost();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
