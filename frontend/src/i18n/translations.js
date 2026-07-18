@@ -5148,6 +5148,7 @@ const t = {
     "menu.theme":          "Theme",
     "menu.account":        "Account",
     "menu.settings":       "Settings",
+    "menu.addProfile":     "Add new profile",
     "filter.all":          "All",
     "filter.shift":        "Shift",
     "filter.unit":         "Unit",
