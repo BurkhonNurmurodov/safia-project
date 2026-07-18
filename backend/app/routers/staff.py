@@ -859,7 +859,15 @@ def get_attendance(
 
     # Workers moved onto a task (approved people-exchange) stay on this page but
     # show "not came" + a task pill. Map worker_name → task_name.
+    #
+    # below_min_eff: → task workers whose split cleared 2h on NEITHER side (e.g. sent
+    # home ~1h in via the "Uyga qaytarilgan" task) don't count as anyone's worker.
+    # Newly-applied exchanges already blank them off the roster (_apply_split_exchange),
+    # but a doc applied under the old rule — or restored by a verifix re-upload — leaves
+    # the worker named with her before-T hours, so drop her here too and fold her
+    # effective before-T hours into extra_hours (mirrors the blanking, at read time).
     task_map: dict[str, str] = {}
+    below_min_eff: dict[str, float] = {}
     for ex in db.query(HrDocument).filter(
         HrDocument.doc_type   == "people_exchange",
         HrDocument.manager_id == manager_id,
@@ -869,9 +877,16 @@ def get_attendance(
         pl = ex.payload or {}
         if pl.get("target_type") != "task":
             continue
+        ttime = pl.get("transfer_time")
         for emp in pl.get("employees", []):
-            if emp.get("worker_name"):
-                task_map[emp["worker_name"]] = pl.get("task_name")
+            wn = emp.get("worker_name")
+            if not wn:
+                continue
+            task_map[wn] = pl.get("task_name")
+            if ttime:
+                plan = _compute_split(emp.get("snapshot") or {}, ttime, pl.get("return_time"))
+                if plan and max(plan["part1"], plan["part2"]) < MIN_MOVED_ZAGRUZKA_HOURS:
+                    below_min_eff[wn] = plan["part1_eff"]
 
     def _serialize(row: Attendance):
         pr = pending_map.get(row.worker_name)
