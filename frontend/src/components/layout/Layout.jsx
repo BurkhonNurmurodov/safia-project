@@ -302,12 +302,12 @@ function UserProfile() {
 
       {confirmLogout && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setConfirmLogout(false)}
         >
           <div
-            className="rounded-2xl p-6 flex flex-col gap-4"
+            className="modal-card rounded-2xl p-6 flex flex-col gap-4"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--border)",
