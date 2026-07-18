@@ -2206,6 +2206,13 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
                 row.hours_worked      = snap.get("hours_worked")
                 row.early_arrival_min = snap.get("early_arrival_min")
                 row.effective_hours   = snap.get("effective_hours")
+            # A below-min → supervisor move also parked the after-T hours as a nameless
+            # leftover on the receiving unit — drop it as the full row is restored.
+            recv_lid = applied.get("recv_leftover_id")
+            if recv_lid:
+                recv = db.query(Attendance).filter(Attendance.id == recv_lid).first()
+                if recv:
+                    db.delete(recv)
             emp.pop("applied", None)
             continue
         # For a → supervisor move the full row lives on the target if it moved,
