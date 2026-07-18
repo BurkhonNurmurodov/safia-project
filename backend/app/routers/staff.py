@@ -914,6 +914,7 @@ def get_attendance(
         Attendance.hours_worked.isnot(None),
         Attendance.hours_worked > 0,
     ).scalar() or 0.0
+    extra_hours = float(extra_hours)   # func.sum on a Numeric col returns Decimal
 
     mgr = db.query(Manager).filter_by(id=manager_id).first()
 
