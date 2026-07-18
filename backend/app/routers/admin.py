@@ -108,6 +108,70 @@ async def upload_verifix(
     return {"results": results}
 
 
+class DeleteAttendanceBody(BaseModel):
+    date: str
+    manager_ids: list[int]
+
+
+@router.post("/delete-attendance")
+def delete_attendance(
+    body: DeleteAttendanceBody,
+    _: dict = Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    """Wipe a whole day's footprint for the given supervisors (units) — used to
+    undo a verifix upload that landed on the wrong date.
+
+    For each (manager, date) this removes the attendance rows AND everything that
+    hangs off them so the day is fully reset (not left "closed but empty" or with
+    orphaned edit requests / documents): EditRequest, HrDocument (+history via DB
+    cascade), DayApproval, DailySubmission. A subsequent correctly-named upload
+    recreates the day cleanly.
+    """
+    try:
+        d = datetime.strptime(body.date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid date format (expected YYYY-MM-DD)")
+
+    if not body.manager_ids:
+        raise HTTPException(status_code=400, detail="No supervisors selected")
+
+    results = []
+    total_rows = 0
+    for mgr_id in body.manager_ids:
+        manager = db.query(Manager).filter(Manager.id == mgr_id).first()
+        if not manager:
+            results.append({"manager_id": mgr_id, "status": "error", "detail": "Manager not found"})
+            continue
+
+        rows = db.query(Attendance).filter(
+            Attendance.manager_id == mgr_id, Attendance.date == d,
+        ).delete(synchronize_session=False)
+        db.query(EditRequest).filter(
+            EditRequest.manager_id == mgr_id, EditRequest.date == d,
+        ).delete(synchronize_session=False)
+        db.query(HrDocument).filter(
+            HrDocument.manager_id == mgr_id, HrDocument.date == d,
+        ).delete(synchronize_session=False)
+        db.query(DayApproval).filter(
+            DayApproval.manager_id == mgr_id, DayApproval.date == d,
+        ).delete(synchronize_session=False)
+        db.query(DailySubmission).filter(
+            DailySubmission.manager_id == mgr_id, DailySubmission.date == d,
+        ).delete(synchronize_session=False)
+
+        total_rows += rows
+        results.append({
+            "manager_id": mgr_id,
+            "manager_name": manager.name,
+            "status": "ok",
+            "rows_deleted": rows,
+        })
+
+    db.commit()
+    return {"date": body.date, "rows_deleted": total_rows, "results": results}
+
+
 @router.get("/sheet-sources")
 def get_sheet_sources(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     return db.query(SheetSource).all()
