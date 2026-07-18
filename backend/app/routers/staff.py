@@ -917,11 +917,21 @@ def get_attendance(
 
     mgr = db.query(Manager).filter_by(id=manager_id).first()
 
+    # Drop below-min → task workers that are still named (old-rule doc or post
+    # re-upload) and credit their effective before-T hours to the unit's extra_hours,
+    # so the count/table/totals match a freshly-blanked worker without a re-approval.
+    workers = []
+    for r in rows:
+        if r.worker_name in below_min_eff:
+            extra_hours += below_min_eff[r.worker_name]
+            continue
+        workers.append(_serialize(r))
+
     return {
         "manager_id":   manager_id,
         "manager_name": mgr.name if mgr else None,
         "date":         attend_date,
-        "workers":      [_serialize(r) for r in rows],
+        "workers":      workers,
         "extra_hours":  round(float(extra_hours), 2),
     }
 
