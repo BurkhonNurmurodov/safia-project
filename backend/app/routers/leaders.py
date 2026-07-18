@@ -86,8 +86,11 @@ def get_leaders(
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
+    meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
+
     return {
         "role": role,
+        "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": [
             {
                 # The form's submission id when we have it — unlike the row id it
