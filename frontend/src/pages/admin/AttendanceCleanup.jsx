@@ -139,7 +139,7 @@ export default function AttendanceCleanup() {
               {Array.from({ length: 6 }).map((_, i) => <SkeletonBlock key={i} className="h-8 w-full" />)}
             </div>
           ) : !filtered.length ? (
-            <EmptyState icon={Users} title={t("admin.cleanup.noSupervisors")} />
+            <EmptyState title={t("admin.cleanup.noSupervisors")} message="" showUploadLink={false} />
           ) : (
             <div className="space-y-0.5">
               {filtered.map((s) => {
