@@ -107,6 +107,51 @@ body.sidebar-open { overflow: hidden; }
 .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 
+/* ── Motion system (Tier 1 · shell) ───────────────────────────────────────
+   One shared vocabulary for the app's shell animations. Two easing curves,
+   a small set of keyframes; every base state below is the FINAL (visible)
+   state, so disabling the animation under prefers-reduced-motion simply shows
+   the element instantly with no hidden/stuck frames.
+   ── ease-out  → things entering (fade-ups, pops)
+   ── ease-io   → things moving between two states (sidebar pill, toggles)   */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-io:  cubic-bezier(.65, 0, .35, 1);
+}
+
+/* Page transition — the new page's content rises + fades in on every route
+   change (Layout remounts per navigation, so this plays once per switch).
+   Replaces the old full-screen logo flash. */
+@keyframes pageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.page-enter { animation: pageEnter .32s var(--ease-out) both; }
+
+/* Modal / confirm dialog — backdrop fades, card scales up from 0.96. */
+@keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalPop  { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+.modal-backdrop { animation: modalFade .2s var(--ease-out) both; }
+.modal-card     { animation: modalPop  .2s var(--ease-out) both; }
+
+/* Toast — the app's "it worked" signal slides down from the top edge. */
+@keyframes toastIn { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
+.toast-in { animation: toastIn .32s var(--ease-out) both; }
+
+/* Notification bell — swing the bell + pop the badge when a new alert lands. */
+@keyframes bellSwing { 0%,100% { transform: rotate(0); } 15% { transform: rotate(13deg); } 32% { transform: rotate(-11deg); } 50% { transform: rotate(7deg); } 68% { transform: rotate(-4deg); } 84% { transform: rotate(2deg); } }
+@keyframes badgePop  { 0% { transform: scale(0); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.bell-swing { animation: bellSwing .7s var(--ease-io); transform-origin: top center; }
+.badge-pop  { animation: badgePop .32s var(--ease-out) both; }
+
+/* Sidebar active-pill: a single indicator that glides between nav items. */
+.sidebar-ind { transition: transform .32s var(--ease-io), height .32s var(--ease-io), opacity .2s ease; }
+
+/* Honor reduced-motion for every shell animation — same stance as the
+   Leaderboard podium halo. Base states are already the visible state, so
+   killing the animation is safe. */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .modal-backdrop, .modal-card, .toast-in, .bell-swing, .badge-pop { animation: none !important; }
+  .sidebar-ind { transition: none !important; }
+}
+
 /* ── Checkboxes — bigger, gold when selected ──────────
    Custom-drawn so they look identical on every device /
    Telegram client. Applies platform-wide to every
