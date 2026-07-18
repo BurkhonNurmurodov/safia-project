@@ -20,12 +20,24 @@ from app.models import Translation
 # Display overrides that may carry a Cyrillic sheet spelling of a brigadir's name.
 SHEET_LANGS = ("ru", "uz_cyrl")
 
+# Cross-person sheet-name pins for the SOURCE / shift-report pipelines
+# (production, downtime, workers, brigadirs). Unlike the ru/uz_cyrl display
+# overrides — which are just other spellings of the SAME brigadir — these
+# deliberately fold one person's sheet rows onto a DIFFERENT platform unit's
+# canonical name. Keyed by the EXACT «Бригадир ФИО» text the sheets carry
+# (read_downtime_data matches it verbatim). The QA register has its own
+# equivalent below in _OVERRIDES / supervisor_match.
+_SHEET_NAME_PINS = {
+    "Файзуллаева Малика": "Murodali Ochilov",
+}
+
 
 def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
     """Return ``{sheet_spelling: canonical_name}`` covering every known spelling
     of the given canonical manager names: the canonical name itself plus its
-    ru/uz_cyrl display overrides. Sheet rows in either alphabet resolve to the
-    same canonical ``Manager.name``."""
+    ru/uz_cyrl display overrides, and any cross-person pins (see
+    ``_SHEET_NAME_PINS``). Sheet rows in either alphabet resolve to the same
+    canonical ``Manager.name``."""
     canon = {n for n in names if n}
     if not canon:
         return {}
@@ -38,6 +50,17 @@ def sheet_alias_map(db: Session, names: Iterable[str]) -> dict[str, str]:
         val = (t.value or "").strip()
         if val:
             alias[val] = key_to_canon[t.key]
+    # Cross-person pins: resolve each target to whichever canonical spelling this
+    # manager set actually holds (order/alphabet-tolerant, so a Latin/Cyrillic or
+    # surname-first profile name still matches), and skip a pin whose unit isn't
+    # in this set — those rows simply stay unmatched, exactly as before.
+    canon_by_norm: dict[str, str] = {}
+    for n in canon:
+        canon_by_norm.setdefault(" ".join(sorted(_name_tokens(n))), n)
+    for spelling, target in _SHEET_NAME_PINS.items():
+        resolved = canon_by_norm.get(" ".join(sorted(_name_tokens(target))))
+        if resolved:
+            alias[spelling] = resolved
     return alias
 
 
