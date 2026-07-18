@@ -150,6 +150,18 @@ function UserProfile() {
         );
       })}
 
+          {/* Add new profile — opens the registration page */}
+          <button
+            onClick={() => { setOpen(false); navigate("/login"); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+            onMouseLeave={e => e.currentTarget.style.background = ""}
+          >
+            <UserPlus size={14} />
+            <span>{t("menu.addProfile") || "Add new profile"}</span>
+          </button>
+
           {/* Settings — language, theme, ghost, sign out */}
           <button
             onClick={() => { setOpen(false); setSettingsOpen(true); }}
