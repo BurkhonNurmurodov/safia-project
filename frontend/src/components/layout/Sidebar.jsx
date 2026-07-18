@@ -195,8 +195,12 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 style={({ isActive }) => ({
                   gap: "12px",
                   padding: "10px",
+                  position: "relative",
+                  zIndex: 1,
+                  // Background now comes from the sliding indicator behind it;
+                  // the link only carries the active text color + weight.
                   ...(isActive
-                    ? { background: "var(--brand-bg)", color: "var(--brand-text)", fontWeight: 500 }
+                    ? { color: "var(--brand-text)", fontWeight: 500 }
                     : { color: "var(--text-3)" }),
                   justifyContent: !expanded ? "center" : undefined,
                 })}
