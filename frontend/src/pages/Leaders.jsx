@@ -448,6 +448,7 @@ export default function Leaders() {
     queryFn: () => api.get("/api/leaders").then((r) => r.data),
   });
   const rows = data?.data ?? [];
+  const lastSynced = fmtDateTime(data?.last_synced);
 
   // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
   const qc = useQueryClient();
