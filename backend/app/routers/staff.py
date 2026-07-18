@@ -2103,6 +2103,29 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             continue
 
         leftover_id = None
+        # Neither side cleared the minimum worked-hours bar → the worker counts as
+        # nobody's worker. Her name leaves the roster and each side becomes a nameless
+        # hours-only leftover: her own row is repurposed into the before-T effective
+        # leftover on the sending unit (mirrors the → task blanking below, so revert
+        # restores it in place by id), and a → supervisor move also drops the after-T
+        # hours as a nameless leftover on the receiving unit (→ task drops them).
+        if max(plan["part1"], plan["part2"]) < MIN_MOVED_ZAGRUZKA_HOURS:
+            recv_leftover_id = None
+            if not is_task and target and plan["part2"] > 0:
+                row = Attendance(manager_id=target, date=doc.date, worker_name=None,
+                                 hours_worked=plan["part2"])
+                db.add(row); db.flush()
+                recv_leftover_id = row.id
+            att.worker_name       = None
+            att.job_title         = None
+            att.schedule          = None
+            att.clock_in_out      = None
+            att.hours_worked      = plan["part1_eff"]
+            att.effective_hours   = None
+            att.early_arrival_min = None
+            emp["applied"] = {"side": "below_min", "leftover_id": att.id,
+                              "recv_leftover_id": recv_leftover_id, "task_blanked": True}
+            continue
         if plan["stay"]:
             # Home side wins: worker keeps their name on the sending unit. No return
             # → clock-out trimmed to T; carve-out (return) → full C–O span, since the
