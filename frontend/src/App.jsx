@@ -327,7 +327,6 @@ function AppWithLang() {
   return (
     <LangProvider defaultLang={defaultLang}>
       <BrowserRouter>
-        <RouteTransitionProvider>
         <FilterProvider>
           <LogoutOverlay />
           <FindInPage />
@@ -367,7 +366,6 @@ function AppWithLang() {
           </Routes>
           </Suspense>
         </FilterProvider>
-        </RouteTransitionProvider>
       </BrowserRouter>
     </LangProvider>
   );

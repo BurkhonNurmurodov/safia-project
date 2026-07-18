@@ -260,6 +260,13 @@ const fmtDate = (iso, lang) => {
   if (lang === "ru") return `${d} ${mn} ${y}`;               // 19 июня 2026
   return `${d}-${mn}, ${y}`;                                 // 19-iyun, 2026 / 19-июн, 2026
 };
+// "last updated" timestamp: date + time (locale-aware), for the page header pill.
+const fmtDateTime = (iso) => {
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (isNaN(dt)) return null;
+  return dt.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+};
 
 // ── small atoms (mirror Trudoyomkost / Production idioms) ───────────────────────
 // ── person-name display helpers (for the insight cards) ─────────────────────────
