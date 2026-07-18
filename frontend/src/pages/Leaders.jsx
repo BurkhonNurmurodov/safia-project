@@ -411,9 +411,9 @@ export default function Leaders() {
   const isLeader = auth?.role === "leader";
   // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
   const isAdmin = auth?.role === "admin";
-  // Supervisors can re-sync the leaders sheet from their own unit, so they get
-  // the refresh button too (the backend allows the "leaders" sheet for them).
-  const canRefresh = isAdmin || isSupervisor;
+  // Supervisors and leaders can re-sync the leaders sheet from the page, so they
+  // get the refresh button too (the backend allows the "leaders" sheet for them).
+  const canRefresh = isAdmin || isSupervisor || isLeader;
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
