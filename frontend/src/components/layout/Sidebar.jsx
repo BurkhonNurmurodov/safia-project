@@ -180,7 +180,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
+        <nav ref={navRef} className="relative flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
           {links.map(({ to, key, icon: Icon }) => {
             const isStaff = to === "/staff";
             const badge = isStaff && showBadge && pendingCount > 0;
