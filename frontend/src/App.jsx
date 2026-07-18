@@ -331,6 +331,7 @@ function AppWithLang() {
         <RouteTransitionProvider>
         <FilterProvider>
           <LogoutOverlay />
+          <FindInPage />
           <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
