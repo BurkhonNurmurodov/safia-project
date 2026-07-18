@@ -706,3 +706,109 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
         "failed_names": r.failed_names or [],
         "status": r.status,
     } for r in rows]
+
+
+# ── /broadcast mini-app: recipient tree + draft send ──────────────────────────
+
+@router.get("/recipients")
+def broadcast_recipients(db: Session = Depends(get_db),
+                         _: dict = Depends(verify_broadcast_admin)):
+    """role → profile → Telegram-user tree for the picker (both the admin tab
+    and the /broadcast mini-app). Each user's name is the CURRENT full name
+    from a live getChat, falling back to the stored name when Telegram doesn't
+    answer. Empty profiles are kept (rendered disabled) so the admin sees them."""
+    blocks = _profile_holders(db)
+    all_ids = _uniq([tid for b in blocks for p in b["profiles"] for tid in p["user_ids"]])
+    stored = _stored_names(db, blocks)
+    live = _live_names(all_ids)
+
+    def uinfo(tid: int) -> dict:
+        full, uname = live.get(tid, (None, None))
+        return {"telegram_id": tid, "name": full or stored.get(tid) or str(tid), "username": uname}
+
+    tree = [{
+        "role": b["role"],
+        "profiles": [{
+            "key": p["key"],
+            "name": p["name"],
+            "users": [uinfo(t) for t in p["user_ids"]],
+        } for p in b["profiles"]],
+    } for b in blocks]
+    return {"tree": tree, "total_users": len(all_ids)}
+
+
+@router.post("/send-draft")
+def send_draft(
+    token: str = Form(...),
+    targets: str = Form(...),
+    payload: dict = Depends(verify_broadcast_admin),
+    db: Session = Depends(get_db),
+):
+    """Send a /broadcast draft: copy the admin's stored message(s) to every
+    selected telegram_id. Runs synchronously (recipient counts are tens) and
+    returns final {sent, failed, total, failed_names} so the mini-app can show
+    an accurate result modal. Also logs a history row and edits the bot's
+    picker message into a 'sent X/Y' summary."""
+    admin_tid = int(payload.get("sub", 0) or 0)
+    draft = db.query(BroadcastDraft).filter_by(token=token).first()
+    if not draft or draft.admin_telegram_id != admin_tid:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft.status == "sent":
+        raise HTTPException(status_code=409, detail="This broadcast was already sent")
+    message_ids = list(draft.message_ids or [])
+    if not message_ids:
+        raise HTTPException(status_code=422, detail="Draft has no message")
+
+    try:
+        keys = json.loads(targets)
+        assert isinstance(keys, list)
+    except Exception:
+        raise HTTPException(status_code=422, detail="targets must be a JSON list")
+
+    blocks = _profile_holders(db)
+    deliverable = _deliverable(blocks)
+    names = _stored_names(db, blocks)
+    want = _uniq([int(x) for x in keys if str(x).lstrip("-").isdigit()])
+    recipients = {tid: names.get(tid, str(tid)) for tid in want if tid in deliverable}
+    if not recipients:
+        raise HTTPException(status_code=422, detail="No deliverable recipients selected")
+
+    from_chat_id = draft.from_chat_id
+    sent = 0
+    failed_names: list[str] = []
+    for tid, name in recipients.items():
+        try:
+            _tg_copy(tid, from_chat_id, message_ids)
+            sent += 1
+        except Exception as e:
+            failed_names.append(name)
+            logger.warning("Draft broadcast %s → %s (%s) failed: %s", draft.id, tid, name, e)
+        time.sleep(0.05)  # stay under Telegram's ~30 msg/s ceiling
+
+    total = len(recipients)
+    failed = len(failed_names)
+
+    from app.telegram_bot import admin_profile_name, notify_broadcast_result
+    row = Broadcast(
+        sender_telegram_id=admin_tid,
+        sender_name=admin_profile_name(admin_tid),
+        mode="copy",
+        text_html="", text_plain=(draft.preview_text or "")[:200],
+        attachment_kind=None, attachment_name=None,
+        media_names=[],
+        target_keys=want, recipient_total=total,
+        sent_count=sent, failed_count=failed, failed_names=failed_names,
+        status="done", finished_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    draft.status = "sent"
+    db.commit()
+
+    # Edit the bot's picker message into a final summary (best-effort).
+    if draft.warn_message_id:
+        try:
+            notify_broadcast_result(admin_tid, draft.warn_message_id, sent, total, failed)
+        except Exception:
+            logger.warning("Broadcast result edit failed for admin %s", admin_tid, exc_info=True)
+
+    return {"sent": sent, "failed": failed, "total": total, "failed_names": failed_names}
