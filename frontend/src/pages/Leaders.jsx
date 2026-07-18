@@ -93,6 +93,7 @@ const TXT = {
     tipLowLeader: "Энг паст ўртача кўрсаткичли лидер",
     searchPh: "Лидер қидириш…", bandAll: "Барчаси", noMatch: "Филтрларга мос ҳисобот йўқ",
     refresh: "Янгилаш", refreshing: "Янгиланмоқда…", refreshed: "Янгиланди",
+    lastSynced: "Охирги янгиланиш", never: "ҳеч қачон",
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
   },
   ru: {
