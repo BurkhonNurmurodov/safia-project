@@ -36,8 +36,8 @@ def get_leaders(
     """All leader checklist submissions. Period/leader filtering is done
     client-side, mirroring the original Apps Script dashboard. A supervisor is
     scoped server-side to their own unit's rows so they can never read another
-    brigadir's data via the raw API; admins / shift-managers / top-managers see
-    everything."""
+    brigadir's data via the raw API; a leader is likewise scoped to their own
+    checklist rows; admins / shift-managers / top-managers see everything."""
     role = payload.get("role")
 
     rows = (
