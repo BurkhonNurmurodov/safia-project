@@ -70,6 +70,7 @@ const TXT = {
     tipLowLeader: "Eng past o'rtacha ko'rsatkichli lider",
     searchPh: "Lider qidirish…", bandAll: "Barchasi", noMatch: "Filtrlarga mos hisobot yo'q",
     refresh: "Yangilash", refreshing: "Yangilanmoqda…", refreshed: "Yangilandi",
+    lastSynced: "Oxirgi yangilanish", never: "hech qachon",
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
   },
   uz_cyrl: {
