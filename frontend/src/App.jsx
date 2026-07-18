@@ -64,6 +64,7 @@ const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceive
 const Login = lazyWithReload(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
+import FindInPage from "./components/FindInPage";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
 import { useTranslit } from "./utils/transliterate";
