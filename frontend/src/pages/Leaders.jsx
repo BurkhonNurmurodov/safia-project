@@ -4,7 +4,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
-  AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff,
+  AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
