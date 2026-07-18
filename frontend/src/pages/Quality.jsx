@@ -393,6 +393,16 @@ export default function Quality() {
   // the default landing tab.
   const [view, setView] = useState("production");
   const isProd = view === "production";
+
+  // Brigadir (supervisor) profile: the page is locked to this one supervisor's
+  // own data — no view / shift / brigadir switching, only the date range stays.
+  // Their JWT role_id is their Manager.id, so resolve it to the canonical
+  // platform name every matched row carries in r.sup.
+  const lockOwn = auth?.role === "supervisor";
+  const myName = useMemo(
+    () => (lockOwn ? (data?.supervisors?.find((s) => s.id === auth.role_id)?.name || "") : ""),
+    [lockOwn, data, auth?.role_id]
+  );
   const [gran, setGran] = useState("month");
   const [topMode, setTopMode] = useState("product");
   const [accMode, setAccMode] = useState("brig");
