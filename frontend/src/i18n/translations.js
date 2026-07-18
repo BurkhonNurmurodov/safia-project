@@ -1383,6 +1383,11 @@ const t = {
     "common.signingOut":     "Chiqilmoqda…",
     "common.selectDate":     "Sanani tanlang…",
     "common.search":         "Qidirish…",
+    "find.placeholder":      "Sahifadan qidirish…",
+    "find.noMatches":        "Natija yo'q",
+    "find.prev":             "Oldingi (Shift+Enter)",
+    "find.next":             "Keyingi (Enter)",
+    "find.close":            "Yopish (Esc)",
 
     // ── Error boundary ───────────────────────────────────────────────────────
     "error.title":   "Nimadir xato ketdi",
