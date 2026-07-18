@@ -79,6 +79,14 @@ async def upload_verifix(
             db.add(Attendance(manager_id=mgr_id, date=date, **r))
             inserted += 1
 
+        # A re-upload over a day that already had approved → task exchanges brings
+        # every worker's full row back while the exchange docs stay, so task-assigned
+        # workers would reappear with full hours and get re-counted (zagruzka etc.).
+        # Re-apply those within-unit → task effects over the fresh rows to restore
+        # the intended state. (First-time uploads have no approved docs → a no-op.)
+        from app.routers.staff import reapply_task_exchanges
+        reapply_task_exchanges(db, mgr_id, date)
+
         # Tell this unit's supervisor their verifix data landed for this date so
         # they can make their changes (exchanges, role changes, deletions) and
         # close the day. The day's close-state is intentionally left untouched —
