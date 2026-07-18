@@ -405,6 +405,10 @@ export default function Leaders() {
   // Supervisors are locked to their own unit: the backend returns only their
   // rows, so they get no supervisor filter and no supervisor standings toggle.
   const isSupervisor = auth?.role === "supervisor";
+  // A leader is locked to their OWN checklist rows (scoped server-side by name),
+  // so they get no shift / supervisor / leader pickers and no standings toggle —
+  // the page shows only their own monitoring.
+  const isLeader = auth?.role === "leader";
   // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
   const isAdmin = auth?.role === "admin";
   // Supervisors can re-sync the leaders sheet from their own unit, so they get
