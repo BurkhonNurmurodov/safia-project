@@ -372,10 +372,9 @@ export default function Quality() {
 
   const rows = data?.rows || [];
 
-  // Default window: the rolling last 12 months — long enough for seasonality,
-  // short enough that "now" isn't drowned by 2025.
+  // Default window: year-to-date — from Jan 1 of the current year through today.
   const today = iso(new Date());
-  const [dateFrom, setDateFrom] = useState(addDays(today, -364));
+  const [dateFrom, setDateFrom] = useState(today.slice(0, 4) + "-01-01");
   const [dateTo, setDateTo] = useState(today);
 
   const [srcSel, setSrcSel] = useState([]);
