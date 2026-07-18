@@ -147,6 +147,10 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
     """
     canon = [(m, _name_tokens(m.name)) for m in managers]
     by_norm = {" ".join(ctok): m for m, ctok in canon}
+    # Token-order-insensitive index, used only to resolve a pinned override unit
+    # (see _OVERRIDES): the Profiles tab may store a name surname-first or
+    # first-first, and a hand-written pin shouldn't have to guess which.
+    by_sorted = {" ".join(sorted(ctok)): m for m, ctok in canon}
     out: dict[str, dict] = {}
     for raw in names:
         if not raw:
