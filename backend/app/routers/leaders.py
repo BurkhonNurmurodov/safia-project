@@ -71,6 +71,18 @@ def get_leaders(
             if (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
             == payload.get("role_id")
         ]
+    elif role == "leader":
+        # Scope a leader to their OWN checklist rows: the sheet's «Лидер ФИО» is a
+        # full passport-form name in either alphabet, while the JWT carries the
+        # canonical profile name — so match with the same fuzzy scorer the
+        # supervisor units use (surname + first name, alphabet/form tolerant).
+        # No confident name match ⇒ no rows, never another leader's data.
+        me = _name_tokens(payload.get("full_name") or "")
+        rows = (
+            [r for r in rows if r.leader and _pair_score(_name_tokens(r.leader), me) > 0]
+            if len(me) >= 2
+            else []
+        )
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
