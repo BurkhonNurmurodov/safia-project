@@ -60,37 +60,11 @@ export default function Broadcast() {
       query.state.data?.some((r) => r.status === "sending") ? 2000 : false,
   });
 
-  const groups = useMemo(() => {
-    if (!list) return [];
-    return ROLE_SECTIONS.map(({ key, listKey, tKey, icon }) => {
-      const items = (list[listKey] || []).filter((p) => key !== "supervisor" || !p.archived);
-      return {
-        key,
-        label: t(tKey),
-        icon,
-        children: items.map((p) => {
-          const bound = (p.bindings || []).find((b) => b.status === "approved" && b.telegram_id);
-          const holder = bound
-            ? bound.tg_name || tl(bound.user_name) || (bound.username ? `@${bound.username}` : null)
-            : null;
-          return {
-            key: `${key}:${p.id}`,
-            label: tl(p.name),
-            sub: key === "leader" && p.supervisor
-              ? [holder, tl(p.supervisor)].filter(Boolean).join(" · ")
-              : holder,
-            disabled: !bound,
-            hint: bound ? null : t("admin.broadcast.notRegistered"),
-          };
-        }),
-      };
-    }).filter((g) => g.children.length);
-  }, [list, t, tl]);
-
-  const allEnabledKeys = useMemo(
-    () => groups.flatMap((g) => g.children.filter((c) => !c.disabled).map((c) => c.key)),
-    [groups],
+  const groups = useMemo(
+    () => buildRecipientGroups(recip?.tree, t, tl, t("admin.broadcast.notRegistered")),
+    [recip, t, tl],
   );
+  const allEnabledKeys = useMemo(() => collectLeafKeys(groups), [groups]);
 
   const rich = mode === "rich";
   const maxLen = rich ? 32768 : attachment ? 1024 : 4096;
