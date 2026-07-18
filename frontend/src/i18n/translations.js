@@ -495,6 +495,7 @@ const t = {
     "menu.theme":          "Mavzu",
     "menu.account":        "Hisob",
     "menu.settings":       "Sozlamalar",
+    "menu.addProfile":     "Yangi profil qo'shish",
     "filter.all":          "Barchasi",
     "filter.shift":        "Smena",
     "filter.unit":         "Birlik",
