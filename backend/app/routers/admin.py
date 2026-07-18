@@ -231,6 +231,16 @@ def refresh_sheet(
 
         if name == "leaders":
             result = sync_leaders_sheet(src.sheet_id, db)
+            # Stamp the sync time so the Leaders page can show "last updated".
+            meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
+            if not meta:
+                meta = LeaderSyncMeta(id=1)
+                db.add(meta)
+            meta.last_synced = datetime.now(timezone.utc)
+            meta.ok = True
+            meta.message = None
+            meta.row_count = result.get("leader_rows", 0)
+            db.commit()
             return {"status": "ok", "sheet": name, **result}
 
         if name == "quality":
