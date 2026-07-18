@@ -150,9 +150,19 @@ function UserProfile() {
         );
       })}
 
-          {/* Add new profile — opens the registration page */}
+          {/* Add new profile — runs the bot's register flow (language →
+              web form → phone number). Navigating to /login in-app would skip
+              the bot's contact request, so open the bot deep link instead. */}
           <button
-            onClick={() => { setOpen(false); navigate("/login"); }}
+            onClick={() => {
+              setOpen(false);
+              const tg = window.Telegram?.WebApp;
+              if (tg?.openTelegramLink && botUsername) {
+                tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
+              } else {
+                navigate("/login");
+              }
+            }}
             className="w-full flex items-center gap-3 px-4 py-3 text-xs"
             style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
             onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
