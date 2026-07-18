@@ -1130,8 +1130,38 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     e.preventDefault();
     ctxCell.current = e.target.closest?.("td,th");
     if (ctxCell.current && !ref.current.contains(ctxCell.current)) ctxCell.current = null;
+    const mediaEl = e.target.closest?.("[data-tg-media],[data-tg-wrap]");
+    ctxMedia.current = mediaEl && ref.current.contains(mediaEl)
+      ? (mediaEl.hasAttribute("data-tg-media") ? mediaEl : mediaEl.querySelector("[data-tg-media]"))
+      : null;
     saveSelection();
     setCtx({ x: e.clientX, y: e.clientY, page: "main" });
+  };
+
+  // ── Media captions (grammar: <figure><figcaption>) ──
+  const openCaption = () => {
+    const el = ctxMedia.current;
+    if (!el) return;
+    capTarget.current = el;
+    setCapVal(el.getAttribute("data-caption") || "");
+    setCapOpen(true);
+  };
+  const applyCaption = () => {
+    setCapOpen(false);
+    const el = capTarget.current;
+    if (!el || !ref.current?.contains(el)) return;
+    const v = capVal.trim();
+    if (v) el.setAttribute("data-caption", v);
+    else el.removeAttribute("data-caption");
+    // reflect in the editor visuals
+    const capSpan = el.closest("[data-tg-wrap]")?.querySelector("[data-tg-cap]");
+    if (capSpan) capSpan.textContent = v;
+    if (el.classList.contains("tg-media-chip")) {
+      const m = mediaReg.current.get(el.getAttribute("data-tg-media"));
+      const base = `${el.getAttribute("data-kind")} · ${m?.name || ""}`;
+      el.textContent = v ? `${base} · ${v}` : base;
+    }
+    emit();
   };
   useEffect(() => {
     if (!ctx) return;
