@@ -631,7 +631,13 @@ async def send_broadcast(
         if _utf16_len(plain) > max_len:
             raise HTTPException(status_code=422, detail=f"Message exceeds {max_len} characters")
 
-    recipients = _resolve_targets(db, keys)
+    # `targets` is now a list of telegram_ids (the picker keys leaves by
+    # telegram_id). Validate each against the deliverable set before sending.
+    blocks = _profile_holders(db)
+    deliverable = _deliverable(blocks)
+    names = _stored_names(db, blocks)
+    want = _uniq([int(x) for x in keys if str(x).lstrip("-").isdigit()])
+    recipients = {tid: names.get(tid, str(tid)) for tid in want if tid in deliverable}
     if not recipients:
         raise HTTPException(status_code=422, detail="No deliverable recipients selected")
 
