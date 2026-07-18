@@ -317,6 +317,24 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   border-radius: 8px;
   margin: 3px 6px 3px 0;
 }
+.tg-editor .tg-embed-wrap {
+  display: inline-block;
+  vertical-align: bottom;
+  max-width: 48%;
+  margin: 3px 6px 3px 0;
+}
+.tg-editor .tg-embed-wrap .tg-embed { max-width: 100%; margin: 0; }
+.tg-editor .tg-embed-cap {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  padding: 1px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tg-editor .tg-embed-cap:empty { display: none; }
+.tg-msg-rich figcaption { font-size: 11px; color: var(--text-3); margin-top: 2px; }
 .tg-editor .tg-media-chip {
   display: inline-flex;
   align-items: center;
