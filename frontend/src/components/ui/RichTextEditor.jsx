@@ -107,7 +107,7 @@ export function serializeTelegram(root) {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = node.tagName.toLowerCase();
     if (tag === "br") { html += "\n"; text += "\n"; atLineStart = true; return; }
-    if (node.getAttribute && node.getAttribute("data-tg-media")) return; // rich-only embeds
+    if (node.getAttribute && (node.getAttribute("data-tg-media") || node.hasAttribute("data-tg-cap"))) return; // rich-only embeds
     if (tag === "input" || tag === "hr") return;
 
     const spoiler = tag === "tg-spoiler" || (tag === "span" && node.classList.contains("tg-spoiler"));
