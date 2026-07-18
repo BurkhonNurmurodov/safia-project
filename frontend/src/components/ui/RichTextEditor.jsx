@@ -901,8 +901,11 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
     if (kind === "photo") {
       const url = URL.createObjectURL(f);
       // inline flow (no forced line break) so consecutive embeds stack into
-      // one row — adjacent media serialize into a single <tg-collage>
-      frag = `<img src="${escAttr(url)}" data-tg-media="${id}" data-kind="photo" class="tg-embed" contenteditable="false">&nbsp;`;
+      // one row — adjacent media serialize into a single <tg-collage>. The
+      // wrapper carries the in-editor caption label under the thumbnail.
+      frag = `<span class="tg-embed-wrap" data-tg-wrap contenteditable="false">` +
+        `<img src="${escAttr(url)}" data-tg-media="${id}" data-kind="photo" class="tg-embed">` +
+        `<span class="tg-embed-cap" data-tg-cap></span></span>&nbsp;`;
     } else {
       frag = `<span class="tg-media-chip" data-tg-media="${id}" data-kind="${kind}" contenteditable="false">${escapeHtml(`${kind} · ${f.name}`)}</span>&nbsp;`;
     }
