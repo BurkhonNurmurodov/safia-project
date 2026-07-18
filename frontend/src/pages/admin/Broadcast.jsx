@@ -77,7 +77,8 @@ export default function Broadcast() {
     mutationFn: () => {
       const form = new FormData();
       form.append("text", msg.html);
-      form.append("targets", JSON.stringify(selected));
+      // Selection keys are telegram_ids (the tree keys leaves by telegram_id).
+      form.append("targets", JSON.stringify(selected.map(Number)));
       form.append("mode", mode);
       if (rich) {
         form.append("media_meta", JSON.stringify(msg.media.map(({ id, kind }) => ({ id, kind }))));
