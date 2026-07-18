@@ -186,12 +186,12 @@ function UserProfile() {
 
       {settingsOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setSettingsOpen(false)}
         >
           <div
-            className="rounded-2xl flex flex-col"
+            className="modal-card rounded-2xl flex flex-col"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--border)",
