@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Manager, Attendance, RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole
+from app.models import (
+    Manager, Attendance, RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole,
+    EditRequest, HrDocument, DayApproval, DailySubmission,
+)
 from app.services.verifix_parser import parse_verifix_file
 from app.services.sheets_sync import (
     sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
