@@ -48,9 +48,9 @@ export default function Broadcast() {
   const [detail, setDetail] = useState(null);
   const [toast, setToast] = useState(false);
 
-  const { data: list, isLoading: listLoading } = useQuery({
-    queryKey: ["broadcast-profiles"],
-    queryFn: () => api.get("/api/profiles/admin/list").then((r) => r.data),
+  const { data: recip, isLoading: listLoading } = useQuery({
+    queryKey: ["broadcast-recipients"],
+    queryFn: () => api.get("/api/broadcast/recipients").then((r) => r.data),
   });
 
   const { data: history, isLoading: historyLoading } = useQuery({
