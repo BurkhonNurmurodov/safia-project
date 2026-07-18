@@ -2,8 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Users, History, Send, Paperclip, X, Image as ImageIcon, Video,
-  FileText, CheckCircle, Loader2, Star, UserCog, Flag, Shield, UserRound,
-  Type, Sparkles,
+  FileText, CheckCircle, Loader2, Type, Sparkles,
 } from "lucide-react";
 import api from "../../utils/api";
 import Button from "../../components/ui/Button";
@@ -11,23 +10,13 @@ import SearchInput from "../../components/ui/SearchInput";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Modal from "../../components/ui/Modal";
 import RichTextEditor from "../../components/ui/RichTextEditor";
-import CheckboxTree from "../../components/ui/CheckboxTree";
+import CheckboxTree, { collectLeafKeys } from "../../components/ui/CheckboxTree";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-
-// Same role sections (labels + icons) as the Profiles tab, so the recipient
-// tree reads identically to the rest of the admin panel.
-const ROLE_SECTIONS = [
-  { key: "top-manager",   listKey: "top_managers",   tKey: "admin.profiles.topManagers",   icon: Star },
-  { key: "shift-manager", listKey: "shift_managers", tKey: "admin.profiles.shiftManagers", icon: UserCog },
-  { key: "supervisor",    listKey: "supervisors",    tKey: "admin.profiles.supervisors",   icon: Users },
-  { key: "leader",        listKey: "leaders",        tKey: "admin.profiles.leaders",       icon: Flag },
-  { key: "admin",         listKey: "admins",         tKey: "admin.profiles.admins",        icon: Shield },
-  { key: "guest",         listKey: "guests",         tKey: "admin.profiles.guests",        icon: UserRound },
-];
+import { buildRecipientGroups } from "../../utils/broadcastTree";
 
 const ATTACH_ICONS = { photo: ImageIcon, video: Video, document: FileText };
 
