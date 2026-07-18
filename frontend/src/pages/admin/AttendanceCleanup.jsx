@@ -205,7 +205,7 @@ export default function AttendanceCleanup() {
 
       {toast && (
         <div
-          className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed", top: 16, right: 16, zIndex: 9999,
             background: "#22c55e", color: "#fff", maxWidth: 340,

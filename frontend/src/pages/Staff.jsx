@@ -625,7 +625,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
       {/* Export success toast — fixed top-right, outside normal flow */}
       {exportDone && (
         <div
-          className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed",
             top: 16,
@@ -3571,7 +3571,7 @@ export default function Staff() {
       {/* Delete toast */}
       {deleteToast && (
         <div
-          className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
           style={{
             position: "fixed", top: 16, right: 16, zIndex: 9999,
             background: deleteToast === "success" ? "#ef4444" : "#C8973F",
