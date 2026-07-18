@@ -6087,6 +6087,11 @@ const t = {
     "common.signingOut":     "Signing out…",
     "common.selectDate":     "Select a date…",
     "common.search":         "Search…",
+    "find.placeholder":      "Find on page…",
+    "find.noMatches":        "No results",
+    "find.prev":             "Previous (Shift+Enter)",
+    "find.next":             "Next (Enter)",
+    "find.close":            "Close (Esc)",
 
     // ── Error boundary ───────────────────────────────────────────────────────
     "error.title":   "Something went wrong",
