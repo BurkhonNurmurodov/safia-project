@@ -201,10 +201,10 @@ export default function NotificationsBell({ refetch, ...list }) {
         title={t("notif.title")}
         aria-label={t("notif.title")}
       >
-        <Bell size={15} />
+        <Bell size={15} className={ring ? "bell-swing" : undefined} />
         {unread > 0 && (
           <span
-            className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+            className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center ${ring ? "badge-pop" : ""}`}
             style={{ background: "#ef4444", color: "#fff", border: "2px solid var(--bg-base)" }}
           >
             {unread > 99 ? "99+" : unread}
