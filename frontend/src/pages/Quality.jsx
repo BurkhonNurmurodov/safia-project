@@ -995,10 +995,10 @@ export default function Quality() {
   );
 
   const lastSynced = fmtDateTime(data?.last_synced);
-  // Gate on the caller's own role, not on the payload: when the GET fails there
-  // is no payload, and hiding Refresh then leaves an admin staring at a page
-  // with no way out. The server re-checks the role on /refresh anyway.
-  const canRefresh = data?.can_refresh ?? auth?.role === "admin";
+  // Refresh is shown to every profile that can open this page. Fall back to
+  // showing it when the GET fails (no payload) so nobody is stranded on a broken
+  // page with no way to re-sync; the server gates /refresh by page access anyway.
+  const canRefresh = data?.can_refresh ?? true;
   const refreshBtn = canRefresh && (
     <Button size="lg" variant="secondary" loading={refresh.isPending}
       icon={!refresh.isPending ? <RefreshCw size={14} /> : null}
