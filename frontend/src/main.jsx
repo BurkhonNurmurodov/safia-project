@@ -11,13 +11,16 @@ window.__bootStage = 'bundle-start'
 // React from mounting (seen on Windows machines where the script is intercepted).
 try {
   const _tg = window.Telegram?.WebApp
+  // The /broadcast recipient picker is a small sheet — it must NOT expand or go
+  // fullscreen, so it opens compact over the bot chat.
+  const _compact = window.location.pathname.startsWith('/broadcast-receivers')
   if (_tg) {
     _tg.ready()
-    _tg.expand()
+    if (!_compact) _tg.expand()
 
     // Fullscreen needs Bot API 8.0+ (client-side); on older Telegram clients
     // requestFullscreen throws WebAppMethodUnsupported, so gate by version.
-    const supportsFullscreen =
+    const supportsFullscreen = !_compact &&
       typeof _tg.isVersionAtLeast === 'function' && _tg.isVersionAtLeast('8.0')
     if (supportsFullscreen) {
       try { _tg.requestFullscreen() } catch { /* unsupported despite version */ }
