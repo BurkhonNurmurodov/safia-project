@@ -1028,7 +1028,7 @@ const t = {
     "admin.broadcast.notRegistered":  "Ro'yxatdan o'tmagan",
     "admin.broadcast.noMatch":        "Hech narsa topilmadi",
     "admin.broadcast.confirmTitle":   "Xabarnomani yuborish",
-    "admin.broadcast.confirmMsg":     "Xabar tanlangan {n} ta profilga Telegram orqali yuboriladi. Yuborilgach uni qaytarib bo'lmaydi.",
+    "admin.broadcast.confirmMsg":     "Xabar tanlangan {n} ta qabul qiluvchiga Telegram orqali yuboriladi. Yuborilgach uni qaytarib bo'lmaydi.",
     "admin.broadcast.cancel":         "Bekor qilish",
     "admin.broadcast.queuedToast":    "Xabarnoma yuborilmoqda",
     "admin.broadcast.sendFailed":     "Yuborishda xatolik yuz berdi",
