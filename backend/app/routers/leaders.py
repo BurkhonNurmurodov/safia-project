@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import LeaderChecklist, Manager
 from app.permissions import require_page
-from app.services.name_map import _norm as _fold_name, supervisor_match
+from app.services.name_map import (
+    _norm as _fold_name,
+    _name_tokens,
+    _pair_score,
+    supervisor_match,
+)
 
 router = APIRouter(prefix="/api", tags=["leaders"])
 
