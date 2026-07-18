@@ -4519,6 +4519,11 @@ const t = {
     "common.signingOut":     "Выход…",
     "common.selectDate":     "Выберите дату…",
     "common.search":         "Поиск…",
+    "find.placeholder":      "Поиск на странице…",
+    "find.noMatches":        "Нет совпадений",
+    "find.prev":             "Предыдущее (Shift+Enter)",
+    "find.next":             "Следующее (Enter)",
+    "find.close":            "Закрыть (Esc)",
 
     // ── Error boundary ───────────────────────────────────────────────────────
     "error.title":   "Что-то пошло не так",
