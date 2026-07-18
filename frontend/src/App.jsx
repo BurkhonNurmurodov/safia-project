@@ -355,6 +355,13 @@ function AppWithLang() {
               path="/admin/upload"
               element={<AuthGate><RequireAdmin><AdminUpload /></RequireAdmin></AuthGate>}
             />
+            {/* /broadcast mini-app recipient picker — opened from the bot's inline
+                button; admin membership is enforced server-side (active role may
+                not be "admin"), and it renders its own minimal, non-fullscreen UI. */}
+            <Route
+              path="/broadcast-receivers"
+              element={<AuthGate><BroadcastReceivers /></AuthGate>}
+            />
             <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
           </Routes>
           </Suspense>
