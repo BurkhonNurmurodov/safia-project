@@ -1105,7 +1105,7 @@ export default function Quality() {
         </div>
         {/* row 4 — supervisor + filters */}
         <div className="flex items-center gap-2 sm:contents">
-          {isProd && (
+          {isProd && !lockOwn && (
             <StyledSelect value={brigSel[0] || ""}
               onChange={(v) => setBrigSel(v ? [v] : [])}
               options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
