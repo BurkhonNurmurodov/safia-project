@@ -148,6 +148,20 @@ export default function NotificationsBell({ refetch, ...list }) {
   const { t } = useLang();
   const { unread } = list;
   const [open, setOpen] = useState(false);
+
+  // Swing the bell + pop the badge whenever the unread count grows (a new
+  // alert landed) — a silent attention cue, important in a Telegram mini-app.
+  const prevUnread = useRef(unread);
+  const [ring, setRing] = useState(false);
+  useEffect(() => {
+    if (unread > prevUnread.current) {
+      setRing(true);
+      const id = setTimeout(() => setRing(false), 800);
+      prevUnread.current = unread;
+      return () => clearTimeout(id);
+    }
+    prevUnread.current = unread;
+  }, [unread]);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   const [panelTop, setPanelTop] = useState(56);
   const ref = useRef(null);
