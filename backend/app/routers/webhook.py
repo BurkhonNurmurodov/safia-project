@@ -56,6 +56,14 @@ async def telegram_webhook(request: Request):
         if _is_non_private(update):
             return {"ok": True}
 
+        # Rich messages (Bot API 10.1+) carry a `rich_message` field the pinned
+        # telebot can't parse — content_type=None → matches no handler → silently
+        # dropped. Detect it from the raw update and reply gracefully if an admin
+        # is mid-/broadcast (see handle_incoming_rich_message).
+        msg = data.get("message") or data.get("edited_message")
+        if isinstance(msg, dict) and "rich_message" in msg and handle_incoming_rich_message(msg):
+            return {"ok": True}
+
         bot.process_new_updates([update])
 
     except Exception:
