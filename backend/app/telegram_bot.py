@@ -1220,6 +1220,37 @@ def _bc_active(tid: int) -> bool:
         return bool(d and d.status in ("awaiting_message", "awaiting_continue"))
 
 
+def handle_incoming_rich_message(msg: dict) -> bool:
+    """Called from the webhook (raw update) when a message carries a
+    ``rich_message`` field (Bot API 10.1+). The pinned telebot can't parse that
+    field, so such a message gets content_type=None and matches no handler —
+    it would be silently dropped. We can't re-broadcast a rich message anyway
+    (copyMessage doesn't carry the rich layer, and a received RichMessage has
+    no html/markdown to re-send), so if the sender is an admin mid-/broadcast
+    we reply that rich isn't supported here and point them at the web tab.
+
+    Returns True when it has fully handled the update (the webhook then skips
+    normal dispatch); False to let telebot process it as usual."""
+    try:
+        tid = int((msg.get("from") or {}).get("id") or 0)
+        chat_id = int((msg.get("chat") or {}).get("id") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not tid or not chat_id:
+        return False
+    # Log the raw shape once so we can confirm on prod what a rich update
+    # actually contains (e.g. whether it ships a plain-text fallback).
+    logger.info("Rich message received (tid=%s): fields=%s", tid, sorted(msg.keys()))
+    if not _bc_active(tid):
+        return False  # not composing a broadcast — leave it to normal dispatch
+    lang = _get_lang(tid)
+    try:
+        bot.send_message(chat_id, _msg(lang, "bc_rich_unsupported"))
+    except Exception:
+        logger.warning("Failed to send rich-unsupported notice to %s", tid, exc_info=True)
+    return True
+
+
 @bot.message_handler(commands=["broadcast"])
 def _broadcast_start(message: types.Message):
     tid = message.from_user.id
