@@ -63,10 +63,8 @@ def refresh_kaizen(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("kaizen")),
 ):
-    """Re-pull every database from Notion and replace the snapshot. Admin only."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can refresh Kaizen data")
-
+    """Re-pull every database from Notion and replace the snapshot. Available to
+    every profile that can open the page (gated by ``require_page`` above)."""
     if not nk.token_configured():
         raise HTTPException(
             status_code=400,
