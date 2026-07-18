@@ -256,6 +256,11 @@ _MESSAGES = {
         "bc_empty":          "Send a message first.",
         "bc_result":         "✅ Message sent: {sent}/{total}",
         "bc_result_failed":  "❌ Not delivered to {failed} recipient(s).",
+        "bc_rich_unsupported": (
+            "⚠️ Rich messages (tables/headings) can't be broadcast via the bot. "
+            "Use the web panel's Broadcast → Rich mode for that.\n\n"
+            "You can send plain text, media, or an album."
+        ),
     },
 }
 
