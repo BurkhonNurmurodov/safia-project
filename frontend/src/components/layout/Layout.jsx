@@ -542,12 +542,14 @@ export default function Layout({ children, title, showFilters = true, filterSlot
           </div>
         </header>
 
-        {/* Wrapper is the positioned, non-scrolling anchor so the page-switch
-            loader covers the whole content viewport regardless of scroll. */}
+        {/* Content viewport. Layout remounts on every route change, so the
+            .page-enter wrapper replays its fade-up once per navigation — a
+            light, instant-feeling swap in place of the old logo overlay. */}
         <div className="relative flex-1 min-h-0">
-          {switching && <PageLoader overlay />}
           <main className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6">
-            {children}
+            <div className="page-enter">
+              {children}
+            </div>
           </main>
         </div>
       </div>
