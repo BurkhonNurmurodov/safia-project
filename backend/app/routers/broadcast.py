@@ -13,24 +13,49 @@ account, so a person holding several selected profiles gets one message.
 import json
 import logging
 import re
+import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from html import escape, unescape
 from html.parser import HTMLParser
+from typing import Annotated
 
+import jwt
 import requests
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from jwt import PyJWTError as JWTError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal, get_db
-from app.models import Admin, Broadcast, Manager, RoleProfile, TelegramUserRole
-from app.routers.admin import verify_admin
+from app.models import (
+    Admin, Broadcast, BroadcastDraft, Manager, RoleProfile, TelegramUser,
+    TelegramUserRole,
+)
+from app.routers.admin import oauth2_scheme, verify_admin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/broadcast", tags=["broadcast"])
+
+
+def verify_broadcast_admin(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
+    """Authorize by ADMIN MEMBERSHIP (admins table) of the token's subject,
+    not by the active-role claim like ``verify_admin``. The /broadcast mini-app
+    is opened straight from the bot, where the admin's active profile may be a
+    non-admin role — but they're still an admin and may broadcast. Used by the
+    recipient tree and the draft-send endpoint."""
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    sub = int(payload.get("sub", 0) or 0)
+    with SessionLocal() as db:
+        if not db.query(Admin).filter_by(telegram_id=sub).first():
+            raise HTTPException(status_code=403, detail="Admin access required")
+    return payload
 
 # Telegram Bot API text/caption limits, counted in UTF-16 code units of the
 # PLAIN text (entities excluded) — mirrored by the frontend's live counter.
