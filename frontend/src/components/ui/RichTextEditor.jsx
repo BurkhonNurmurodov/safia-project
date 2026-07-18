@@ -1024,8 +1024,26 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
       line.remove();
       return exitAfter(container, container.tagName.toLowerCase() !== "details");
     }
+    const cTag = container.tagName.toLowerCase();
+    // blockquote / pull quote: Enter must stay INSIDE the quote as a soft
+    // line break — Chrome's native Enter SPLITS the blockquote in two (the
+    // "three quotes instead of one" bug). Double-Enter at the end exits.
+    if (cTag === "blockquote" || cTag === "aside") {
+      if (atEndOf(container) && /\n\s*$/.test(container.innerText || "")) {
+        while (container.lastChild && (
+          (container.lastChild.nodeType === Node.ELEMENT_NODE && container.lastChild.tagName === "BR") ||
+          (container.lastChild.nodeType === Node.TEXT_NODE && !container.lastChild.nodeValue.trim()))) {
+          container.lastChild.remove();
+        }
+        return exitAfter(container, true);
+      }
+      e.preventDefault();
+      document.execCommand("insertLineBreak");
+      emit();
+      return true;
+    }
     // <pre> keeps lines as raw text/<br> — exit when Enter follows a blank line
-    if (container.tagName.toLowerCase() === "pre" && atEndOf(container) &&
+    if (cTag === "pre" && atEndOf(container) &&
         /\n\s*$/.test(container.innerText || container.textContent || "")) {
       const last = container.lastChild;
       if (last?.nodeType === Node.ELEMENT_NODE && last.tagName === "BR") last.remove();
