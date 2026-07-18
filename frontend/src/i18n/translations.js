@@ -1118,6 +1118,7 @@ const t = {
     "rte.deleteRow":     "Qatorni o'chirish",
     "rte.deleteCol":     "Ustunni o'chirish",
     "rte.quoteAuthor":   "Iqtibos muallifi",
+    "rte.captionTitle": "Media izohi",
     "admin.tabProduction":   "Ishlab chiqarish",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
@@ -2662,6 +2663,7 @@ const t = {
     "rte.deleteRow":     "Қаторни ўчириш",
     "rte.deleteCol":     "Устунни ўчириш",
     "rte.quoteAuthor":   "Иқтибос муаллифи",
+    "rte.captionTitle":  "Медиа изоҳи",
     "admin.tabProduction":   "Ишлаб чиқариш",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
@@ -4206,6 +4208,7 @@ const t = {
     "rte.deleteRow":     "Удалить строку",
     "rte.deleteCol":     "Удалить столбец",
     "rte.quoteAuthor":   "Автор цитаты",
+    "rte.captionTitle":  "Подпись к медиа",
     "admin.tabProduction":   "Производство",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
@@ -5750,6 +5753,7 @@ const t = {
     "rte.deleteRow":     "Delete row",
     "rte.deleteCol":     "Delete column",
     "rte.quoteAuthor":   "Quote author",
+    "rte.captionTitle":  "Media caption",
     "admin.tabProduction":   "Production",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
