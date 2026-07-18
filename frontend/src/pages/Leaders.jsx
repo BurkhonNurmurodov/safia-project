@@ -581,7 +581,7 @@ export default function Leaders() {
     };
   }, [trendRows]);
 
-  const effStandMode = isSupervisor ? "leader" : standMode;
+  const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
   const standings = useMemo(() => {
     const map = {};
