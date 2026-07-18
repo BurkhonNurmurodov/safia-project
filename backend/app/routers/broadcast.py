@@ -397,49 +397,123 @@ def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
         db.close()
 
 
-# ── Target resolution ─────────────────────────────────────────────────────────
+# ── Recipient resolution ──────────────────────────────────────────────────────
+# The picker is a role → profile → Telegram-user tree. A person may hold several
+# profiles, so the same telegram_id can appear under many profiles; the frontend
+# keys leaves by telegram_id, so selecting a user toggles it everywhere at once.
+# What actually gets sent is a set of telegram_ids, validated here against the
+# deliverable set (every APPROVED holder) before any copy goes out.
 
-def _resolve_targets(db: Session, keys: list[str]) -> dict[int, str]:
-    """Profile keys ("role:id", ids per /api/profiles/admin/list) → deduped
-    {telegram_id: profile-name} of every APPROVED holder."""
-    recipients: dict[int, str] = {}
 
-    def add(tid: int | None, name: str):
-        if tid and tid not in recipients:
-            recipients[tid] = name
+def _uniq(seq: list[int]) -> list[int]:
+    """Order-preserving de-dupe."""
+    seen: set[int] = set()
+    out: list[int] = []
+    for x in seq:
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
 
-    for key in keys:
-        try:
-            role, sid = key.rsplit(":", 1)
-            pid = int(sid)
-        except (ValueError, AttributeError):
-            continue
+
+def _profile_holders(db: Session) -> list[dict]:
+    """The full role → profile → holder-telegram-ids structure, in the same
+    role order the admin panel uses. A profile with no approved holder keeps an
+    empty ``user_ids`` (the UI shows it disabled as "no registered users")."""
+
+    def approved(role: str, role_id: int) -> list[int]:
+        return _uniq([
+            r.telegram_id for r in db.query(TelegramUserRole)
+            .filter_by(role=role, role_id=role_id, status="approved").all()
+            if r.telegram_id
+        ])
+
+    blocks: list[dict] = []
+    for role in ("top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"):
+        profiles: list[dict] = []
         if role == "supervisor":
-            mgr = db.query(Manager).filter_by(id=pid).first()
-            for r in db.query(TelegramUserRole).filter_by(
-                    role="supervisor", role_id=pid, status="approved").all():
-                add(r.telegram_id, mgr.name if mgr else r.full_name)
-        elif role == "admin":
-            prof = db.query(RoleProfile).filter_by(id=pid, role="admin").first()
-            a = db.query(Admin).filter_by(profile_id=pid).first()
-            if a:
-                add(a.telegram_id, prof.name if prof else "Admin")
+            for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
+                profiles.append({"key": f"supervisor:{m.id}", "name": m.name,
+                                 "user_ids": approved("supervisor", m.id)})
         elif role == "leader":
-            prof = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
-            if not prof:
-                continue
-            for r in db.query(TelegramUserRole).filter_by(
-                    role="leader", role_id=prof.manager_id, status="approved").all():
-                if r.full_name == prof.name:
-                    add(r.telegram_id, prof.name)
-        elif role in ("top-manager", "shift-manager", "guest"):
-            prof = db.query(RoleProfile).filter_by(id=pid, role=role).first()
-            if not prof:
-                continue
-            for r in db.query(TelegramUserRole).filter_by(
-                    role=role, role_id=pid, status="approved").all():
-                add(r.telegram_id, prof.name)
-    return recipients
+            for p in db.query(RoleProfile).filter_by(role="leader").order_by(RoleProfile.name).all():
+                ids = _uniq([
+                    r.telegram_id for r in db.query(TelegramUserRole)
+                    .filter_by(role="leader", role_id=p.manager_id, status="approved").all()
+                    if r.telegram_id and r.full_name == p.name
+                ])
+                profiles.append({"key": f"leader:{p.id}", "name": p.name, "user_ids": ids})
+        elif role == "admin":
+            for p in db.query(RoleProfile).filter_by(role="admin").order_by(RoleProfile.name).all():
+                ids = _uniq([a.telegram_id for a in db.query(Admin).filter_by(profile_id=p.id).all()
+                             if a.telegram_id])
+                profiles.append({"key": f"admin:{p.id}", "name": p.name, "user_ids": ids})
+        else:  # top-manager, shift-manager, guest — RoleProfile keyed by its own id
+            for p in db.query(RoleProfile).filter_by(role=role).order_by(RoleProfile.name).all():
+                profiles.append({"key": f"{role}:{p.id}", "name": p.name,
+                                 "user_ids": approved(role, p.id)})
+        if profiles:
+            blocks.append({"role": role, "profiles": profiles})
+    return blocks
+
+
+def _stored_names(db: Session, blocks: list[dict]) -> dict[int, str]:
+    """Best stored display name per telegram_id — the Telegram account name
+    (telegram_users.tg_name) if known, else the first profile they hold. Used
+    for history / failed-name rows (the live getChat name is only for the UI)."""
+    pname: dict[int, str] = {}
+    for b in blocks:
+        for p in b["profiles"]:
+            for tid in p["user_ids"]:
+                pname.setdefault(tid, p["name"])
+    ids = list(pname.keys())
+    tg = {u.telegram_id: u for u in
+          db.query(TelegramUser).filter(TelegramUser.telegram_id.in_(ids)).all()} if ids else {}
+    return {
+        tid: (tg[tid].tg_name if tid in tg and tg[tid].tg_name else None) or pname[tid] or str(tid)
+        for tid in ids
+    }
+
+
+def _live_names(ids: list[int]) -> dict[int, tuple[str | None, str | None]]:
+    """Current (full_name, username) per telegram_id via Telegram getChat,
+    fetched concurrently. Any id that fails (rate-limited, never started the
+    bot) yields (None, None) so callers fall back to the stored name."""
+    if not ids:
+        return {}
+    from app.telegram_bot import bot
+
+    def fetch(tid: int):
+        try:
+            c = bot.get_chat(tid)
+            full = " ".join(x for x in (getattr(c, "first_name", None),
+                                        getattr(c, "last_name", None)) if x).strip()
+            return tid, (full or None, getattr(c, "username", None))
+        except Exception:
+            return tid, (None, None)
+
+    out: dict[int, tuple[str | None, str | None]] = {}
+    with ThreadPoolExecutor(max_workers=min(10, len(ids))) as ex:
+        for tid, res in ex.map(fetch, ids):
+            out[tid] = res
+    return out
+
+
+def _deliverable(blocks: list[dict]) -> set[int]:
+    return {tid for b in blocks for p in b["profiles"] for tid in p["user_ids"]}
+
+
+def _tg_copy(chat_id: int, from_chat_id: int, message_ids: list[int]):
+    """Copy the admin's original message(s) to one recipient — copyMessages for
+    an album (>1 id), copyMessage for a single message. A clean copy (no
+    'forwarded from' header), preserving text/media/entities exactly."""
+    if len(message_ids) == 1:
+        _tg_api("copyMessage",
+                {"chat_id": chat_id, "from_chat_id": from_chat_id, "message_id": message_ids[0]})
+    else:
+        _tg_api("copyMessages",
+                {"chat_id": chat_id, "from_chat_id": from_chat_id,
+                 "message_ids": json.dumps(message_ids)})
 
 
 # ── Background sender ─────────────────────────────────────────────────────────
