@@ -82,6 +82,12 @@ _MESSAGES = {
         "bc_empty":          "Avval xabar yuboring.",
         "bc_result":         "✅ Xabar yuborildi: {sent}/{total}",
         "bc_result_failed":  "❌ {failed} ta qabul qiluvchiga yetkazilmadi.",
+        "bc_rich_unsupported": (
+            "⚠️ Kengaytirilgan (jadval/sarlavhali) xabarlarni bot orqali "
+            "tarqatib bo'lmaydi. Buning uchun web-paneldagi «Broadcast» "
+            "bo'limining «Kengaytirilgan» rejimidan foydalaning.\n\n"
+            "Oddiy matn, media yoki albom yuborishingiz mumkin."
+        ),
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
