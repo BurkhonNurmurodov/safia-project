@@ -225,6 +225,19 @@ _MESSAGES = {
             "❌ This name is already taken.\n"
             "Please register again with a different name: /start"
         ),
+        "bc_prompt":         "📢 Send the message to broadcast — text, media, or an album.",
+        "bc_warn": (
+            "⚠️ Review the message carefully. If there are mistakes, edit it "
+            "(or resend) before continuing.\n\n"
+            "When it's ready, press «Continue»."
+        ),
+        "bc_album_note":     "📎 {n} item(s) collected",
+        "bc_continue_btn":   "Continue ›",
+        "bc_choose":         "👥 Now choose the recipients:",
+        "bc_choose_btn":     "👥 Choose recipients",
+        "bc_empty":          "Send a message first.",
+        "bc_result":         "✅ Message sent: {sent}/{total}",
+        "bc_result_failed":  "❌ Not delivered to {failed} recipient(s).",
     },
 }
 
