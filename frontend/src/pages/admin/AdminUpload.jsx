@@ -706,7 +706,7 @@ export default function AdminUpload() {
         <SegmentedToggle
           value={adminTab}
           onChange={setAdminTab}
-          options={[["data", t("admin.tabData"), Database], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck], ["broadcast", t("admin.tabBroadcast"), Megaphone]].map(([id, label, Icon]) => ({
+          options={[["data", t("admin.tabData"), Database], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck], ["broadcast", t("admin.tabBroadcast"), Megaphone], ["cleanup", t("admin.tabCleanup"), Trash2]].map(([id, label, Icon]) => ({
             value: id,
             label: <span className="inline-flex items-center gap-1.5"><Icon size={14} /> {label}</span>,
           }))}
