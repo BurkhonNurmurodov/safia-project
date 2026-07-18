@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { RouteTransitionProvider } from "./context/RouteTransitionContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FilterProvider } from "./context/FilterContext";
 import { ThemeProvider } from "./context/ThemeContext";
