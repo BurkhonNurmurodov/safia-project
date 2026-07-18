@@ -758,8 +758,9 @@ export default function Leaders() {
         </div>
 
         {/* Shift — narrows the supervisor picker (and all data) to one shift.
-            Hidden for supervisors, who are locked to their own unit/shift. */}
-        {!isSupervisor && (
+            Hidden for supervisors, who are locked to their own unit/shift, and
+            for leaders, who see only their own (single-shift) rows. */}
+        {!isSupervisor && !isLeader && (
           <div className="min-w-0">
             <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.shift}</label>
             <SegmentedToggle fill value={fShift}
