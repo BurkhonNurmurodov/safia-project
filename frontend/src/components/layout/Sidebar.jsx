@@ -75,6 +75,18 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // Sidebar is expanded when: mobile drawer open, pinned, or hovered on desktop
   const expanded = open || pinned || hovered;
 
+  // Sliding active-page indicator — measure the active NavLink and move one
+  // shared pill to it (glides between items instead of the highlight cutting).
+  const navRef = useRef(null);
+  const [ind, setInd] = useState({ top: 0, height: 0, show: false, anim: false });
+  useLayoutEffect(() => {
+    const el = navRef.current?.querySelector('[aria-current="page"]');
+    if (!el) { setInd(p => (p.show ? { ...p, show: false } : p)); return; }
+    // anim: only glide when the pill was already showing (i.e. moving between
+    // items). On first appearance it snaps into place with no slide.
+    setInd(p => ({ top: el.offsetTop, height: el.offsetHeight, show: true, anim: p.show }));
+  }, [location.pathname, expanded, links.length]);
+
   return (
     <>
       {/* Backdrop — mobile only */}
