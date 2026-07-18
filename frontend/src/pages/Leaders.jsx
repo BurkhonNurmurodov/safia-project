@@ -409,11 +409,11 @@ export default function Leaders() {
   // so they get no shift / supervisor / leader pickers and no standings toggle —
   // the page shows only their own monitoring.
   const isLeader = auth?.role === "leader";
-  // The sheet-sync endpoint is admin-only, so only admins see the refresh button.
   const isAdmin = auth?.role === "admin";
-  // Supervisors and leaders can re-sync the leaders sheet from the page, so they
-  // get the refresh button too (the backend allows the "leaders" sheet for them).
-  const canRefresh = isAdmin || isSupervisor || isLeader;
+  // The refresh button is shown to every profile that can open this page — the
+  // backend allows the "leaders" sheet re-sync for anyone with page access, and
+  // each still only reads their own scoped rows afterwards.
+  const canRefresh = true;
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
