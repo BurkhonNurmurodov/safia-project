@@ -779,12 +779,15 @@ export default function Leaders() {
           </div>
         )}
 
-        {/* Leader — takes the full row on mobile when it is the only select */}
-        <div className={`min-w-0 ${isSupervisor ? "col-span-2 sm:col-span-1" : ""}`}>
-          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
-          <StyledSelect value={fLeader} onChange={setFLeader}
-            options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
-        </div>
+        {/* Leader — hidden for leaders, who see only their own monitoring;
+            takes the full row on mobile when it is the only select */}
+        {!isLeader && (
+          <div className={`min-w-0 ${isSupervisor ? "col-span-2 sm:col-span-1" : ""}`}>
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
+            <StyledSelect value={fLeader} onChange={setFLeader}
+              options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
+          </div>
+        )}
       </div>
 
       {/* Re-sync the leaders sheet without leaving the page (admins + supervisors,
