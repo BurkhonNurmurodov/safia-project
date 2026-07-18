@@ -4128,7 +4128,7 @@ const t = {
     "admin.broadcast.notRegistered":  "Не зарегистрирован",
     "admin.broadcast.noMatch":        "Ничего не найдено",
     "admin.broadcast.confirmTitle":   "Отправить рассылку",
-    "admin.broadcast.confirmMsg":     "Сообщение будет отправлено {n} выбранным профилям в Telegram. После отправки его нельзя отменить.",
+    "admin.broadcast.confirmMsg":     "Сообщение будет отправлено {n} выбранным получателям в Telegram. После отправки его нельзя отменить.",
     "admin.broadcast.cancel":         "Отмена",
     "admin.broadcast.queuedToast":    "Рассылка запущена",
     "admin.broadcast.sendFailed":     "Ошибка при отправке",
