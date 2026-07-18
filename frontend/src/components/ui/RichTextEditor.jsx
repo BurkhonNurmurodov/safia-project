@@ -833,28 +833,44 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
   };
 
   // ── Quote author (<cite>, the blue author line in Telegram quotes) ──
+  // Quote lines are <br>-separated, so the author is the quote's LAST line:
+  // wrap it in <cite> (or create an empty author line to type into). If an
+  // author already exists, just move the caret there.
   const makeQuoteAuthor = () => {
     const q = ancestorTag("blockquote") || ancestorTag("aside");
     if (!q) return;
     ref.current?.focus();
-    const sel = window.getSelection();
-    let line = sel?.anchorNode;
-    while (line && line !== q && line.parentNode !== q) line = line.parentNode;
-    const cite = document.createElement("cite");
-    if (line && line !== q) {
-      if (line.nodeType === Node.ELEMENT_NODE) {
-        while (line.firstChild) cite.appendChild(line.firstChild);
-        line.replaceWith(cite);
+    let cite = q.querySelector("cite");
+    if (!cite) {
+      cite = document.createElement("cite");
+      const nodes = [...q.childNodes];
+      let lastBr = -1;
+      nodes.forEach((n, i) => {
+        if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") lastBr = i;
+      });
+      const lineNodes = nodes.slice(lastBr + 1)
+        .filter((n) => !(n.nodeType === Node.TEXT_NODE && !n.nodeValue.trim()));
+      if (lineNodes.length === 1 && lineNodes[0].nodeType === Node.ELEMENT_NODE &&
+          lineNodes[0].tagName === "DIV") {
+        const div = lineNodes[0]; // legacy div-line quote content
+        while (div.firstChild) cite.appendChild(div.firstChild);
+        div.replaceWith(cite);
+      } else if (lineNodes.length) {
+        q.insertBefore(cite, lineNodes[0]);
+        lineNodes.forEach((n) => cite.appendChild(n));
+        // the preceding <br> is redundant — <cite> renders as its own line
+        if (lastBr >= 0 && nodes[lastBr].parentNode === q) nodes[lastBr].remove();
       } else {
-        cite.textContent = line.nodeValue || "";
-        line.parentNode.replaceChild(cite, line);
+        q.appendChild(cite);
       }
-    } else {
-      cite.appendChild(document.createElement("br"));
-      q.appendChild(cite);
+      if (!cite.childNodes.length) cite.appendChild(document.createElement("br"));
     }
-    if (!cite.childNodes.length) cite.appendChild(document.createElement("br"));
-    placeCaretIn(cite);
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(cite);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
     refreshStates(); emit();
   };
 
