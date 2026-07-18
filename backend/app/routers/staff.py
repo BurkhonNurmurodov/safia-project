@@ -2867,6 +2867,36 @@ def _revert_doc_effects(db: Session, doc: HrDocument):
         _revert_people_exchange(db, doc)
 
 
+def reapply_task_exchanges(db: Session, manager_id: int, d: date) -> int:
+    """Re-apply approved → task people-exchange effects after a verifix re-upload
+    (admin.upload_verifix) wiped and re-inserted a unit's attendance for the date.
+
+    A re-upload restores every worker's full row while the approved exchange docs
+    stay in place, so a worker sent to a task would otherwise reappear with full
+    hours + the task pill and get re-counted (zagruzka, «came», etc.) — exactly the
+    thing that move was meant to remove. A → task effect lives entirely inside the
+    sending unit (part2 is dropped, no receiving row), so re-applying it over the
+    fresh rows is idempotent and safe: a supervisor-majority split is re-trimmed to
+    its before-T hours, a task-majority worker is re-blanked off the roster, and a
+    plain full move is re-marked X/0. → supervisor moves are intentionally skipped —
+    they touch a second unit that this upload did not wipe, so re-applying them would
+    duplicate the receiving-side rows; the receiver's own re-upload handles its side.
+    Returns the number of docs re-applied."""
+    docs = db.query(HrDocument).filter(
+        HrDocument.doc_type   == "people_exchange",
+        HrDocument.manager_id == manager_id,
+        HrDocument.date       == d,
+        HrDocument.status     == "approved",
+    ).all()
+    applied = 0
+    for doc in docs:
+        if (doc.payload or {}).get("target_type") != "task":
+            continue
+        _apply_people_exchange(db, doc)
+        applied += 1
+    return applied
+
+
 def _approve_doc(doc: HrDocument, caller: dict, db: Session):
     if doc.status == "approved":
         return
