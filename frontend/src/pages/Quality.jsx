@@ -1063,11 +1063,14 @@ export default function Quality() {
       </div>
 
       {/* page-level view switch — Production narrows everything to источник = «Производство».
-          Full-width tab bar on phones, capped on desktop. */}
-      <div className="mb-3">
-        <SegmentedToggle value={view} onChange={setView} fill className="sm:max-w-[260px]"
-          options={[["production", T.vSup], ["overall", T.vOverall]]} />
-      </div>
+          Full-width tab bar on phones, capped on desktop. Hidden for a brigadir
+          profile: they are pinned to their own production rows. */}
+      {!lockOwn && (
+        <div className="mb-3">
+          <SegmentedToggle value={view} onChange={setView} fill className="sm:max-w-[260px]"
+            options={[["production", T.vSup], ["overall", T.vOverall]]} />
+        </div>
+      )}
 
       {(refresh.isError || isError) && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
