@@ -114,14 +114,17 @@ def _norm(name: str) -> str:
 
 
 # ─── Manual sheet-name → unit overrides ──────────────────────────────────────
-# Two real cases the fuzzy scorer above can't handle:
+# Real cases the fuzzy scorer above can't handle:
 #   • the register names someone in a form unrelated to their unit's profile
 #     name — "XAYRULLO O'G'LI ХABIBULLO" is the unit shown as "Suvonov Elshod OF",
 #     which scores 0 against it and would drop every one of that unit's rows;
 #   • two units share the same surname+first name, so every candidate ties on
 #     the two-token score and iteration order alone would decide the winner —
 #     "SUVONOV ELSHOD VALIJON O'G'LI" scores 1.0 for BOTH "Suvonov Elshod" and
-#     "Suvonov Elshod OF" and must be pinned to the former.
+#     "Suvonov Elshod OF" and must be pinned to the former;
+#   • the register attributes a whole unit's complaints to an entirely different
+#     person's name — "FAYZULLAYEVA MALIKA ABDUMANNOB QIZI" is the unit shown as
+#     "Murodali Ochilov" (shares no tokens, so the scorer can never reach it).
 # Keyed and valued on the folded skeleton (via _norm) so alphabet/spelling drift
 # on either the sheet or the profile name still resolves.
 _OVERRIDES = {
@@ -129,6 +132,7 @@ _OVERRIDES = {
     for sheet, unit in {
         "SUVONOV ELSHOD VALIJON O'G'LI": "Suvonov Elshod",
         "XAYRULLO O'G'LI ХABIBULLO": "Suvonov Elshod OF",
+        "FAYZULLAYEVA MALIKA ABDUMANNOB QIZI": "Murodali Ochilov",
     }.items()
 }
 
