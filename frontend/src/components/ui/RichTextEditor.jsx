@@ -1200,6 +1200,10 @@ export default function RichTextEditor({ onChange, placeholder = "", minHeight =
         { divider: true },
         { key: "cite", icon: Quote, label: t("rte.quoteAuthor"), run: makeQuoteAuthor },
       ] : []),
+      ...(rich && ctxMedia.current ? [
+        { divider: true },
+        { key: "caption", icon: ImageIcon, label: t("rte.captionTitle"), run: openCaption },
+      ] : []),
       ...(inCell ? [
         { divider: true },
         { key: "rowUp", icon: Plus, label: t("rte.insertAbove"), run: () => insertRow(true) },
