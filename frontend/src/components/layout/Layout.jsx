@@ -38,7 +38,7 @@ const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 // Avatar in the header that opens a popover for role-switch / sign-out.
 
 function UserProfile() {
-  const { auth, leaveRole, switchRole } = useAuth();
+  const { auth, leaveRole, switchRole, botUsername } = useAuth();
   const { lang, setLang, t, languages } = useLang();
   const { tl } = useTranslit();
   const { theme, toggle } = useTheme();
