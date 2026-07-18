@@ -838,11 +838,13 @@ export default function Leaders() {
             badgeColor={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
         )}
 
-        {/* Lowest-performing leader */}
-        <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit
-          value={hasData && insights.lowLeader ? nm(insights.lowLeader.name) : "—"}
-          badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
-          badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
+        {/* Lowest-performing leader — hidden for a leader (it's just themselves) */}
+        {!isLeader && (
+          <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit
+            value={hasData && insights.lowLeader ? nm(insights.lowLeader.name) : "—"}
+            badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
+            badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
+        )}
       </div>
 
       {isError && (
