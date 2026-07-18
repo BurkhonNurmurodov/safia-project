@@ -2046,6 +2046,7 @@ const t = {
     "menu.theme":          "Мавзу",
     "menu.account":        "Ҳисоб",
     "menu.settings":       "Созламалар",
+    "menu.addProfile":     "Янги профил қўшиш",
     "filter.all":          "Барчаси",
     "filter.shift":        "Смена",
     "filter.unit":         "Бирлик",
