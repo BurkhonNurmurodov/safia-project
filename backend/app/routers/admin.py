@@ -36,14 +36,15 @@ def verify_admin(token: Annotated[str, Depends(oauth2_scheme)]):
 
 
 def verify_refresh_access(name: str, token: Annotated[str, Depends(oauth2_scheme)]):
-    """Sheet re-sync is admin-only, except the leaders sheet: supervisors may
-    refresh it too, since they re-sync their own unit from the Leaders page."""
+    """Sheet re-sync is admin-only, except the leaders sheet: supervisors and
+    leaders may refresh it too, since they re-sync from the Leaders page (each
+    still only reads their own scoped rows afterwards)."""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     role = payload.get("role")
-    if role == "admin" or (role == "supervisor" and name == "leaders"):
+    if role == "admin" or (role in ("supervisor", "leader") and name == "leaders"):
         return payload
     raise HTTPException(status_code=403, detail="Admin access required")
 
