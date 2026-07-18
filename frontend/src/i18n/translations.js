@@ -2951,6 +2951,11 @@ const t = {
     "common.signingOut":     "Чиқилмоқда…",
     "common.selectDate":     "Санани танланг…",
     "common.search":         "Қидириш…",
+    "find.placeholder":      "Саҳифадан қидириш…",
+    "find.noMatches":        "Натижа йўқ",
+    "find.prev":             "Олдинги (Shift+Enter)",
+    "find.next":             "Кейинги (Enter)",
+    "find.close":            "Ёпиш (Esc)",
 
     // ── Error boundary ───────────────────────────────────────────────────────
     "error.title":   "Нимадир хато кетди",
