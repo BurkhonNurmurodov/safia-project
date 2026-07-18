@@ -769,8 +769,9 @@ export default function Leaders() {
           </div>
         )}
 
-        {/* Supervisor — shift-managers / admins only; supervisors are locked to their own unit */}
-        {!isSupervisor && (
+        {/* Supervisor — shift-managers / admins only; supervisors are locked to
+            their own unit and leaders to their own rows */}
+        {!isSupervisor && !isLeader && (
           <div className="min-w-0">
             <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
             <StyledSelect value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}
