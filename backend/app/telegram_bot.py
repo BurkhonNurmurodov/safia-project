@@ -5,6 +5,7 @@ Updates arrive at POST /bot/webhook and are dispatched here.
 import hashlib
 import json
 import logging
+import secrets
 from datetime import datetime, timezone
 
 import telebot
@@ -14,8 +15,8 @@ from sqlalchemy import and_, or_, text
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
-    Admin, Manager, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole,
-    Translation,
+    Admin, BroadcastDraft, Manager, RegistrationNotice, RoleProfile, TelegramUser,
+    TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
 from app.translit import transliterate as _to_uz_latin
