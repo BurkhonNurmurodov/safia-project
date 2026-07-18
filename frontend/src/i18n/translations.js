@@ -3597,6 +3597,7 @@ const t = {
     "menu.theme":          "Тема",
     "menu.account":        "Аккаунт",
     "menu.settings":       "Настройки",
+    "menu.addProfile":     "Добавить профиль",
     "filter.all":          "Все",
     "filter.shift":        "Смена",
     "filter.unit":         "Единица",
