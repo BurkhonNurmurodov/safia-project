@@ -235,6 +235,24 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               </NavLink>
             );
           })}
+
+          {/* Active-page indicator — one gold pill that glides between items.
+              Rendered last so the first link stays the flow's first child;
+              marginTop:0 cancels the space-y gap on this absolute element. */}
+          <div
+            aria-hidden
+            className="sidebar-ind absolute left-2 right-2 rounded-lg pointer-events-none"
+            style={{
+              top: 0,
+              height: ind.height,
+              transform: `translateY(${ind.top}px)`,
+              opacity: ind.show ? 1 : 0,
+              marginTop: 0,
+              background: "var(--brand-bg)",
+              zIndex: 0,
+              ...(ind.anim ? null : { transition: "none" }),
+            }}
+          />
         </nav>
 
         {/* Footer */}
