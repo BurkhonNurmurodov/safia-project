@@ -886,7 +886,8 @@ export default function Leaders() {
           </div>
         </div>
 
-        {/* Standings */}
+        {/* Standings — hidden for a leader (a single-bar ranking of themselves) */}
+        {!isLeader && (
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Trophy} title={effStandMode === "leader" ? T.standing : T.supStanding}
             right={
@@ -900,6 +901,7 @@ export default function Leaders() {
             } />
           <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
         </div>
+        )}
 
         {/* Recent submissions */}
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
