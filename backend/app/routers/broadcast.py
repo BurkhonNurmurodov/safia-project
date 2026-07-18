@@ -347,7 +347,9 @@ def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
                     files = {f"f{i}": (m["filename"], m["data"]) for i, m in enumerate(media_items)}
                 else:
                     specs = reusable or []
-                rich: dict = {"html": html}
+                # is_rtl pinned False: with mixed-direction content (Arabic
+                # inside tables) Telegram otherwise mirrors table columns
+                rich: dict = {"html": html, "is_rtl": False}
                 if specs:
                     rich["media"] = specs
                 result = _tg_api("sendRichMessage",
