@@ -658,6 +658,18 @@ class QualitySyncMeta(Base):
     row_count   = Column(Integer, default=0)
 
 
+class LeaderSyncMeta(Base):
+    """Singleton row (id=1) tracking the last leaders-checklist sheet sync — the
+    "last updated" time shown on the Leaders page header."""
+    __tablename__ = "leader_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    row_count   = Column(Integer, default=0)
+
+
 class UserActivity(Base):
     """One row per (Telegram account, calendar day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average
