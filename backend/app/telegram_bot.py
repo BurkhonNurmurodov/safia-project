@@ -69,6 +69,19 @@ _MESSAGES = {
             "❌ Bu ism allaqachon band.\n"
             "Boshqa ism bilan qayta ro'yxatdan o'ting: /start"
         ),
+        "bc_prompt":         "📢 Tarqatiladigan xabarni yuboring — matn, media yoki albom bo'lishi mumkin.",
+        "bc_warn": (
+            "⚠️ Xabarni diqqat bilan tekshiring. Xatolar bo'lsa, davom etishdan "
+            "oldin uni tahrirlang (yoki qayta yuboring).\n\n"
+            "Tayyor bo'lsa «Davom etish» tugmasini bosing."
+        ),
+        "bc_album_note":     "📎 {n} ta element yig'ildi",
+        "bc_continue_btn":   "Davom etish ›",
+        "bc_choose":         "👥 Endi qabul qiluvchilarni tanlang:",
+        "bc_choose_btn":     "👥 Qabul qiluvchilarni tanlash",
+        "bc_empty":          "Avval xabar yuboring.",
+        "bc_result":         "✅ Xabar yuborildi: {sent}/{total}",
+        "bc_result_failed":  "❌ {failed} ta qabul qiluvchiga yetkazilmadi.",
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
