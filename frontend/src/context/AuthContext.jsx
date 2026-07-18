@@ -15,7 +15,9 @@ export function AuthProvider({ children }) {
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();
-      if (!window.location.pathname.startsWith("/login")) tg.expand();
+      // /login and the compact /broadcast picker must not expand to full height.
+      const path = window.location.pathname;
+      if (!path.startsWith("/login") && !path.startsWith("/broadcast-receivers")) tg.expand();
     }
 
     const initData = tg?.initData || "";
