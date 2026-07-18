@@ -738,35 +738,51 @@ export default function Leaders() {
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <Layout title={T.title} showFilters={false}>
-      {/* Filters + admin refresh */}
-      <div className="flex flex-wrap items-start gap-3 mb-3">
-      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : isLeader ? "lg:grid-cols-1 sm:max-w-xs" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
-        {/* Period — same range picker as the global filters (presets + calendar).
-            Mobile: full row, labels hidden (controls are self-describing), admin
-            refresh collapses to an icon button beside the picker. */}
-        <div className="col-span-2 sm:col-span-1 flex items-end gap-2">
-          <div className="flex-1 min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
-            <DateRangePicker
-              dateFrom={startDate}
-              dateTo={endDate}
-              setDateFrom={setStartDate}
-              setDateTo={setEndDate}
-              triggerClassName="w-full px-3 py-2 text-sm"
-            />
-          </div>
+      {/* header: title + last-updated + refresh (right side, all profiles) */}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{T.title}</h2>
+          {/* phones can't spare a whole pill row — updated time rides under the title */}
+          <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }} title={lastSynced || T.never}>
+            <CalendarClock size={12} style={{ color: "var(--brand-text)" }} />
+            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+            <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
+            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+          </span>
           {canRefresh && (
             <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
               aria-label={T.refresh} title={T.refresh}
-              className="sm:hidden flex-shrink-0 p-2.5 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
               style={justSynced
                 ? { background: hexA(C_GOOD, 0.15), border: `1px solid ${hexA(C_GOOD, 0.35)}`, color: C_GOOD }
                 : { background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)", opacity: refreshMut.isPending ? 0.6 : 1 }}>
-              {refreshMut.isPending ? <Loader2 size={16} className="animate-spin" />
-                : justSynced ? <CheckCircle2 size={16} />
-                : <RefreshCw size={16} />}
+              {refreshMut.isPending ? <Loader2 size={14} className="animate-spin" />
+                : justSynced ? <CheckCircle2 size={14} />
+                : <RefreshCw size={14} />}
+              <span className="hidden sm:inline">{refreshMut.isPending ? T.refreshing : justSynced ? T.refreshed : T.refresh}</span>
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-start gap-3 mb-3">
+      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : isLeader ? "lg:grid-cols-1 sm:max-w-xs" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
+        {/* Period — same range picker as the global filters (presets + calendar).
+            Mobile: full row, labels hidden (controls are self-describing). */}
+        <div className="col-span-2 sm:col-span-1">
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
+          <DateRangePicker
+            dateFrom={startDate}
+            dateTo={endDate}
+            setDateFrom={setStartDate}
+            setDateTo={setEndDate}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
         </div>
 
         {/* Shift — narrows the supervisor picker (and all data) to one shift.
