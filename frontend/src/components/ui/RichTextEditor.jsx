@@ -160,25 +160,41 @@ export function serializeRich(root) {
   const seenMedia = (node) => {
     const id = node.getAttribute("data-tg-media");
     const kind = node.getAttribute("data-kind") || "photo";
+    const caption = (node.getAttribute("data-caption") || "").trim();
     if (!mediaIds.some((m) => m.id === id)) mediaIds.push({ id, kind });
-    return { tag: mediaRefTag(id, kind), kind };
+    return { tag: mediaRefTag(id, kind), kind, caption };
   };
 
   // Adjacent visual media (photos/videos/animations) group into ONE
   // <tg-collage> — the rich-message equivalent of a Telegram album — so
   // stacked uploads render side by side instead of as separate rows.
-  // Audio can't join a collage and 10 items is the album ceiling.
+  // Captioned media become standalone <figure><figcaption> blocks (a collage
+  // has no per-item captions); audio can't join a collage; 10 = album ceiling.
   const groupMedia = (run) => {
-    const visual = run.filter((m) => m.kind !== "audio" && m.kind !== "voice");
-    const audio = run.filter((m) => m.kind === "audio" || m.kind === "voice");
-    let out = "";
-    for (let i = 0; i < visual.length; i += 10) {
-      const chunk = visual.slice(i, i + 10);
-      out += chunk.length >= 2
-        ? `<tg-collage>${chunk.map((m) => m.tag).join("")}</tg-collage>`
-        : chunk.map((m) => m.tag).join("");
+    let out = "", buf = [];
+    const flushBuf = () => {
+      for (let i = 0; i < buf.length; i += 10) {
+        const chunk = buf.slice(i, i + 10);
+        out += chunk.length >= 2
+          ? `<tg-collage>${chunk.map((m) => m.tag).join("")}</tg-collage>`
+          : chunk.map((m) => m.tag).join("");
+      }
+      buf = [];
+    };
+    for (const m of run) {
+      const isAudio = m.kind === "audio" || m.kind === "voice";
+      if (m.caption) {
+        flushBuf();
+        out += `<figure>${m.tag}<figcaption>${escapeHtml(m.caption)}</figcaption></figure>`;
+      } else if (isAudio) {
+        flushBuf();
+        out += m.tag;
+      } else {
+        buf.push(m);
+      }
     }
-    return out + audio.map((m) => m.tag).join("");
+    flushBuf();
+    return out;
   };
 
   const BLOCK_TAGS = new Set(["div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol",
