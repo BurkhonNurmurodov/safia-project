@@ -889,7 +889,7 @@ export default function Leaders() {
           <SectionHead icon={Trophy} title={effStandMode === "leader" ? T.standing : T.supStanding}
             right={
               <div className="flex items-center gap-2">
-                {!isSupervisor && (
+                {!isSupervisor && !isLeader && (
                   <SegmentedToggle value={standMode} onChange={setStandMode} options={[["leader", T.toggleLeader], ["sup", T.toggleSup]]} />
                 )}
                 <SegmentedToggle value={standDir} onChange={setStandDir}
