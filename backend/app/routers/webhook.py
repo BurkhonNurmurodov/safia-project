@@ -4,7 +4,7 @@ from collections import deque
 import telebot
 from fastapi import APIRouter, Request
 
-from app.telegram_bot import bot
+from app.telegram_bot import bot, handle_incoming_rich_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
