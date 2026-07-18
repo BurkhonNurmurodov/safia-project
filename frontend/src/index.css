@@ -168,6 +168,19 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   overflow: visible !important;
 }
 
+/* ── Browser-style "find on page" (⌘F / Ctrl+F) ──────────────────────────────
+   Painted by FindInPage.jsx via the CSS Custom Highlight API (no DOM mutation).
+   `safia-find-all` tints every match; `safia-find-current` (higher priority)
+   marks the active one in brand gold. */
+::highlight(safia-find-all) {
+  background-color: rgba(200, 151, 63, 0.32);
+  color: inherit;
+}
+::highlight(safia-find-current) {
+  background-color: var(--brand);
+  color: #fff;
+}
+
 /* ── Seasonality grid heatmap — cell hover ───────────────────────────────────
    Native <table> heatmap (styled after the fleet HeatmapChart). Brighten a
    filled cell on hover so the pointer has a target, mirroring the fleet grid's
