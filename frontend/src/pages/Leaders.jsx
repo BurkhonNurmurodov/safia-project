@@ -116,6 +116,7 @@ const TXT = {
     tipLowLeader: "Лидер с наименьшим средним баллом",
     searchPh: "Поиск лидера…", bandAll: "Все", noMatch: "Нет отчётов под фильтры",
     refresh: "Обновить", refreshing: "Обновление…", refreshed: "Обновлено",
+    lastSynced: "Обновлено", never: "никогда",
     photoFailed: "Не удалось загрузить фото", retry: "Повторить",
   },
   en: {
