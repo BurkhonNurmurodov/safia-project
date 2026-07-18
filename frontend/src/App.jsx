@@ -59,6 +59,7 @@ const Quality = lazyWithReload(() => import("./pages/Quality"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
+const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
@@ -348,6 +349,7 @@ function AppWithLang() {
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
+            <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route
               path="/admin/upload"
               element={<AuthGate><RequireAdmin><AdminUpload /></RequireAdmin></AuthGate>}

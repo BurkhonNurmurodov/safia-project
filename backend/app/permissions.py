@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "kaizen", "quality", "concerns", "tasks", "activity"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "kaizen", "quality", "concerns", "tasks", "activity", "setup"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -81,6 +81,9 @@ DEFAULT_PAGE_ACCESS = {
     # Users-activity & usage statistics (who's active, time-in-app, contribution
     # calendar). Admin-only by default; open up roles from the Access tab.
     "activity": [],
+    # Setup-times register (среднее время переналадки по ячейкам). Admin-only
+    # by default; open up roles from the Access tab.
+    "setup": [],
 }
 
 

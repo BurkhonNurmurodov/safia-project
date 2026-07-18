@@ -43,6 +43,7 @@ export const PAGES = [
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
+  { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -68,6 +69,7 @@ export const DEFAULT_PAGE_ACCESS = {
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],
   tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
+  setup: [], // Setup-times register (переналадка) — admin-only until enabled
 };
 
 export function canAccessPage(role, pageKey, access) {

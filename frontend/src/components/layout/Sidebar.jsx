@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
-  MessageSquareWarning, Headset,
+  MessageSquareWarning, Headset, Wrench,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -34,6 +34,7 @@ const ALL_LINKS = [
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
+  { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
 ];
 
 function fmtDate(iso) {

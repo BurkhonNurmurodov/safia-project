@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import webhook as webhook_router
@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
+        seed_setup_times,
     )
     add_last_seen_column()
     add_tg_name_column()
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
     backfill_concern_owner()
     seed_exchange_tasks()
     seed_production_pilot()
+    seed_setup_times()
     resync_production_catalog()
     relax_pp_upload_manager()
     backfill_pp_actual_from_deliv()
@@ -185,6 +187,7 @@ app.include_router(quality.router)
 app.include_router(boot.router)
 app.include_router(ui_prefs.router)
 app.include_router(broadcast.router)
+app.include_router(setup_times.router)
 
 
 @app.get("/health")

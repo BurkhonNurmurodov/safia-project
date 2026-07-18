@@ -17,6 +17,7 @@ const t = {
     "nav.kaizen":          "Kaizen loyihalari",
     "nav.quality":         "Sifat va shikoyatlar",
     "nav.activity":        "Foydalanuvchilar faolligi",
+    "nav.setupTimes":      "Perenaladka vaqtlari",
     "nav.concerns":        "Xavotirlar",
     "nav.tasks":           "Vazifalar",
 
@@ -1562,6 +1563,7 @@ const t = {
     "nav.kaizen":          "Kaizen лойиҳалари",
     "nav.quality":         "Сифат ва шикоятлар",
     "nav.activity":        "Фойдаланувчилар фаоллиги",
+    "nav.setupTimes":      "Переналадка вақтлари",
     "nav.concerns":        "Хавотирлар",
     "nav.tasks":           "Вазифалар",
 
@@ -3107,6 +3109,7 @@ const t = {
     "nav.kaizen":          "Кайзен-проекты",
     "nav.quality":         "Качество и жалобы",
     "nav.activity":        "Активность пользователей",
+    "nav.setupTimes":      "Время переналадки",
     "nav.concerns":        "Обеспокоенности",
     "nav.tasks":           "Задачи",
 
@@ -4652,6 +4655,7 @@ const t = {
     "nav.kaizen":          "Kaizen Projects",
     "nav.quality":         "Quality & Complaints",
     "nav.activity":        "Users Activity",
+    "nav.setupTimes":      "Setup Times",
     "nav.concerns":        "Concerns",
     "nav.tasks":           "Tasks",
 

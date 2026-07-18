@@ -1210,3 +1210,42 @@ def backfill_role_profiles() -> None:
         print(f"[startup] role-profiles backfill skipped: {exc}")
     finally:
         db.close()
+
+
+def seed_setup_times() -> None:
+    """Seed the setup_times register from the bundled «периналадка» workbook
+    extract (data/setup_times_seed.json). Flag-guarded so it runs exactly once
+    — after that the register is maintained from the Setup times page and must
+    not be overwritten (the seed has no SKUs; those are filled in by hand).
+    The setup_times table itself comes from Base.metadata.create_all."""
+    import json
+    import os
+    from app.models import SetupTime
+
+    FLAG = "setup_times_seeded"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=FLAG).first():
+            return
+        path = os.path.join(os.path.dirname(__file__), "data", "setup_times_seed.json")
+        if not os.path.isfile(path):
+            print(f"[startup] setup-times seed file missing: {path}")
+            return
+        with open(path, encoding="utf-8") as fh:
+            rows = json.load(fh)["rows"]
+        for r in rows:
+            db.add(SetupTime(
+                manager_id=r.get("manager_id"),
+                supervisor=r.get("supervisor") or "",
+                cell=r["cell"],
+                minutes=r.get("minutes"),
+                reason=r.get("reason") or "",
+            ))
+        db.add(AppSetting(key=FLAG, value="1"))
+        db.commit()
+        print(f"[startup] seeded setup_times with {len(rows)} rows")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] setup-times seed skipped: {exc}")
+    finally:
+        db.close()

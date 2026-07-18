@@ -859,3 +859,24 @@ class Broadcast(Base):
     status             = Column(String, nullable=False, default="sending")  # sending | done
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     finished_at        = Column(DateTime(timezone=True), nullable=True)
+
+
+class SetupTime(Base):
+    """Average changeover («переналадка») time of one production cell, as
+    reported by its supervisor. Seeded once from the «периналадка» workbook
+    (data/setup_times_seed.json), maintained from the Setup times page after
+    that. manager_id links the row to a supervisor unit (display name/shift
+    come from the live managers row); `supervisor` is the fallback display
+    name for rows whose sheet doesn't match a platform unit. The workbook has
+    no SKU column, so `sku` starts empty and is filled in from the UI."""
+    __tablename__ = "setup_times"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    supervisor = Column(String, nullable=False, default="")
+    cell       = Column(String, nullable=False)
+    minutes    = Column(Numeric(6, 2), nullable=True)
+    reason     = Column(Text, nullable=False, default="")
+    sku        = Column(String, nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
