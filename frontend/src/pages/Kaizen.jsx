@@ -563,7 +563,9 @@ export default function Kaizen() {
   const typeSeries = [{ name: T.tasksWord, data: topTypes.map((t) => t.total) }];
 
   const lastSynced = fmtDateTime(data?.last_synced);
-  const canRefresh = data?.can_refresh;
+  // Refresh is shown to every profile that can open this page; keep it visible
+  // even before the GET resolves. The server gates /refresh by page access.
+  const canRefresh = data?.can_refresh ?? true;
   const medals = ["🥇", "🥈", "🥉", "🏅", "🏅"];
 
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
