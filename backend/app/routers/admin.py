@@ -18,7 +18,7 @@ from app.services.verifix_parser import parse_verifix_file
 from app.services.sheets_sync import (
     sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
 )
-from app.permissions import get_page_access, set_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
+from app.permissions import get_page_access, set_page_access, role_can_access, PAGE_KEYS, TOGGLEABLE_ROLES
 from app.routers.auth import VALID_ROLES
 
 router = APIRouter(prefix="/admin", tags=["admin"])
