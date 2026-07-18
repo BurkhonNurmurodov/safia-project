@@ -2578,7 +2578,7 @@ const t = {
     "admin.broadcast.notRegistered":  "Рўйхатдан ўтмаган",
     "admin.broadcast.noMatch":        "Ҳеч нарса топилмади",
     "admin.broadcast.confirmTitle":   "Хабарномани юбориш",
-    "admin.broadcast.confirmMsg":     "Хабар танланган {n} та профилга Telegram орқали юборилади. Юборилгач уни қайтариб бўлмайди.",
+    "admin.broadcast.confirmMsg":     "Хабар танланган {n} та қабул қилувчига Telegram орқали юборилади. Юборилгач уни қайтариб бўлмайди.",
     "admin.broadcast.cancel":         "Бекор қилиш",
     "admin.broadcast.queuedToast":    "Хабарнома юборилмоқда",
     "admin.broadcast.sendFailed":     "Юборишда хатолик юз берди",
