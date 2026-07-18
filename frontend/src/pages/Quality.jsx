@@ -1097,7 +1097,7 @@ export default function Quality() {
         <div className="flex items-center gap-2 sm:contents">
           <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
             max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
-          {isProd && (
+          {isProd && !lockOwn && (
             <SegmentedToggle value={shiftTab}
               onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
               options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
