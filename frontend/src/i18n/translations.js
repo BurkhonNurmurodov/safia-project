@@ -5678,7 +5678,7 @@ const t = {
     "admin.broadcast.notRegistered":  "Not registered",
     "admin.broadcast.noMatch":        "Nothing found",
     "admin.broadcast.confirmTitle":   "Send broadcast",
-    "admin.broadcast.confirmMsg":     "The message will be sent to {n} selected profiles on Telegram. It cannot be recalled once sent.",
+    "admin.broadcast.confirmMsg":     "The message will be sent to {n} selected recipients on Telegram. It cannot be recalled once sent.",
     "admin.broadcast.cancel":         "Cancel",
     "admin.broadcast.queuedToast":    "Broadcast started",
     "admin.broadcast.sendFailed":     "Send failed",
