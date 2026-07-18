@@ -511,9 +511,10 @@ def _tg_copy(chat_id: int, from_chat_id: int, message_ids: list[int]):
         _tg_api("copyMessage",
                 {"chat_id": chat_id, "from_chat_id": from_chat_id, "message_id": message_ids[0]})
     else:
+        # copyMessages requires the ids in strictly increasing order.
         _tg_api("copyMessages",
                 {"chat_id": chat_id, "from_chat_id": from_chat_id,
-                 "message_ids": json.dumps(message_ids)})
+                 "message_ids": json.dumps(sorted(set(message_ids)))})
 
 
 # ── Background sender ─────────────────────────────────────────────────────────
