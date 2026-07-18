@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useLayoutEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 // Inlined base64 logo baked into the JS bundle — no network fetch, so it can
 // never get stuck on a poisoned cache entry for the stable /logo.png URL. See
