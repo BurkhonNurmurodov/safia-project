@@ -162,10 +162,11 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
         # be reached by fuzzy matching (see _OVERRIDES). Falls through to the
         # scorer when the pinned unit isn't in this manager set.
         forced = _OVERRIDES.get(" ".join(tokens))
-        if forced and forced in by_norm:
-            m = by_norm[forced]
-            out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
-            continue
+        if forced:
+            m = by_norm.get(forced) or by_sorted.get(" ".join(sorted(forced.split())))
+            if m is not None:
+                out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
+                continue
         # Best candidate, not the first acceptable one: two supervisors can both
         # clear the bar (TALIPOVA MAMURA also half-resembles Арипова Манзура),
         # and the register hands those rows to the wrong unit if order decides.
