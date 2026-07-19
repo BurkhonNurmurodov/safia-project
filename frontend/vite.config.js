@@ -9,9 +9,15 @@ export default defineConfig({
   ],
   build: {
     minify: 'esbuild',
-    // Telegram Desktop on old Windows is capped at WebView2 109 — keep JS
-    // compatible and let Lightning CSS emit fallbacks for oklch()/color-mix()
-    target: 'es2019',
+    // Telegram Desktop on old Windows can run the legacy EdgeHTML/Chakra WebView
+    // (UA "…Chrome/70… Edge/18…" — Chakra, not real V8). It parses almost all of
+    // ES2019 but NOT optional catch binding (`try{}catch{}` with no `(e)`), so an
+    // es2019 bundle threw "Expected '(' … bundle never started" and never mounted.
+    // Pin the actual engines so esbuild down-levels exactly what they lack
+    // (optional catch binding, object spread, async iteration, ?. / ??) while
+    // keeping native async/await (both engines have it → no regenerator bloat).
+    // Let Lightning CSS emit fallbacks for oklch()/color-mix().
+    target: ['es2017', 'chrome70', 'edge18'],
     cssTarget: 'chrome87',
   },
   server: {
