@@ -267,9 +267,13 @@ export default function DateRangePicker({
         )}
       </button>
 
-      {/* ── Mobile: full-screen bottom sheet ── */}
-      {open && isMobile && (
-        <div className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
+      {/* ── Mobile: full-screen bottom sheet — portaled to <body> so `fixed
+          inset-0` anchors to the viewport. Rendered inline it gets trapped by
+          the animated `.page-enter` wrapper (its transform makes it the
+          containing block for fixed descendants), so the backdrop covered only
+          the content region and the sheet landed in the wrong place. ── */}
+      {open && isMobile && createPortal(
+        <div ref={popRef} data-popover-portal className="fixed inset-0 z-[300] flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={e => { if (e.target===e.currentTarget) setOpen(false); }}>
           <div className="rounded-t-2xl flex flex-col max-h-[90dvh]"
             style={{ background:"var(--bg-card)", border:"1px solid var(--border-md)" }}>
