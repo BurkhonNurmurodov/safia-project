@@ -362,7 +362,8 @@ export default function DateRangePicker({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Desktop: portaled fixed dropdown (escapes parent overflow) ── */}
