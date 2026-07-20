@@ -216,6 +216,8 @@ const TXT = {
     secAcc: "Масъулият ва бартараф этиш", accBrig: "Бригадирлар/ТМ", accMgr: "Раҳбарлар",
     accSub: "чора талаб этилган ёзувлар; % — бартараф этилган улуши",
     secSupStatus: "Бригадирлар бўйича ҳолат",
+    secMyStatus: "Бартараф этиш ҳолати", myStatusSub: "ёзувларингиз ҳолат бўйича",
+    trendSubOwn: "ўз ёзувларингиз", stWaitShort: "Кутилмоқда",
     stResolved: "Бартараф этилган", stNotSolved: "Бартараф этилмаган", stRecurring: "Такрорланувчи",
     stWaiting: "Тўлов, етказиш ва ҳ.к. кутилмоқда",
     stTotal: "Жами", tglCount: "Сони", tglPct: "%",
