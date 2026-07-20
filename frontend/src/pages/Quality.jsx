@@ -489,9 +489,10 @@ export default function Quality() {
       if (brigSel.length && !brigSel.includes(who(r))) return false;
       if (shiftSel.length && !shiftSel.includes(String(r.sh || ""))) return false;
       if (mgrSel.length && !mgrSel.includes(r.m)) return false;
+      if (hairMode === "without" && r.c === "hair") return false;
       return true;
     };
-  }, [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]);
+  }, [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, hairMode]);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
