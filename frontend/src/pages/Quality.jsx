@@ -918,6 +918,49 @@ export default function Quality() {
     tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v} ${T.rows}` } },
   };
 
+  // Supervisor view: their own resolution-status split (a donut), replacing the
+  // per-supervisor comparison table + accountability bar that both collapse to a
+  // single brigadir. Slices reuse the status traffic-light + the waiting purple.
+  const myStat = lockOwn ? (supStatus[0] || { resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 }) : null;
+  const myStatusData = [
+    { k: "resolved",  v: myStat?.resolved  || 0, c: C_DONE,    label: T.stResolved },
+    { k: "notSolved", v: myStat?.notSolved || 0, c: C_OPEN,    label: T.stNotSolved },
+    { k: "waiting",   v: myStat?.waiting   || 0, c: C_WAITCOL, label: T.stWaitShort },
+    { k: "recurring", v: myStat?.recurring || 0, c: C_REPEAT,  label: T.stRecurring },
+  ];
+  const myStatusSeries = myStatusData.map((x) => x.v);
+  const myStatusOpts = {
+    chart: { ...baseChart, type: "donut" },
+    theme: chartTheme,
+    labels: myStatusData.map((x) => x.label),
+    colors: myStatusData.map((x) => x.c),
+    stroke: { width: 2, colors: [cardBg] },
+    dataLabels: {
+      enabled: true,
+      formatter: (v) => (v >= 6 ? `${Math.round(v)}%` : ""),
+      style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
+      dropShadow: { enabled: false },
+    },
+    plotOptions: {
+      pie: {
+        donut: {
+          size: "68%",
+          labels: {
+            show: true,
+            total: {
+              show: true, showAlways: true, label: T.stTotal, fontSize: "11px", color: labelColor,
+              formatter: () => (myStat?.total || 0).toLocaleString("ru-RU"),
+            },
+            value: { fontSize: "20px", fontWeight: 700, color: legendColor },
+            name: { fontSize: "11px", color: labelColor },
+          },
+        },
+      },
+    },
+    legend: { show: false },
+    tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v} ${T.rows}` } },
+  };
+
   const treeSeries = [{
     data: A.cats.map((x) => ({ x: L("cat", x.k), y: x.n, fillColor: CAT_COLORS[x.k] || C_NA })),
   }];
