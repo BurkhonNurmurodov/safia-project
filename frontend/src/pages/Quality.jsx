@@ -174,6 +174,8 @@ const TXT = {
     secAcc: "Mas’uliyat va bartaraf etish", accBrig: "Brigadirlar/TM", accMgr: "Rahbarlar",
     accSub: "chora talab etilgan yozuvlar; % — bartaraf etilgan ulushi",
     secSupStatus: "Brigadirlar bo‘yicha holat",
+    secMyStatus: "Bartaraf etish holati", myStatusSub: "yozuvlaringiz holat bo‘yicha",
+    trendSubOwn: "o‘z yozuvlaringiz", stWaitShort: "Kutilmoqda",
     stResolved: "Bartaraf etilgan", stNotSolved: "Bartaraf etilmagan", stRecurring: "Takrorlanuvchi",
     stWaiting: "To‘lov, yetkazish va h.k. kutilmoqda",
     stTotal: "Jami", tglCount: "Soni", tglPct: "%",
