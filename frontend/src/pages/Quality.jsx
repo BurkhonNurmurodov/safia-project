@@ -402,6 +402,12 @@ export default function Quality() {
   const [view, setView] = useState("production");
   const isProd = view === "production";
 
+  // Top-level «Soch bilan / Sochsiz» switch: "without" drops every hair-category
+  // (соч/волос) foreign-object record from the WHOLE page — KPIs, charts, tables
+  // and the previous-period deltas alike — so the register reads as if hair
+  // complaints don't exist. "with" (default) keeps them, i.e. today's behaviour.
+  const [hairMode, setHairMode] = useState("with");
+
   // Brigadir (supervisor) profile: the page is locked to this one supervisor's
   // own data — no view / shift / brigadir switching, only the date range stays.
   // Their JWT role_id is their Manager.id, so resolve it to the canonical
