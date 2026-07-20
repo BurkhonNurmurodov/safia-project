@@ -1226,7 +1226,7 @@ export default function Quality() {
                  supervisor's four status columns sum to 100% and «Resolved» reads
                  as that supervisor's own resolution rate; the Total column stays a
                  raw actionable count to anchor the percentages. ── */}
-          {isProd && (
+          {isProd && !lockOwn && (
             <TableCard
               icon={ShieldCheck}
               title={T.secSupStatus}
