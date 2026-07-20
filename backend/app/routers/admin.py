@@ -101,7 +101,7 @@ async def upload_verifix(
         # upload, and the notification commits together with the attendance rows.
         try:
             from app.routers.staff import notify_supervisor_verifix_upload
-            notify_supervisor_verifix_upload(db, mgr_id, date, actor_tg_id=actor_tg_id)
+            notify_supervisor_verifix_upload(db, mgr_id, date)
         except Exception:
             pass
 
