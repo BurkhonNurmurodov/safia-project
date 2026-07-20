@@ -713,18 +713,26 @@ def _notify_all_parties(
         _notify(db, tg_id, type=ntype, dm=dm, nkey=nkey, params=params, profile=prof)
 
 
-def notify_supervisor_verifix_upload(
-    db: Session, manager_id: int, d: date, actor_tg_id: Optional[int] = None,
-):
+def notify_supervisor_verifix_upload(db: Session, manager_id: int, d: date):
     """Tell a unit's supervisor that fresh verifix attendance data was uploaded
     for ``d``, so they can make their changes (people exchange, role change,
     deletion) and close the day. Called by the /admin/upload handler after each
     file is inserted — ONLY the supervisor is notified (no admins/shift-managers),
-    and the day's close-state is left untouched. No-op when the unit has no
-    registered supervisor, or the supervisor is the uploader themselves. The
-    caller must commit; the bell row is added to ``db`` and the DM sent inline."""
+    and the day's close-state is left untouched.
+
+    Verifix uploads are admin-only (/admin/upload is verify_admin-gated), so the
+    supervisor is never the person who uploaded — the notification always fires
+    for the unit's current brigadir. When the unit has no approved supervisor it
+    is a no-op, logged at WARNING so a missing link is visible instead of being
+    silently dropped. The caller must commit; the bell row is added to ``db`` and
+    the DM sent inline. An unclaimed supervisor profile (no telegram_id) still
+    gets the bell queued to its profile — delivered as a DM once it is claimed."""
     sup = _find_supervisor(db, manager_id)
-    if not sup or sup.telegram_id == actor_tg_id:
+    if not sup:
+        logger.warning(
+            "verifix upload for manager %s on %s: no approved supervisor to notify",
+            manager_id, d,
+        )
         return
     _notify(db, sup.telegram_id, type="info", nkey="verifix_uploaded", params={"date": d},
             profile=_profile_key("supervisor", sup.role_id))
