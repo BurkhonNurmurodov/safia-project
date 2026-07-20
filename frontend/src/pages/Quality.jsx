@@ -1331,12 +1331,29 @@ export default function Quality() {
                 type="bar" height={330} />
             </ChartCard>
 
-            <ChartCard icon={<UserCog size={13} />} title={T.secAcc} subtitle={T.accSub}
-              empty={A.acc.length === 0} height={330}
-              right={<SegmentedToggle size="sm" value={accMode} onChange={setAccMode}
-                options={[["brig", T.accBrig], ["mgr", T.accMgr]]} />}>
-              <ReactApexChart options={accOpts} series={accSeries} type="bar" height={330} />
-            </ChartCard>
+            {lockOwn ? (
+              <ChartCard icon={<ShieldCheck size={13} />} title={T.secMyStatus} subtitle={T.myStatusSub}
+                empty={!myStat || myStat.total === 0} height={330}>
+                <div className="px-3">
+                  <ReactApexChart options={myStatusOpts} series={myStatusSeries} type="donut" height={250} />
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center pb-2">
+                    {myStatusData.map((x) => (
+                      <span key={x.k} className="inline-flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-3)" }}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: x.c }} />
+                        {x.label} <span className="tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>{x.v}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </ChartCard>
+            ) : (
+              <ChartCard icon={<UserCog size={13} />} title={T.secAcc} subtitle={T.accSub}
+                empty={A.acc.length === 0} height={330}
+                right={<SegmentedToggle size="sm" value={accMode} onChange={setAccMode}
+                  options={[["brig", T.accBrig], ["mgr", T.accMgr]]} />}>
+                <ReactApexChart options={accOpts} series={accSeries} type="bar" height={330} />
+              </ChartCard>
+            )}
           </div>
 
           {/* ── seasonality — native grid heatmap, styled after the fleet HeatmapChart:
