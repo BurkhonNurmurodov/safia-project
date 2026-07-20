@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, ChevronsUpDown, ChevronUp, ChevronDown } from "lucide-react";
@@ -43,7 +44,7 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
         : fmtDateLabel(dateFrom || dateTo))
     : date;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
       <div className="rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}
@@ -157,6 +158,7 @@ export default function AttendanceModal({ managerId, date, dateFrom, dateTo, man
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

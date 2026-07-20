@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -14,7 +15,7 @@ import { useTranslit } from "../../utils/transliterate";
 export default function PendingInfoModal({ managerName, date, reason, onClose }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[210] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -54,6 +55,7 @@ export default function PendingInfoModal({ managerName, date, reason, onClose })
             : t("zagruzka.pendingNotClosed")}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   X,
   Snowflake,
@@ -43,7 +44,7 @@ export default function CategoryLegendModal({ catNames = [], catColors = [], onC
   const { t } = useLang();
   const code = (name) => name.replace(/^Cat\s*/i, "");
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -125,6 +126,7 @@ export default function CategoryLegendModal({ catNames = [], catColors = [], onC
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

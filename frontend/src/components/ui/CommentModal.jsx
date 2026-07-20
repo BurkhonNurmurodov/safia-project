@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState } from "react";
 import { X, MessageSquare, Pencil, Trash2, Check, XCircle, ChevronDown, Calculator } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,7 +64,7 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
 
   const isOwn = (c) => myId && String(c.author_telegram_id) === myId;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
       <div
         className="rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
@@ -251,6 +252,7 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
           </button>
         </div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

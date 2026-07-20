@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, Info } from "lucide-react";
@@ -259,8 +260,10 @@ export default function Zagruzka() {
         </div>
       ) : null}
 
-      {/* ── Comparison Table fullscreen overlay ── */}
-      {compFullscreen && (
+      {/* ── Comparison Table fullscreen overlay — portaled to <body> so its
+          `fixed inset-0` anchors to the viewport, not the .page-enter transform
+          (see the DateRangePicker fix). ── */}
+      {compFullscreen && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -279,7 +282,8 @@ export default function Zagruzka() {
               onToggleFullscreen={() => setCompFullscreen(false)}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Fleet Heatmap ── */}
@@ -303,7 +307,7 @@ export default function Zagruzka() {
       </div>
 
       {/* ── Fleet Heatmap fullscreen overlay ── */}
-      {heatmapFullscreen && (
+      {heatmapFullscreen && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
           style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -343,7 +347,8 @@ export default function Zagruzka() {
               <EmptyState title={t("zagruzka.noHeatmap")} message={t("zagruzka.noHeatmapMsg")} height="h-48" />
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Fleet Funnel */}

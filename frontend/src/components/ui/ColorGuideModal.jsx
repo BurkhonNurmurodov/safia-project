@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { orderedSegments, formatRange } from "../../utils/segments";
@@ -20,7 +21,7 @@ import { orderedSegments, formatRange } from "../../utils/segments";
  */
 export default function ColorGuideModal({ title, subtitle, sections = [], onClose }) {
   const { lang } = useLang();
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -113,6 +114,7 @@ export default function ColorGuideModal({ title, subtitle, sections = [], onClos
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

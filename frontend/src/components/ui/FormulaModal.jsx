@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 
@@ -13,7 +14,7 @@ import { useLang } from "../../context/LangContext";
  */
 export default function FormulaModal({ title, value, formula, inputs, onClose }) {
   const { t } = useLang();
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
@@ -122,6 +123,7 @@ export default function FormulaModal({ title, value, formula, inputs, onClose })
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
