@@ -36,6 +36,8 @@ from app.services.day_state import confirmed_pairs, day_state
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
 
+logger = logging.getLogger(__name__)
+
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
 STAFF_ROLES = {"admin", "supervisor", "shift-manager"}
