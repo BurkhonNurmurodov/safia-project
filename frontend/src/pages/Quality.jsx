@@ -1278,7 +1278,7 @@ export default function Quality() {
           {/* ── trend + type mix ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
-              <ChartCard icon={<TrendingUp size={13} />} title={T.secTrend} subtitle={isProd ? T.trendSubProd : T.trendSub}
+              <ChartCard icon={<TrendingUp size={13} />} title={T.secTrend} subtitle={lockOwn ? T.trendSubOwn : isProd ? T.trendSubProd : T.trendSub}
                 empty={A.trend.length === 0} height={286}
                 right={<SegmentedToggle size="sm" value={gran} onChange={setGran}
                   options={[["month", T.byMonth], ["week", T.byWeek]]} />}>
