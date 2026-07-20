@@ -62,11 +62,6 @@ async def upload_verifix(
     admin_payload: dict = Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
-    try:
-        actor_tg_id = int(admin_payload["sub"])
-    except (KeyError, TypeError, ValueError):
-        actor_tg_id = None
-
     results = []
     for f in files:
         content = await f.read()
