@@ -874,7 +874,7 @@ export default function Quality() {
     },
     yaxis: { labels: { style: { colors: labelColor, fontSize: "10px" } } },
     grid: { borderColor: gridColor, strokeDashArray: 3, padding: { left: 4, right: 8 } },
-    legend: { show: true, position: "top", horizontalAlign: "right", markers: { radius: 4 }, labels: { colors: legendColor }, fontSize: "11px" },
+    legend: { show: !lockOwn, position: "top", horizontalAlign: "right", markers: { radius: 4 }, labels: { colors: legendColor }, fontSize: "11px" },
     tooltip: { theme: chartTheme.mode, shared: true, intersect: false },
   };
   const areaSeries = trendOrder.map((x) => ({
