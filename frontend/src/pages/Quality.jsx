@@ -157,7 +157,7 @@ const TXT = {
     title: "Sifat va shikoyatlar", sub: "Nomuvofiqliklar reyestri tahlili",
     refresh: "Yangilash", refreshing: "Yangilanmoqda…", lastSynced: "Oxirgi sinxron", never: "hech qachon",
     emptyTitle: "Ma’lumot yo‘q", emptyNote: "Reyestrni Google Sheets’dan tortib olish uchun «Yangilash» tugmasini bosing.",
-    noMatch: "Filtrlarga mos yozuv yo‘q", vOverall: "Umumiy", vSup: "Brigadirlar",
+    noMatch: "Filtrlarga mos yozuv yo‘q", vOverall: "Umumiy", vSup: "Brigadirlar", hairWith: "Soch bilan", hairWithout: "Sochsiz",
     kTotal: "Jami nomuvofiqlik", kGuest: "Mehmon shikoyatlari", kResolved: "Bartaraf etilgan",
     kOpen: "Ochiq", kReturn: "Qaytarishlar", kCritical: "Kritik",
     kResolvedHint: "chora talab etilganlardan", kCriticalHint: "zaharlanish · mog‘or · mehmondagi yot jism",
