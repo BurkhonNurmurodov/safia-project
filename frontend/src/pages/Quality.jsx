@@ -258,6 +258,8 @@ const TXT = {
     secAcc: "Ответственность и устранение", accBrig: "Бригадиры/ТМ", accMgr: "Руководители",
     accSub: "записи, требующие меры; % — доля устранённых",
     secSupStatus: "Статусы по бригадирам",
+    secMyStatus: "Статус устранения", myStatusSub: "ваши записи по статусу",
+    trendSubOwn: "ваши записи", stWaitShort: "В ожидании",
     stResolved: "Устранено", stNotSolved: "Не устранено", stRecurring: "Повторяющееся",
     stWaiting: "В ожидании оплаты, доставки и т.п.",
     stTotal: "Всего", tglCount: "Кол-во", tglPct: "%",
