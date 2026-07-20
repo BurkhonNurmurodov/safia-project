@@ -6,6 +6,7 @@ Access:
   shift-manager → sees requests for their shift, approves/rejects
   admin         → view/edit/delete directly, actions logged as processed requests
 """
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
