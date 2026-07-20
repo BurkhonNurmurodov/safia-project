@@ -300,6 +300,8 @@ const TXT = {
     secAcc: "Accountability & resolution", accBrig: "Brigadirs/TM", accMgr: "Managers",
     accSub: "records needing action; % = share resolved",
     secSupStatus: "Status by supervisor",
+    secMyStatus: "Resolution status", myStatusSub: "your findings by status",
+    trendSubOwn: "your own findings", stWaitShort: "Waiting",
     stResolved: "Resolved", stNotSolved: "Not solved", stRecurring: "Recurring",
     stWaiting: "Awaiting payment, delivery, etc.",
     stTotal: "Total", tglCount: "Count", tglPct: "%",
