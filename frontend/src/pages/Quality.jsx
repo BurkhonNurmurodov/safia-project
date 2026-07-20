@@ -1502,7 +1502,7 @@ export default function Quality() {
                       <td className="px-3 py-2 max-w-[170px] truncate" title={r.cn || r.fc || ""} style={{ color: "var(--text-3)" }}>
                         {r.cn || r.fc || "—"}
                       </td>
-                      <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>
+                      {!lockOwn && <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>}
                       <td className="px-3 py-2 text-center" style={{ color: r.r ? C_WAIT : "var(--text-4)" }}>{r.r ? T.yes : "—"}</td>
                       <td className="px-3 py-2"><Chip color={STATUS_COLORS[r.st] || C_NA}>{L("st", r.st)}</Chip></td>
                     </tr>
