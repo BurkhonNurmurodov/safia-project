@@ -1120,6 +1120,13 @@ export default function Quality() {
         </div>
       </div>
 
+      {/* «Soch bilan / Sochsiz» — a page-wide hair-category filter, its own row
+          directly under the title. Shown for EVERY profile (brigadirs included). */}
+      <div className="mb-3">
+        <SegmentedToggle value={hairMode} onChange={setHairMode} fill className="sm:max-w-[260px]"
+          options={[["with", T.hairWith], ["without", T.hairWithout]]} />
+      </div>
+
       {/* page-level view switch — Production narrows everything to источник = «Производство».
           Full-width tab bar on phones, capped on desktop. Hidden for a brigadir
           profile: they are pinned to their own production rows. */}
