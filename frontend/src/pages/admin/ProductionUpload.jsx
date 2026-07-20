@@ -131,7 +131,7 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
         </label>
       </div>
       <div className="text-[11px] text-[var(--text-4)] mb-3">
-        Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Снимки данных не затрагиваются.
+        Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Затем пересчитывает данные бригадира за все даты с загруженными файлами SAP — ручные правки за эти даты сбрасываются.
       </div>
       <button onClick={doImport} disabled={!file || managerId == null || state.status === "uploading"}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50">
@@ -141,6 +141,8 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
       {state.status === "ok" && (
         <div className="mt-3 flex items-center gap-2 text-green-400 text-sm">
           <CheckCircle2 size={14} /> Лист «{state.data.sheet}»: {state.data.products} товаров, команд +{state.data.work_centers_added}/~{state.data.work_centers_updated}
+          {state.data.backfilled_days > 0 &&
+            `, пересчитано ${state.data.backfilled_days} дн. (${state.data.backfilled_rows} строк)`}
         </div>
       )}
       {state.status === "error" && (

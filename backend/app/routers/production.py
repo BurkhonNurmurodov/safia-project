@@ -604,6 +604,61 @@ def _ingest_for_manager(db, manager_id: int, day: date, mode: str, *,
     return updated
 
 
+def _num(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _stored_slices(db, day: date) -> tuple[list[dict], dict, dict]:
+    """Rebuild (faza_ops, order_sku, order_deliv) for a date from the PPUpload
+    rows kept at upload time, so a brigadir configured AFTER the SAP files
+    landed can be ingested without re-uploading them."""
+    ups = db.query(PPUpload).filter(PPUpload.date == day).all()
+
+    # The global (manager_id NULL) row is the whole plant file; legacy
+    # per-brigadir slices are disjoint crops, so fall back to all of them.
+    faza_ups = [u for u in ups if u.file_type == "faza"]
+    faza_ups = [u for u in faza_ups if u.manager_id is None] or faza_ups
+    faza_ops = [
+        {"order": str(r[0]), "wc": str(r[2] or ""), "plan": _num(r[5])}
+        for up in faza_ups for r in (up.rows or [])   # [order, op, wc, sku, name, plan, …]
+        if len(r) >= 6 and r[0]
+    ]
+
+    order_sku: dict[str, str] = {}
+    order_deliv: dict[str, float] = {}
+    for up in sorted((u for u in ups if u.file_type == "zaga"),
+                     key=lambda u: u.manager_id is not None):   # global first
+        for r in (up.rows or []):     # [order, sku, plant, ordqty, deliv, conf, …]
+            if len(r) >= 2 and r[0] and r[1]:
+                order_sku.setdefault(str(r[0]), str(r[1]))
+                if len(r) > 4:
+                    order_deliv.setdefault(str(r[0]), _num(r[4]))
+    return faza_ops, order_sku, order_deliv
+
+
+def _backfill_manager(db, manager_id: int) -> dict:
+    """Ingest EVERY date whose raw SAP slices are already stored, for a brigadir
+    who has just been given a catalog. Without this, a фаза/заголовок upload
+    that predates the catalog import leaves the unit with no pp_daily rows and
+    the files would have to be uploaded again."""
+    days = [d for (d,) in db.query(PPUpload.date).filter(
+        PPUpload.file_type == "faza").distinct().order_by(PPUpload.date).all()]
+    filled_days = filled_rows = 0
+    for day in days:
+        faza_ops, order_sku, order_deliv = _stored_slices(db, day)
+        if not faza_ops:
+            continue
+        n = _ingest_for_manager(db, manager_id, day, "both", faza_ops=faza_ops,
+                                order_sku=order_sku, order_deliv=order_deliv)
+        if n:
+            filled_days += 1
+            filled_rows += n
+    return {"days": filled_days, "rows": filled_rows}
+
+
 @router.post("/admin/production/upload")
 async def upload_phase(
     files: list[UploadFile] = File(...),
@@ -771,8 +826,12 @@ async def import_catalog(
 ):
     """Replace a brigadir's catalog from an uploaded 'Sheet1 …' sheet: products
     (SKU, name, labor, work center) + work-center штатка/capacity. Junk '0' rows
-    are dropped. Overrides/snapshots (pp_daily) are untouched — they key on
-    (sap_code, work_center)."""
+    are dropped.
+
+    Then re-derive pp_daily for every date whose raw SAP slices are stored, so
+    a catalog imported AFTER the фаза/заголовок upload still produces numbers.
+    That rewrites this brigadir's snapshots (and clears their manual overrides)
+    on the backfilled dates — other brigadirs are untouched."""
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
     parsed = parse_catalog_workbook(await file.read(), sheet_name)
@@ -805,11 +864,15 @@ async def import_catalog(
                 manager_id=manager_id, code=w["code"], shtatka=w.get("shtatka") or 0,
                 capacity=w.get("capacity"), sort_order=w.get("sort_order", 0)))
             wc_added += 1
+    db.commit()   # catalog must be visible to the scope queries in the backfill
+
+    filled = _backfill_manager(db, manager_id)
     db.commit()
     return {
         "status": "ok", "manager_id": manager_id, "sheet": parsed["sheet"],
         "products": len(parsed["products"]),
         "work_centers_added": wc_added, "work_centers_updated": wc_updated,
+        "backfilled_days": filled["days"], "backfilled_rows": filled["rows"],
     }
 
 
