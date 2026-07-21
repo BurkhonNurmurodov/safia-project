@@ -2008,16 +2008,22 @@ def _lt_callback(call: types.CallbackQuery):
 def _lt_photo(message: types.Message):
     tid = message.from_user.id
     lang = _get_lang(tid)
-    lt = _lt_state(tid)
-    if not lt:
-        return
     with SessionLocal() as db:
+        # FOR UPDATE serializes album items that Passenger spread across
+        # workers — each append sees the previous one's committed count.
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "photos":
+            return
         relayed = _lt_relay_photo(db, message)
         if not relayed:
+            db.commit()  # release the row lock before messaging
             bot.send_message(message.chat.id, _lt(lang, "relay_fail"))
             return
-        lt["media"].append(relayed)
-        k, need, pid, task_id = len(lt["media"]), lt["min"], lt["pid"], lt["task"]
+        cap.media = (cap.media or []) + [list(relayed)]  # reassign → JSONB change tracked
+        db.commit()
+        k, need = len(cap.media), cap.min_media
+        pid, task_id = cap.leader_id, cap.task_id
+        chat, counter_id = cap.chat_id, cap.message_id
         defs = {td.id: td for td in ensure_task_defs(db)}
         td = defs.get(task_id)
         tname = task_name(td, lang) if td else f"T{task_id}"
@@ -2028,7 +2034,7 @@ def _lt_photo(message: types.Message):
     try:  # counter edits in place; concurrent album items re-render the latest k
         bot.edit_message_text(
             _lt(lang, "photos_counter").format(task=tname, min=need, k=k),
-            chat_id=lt["chat"], message_id=lt["msg_id"], reply_markup=kb)
+            chat_id=chat, message_id=counter_id, reply_markup=kb)
     except Exception:
         pass
 
