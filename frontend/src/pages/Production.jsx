@@ -1129,7 +1129,14 @@ export default function Production() {
         <RawView fileType={view} date={date} managerParam={managerParam} ready={managerReady} />
       )}
 
-      {view === "people" && (
+      {/* both computed views read the same dashboard fetch — surface its error */}
+      {isError && (view === "zagruzka" || view === "people") && (
+        <div className="rounded-2xl p-4 text-sm mb-4" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
+          {error?.response?.data?.detail || t("production.loadError")}
+        </div>
+      )}
+
+      {view === "people" && !isError && (
         <PeopleTab
           wcs={wcs}
           constants={data?.constants}
