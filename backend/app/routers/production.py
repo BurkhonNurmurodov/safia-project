@@ -295,7 +295,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
     # what the «Odamlar soni» tab needs to show and reset the efficiency box
     result["constants"].update({
         "productive_min_global": global_pm,
-        "productive_pinned": abs(productive_min - global_pm) > 0.001,
+        "productive_pinned": pinned_pm is not None,
     })
     return result
 
