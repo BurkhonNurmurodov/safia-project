@@ -1124,22 +1124,21 @@ export default function Quality() {
         </div>
       </div>
 
-      {/* «Soch bilan / Sochsiz» — a page-wide hair-category filter, its own row
-          directly under the title. Shown for EVERY profile (brigadirs included). */}
-      <div className="mb-3">
-        <SegmentedToggle value={hairMode} onChange={setHairMode} fill className="sm:max-w-[260px]"
+      {/* one scope row under the title — page-level view switch first (Production
+          narrows everything to источник = «Производство»), then the page-wide
+          «Soch bilan / Sochsiz» hair-category filter beside it. Both shrink-wrap
+          to their labels instead of stretching to a fixed width, so they read as
+          two separate switches; on narrow phones the row wraps. The view switch
+          is hidden for a brigadir profile (pinned to their own production rows);
+          the hair filter shows for EVERY profile. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {!lockOwn && (
+          <SegmentedToggle value={view} onChange={setView}
+            options={[["production", T.vSup], ["overall", T.vOverall]]} />
+        )}
+        <SegmentedToggle value={hairMode} onChange={setHairMode}
           options={[["with", T.hairWith], ["without", T.hairWithout]]} />
       </div>
-
-      {/* page-level view switch — Production narrows everything to источник = «Производство».
-          Full-width tab bar on phones, capped on desktop. Hidden for a brigadir
-          profile: they are pinned to their own production rows. */}
-      {!lockOwn && (
-        <div className="mb-3">
-          <SegmentedToggle value={view} onChange={setView} fill className="sm:max-w-[260px]"
-            options={[["production", T.vSup], ["overall", T.vOverall]]} />
-        </div>
-      )}
 
       {(refresh.isError || isError) && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
