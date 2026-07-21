@@ -14,6 +14,7 @@ const t = {
     "nav.production":      "Ishlab chiqarish",
     "nav.trudoyomkost":    "Plan Prognoz",
     "nav.leaders":         "Lider nazorati",
+    "nav.leadersBot":      "Lider nazorati · Bot",
     "nav.kaizen":          "Kaizen loyihalari",
     "nav.quality":         "Sifat va shikoyatlar",
     "nav.activity":        "Foydalanuvchilar faolligi",
