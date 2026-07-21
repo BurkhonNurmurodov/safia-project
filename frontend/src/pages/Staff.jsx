@@ -735,16 +735,22 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
         </div>
       )}
 
-      <div
-        className="fixed bottom-4 right-4 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-md)",
-          color: "var(--text-2)",
-        }}
-      >
-        {t("staff.showingRows").replace("{n}", workers.length)}
-      </div>
+      {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
+          animation (fill-mode both) keeps a transform, which would make it the
+          containing block for position:fixed and pin the badge to the page. */}
+      {!isCollapsed && createPortal(
+        <div
+          className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-md)",
+            color: "var(--text-2)",
+          }}
+        >
+          {t("staff.showingRows").replace("{n}", workers.length)}
+        </div>,
+        document.body,
+      )}
 
       {/* Extra hours note */}
       {(data?.extra_hours ?? 0) > 0 && (
