@@ -963,9 +963,25 @@ export default function Production() {
             const wc = wcColor(w.work_center);
             return (
               <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}` }}>{w.work_center}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: c }}>{pct(w.load)}</span>
+                  {/* The staffing pin governs BOTH numbers below, so its control sits
+                      in the header — above the pair — not appended to one of them. */}
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-bold tabular-nums" style={{ color: c }}>{pct(w.load)}</span>
+                    {canEditStaffing && (
+                      <Button
+                        variant="secondary"
+                        icon={<Pencil size={14} />}
+                        onClick={() => startWcEdit(w)}
+                        title={t("production.editManually")}
+                        aria-label={t("production.editManually")}
+                        // the card surface IS --bg-inner, so the secondary fill would
+                        // vanish into it — lift the button to the card colour instead
+                        style={{ background: "var(--bg-card)", paddingLeft: 8, paddingRight: 8 }}
+                      />
+                    )}
+                  </span>
                 </div>
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
                 <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
