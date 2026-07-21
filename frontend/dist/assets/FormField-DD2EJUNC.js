@@ -1,1 +1,0 @@
-import{d as i}from"./transliterate-DReSXK36.js";var r=i();function n({label:e,required:s,children:t}){return(0,r.jsxs)("div",{children:[(0,r.jsxs)("div",{className:"text-[11px] uppercase tracking-wider mb-1",style:{color:"var(--text-3)"},children:[e,s&&(0,r.jsx)("span",{className:"text-red-400",children:" *"})]}),t]})}export{n as t};
