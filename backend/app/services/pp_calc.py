@@ -175,10 +175,9 @@ def compute_dashboard(
             "work_center": code,
             "shtatka": shtatka,           # штатка (W) — effective
             "capacity": s_eff,            # S — productive minutes for the roster
-            # not None = S is genuinely hand-tuned and the efficiency % does NOT
-            # move it (the «Odamlar soni» preview needs to know which cells
-            # ignore the %); None = S follows W × the day's productive minutes.
-            "capacity_cfg": (cap if hand_tuned else None),
+            # per-head productive minutes this cell is running at (S ÷ W) — what
+            # the «Odamlar soni» efficiency box reads and writes
+            "per_head": (s_eff / shtatka) if shtatka > 0 else None,
             "people": people,             # O. SONI (N) — effective
             "total_labor": q,             # Σ Общ.трудоёмкость for this WC
             "load": load,                 # Загруженность (O)
