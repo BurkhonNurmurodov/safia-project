@@ -48,6 +48,7 @@ def get_leaders(
         .order_by(LeaderChecklist.date.desc(), LeaderChecklist.id.desc())
         .all()
     )
+    all_sheet_rows = rows  # pre-scoping snapshot — drives the sheet-wins dedup
 
     # Each row's (relabeled) supervisor resolves to a unit via the Manager table.
     # The leaders sheet's «Бригадир ФИО» column is a FULL passport-form name in
