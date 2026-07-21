@@ -173,6 +173,19 @@ def _constants(db: Session) -> tuple[float, float]:
     return num("pp_shift_min", DEFAULT_SHIFT_MIN), num("pp_productive_min", DEFAULT_PRODUCTIVE_MIN)
 
 
+def _day_constants(db: Session, manager_id: int, day: date) -> tuple[float, float, float]:
+    """(shift_min, effective productive_min, global productive_min) for one day.
+
+    The «Odamlar soni» tab pins the efficiency per (brigadir, date); with no pin
+    the day uses the platform-wide pp_productive_min, so past days never shift
+    under a brigadir who edits today."""
+    shift_min, global_pm = _constants(db)
+    row = db.query(PPDaySetting).filter(
+        PPDaySetting.manager_id == manager_id, PPDaySetting.date == day).first()
+    pinned = float(row.productive_min) if (row and row.productive_min is not None) else None
+    return shift_min, (pinned if pinned else global_pm), global_pm
+
+
 def _parse_date(s: Optional[str]) -> date:
     if not s:
         return date.today()
