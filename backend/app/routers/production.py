@@ -206,6 +206,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
         } for w in wcs],
         shift_min=shift_min,
         productive_min=productive_min,
+        wc_overrides=wc_overrides,
     )
 
     # SKUs present in the SAP snapshot but absent from the catalog
