@@ -29,6 +29,9 @@ const ALL_LINKS = [
   { to: "/production", page: "production", key: "nav.production",    icon: Factory },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
+  // Admin-only copy of leaders monitoring, fed by the in-bot checklist —
+  // independent of the sheet-driven page above (no page-access key).
+  { to: "/leaders-bot", adminOnly: true, key: "nav.leadersBot", icon: Bot },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
