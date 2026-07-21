@@ -201,9 +201,11 @@ export default function LeaderTasksAdmin() {
                             type="button"
                             title={`${tname(task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · 📸${c.min_media} · ${c.weight}%`}
                             onClick={() => setCell({ mid: m.id, tid: task.id, ...c })}
-                            className="w-full h-7 transition-opacity hover:opacity-75"
+                            className="w-full h-7 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold text-white tabular-nums"
                             style={{ background: c.enabled ? C_ON : C_OFF, opacity: c.enabled ? 1 : 0.45 }}
-                          />
+                          >
+                            {c.weight}%
+                          </button>
                         </td>
                       );
                     })}
