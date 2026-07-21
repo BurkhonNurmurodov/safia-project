@@ -276,8 +276,20 @@ _ROLE_LABELS = {
 }
 
 
+_MEDIA_LABELS = {
+    "uz":      {"photo": "Rasm", "video": "Video", "document": "Hujjat", "audio": "Audio", "voice": "Ovozli xabar", "animation": "GIF", "video_note": "Video-xabar", "sticker": "Stiker"},
+    "uz_cyrl": {"photo": "Расм", "video": "Видео", "document": "Ҳужжат", "audio": "Аудио", "voice": "Овозли хабар", "animation": "GIF", "video_note": "Видео-хабар", "sticker": "Стикер"},
+    "ru":      {"photo": "Фото", "video": "Видео", "document": "Документ", "audio": "Аудио", "voice": "Голосовое", "animation": "GIF", "video_note": "Видеосообщение", "sticker": "Стикер"},
+    "en":      {"photo": "Photo", "video": "Video", "document": "Document", "audio": "Audio", "voice": "Voice message", "animation": "GIF", "video_note": "Video note", "sticker": "Sticker"},
+}
+
+
 def _msg(lang: str, key: str) -> str:
     return _MESSAGES.get(lang, _MESSAGES["uz"]).get(key, _MESSAGES["uz"].get(key, key))
+
+
+def _media_label(lang: str, kind: str) -> str:
+    return _MEDIA_LABELS.get(lang, _MEDIA_LABELS["uz"]).get(kind, kind)
 
 
 def _role(lang: str, role: str) -> str:
