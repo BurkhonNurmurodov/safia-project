@@ -136,9 +136,9 @@ export default function MediaViewer() {
                   {copied ? t("media.copied") : t("media.copyId")}
                 </Button>
                 {blobUrl && (
-                  <a href={blobUrl} download={meta.file_name} className="inline-flex">
-                    <Button size="sm" variant="secondary" icon={<Download size={12} />}>{t("media.download")}</Button>
-                  </a>
+                  <Button size="sm" variant="secondary" icon={<Download size={12} />} onClick={download}>
+                    {t("media.download")}
+                  </Button>
                 )}
               </div>
             }
