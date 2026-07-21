@@ -1452,6 +1452,597 @@ def _broadcast_callback(call: types.CallbackQuery):
     bot.answer_callback_query(call.id)
 
 
+# ── Leader daily checklist (/tasks) ───────────────────────────────────────────
+# In-bot replacement of the Google-Form collection layer of /leaders: a leader
+# marks each enabled task done (with proof photos, relayed as BYTES to the
+# archive channel) or not done (with a reason), then locks the day with «KUNNI
+# YOPISH». Only closed days surface on the dashboard; a sheet row for the same
+# (leader, date) still wins over the bot's. Capture state lives in _state[tid]
+# ["lt"] — lost on restart, in which case the leader just re-runs /tasks.
+
+_LT_MESSAGES = {
+    "uz": {
+        "not_leader": "Siz lider emassiz.",
+        "pick_profile": "Qaysi profil bilan davom etasiz?",
+        "menu_title": "📋 {name}\n📅 {date}\n\nVazifani tanlang:",
+        "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Kun yopilgan. Natija: {score}%",
+        "btn_back": "⬅️ Orqaga",
+        "btn_close_day": "⚠️ KUNNI YOPISH ⚠️",
+        "farewell": "Vazifalaringizni istalgan vaqtda /tasks buyrug'i orqali bajarishingiz mumkin.",
+        "did_you": "Siz bu vazifani bajardingizmi?\n\n📌 {task}",
+        "btn_yes": "Ha ✅",
+        "btn_no": "Yo'q ❌",
+        "photos_counter": "📌 {task}\n\nIsbot uchun kamida {min} ta rasm yuboring.\n\n📸 {k}/{min} rasm qabul qilindi.",
+        "btn_save": "💾 Saqlash",
+        "btn_discard": "🔄 Bekor qilish",
+        "reason_prompt": "📌 {task}\n\n✍️ Nega bajarilmadi? Sababini yozib yuboring.",
+        "reason_confirm": "📌 {task}\n\n📝 Sabab: {reason}\n\nSaqlaysizmi?",
+        "reset_confirm": "Bu vazifaning oldingi ma'lumotlari o'chirilib, qaytadan topshirishingizni tasdiqlaysizmi?\n\n📌 {task}",
+        "btn_reset": "🔄 Qayta topshirish",
+        "close_confirm": "Kunni yopishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi va vazifalarni boshqa tahrirlay olmaysiz!",
+        "btn_confirm": "✅ Tasdiqlash",
+        "closed_done": "🔒 Kun yopildi! Natija: {score}%",
+        "incomplete": "Avval barcha vazifalarni belgilang! Qolgan: {n}",
+        "day_closed_alert": "Bu kun yopilgan — tahrirlash mumkin emas.",
+        "photos_only": "Faqat rasm yuboring 📸",
+        "relay_fail": "❌ Rasm qabul qilinmadi (arxiv kanaliga yuborib bo'lmadi). Keyinroq qayta urinib ko'ring yoki administratorga xabar bering.",
+        "expired": "Sessiya eskirgan. /tasks buyrug'ini qaytadan yuboring.",
+        "saved_toast": "✅ Saqlandi",
+    },
+    "uz_cyrl": {
+        "not_leader": "Сиз лидер эмассиз.",
+        "pick_profile": "Қайси профил билан давом этасиз?",
+        "menu_title": "📋 {name}\n📅 {date}\n\nВазифани танланг:",
+        "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Кун ёпилган. Натижа: {score}%",
+        "btn_back": "⬅️ Орқага",
+        "btn_close_day": "⚠️ КУННИ ЁПИШ ⚠️",
+        "farewell": "Вазифаларингизни исталган вақтда /tasks буйруғи орқали бажаришингиз мумкин.",
+        "did_you": "Сиз бу вазифани бажардингизми?\n\n📌 {task}",
+        "btn_yes": "Ҳа ✅",
+        "btn_no": "Йўқ ❌",
+        "photos_counter": "📌 {task}\n\nИсбот учун камида {min} та расм юборинг.\n\n📸 {k}/{min} расм қабул қилинди.",
+        "btn_save": "💾 Сақлаш",
+        "btn_discard": "🔄 Бекор қилиш",
+        "reason_prompt": "📌 {task}\n\n✍️ Нега бажарилмади? Сабабини ёзиб юборинг.",
+        "reason_confirm": "📌 {task}\n\n📝 Сабаб: {reason}\n\nСақлайсизми?",
+        "reset_confirm": "Бу вазифанинг олдинги маълумотлари ўчирилиб, қайтадан топширишингизни тасдиқлайсизми?\n\n📌 {task}",
+        "btn_reset": "🔄 Қайта топшириш",
+        "close_confirm": "Кунни ёпишни тасдиқлайсизми? Бу амални ортга қайтариб бўлмайди ва вазифаларни бошқа таҳрирлай олмайсиз!",
+        "btn_confirm": "✅ Тасдиқлаш",
+        "closed_done": "🔒 Кун ёпилди! Натижа: {score}%",
+        "incomplete": "Аввал барча вазифаларни белгиланг! Қолган: {n}",
+        "day_closed_alert": "Бу кун ёпилган — таҳрирлаш мумкин эмас.",
+        "photos_only": "Фақат расм юборинг 📸",
+        "relay_fail": "❌ Расм қабул қилинмади (архив каналига юбориб бўлмади). Кейинроқ қайта уриниб кўринг ёки администраторга хабар беринг.",
+        "expired": "Сессия эскирган. /tasks буйруғини қайтадан юборинг.",
+        "saved_toast": "✅ Сақланди",
+    },
+    "ru": {
+        "not_leader": "Вы не лидер.",
+        "pick_profile": "С каким профилем продолжить?",
+        "menu_title": "📋 {name}\n📅 {date}\n\nВыберите задачу:",
+        "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 День закрыт. Результат: {score}%",
+        "btn_back": "⬅️ Назад",
+        "btn_close_day": "⚠️ ЗАКРЫТЬ ДЕНЬ ⚠️",
+        "farewell": "Вы можете выполнять свои задачи в любое время командой /tasks.",
+        "did_you": "Вы выполнили эту задачу?\n\n📌 {task}",
+        "btn_yes": "Да ✅",
+        "btn_no": "Нет ❌",
+        "photos_counter": "📌 {task}\n\nОтправьте минимум {min} фото как подтверждение.\n\n📸 Принято {k}/{min} фото.",
+        "btn_save": "💾 Сохранить",
+        "btn_discard": "🔄 Сбросить",
+        "reason_prompt": "📌 {task}\n\n✍️ Почему не выполнено? Напишите причину.",
+        "reason_confirm": "📌 {task}\n\n📝 Причина: {reason}\n\nСохранить?",
+        "reset_confirm": "Подтверждаете сброс прежних данных этой задачи для повторной сдачи?\n\n📌 {task}",
+        "btn_reset": "🔄 Пересдать",
+        "close_confirm": "Подтверждаете закрытие дня? Это действие нельзя отменить, и вы больше не сможете редактировать задачи!",
+        "btn_confirm": "✅ Подтвердить",
+        "closed_done": "🔒 День закрыт! Результат: {score}%",
+        "incomplete": "Сначала отметьте все задачи! Осталось: {n}",
+        "day_closed_alert": "Этот день закрыт — редактирование невозможно.",
+        "photos_only": "Отправьте именно фото 📸",
+        "relay_fail": "❌ Фото не принято (не удалось отправить в архивный канал). Попробуйте позже или сообщите администратору.",
+        "expired": "Сессия устарела. Отправьте команду /tasks заново.",
+        "saved_toast": "✅ Сохранено",
+    },
+    "en": {
+        "not_leader": "You're not a leader.",
+        "pick_profile": "Which profile do you want to continue with?",
+        "menu_title": "📋 {name}\n📅 {date}\n\nPick a task:",
+        "menu_closed": "📋 {name}\n📅 {date}\n\n🔒 Day closed. Score: {score}%",
+        "btn_back": "⬅️ Back",
+        "btn_close_day": "⚠️ CLOSE THE DAY ⚠️",
+        "farewell": "You can complete your tasks anytime by sending the /tasks command.",
+        "did_you": "Did you complete this task?\n\n📌 {task}",
+        "btn_yes": "Yes ✅",
+        "btn_no": "No ❌",
+        "photos_counter": "📌 {task}\n\nSend at least {min} photo(s) as proof.\n\n📸 {k}/{min} photos received.",
+        "btn_save": "💾 Save",
+        "btn_discard": "🔄 Reset",
+        "reason_prompt": "📌 {task}\n\n✍️ Why wasn't it done? Send the reason.",
+        "reason_confirm": "📌 {task}\n\n📝 Reason: {reason}\n\nSave it?",
+        "reset_confirm": "Do you confirm resetting this task's previous data so you can re-submit it?\n\n📌 {task}",
+        "btn_reset": "🔄 Re-submit",
+        "close_confirm": "Do you confirm closing this day? This can't be undone and you won't be able to edit your tasks anymore!",
+        "btn_confirm": "✅ Confirm",
+        "closed_done": "🔒 Day closed! Score: {score}%",
+        "incomplete": "Mark all tasks first! Remaining: {n}",
+        "day_closed_alert": "This day is closed — editing is not possible.",
+        "photos_only": "Photos only, please 📸",
+        "relay_fail": "❌ Photo not accepted (couldn't relay it to the archive channel). Try again later or tell an administrator.",
+        "expired": "Session expired. Send /tasks again.",
+        "saved_toast": "✅ Saved",
+    },
+}
+
+
+def _lt(lang: str, key: str) -> str:
+    return _LT_MESSAGES.get(lang, _LT_MESSAGES["uz"]).get(key, _LT_MESSAGES["uz"].get(key, key))
+
+
+def _lt_state(tid: int) -> dict | None:
+    return _state.get(tid, {}).get("lt")
+
+
+def _lt_stage(tid: int) -> str | None:
+    lt = _lt_state(tid)
+    return lt.get("stage") if lt else None
+
+
+def _lt_clear(tid: int):
+    _state.setdefault(tid, {}).pop("lt", None)
+
+
+def _lt_leader_profiles(db, tid: int) -> list[RoleProfile]:
+    """Leader RoleProfiles this account holds (approved role rows bind to a
+    profile via (manager_id, name) — the same mapping staff.py uses)."""
+    rows = (
+        db.query(TelegramUserRole)
+        .filter_by(telegram_id=tid, role="leader", status="approved")
+        .all()
+    )
+    out, seen = [], set()
+    for r in rows:
+        p = (
+            db.query(RoleProfile)
+            .filter_by(role="leader", manager_id=r.role_id, name=r.full_name)
+            .first()
+        )
+        if p and p.id not in seen:
+            seen.add(p.id)
+            out.append(p)
+    return out
+
+
+def _lt_btn(text: str, data: str) -> types.InlineKeyboardButton:
+    return types.InlineKeyboardButton(text[:60], callback_data=data)
+
+
+def _lt_profile_kb(db, profs: list[RoleProfile]) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for p in profs:
+        mgr = db.query(Manager).filter_by(id=p.manager_id).first()
+        label = f"{p.name} · {mgr.name}" if mgr else p.name
+        kb.add(_lt_btn(label, f"lt:prof:{p.id}"))
+    return kb
+
+
+def _lt_day(db, pid: int, date: str) -> LeaderTaskDay | None:
+    return db.query(LeaderTaskDay).filter_by(leader_id=pid, date=date).first()
+
+
+def _lt_entries(db, day: LeaderTaskDay | None) -> dict[int, LeaderTaskEntry]:
+    if not day:
+        return {}
+    return {e.task_id: e for e in db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
+
+
+def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):
+    """Render the task list (or the closed-day view) — edit msg_id in place
+    when given, else send a fresh message."""
+    prof = db.query(RoleProfile).filter_by(id=pid).first()
+    if not prof:
+        bot.send_message(chat_id, _lt(lang, "expired"))
+        return
+    date = effective_date()
+    day = _lt_day(db, pid, date)
+    entries = _lt_entries(db, day)
+    cfg = effective_settings(db, prof.manager_id)
+    defs = {td.id: td for td in ensure_task_defs(db)}
+
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    if day and day.closed_at:
+        text = _lt(lang, "menu_closed").format(
+            name=prof.name, date=date,
+            score=round(float(day.completion or 0)),
+        )
+        for td_id, s in cfg.items():
+            if not s["enabled"]:
+                continue
+            e = entries.get(td_id)
+            mark = "✅ " if (e and e.done) else ("❌ " if e else "")
+            kb.add(_lt_btn(f"{mark}{task_name(defs[td_id], lang)}", f"lt:noop:{pid}"))
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
+    else:
+        text = _lt(lang, "menu_title").format(name=prof.name, date=date)
+        for td_id, s in cfg.items():
+            if not s["enabled"]:
+                continue
+            e = entries.get(td_id)
+            mark = "✅ " if (e and e.done) else ("❌ " if e else "")
+            kb.add(_lt_btn(f"{mark}{task_name(defs[td_id], lang)}", f"lt:task:{pid}:{td_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
+        kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
+
+    if msg_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+            return
+        except Exception:
+            pass
+    bot.send_message(chat_id, text, reply_markup=kb)
+
+
+def _lt_relay_photo(db, message: types.Message) -> tuple[str, int] | None:
+    """Bytes round-trip: download the photo into RAM, upload it to the archive
+    channel, return the CHANNEL copy's (file_id, message_id). None = relay
+    unavailable/failed — per spec the upload is then rejected."""
+    chan = channel_chat_id(db)
+    if not chan:
+        return None
+    try:
+        best = max(message.photo, key=lambda p: p.file_size or 0)
+        tf = bot.get_file(best.file_id)
+        data = bot.download_file(tf.file_path)  # kept in memory, never on disk
+        sent = bot.send_photo(chan, data)
+        fid = max(sent.photo, key=lambda p: p.file_size or 0).file_id
+        return fid, sent.message_id
+    except Exception:
+        logger.warning("Leader-task photo relay failed", exc_info=True)
+        return None
+
+
+def _lt_save_entry(db, pid: int, task_id: int, done: bool,
+                   reason: str | None, media: list[tuple[str, int]]) -> bool:
+    """Persist one task's answer. False when the day is already closed."""
+    prof = db.query(RoleProfile).filter_by(id=pid).first()
+    if not prof:
+        return False
+    date = effective_date()
+    day = _lt_day(db, pid, date)
+    if day and day.closed_at:
+        return False
+    if not day:
+        day = LeaderTaskDay(leader_id=pid, manager_id=prof.manager_id, date=date)
+        db.add(day)
+        db.flush()
+    old = db.query(LeaderTaskEntry).filter_by(day_id=day.id, task_id=task_id).first()
+    if old:
+        db.query(LeaderTaskMedia).filter_by(entry_id=old.id).delete()
+        db.delete(old)
+        db.flush()
+    entry = LeaderTaskEntry(day_id=day.id, task_id=task_id, done=done, reason=reason)
+    db.add(entry)
+    db.flush()
+    for i, (fid, mid) in enumerate(media):
+        db.add(LeaderTaskMedia(entry_id=entry.id, file_id=fid, message_id=mid, pos=i))
+    db.commit()
+    return True
+
+
+@bot.message_handler(commands=["tasks"])
+def _lt_cmd(message: types.Message):
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    _lt_clear(tid)  # a fresh /tasks abandons any half-done capture
+    with SessionLocal() as db:
+        profs = _lt_leader_profiles(db, tid)
+        if not profs:
+            bot.send_message(message.chat.id, _lt(lang, "not_leader"))
+            return
+        if len(profs) == 1:
+            _lt_menu(db, tid, profs[0].id, lang, message.chat.id, None)
+        else:
+            bot.send_message(message.chat.id, _lt(lang, "pick_profile"),
+                             reply_markup=_lt_profile_kb(db, profs))
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("lt:"))
+def _lt_callback(call: types.CallbackQuery):
+    tid = call.from_user.id
+    lang = _get_lang(tid)
+    parts = call.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    chat_id = call.message.chat.id
+    msg_id = call.message.message_id
+
+    with SessionLocal() as db:
+        profs = {p.id: p for p in _lt_leader_profiles(db, tid)}
+
+        if action == "noop":
+            bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"))
+            return
+
+        try:
+            pid = int(parts[2])
+        except (IndexError, ValueError):
+            bot.answer_callback_query(call.id)
+            return
+        prof = profs.get(pid)
+        if not prof:  # stale button / re-claimed profile
+            bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
+            return
+
+        date = effective_date()
+        day = _lt_day(db, pid, date)
+        closed = bool(day and day.closed_at)
+        defs = {td.id: td for td in ensure_task_defs(db)}
+        cfg = effective_settings(db, prof.manager_id)
+
+        def tname(tid_):
+            td = defs.get(tid_)
+            return task_name(td, lang) if td else f"T{tid_}"
+
+        if action == "prof":
+            _lt_clear(tid)
+            bot.answer_callback_query(call.id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action == "menu":
+            _lt_clear(tid)
+            bot.answer_callback_query(call.id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action == "back":
+            _lt_clear(tid)
+            bot.answer_callback_query(call.id)
+            if len(profs) > 1:
+                try:
+                    bot.edit_message_text(_lt(lang, "pick_profile"), chat_id=chat_id,
+                                          message_id=msg_id,
+                                          reply_markup=_lt_profile_kb(db, list(profs.values())))
+                except Exception:
+                    pass
+            else:
+                try:
+                    bot.edit_message_text(_lt(lang, "farewell"), chat_id=chat_id,
+                                          message_id=msg_id)
+                except Exception:
+                    pass
+            return
+
+        if action == "task":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            if task_id not in cfg or not cfg[task_id]["enabled"]:
+                bot.answer_callback_query(call.id)
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            entries = _lt_entries(db, day)
+            bot.answer_callback_query(call.id)
+            if task_id in entries:
+                # already answered → confirm reset-for-resubmission
+                kb = types.InlineKeyboardMarkup()
+                kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"),
+                       _lt_btn(_lt(lang, "btn_reset"), f"lt:rconf:{pid}:{task_id}"))
+                try:
+                    bot.edit_message_text(_lt(lang, "reset_confirm").format(task=tname(task_id)),
+                                          chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+                except Exception:
+                    pass
+            else:
+                kb = types.InlineKeyboardMarkup()
+                kb.row(_lt_btn(_lt(lang, "btn_yes"), f"lt:yes:{pid}:{task_id}"),
+                       _lt_btn(_lt(lang, "btn_no"), f"lt:no:{pid}:{task_id}"))
+                kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"))
+                try:
+                    bot.edit_message_text(_lt(lang, "did_you").format(task=tname(task_id)),
+                                          chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+                except Exception:
+                    pass
+            return
+
+        if action == "rconf":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            entries = _lt_entries(db, day)
+            e = entries.get(task_id)
+            if e:  # channel posts stay (audit trail); only our rows go
+                db.query(LeaderTaskMedia).filter_by(entry_id=e.id).delete()
+                db.delete(e)
+                db.commit()
+            bot.answer_callback_query(call.id)
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action == "yes":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            need = cfg.get(task_id, {}).get("min_media", 1)
+            if need <= 0:  # no proof required — save instantly
+                _lt_save_entry(db, pid, task_id, True, None, [])
+                bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
+                _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+                return
+            _state.setdefault(tid, {})["lt"] = {
+                "stage": "photos", "pid": pid, "task": task_id,
+                "chat": chat_id, "msg_id": msg_id, "min": need, "media": [],
+            }
+            kb = types.InlineKeyboardMarkup(row_width=1)
+            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+            bot.answer_callback_query(call.id)
+            try:
+                bot.edit_message_text(
+                    _lt(lang, "photos_counter").format(task=tname(task_id), min=need, k=0),
+                    chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+            except Exception:
+                pass
+            return
+
+        if action == "no":
+            task_id = int(parts[3])
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            _state.setdefault(tid, {})["lt"] = {
+                "stage": "reason", "pid": pid, "task": task_id,
+                "chat": chat_id, "msg_id": msg_id,
+            }
+            kb = types.InlineKeyboardMarkup(row_width=1)
+            kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+            bot.answer_callback_query(call.id)
+            try:
+                bot.edit_message_text(_lt(lang, "reason_prompt").format(task=tname(task_id)),
+                                      chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+            except Exception:
+                pass
+            return
+
+        if action == "save":
+            task_id = int(parts[3])
+            lt = _lt_state(tid)
+            if not lt or lt.get("pid") != pid or lt.get("task") != task_id:
+                bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
+                return
+            if lt["stage"] == "photos":
+                if len(lt["media"]) < lt["min"]:
+                    bot.answer_callback_query(call.id)
+                    return
+                ok = _lt_save_entry(db, pid, task_id, True, None, lt["media"])
+            elif lt["stage"] == "confirm_reason":
+                ok = _lt_save_entry(db, pid, task_id, False, lt.get("reason") or "", [])
+            else:
+                bot.answer_callback_query(call.id)
+                return
+            _lt_clear(tid)
+            if not ok:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+        if action == "close":
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            entries = _lt_entries(db, day)
+            missing = [t for t, s in cfg.items() if s["enabled"] and t not in entries]
+            if missing:
+                bot.answer_callback_query(
+                    call.id, _lt(lang, "incomplete").format(n=len(missing)), show_alert=True)
+                return
+            kb = types.InlineKeyboardMarkup()
+            kb.row(_lt_btn(_lt(lang, "btn_back"), f"lt:menu:{pid}"),
+                   _lt_btn(_lt(lang, "btn_confirm"), f"lt:cconf:{pid}"))
+            bot.answer_callback_query(call.id)
+            try:
+                bot.edit_message_text(_lt(lang, "close_confirm"),
+                                      chat_id=chat_id, message_id=msg_id, reply_markup=kb)
+            except Exception:
+                pass
+            return
+
+        if action == "cconf":
+            if closed:
+                bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
+                return
+            entries = _lt_entries(db, day)
+            missing = [t for t, s in cfg.items() if s["enabled"] and t not in entries]
+            if missing or not day:
+                bot.answer_callback_query(
+                    call.id, _lt(lang, "incomplete").format(n=len(missing) or 1), show_alert=True)
+                return
+            day.closed_at = datetime.now(timezone.utc)
+            day.completion = compute_completion(cfg, list(entries.values()))
+            db.commit()
+            bot.answer_callback_query(call.id, _lt(lang, "closed_done").format(
+                score=round(float(day.completion))))
+            _lt_menu(db, tid, pid, lang, chat_id, msg_id)
+            return
+
+    bot.answer_callback_query(call.id)
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "photos",
+                     content_types=["photo"])
+def _lt_photo(message: types.Message):
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    lt = _lt_state(tid)
+    if not lt:
+        return
+    with SessionLocal() as db:
+        relayed = _lt_relay_photo(db, message)
+        if not relayed:
+            bot.send_message(message.chat.id, _lt(lang, "relay_fail"))
+            return
+        lt["media"].append(relayed)
+        k, need, pid, task_id = len(lt["media"]), lt["min"], lt["pid"], lt["task"]
+        defs = {td.id: td for td in ensure_task_defs(db)}
+        td = defs.get(task_id)
+        tname = task_name(td, lang) if td else f"T{task_id}"
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    if k >= need:
+        kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
+    kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+    try:  # counter edits in place; concurrent album items re-render the latest k
+        bot.edit_message_text(
+            _lt(lang, "photos_counter").format(task=tname, min=need, k=k),
+            chat_id=lt["chat"], message_id=lt["msg_id"], reply_markup=kb)
+    except Exception:
+        pass
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "photos",
+                     content_types=["video", "document", "audio", "voice",
+                                    "animation", "video_note", "sticker"])
+def _lt_wrong_media(message: types.Message):
+    bot.send_message(message.chat.id, _lt(_get_lang(message.from_user.id), "photos_only"))
+
+
+@bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "reason",
+                     content_types=["text"])
+def _lt_reason(message: types.Message):
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    lt = _lt_state(tid)
+    if not lt:
+        return
+    text = (message.text or "").strip()
+    if not text or text.startswith("/"):  # unknown command mid-capture → abandon
+        _lt_clear(tid)
+        bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+        return
+    pid, task_id = lt["pid"], lt["task"]
+    # Per spec: the prompt is DELETED and a fresh save/reset message is sent so
+    # it lands below the leader's answer.
+    try:
+        bot.delete_message(lt["chat"], lt["msg_id"])
+    except Exception:
+        pass
+    with SessionLocal() as db:
+        defs = {td.id: td for td in ensure_task_defs(db)}
+        td = defs.get(task_id)
+        tname = task_name(td, lang) if td else f"T{task_id}"
+    kb = types.InlineKeyboardMarkup()
+    kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"),
+           _lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
+    sent = bot.send_message(
+        message.chat.id,
+        _lt(lang, "reason_confirm").format(task=tname, reason=text[:800]),
+        reply_markup=kb)
+    lt.update(stage="confirm_reason", reason=text[:800], msg_id=sent.message_id)
+
+
 # ── Media → file_id echo (admins only) ────────────────────────────────────────
 # Any attachment an admin sends outside a /broadcast draft is answered with its
 # file_id in a tap-to-copy <code> block, so it can be pasted into the admin
