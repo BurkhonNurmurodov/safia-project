@@ -6259,6 +6259,8 @@ const t = {
     "production.editManually":     "Edit manually",
     "production.editRow":          "Edit",
     "production.editTitle":        "Edit position",
+    "production.wcEditTitle":      "Team staffing",
+    "production.wcEditHint":       "Leave empty to use the calculated value. The change applies to the selected date only.",
     "production.addRow":           "Add",
     "production.createTitle":      "New position",
     "production.cancelEdit":       "Cancel",
