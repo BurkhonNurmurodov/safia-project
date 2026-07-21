@@ -1500,6 +1500,7 @@ const t = {
     "production.peopleActual":     "Bugungi fakt",
     "production.efficiency":       "Samaradorlik",
     "production.perPerson":        "1 kishiga",
+    "production.ofShift":          "smenadan",
     "production.apply":            "Qo'llash",
     "production.peopleTotal":      "Jami",
     "production.unsaved":          "saqlanmagan",
