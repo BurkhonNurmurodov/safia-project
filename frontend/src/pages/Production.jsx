@@ -756,6 +756,30 @@ export default function Production() {
     else done();
   };
 
+  // Staffing card «tahrirlash»: pre-fill only the values that are already pinned,
+  // so a blank input keeps meaning "follow the formula / the configured штатка".
+  const startWcEdit = (w) => {
+    setWcDraft({
+      people: w.people_overridden ? String(w.people) : "",
+      shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
+    });
+    setWcEdit(w);
+  };
+  const saveWcEdit = () => {
+    if (!wcEdit) return;
+    const num = (v) => {
+      const s = String(v ?? "").trim();
+      if (s === "") return null;                       // blank → clear the pin
+      const n = Number(s.replace(",", "."));
+      return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+    };
+    wcOverride.mutate({
+      work_center: wcEdit.work_center,
+      people: num(wcDraft.people),
+      shtatka: num(wcDraft.shtatka),
+    });
+  };
+
   // The reveal strip is appended below its row inside the scroll container, so
   // selecting the LAST row leaves the strip below the fold. Nudge it into view.
   useEffect(() => {
