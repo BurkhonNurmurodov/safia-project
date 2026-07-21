@@ -166,6 +166,10 @@ def compute_dashboard(
             "work_center": code,
             "shtatka": shtatka,           # штатка (W) — effective
             "capacity": s_eff,            # S — productive minutes for the roster
+            # raw per-WC capacity config: not None = S is hand-set and the
+            # efficiency % does NOT move it (the «Odamlar soni» preview needs
+            # to know which cells ignore the %).
+            "capacity_cfg": cap,
             "people": people,             # O. SONI (N) — effective
             "total_labor": q,             # Σ Общ.трудоёмкость for this WC
             "load": load,                 # Загруженность (O)
