@@ -3262,6 +3262,7 @@ const t = {
     "nav.production":      "Производство",
     "nav.trudoyomkost":    "Прогноз плана",
     "nav.leaders":         "Контроль лидеров",
+    "nav.leadersBot":      "Контроль лидеров · Бот",
     "nav.kaizen":          "Кайзен-проекты",
     "nav.quality":         "Качество и жалобы",
     "nav.activity":        "Активность пользователей",
