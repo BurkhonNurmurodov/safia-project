@@ -2020,23 +2020,32 @@ def _lt_photo(message: types.Message):
             bot.send_message(message.chat.id, _lt(lang, "relay_fail"))
             return
         cap.media = (cap.media or []) + [list(relayed)]  # reassign → JSONB change tracked
-        db.commit()
         k, need = len(cap.media), cap.min_media
         pid, task_id = cap.leader_id, cap.task_id
-        chat, counter_id = cap.chat_id, cap.message_id
+        chat, old_counter = cap.chat_id, cap.message_id
         defs = {td.id: td for td in ensure_task_defs(db)}
         td = defs.get(task_id)
         tname = task_name(td, lang) if td else f"T{task_id}"
-    kb = types.InlineKeyboardMarkup(row_width=1)
-    if k >= need:
-        kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
-    kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
-    try:  # counter edits in place; concurrent album items re-render the latest k
-        bot.edit_message_text(
-            _lt(lang, "photos_counter").format(task=tname, min=need, k=k),
-            chat_id=chat, message_id=counter_id, reply_markup=kb)
-    except Exception:
-        pass
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        if k >= need:
+            kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
+        kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
+        # The counter FOLLOWS the chat: delete the old counter message and send
+        # a fresh one below the uploads — editing in place left the Save button
+        # stranded above the photos. Album items are serialized by the row lock,
+        # so each delete/send/update sees the previous one's message id.
+        try:
+            bot.delete_message(chat, old_counter)
+        except Exception:
+            pass
+        try:
+            sent = bot.send_message(
+                chat, _lt(lang, "photos_counter").format(task=tname, min=need, k=k),
+                reply_markup=kb)
+            cap.message_id = sent.message_id
+        except Exception:
+            logger.warning("Leader-task counter re-send failed", exc_info=True)
+        db.commit()
 
 
 @bot.message_handler(func=lambda m: _lt_stage(m.from_user.id) == "photos",
