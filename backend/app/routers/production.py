@@ -175,6 +175,9 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
         .all()
     )
     daily = db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).all()
+    wc_daily = db.query(PPWorkCenterDaily).filter(
+        PPWorkCenterDaily.manager_id == manager_id, PPWorkCenterDaily.date == day).all()
+    wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka} for o in wc_daily}
 
     quantities: dict[tuple[str, str], dict] = {}
     for d in daily:
