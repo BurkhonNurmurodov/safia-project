@@ -760,6 +760,16 @@ export default function Production() {
       setWcEdit(null);
     },
   });
+  // «Odamlar soni» tab — the day's efficiency + every cell's actual O.soni /
+  // штатка in ONE commit, after which the whole page recomputes off them.
+  const staffing = useMutation({
+    mutationFn: (body) => api.post("/api/production/staffing", { date, ...body }, { params: managerParam }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      setStaffingSaved(true);
+      setTimeout(() => setStaffingSaved(false), 2500);
+    },
+  });
   // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
   // Admin-only endpoint; renaming sap_code/work_center re-points the SKU/unit.
   const catalog = useMutation({
