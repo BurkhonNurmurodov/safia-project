@@ -2638,6 +2638,7 @@ const t = {
     "admin.tabBroadcast":    "Хабарнома",
     "admin.tabMedia":        "Медиа",
     "admin.tabCleanup":      "Тозалаш",
+    "admin.tabLtasks":       "Лидерлар мониторинги",
 
     // Media (file_id) viewer
     "media.title":          "Медиа кўрувчи",
