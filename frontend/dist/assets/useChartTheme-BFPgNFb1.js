@@ -1,1 +1,0 @@
-import{p as a}from"./index-qq_t6aZ4.js";function t(){const{theme:r}=a(),e=r==="dark";return{chartTheme:{mode:e?"dark":"light"},cardBg:e?"#1a1d27":"#ffffff",gridColor:e?"#1e2235":"#e5e7eb",labelColor:e?"#6b7280":"#9ca3af",legendColor:e?"#9ca3af":"#374151",tooltipTheme:e?"dark":"light",background:"transparent"}}export{t};
