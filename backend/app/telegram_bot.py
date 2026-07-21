@@ -16,10 +16,14 @@ from sqlalchemy import and_, or_, text
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
-    Admin, BroadcastDraft, Manager, RegistrationNotice, RoleProfile, TelegramUser,
-    TelegramUserRole, Translation,
+    Admin, BroadcastDraft, LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager,
+    RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
+from app.services.leader_tasks import (
+    channel_chat_id, compute_completion, effective_date, effective_settings,
+    ensure_task_defs, task_name,
+)
 from app.translit import transliterate as _to_uz_latin
 
 logger = logging.getLogger(__name__)
