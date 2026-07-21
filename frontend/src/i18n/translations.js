@@ -3119,6 +3119,8 @@ const t = {
     "production.editManually":     "Қўлда ўзгартириш",
     "production.editRow":          "Таҳрирлаш",
     "production.editTitle":        "Позицияни таҳрирлаш",
+    "production.wcEditTitle":      "Жамоа таркиби",
+    "production.wcEditHint":       "Бўш қолдирилса ҳисобланган қиймат ишлатилади. Ўзгартириш фақат танланган санага тегишли.",
     "production.addRow":           "Қўшиш",
     "production.createTitle":      "Янги позиция",
     "production.cancelEdit":       "Бекор қилиш",
