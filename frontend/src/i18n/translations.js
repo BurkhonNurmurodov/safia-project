@@ -3082,6 +3082,7 @@ const t = {
     "production.peopleActual":     "Бугунги факт",
     "production.efficiency":       "Самарадорлик",
     "production.perPerson":        "1 кишига",
+    "production.ofShift":          "сменадан",
     "production.apply":            "Қўллаш",
     "production.peopleTotal":      "Жами",
     "production.unsaved":          "сақланмаган",
