@@ -497,6 +497,16 @@ export default function Production() {
     mutationFn: (payload) => api.post("/api/production/reconciliation", { date, data: payload }, { params: managerParam }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["production", date] }),
   });
+  // Staffing-card pin (O.soni / штатка) for one work center on the SELECTED date.
+  // Admin-only; both fields ride every call, null = drop the pin and go back to
+  // the computed N / configured штатка. Other dates and the config are untouched.
+  const wcOverride = useMutation({
+    mutationFn: (body) => api.post("/api/production/wc-override", { date, ...body }, { params: managerParam }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["production", date] });
+      setWcEdit(null);
+    },
+  });
   // Catalog line edit (PPProduct: sap_code / name / labor_time / work_center).
   // Admin-only endpoint; renaming sap_code/work_center re-points the SKU/unit.
   const catalog = useMutation({
