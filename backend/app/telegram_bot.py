@@ -1582,17 +1582,40 @@ def _lt(lang: str, key: str) -> str:
     return _LT_MESSAGES.get(lang, _LT_MESSAGES["uz"]).get(key, _LT_MESSAGES["uz"].get(key, key))
 
 
-def _lt_state(tid: int) -> dict | None:
-    return _state.get(tid, {}).get("lt")
+_LT_CAPTURE_TTL = timedelta(minutes=30)
+
+
+def _lt_capture(db, tid: int, lock: bool = False) -> LeaderTaskCapture | None:
+    """The account's in-flight capture row, or None. Stale rows (abandoned
+    flows) are deleted on touch. lock=True takes FOR UPDATE so concurrent
+    album photos landing on different workers serialize their appends."""
+    q = db.query(LeaderTaskCapture).filter_by(telegram_id=tid)
+    if lock:
+        q = q.with_for_update()
+    cap = q.first()
+    if not cap:
+        return None
+    ts = cap.updated_at
+    if ts is not None and ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    if ts is not None and datetime.now(timezone.utc) - ts > _LT_CAPTURE_TTL:
+        db.delete(cap)
+        db.commit()
+        return None
+    return cap
 
 
 def _lt_stage(tid: int) -> str | None:
-    lt = _lt_state(tid)
-    return lt.get("stage") if lt else None
+    """Handler-filter probe — its own short session, like _bc_active."""
+    with SessionLocal() as db:
+        cap = _lt_capture(db, tid)
+        return cap.stage if cap else None
 
 
 def _lt_clear(tid: int):
-    _state.setdefault(tid, {}).pop("lt", None)
+    with SessionLocal() as db:
+        db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+        db.commit()
 
 
 def _lt_leader_profiles(db, tid: int) -> list[RoleProfile]:
