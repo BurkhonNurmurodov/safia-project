@@ -17,6 +17,8 @@ Per work center w:
     S_w   = capacity (productive minutes for the roster), hand-set per WC;
             falls back to W_w × PRODUCTIVE_MIN when not configured
     N_w   = ROUND( W_w × Q_w / S_w )             people needed   (U = W*R, R = Q/S)
+            W_w and N_w may each be pinned for a single date (pp_work_center_daily);
+            a pinned W still feeds the formula, a pinned N replaces its result.
     load  (Загруженность, col O)             = Q_w / (SHIFT_MIN * N_w)   [IFERROR→0]
 
 Totals (header row):
