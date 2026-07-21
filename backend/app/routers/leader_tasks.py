@@ -158,7 +158,71 @@ def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depend
     return {"ok": True, "chat_id": chat_id}
 
 
-# ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────
+# ── Admin: bot-submission dashboard data ──────────────────────────────────────
+# The admin-only COPY of the leaders monitoring page (/leaders-bot) is driven by
+# this. Deliberately independent of /api/leaders: bot data and the Google-Sheet
+# data never mix — two pages, two sources.
+
+@router.get("/admin/leaders-bot")
+def leaders_bot(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    days = (
+        db.query(LeaderTaskDay)
+        .filter(LeaderTaskDay.closed_at.isnot(None))
+        .all()
+    )
+    profs = {
+        p.id: p
+        for p in db.query(RoleProfile)
+        .filter(RoleProfile.id.in_({d.leader_id for d in days}))
+        .all()
+    } if days else {}
+    mgrs = {m.id: m for m in db.query(Manager).all()}
+
+    day_ids = [d.id for d in days]
+    entries_by_day: dict[int, list] = {}
+    if day_ids:
+        for e in db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(day_ids)).all():
+            entries_by_day.setdefault(e.day_id, []).append(e)
+    entry_ids = [e.id for es in entries_by_day.values() for e in es]
+    media_by_entry: dict[int, list] = {}
+    if entry_ids:
+        for m in (db.query(LeaderTaskMedia)
+                  .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
+                  .order_by(LeaderTaskMedia.pos)
+                  .all()):
+            media_by_entry.setdefault(m.entry_id, []).append(m.id)
+
+    data = []
+    for d in days:
+        prof = profs.get(d.leader_id)
+        if not prof:
+            continue
+        mgr = mgrs.get(d.manager_id)
+        data.append({
+            "uid": f"bot-{d.id}",
+            "date": d.date,
+            "submitted_at": d.closed_at.isoformat() if d.closed_at else None,
+            "supervisor": mgr.name if mgr else "N/A",
+            "shift": mgr.shift if mgr else None,
+            "leader": prof.name,
+            "completion": float(d.completion or 0),
+            "tasks": [
+                {
+                    "id": e.task_id,
+                    "done": bool(e.done),
+                    "answered": True,
+                    "photo": "",
+                    "reason": e.reason or "",
+                    "media": media_by_entry.get(e.id, []),
+                }
+                for e in sorted(entries_by_day.get(d.id, []), key=lambda e: e.task_id)
+            ],
+        })
+    data.sort(key=lambda r: str(r["date"]), reverse=True)
+    return {"role": "admin", "last_synced": None, "data": data}
+
+
+# ── Viewer: proof-photo streaming for the /leaders-bot detail modal ───────────
 
 @router.get("/api/leader-tasks/media/{media_id}")
 def leader_task_media(
