@@ -431,13 +431,14 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   const previewPm = pctValid ? minOf(typedPct) : curPm;   // minutes + share follow typing
 
   // The suggestion runs off the CONFIGURED штатка, so it stays a stable
-  // reference to compare the typed actuals against. W cancels out unless the
-  // cell carries a hand-set capacity — those ignore the efficiency entirely.
+  // reference to compare the typed actuals against. S is always W × the
+  // previewed per-head minutes — which is exactly what saving the % makes the
+  // backend do, so the preview can never promise a number Save won't deliver.
+  // (W then cancels out: N = ROUND(Q / pm).)
   const suggest = (w, pm) => {
     const W = Number(w.shtatka_cfg) || 0;
     const Q = Number(w.total_labor) || 0;
-    const cap = w.capacity_cfg;
-    const S = cap != null && Number(cap) > 0 ? Number(cap) : W * pm;
+    const S = W * pm;
     return S > 0 && W > 0 ? roundHalfUp((W * Q) / S) : 0;
   };
 
