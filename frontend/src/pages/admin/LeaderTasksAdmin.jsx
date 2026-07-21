@@ -179,7 +179,7 @@ export default function LeaderTasksAdmin() {
                       </button>
                     </th>
                   ))}
-                  <th style={{ width: 30 }} />
+                  <th style={{ width: 56 }} />
                 </tr>
               </thead>
               <tbody>
