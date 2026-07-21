@@ -785,22 +785,26 @@ export default function Leaders({ botMode = false }) {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <Layout title={T.title} showFilters={false}>
+    <Layout title={botMode ? T.titleBot : T.title} showFilters={false}>
       {/* header: title + last-updated + refresh (right side, all profiles) */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{T.title}</h2>
+          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{botMode ? T.titleBot : T.title}</h2>
           {/* phones can't spare a whole pill row — updated time rides under the title */}
+          {!botMode && (
           <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }} title={lastSynced || T.never}>
             <CalendarClock size={12} style={{ color: "var(--brand-text)" }} />
             {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
           </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {!botMode && (
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
             <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
             {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
           </span>
+          )}
           {canRefresh && (
             <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
               aria-label={T.refresh} title={T.refresh}
