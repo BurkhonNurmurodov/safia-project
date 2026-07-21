@@ -643,6 +643,7 @@ export default function Production() {
   const [sort, setSort] = useState({ key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  const [staffingSaved, setStaffingSaved] = useState(false); // «Saqlandi» flash on the people tab
   const toggleSort = (key) =>
     setSort((s) => (s.key !== key ? { key, dir: "asc" }
       : s.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" }));
