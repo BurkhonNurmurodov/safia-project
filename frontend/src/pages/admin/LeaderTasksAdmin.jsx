@@ -261,7 +261,7 @@ export default function LeaderTasksAdmin() {
       {col && (
         <Modal
           title={`${t("admin.ltasks.colTitle")} — T${col.tid}`}
-          icon={ListChecks}
+          icon={<ListChecks size={14} />}
           onClose={() => setCol(null)}
           footer={
             <>
