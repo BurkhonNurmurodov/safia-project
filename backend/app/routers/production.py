@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -54,19 +55,25 @@ PAGE = "production"
 
 POSITIONS_TITLE = {"uz": "Pozitsiyalar", "uz_cyrl": "Позициялар", "ru": "Позиции", "en": "Positions"}
 
-# «Загрузка» workbook layout — the Excel export reproduces the brigadirs' manual
-# working file («DD.MM.YYYY загрузка <имя>.xlsx») verbatim: fixed columns A–L
-# with live formulas, a per-team loading block (N:Q), the indicator block (R:S)
-# and the staffing block (T:U). Labels stay in the template's original mixed
-# ru/uz wording regardless of UI language — it is their real production form.
-ZAGRUZKA_HEADERS = ["Махсулот САП коди", "SKU", "Трудоемкость", "Команда", "ЛЮДИ",
-                    "Команда (САП) ячейка", "План(Смена бошида)", "План(Смена охирида)",
-                    "Общ.трудаёмкост", "Общ.трудаёмкост", "Минут", "Парето"]
-ZAGRUZKA_WIDTHS = {"A": 15.7, "B": 50, "C": 14, "D": 11, "E": 6.4, "F": 15.7, "G": 19.3,
-                   "H": 19.9, "I": 16.4, "J": 16.4, "K": 7.1, "L": 9, "M": 0.9, "N": 9,
-                   "O": 7.7, "P": 14.6, "Q": 8.6, "R": 51.6, "S": 12.6, "T": 25, "U": 9}
-ZAGRUZKA_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
-ZAGRUZKA_SIDE_MIN_ROWS = 15  # minimum bordered rows in the N:Q team block
+# «ABC форма» workbook layout — the Excel export reproduces the brigadirs' manual
+# ABC form («Форма ABC … 8 соатлик») sheet-for-sheet: shift totals in row 1,
+# headers in row 2, position rows from row 3, the per-team block (M:W), the
+# indicator block (X:Y) and the staffing block (Z:AA).
+#
+# Only the four true inputs are written as values — Трудоемкость (C), Команда
+# (D), Факт (G), ПЛАН (H) — plus Штатка (W) and the reconciliation counts.
+# EVERYTHING else is a live formula, so editing any of those recalculates the
+# whole sheet exactly as the manual form does. Labels stay in the template's
+# original mixed ru/uz wording regardless of UI language.
+ABC_HEADERS = ["Сап код", "SKU", "Трудоемкость", "Команда", "ЛЮДИ", "вып %",
+               "Факт План", "ПЛАН", "Общ.трудаёмкост", "Минут", "Парето"]
+ABC_WIDTHS = {"A": 12.5, "B": 42, "C": 12.5, "D": 10.5, "E": 8, "F": 8, "G": 9.5,
+              "H": 9, "I": 12.5, "J": 8.5, "K": 8.5, "L": 4.5, "M": 10, "N": 8.5,
+              "O": 15, "P": 10, "Q": 9, "R": 8.5, "S": 9.5, "T": 8.5, "U": 7.5,
+              "V": 3, "W": 8.5, "X": 34, "Y": 11, "Z": 24, "AA": 9}
+ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
+ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
+ABC_TEAM_START = 6    # first row of the M:W per-team block, as in the form
 
 
 # --------------------------------------------------------------------------- #
@@ -270,13 +277,21 @@ def export_positions(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
-    """Excel export = the brigadirs' working «загрузка» file, pre-filled from the
-    day's dashboard and delivered to the caller's private Telegram chat. The
-    layout mirrors their manual template exactly — live formulas (ЛЮДИ via
-    VLOOKUP into the N:O team table, Общ.трудаёмкост =C*G/60, Парето vs the I2
-    shift sum, per-team SUMIFS loading) — so the file keeps recalculating as
-    the brigadir edits plans, teams or headcounts during the shift. Rows are
-    rendered in the exact order the client sends (`body.order`)."""
+    """Excel export = the brigadirs' manual «ABC форма» sheet, pre-filled from the
+    day's dashboard and delivered to the caller's private Telegram chat.
+
+    The layout mirrors that form cell-for-cell — totals in row 1, headers in row
+    2, positions from row 3, the per-team block in M:W, indicators in X:Y and the
+    staffing block in Z:AA. Only the true inputs are values (Трудоемкость, Команда,
+    Факт, ПЛАН, Штатка and the reconciliation counts); every derived cell is a live
+    formula — ЛЮДИ via VLOOKUP into the M:N team table, Общ.трудаёмкост =C*H/60,
+    Парето against the I1 shift sum, per-team SUMIFS loading — so the file keeps
+    recalculating as the brigadir edits it during the shift.
+
+    Two deliberate departures from the manual form: the indicator block's three
+    headcount figures are independent instead of all pointing at one cell (see the
+    X:Y section), and division-prone cells are wrapped in IFERROR so the spare rows
+    stay clean. Rows render in the exact order the client sends (`body.order`)."""
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
@@ -286,8 +301,9 @@ def export_positions(
         by_id = {r.get("id"): r for r in rows}
         rows = [by_id[i] for i in body.order if i in by_id]
     wcs = dash.get("work_centers") or []
-    sm, _pm = _constants(db)
-    sm = int(sm)
+    recon = dash.get("reconciliation") or {}
+    sm, pm = _constants(db)
+    sm, pm = int(sm), float(pm or DEFAULT_PRODUCTIVE_MIN)
 
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
     mgr_name = dash.get("manager_name") or ""
@@ -299,6 +315,7 @@ def export_positions(
 
     green_head = PatternFill("solid", fgColor="E2EFDA")   # header band / labels
     green_cell = PatternFill("solid", fgColor="C6E0B4")   # editable data area
+    yellow = PatternFill("solid", fgColor="FFFF00")       # key inputs (date, Штатка)
     bold = Font(bold=True)
     thin = Side(style="thin")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -306,125 +323,150 @@ def export_positions(
     left = Alignment(horizontal="left", vertical="center")
     head_al = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    data_end = 3 + len(rows) + ZAGRUZKA_SPARE_ROWS          # incl. spare formula rows
-    side_end = 3 + max(len(wcs), ZAGRUZKA_SIDE_MIN_ROWS)    # N:Q team block bottom
+    ds = ABC_DATA_START
+    data_end = ds + len(rows) + ABC_SPARE_ROWS - 1        # incl. spare formula rows
+    t0 = ABC_TEAM_START                                   # first team row
+    t1 = t0 + max(len(wcs), 1) - 1                        # last team row
+    ttot = t1 + 1                                         # SUM row under the block
 
-    # --- rows 1-2: shift-total sums over the Общ.трудаёмкост columns --------
-    ws["I1"], ws["J1"] = "Смена Бошида", "Смена Охирида"
-    ws["I2"], ws["J2"] = f"=+SUM(I4:I{data_end})", f"=SUM(J4:J{data_end})"
-    for coord in ("I1", "J1", "I2", "J2"):
+    # --- row 1: shift totals (вып % = actual/plan minutes, and the two sums) --
+    ws["E1"] = "=IFERROR(F1/I1,0)"
+    ws["F1"] = f"=+SUM(F{ds}:F{data_end})"
+    ws["H1"] = day                                        # the form's date cell
+    ws["I1"] = f"=SUM(I{ds}:I{data_end})"
+    for coord, nf in (("E1", "0%"), ("F1", "0.00"), ("H1", "DD.MMM"), ("I1", "#\\ ##0.00")):
         c = ws[coord]
-        c.border, c.alignment = border, center
-    ws["I1"].font = ws["J1"].font = bold
-    ws["I2"].number_format = ws["J2"].number_format = "#\\ ##0.00"
+        c.border, c.alignment, c.font, c.number_format = border, center, bold, nf
+    ws["E1"].fill, ws["H1"].fill = green_cell, yellow
 
-    # --- row 3: main headers -------------------------------------------------
-    for i, h in enumerate(ZAGRUZKA_HEADERS, start=1):
-        c = ws.cell(row=3, column=i, value=h)
+    # --- row 2: headers -------------------------------------------------------
+    for i, h in enumerate(ABC_HEADERS, start=1):
+        c = ws.cell(row=2, column=i, value=h)
         c.font, c.alignment, c.border = bold, head_al, border
-    ws.row_dimensions[3].height = 25.35
-    # green band over the editable columns (rows 1-3, as in the template)
-    for col in ("B", "C", "D", "G", "H"):
-        for r in (1, 2, 3):
-            ws[f"{col}{r}"].fill = green_head
+    for col, h in ((13, "Команда"), (14, "O. SONI"), (15, "Загруженность"),
+                   (23, "Штатка"), (24, "Показатель"), (25, "Кол-во"),
+                   (26, "Сколько должна на штатке")):
+        c = ws.cell(row=2, column=col, value=h)
+        c.font, c.alignment, c.border = bold, head_al, border
+    ws.row_dimensions[2].height = 25.35
 
-    # --- data rows (row 4+), then spare formula rows for hand-added SKUs -----
+    # --- position rows (row 3+), then spare formula rows for hand-added SKUs --
     for idx, r in enumerate(rows):
-        rn = 4 + idx
+        rn = ds + idx
         ws.cell(row=rn, column=1, value=r.get("sap_code") or "")
         ws.cell(row=rn, column=2, value=r.get("name") or "")
         ws.cell(row=rn, column=3, value=r.get("labor_time") if r.get("has_labor") else None)
         ws.cell(row=rn, column=4, value=r.get("work_center") or "")
-        ws.cell(row=rn, column=6, value=r.get("op") or None)
-        plan = r.get("plan_qty")
-        ws.cell(row=rn, column=7, value=plan if plan else None)
-    for rn in range(4, data_end + 1):
-        ws.cell(row=rn, column=5, value=f"=+VLOOKUP(D{rn},$N:$O,2,0)")
-        ws.cell(row=rn, column=9, value=f"=C{rn}*G{rn}/60")
-        ws.cell(row=rn, column=10, value=f"=C{rn}*H{rn}/60")
-        ws.cell(row=rn, column=11, value=f"=I{rn}/E{rn}")
-        ws.cell(row=rn, column=12, value=f"=+I{rn}/$I$2")
-        for cn in range(1, 13):
+        act, plan = r.get("actual_qty"), r.get("plan_qty")
+        ws.cell(row=rn, column=7, value=act if act else None)
+        ws.cell(row=rn, column=8, value=plan if plan else None)
+    for rn in range(ds, data_end + 1):
+        ws.cell(row=rn, column=5, value=f"=+IFERROR(VLOOKUP(D{rn},$M:$N,2,0),0)")   # ЛЮДИ
+        ws.cell(row=rn, column=6, value=f"=C{rn}*G{rn}/60")                          # вып %
+        ws.cell(row=rn, column=9, value=f"=C{rn}*H{rn}/60")                          # Общ.трудаёмкост
+        ws.cell(row=rn, column=10, value=f"=IFERROR(I{rn}/E{rn},0)")                 # Минут
+        ws.cell(row=rn, column=11, value=f"=+IFERROR(I{rn}/$I$1,0)")                 # Парето
+        for cn in range(1, 12):
             c = ws.cell(row=rn, column=cn)
             c.border = border
             c.alignment = left if cn in (1, 2) else center
-            if 2 <= cn <= 8:
+            if cn in (3, 4, 7, 8):        # the editable inputs
                 c.fill = green_cell
-        for cn, nf in ((3, "0.0"), (5, "0.0"), (9, "0.0"), (10, "0.0"), (11, "0.0"), (12, "0%")):
+        for cn, nf in ((3, "0.0"), (5, "0.0"), (6, "0.0"), (7, "0.0"), (8, "0"),
+                       (9, "0.0"), (10, "0.0"), (11, "0%")):
             ws.cell(row=rn, column=cn).number_format = nf
 
-    # --- N:Q — per-team headcount + loading (feeds the ЛЮДИ VLOOKUP) --------
-    for i, h in enumerate(("Команда", "O. SONI", "Загруженность", "Вакти"), start=14):
-        c = ws.cell(row=3, column=i, value=h)
-        c.font, c.alignment, c.border = bold, head_al, border
-    ws["O3"].fill = green_head
-    for idx in range(side_end - 3):
-        rn = 4 + idx
-        if idx < len(wcs):
-            ws.cell(row=rn, column=14, value=wcs[idx]["work_center"])
-            ws.cell(row=rn, column=15, value=wcs[idx]["people"])
-        ws.cell(row=rn, column=16,
-                value=f"=+IFERROR(SUMIFS($I:$I,$D:$D,$N{rn})/({sm}*VLOOKUP($N{rn},$D:$E,2,0)),0)")
-        ws.cell(row=rn, column=17, value=f"=(P{rn}*{sm / 100:g})*100")
-        for cn in range(14, 18):
+    # --- M:W — per-team block (feeds the ЛЮДИ VLOOKUP) ------------------------
+    # S (capacity) is emitted as =W*productive_min so that editing Штатка cascades
+    # into load and headcount; a hand-tuned PPWorkCenter.capacity stays a literal.
+    ws.cell(row=t0 - 1, column=19, value=f"Для {pm / sm:.0%} труд").alignment = center
+    ws.cell(row=t0 - 1, column=23, value=f"=SUM(W{t0}:W{t1})").number_format = "0"
+    ws.cell(row=t0 - 1, column=23).font = bold
+    for idx in range(t1 - t0 + 1):
+        rn = t0 + idx
+        w = wcs[idx] if idx < len(wcs) else {}
+        code = w.get("work_center") or ""
+        shtatka = int(w.get("shtatka") or 0)
+        cap = float(w.get("capacity") or 0)
+        ws.cell(row=rn, column=13, value=code)                                        # M Команда
+        ws.cell(row=rn, column=14, value=f"=ROUND(U{rn},0)")                          # N O. SONI
+        ws.cell(row=rn, column=15, value=(                                            # O Загруженность
+            f"=+IFERROR(SUMIFS($I:$I,$D:$D,$M{rn})/({sm}*VLOOKUP($M{rn},$D:$E,2,0)),0)"))
+        ws.cell(row=rn, column=16, value=code)                                        # P Команда
+        ws.cell(row=rn, column=17, value=f"=SUMIFS(I:I,D:D,P{rn})")                   # Q минут
+        ws.cell(row=rn, column=18, value=f"=IFERROR(Q{rn}/S{rn},0)")                  # R real load
+        hand_tuned = shtatka > 0 and abs(cap - shtatka * pm) > 0.01
+        ws.cell(row=rn, column=19,                                                    # S capacity
+                value=(round(cap, 2) if hand_tuned else f"=W{rn}*{pm:g}"))
+        ws.cell(row=rn, column=20, value=f"=IFERROR(SUMIFS(S:S,P:P,M{rn})/({sm}*W{rn}),0)")  # T
+        ws.cell(row=rn, column=21, value=f"=W{rn}*R{rn}")                             # U kerak (fract.)
+        ws.cell(row=rn, column=23, value=shtatka or None)                             # W Штатка
+        for cn in (13, 14, 15, 16, 17, 18, 19, 20, 21, 23):
             c = ws.cell(row=rn, column=cn)
             c.border, c.alignment = border, center
-        ws.cell(row=rn, column=16).number_format = "0%"
-        ws.cell(row=rn, column=17).number_format = "0_ "
+        ws.cell(row=rn, column=23).fill = yellow
+        for cn, nf in ((14, "0.0"), (15, "0%"), (17, "0"), (18, "0.0%"),
+                       (19, "0"), (20, "0.0%"), (21, "0.0"), (23, "0")):
+            ws.cell(row=rn, column=cn).number_format = nf
+    for cn, nf in ((14, "0.0"), (21, "0.0")):
+        c = ws.cell(row=ttot, column=cn,
+                    value=f"=SUM({get_column_letter(cn)}{t0}:{get_column_letter(cn)}{t1})")
+        c.border, c.alignment, c.font, c.number_format = border, center, bold, nf
 
-    # --- R:S — indicator block ----------------------------------------------
+    # --- X:Y — indicator block ------------------------------------------------
+    # The manual form points «keldi», «kelishi kerak edi» and «kerak» at the same
+    # cell, which pins spare-people to 0, обеспеч to 100% and абсетеизм to 0%.
+    # Here they are three independent figures:
+    #   keldi           = AA8 «Сравнение» — roster minus brigadir/лидер/мицу/отдихает
+    #   kelishi kerak   = AA3 «По штатке Факт» — the roster the day was planned on
+    #   kerak           = N<ttot> — headcount the workload actually requires
     indicators = [
-        ("Nechta odam keldi", f"=SUM(O4:O{side_end})", None),
-        ("Nechta odam kelishi kerak edi", None, None),                 # manual
-        ("Nechta odam kerak", f"=ROUND(I2/(0.85*{sm}),0)", None),
-        ("Bo`sh odam/kerakli odam", "=+S4-S6", None),
-        ("Kerakli odam bilan o`rtacha bandlik", f"=I2/(S6*{sm})", "0%"),
-        ("Hozirgi odam bilan o`rtacha bandlik(smena boshida)", f"=I2/(S4*{sm})", "0%"),
-        ("% обеспеч", "=S4/S6", "0%"),
-        ("% абсетеизм", "=1-(S4/S5)", "0%"),
-        ("Hozirgi odam bilan o`rtacha bandlik(smena oxirida)", f"=J2/(S4*{sm})", "0%"),
+        ("Nechta odam keldi",                   "=AA8",                          "0"),
+        ("Nechta odam kelishi kerak edi",       "=AA3",                          "0"),
+        ("Nechta odam kerak",                   f"=N{ttot}",                     "0"),
+        ("Bo`sh odam/kerakli odam",             "=+Y3-Y5",                       "0"),
+        ("Kerakli odam bilan o`rtacha bandlik", f"=IFERROR(I1/(Y5*{sm}),0)",     "0%"),
+        ("Hozirgi odam bilan o`rtacha bandlik", f"=IFERROR(I1/(Y3*{sm}),0)",     "0%"),
+        ("% обеспеч",                           "=IFERROR(Y3/Y5,0)",             "0%"),
+        ("% абсетеизм",                         '=IFERROR(1-(Y3/Y4),"")',        "0%"),
+        ("Общ.трудаёмкост",                     "=I1",                           "#\\ ##0.00"),
     ]
-    ws["R3"], ws["S3"] = "Показатель", "Количество"
-    for coord in ("R3", "S3"):
-        ws[coord].font, ws[coord].alignment, ws[coord].border = bold, head_al, border
     for idx, (label, formula, nf) in enumerate(indicators):
-        rn = 4 + idx
-        rc = ws.cell(row=rn, column=18, value=label)
-        sc = ws.cell(row=rn, column=19, value=formula)
-        rc.font, rc.alignment, rc.border = bold, left, border
-        sc.alignment, sc.border = center, border
-        if rn != 5:  # row 5 = the manual «kelishi kerak edi» entry, left white
-            rc.fill = sc.fill = green_head
-        if nf:
-            sc.number_format = nf
+        rn = ds + idx
+        xc = ws.cell(row=rn, column=24, value=label)
+        yc = ws.cell(row=rn, column=25, value=formula)
+        xc.font, xc.alignment, xc.border = bold, left, border
+        yc.alignment, yc.border, yc.number_format = center, border, nf
+        xc.fill = yc.fill = green_head
 
-    # --- T:U — staffing (штатка) block; counts are filled in by hand --------
+    # --- Z:AA — staffing (штатка) block, pre-filled from the reconciliation ---
     staffing = [
-        ("Сколько должна на штатке", sum(w.get("shtatka") or 0 for w in wcs) or None),
-        ("По штатке Факт", None),
-        ("Бригадир", None),
-        ("Лидер", None),
-        ("Мицу", None),
-        ("Отдихает", None),
-        ("Сравнение", "=U4-U5-U6-U7-U8"),
-        ("Верифекс", "=U9+U7+U6+U5"),
+        ("По штатке Факт", recon.get("po_shtatke_fact")),
+        ("Бригадир",       recon.get("brigadir")),
+        ("Лидер",          recon.get("lider")),
+        ("Мицу",           recon.get("mitsu")),
+        ("Отдихает",       recon.get("otdihaet")),
+        ("Сравнение",      "=AA3-AA4-AA5-AA6-AA7"),
+        ("Верифекс",       "=AA8+AA6+AA5+AA4"),
     ]
     for idx, (label, val) in enumerate(staffing):
-        rn = 3 + idx
-        tc = ws.cell(row=rn, column=20, value=label)
-        uc = ws.cell(row=rn, column=21, value=val)
-        tc.font, tc.alignment, tc.border = bold, center, border
-        uc.alignment, uc.border = center, border
-        if rn >= 4:
-            tc.fill = green_head
+        rn = ds + idx
+        zc = ws.cell(row=rn, column=26, value=label)
+        ac = ws.cell(row=rn, column=27, value=val)
+        zc.font, zc.alignment, zc.border = bold, center, border
+        ac.alignment, ac.border, ac.number_format = center, border, "0"
+        zc.fill = green_head
+        if not (isinstance(val, str) and val.startswith("=")):
+            ac.fill = yellow          # hand-entered counts
 
-    for col, w in ZAGRUZKA_WIDTHS.items():
+    ws.freeze_panes = "A3"
+    for col, w in ABC_WIDTHS.items():
         ws.column_dimensions[col].width = w
 
     bio = BytesIO()
     wb.save(bio)
     bio.seek(0)
-    fname = f"{day_h} загрузка {mgr_name}.xlsx" if mgr_name else f"{day_h} загрузка.xlsx"
+    fname = f"{day_h} ABC форма {mgr_name}.xlsx" if mgr_name else f"{day_h} ABC форма.xlsx"
     from app.telegram_bot import bot
     caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
     try:
