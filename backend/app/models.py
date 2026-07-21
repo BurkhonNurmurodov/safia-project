@@ -712,6 +712,92 @@ class LeaderSyncMeta(Base):
     row_count   = Column(Integer, default=0)
 
 
+class LeaderTaskDef(Base):
+    """Global catalog of the daily leader-checklist tasks, collected in-bot.
+    id = the historic sheet question number (1..13) so bot submissions and
+    Google-Form rows share task ids on the /leaders dashboard. Seeded lazily
+    from the dashboard's task list (services/leader_tasks.py); names are
+    editable via the admin column modal, per-language."""
+    __tablename__ = "leader_task_defs"
+
+    id           = Column(Integer, primary_key=True)  # question number, 1-based
+    name_uz      = Column(String, nullable=False)
+    name_uz_cyrl = Column(String, nullable=False)
+    name_ru      = Column(String, nullable=False)
+    name_en      = Column(String, nullable=False)
+    note_uz      = Column(String, nullable=True)
+    note_uz_cyrl = Column(String, nullable=True)
+    note_ru      = Column(String, nullable=True)
+    note_en      = Column(String, nullable=True)
+    # Virtual-default weight: a supervisor with no leader_task_settings row for
+    # this task uses this (the seeded weights sum to 100, so untouched
+    # supervisors never trip the ≠100 warning).
+    default_weight = Column(Integer, nullable=False, default=0)
+
+
+class LeaderTaskSetting(Base):
+    """Per-supervisor override of one task's config. Absent row = the virtual
+    default (enabled, min_media 1, LeaderTaskDef.default_weight)."""
+    __tablename__ = "leader_task_settings"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    task_id    = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False)
+    enabled    = Column(Boolean, nullable=False, default=True)
+    min_media  = Column(Integer, nullable=False, default=1)
+    weight     = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
+
+
+class LeaderTaskDay(Base):
+    """One leader's in-bot checklist day. Created lazily on the first saved
+    task; closed_at set by «KUNNI YOPISH» after which entries are immutable and
+    the day (only then) surfaces on the /leaders dashboard — where a Google-
+    Sheet row for the same (leader, date) still wins over this one. The `date`
+    follows the 09:00 boundary: a day runs 09:01 → 09:00 next morning, so the
+    21:00 night shift stays on its starting date."""
+    __tablename__ = "leader_task_days"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id  = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
+    manager_id = Column(Integer, nullable=False, index=True)  # supervisor unit at save time
+    date       = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    closed_at  = Column(DateTime(timezone=True), nullable=True)
+    completion = Column(Numeric(6, 2), nullable=True)  # weighted %, stamped at close
+
+    __table_args__ = (UniqueConstraint("leader_id", "date", name="uq_ltask_day"),)
+
+
+class LeaderTaskEntry(Base):
+    """One task's answer within a LeaderTaskDay: done (Ha) with proof media, or
+    not done (Yo'q) with a reason. Deleted wholesale when the leader resets the
+    task before closing the day (channel posts stay as the audit trail)."""
+    __tablename__ = "leader_task_entries"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    day_id   = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    task_id  = Column(Integer, nullable=False)
+    done     = Column(Boolean, nullable=False)
+    reason   = Column(Text, nullable=True)
+    saved_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_entry"),)
+
+
+class LeaderTaskMedia(Base):
+    """A proof photo re-uploaded (as bytes) to the archive channel. file_id /
+    message_id are the CHANNEL copy's — the private-chat original is never
+    stored, per spec."""
+    __tablename__ = "leader_task_media"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id   = Column(Integer, ForeignKey("leader_task_entries.id"), nullable=False, index=True)
+    file_id    = Column(String, nullable=False)
+    message_id = Column(BigInteger, nullable=True)
+    pos        = Column(Integer, nullable=False, default=0)
+
+
 class UserActivity(Base):
     """One row per (Telegram account, calendar day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average
