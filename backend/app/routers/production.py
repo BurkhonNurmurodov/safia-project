@@ -397,6 +397,13 @@ def export_positions(
             c.alignment = left if cn in (1, 2) else center
             if cn in (3, 4, 7, 8):        # the editable inputs
                 c.fill = green_cell
+        # Команда wears its identity colour instead of the plain editable green,
+        # so teams read at a glance exactly as the chips do in the app's table.
+        code = ws.cell(row=rn, column=4).value
+        if code:
+            fill, colour = _wc_style(str(code))
+            dc = ws.cell(row=rn, column=4)
+            dc.fill, dc.font = fill, Font(color=colour, bold=True)
         for cn, nf in ((3, "0.0"), (5, "0.0"), (6, "0.0"), (7, "0.0"), (8, "0"),
                        (9, "0.0"), (10, "0.0"), (11, "0%")):
             ws.cell(row=rn, column=cn).number_format = nf
