@@ -404,6 +404,8 @@ export default function Production() {
   const [createOpen, setCreateOpen] = useState(false); // "new position" modal open?
   const [confirmDel, setConfirmDel] = useState(null);  // row pending delete-confirm, or null
   const [catDraft, setCatDraft] = useState({});    // { sap_code, name, labor_time, work_center }
+  const [wcEdit, setWcEdit] = useState(null);      // staffing card being edited, or null
+  const [wcDraft, setWcDraft] = useState({ people: "", shtatka: "" }); // "" = follow the formula
   const stripRef = useRef(null);                   // revealed action strip → scroll into view
 
   // Supervisors are pinned to their own unit (the backend derives it from the
