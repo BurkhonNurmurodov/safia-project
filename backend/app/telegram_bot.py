@@ -261,6 +261,8 @@ _MESSAGES = {
         ),
         "bc_album_note":     "📎 {n} item(s) collected",
         "bc_continue_btn":   "Continue ›",
+        "bc_cancel_btn":     "✕ Cancel",
+        "bc_cancelled":      "✕ Broadcast cancelled.",
         "bc_choose":         "👥 Now choose the recipients:",
         "bc_choose_btn":     "👥 Choose recipients",
         "bc_empty":          "Send a message first.",
