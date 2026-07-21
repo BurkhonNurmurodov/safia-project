@@ -707,16 +707,16 @@ def save_staffing(
         raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
-    shift_min, _, global_pm = _day_constants(db, mid, day)
+    shift_min, _ = _constants(db)
 
+    # An explicit save always pins — the box opens at the unit's OWN rate, not at
+    # the platform default, so "equals the default" says nothing about intent.
     pm = body.productive_min
     if pm is not None:
         pm = round(float(pm), 2)
         if not (1 <= pm <= shift_min):
             raise HTTPException(status_code=400,
                                 detail=f"productive_min must be between 1 and {shift_min:g}")
-        if abs(pm - global_pm) < 0.001:      # back at the platform default → no pin
-            pm = None
     for r in body.rows:
         for name, val in (("people", r.people), ("shtatka", r.shtatka)):
             if val is not None and not (0 <= val <= 9999):
