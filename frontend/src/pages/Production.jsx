@@ -1111,20 +1111,34 @@ export default function Production() {
         )}
       </div>
 
-      {/* view switcher: computed dashboard / raw фаза / raw заголовок */}
-      <SegmentedToggle
-        className="mb-4"
-        value={view}
-        onChange={setView}
-        options={[
-          ["zagruzka", t("production.viewZagruzka")],
-          ["faza", t("production.viewFaza")],
-          ["zaga", t("production.viewZaga")],
-        ]}
-      />
+      {/* view switcher: computed dashboard / staffing / raw фаза / raw заголовок */}
+      <div className="overflow-x-auto mb-4">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[
+            ["zagruzka", t("production.viewZagruzka")],
+            ["people", t("production.viewPeople")],
+            ["faza", t("production.viewFaza")],
+            ["zaga", t("production.viewZaga")],
+          ]}
+        />
+      </div>
 
-      {view !== "zagruzka" && (
+      {(view === "faza" || view === "zaga") && (
         <RawView fileType={view} date={date} managerParam={managerParam} ready={managerReady} />
+      )}
+
+      {view === "people" && (
+        <PeopleTab
+          wcs={wcs}
+          constants={data?.constants}
+          loading={loading}
+          canEdit={canEditPeople}
+          onSave={(body) => staffing.mutate(body)}
+          saving={staffing.isPending}
+          savedAt={staffingSaved}
+        />
       )}
 
       {view === "zagruzka" && (<>
