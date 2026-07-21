@@ -1015,6 +1015,7 @@ const t = {
     "admin.tabBroadcast":    "Xabarnoma",
     "admin.tabMedia":        "Media",
     "admin.tabCleanup":      "Tozalash",
+    "admin.tabLtasks":       "Liderlar monitoringi",
 
     // Media (file_id) viewer
     "media.title":          "Media ko'ruvchi",
