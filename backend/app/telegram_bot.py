@@ -1897,10 +1897,12 @@ def _lt_callback(call: types.CallbackQuery):
                 bot.answer_callback_query(call.id, _lt(lang, "saved_toast"))
                 _lt_menu(db, tid, pid, lang, chat_id, msg_id)
                 return
-            _state.setdefault(tid, {})["lt"] = {
-                "stage": "photos", "pid": pid, "task": task_id,
-                "chat": chat_id, "msg_id": msg_id, "min": need, "media": [],
-            }
+            db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+            db.add(LeaderTaskCapture(
+                telegram_id=tid, stage="photos", leader_id=pid, task_id=task_id,
+                chat_id=chat_id, message_id=msg_id, min_media=need, media=[],
+            ))
+            db.commit()
             kb = types.InlineKeyboardMarkup(row_width=1)
             kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
             bot.answer_callback_query(call.id)
