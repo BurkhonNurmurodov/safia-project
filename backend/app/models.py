@@ -517,6 +517,29 @@ class PPWorkCenter(Base):
     __table_args__ = (UniqueConstraint("manager_id", "code", name="uq_pp_wc_manager_code"),)
 
 
+class PPWorkCenterDaily(Base):
+    """Per-day manual overrides for the staffing panel of one work center.
+
+    O. SONI (N) is normally derived — ROUND(W × Σlabor / S) — and штатка (W) is
+    global config on pp_work_centers. From the Production staffing cards an admin
+    may pin either for a SINGLE date; NULL means "use the computed / configured
+    value". Same semantics as pp_daily.*_override, so a day can always be reset
+    back to the formula and neither past days nor the master config are touched."""
+    __tablename__ = "pp_work_center_daily"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    work_center = Column(String, nullable=False)
+    people      = Column(Integer, nullable=True)   # N override (O. SONI)
+    shtatka     = Column(Integer, nullable=True)   # W override (штатка)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "work_center", name="uq_pp_wc_daily_key"),
+    )
+
+
 class PPDaily(Base):
     """Daily snapshot of plan/actual quantities per (brigadir, date, SAP code,
     work center). Grain matches the фаза SUMIFS (SKU + work center + date), so
