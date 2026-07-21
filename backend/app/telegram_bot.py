@@ -1937,21 +1937,23 @@ def _lt_callback(call: types.CallbackQuery):
 
         if action == "save":
             task_id = int(parts[3])
-            lt = _lt_state(tid)
-            if not lt or lt.get("pid") != pid or lt.get("task") != task_id:
+            cap = _lt_capture(db, tid, lock=True)
+            if not cap or cap.leader_id != pid or cap.task_id != task_id:
                 bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
                 return
-            if lt["stage"] == "photos":
-                if len(lt["media"]) < lt["min"]:
+            if cap.stage == "photos":
+                media = [(p[0], p[1]) for p in (cap.media or [])]
+                if len(media) < cap.min_media:
                     bot.answer_callback_query(call.id)
                     return
-                ok = _lt_save_entry(db, pid, task_id, True, None, lt["media"])
-            elif lt["stage"] == "confirm_reason":
-                ok = _lt_save_entry(db, pid, task_id, False, lt.get("reason") or "", [])
+                ok = _lt_save_entry(db, pid, task_id, True, None, media)
+            elif cap.stage == "confirm_reason":
+                ok = _lt_save_entry(db, pid, task_id, False, cap.reason or "", [])
             else:
                 bot.answer_callback_query(call.id)
                 return
-            _lt_clear(tid)
+            db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+            db.commit()
             if not ok:
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
