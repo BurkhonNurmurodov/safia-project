@@ -9,6 +9,7 @@ admin may pass ?manager_id=):
     POST /api/production/reconciliation     {date, data}
 
 Admin-only:
+    POST /api/production/wc-override        {date, work_center, people, shtatka}
     POST /admin/production/upload           file(s) + manager_id + date + mode
     GET  /admin/production/work-centers?manager_id=
     PUT  /admin/production/work-centers/{id}    {shtatka, capacity}
