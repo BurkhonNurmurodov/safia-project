@@ -1113,6 +1113,47 @@ export default function Production() {
       {/* reconciliation */}
       <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
 
+      {/* staffing pin (admin) — O.soni / штатка for ONE work center on ONE date */}
+      {wcEdit && (
+        <Modal
+          onClose={() => setWcEdit(null)}
+          title={t("production.wcEditTitle")}
+          subtitle={`${wcEdit.work_center} · ${ddmmyyyy(date)}`}
+          icon={<Users size={16} style={{ color: "var(--brand-text)" }} />}
+          dismissable={!wcOverride.isPending}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setWcEdit(null)}>{t("production.cancelEdit")}</Button>
+              <Button icon={<Save size={14} />} loading={wcOverride.isPending} onClick={saveWcEdit}>{t("production.save")}</Button>
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("production.oSoni")}>
+              <ModalInput
+                type="number"
+                value={wcDraft.people}
+                onChange={(v) => setWcDraft((d) => ({ ...d, people: v }))}
+                placeholder={fmt(wcEdit.people_calc, 0)}
+                className="tabular-nums"
+              />
+            </Field>
+            <Field label={t("production.shtatka")}>
+              <ModalInput
+                type="number"
+                value={wcDraft.shtatka}
+                onChange={(v) => setWcDraft((d) => ({ ...d, shtatka: v }))}
+                placeholder={fmt(wcEdit.shtatka_cfg, 0)}
+                className="tabular-nums"
+              />
+            </Field>
+          </div>
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+            {t("production.wcEditHint")}
+          </p>
+        </Modal>
+      )}
+
       {/* catalog line edit (admin) — SAP код / Наименование / Труд. / Команда */}
       {editRow && (
         <Modal
