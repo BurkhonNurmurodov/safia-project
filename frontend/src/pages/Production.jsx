@@ -986,23 +986,10 @@ export default function Production() {
                 <Bar value={w.load} color={c} height={6} track="var(--bg-card)" />
                 <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
                   {/* a pinned value goes brand-gold + bold, like an overridden Факт/ПЛАН cell */}
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">
-                      {t("production.oSoni")} <b style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.people, 0)}</b>
-                      {" · "}
-                      {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
-                    </span>
-                    {canEditStaffing && (
-                      <button
-                        type="button"
-                        onClick={() => startWcEdit(w)}
-                        title={t("production.editManually")}
-                        className="shrink-0 p-0.5 rounded-md opacity-50 hover:opacity-100 transition-opacity"
-                        style={{ color: "var(--text-2)" }}
-                      >
-                        <Pencil size={11} />
-                      </button>
-                    )}
+                  <span className="truncate">
+                    {t("production.oSoni")} <b style={{ color: w.people_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.people, 0)}</b>
+                    {" · "}
+                    {t("production.shtatka")} <b style={{ color: w.shtatka_overridden ? "var(--brand-text)" : "var(--text-2)" }}>{fmt(w.shtatka, 0)}</b>
                   </span>
                   <span className="tabular-nums shrink-0">{fmt(w.total_labor, 0)} {t("production.minUnit")}</span>
                 </div>
