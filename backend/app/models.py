@@ -540,6 +540,25 @@ class PPWorkCenterDaily(Base):
     )
 
 
+class PPDaySetting(Base):
+    """Per-(brigadir, date) planning constants for the staffing math.
+
+    Holds the day's efficiency: `productive_min` = productive minutes ONE person
+    contributes in the shift (the «Для 85% труд» figure), which is the S per head
+    behind N = ROUND(W × Σlabor / S). Set from the Production «Odamlar soni» tab;
+    no row (or NULL) = fall back to the global pp_productive_min app-setting, so
+    untouched days keep the platform default."""
+    __tablename__ = "pp_day_settings"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id     = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date           = Column(Date, nullable=False, index=True)
+    productive_min = Column(Numeric(8, 2), nullable=True)
+    updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_pp_day_setting_key"),)
+
+
 class PPDaily(Base):
     """Daily snapshot of plan/actual quantities per (brigadir, date, SAP code,
     work center). Grain matches the фаза SUMIFS (SKU + work center + date), so
