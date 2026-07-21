@@ -6246,6 +6246,7 @@ const t = {
     "production.peopleActual":     "Today's actual",
     "production.efficiency":       "Efficiency",
     "production.perPerson":        "per person",
+    "production.ofShift":          "of the shift",
     "production.apply":            "Apply",
     "production.peopleTotal":      "Total",
     "production.unsaved":          "unsaved",
