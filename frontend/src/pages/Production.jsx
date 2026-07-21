@@ -421,8 +421,9 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   useEffect(() => { setEffPct(String(pctOf(curPm))); setAppliedPm(curPm); }, [curPm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const typedPct = Number(String(effPct).replace(",", "."));
-  const pctValid = Number.isFinite(typedPct) && typedPct > 0 && typedPct <= 100;
-  const previewPm = pctValid ? minOf(typedPct) : curPm;   // the «= N min» chip follows typing
+  // capped by the shift itself — a head can't be productive longer than the clock
+  const pctValid = Number.isFinite(typedPct) && typedPct > 0 && minOf(typedPct) <= shiftMin;
+  const previewPm = pctValid ? minOf(typedPct) : curPm;   // minutes + share follow typing
 
   // The suggestion runs off the CONFIGURED штатка, so it stays a stable
   // reference to compare the typed actuals against. W cancels out unless the
