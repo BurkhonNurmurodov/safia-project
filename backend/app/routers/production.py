@@ -224,7 +224,7 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
             "actual_overridden": d.actual_override is not None,
         }
 
-    shift_min, productive_min = _constants(db)
+    shift_min, productive_min, global_pm = _day_constants(db, manager_id, day)
     result = compute_dashboard(
         products=[{
             "id": p.id,
