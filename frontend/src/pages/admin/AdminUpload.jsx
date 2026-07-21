@@ -14,6 +14,7 @@ import PageAccess from "./PageAccess";
 import ProductionUpload from "./ProductionUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
+import MediaViewer from "./MediaViewer";
 import { fillDescs } from "../../utils/segments";
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
