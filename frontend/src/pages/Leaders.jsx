@@ -470,8 +470,9 @@ export default function Leaders({ botMode = false }) {
   const isAdmin = auth?.role === "admin";
   // The refresh button is shown to every profile that can open this page — the
   // backend allows the "leaders" sheet re-sync for anyone with page access, and
-  // each still only reads their own scoped rows afterwards.
-  const canRefresh = true;
+  // each still only reads their own scoped rows afterwards. Bot mode has no
+  // sheet to sync, so no refresh at all.
+  const canRefresh = !botMode;
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
