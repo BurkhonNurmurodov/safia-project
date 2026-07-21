@@ -396,6 +396,11 @@ const roundHalfUp = (x) => Math.floor(x + 0.5);
 // and the true share of the shift it works out to (425 / 480 = 88.5%).
 const NOMINAL_BASE = 500;
 
+// Both tables pin every row to ONE height so the cell rows sit side by side —
+// a text row and a row of inputs are naturally 10px apart, which compounds down
+// the table. Tall enough to clear the inputs (34px + padding).
+const PT_ROW = "h-[48px]";
+
 function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
   const { t } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
@@ -469,6 +474,14 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
 
   const totalShtat = wcs.reduce((s, w) => s + (Number(w.shtatka_cfg) || 0), 0);
   const totalSuggest = wcs.reduce((s, w) => s + suggest(w, appliedPm), 0);
+  // what a cell currently COUNTS as: typed value, else the formula fallback
+  const effOf = (w, key) => {
+    if (!canEdit) return Number(key === "people" ? w.people : w.shtatka) || 0;
+    const typed = num((draft[w.work_center] || {})[key]);
+    return typed != null ? typed : Number(key === "people" ? w.people_calc : w.shtatka_cfg) || 0;
+  };
+  const totalActPeople = wcs.reduce((s, w) => s + effOf(w, "people"), 0);
+  const totalActShtat = wcs.reduce((s, w) => s + effOf(w, "shtatka"), 0);
 
   const chip = (code) => {
     const c = wcColor(code);
@@ -479,52 +492,57 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   };
 
   return (
+    <>
+    {/* Efficiency governs the suggestion AND, once saved, the whole page — so it
+        spans the full width above BOTH tables rather than living inside one of
+        them. Keeping the cards free of a toolbar is also what lets their rows
+        line up: they end up structurally identical, header for header. */}
+    <div className="rounded-2xl px-4 py-3 mb-3 flex items-center gap-2 flex-wrap"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {t("production.efficiency")}
+      </span>
+      <span className="flex items-center gap-1.5">
+        <input
+          value={effPct}
+          type="number"
+          step="0.1"
+          disabled={!canEdit}
+          onChange={(e) => setEffPct(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
+          className="w-20 rounded-lg px-3 py-2 text-sm outline-none tabular-nums"
+          style={{
+            background: "var(--bg-inner)", color: "var(--text-1)",
+            border: `1px solid ${pctValid ? "var(--border-md)" : "#ef4444"}`,
+          }}
+        />
+        <span className="text-sm" style={{ color: "var(--text-3)" }}>%</span>
+      </span>
+      {/* both readings follow the % as it is typed — the table waits for Apply */}
+      <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
+        title={`${fmt(NOMINAL_BASE, 0)} ${t("production.minUnit")} × ${fmt(typedPct, 1)}%`}
+        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+        = {fmt(previewPm, 0)} {t("production.minUnit")} / {t("production.perPerson")}
+      </span>
+      <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
+        title={`${fmt(previewPm, 0)} ${t("production.minUnit")} ÷ ${fmt(shiftMin, 0)} ${t("production.minUnit")}`}
+        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+        {fmt(shareOf(previewPm), 1)}% {t("production.ofShift")}
+      </span>
+      {canEdit && (
+        <Button size="lg" variant="secondary" className="ml-auto" onClick={apply}
+          disabled={!pctValid || Math.abs(previewPm - appliedPm) < 0.001}>
+          {t("production.apply")}
+        </Button>
+      )}
+    </div>
+
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
       {/* suggestion — formula output at the previewed efficiency */}
       <TableCard
         icon={Gauge}
         title={t("production.peopleSuggested")}
         right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} ${t("production.unitsCount")}`}</span>}
-        toolbar={
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              {t("production.efficiency")}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <input
-                value={effPct}
-                type="number"
-                step="0.1"
-                disabled={!canEdit}
-                onChange={(e) => setEffPct(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
-                className="w-20 rounded-lg px-3 py-2 text-sm outline-none tabular-nums"
-                style={{
-                  background: "var(--bg-inner)", color: "var(--text-1)",
-                  border: `1px solid ${pctValid ? "var(--border-md)" : "#ef4444"}`,
-                }}
-              />
-              <span className="text-sm" style={{ color: "var(--text-3)" }}>%</span>
-            </span>
-            {/* both readings follow the % as it is typed — the table waits for Apply */}
-            <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
-              title={`${fmt(NOMINAL_BASE, 0)} ${t("production.minUnit")} × ${fmt(typedPct, 1)}%`}
-              style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-              = {fmt(previewPm, 0)} {t("production.minUnit")} / {t("production.perPerson")}
-            </span>
-            <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
-              title={`${fmt(previewPm, 0)} ${t("production.minUnit")} ÷ ${fmt(shiftMin, 0)} ${t("production.minUnit")}`}
-              style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-              {fmt(shareOf(previewPm), 1)}% {t("production.ofShift")}
-            </span>
-            {canEdit && (
-              <Button size="lg" variant="secondary" onClick={apply}
-                disabled={!pctValid || Math.abs(previewPm - appliedPm) < 0.001}>
-                {t("production.apply")}
-              </Button>
-            )}
-          </div>
-        }
       >
         <thead>
           <tr>
@@ -535,21 +553,21 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
         </thead>
         <tbody>
           {loading && Array.from({ length: 4 }).map((_, i) => (
-            <tr key={`sg-sk-${i}`}>
+            <tr key={`sg-sk-${i}`} className={PT_ROW}>
               {Array.from({ length: 3 }).map((__, j) => (
                 <td key={j} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
               ))}
             </tr>
           ))}
           {!loading && wcs.map((w) => (
-            <tr key={w.work_center}>
+            <tr key={w.work_center} className={PT_ROW}>
               <td className="px-3 py-2">{chip(w.work_center)}</td>
               <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka_cfg, 0)}</td>
               <td className="px-3 py-2 text-center tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmt(suggest(w, appliedPm), 0)}</td>
             </tr>
           ))}
           {!loading && wcs.length > 0 && (
-            <tr>
+            <tr className={PT_ROW}>
               <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
               <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>{fmt(totalShtat, 0)}</td>
               <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>{fmt(totalSuggest, 0)}</td>
@@ -577,7 +595,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
           </thead>
           <tbody>
             {loading && Array.from({ length: 4 }).map((_, i) => (
-              <tr key={`ac-sk-${i}`}>
+              <tr key={`ac-sk-${i}`} className={PT_ROW}>
                 {Array.from({ length: 3 }).map((__, j) => (
                   <td key={j} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
                 ))}
@@ -586,10 +604,10 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
             {!loading && wcs.map((w) => {
               const d = draft[w.work_center] || { people: "", shtatka: "" };
               return (
-                <tr key={w.work_center}>
+                <tr key={w.work_center} className={PT_ROW}>
                   <td className="px-3 py-2">{chip(w.work_center)}</td>
                   {[["people", w.people_calc], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
-                    <td key={key} className="px-3 py-1.5 text-center">
+                    <td key={key} className="px-3 py-1 text-center">
                       {canEdit ? (
                         <input
                           value={d[key]}
@@ -613,6 +631,15 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
                 </tr>
               );
             })}
+            {/* mirrors the suggestion's JAMI row — same position, so the two
+                tables end level; counts typed values and formula fallbacks alike */}
+            {!loading && wcs.length > 0 && (
+              <tr className={PT_ROW}>
+                <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
+                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>{fmt(totalActPeople, 0)}</td>
+                <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>{fmt(totalActShtat, 0)}</td>
+              </tr>
+            )}
             {!loading && wcs.length === 0 && (
               <tr><td colSpan={3} className="px-3 py-6 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</td></tr>
             )}
@@ -637,6 +664,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
         )}
       </div>
     </div>
+    </>
   );
 }
 
