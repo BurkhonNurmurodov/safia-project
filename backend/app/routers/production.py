@@ -76,6 +76,25 @@ ABC_SPARE_ROWS = 15   # bordered formula rows under the data for hand-added SKUs
 ABC_DATA_START = 3    # first position row (row 1 = totals, row 2 = headers)
 ABC_TEAM_START = 6    # first row of the M:W per-team block, as in the form
 
+# Per-команда identity colour — MUST stay in sync with `WC_PALETTE` / `wcColor`
+# in frontend/src/pages/Production.jsx so a team wears the same colour in the
+# export as it does in the «Позиции» table (hash of the code → palette slot).
+WC_PALETTE = ["6366F1", "0EA5E9", "10B981", "F59E0B", "EF4444", "EC4899",
+              "8B5CF6", "14B8A6", "F97316", "84CC16", "06B6D4", "A855F7"]
+WC_TINT = 0.16       # chip background = colour blended onto white, as in the app
+
+
+@lru_cache(maxsize=256)
+def _wc_style(code: str) -> tuple:
+    """(fill, font colour) for a work-center chip — pale tint + the colour itself."""
+    h = 0
+    for ch in code:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF          # JS: (h*31 + charCodeAt) >>> 0
+    hexc = WC_PALETTE[h % len(WC_PALETTE)]
+    rgb = (int(hexc[0:2], 16), int(hexc[2:4], 16), int(hexc[4:6], 16))
+    tint = "".join(f"{round(c * WC_TINT + 255 * (1 - WC_TINT)):02X}" for c in rgb)
+    return PatternFill("solid", fgColor=tint), hexc
+
 
 # --------------------------------------------------------------------------- #
 # helpers
