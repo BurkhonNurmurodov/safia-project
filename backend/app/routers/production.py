@@ -436,6 +436,11 @@ def export_positions(
         for cn in (13, 14, 15, 16, 17, 18, 19, 20, 21, 23):
             c = ws.cell(row=rn, column=cn)
             c.border, c.alignment = border, center
+        if code:                                    # M/P Команда — same chip colour
+            fill, colour = _wc_style(code)
+            for cn in (13, 16):
+                c = ws.cell(row=rn, column=cn)
+                c.fill, c.font = fill, Font(color=colour, bold=True)
         ws.cell(row=rn, column=23).fill = yellow
         for cn, nf in ((14, "0.0"), (15, "0%"), (17, "0"), (18, "0.0%"),
                        (19, "0"), (20, "0.0%"), (21, "0.0"), (23, "0")):
