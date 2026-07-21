@@ -280,6 +280,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
         "unknown_skus": [{"sap_code": s, "work_center": w} for s, w in unknown],
         "missing_labor_count": sum(1 for r in result["rows"] if not r["has_labor"]),
     })
+    # what the «Odamlar soni» tab needs to show and reset the efficiency box
+    result["constants"].update({
+        "productive_min_global": global_pm,
+        "productive_pinned": abs(productive_min - global_pm) > 0.001,
+    })
     return result
 
 
