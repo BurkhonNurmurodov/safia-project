@@ -160,8 +160,14 @@ def compute_dashboard(
         shtatka_ov = _opt_int(ov.get("shtatka"))
         shtatka = shtatka_ov if shtatka_ov is not None else shtatka_cfg
         cap = meta["capacity"]
+        # A capacity equal to W × the platform default is NOT a hand-tuned S —
+        # it is the default written into the column by the seeder. Treating it as
+        # hand-set would freeze S and make the day's efficiency a no-op, which is
+        # the state nearly every WC is in. Same test the ABC export uses.
+        hand_tuned = bool(cap and cap > 0) and (
+            shtatka <= 0 or abs(float(cap) - shtatka * productive_ref) > 0.01)
         # S (productive minutes for the roster): hand-set per WC, else W × 425.
-        s_eff = cap if (cap and cap > 0) else (shtatka * productive_min)
+        s_eff = cap if hand_tuned else (shtatka * productive_min)
         # O. SONI: derived from the formula unless the day carries a manual pin.
         people_calc = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
         people_ov = _opt_int(ov.get("people"))
