@@ -18,13 +18,17 @@ import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
  *   </TableCard>
  */
 
-// Uppercase card/section header — icon + title on the left, free slot on the right.
-export function SectionHead({ icon: Icon, title, right }) {
+// Uppercase card/section header — icon + title (optional lowercase subtitle
+// under it) on the left, free slot on the right.
+export function SectionHead({ icon: Icon, title, subtitle, right }) {
   return (
     <div className="flex items-center justify-between gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {Icon && <Icon size={14} style={{ color: "var(--brand-text)" }} />}
-        {title}
+      <div className="flex items-center gap-2 min-w-0">
+        {Icon && <Icon size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{title}</div>
+          {subtitle && <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{subtitle}</div>}
+        </div>
       </div>
       {right}
     </div>
@@ -87,6 +91,7 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
 export default function TableCard({
   icon,
   title,
+  subtitle,
   right,
   toolbar,
   maxHeight = "70vh",
@@ -100,7 +105,7 @@ export default function TableCard({
   const detached = mobile != null && mobileCards;
   const card = (
     <div className={`rounded-2xl overflow-hidden ${detached ? "" : className}`} style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      {title != null && <SectionHead icon={icon} title={title} right={right} />}
+      {title != null && <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />}
       {toolbar && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           {toolbar}

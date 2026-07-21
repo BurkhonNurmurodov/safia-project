@@ -174,6 +174,7 @@ const TXT = {
     secAcc: "Mas’uliyat va bartaraf etish", accBrig: "Brigadirlar/TM", accMgr: "Rahbarlar",
     accSub: "chora talab etilgan yozuvlar; % — bartaraf etilgan ulushi",
     secSupStatus: "Brigadirlar bo‘yicha holat",
+    supStatusSub: "korrektiv choralarning yopilish foizi",
     secMyStatus: "Bartaraf etish holati", myStatusSub: "yozuvlaringiz holat bo‘yicha",
     trendSubOwn: "o‘z yozuvlaringiz", stWaitShort: "Kutilmoqda",
     stResolved: "Bartaraf etilgan", stNotSolved: "Bartaraf etilmagan", stRecurring: "Takrorlanuvchi",
@@ -216,6 +217,7 @@ const TXT = {
     secAcc: "Масъулият ва бартараф этиш", accBrig: "Бригадирлар/ТМ", accMgr: "Раҳбарлар",
     accSub: "чора талаб этилган ёзувлар; % — бартараф этилган улуши",
     secSupStatus: "Бригадирлар бўйича ҳолат",
+    supStatusSub: "корректив чораларнинг ёпилиш фоизи",
     secMyStatus: "Бартараф этиш ҳолати", myStatusSub: "ёзувларингиз ҳолат бўйича",
     trendSubOwn: "ўз ёзувларингиз", stWaitShort: "Кутилмоқда",
     stResolved: "Бартараф этилган", stNotSolved: "Бартараф этилмаган", stRecurring: "Такрорланувчи",
@@ -258,6 +260,7 @@ const TXT = {
     secAcc: "Ответственность и устранение", accBrig: "Бригадиры/ТМ", accMgr: "Руководители",
     accSub: "записи, требующие меры; % — доля устранённых",
     secSupStatus: "Статусы по бригадирам",
+    supStatusSub: "процент закрытия корректирующих мер",
     secMyStatus: "Статус устранения", myStatusSub: "ваши записи по статусу",
     trendSubOwn: "ваши записи", stWaitShort: "В ожидании",
     stResolved: "Устранено", stNotSolved: "Не устранено", stRecurring: "Повторяющееся",
@@ -300,6 +303,7 @@ const TXT = {
     secAcc: "Accountability & resolution", accBrig: "Brigadirs/TM", accMgr: "Managers",
     accSub: "records needing action; % = share resolved",
     secSupStatus: "Status by supervisor",
+    supStatusSub: "corrective action closure rate",
     secMyStatus: "Resolution status", myStatusSub: "your findings by status",
     trendSubOwn: "your own findings", stWaitShort: "Waiting",
     stResolved: "Resolved", stNotSolved: "Not solved", stRecurring: "Recurring",
@@ -1244,6 +1248,7 @@ export default function Quality() {
             <TableCard
               icon={ShieldCheck}
               title={T.secSupStatus}
+              subtitle={T.supStatusSub}
               right={<SegmentedToggle size="sm" value={supStatMode} onChange={setSupStatMode}
                 options={[["count", T.tglCount], ["pct", T.tglPct]]} />}
             >
