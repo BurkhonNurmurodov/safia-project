@@ -635,7 +635,7 @@ export default function Production() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const [date, setDate] = useState(todayISO());
-  const [view, setView] = useState("zagruzka"); // zagruzka | faza | zaga
+  const [view, setView] = useState("zagruzka"); // zagruzka | people | faza | zaga
   const [unknownOpen, setUnknownOpen] = useState(false);
   // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
   const [search, setSearch] = useState("");
