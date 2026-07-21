@@ -264,6 +264,7 @@ _MESSAGES = {
             "Use the web panel's Broadcast → Rich mode for that.\n\n"
             "You can send plain text, media, or an album."
         ),
+        "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nTap to copy.",
     },
 }
 
