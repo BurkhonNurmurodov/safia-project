@@ -1149,12 +1149,6 @@ export default function Production() {
       )}
 
       {view === "zagruzka" && (<>
-      {isError && (
-        <div className="rounded-2xl p-4 text-sm" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>
-          {error?.response?.data?.detail || t("production.loadError")}
-        </div>
-      )}
-
       {noSapData && (
         <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 mb-4 text-xs"
           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
