@@ -173,17 +173,24 @@ def _constants(db: Session) -> tuple[float, float]:
     return num("pp_shift_min", DEFAULT_SHIFT_MIN), num("pp_productive_min", DEFAULT_PRODUCTIVE_MIN)
 
 
-def _day_constants(db: Session, manager_id: int, day: date) -> tuple[float, float, float]:
-    """(shift_min, effective productive_min, global productive_min) for one day.
-
-    The «Odamlar soni» tab pins the efficiency per (brigadir, date); with no pin
-    the day uses the platform-wide pp_productive_min, so past days never shift
-    under a brigadir who edits today."""
-    shift_min, global_pm = _constants(db)
+def _day_pin(db: Session, manager_id: int, day: date) -> Optional[float]:
+    """The «Odamlar soni» efficiency pinned for one (brigadir, date), if any."""
     row = db.query(PPDaySetting).filter(
         PPDaySetting.manager_id == manager_id, PPDaySetting.date == day).first()
-    pinned = float(row.productive_min) if (row and row.productive_min is not None) else None
-    return shift_min, (pinned if pinned else global_pm), global_pm
+    return float(row.productive_min) if (row and row.productive_min is not None) else None
+
+
+def _unit_per_head(wcs, fallback: float) -> float:
+    """The unit's own productive minutes per head — Σcapacity ÷ Σштатка.
+
+    pp_work_centers.capacity is W × a per-head rate, and that rate differs per
+    brigadir (425/head on one unit, ~407.5 on another). Averaging it back out
+    gives the efficiency the unit is ACTUALLY running at, which is what the box
+    must show on open — otherwise the suggestion column would contradict the
+    staffing cards until the user pressed Save."""
+    cap_sum = sum(float(w.capacity) for w in wcs if w.capacity and w.shtatka)
+    sht_sum = sum(int(w.shtatka) for w in wcs if w.capacity and w.shtatka)
+    return (cap_sum / sht_sum) if sht_sum > 0 else fallback
 
 
 def _parse_date(s: Optional[str]) -> date:
