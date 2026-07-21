@@ -139,26 +139,40 @@ def compute_dashboard(
             wc_meta[code] = {"shtatka": 0, "capacity": None, "sort_order": 999}
             wc_codes.append(code)
 
+    ov_all = wc_overrides or {}
+
     people_by_wc: dict[str, int] = {}
     wc_panel: list[dict] = []
     for code in wc_codes:
         meta = wc_meta[code]
+        ov = ov_all.get(code) or {}
         q = q_by_wc.get(code, 0.0)
-        shtatka = meta["shtatka"]
+        # Штатка: configured W unless the day carries a manual pin.
+        shtatka_cfg = meta["shtatka"]
+        shtatka_ov = _opt_int(ov.get("shtatka"))
+        shtatka = shtatka_ov if shtatka_ov is not None else shtatka_cfg
         cap = meta["capacity"]
         # S (productive minutes for the roster): hand-set per WC, else W × 425.
         s_eff = cap if (cap and cap > 0) else (shtatka * productive_min)
-        people = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
+        # O. SONI: derived from the formula unless the day carries a manual pin.
+        people_calc = _round_half_up(shtatka * q / s_eff) if (s_eff > 0 and shtatka > 0) else 0
+        people_ov = _opt_int(ov.get("people"))
+        people = people_ov if people_ov is not None else people_calc
         people_by_wc[code] = people
         load = (q / (shift_min * people)) if people > 0 else 0.0
         wc_panel.append({
             "work_center": code,
-            "shtatka": shtatka,           # штатка (W)
+            "shtatka": shtatka,           # штатка (W) — effective
             "capacity": s_eff,            # S — productive minutes for the roster
-            "people": people,             # O. SONI (N)
+            "people": people,             # O. SONI (N) — effective
             "total_labor": q,             # Σ Общ.трудоёмкость for this WC
             "load": load,                 # Загруженность (O)
             "sort_order": meta["sort_order"],
+            # what the card falls back to when an override is cleared
+            "people_calc": people_calc,
+            "shtatka_cfg": shtatka_cfg,
+            "people_overridden": people_ov is not None,
+            "shtatka_overridden": shtatka_ov is not None,
         })
     wc_panel.sort(key=lambda x: (x["sort_order"], x["work_center"]))
 
