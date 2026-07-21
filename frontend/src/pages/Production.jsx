@@ -400,10 +400,9 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   const { t } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
   const curPm = Number(constants?.productive_min) || 425;
-  // 425 min of a 480 min shift = 88.5%, NOT the 85% the Excel label says — the
-  // box always shows the day's real share so nothing shifts behind the user.
-  const pctOf = (min) => Math.round((min / shiftMin) * 1000) / 10;
-  const minOf = (p) => (p * shiftMin) / 100;
+  const pctOf = (min) => Math.round((min / NOMINAL_BASE) * 1000) / 10;   // 425 → 85
+  const minOf = (p) => (p * NOMINAL_BASE) / 100;                         // 85 → 425
+  const shareOf = (min) => Math.round((min / shiftMin) * 1000) / 10;     // 425 → 88.5
 
   const [effPct, setEffPct] = useState(() => String(pctOf(curPm)));
   const [appliedPm, setAppliedPm] = useState(curPm);
