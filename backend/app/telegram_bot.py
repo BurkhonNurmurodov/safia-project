@@ -206,6 +206,7 @@ _MESSAGES = {
             "в разделе «Broadcast» веб-панели.\n\n"
             "Вы можете отправить обычный текст, медиа или альбом."
         ),
+        "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nНажмите, чтобы скопировать.",
     },
     "en": {
         "choose_language":   "🌐 Choose your language:",
