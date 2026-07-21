@@ -492,8 +492,8 @@ export default function Leaders({ botMode = false }) {
   const [tSort, setTSort] = useState({ key: "score", dir: "asc" });
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["leaders"],
-    queryFn: () => api.get("/api/leaders").then((r) => r.data),
+    queryKey: [botMode ? "leaders-bot" : "leaders"],
+    queryFn: () => api.get(botMode ? "/admin/leaders-bot" : "/api/leaders").then((r) => r.data),
   });
   const rows = data?.data ?? [];
   const lastSynced = fmtDateTime(data?.last_synced);
