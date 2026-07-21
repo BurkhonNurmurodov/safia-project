@@ -211,8 +211,13 @@ export default function LeaderTasksAdmin() {
                     })}
                     <td className="text-center">
                       {sums[m.id] !== 100 && (
-                        <span title={t("admin.ltasks.weightWarn").replace("{sum}", sums[m.id])}>
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] font-bold tabular-nums"
+                          style={{ color: C_WARN }}
+                          title={t("admin.ltasks.weightWarn").replace("{sum}", sums[m.id])}
+                        >
                           <AlertTriangle size={15} color={C_WARN} />
+                          {sums[m.id]}%
                         </span>
                       )}
                     </td>
