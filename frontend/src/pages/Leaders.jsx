@@ -1082,6 +1082,9 @@ export default function Leaders() {
                   {photos.map((p, pi) => (
                     <ReportPhoto key={pi} src={p} T={T} />
                   ))}
+                  {(tk.media || []).map((mid) => (
+                    <BotPhoto key={`m${mid}`} id={mid} T={T} />
+                  ))}
                 </div>
               );
             })}
