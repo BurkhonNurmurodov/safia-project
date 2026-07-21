@@ -550,3 +550,103 @@ def admin_update_page_access(
 ):
     pages = set_page_access(db, payload.pages)
     return {"status": "ok", "pages": pages}
+
+
+# ── Telegram file_id viewer ───────────────────────────────────────────────────
+# The bot answers any media an admin sends with its file_id; the admin panel's
+# «Media» tab pastes that id back here to look at the file. Telegram's file URL
+# embeds the bot token, so it can never reach the browser — the backend
+# resolves the id with getFile and proxies the bytes itself.
+
+_TG_API = "https://api.telegram.org"
+
+# Extensions Telegram serves that mimetypes doesn't know (or gets wrong).
+_TG_MIME_OVERRIDES = {
+    ".oga": "audio/ogg",
+    ".ogg": "audio/ogg",
+    ".webp": "image/webp",
+    ".tgs": "application/gzip",     # animated sticker (lottie) — not renderable
+    ".webm": "video/webm",
+}
+
+
+def _tg_get_file(file_id: str) -> dict:
+    """getFile → {file_path, file_size, file_unique_id}. Raises the Telegram
+    error as an HTTP error so the panel can show why an id didn't resolve."""
+    if not settings.telegram_bot_token:
+        raise HTTPException(status_code=503, detail="Bot token not configured")
+    try:
+        r = requests.get(
+            f"{_TG_API}/bot{settings.telegram_bot_token}/getFile",
+            params={"file_id": file_id}, timeout=20,
+        )
+        body = r.json()
+    except (requests.RequestException, ValueError):
+        raise HTTPException(status_code=502, detail="Telegram API unreachable")
+    if not body.get("ok"):
+        # 400 "wrong file_id" / "file is too big" — surface Telegram's wording.
+        raise HTTPException(status_code=404, detail=body.get("description") or "File not found")
+    return body.get("result") or {}
+
+
+def _tg_media_kind(mime: str, path: str) -> str:
+    """How the panel should render it: image / video / audio / file."""
+    if path.lower().endswith(".tgs"):
+        return "file"                      # lottie archive, no <img> can show it
+    for prefix in ("image", "video", "audio"):
+        if mime.startswith(prefix):
+            return prefix
+    return "file"
+
+
+def _tg_file_meta(file_id: str) -> dict:
+    result = _tg_get_file(file_id)
+    path = result.get("file_path") or ""
+    ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+    mime = _TG_MIME_OVERRIDES.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return {
+        "file_id":        file_id,
+        "file_unique_id": result.get("file_unique_id"),
+        "file_path":      path,
+        "file_name":      path.rsplit("/", 1)[-1] or "file",
+        "file_size":      result.get("file_size"),
+        "mime_type":      mime,
+        "kind":           _tg_media_kind(mime, path),
+    }
+
+
+@router.get("/tg-file")
+def admin_tg_file_info(file_id: str, _: dict = Depends(verify_admin)):
+    """Resolve a file_id to metadata (no bytes) so the panel knows what to render."""
+    return _tg_file_meta(file_id.strip())
+
+
+@router.get("/tg-file/raw")
+def admin_tg_file_raw(file_id: str, _: dict = Depends(verify_admin)):
+    """Stream the file itself. Fetched as a blob by the panel (the JWT rides on
+    the Authorization header, so this can't be a plain <img src>)."""
+    meta = _tg_file_meta(file_id.strip())
+    if not meta["file_path"]:
+        raise HTTPException(status_code=404, detail="File has no download path")
+    url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
+    try:
+        upstream = requests.get(url, stream=True, timeout=60)
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Telegram file download failed")
+    if upstream.status_code != 200:
+        upstream.close()
+        raise HTTPException(status_code=404, detail="File no longer available")
+
+    def _chunks():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{meta["file_name"]}"',
+        "Cache-Control": "no-store",
+    }
+    if meta["file_size"]:
+        headers["Content-Length"] = str(meta["file_size"])
+    return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
