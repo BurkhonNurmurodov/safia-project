@@ -67,7 +67,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const pendingCount = pendingData?.count ?? 0;
 
   const withSearch = (path) => `${path}${location.search}`;
-  const links = ALL_LINKS.filter(l => canAccessPage(auth?.role, l.page, access));
+  const links = ALL_LINKS.filter(l =>
+    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access));
 
   const { data: range } = useQuery({
     queryKey: ["attendance-range"],
