@@ -20,7 +20,6 @@ from app.models import (
     AppSetting, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry, LeaderTaskMedia,
     LeaderTaskSetting, Manager, RoleProfile,
 )
-from app.permissions import require_page
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, channel_chat_id, effective_settings, ensure_task_defs,
