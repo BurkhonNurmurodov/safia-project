@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import statistics
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from io import BytesIO
 from typing import Annotated, Optional
 
