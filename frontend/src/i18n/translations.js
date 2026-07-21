@@ -5884,6 +5884,7 @@ const t = {
     "admin.tabBroadcast":    "Broadcast",
     "admin.tabMedia":        "Media",
     "admin.tabCleanup":      "Cleanup",
+    "admin.tabLtasks":       "Leaders monitoring",
 
     // Media (file_id) viewer
     "media.title":          "Media viewer",
