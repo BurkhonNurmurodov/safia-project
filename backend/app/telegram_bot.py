@@ -1400,9 +1400,22 @@ def _broadcast_capture(message: types.Message):
 
 @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("bc:"))
 def _broadcast_callback(call: types.CallbackQuery):
-    """'Continue' → swap the warning for the recipient-picker mini-app button."""
+    """'Continue' → swap the warning for the recipient-picker mini-app button;
+    'Cancel' → drop the draft, so the bot stops capturing the admin's messages
+    into it (otherwise they wait out _BC_COMPOSE_TTL)."""
     tid = call.from_user.id
     lang = _get_lang(tid)
+    if call.data == "bc:cancel":
+        with SessionLocal() as db:
+            db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).delete()
+            db.commit()
+        try:
+            bot.edit_message_text(_msg(lang, "bc_cancelled"), chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id)
+        except Exception:
+            bot.send_message(tid, _msg(lang, "bc_cancelled"))
+        bot.answer_callback_query(call.id)
+        return
     if call.data != "bc:cont":
         bot.answer_callback_query(call.id)
         return
