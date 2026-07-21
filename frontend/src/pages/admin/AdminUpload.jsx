@@ -735,6 +735,8 @@ export default function AdminUpload() {
 
       {adminTab === "cleanup" && <AttendanceCleanup />}
 
+      {adminTab === "ltasks" && <LeaderTasksAdmin />}
+
       {adminTab === "data" && (
       <div className="max-w-3xl mx-auto p-4 sm:p-8 space-y-6">
         {/* Upload drop zone */}
