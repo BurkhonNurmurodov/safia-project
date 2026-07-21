@@ -78,6 +78,8 @@ _MESSAGES = {
         ),
         "bc_album_note":     "📎 {n} ta element yig'ildi",
         "bc_continue_btn":   "Davom etish ›",
+        "bc_cancel_btn":     "✕ Bekor qilish",
+        "bc_cancelled":      "✕ Xabarnoma bekor qilindi.",
         "bc_choose":         "👥 Endi qabul qiluvchilarni tanlang:",
         "bc_choose_btn":     "👥 Qabul qiluvchilarni tanlash",
         "bc_empty":          "Avval xabar yuboring.",
