@@ -42,7 +42,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     Manager, AppSetting, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
-    PPDaily, PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser,
+    PPDaily, PPDaySetting, PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser,
     TelegramUserRole, RoleProfile,
 )
 from app.permissions import require_page
