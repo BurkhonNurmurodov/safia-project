@@ -620,7 +620,7 @@ function ComparisonThresholdEditor() {
 
 // ─── Upload panel ─────────────────────────────────────────────────────────────
 
-const ADMIN_TABS = ["data", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup"];
+const ADMIN_TABS = ["data", "production", "translations", "users", "profiles", "access", "broadcast", "media", "cleanup"];
 
 export default function AdminUpload() {
   const navigate = useNavigate();
