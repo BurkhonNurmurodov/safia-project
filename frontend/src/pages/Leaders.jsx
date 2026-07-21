@@ -447,7 +447,10 @@ function BotPhoto({ id, T }) {
 }
 
 // ── main page ──────────────────────────────────────────────────────────────────
-export default function Leaders() {
+// botMode: the admin-only COPY at /leaders-bot showing the in-bot checklist
+// submissions. Deliberately independent of the sheet-driven /leaders — two
+// pages, two data sources, no refresh button (the DB needs no sync).
+export default function Leaders({ botMode = false }) {
   const { auth } = useAuth();
   const { lang } = useLang();
   const { tl } = useTranslit();
