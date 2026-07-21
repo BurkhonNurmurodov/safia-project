@@ -16,8 +16,9 @@ from sqlalchemy import and_, or_, text
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
-    Admin, BroadcastDraft, LeaderTaskDay, LeaderTaskEntry, LeaderTaskMedia, Manager,
-    RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole, Translation,
+    Admin, BroadcastDraft, LeaderTaskCapture, LeaderTaskDay, LeaderTaskEntry,
+    LeaderTaskMedia, Manager, RegistrationNotice, RoleProfile, TelegramUser,
+    TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
 from app.services.leader_tasks import (
