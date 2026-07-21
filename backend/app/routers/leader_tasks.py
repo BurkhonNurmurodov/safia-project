@@ -228,24 +228,11 @@ def leaders_bot(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 def leader_task_media(
     media_id: int,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("leaders")),
+    _: dict = Depends(verify_admin),
 ):
     m = db.query(LeaderTaskMedia).filter_by(id=media_id).first()
-    entry = m and db.query(LeaderTaskEntry).filter_by(id=m.entry_id).first()
-    day = entry and db.query(LeaderTaskDay).filter_by(id=entry.day_id).first()
-    if not day:
+    if not m:
         raise HTTPException(status_code=404, detail="Media not found")
-
-    # Same row scoping as /api/leaders: supervisor → own unit, leader → own
-    # profile's rows; admin / shift- / top-managers see everything.
-    role = payload.get("role")
-    if role == "supervisor" and day.manager_id != payload.get("role_id"):
-        raise HTTPException(status_code=403, detail="Not your unit")
-    if role == "leader":
-        prof = db.query(RoleProfile).filter_by(id=day.leader_id).first()
-        if (not prof or prof.manager_id != payload.get("role_id")
-                or prof.name != payload.get("full_name")):
-            raise HTTPException(status_code=403, detail="Not your submission")
 
     meta = _tg_file_meta(m.file_id)
     url = f"{_TG_API}/file/bot{settings.telegram_bot_token}/{meta['file_path']}"
