@@ -2,10 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import (
-    LeaderChecklist, LeaderSyncMeta, LeaderTaskDay, LeaderTaskEntry,
-    LeaderTaskMedia, Manager, RoleProfile,
-)
+from app.models import LeaderChecklist, LeaderSyncMeta, Manager
 from app.permissions import require_page
 from app.services.name_map import (
     _norm as _fold_name,
