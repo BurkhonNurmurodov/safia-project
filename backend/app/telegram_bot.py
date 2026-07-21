@@ -2051,33 +2051,38 @@ def _lt_wrong_media(message: types.Message):
 def _lt_reason(message: types.Message):
     tid = message.from_user.id
     lang = _get_lang(tid)
-    lt = _lt_state(tid)
-    if not lt:
-        return
     text = (message.text or "").strip()
-    if not text or text.startswith("/"):  # unknown command mid-capture → abandon
-        _lt_clear(tid)
-        bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
-        return
-    pid, task_id = lt["pid"], lt["task"]
-    # Per spec: the prompt is DELETED and a fresh save/reset message is sent so
-    # it lands below the leader's answer.
-    try:
-        bot.delete_message(lt["chat"], lt["msg_id"])
-    except Exception:
-        pass
     with SessionLocal() as db:
+        cap = _lt_capture(db, tid, lock=True)
+        if not cap or cap.stage != "reason":
+            return
+        if not text or text.startswith("/"):  # unknown command mid-capture → abandon
+            db.delete(cap)
+            db.commit()
+            bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+            return
+        pid, task_id = cap.leader_id, cap.task_id
+        old_chat, old_mid = cap.chat_id, cap.message_id
         defs = {td.id: td for td in ensure_task_defs(db)}
         td = defs.get(task_id)
         tname = task_name(td, lang) if td else f"T{task_id}"
-    kb = types.InlineKeyboardMarkup()
-    kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"),
-           _lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
-    sent = bot.send_message(
-        message.chat.id,
-        _lt(lang, "reason_confirm").format(task=tname, reason=text[:800]),
-        reply_markup=kb)
-    lt.update(stage="confirm_reason", reason=text[:800], msg_id=sent.message_id)
+        # Per spec: the prompt is DELETED and a fresh save/reset message is sent
+        # so it lands below the leader's answer.
+        try:
+            bot.delete_message(old_chat, old_mid)
+        except Exception:
+            pass
+        kb = types.InlineKeyboardMarkup()
+        kb.row(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"),
+               _lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
+        sent = bot.send_message(
+            message.chat.id,
+            _lt(lang, "reason_confirm").format(task=tname, reason=text[:800]),
+            reply_markup=kb)
+        cap.stage = "confirm_reason"
+        cap.reason = text[:800]
+        cap.message_id = sent.message_id
+        db.commit()
 
 
 # ── Media → file_id echo (admins only) ────────────────────────────────────────
