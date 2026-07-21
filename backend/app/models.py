@@ -785,6 +785,27 @@ class LeaderTaskEntry(Base):
     __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_entry"),)
 
 
+class LeaderTaskCapture(Base):
+    """In-flight /tasks capture state — the leader is mid-answer, sending proof
+    photos or a failure reason. DB-backed, NOT in-memory: Passenger runs several
+    worker processes and consecutive webhook updates land on different workers,
+    so process memory loses the flow between the button tap and the next message
+    (the same reason broadcast_drafts exists). One row per Telegram account;
+    stale rows expire via updated_at."""
+    __tablename__ = "leader_task_captures"
+
+    telegram_id = Column(BigInteger, primary_key=True)
+    stage       = Column(String, nullable=False)  # photos | reason | confirm_reason
+    leader_id   = Column(Integer, nullable=False)  # role_profiles.id
+    task_id     = Column(Integer, nullable=False)
+    chat_id     = Column(BigInteger, nullable=False)
+    message_id  = Column(BigInteger, nullable=True)   # counter / prompt message
+    min_media   = Column(Integer, nullable=False, default=1)
+    media       = Column(JSONB, default=list)         # [[channel file_id, channel msg id], …]
+    reason      = Column(Text, nullable=True)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class LeaderTaskMedia(Base):
     """A proof photo re-uploaded (as bytes) to the archive channel. file_id /
     message_id are the CHANNEL copy's — the private-chat original is never
