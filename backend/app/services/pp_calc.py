@@ -78,15 +78,16 @@ def compute_dashboard(
     wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
                  panel (pp_work_center_daily). A non-None штатка replaces W before
                  N is derived; a non-None people replaces the derived N outright.
-    productive_ref: the PLATFORM default productive_min, used only to tell a
-                 genuinely hand-tuned capacity from one that is merely W × the
-                 default materialised into the column (the seeder writes those,
-                 so almost every WC has capacity set). Defaults to productive_min.
+    ignore_capacity: the day carries a pinned efficiency, so S is W × productive_min
+                 for EVERY work center and the configured capacity is bypassed.
+                 `capacity` is only ever W × a per-head rate anyway (the rate
+                 differs per brigadir: 425/head for one unit, 407.5 for another),
+                 so a pinned efficiency has to be able to replace it — otherwise
+                 the pin would silently do nothing on units that have one.
     Returns a dict with `rows`, `work_centers` (staffing panel) and `totals`.
     """
     productive_min = productive_min or DEFAULT_PRODUCTIVE_MIN
     shift_min = shift_min or DEFAULT_SHIFT_MIN
-    productive_ref = productive_ref or productive_min
 
     # --- pass 1: per-row labor, and accumulate Q per work center -----------
     rows: list[dict] = []
