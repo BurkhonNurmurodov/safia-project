@@ -1229,12 +1229,33 @@ def notify_broadcast_result(admin_tid: int, message_id: int, sent: int, total: i
             pass
 
 
+# How long a /broadcast stays in compose mode. Past this the draft is dead: an
+# abandoned compose (the admin ran /broadcast and never tapped «Davom etish»)
+# used to capture EVERY attachment they sent afterwards, forever — so a photo
+# meant for the file_id echo landed in the draft instead.
+_BC_COMPOSE_TTL = timedelta(minutes=30)
+
+
 def _bc_active(tid: int) -> bool:
     """True while the admin is mid-compose (before they pick recipients) — the
-    filter that routes their next message into the draft-capture handler."""
+    filter that routes their next message into the draft-capture handler.
+    A compose older than _BC_COMPOSE_TTL is dropped rather than honoured; only
+    the pre-picker statuses expire, so a draft already showing the recipient
+    picker (awaiting_recipients) is untouched and stays sendable."""
     with SessionLocal() as db:
         d = db.query(BroadcastDraft).filter_by(admin_telegram_id=tid).first()
-        return bool(d and d.status in ("awaiting_message", "awaiting_continue"))
+        if not d or d.status not in ("awaiting_message", "awaiting_continue"):
+            return False
+        stamp = d.updated_at or d.created_at
+        if stamp is not None:
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - stamp >= _BC_COMPOSE_TTL:
+                # Clear it so the stale «Davom etish» button can't resurrect it.
+                db.delete(d)
+                db.commit()
+                return False
+        return True
 
 
 def handle_incoming_rich_message(msg: dict) -> bool:
