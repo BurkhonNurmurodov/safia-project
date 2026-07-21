@@ -4664,6 +4664,7 @@ const t = {
     "production.peopleActual":     "Факт на день",
     "production.efficiency":       "Эффективность",
     "production.perPerson":        "на 1 чел.",
+    "production.ofShift":          "от смены",
     "production.apply":            "Применить",
     "production.peopleTotal":      "Итого",
     "production.unsaved":          "не сохранено",
