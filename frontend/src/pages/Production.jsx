@@ -691,6 +691,9 @@ export default function Production() {
   const canEditCatalog = auth?.role === "admin";
   // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
   const canEditStaffing = auth?.role === "admin";
+  // The «Odamlar soni» tab is the brigadir's own entry point for the same pins —
+  // they type the day's real headcount there, so supervisors edit it too.
+  const canEditPeople = ["admin", "supervisor"].includes(auth?.role);
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
