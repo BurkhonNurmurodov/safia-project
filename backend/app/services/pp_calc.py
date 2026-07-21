@@ -49,18 +49,32 @@ def _f(v) -> float:
         return 0.0
 
 
+def _opt_int(v) -> Optional[int]:
+    """None / unparseable → None (no override); anything numeric → int."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(round(float(v)))
+    except (TypeError, ValueError):
+        return None
+
+
 def compute_dashboard(
     products: list[dict],
     quantities: dict[tuple[str, str], dict],
     work_centers: list[dict],
     shift_min: float = DEFAULT_SHIFT_MIN,
     productive_min: float = DEFAULT_PRODUCTIVE_MIN,
+    wc_overrides: Optional[dict[str, dict]] = None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
     quantities:  {(sap_code, work_center): {plan_qty, actual_qty}}  (already
                  override-resolved by the caller)
     work_centers:[{code, shtatka, sort_order}, ...]
+    wc_overrides:{code: {people, shtatka}} — per-DAY manual pins for the staffing
+                 panel (pp_work_center_daily). A non-None штатка replaces W before
+                 N is derived; a non-None people replaces the derived N outright.
     Returns a dict with `rows`, `work_centers` (staffing panel) and `totals`.
     """
     productive_min = productive_min or DEFAULT_PRODUCTIVE_MIN
