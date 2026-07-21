@@ -148,14 +148,17 @@ export default function LeaderTasksAdmin() {
           </div>
         ) : (
           <div className="p-4 overflow-x-auto">
-            <table className="text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3 }}>
+            {/* Fixed layout: the name/warning columns take their set widths and
+                every task column splits the remaining width EQUALLY, so the
+                matrix always fills the card edge-to-edge. */}
+            <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3, tableLayout: "fixed", minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th className="text-left pr-2 font-semibold sticky left-0 z-10" style={{ color: "var(--text-3)", background: "var(--bg-card)", minWidth: 150 }}>
+                  <th className="text-left pr-2 font-semibold sticky left-0 z-10" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>
                     {t("admin.ltasks.supervisor")}
                   </th>
                   {tasks.map((task) => (
-                    <th key={task.id} style={{ minWidth: 34 }}>
+                    <th key={task.id}>
                       <button
                         type="button"
                         title={tname(task)}
