@@ -557,6 +557,54 @@ def set_override(
     return _build_dashboard(db, mid, day)
 
 
+class WcOverrideBody(BaseModel):
+    date: str
+    work_center: str
+    # BOTH fields are authoritative on every call — the staffing-card modal always
+    # submits its two inputs together. null = clear the pin and fall back to the
+    # computed N / configured штатка.
+    people: Optional[int] = None
+    shtatka: Optional[int] = None
+
+
+@router.post("/api/production/wc-override")
+def set_wc_override(
+    body: WcOverrideBody,
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(_verify_admin),
+    db: Session = Depends(get_db),
+):
+    """Pin «O. SONI» and/or «штатка» for one work center on ONE date.
+
+    Admin-only: everyone else sees the staffing cards read-only. The pin lives in
+    pp_work_center_daily, so the master pp_work_centers config and every other
+    date keep their values — clearing both fields drops the row entirely."""
+    mid = _resolve_manager_id(payload, manager_id, db)
+    day = _parse_date(body.date)
+    code = (body.work_center or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="work_center is required")
+    for name, val in (("people", body.people), ("shtatka", body.shtatka)):
+        if val is not None and not (0 <= val <= 9999):
+            raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
+
+    row = db.query(PPWorkCenterDaily).filter(
+        PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day,
+        PPWorkCenterDaily.work_center == code,
+    ).first()
+
+    if body.people is None and body.shtatka is None:
+        if row:
+            db.delete(row)
+    elif row:
+        row.people, row.shtatka = body.people, body.shtatka
+    else:
+        db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                 people=body.people, shtatka=body.shtatka))
+    db.commit()
+    return _build_dashboard(db, mid, day)
+
+
 class ReconciliationBody(BaseModel):
     date: str
     data: dict
