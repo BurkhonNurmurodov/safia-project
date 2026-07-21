@@ -68,6 +68,7 @@ def compute_dashboard(
     shift_min: float = DEFAULT_SHIFT_MIN,
     productive_min: float = DEFAULT_PRODUCTIVE_MIN,
     wc_overrides: Optional[dict[str, dict]] = None,
+    productive_ref: Optional[float] = None,
 ) -> dict:
     """
     products:    [{sap_code, name, work_center, labor_time(None ok), sort_order}, ...]
