@@ -88,6 +88,7 @@ _MESSAGES = {
             "bo'limining «Kengaytirilgan» rejimidan foydalaning.\n\n"
             "Oddiy matn, media yoki albom yuborishingiz mumkin."
         ),
+        "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nNusxalash uchun bosing.",
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
