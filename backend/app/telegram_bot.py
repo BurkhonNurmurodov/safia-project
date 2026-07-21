@@ -1361,6 +1361,7 @@ def _broadcast_capture(message: types.Message):
 
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton(_msg(lang, "bc_continue_btn"), callback_data="bc:cont"))
+    kb.add(types.InlineKeyboardButton(_msg(lang, "bc_cancel_btn"), callback_data="bc:cancel"))
 
     # Claim the warning: only the transaction that flips warn_message_id from
     # NULL to the 0 sentinel wins the right to send it.
