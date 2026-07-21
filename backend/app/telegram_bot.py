@@ -3,6 +3,7 @@ Telegram bot — runs inside the FastAPI process via webhook.
 Updates arrive at POST /bot/webhook and are dispatched here.
 """
 import hashlib
+import html
 import json
 import logging
 import secrets
