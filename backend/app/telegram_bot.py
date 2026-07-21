@@ -1919,10 +1919,12 @@ def _lt_callback(call: types.CallbackQuery):
             if closed:
                 bot.answer_callback_query(call.id, _lt(lang, "day_closed_alert"), show_alert=True)
                 return
-            _state.setdefault(tid, {})["lt"] = {
-                "stage": "reason", "pid": pid, "task": task_id,
-                "chat": chat_id, "msg_id": msg_id,
-            }
+            db.query(LeaderTaskCapture).filter_by(telegram_id=tid).delete()
+            db.add(LeaderTaskCapture(
+                telegram_id=tid, stage="reason", leader_id=pid, task_id=task_id,
+                chat_id=chat_id, message_id=msg_id,
+            ))
+            db.commit()
             kb = types.InlineKeyboardMarkup(row_width=1)
             kb.add(_lt_btn(_lt(lang, "btn_discard"), f"lt:menu:{pid}"))
             bot.answer_callback_query(call.id)
