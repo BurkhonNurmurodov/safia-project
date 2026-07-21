@@ -4689,6 +4689,8 @@ const t = {
     "production.editManually":     "Изменить вручную",
     "production.editRow":          "Редактировать",
     "production.editTitle":        "Редактировать позицию",
+    "production.wcEditTitle":      "Состав команды",
+    "production.wcEditHint":       "Пустое поле — используется расчётное значение. Изменение действует только на выбранную дату.",
     "production.addRow":           "Добавить",
     "production.createTitle":      "Новая позиция",
     "production.cancelEdit":       "Отмена",
