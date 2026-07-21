@@ -345,8 +345,11 @@ def export_positions(
         rows = [by_id[i] for i in body.order if i in by_id]
     wcs = dash.get("work_centers") or []
     recon = dash.get("reconciliation") or {}
-    sm, pm = _constants(db)
-    sm, pm = int(sm), float(pm or DEFAULT_PRODUCTIVE_MIN)
+    # the day's own efficiency (pinned on the «Odamlar soni» tab), so the
+    # workbook's =W*<pm> capacity formulas match what the page shows
+    consts = dash.get("constants") or {}
+    sm = int(consts.get("shift_min") or DEFAULT_SHIFT_MIN)
+    pm = float(consts.get("productive_min") or DEFAULT_PRODUCTIVE_MIN)
 
     title_word = POSITIONS_TITLE.get(lang, POSITIONS_TITLE["ru"])
     mgr_name = dash.get("manager_name") or ""
