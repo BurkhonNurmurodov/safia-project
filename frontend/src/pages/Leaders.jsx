@@ -402,6 +402,50 @@ function ReportPhoto({ src, T }) {
   );
 }
 
+// A bot-submission proof photo. Unlike the sheet's public Google URLs it sits
+// behind the auth-gated backend proxy (the JWT rides the Authorization header),
+// so it's fetched as a BLOB and rendered via an object URL — a bare <img src>
+// can't attach the token.
+function BotPhoto({ id, T }) {
+  const [url, setUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let obj = "";
+    let alive = true;
+    setFailed(false);
+    setUrl("");
+    api.get(`/api/leader-tasks/media/${id}`, { responseType: "blob" })
+      .then((res) => {
+        obj = URL.createObjectURL(res.data);
+        if (alive) setUrl(obj);
+        else URL.revokeObjectURL(obj);
+      })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [id, attempt]);
+  if (failed) {
+    return (
+      <div className="mt-2 w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center"
+        style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
+        <ImageOff size={22} color="var(--text-4)" />
+        <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
+        <button type="button" onClick={() => setAttempt((a) => a + 1)}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md"
+          style={{ color: "var(--brand)", background: hexA("#C8973F", 0.12) }}>
+          <RefreshCw size={13} /> {T.retry}
+        </button>
+      </div>
+    );
+  }
+  if (!url) return <SkeletonBlock className="mt-2 h-28 w-full" />;
+  return (
+    <img src={url} alt="" onClick={() => window.open(url, "_blank")} loading="lazy"
+      className="mt-2 w-full rounded-lg border cursor-zoom-in"
+      style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function Leaders() {
   const { auth } = useAuth();
