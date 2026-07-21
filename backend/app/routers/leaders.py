@@ -92,22 +92,103 @@ def get_leaders(
 
     meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
 
+    data = [
+        {
+            # The form's submission id when we have it — unlike the row id it
+            # survives the wipe-and-reload of every sheet refresh.
+            "uid": r.submission_id or f"row-{r.id}",
+            "date": r.date,
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            "supervisor": _relabel(r.supervisor),
+            "shift": sup_shift.get(_relabel(r.supervisor)),
+            "leader": r.leader,
+            "completion": float(r.completion or 0),
+            "tasks": r.tasks or [],
+        }
+        for r in rows
+    ]
+
+    # ── In-bot checklist days (closed only), merged with SHEET PRECEDENCE ──────
+    # The Google Form stays alive alongside the bot: when both hold the same
+    # (unit, date, leader) day, the sheet row wins and the bot row is dropped.
+    # Bot rows carry exact identities (RoleProfile / Manager), so no fuzzy
+    # matching is needed except against the sheet's free-text names.
+    bot_days = (
+        db.query(LeaderTaskDay)
+        .filter(LeaderTaskDay.closed_at.isnot(None))
+        .all()
+    )
+    if bot_days:
+        profs = {
+            p.id: p
+            for p in db.query(RoleProfile)
+            .filter(RoleProfile.id.in_({d.leader_id for d in bot_days}))
+            .all()
+        }
+        mgr_by_id = {m.id: m for m in managers}
+        day_ids = [d.id for d in bot_days]
+        entries_by_day: dict[int, list] = {}
+        for e in db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(day_ids)).all():
+            entries_by_day.setdefault(e.day_id, []).append(e)
+        entry_ids = [e.id for es in entries_by_day.values() for e in es]
+        media_by_entry: dict[int, list] = {}
+        if entry_ids:
+            for m in (db.query(LeaderTaskMedia)
+                      .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
+                      .order_by(LeaderTaskMedia.pos)
+                      .all()):
+                media_by_entry.setdefault(m.entry_id, []).append(m.id)
+
+        # (unit id, date) → folded leader-name token lists present in the sheet.
+        sheet_idx: dict[tuple[int, str], list] = {}
+        for r in all_sheet_rows:
+            info = sup_match.get(_relabel(r.supervisor))
+            if info and r.leader:
+                sheet_idx.setdefault((info["id"], r.date), []).append(_name_tokens(r.leader))
+
+        for d in bot_days:
+            prof = profs.get(d.leader_id)
+            if not prof:
+                continue
+            # sheet wins: a same-unit same-date sheet row naming this leader
+            my_tokens = _name_tokens(prof.name)
+            if any(_pair_score(toks, my_tokens) > 0
+                   for toks in sheet_idx.get((d.manager_id, d.date), [])):
+                continue
+            # role scoping (mirrors the sheet-row scoping above, but exact)
+            if role == "supervisor" and d.manager_id != payload.get("role_id"):
+                continue
+            if role == "leader" and not (
+                prof.manager_id == payload.get("role_id")
+                and prof.name == (payload.get("full_name") or "")
+            ):
+                continue
+            mgr = mgr_by_id.get(d.manager_id)
+            data.append({
+                "uid": f"bot-{d.id}",
+                "date": d.date,
+                "submitted_at": d.closed_at.isoformat() if d.closed_at else None,
+                "supervisor": mgr.name if mgr else "N/A",
+                "shift": mgr.shift if mgr else None,
+                "leader": prof.name,
+                "completion": float(d.completion or 0),
+                "tasks": [
+                    {
+                        "id": e.task_id,
+                        "done": bool(e.done),
+                        "answered": True,
+                        "photo": "",
+                        "reason": e.reason or "",
+                        "media": media_by_entry.get(e.id, []),
+                    }
+                    for e in sorted(entries_by_day.get(d.id, []), key=lambda e: e.task_id)
+                ],
+            })
+
+        data.sort(key=lambda r: str(r["date"]), reverse=True)
+
     return {
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
-        "data": [
-            {
-                # The form's submission id when we have it — unlike the row id it
-                # survives the wipe-and-reload of every sheet refresh.
-                "uid": r.submission_id or f"row-{r.id}",
-                "date": r.date,
-                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
-                "supervisor": _relabel(r.supervisor),
-                "shift": sup_shift.get(_relabel(r.supervisor)),
-                "leader": r.leader,
-                "completion": float(r.completion or 0),
-                "tasks": r.tasks or [],
-            }
-            for r in rows
-        ],
+        "data": data,
     }
