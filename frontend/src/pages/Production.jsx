@@ -437,6 +437,8 @@ export default function Production() {
   // Catalog fields (Сап код / Наименование / Труд. / Команда) are admin-editable
   // only — supervisors keep the read-only cells and just edit Факт/ПЛАН.
   const canEditCatalog = auth?.role === "admin";
+  // Staffing-card pins (O.soni / штатка, per date) are admin-only as well.
+  const canEditStaffing = auth?.role === "admin";
 
   const { data, isLoading, isPlaceholderData, isError, error } = useQuery({
     queryKey: ["production", date, managerParam.manager_id ?? "self"],
