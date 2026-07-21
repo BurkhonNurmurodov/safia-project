@@ -1549,6 +1549,8 @@ const t = {
     "production.editManually":     "Qo'lda o'zgartirish",
     "production.editRow":          "Tahrirlash",
     "production.editTitle":        "Pozitsiyani tahrirlash",
+    "production.wcEditTitle":      "Jamoa tarkibi",
+    "production.wcEditHint":       "Bo'sh qoldirilsa hisoblangan qiymat ishlatiladi. O'zgartirish faqat tanlangan sanaga tegishli.",
     "production.addRow":           "Qo'shish",
     "production.createTitle":      "Yangi pozitsiya",
     "production.cancelEdit":       "Bekor qilish",
