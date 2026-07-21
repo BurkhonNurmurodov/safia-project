@@ -65,6 +65,16 @@ export default function MediaViewer() {
     }
   }
 
+  function download() {
+    if (!blobUrl || !meta) return;
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = meta.file_name || "file";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function copyId() {
     if (!meta?.file_id) return;
     navigator.clipboard?.writeText(meta.file_id).then(() => {
