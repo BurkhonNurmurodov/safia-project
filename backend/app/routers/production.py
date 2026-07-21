@@ -231,7 +231,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
             "actual_overridden": d.actual_override is not None,
         }
 
-    shift_min, productive_min, global_pm = _day_constants(db, manager_id, day)
+    shift_min, global_pm = _constants(db)
+    pinned_pm = _day_pin(db, manager_id, day)
+    # pinned → that efficiency governs every cell; unpinned → each WC keeps its
+    # configured capacity and the box merely reports the unit's current rate
+    productive_min = pinned_pm if pinned_pm else _unit_per_head(wcs, global_pm)
     result = compute_dashboard(
         products=[{
             "id": p.id,
