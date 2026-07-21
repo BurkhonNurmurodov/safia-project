@@ -378,6 +378,256 @@ function RawView({ fileType, date, managerParam, ready = true }) {
   );
 }
 
+// ── «Odamlar soni» tab ───────────────────────────────────────────────────────
+// Two tables side by side.
+//   LEFT  — what the formula SUGGESTS: N = ROUND(W × Σmehnat / S), with S = the
+//           day's productive minutes per head. The efficiency box on top drives
+//           it; «Qo'llash» only re-runs this preview, nothing is written, so a
+//           brigadir can try «what if 90%» before committing.
+//   RIGHT — the day's ACTUAL numbers, typed by the brigadir. Blank = follow the
+//           formula, identical semantics to the staffing-card pin.
+// Save writes the efficiency AND every pin in one call; the whole page (load %,
+// ЛЮДИ, Минут, KPIs) then recomputes off them, for THIS date only.
+const roundHalfUp = (x) => Math.floor(x + 0.5);
+
+function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
+  const { t } = useLang();
+  const shiftMin = Number(constants?.shift_min) || 480;
+  const curPm = Number(constants?.productive_min) || 425;
+  // 425 min of a 480 min shift = 88.5%, NOT the 85% the Excel label says — the
+  // box always shows the day's real share so nothing shifts behind the user.
+  const pctOf = (min) => Math.round((min / shiftMin) * 1000) / 10;
+  const minOf = (p) => (p * shiftMin) / 100;
+
+  const [effPct, setEffPct] = useState(() => String(pctOf(curPm)));
+  const [appliedPm, setAppliedPm] = useState(curPm);
+  const [draft, setDraft] = useState({});
+
+  // Re-seed only when the SAVED state changes (date switch, brigadir switch, or
+  // our own save landing) — a background refetch returning identical pins must
+  // not wipe what the user is in the middle of typing.
+  const seedKey = wcs.map((w) => `${w.work_center}:${w.people_overridden ? w.people : ""}:${w.shtatka_overridden ? w.shtatka : ""}`).join("|");
+  useEffect(() => {
+    setDraft(Object.fromEntries(wcs.map((w) => [w.work_center, {
+      people: w.people_overridden ? String(w.people) : "",
+      shtatka: w.shtatka_overridden ? String(w.shtatka) : "",
+    }])));
+  }, [seedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setEffPct(String(pctOf(curPm))); setAppliedPm(curPm); }, [curPm]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const typedPct = Number(String(effPct).replace(",", "."));
+  const pctValid = Number.isFinite(typedPct) && typedPct > 0 && typedPct <= 100;
+  const previewPm = pctValid ? minOf(typedPct) : curPm;   // the «= N min» chip follows typing
+
+  // The suggestion runs off the CONFIGURED штатка, so it stays a stable
+  // reference to compare the typed actuals against. W cancels out unless the
+  // cell carries a hand-set capacity — those ignore the efficiency entirely.
+  const suggest = (w, pm) => {
+    const W = Number(w.shtatka_cfg) || 0;
+    const Q = Number(w.total_labor) || 0;
+    const cap = w.capacity_cfg;
+    const S = cap != null && Number(cap) > 0 ? Number(cap) : W * pm;
+    return S > 0 && W > 0 ? roundHalfUp((W * Q) / S) : 0;
+  };
+
+  const setCell = (code, key) => (v) =>
+    setDraft((d) => ({ ...d, [code]: { ...(d[code] || { people: "", shtatka: "" }), [key]: v } }));
+
+  const num = (v) => {
+    const s = String(v ?? "").trim();
+    if (s === "") return null;
+    const n = Number(s.replace(",", "."));
+    return Number.isFinite(n) ? Math.round(n) : null;
+  };
+
+  const dirty =
+    (pctValid && Math.abs(previewPm - curPm) > 0.001) ||
+    wcs.some((w) => {
+      const d = draft[w.work_center] || { people: "", shtatka: "" };
+      return String(w.people_overridden ? w.people : "") !== String(d.people).trim() ||
+             String(w.shtatka_overridden ? w.shtatka : "") !== String(d.shtatka).trim();
+    });
+
+  const apply = () => { if (pctValid) setAppliedPm(previewPm); };
+  const save = () => {
+    if (!pctValid) return;
+    setAppliedPm(previewPm);           // committing also lands it in the preview
+    onSave({
+      productive_min: Math.round(previewPm * 100) / 100,
+      rows: wcs.map((w) => {
+        const d = draft[w.work_center] || { people: "", shtatka: "" };
+        return { work_center: w.work_center, people: num(d.people), shtatka: num(d.shtatka) };
+      }),
+    });
+  };
+
+  const totalShtat = wcs.reduce((s, w) => s + (Number(w.shtatka_cfg) || 0), 0);
+  const totalSuggest = wcs.reduce((s, w) => s + suggest(w, appliedPm), 0);
+
+  const chip = (code) => {
+    const c = wcColor(code);
+    return (
+      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md"
+        style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}` }}>{code}</span>
+    );
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      {/* suggestion — formula output at the previewed efficiency */}
+      <TableCard
+        icon={Gauge}
+        title={t("production.peopleSuggested")}
+        right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : `${wcs.length} ${t("production.unitsCount")}`}</span>}
+        toolbar={
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              {t("production.efficiency")}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <input
+                value={effPct}
+                type="number"
+                step="0.1"
+                disabled={!canEdit}
+                onChange={(e) => setEffPct(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
+                className="w-20 rounded-lg px-3 py-2 text-sm outline-none tabular-nums"
+                style={{
+                  background: "var(--bg-inner)", color: "var(--text-1)",
+                  border: `1px solid ${pctValid ? "var(--border-md)" : "#ef4444"}`,
+                }}
+              />
+              <span className="text-sm" style={{ color: "var(--text-3)" }}>%</span>
+            </span>
+            {/* the minutes follow the % as it is typed — the table waits for Apply */}
+            <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
+              style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
+              = {fmt(previewPm, 0)} {t("production.minUnit")} / {t("production.perPerson")}
+            </span>
+            {canEdit && (
+              <Button size="lg" variant="secondary" onClick={apply}
+                disabled={!pctValid || Math.abs(previewPm - appliedPm) < 0.001}>
+                {t("production.apply")}
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <thead>
+          <tr>
+            <Th label={t("production.col.wc")} />
+            <Th label={t("production.shtatka")} align="center" />
+            <Th label={t("production.oSoni")} align="center" hint={t("production.peopleSuggestedHint")} />
+          </tr>
+        </thead>
+        <tbody>
+          {loading && Array.from({ length: 4 }).map((_, i) => (
+            <tr key={`sg-sk-${i}`}>
+              {Array.from({ length: 3 }).map((__, j) => (
+                <td key={j} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
+              ))}
+            </tr>
+          ))}
+          {!loading && wcs.map((w) => (
+            <tr key={w.work_center}>
+              <td className="px-3 py-2">{chip(w.work_center)}</td>
+              <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka_cfg, 0)}</td>
+              <td className="px-3 py-2 text-center tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmt(suggest(w, appliedPm), 0)}</td>
+            </tr>
+          ))}
+          {!loading && wcs.length > 0 && (
+            <tr>
+              <td className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{t("production.peopleTotal")}</td>
+              <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-2)" }}>{fmt(totalShtat, 0)}</td>
+              <td className="px-3 py-2 text-center tabular-nums font-bold" style={{ color: "var(--text-1)" }}>{fmt(totalSuggest, 0)}</td>
+            </tr>
+          )}
+          {!loading && wcs.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-6 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</td></tr>
+          )}
+        </tbody>
+      </TableCard>
+
+      {/* actuals — what the day really ran with */}
+      <div>
+        <TableCard
+          icon={Users}
+          title={t("production.peopleActual")}
+          right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{loading ? "" : dirty ? t("production.unsaved") : ""}</span>}
+        >
+          <thead>
+            <tr>
+              <Th label={t("production.col.wc")} />
+              <Th label={t("production.oSoni")} align="center" />
+              <Th label={t("production.shtatka")} align="center" />
+            </tr>
+          </thead>
+          <tbody>
+            {loading && Array.from({ length: 4 }).map((_, i) => (
+              <tr key={`ac-sk-${i}`}>
+                {Array.from({ length: 3 }).map((__, j) => (
+                  <td key={j} className="px-3 py-2"><SkeletonBlock className="h-4 w-full" /></td>
+                ))}
+              </tr>
+            ))}
+            {!loading && wcs.map((w) => {
+              const d = draft[w.work_center] || { people: "", shtatka: "" };
+              return (
+                <tr key={w.work_center}>
+                  <td className="px-3 py-2">{chip(w.work_center)}</td>
+                  {[["people", w.people_calc], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
+                    <td key={key} className="px-3 py-1.5 text-center">
+                      {canEdit ? (
+                        <input
+                          value={d[key]}
+                          type="number"
+                          placeholder={fmt(fallback, 0)}
+                          onChange={(e) => setCell(w.work_center, key)(e.target.value)}
+                          className="w-20 rounded-lg px-2 py-1.5 text-sm text-center outline-none tabular-nums"
+                          style={{
+                            background: "var(--bg-inner)", border: "1px solid var(--border-md)",
+                            color: String(d[key]).trim() === "" ? "var(--text-2)" : "var(--brand-text)",
+                            fontWeight: String(d[key]).trim() === "" ? 400 : 700,
+                          }}
+                        />
+                      ) : (
+                        <span className="tabular-nums" style={{ color: "var(--text-2)" }}>
+                          {fmt(key === "people" ? w.people : w.shtatka, 0)}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+            {!loading && wcs.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-6 text-center text-sm" style={{ color: "var(--text-4)" }}>{t("production.noUnits")}</td></tr>
+            )}
+          </tbody>
+        </TableCard>
+
+        {canEdit && (
+          <div className="flex items-center justify-between gap-3 mt-2.5 flex-wrap">
+            <p className="text-[11px] leading-relaxed flex-1 min-w-[200px]" style={{ color: "var(--text-3)" }}>
+              {t("production.peopleHint")}
+            </p>
+            <Button
+              size="lg"
+              icon={savedAt ? <CheckCircle size={14} /> : <Save size={14} />}
+              loading={saving}
+              disabled={!dirty || !pctValid}
+              onClick={save}
+            >
+              {savedAt ? t("production.savedOk") : t("production.save")}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
