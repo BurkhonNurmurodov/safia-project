@@ -224,7 +224,7 @@ export default function LeaderTasksAdmin() {
         <Modal
           title={t("admin.ltasks.cellTitle")}
           subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")}
-          icon={ListChecks}
+          icon={<ListChecks size={14} />}
           onClose={() => setCell(null)}
           footer={
             <>
