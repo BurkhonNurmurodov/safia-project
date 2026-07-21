@@ -15,6 +15,7 @@ import ProductionUpload from "./ProductionUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import MediaViewer from "./MediaViewer";
+import LeaderTasksAdmin from "./LeaderTasksAdmin";
 import { fillDescs } from "../../utils/segments";
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
