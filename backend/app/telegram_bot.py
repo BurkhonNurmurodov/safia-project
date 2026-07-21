@@ -1404,6 +1404,59 @@ def _broadcast_callback(call: types.CallbackQuery):
     bot.answer_callback_query(call.id)
 
 
+# ── Media → file_id echo (admins only) ────────────────────────────────────────
+# Any attachment an admin sends outside a /broadcast draft is answered with its
+# file_id in a tap-to-copy <code> block, so it can be pasted into the admin
+# panel's «Media» tab or reused as a bot attachment. Registered AFTER
+# _broadcast_capture so a draft in progress still wins, and BEFORE _fallback so
+# non-admins keep getting the usual "unknown command" reply.
+
+_FILE_ID_CONTENT = ["photo", "video", "document", "audio", "voice",
+                    "animation", "video_note", "sticker"]
+
+
+def _message_file_id(message: types.Message) -> tuple[str, int | None] | None:
+    """(file_id, size) of the message's attachment, or None if it carries none.
+    Photos arrive as a size ladder — the largest one is the useful id."""
+    if message.content_type == "photo" and message.photo:
+        best = max(message.photo, key=lambda p: p.file_size or 0)
+        return best.file_id, best.file_size
+    obj = getattr(message, message.content_type, None)
+    fid = getattr(obj, "file_id", None)
+    return (fid, getattr(obj, "file_size", None)) if fid else None
+
+
+def _human_size(size: int | None) -> str:
+    if not size:
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f" · {size:.0f} {unit}" if unit == "B" else f" · {size:.1f} {unit}"
+        size /= 1024.0
+    return ""
+
+
+@bot.message_handler(func=lambda m: m.from_user.id in _admin_ids(),
+                     content_types=_FILE_ID_CONTENT)
+def _file_id_echo(message: types.Message):
+    lang = _get_lang(message.from_user.id)
+    found = _message_file_id(message)
+    if not found:
+        bot.send_message(message.chat.id, _msg(lang, "unknown_command"))
+        return
+    fid, size = found
+    txt = _msg(lang, "file_id_reply").format(
+        kind=html.escape(_media_label(lang, message.content_type)),
+        size=_human_size(size),
+        fid=html.escape(fid),
+    )
+    try:
+        bot.send_message(message.chat.id, txt, parse_mode="HTML",
+                         reply_to_message_id=message.message_id)
+    except Exception:
+        logger.warning("Failed to echo file_id to %s", message.from_user.id, exc_info=True)
+
+
 @bot.message_handler(func=lambda m: True)
 def _fallback(message: types.Message):
     lang = _get_lang(message.from_user.id)
