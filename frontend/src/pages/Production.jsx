@@ -191,11 +191,12 @@ function QtyCell({ value, overridden, onSave }) {
 
 // ── catalog edit-modal input (Сап код / Наименование / Труд. / Команда) ───────
 // The standard full-width modal text input (matches the Concerns/Staff forms).
-function ModalInput({ value, onChange, type = "text", className = "" }) {
+function ModalInput({ value, onChange, type = "text", className = "", placeholder }) {
   return (
     <input
       value={value}
       type={type}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
       className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
