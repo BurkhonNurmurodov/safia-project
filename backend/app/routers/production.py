@@ -659,6 +659,87 @@ def set_wc_override(
     return _build_dashboard(db, mid, day)
 
 
+class StaffingRow(BaseModel):
+    work_center: str
+    people: Optional[int] = None
+    shtatka: Optional[int] = None
+
+
+class StaffingBody(BaseModel):
+    date: str
+    # per-person productive minutes for THIS day (the efficiency box, sent as
+    # minutes so the engine takes it verbatim). null = drop the pin and follow
+    # the global pp_productive_min again.
+    productive_min: Optional[float] = None
+    # authoritative for every work center it lists; null field = clear that pin
+    # and fall back to the computed N / configured штатка.
+    rows: list[StaffingRow] = []
+
+
+@router.post("/api/production/staffing")
+def save_staffing(
+    body: StaffingBody,
+    manager_id: Optional[int] = Query(None),
+    payload: dict = Depends(require_page(PAGE)),
+    db: Session = Depends(get_db),
+):
+    """Bulk-save one day's staffing from the «Odamlar soni» tab: the efficiency
+    plus every cell's actual O. SONI / штатка, in a single commit.
+
+    Same per-day store as the staffing-card pin (pp_work_center_daily), so the
+    master pp_work_centers config and every other date stay untouched. Open to
+    admins and to supervisors — a brigadir enters their own unit's real numbers;
+    _resolve_manager_id pins a supervisor to their own unit regardless of the
+    manager_id they send."""
+    if payload.get("role") not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Not allowed to edit staffing")
+    mid = _resolve_manager_id(payload, manager_id, db)
+    day = _parse_date(body.date)
+    shift_min, _, global_pm = _day_constants(db, mid, day)
+
+    pm = body.productive_min
+    if pm is not None:
+        pm = round(float(pm), 2)
+        if not (1 <= pm <= shift_min):
+            raise HTTPException(status_code=400,
+                                detail=f"productive_min must be between 1 and {shift_min:g}")
+        if abs(pm - global_pm) < 0.001:      # back at the platform default → no pin
+            pm = None
+    for r in body.rows:
+        for name, val in (("people", r.people), ("shtatka", r.shtatka)):
+            if val is not None and not (0 <= val <= 9999):
+                raise HTTPException(status_code=400, detail=f"{name} must be between 0 and 9999")
+
+    existing = {o.work_center: o for o in db.query(PPWorkCenterDaily).filter(
+        PPWorkCenterDaily.manager_id == mid, PPWorkCenterDaily.date == day).all()}
+    for r in body.rows:
+        code = (r.work_center or "").strip()
+        if not code:
+            continue
+        row = existing.get(code)
+        if r.people is None and r.shtatka is None:
+            if row:
+                db.delete(row)
+        elif row:
+            row.people, row.shtatka = r.people, r.shtatka
+        else:
+            db.add(PPWorkCenterDaily(manager_id=mid, date=day, work_center=code,
+                                     people=r.people, shtatka=r.shtatka))
+
+    ds = db.query(PPDaySetting).filter(
+        PPDaySetting.manager_id == mid, PPDaySetting.date == day).first()
+    if pm is None:
+        if ds:
+            db.delete(ds)
+    elif ds:
+        ds.productive_min = pm
+    else:
+        db.add(PPDaySetting(manager_id=mid, date=day, productive_min=pm))
+
+    db.commit()
+    return _build_dashboard(db, mid, day)
+
+
 class ReconciliationBody(BaseModel):
     date: str
     data: dict
