@@ -4886,6 +4886,7 @@ const t = {
     "nav.production":      "Production",
     "nav.trudoyomkost":    "Plan Forecasting",
     "nav.leaders":         "Leader Monitoring",
+    "nav.leadersBot":      "Leader Monitoring · Bot",
     "nav.kaizen":          "Kaizen Projects",
     "nav.quality":         "Quality & Complaints",
     "nav.activity":        "Users Activity",
