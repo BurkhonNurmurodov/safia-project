@@ -1457,9 +1457,10 @@ def _broadcast_callback(call: types.CallbackQuery):
 # In-bot replacement of the Google-Form collection layer of /leaders: a leader
 # marks each enabled task done (with proof photos, relayed as BYTES to the
 # archive channel) or not done (with a reason), then locks the day with «KUNNI
-# YOPISH». Only closed days surface on the dashboard; a sheet row for the same
-# (leader, date) still wins over the bot's. Capture state lives in _state[tid]
-# ["lt"] — lost on restart, in which case the leader just re-runs /tasks.
+# YOPISH». Only closed days surface on the admin-only /leaders-bot page.
+# Capture state (mid-answer photos/reason) lives in the leader_task_captures
+# table — NOT process memory: Passenger dispatches consecutive updates to
+# different worker processes, exactly like the broadcast_drafts flow.
 
 _LT_MESSAGES = {
     "uz": {
