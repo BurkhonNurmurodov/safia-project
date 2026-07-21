@@ -188,6 +188,7 @@ app.include_router(boot.router)
 app.include_router(ui_prefs.router)
 app.include_router(broadcast.router)
 app.include_router(setup_times.router)
+app.include_router(leader_tasks.router)
 
 
 @app.get("/health")
