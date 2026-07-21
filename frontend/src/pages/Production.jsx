@@ -390,6 +390,12 @@ function RawView({ fileType, date, managerParam, ready = true }) {
 // ЛЮДИ, Минут, KPIs) then recomputes off them, for THIS date only.
 const roundHalfUp = (x) => Math.floor(x + 0.5);
 
+// The Excel's «Для 85% труд» is 85% of FIVE HUNDRED minutes — that is where the
+// 425 comes from (425 / 0.85 = 500 exactly), NOT 85% of the 480-minute shift.
+// So the box carries both readings: the nominal % the brigadirs know (editable)
+// and the true share of the shift it works out to (425 / 480 = 88.5%).
+const NOMINAL_BASE = 500;
+
 function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
   const { t } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
