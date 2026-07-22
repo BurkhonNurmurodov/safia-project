@@ -505,6 +505,11 @@ const TIER_BANDS = [
 ];
 const TIER_BAD = { key: "tierBad", color: C_BAD, Icon: ShieldAlert };
 const tierOf = (v, cuts = TIER_CUTS) => TIER_BANDS.find((b) => v >= cuts[b.cut]) || TIER_BAD;
+// Cutoffs must stay strictly descending: a band whose floor sits at or above the
+// one above it can never be reached. Guards the editor before the PUT does.
+const tierOrderOk = (c) =>
+  [c?.top, c?.good, c?.mid].every((v) => Number.isFinite(v) && v >= 0 && v <= 100)
+  && c.top > c.good && c.good > c.mid;
 
 function Avatar({ name, size = 24 }) {
   const hue = hueOf(name);
