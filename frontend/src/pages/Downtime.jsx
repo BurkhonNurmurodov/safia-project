@@ -33,7 +33,14 @@ export default function Downtime() {
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
-  const fmt = (v, d = 1) => fmtTime(v, unit, d, minLabel, hrsLabel);
+  // Waiting times here are routinely single-digit minutes, where fractional
+  // hours collapse: at one decimal every 0.1 is a 6-minute bucket, so 3 min and
+  // 8 min both render "0.1 soat" and two very different slices read identical.
+  // The hrs unit therefore renders a compound span ("8 daq", "1 soat 35 daq").
+  // Minutes mode is unchanged — it never had the collision.
+  const durLabels = { day: t("general.unitDay"), hour: t("general.unitHour"), min: t("general.unitMin") };
+  const fmtHrs = (v) => fmtDuration(v, durLabels);
+  const fmt = (v, d = 1) => (unit === "hrs" ? fmtHrs(v) : fmtTime(v, unit, d, minLabel, hrsLabel));
 
   const { data, isLoading } = useQuery({
     queryKey: ["downtime", params],
