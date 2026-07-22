@@ -734,9 +734,6 @@ const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, la
             }} />
         );
       })}
-      {Array.from({ length: padCount }, (_, i) => (
-        <td key={`p${i}`} style={{ width: cellW, height: HM_ROW_H, borderLeft: seam, borderBottom: seam }} />
-      ))}
     </tr>
   );
 });
