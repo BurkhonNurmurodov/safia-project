@@ -149,8 +149,20 @@ export default function UsersManagement() {
     (u.roles?.length ? u.roles : [null]).map((r) => ({ user: u, role: r })),
   ).filter((row) => row.role);
 
+  // Search spans the claimed profile name AND the Telegram account it was
+  // filed from (raw + transliterated, so «Сех просеивание» is findable while
+  // the UI runs in Latin), plus @username / phone.
+  const needle = query.trim().toLowerCase();
+  const matchesQuery = ({ user, role }) =>
+    !needle ||
+    [
+      role.full_name, user.full_name, user.tg_name,
+      tl(role.full_name), tl(user.full_name), tl(user.tg_name),
+      user.username, user.phone,
+    ].some((v) => v && String(v).toLowerCase().includes(needle));
+
   const filtered = rows.filter(
-    (row) => statusFilter === "all" || row.role.status === statusFilter,
+    (row) => (statusFilter === "all" || row.role.status === statusFilter) && matchesQuery(row),
   );
 
   const countByStatus = (s) => rows.filter((row) => row.role.status === s).length;
