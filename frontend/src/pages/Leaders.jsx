@@ -665,6 +665,61 @@ function TierChip({ value, T, cuts }) {
   );
 }
 
+/* ── trend column ─────────────────────────────────────────────────────────────
+ * Two readings of "is this person moving" that a per-range ranking can still
+ * give: the Reyting's change against the previous period of the SAME length
+ * (the chip), and the day-by-day score across the picked period (the spark).
+ * Both come out of the same scoring core as the row itself — missing day = 0 —
+ * so the chip can never disagree with the Reyting printed beside it. `prev` is
+ * null when the sheet holds nothing at all before the window: without a
+ * baseline every chip would print a fake "+62". ±1 point is rounding noise,
+ * not movement — it stays grey, as does the spark's end dot. */
+const trendParts = (trend, e) => {
+  const prevR = trend.prev ? trend.prev.get(e.name) ?? 0 : null;
+  const delta = prevR == null ? null : e.rating - prevR;
+  const flat = delta == null || Math.abs(delta) <= 1;
+  return { prevR, delta, tone: flat ? C_FLAT : delta > 0 ? C_GOOD : C_BAD,
+    Icon: flat ? Minus : delta > 0 ? TrendingUp : TrendingDown };
+};
+
+function DeltaChip({ trend, e, T }) {
+  const { prevR, delta, tone, Icon } = trendParts(trend, e);
+  return (
+    <span className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap"
+      title={delta == null ? T.trendNoPrev : `${T.trendVsPrev}: ${prevR}% → ${e.rating}%`}
+      style={{ background: hexA(tone, 0.14), color: tone }}>
+      <Icon size={12} />{delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}
+    </span>
+  );
+}
+
+/* The spark is one polyline — a wide window is a few hundred points but still a
+ * single DOM node, so no SVG filters and nothing per-cell to freeze on. */
+const SPARK_W = 84, SPARK_H = 24;
+function Spark({ vals, tone }) {
+  if (!vals || vals.length < 2) return null;
+  const pt = (v, i) => [3 + (i / (vals.length - 1)) * (SPARK_W - 6),
+    SPARK_H - 3 - (Math.min(100, Math.max(0, v)) / 100) * (SPARK_H - 6)];
+  const [ex, ey] = pt(vals[vals.length - 1], vals.length - 1);
+  return (
+    <svg width={SPARK_W} height={SPARK_H} className="flex-shrink-0" aria-hidden="true">
+      <polyline points={vals.map((v, i) => pt(v, i).join(",")).join(" ")} fill="none"
+        stroke="var(--text-4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={ex} cy={ey} r="2.5" fill={tone} />
+    </svg>
+  );
+}
+
+function TrendCell({ trend, e, T }) {
+  const { tone } = trendParts(trend, e);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Spark vals={trend.sparks.get(e.name)} tone={tone} />
+      <DeltaChip trend={trend} e={e} T={T} />
+    </span>
+  );
+}
+
 // One stat inside a podium card: label, value, micro-gauge. The metric the list
 // is ranked by gets a brand-gold label so the card says why it is on the card.
 function CardStat({ label, value, pct, color, active }) {
