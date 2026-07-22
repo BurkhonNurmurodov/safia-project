@@ -48,14 +48,23 @@ def get_downtime(
         DowntimeData.date.in_(dates),
     ).all()
 
+    # Both halves of every category pair travel together: `total`/`by_category`
+    # are the «тўхтаганда» numbers (the wait stopped the cell) and the `_ns`
+    # fields the «тўхтамаганда» ones. The page tabs between them client-side, so
+    # one fetch serves both and switching tabs costs no round-trip.
     dt_total: dict[str, dict[str, float]] = {}
     dt_by_cat: dict[str, dict[str, dict]] = {}
+    dt_total_ns: dict[str, dict[str, float]] = {}
+    dt_by_cat_ns: dict[str, dict[str, dict]] = {}
     cat_names_set: set[str] = set()
     for r in dt_rows:
         canon = alias.get(r.manager_name, r.manager_name)
         dt_total.setdefault(canon, {})[r.date] = float(r.total_minutes or 0)
         dt_by_cat.setdefault(canon, {})[r.date] = r.by_category or {}
+        dt_total_ns.setdefault(canon, {})[r.date] = float(r.total_minutes_ns or 0)
+        dt_by_cat_ns.setdefault(canon, {})[r.date] = r.by_category_ns or {}
         cat_names_set.update((r.by_category or {}).keys())
+        cat_names_set.update((r.by_category_ns or {}).keys())
 
     cat_names = sorted(cat_names_set)
 
