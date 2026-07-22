@@ -49,6 +49,13 @@ export default function DowntimeToggleChart({
   unit,
   minLabel,
   hrsLabel,
+  // Compound-span unit words ("kun" / "soat" / "daq"). Passed as three plain
+  // strings rather than a formatter or an options object so they stay stable
+  // dependencies of the options useMemo below — an inline function or literal
+  // would change identity every render and rebuild the chart each time.
+  unitDayLabel,
+  unitHourLabel,
+  unitMinLabel,
   thresholdText,
   catColors,
   chartTheme,
