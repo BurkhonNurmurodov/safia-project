@@ -1175,11 +1175,11 @@ export default function Leaders({ botMode = false }) {
               <thead>
                 <tr>
                   <Th label={T.thPlace} cls="w-[58px]" />
-                  <Th label={effStandMode === "leader" ? T.thLeader : T.supervisor} cls="border-l" />
-                  <Th label={T.thDays} cls="border-l w-[92px]" hint={`${T.daysSent} – ${T.daysMissed}`} />
-                  <Th label={T.standRating} k="rating" sort={standSort} onSort={onStandSort} cls="border-l w-[104px]" />
-                  <Th label={T.standConsist} k="consist" sort={standSort} onSort={onStandSort} cls="border-l w-[112px]" />
-                  <Th label={T.thTier} cls="border-l w-[116px]" />
+                  <Th label={effStandMode === "leader" ? T.thLeader : T.supervisor} cls="border-l border-[var(--border)]" />
+                  <Th label={T.thDays} cls="border-l border-[var(--border)] w-[92px]" hint={`${T.daysSent} – ${T.daysMissed}`} />
+                  <Th label={T.standRating} k="rating" sort={standSort} onSort={onStandSort} cls="border-l border-[var(--border)] w-[104px]" />
+                  <Th label={T.standConsist} k="consist" sort={standSort} onSort={onStandSort} cls="border-l border-[var(--border)] w-[112px]" />
+                  <Th label={T.thTier} cls="border-l border-[var(--border)] w-[116px]" />
                 </tr>
               </thead>
               <tbody>
