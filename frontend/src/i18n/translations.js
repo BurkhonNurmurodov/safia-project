@@ -5672,6 +5672,10 @@ const t = {
 
     // ── Downtime ──────────────────────────────────────────────────────────────
     "downtime.title":        "Idle Time · Equipment Downtime",
+    "downtime.tabStopped":   "Cell stopped",
+    "downtime.tabNotStopped":"Cell not stopped",
+    "downtime.tabStoppedSub":"Waiting that halted the cell",
+    "downtime.tabNotStoppedSub":"Waiting that did not halt the cell",
     "downtime.totalDowntime":"Total Downtime",
     "downtime.flaggedDays":  "Supervisors with Flagged Days",
     "downtime.worstCategory":"Most Affected Category",
