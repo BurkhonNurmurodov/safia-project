@@ -4043,6 +4043,10 @@ const t = {
 
     // ── Downtime ──────────────────────────────────────────────────────────────
     "downtime.title":        "Ожидания · Ожидания оборудования",
+    "downtime.tabStopped":   "Остановлена",
+    "downtime.tabNotStopped":"Не остановлена",
+    "downtime.tabStoppedSub":"Ожидание, остановившее ячейку",
+    "downtime.tabNotStoppedSub":"Ожидание, не остановившее ячейку",
     "downtime.totalDowntime":"Общие ожидания",
     "downtime.flaggedDays":  "Бригадиры с отмеченными днями",
     "downtime.worstCategory":"Наиболее пострадавшая категория",
