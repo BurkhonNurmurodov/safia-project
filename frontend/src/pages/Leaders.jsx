@@ -1812,6 +1812,9 @@ export default function Leaders({ botMode = false }) {
                           </span>
                         </td>
                       )}
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <TrendCell trend={standTrend} e={e} T={T} />
+                      </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
                         <div className="font-bold" style={{ color: "var(--text-1)" }}>
