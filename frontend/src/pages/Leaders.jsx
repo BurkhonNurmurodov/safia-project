@@ -1461,7 +1461,7 @@ export default function Leaders({ botMode = false }) {
       {/* Task-info modal */}
       {standInfo && (
         <Modal maxWidth="max-w-lg" title={effStandMode === "leader" ? T.standing : T.supStanding} onClose={() => setStandInfo(false)}>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>{T.standInfo}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-2)" }}>{T.standInfo}</p>
           {standings.winFrom && (
             <p className="text-xs mt-3 tabular-nums" style={{ color: "var(--text-4)" }}>
               {T.winLabel}: {ddmm(standings.winFrom)} – {ddmm(standings.winTo)} · {standings.winDays} {T.dayAbbr}
