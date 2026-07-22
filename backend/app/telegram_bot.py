@@ -970,6 +970,10 @@ def _adminreg_pick(call: types.CallbackQuery):
 def _contact(message: types.Message):
     tid = message.from_user.id
     if message.contact.user_id != tid:
+        # Someone from the address book, not their own number — only Telegram's
+        # own button proves the number belongs to this account.
+        if _awaiting_contact(tid):
+            _ask_contact(tid, _get_lang(tid), "contact_not_own")
         return
 
     phone = message.contact.phone_number
