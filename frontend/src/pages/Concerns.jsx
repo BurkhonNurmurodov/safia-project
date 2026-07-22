@@ -845,6 +845,69 @@ export default function Concerns() {
     return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen, maxFlow };
   }, [filtered, chartFiltered, chartStart, endDate]);
 
+  // ── analytics-tab aggregates ────────────────────────────────────────────────
+  // Category / brigadir / level splits plus the age-vs-resolution histogram,
+  // all built over the SAME fully filtered rows the headline charts use so both
+  // tabs always tell one story. Keys and counts only — labels and colours are
+  // mapped outside the memo (they depend on t()/tl(), which change identity
+  // every render and would bust the memo).
+  const analytics = useMemo(() => {
+    const today = localTodayIso();
+    const isOverdue = (r) =>
+      r.status !== "done" && r.deadline_days != null && r.entry_date &&
+      r.entry_date < isoMinusDays(today, r.deadline_days);
+    // Same four disjoint buckets as the donut — an overdue row leaves its
+    // todo/doing bucket, so the stacks always add up to the row count.
+    const bucketOf = (r) =>
+      r.status === "done" ? "done" : isOverdue(r) ? "overdue" : r.status === "doing" ? "doing" : "todo";
+
+    const byCategory = new Map();
+    const byBrigadir = new Map();
+    const byLevel = new Map();          // still-open rows only: who holds them now
+
+    // Shared day buckets: 0–1 · 2–3 · 4–7 · 8–14 · 15+. Done rows contribute
+    // their resolution span, open ones how long they have been waiting.
+    const bucketIdx = (d) => (d <= 1 ? 0 : d <= 3 ? 1 : d <= 7 ? 2 : d <= 14 ? 3 : 4);
+    const ageDone = [0, 0, 0, 0, 0];
+    const ageOpen = [0, 0, 0, 0, 0];
+
+    const push = (map, key, b) => {
+      if (!key) return;
+      const g = map.get(key) || { done: 0, doing: 0, todo: 0, overdue: 0, total: 0 };
+      g[b] += 1; g.total += 1;
+      map.set(key, g);
+    };
+
+    for (const r of filtered) {
+      const b = bucketOf(r);
+      push(byCategory, r.category, b);
+      push(byBrigadir, r.brigadir_name, b);
+      if (r.status !== "done") {
+        const lv = r.level || "supervisor";
+        byLevel.set(lv, (byLevel.get(lv) || 0) + 1);
+      }
+      const span = r.status === "done"
+        ? (r.resolution_days != null
+            ? r.resolution_days
+            : r.entry_date && r.completion_date ? Math.max(0, isoDiffDays(r.completion_date, r.entry_date)) : null)
+        : (r.entry_date ? Math.max(0, isoDiffDays(today, r.entry_date)) : null);
+      if (span != null) (r.status === "done" ? ageDone : ageOpen)[bucketIdx(span)] += 1;
+    }
+
+    const rank = (map) => [...map.entries()]
+      .map(([key, g]) => ({ key, ...g }))
+      .sort((a, b) => b.total - a.total || String(a.key).localeCompare(String(b.key)));
+
+    return {
+      categories: rank(byCategory),
+      brigadirs: rank(byBrigadir),
+      levels: Object.fromEntries(byLevel),
+      openTotal: [...byLevel.values()].reduce((s, n) => s + n, 0),
+      ageDone, ageOpen,
+      ageMax: Math.max(...ageDone, ...ageOpen, 0),
+    };
+  }, [filtered]);
+
   // ── column sort (asc → desc → off), applied over the filtered rows ──────────
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" }
