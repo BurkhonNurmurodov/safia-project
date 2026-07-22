@@ -5,7 +5,7 @@ import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
-  Crown, Award, Shield, ShieldAlert, SlidersHorizontal,
+  Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
