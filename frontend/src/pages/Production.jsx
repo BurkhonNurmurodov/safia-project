@@ -204,10 +204,11 @@ function ModalInput({ value, onChange, type = "text", className = "", placeholde
   );
 }
 
-// Catalog form body — the four editable catalog fields (Сап код / Команда /
-// Наименование / Труд.), shared by the create and edit modals so both stay
-// identical. `draft` = { sap_code, name, labor_time, work_center }; `setDraft`
-// is the curried (key) => (value) => … updater.
+// Catalog form body — the editable catalog fields (Сап код / Команда /
+// Наименование / Труд. / Опер.), shared by the create and edit modals so both
+// stay identical. `draft` = { sap_code, name, labor_time, work_center, op };
+// `setDraft` is the curried (key) => (value) => … updater. A blank фаза keeps
+// the cell following the day's фаза upload.
 function CatalogFields({ draft, setDraft }) {
   const { t } = useLang();
   return (
