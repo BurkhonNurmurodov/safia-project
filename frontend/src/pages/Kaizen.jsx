@@ -466,7 +466,7 @@ export default function Kaizen() {
 
   // ── charts ───────────────────────────────────────────────────────────────────
   const gaugeOpts = {
-    chart: { type: "radialBar", sparkline: { enabled: true }, fontFamily: "inherit", animations: { enabled: false } },
+    chart: { type: "radialBar", sparkline: { enabled: true }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     plotOptions: { radialBar: {
       hollow: { size: "60%" },
       track: { background: "var(--bg-inner)" },
