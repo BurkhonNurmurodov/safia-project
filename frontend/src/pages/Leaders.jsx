@@ -1670,7 +1670,10 @@ export default function Leaders({ botMode = false }) {
                       <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{e.place}</td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={nm(e.name)}>
-                        <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
+                        <span className="inline-flex items-center gap-2">
+                          <Avatar name={nm(e.name)} size={24} />
+                          <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
+                        </span>
                       </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
