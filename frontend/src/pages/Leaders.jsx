@@ -72,6 +72,7 @@ const TXT = {
     tierEditOrder: "Chegaralar kamayib borishi kerak: Chempion > A'lo > O'rta.",
     save: "Saqlash", cancel: "Bekor qilish",
     winLabel: "Hisob oynasi", daysSent: "Yuborilgan", daysMissed: "O'tkazib yuborilgan",
+    hmTitle: "Kunlar kalendari", hmNoSync: "Ma'lumot hali kelmagan",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun",
