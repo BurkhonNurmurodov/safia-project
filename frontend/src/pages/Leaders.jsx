@@ -490,14 +490,19 @@ const initialsOf = (s) => s.trim().split(/\s+/).map((p) => p[0] || "").join("").
 const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
 
 // Tier chip ("Daraja"). Cut from whichever metric is being ranked, so the chip
-// always describes the number the list is sorted by.
-const TIERS = [
-  { min: 95, key: "tierTop",  color: C_GOOD, Icon: Crown },
-  { min: 85, key: "tierGood", color: C_GOOD, Icon: Award },
-  { min: 50, key: "tierMid",  color: C_MID,  Icon: Shield },
-  { min: -1, key: "tierBad",  color: C_BAD,  Icon: ShieldAlert },
+// always describes the number the list is sorted by. The three cutoffs are org
+// policy an admin retunes from the page (GET/PUT /api/leader-tiers) and are held
+// globally, not per viewer — a grade has to mean the same thing to the admin,
+// the supervisor and the leader reading their own row. These defaults mirror the
+// backend's and only render while that fetch is in flight.
+const TIER_CUTS = { top: 85, good: 65, mid: 40 };
+const TIER_BANDS = [
+  { cut: "top",  key: "tierTop",  color: C_GOOD, Icon: Crown },
+  { cut: "good", key: "tierGood", color: C_GOOD, Icon: Award },
+  { cut: "mid",  key: "tierMid",  color: C_MID,  Icon: Shield },
 ];
-const tierOf = (v) => TIERS.find((t) => v >= t.min);
+const TIER_BAD = { key: "tierBad", color: C_BAD, Icon: ShieldAlert };
+const tierOf = (v, cuts = TIER_CUTS) => TIER_BANDS.find((b) => v >= cuts[b.cut]) || TIER_BAD;
 
 function Avatar({ name, size = 24 }) {
   const hue = hueOf(name);
