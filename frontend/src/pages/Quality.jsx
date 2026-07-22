@@ -1329,6 +1329,79 @@ export default function Quality() {
             </TableCard>
           )}
 
+          {/* ── the same matrix for a brigadir profile, where it is one row ──
+                 a single-row table is not a table: the four buckets become a
+                 full-width closure ribbon — hero closure rate, one 100% band
+                 (2px card-coloured seams, tiny buckets held to a visible
+                 minimum width), then one leg per bucket with count · share ·
+                 movement vs the previous window. ── */}
+          {isProd && lockOwn && myClosure && (
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={ShieldCheck} title={T.secMyClosure} subtitle={T.myClosureSub} />
+              <div className="px-4 py-4">
+                <div className="flex items-end justify-between gap-4 mb-3">
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider mb-1.5 truncate" style={{ color: "var(--text-4)" }}>
+                      {T.stResolved}
+                    </div>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-3xl font-bold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>
+                        {myClosure.rate.toFixed(1)}<span className="text-lg">%</span>
+                      </span>
+                      <Delta v={myClosure.dRate} invert={false} suffix=" п.п." />
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>{T.stTotal}</div>
+                    <div className="text-xl font-bold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>
+                      {myClosure.total.toLocaleString("ru-RU")}
+                    </div>
+                  </div>
+                </div>
+
+                {myClosure.total === 0 ? (
+                  <div className="h-[30px] rounded-xl grid place-items-center text-xs mb-3"
+                    style={{ background: "var(--bg-inner)", color: "var(--text-4)" }}>{T.noMatch}</div>
+                ) : (
+                  <div className="flex h-[30px] rounded-xl overflow-hidden gap-[2px] mb-3">
+                    {closureLegs.filter((x) => x.v > 0).map((x) => {
+                      const share = (x.v / myClosure.total) * 100;
+                      return (
+                        <div key={x.k} className="grid place-items-center overflow-hidden text-[11px] font-bold"
+                          style={{ flex: `${x.v} 1 0%`, minWidth: 10, background: x.c, color: "#fff" }}
+                          title={`${x.label} — ${x.v.toLocaleString("ru-RU")} (${share.toFixed(1)}%)`}>
+                          {share >= 8 ? x.v.toLocaleString("ru-RU") : ""}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-xl overflow-hidden"
+                  style={{ background: "var(--border)", border: "1px solid var(--border)" }}>
+                  {closureLegs.map((x) => (
+                    <div key={x.k} className="px-3 py-2.5" style={{ background: "var(--bg-card)" }}>
+                      <div className="flex items-center gap-1.5 mb-1.5 min-w-0">
+                        <span className="w-[7px] h-[7px] rounded-sm flex-shrink-0" style={{ background: x.c }} />
+                        <span className="text-[10.5px] truncate" style={{ color: "var(--text-3)" }} title={x.label}>{x.label}</span>
+                      </div>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-lg font-bold leading-none tabular-nums"
+                          style={{ color: x.v ? "var(--text-1)" : "var(--text-4)" }}>
+                          {x.v.toLocaleString("ru-RU")}
+                        </span>
+                        <Delta v={x.d} invert={x.invert} suffix="" />
+                      </div>
+                      <div className="text-[10px] mt-1 tabular-nums" style={{ color: "var(--text-4)" }}>
+                        {myClosure.total ? ((x.v / myClosure.total) * 100).toFixed(1) : "0.0"}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── trend + type mix ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
