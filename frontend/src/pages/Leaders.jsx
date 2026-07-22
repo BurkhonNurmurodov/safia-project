@@ -702,7 +702,7 @@ function HmLegend({ T, hasVoid }) {
  * thousand cells, and without this boundary every mouse move — and every
  * unrelated re-render of the page around it — would walk all of them. With it,
  * a hover repaints the two rows whose highlight actually changed. */
-const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, labelW, padCount, hovered, r, onEnter, T }) {
+const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, labelW, hovered, r, onEnter, T }) {
   const seam = "1px solid var(--bg-card)";
   return (
     <tr>
@@ -715,8 +715,8 @@ const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, la
         <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
           <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
             style={{ color: "var(--text-4)" }}>{place}</span>
-          <Avatar name={name} size={18} />
-          <span className="truncate text-[12px]"
+          <Avatar name={name} size={22} />
+          <span className="truncate text-[12.5px]"
             style={{ color: hovered ? "var(--text-1)" : "var(--text-2)" }}>{name}</span>
         </span>
       </td>
