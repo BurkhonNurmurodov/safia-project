@@ -1,0 +1,1 @@
+import{d as l}from"./transliterate-Cf8-XhiO.js";var e=l();function a({label:r,required:s,children:t}){return(0,e.jsxs)("div",{className:"flex flex-col h-full",children:[(0,e.jsxs)("div",{className:"text-[11px] uppercase tracking-wider mb-1 flex-1",style:{color:"var(--text-3)"},children:[r,s&&(0,e.jsx)("span",{className:"text-red-400",children:" *"})]}),t]})}export{a as t};

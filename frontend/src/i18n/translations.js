@@ -6385,6 +6385,7 @@ const t = {
     "admin.error":            "Error",
     "admin.uploadFailed":     "Upload failed",
     "admin.sheetId":          "Sheet ID...",
+    "admin.openSheet":        "Open sheet",
     "admin.comparisonRanges": "Comparison Table Ranges",
     "admin.pPlanned":         "P — Planned %",
     "admin.perCellUtil":      "per-cell planned utilization",
