@@ -823,8 +823,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
   const selDate = selection?.type === "date" ? selection.value : null;
 
   return (
-    <div ref={scrollRef} className="overflow-auto"
-      style={{ maxHeight: HM_HEAD_H + HM_ROWS_OPEN * HM_ROW_H }}
+    <div ref={scrollRef} className="overflow-x-auto"
       onMouseLeave={onLeave}
       onClick={() => setSelection(null)}>
       <table style={{ borderCollapse: "collapse", borderSpacing: 0, width: tableWidth, tableLayout: "fixed" }}>
