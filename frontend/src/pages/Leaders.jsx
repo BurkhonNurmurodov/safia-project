@@ -714,41 +714,72 @@ function HmLegend({ T, hasVoid }) {
 }
 
 /* One leader's strip. Memoised on purpose: a wide window is well over a
- * thousand cells, and without this boundary every mouse move — and every
- * unrelated re-render of the page around it — would walk all of them. With it,
- * a hover repaints the two rows whose highlight actually changed. */
-const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, labelW, hovered, r, onEnter, T }) {
-  const seam = "1px solid var(--bg-card)";
+ * thousand cells, and without this boundary every unrelated re-render of the
+ * page around the grid would walk all of them. */
+const HmRow = memo(function HmRow({
+  name, place, days, dates, dataMax, cellW, labelW, padCount,
+  sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T,
+}) {
+  const live = !sel && !dim && selDate == null;   // hover only reads when nothing is isolated
   return (
     <tr>
-      <td style={{
-        position: "sticky", left: 0, zIndex: 2,
-        width: labelW, minWidth: labelW, maxWidth: labelW,
-        background: "var(--bg-card)", borderRight: "2px solid var(--border-md)",
-        height: HM_ROW_H, borderBottom: "1px solid var(--border)",
-      }}>
+      {/* Name — pinned, and the handle that isolates this row */}
+      <td onClick={(ev) => { ev.stopPropagation(); onPick("row", name); }}
+        style={{
+          position: "sticky", left: 0, zIndex: 2,
+          width: labelW, minWidth: labelW, maxWidth: labelW,
+          height: HM_ROW_H, background: "var(--bg-card)",
+          borderRight: "2px solid var(--border-md)", borderBottom: HM_BORDER,
+          opacity: dim ? 0.35 : 1, cursor: "pointer", userSelect: "none",
+          transition: "opacity .1s",
+        }}>
         <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
           <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
             style={{ color: "var(--text-4)" }}>{place}</span>
           <Avatar name={name} size={22} />
           <span className="truncate text-[12.5px]"
-            style={{ color: hovered ? "var(--text-1)" : "var(--text-2)" }}>{name}</span>
+            style={{
+              color: sel || hoverRow ? "var(--text-1)" : "var(--text-2)",
+              fontWeight: sel ? 700 : 500,
+            }}>{name}</span>
         </span>
       </td>
-      {dates.map((d, c) => {
+
+      {dates.map((d) => {
         const stale = dataMax != null && d > dataMax;
         const sent = days.has(d);
+        const grayed = dim || (selDate != null && d !== selDate);
+        // Fleet cell feedback: the cell under the pointer lifts, its row and
+        // column merely brighten. Skipped on the hatch, which has nothing to lift.
+        const cellHov = live && hoverRow && d === hoverDate;
+        const soft = live && !cellHov && (hoverRow || d === hoverDate);
         return (
           <td key={d}
-            onMouseEnter={() => onEnter(r, c)}
+            onMouseEnter={() => onEnter(name, d)}
+            onMouseLeave={onLeave}
+            onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
             title={`${name} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
             style={{
-              width: cellW, height: HM_ROW_H,
+              width: cellW, minWidth: cellW, height: HM_ROW_H, padding: 0,
               background: stale ? HM_VOID : sent ? HM_SENT : HM_MISSED,
-              borderLeft: seam, borderBottom: seam, cursor: "default",
+              border: HM_BORDER, cursor: "pointer", position: "relative",
+              opacity: grayed ? 0.18 : 1,
+              filter: stale || grayed ? "none" : cellHov ? "brightness(1.25)" : soft ? "brightness(1.12)" : "none",
+              transform: !stale && !grayed && cellHov ? "scale(1.06)" : "none",
+              boxShadow: !stale && !grayed && cellHov ? "0 4px 12px rgba(0,0,0,.25)" : "none",
+              zIndex: cellHov ? 3 : "auto",
+              transition: "filter .08s, transform .07s, box-shadow .07s, opacity .1s",
             }} />
         );
       })}
+
+      {/* Blank placeholders — hold the BASIS_DAYS width */}
+      {Array.from({ length: padCount }, (_, i) => (
+        <td key={`p${i}`} style={{
+          width: cellW, minWidth: cellW, height: HM_ROW_H,
+          border: HM_BORDER, background: "var(--bg-card)",
+        }} />
+      ))}
     </tr>
   );
 });
