@@ -663,16 +663,17 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
  * run yet, so it greys out instead of accusing the whole shift; an empty day
  * INSIDE the data's range is a real collective miss and stays red.
  *
- * Sizing follows the fleet HeatmapChart: exactly HM_BASIS_DAYS columns fill the
- * width, a shorter window pads with blanks so the grid never changes width, and
- * a longer one scrolls sideways under the pinned name column.
+ * Columns divide the width evenly however many days are picked, so a week fills
+ * the card edge to edge. Only when they would squeeze below HM_CELL_W does the
+ * grid switch to a fixed column and scroll sideways under the pinned name
+ * column — the width then follows HM_BASIS_DAYS, as the fleet heatmap does.
  */
-const HM_BASIS_DAYS = 14;   // columns that fill the width with no scroll
-const HM_CELL_W     = 34;   // floor before the grid starts scrolling instead
+const HM_BASIS_DAYS = 14;   // columns visible at once once the grid has to scroll
+const HM_CELL_W     = 40;   // floor before columns stop stretching and scroll
 const HM_LABEL_W    = 188;
 const HM_LABEL_W_SM = 124;  // narrow containers give the grid back some room
-const HM_ROW_H      = 28;
-const HM_ROWS_OPEN  = 15;   // rows kept open before the grid scrolls vertically
+const HM_ROW_H      = 56;
+const HM_ROWS_OPEN  = 9;    // rows kept open before the grid scrolls vertically
 const HM_HEAD_H     = 30;
 
 const HM_SENT   = hexA("#22c55e", 0.9);
