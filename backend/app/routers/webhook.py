@@ -32,6 +32,25 @@ def _is_non_private(update: telebot.types.Update) -> bool:
     return msg is not None and msg.chat.type != "private"
 
 
+def _describe(update: telebot.types.Update) -> str:
+    """One line of "who sent what" for the update log.
+
+    A command that reaches no handler is dropped by telebot without a word, so
+    without this line a silent command is indistinguishable from one Telegram
+    never delivered. Commands are logged by name; anything else only by content
+    type — message bodies (registration details, broadcast drafts) stay out of
+    the log.
+    """
+    msg = update.message or update.edited_message
+    if msg is not None:
+        text = msg.text or ""
+        what = text.split(maxsplit=1)[0][:32] if text.startswith("/") else msg.content_type
+        return f"{what} from {msg.from_user.id if msg.from_user else '?'}"
+    if update.callback_query is not None:
+        return f"callback {update.callback_query.data} from {update.callback_query.from_user.id}"
+    return "no message"
+
+
 def _already_seen(update_id: int) -> bool:
     if update_id in _seen_set:
         return True
