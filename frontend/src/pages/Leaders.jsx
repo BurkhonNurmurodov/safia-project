@@ -5,6 +5,7 @@ import {
   Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
+  Crown, Award, Shield, ShieldAlert,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -12,6 +13,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
 import SearchInput from "../components/ui/SearchInput";
+import Pagination from "../components/ui/Pagination";
 import { SectionHead, Th } from "../components/ui/DataTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
