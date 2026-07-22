@@ -277,8 +277,12 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
         if op not in ops:
             ops.append(op)
     op_by_key = {k: " / ".join(sorted(v)) for k, v in op_sets.items()}
+    # A catalog line may pin its own фаза (edited in the Positions modal); that
+    # hand-entered value wins, so a position the upload doesn't cover still shows one.
+    manual_op = {p.id: (p.op or "").strip() for p in products}
     for prow in result["rows"]:
-        prow["op"] = op_by_key.get((prow["sap_code"], prow["work_center"]))
+        prow["op"] = (manual_op.get(prow.get("id"))
+                      or op_by_key.get((prow["sap_code"], prow["work_center"])))
 
     recon = db.query(PPReconciliation).filter(
         PPReconciliation.manager_id == manager_id, PPReconciliation.date == day).first()
