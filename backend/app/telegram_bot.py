@@ -30,7 +30,31 @@ from app.translit import transliterate as _to_uz_latin
 
 logger = logging.getLogger(__name__)
 
-bot = telebot.TeleBot(settings.telegram_bot_token, parse_mode=None)
+
+class _BotExceptionHandler(telebot.ExceptionHandler):
+    """Without this, a handler that raises is logged by telebot at DEBUG level
+    into telebot's own logger and then dropped — the command reaches the user
+    as pure silence and leaves NOTHING in the app log to debug from. Surface
+    every handler crash at ERROR instead."""
+
+    def handle(self, exception):
+        logger.error("Unhandled error in a bot handler", exc_info=exception)
+        return True
+
+
+# num_threads: every update — the handler-filter tests AND the handler body —
+# is serialised through this worker pool (process_new_updates only enqueues;
+# nothing runs on the caller's thread). Each Telegram API call inside a handler
+# blocks for up to CONNECT_TIMEOUT+READ_TIMEOUT ≈ 45 s, so with telebot's
+# default of 2 threads it took just two slow commands to starve the bot for
+# EVERY user — commands stopped being answered while the web app carried on
+# serving, which reads as "the bot is dead" with no error anywhere.
+bot = telebot.TeleBot(
+    settings.telegram_bot_token,
+    parse_mode=None,
+    num_threads=8,
+    exception_handler=_BotExceptionHandler(),
+)
 
 # In-memory state: { telegram_id: { "language": "uz"|"uz_cyrl"|"ru"|"en" } }
 _state: dict[int, dict] = {}
