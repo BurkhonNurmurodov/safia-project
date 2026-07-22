@@ -1374,7 +1374,8 @@ export default function Concerns() {
     chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
     colors: [STATUS_COLOR.done, CHART_BRAND],
-    plotOptions: { bar: { columnWidth: "56%", borderRadius: 3, borderRadiusApplication: "end" } },
+    // Only five buckets across a full-width card — keep the columns slim.
+    plotOptions: { bar: { columnWidth: "34%", borderRadius: 3, borderRadiusApplication: "end" } },
     dataLabels: { enabled: false },
     stroke: { show: false },
     xaxis: {
