@@ -414,21 +414,25 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
         except Exception:
             continue
 
-        downtime_total.setdefault(name, {})
-        downtime_total[name].setdefault(date_label, 0.0)
-        downtime_by_cat.setdefault(name, {})
-        downtime_by_cat[name].setdefault(date_label, {c: 0.0 for c in cat_names})
+        for cats, totals, by_cat in (
+            (SHIFT_CATEGORIES, downtime_total, downtime_by_cat),
+            (SHIFT_CATEGORIES_NS, downtime_total_ns, downtime_by_cat_ns),
+        ):
+            totals.setdefault(name, {})
+            totals[name].setdefault(date_label, 0.0)
+            by_cat.setdefault(name, {})
+            by_cat[name].setdefault(date_label, {c: 0.0 for c in cat_names})
 
-        for cat_name, col_idx in SHIFT_CATEGORIES:
-            if col_idx < len(row) and row[col_idx].strip():
-                try:
-                    val = float(row[col_idx])
-                    downtime_total[name][date_label] += val
-                    downtime_by_cat[name][date_label][cat_name] += val
-                except ValueError:
-                    pass
+            for cat_name, col_idx in cats:
+                if col_idx < len(row) and row[col_idx].strip():
+                    try:
+                        val = float(row[col_idx])
+                        totals[name][date_label] += val
+                        by_cat[name][date_label][cat_name] += val
+                    except ValueError:
+                        pass
 
-    return downtime_total, downtime_by_cat, cat_names
+    return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
 
 
 # ─── Quality register («для свода» tab of the QA workbook) ────────────────────
