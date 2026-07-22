@@ -819,7 +819,7 @@ export default function Concerns() {
     // days plot as a flat line instead of gaps.
     const dayKeys = [...opened.keys(), ...closed.keys()].sort();
     const trend = [];
-    let maxOpen = 0;
+    let maxOpen = 0, maxFlow = 0;
     if (dayKeys.length) {
       let firstIso = dayKeys[0];
       if (chartStart && chartStart < firstIso) firstIso = chartStart;
