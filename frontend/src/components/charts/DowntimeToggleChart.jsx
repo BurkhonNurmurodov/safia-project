@@ -145,6 +145,8 @@ export default function DowntimeToggleChart({
           animations: { enabled: true, easing: "easeinout", speed: 550, animateGradually: { enabled: false }, dynamicAnimation: { enabled: true, speed: 550 } },
           redrawOnParentResize: false,
           redrawOnWindowResize: false,
+          // Keeps the threshold line above the bars after a Total⇄Categories toggle.
+          events: { updated: raiseAnnotations },
         },
         plotOptions: {
           bar: {
