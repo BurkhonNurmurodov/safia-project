@@ -1043,14 +1043,10 @@ export default function Leaders({ botMode = false }) {
   const standings = useMemo(() => {
     const map = {};                                   // name → { days: Map }
     let winFrom = startDate || null, winTo = endDate || null;
-    // The newest day the sheet holds anything for, tracked whatever the picker
-    // says: the day calendar greys out everything past it (see DayGrid).
-    let dataMax = null;
     for (const r of filtered) {
       const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
       const d = String(r.date).slice(0, 10);
-      if (dataMax == null || d > dataMax) dataMax = d;
       if (!startDate && (winFrom == null || d < winFrom)) winFrom = d;
       if (!endDate && (winTo == null || d > winTo)) winTo = d;
       const e = (map[key] ||= { days: new Map() });
