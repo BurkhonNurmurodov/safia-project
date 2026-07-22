@@ -5,6 +5,23 @@ import { fmtDuration } from "../../utils/formatters";
 
 const INDIGO = "#6366f1";
 
+// ApexCharts takes its "fast update" path whenever only the series *values* change — which
+// is exactly what the Total⇄Categories toggle does. That path rips out the bar groups and
+// re-appends the redrawn ones at the END of `.apexcharts-inner`, i.e. AFTER the annotation
+// group that mount() had put last. SVG has no z-index (paint order = document order), so on
+// the first toggle the 50-min threshold line and its label sink behind the bars. Re-raise
+// the annotation groups after every update to restore the mount-time paint order.
+function raiseAnnotations(chartCtx) {
+  const inner = chartCtx?.el?.querySelector(".apexcharts-inner");
+  if (!inner) return;
+  // Same order mount() adds them in, so their relative stacking is preserved.
+  [".apexcharts-yaxis-annotations", ".apexcharts-xaxis-annotations", ".apexcharts-point-annotations"]
+    .forEach((sel) => {
+      const g = inner.querySelector(sel);
+      if (g && g.parentNode === inner) inner.appendChild(g);
+    });
+}
+
 // Round a raw max up to a "nice" axis maximum (…, 1000, 1250, 1500, 2000 …), mirroring
 // the tick values ApexCharts would auto-pick. We force this max so the label-fit test
 // below can convert a bar's value into a pixel width deterministically.
