@@ -72,6 +72,7 @@ try:
     add_leader_submission_columns()
     add_broadcast_rich_columns()
     add_pp_product_op()
+    add_downtime_ns_columns()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
