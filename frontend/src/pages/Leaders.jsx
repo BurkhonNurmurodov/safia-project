@@ -1610,7 +1610,8 @@ export default function Leaders({ botMode = false }) {
           <SectionHead icon={CalendarDays} title={T.hmTitle}
             subtitle={`${ddmm(standings.winFrom)} – ${ddmm(standings.winTo)} · ${standings.winDays} ${T.dayAbbr}`}
             right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
-          <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm} />
+          <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm}
+            nameHead={effStandMode === "leader" ? T.thLeader : T.supervisor} />
         </div>
         )}
 
