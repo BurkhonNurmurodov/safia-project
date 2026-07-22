@@ -349,7 +349,7 @@ const TXT = {
     fBrig: "Brigadir", fMgr: "Manager",
     yes: "Yes", no: "No", rows: "records", vsPrev: "vs previous period",
     mDesc: "Complaint description", mAction: "Corrective actions", mComment: "Comments",
-    mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received",
+    mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received", mNo: "Non-conformance no.",
     close: "Close", detail: "Non-conformance", otherWord: "Other",
     fShift: "Shift", shift: "Shift", shiftAll: "All", allBrig: "All brigadirs", mSheetName: "Name in the sheet",
     loadFailed: "Could not load the register", retry: "Retry",
