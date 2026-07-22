@@ -184,12 +184,13 @@ export default function DowntimeToggleChart({
           theme: tipTheme,
           shared: false,
           intersect: true,
-          y: { formatter: (v) => (unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`) },
+          y: { formatter: (v) => (unit === "hrs" ? hrsText(v) : `${Math.round(v)}${minLabel}`) },
         },
         theme: { mode: themeMode },
       };
     },
-    [categories, axisMax, unit, minLabel, hrsLabel, thresholdText, catColors, themeMode, grid, axisLabel, tipTheme, outsideLabel],
+    [categories, axisMax, unit, minLabel, hrsLabel, unitDayLabel, unitHourLabel, unitMinLabel,
+     thresholdText, catColors, themeMode, grid, axisLabel, tipTheme, outsideLabel],
   );
 
   return <ReactApexChart type="bar" series={series} options={options} height={height} />;
