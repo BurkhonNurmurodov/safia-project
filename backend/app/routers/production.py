@@ -1156,7 +1156,7 @@ def admin_catalog(manager_id: int = Query(...), _: dict = Depends(_verify_admin)
     rows = db.query(PPProduct).filter(PPProduct.manager_id == manager_id).order_by(
         PPProduct.sort_order, PPProduct.id).all()
     return [{"id": p.id, "sap_code": p.sap_code, "name": p.name,
-             "work_center": p.work_center,
+             "work_center": p.work_center, "op": p.op,
              "labor_time": (float(p.labor_time) if p.labor_time is not None else None),
              "active": p.active} for p in rows]
 
