@@ -809,7 +809,7 @@ export default function Leaders({ botMode = false }) {
   // unit reporting more rows than another doesn't inflate its calendar.
   const standings = useMemo(() => {
     const map = {};                                   // name → { sum, n, days: Map }
-    let winFrom = null, winTo = null;
+    let winFrom = startDate || null, winTo = null;
     for (const r of filtered) {
       const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
