@@ -1230,6 +1230,10 @@ def admin_update_catalog(prod_id: int, body: CatalogBody,
         if not wc:
             raise HTTPException(status_code=400, detail="work_center cannot be empty")
         p.work_center = wc
+    # op is optional metadata — an empty string clears the pin and hands the cell
+    # back to whatever the day's фаза upload says.
+    if body.op is not None:
+        p.op = body.op.strip() or None
     if body.active is not None:
         p.active = body.active
     db.commit()
