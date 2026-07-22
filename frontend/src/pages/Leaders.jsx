@@ -776,18 +776,85 @@ export default function Leaders({ botMode = false }) {
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
+  // ── standings ───────────────────────────────────────────────────────────────
+  // One shared calendar window for everyone in view: it opens on the first day
+  // ANY report lands inside the selected period and closes on the last day that
+  // carries data — never the raw end date, since a sheet synced up to yesterday
+  // would otherwise hand every leader a phantom 0% for today.
+  //
+  //   Reyting     — the average of the reports they actually filed
+  //   Barqarorlik — those same scores spread across EVERY day of the window, a
+  //                 day with no report counting as 0%
+  //
+  // Consistency can therefore never exceed the rating, and the gap between the
+  // two columns is exactly "good when he shows up, but he doesn't show up".
+  // In supervisor mode a day's score is the mean of that unit's leaders, so one
+  // unit reporting more rows than another doesn't inflate its calendar.
   const standings = useMemo(() => {
-    const map = {};
+    const map = {};                                   // name → { sum, n, days: Map }
+    let winFrom = null, winTo = null;
     for (const r of filtered) {
       const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
-      (map[key] ||= { sum: 0, n: 0 });
-      map[key].sum += r.completion; map[key].n++;
+      const d = String(r.date).slice(0, 10);
+      if (winFrom == null || d < winFrom) winFrom = d;
+      if (winTo == null || d > winTo) winTo = d;
+      const e = (map[key] ||= { sum: 0, n: 0, days: new Map() });
+      e.sum += r.completion; e.n++;
+      const day = e.days.get(d) || { sum: 0, n: 0 };
+      day.sum += r.completion; day.n++;
+      e.days.set(d, day);
     }
-    const entries = Object.entries(map).map(([name, v]) => ({ name, val: Math.round(v.sum / v.n) }));
-    entries.sort((a, b) => (standDir === "desc" ? b.val - a.val : a.val - b.val));
-    return entries;
-  }, [filtered, effStandMode, standDir]);
+    if (!winFrom) return { list: [], winFrom: null, winTo: null, winDays: 0 };
+    const winDays = Math.round((new Date(`${winTo}T00:00:00`) - new Date(`${winFrom}T00:00:00`)) / DAY) + 1;
+
+    const list = Object.entries(map).map(([name, e]) => {
+      let daySum = 0;
+      for (const day of e.days.values()) daySum += day.sum / day.n;
+      return {
+        name,
+        rating: Math.round(e.sum / e.n),
+        consist: Math.round(daySum / winDays),
+        sent: e.days.size,
+        missed: winDays - e.days.size,
+      };
+    });
+    // Ranked on the active metric, ties broken by the other one and then by how
+    // many days they filed at all: with a whole shift sitting on 100% a stable,
+    // meaningful chain is the only thing keeping the podium from being random.
+    const val = (e) => (standMetric === "consist" ? e.consist : e.rating);
+    const alt = (e) => (standMetric === "consist" ? e.rating : e.consist);
+    list.sort((a, b) => val(b) - val(a) || alt(b) - alt(a) || b.sent - a.sent || a.name.localeCompare(b.name));
+    // Competition ranking — an equal metric value shares a place (4, 4, 6…).
+    list.forEach((e, i) => { e.place = i > 0 && val(list[i - 1]) === val(e) ? list[i - 1].place : i + 1; });
+    return { list, winFrom, winTo, winDays };
+  }, [filtered, effStandMode, standMetric]);
+
+  // Descending is the natural reading order; flipping reverses the whole list,
+  // which drops the three who need help into the card row (see StandCard).
+  const standOrdered = useMemo(
+    () => (standDir === "desc" ? standings.list : [...standings.list].reverse()),
+    [standings, standDir]);
+  const standTop = standOrdered.length >= 3 ? standOrdered.slice(0, 3) : [];
+  const standRest = standTop.length ? standOrdered.slice(3) : standOrdered;
+  // Searching drops the cards and searches the FULL ranking instead of the
+  // leftovers, so a name that sits on the podium is still findable.
+  const standRows = useMemo(() => {
+    const q = standSearch.trim().toLowerCase();
+    if (!q) return standRest;
+    return standOrdered.filter((e) => nm(e.name).toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
+  }, [standRest, standOrdered, standSearch, lang]);
+
+  const STAND_PAGE = 20;
+  const standPageCount = Math.max(1, Math.ceil(standRows.length / STAND_PAGE));
+  const standPageSafe = Math.min(standPage, standPageCount);
+  const standPageRows = standRows.slice((standPageSafe - 1) * STAND_PAGE, standPageSafe * STAND_PAGE);
+  useEffect(() => { setStandPage(1); }, [standMetric, standDir, effStandMode, standSearch, startDate, endDate, fShift, fSup, fLeader]);
+  // Tabs and sortable headers drive the same pair of knobs — re-picking the
+  // column that is already active flips the direction, as a table should.
+  const standSort = { key: standMetric, dir: standDir };
+  const onStandSort = (k) =>
+    (k === standMetric ? setStandDir((d) => (d === "desc" ? "asc" : "desc")) : setStandMetric(k));
 
   // Insight cards: the worst task plus the worst-performing supervisor / leader.
   const insights = useMemo(() => {
