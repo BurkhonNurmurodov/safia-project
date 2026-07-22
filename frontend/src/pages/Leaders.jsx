@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback, mem
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
-  Gauge, TrendingUp, BarChart3, Trophy, ListChecks, Info,
+  Gauge, TrendingUp, TrendingDown, Minus, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays,
