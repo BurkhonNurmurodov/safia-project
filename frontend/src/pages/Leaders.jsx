@@ -836,7 +836,9 @@ export default function Leaders({ botMode = false }) {
   const standOrdered = useMemo(
     () => (standDir === "desc" ? standings.list : [...standings.list].reverse()),
     [standings, standDir]);
-  const standTop = standOrdered.length >= 3 ? standOrdered.slice(0, 3) : [];
+  // A pool of three or fewer is the whole table already — cards there would
+  // leave an empty register underneath, so the podium only opens above three.
+  const standTop = standOrdered.length > 3 ? standOrdered.slice(0, 3) : [];
   const standRest = standTop.length ? standOrdered.slice(3) : standOrdered;
   // Searching drops the cards and searches the FULL ranking instead of the
   // leftovers, so a name that sits on the podium is still findable.
