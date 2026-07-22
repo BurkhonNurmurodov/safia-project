@@ -597,8 +597,14 @@ def _start(message: types.Message):
             # Adding another role moved to /register — only the dashboard here
             _send_dashboard(tid, lang, _msg(lang, "already_approved"))
         elif "pending" in statuses:
-            bot.send_message(tid, _msg(lang, "already_pending"),
-                             reply_markup=types.ReplyKeyboardRemove())
+            # A request still waiting for the contact isn't "under review" yet —
+            # re-offer the button instead of removing the keyboard and leaving
+            # the user with no way to finish.
+            if _awaiting_contact(tid):
+                _ask_contact(tid, lang)
+            else:
+                bot.send_message(tid, _msg(lang, "already_pending"),
+                                 reply_markup=types.ReplyKeyboardRemove())
         else:
             _state.pop(tid, None)
             bot.send_message(tid, _msg("uz", "choose_language"), reply_markup=_lang_kb())
