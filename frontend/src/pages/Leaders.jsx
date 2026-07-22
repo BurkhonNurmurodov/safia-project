@@ -889,14 +889,20 @@ export default function Leaders({ botMode = false }) {
         missed: winDays - e.days.size,
       };
     });
-    // Ranked on the active metric, ties broken by the other one and then by how
-    // many days they filed at all: with a whole shift sitting on 100% a stable,
-    // meaningful chain is the only thing keeping the podium from being random.
+    // The two columns are ONE ranking, not two: the active tab is the primary
+    // metric and the other column is its sub-rating. Ranking on the primary
+    // alone put five people on 1st place — a whole shift shares a 6/7 calendar,
+    // so Barqarorlik is coarse by construction (only 8 values exist in a 7-day
+    // window) and Reyting, the finer number, has to separate them.
     const val = (e) => (standMetric === "consist" ? e.consist : e.rating);
     const alt = (e) => (standMetric === "consist" ? e.rating : e.consist);
-    list.sort((a, b) => val(b) - val(a) || alt(b) - alt(a) || b.sent - a.sent || a.name.localeCompare(b.name));
-    // Competition ranking — an equal metric value shares a place (4, 4, 6…).
-    list.forEach((e, i) => { e.place = i > 0 && val(list[i - 1]) === val(e) ? list[i - 1].place : i + 1; });
+    list.sort((a, b) => val(b) - val(a) || alt(b) - alt(a) || a.name.localeCompare(b.name));
+    // Competition ranking on the PAIR — a place is shared only when the primary
+    // AND the sub-rating both match, i.e. the two are genuinely indistinguishable
+    // (1, 2, 2, 4…). `sent` is not a third tiebreak: it is consist over a fixed
+    // window, so it can never split a pair the sub-rating already tied.
+    const same = (a, b) => val(a) === val(b) && alt(a) === alt(b);
+    list.forEach((e, i) => { e.place = i > 0 && same(list[i - 1], e) ? list[i - 1].place : i + 1; });
     return { list, winFrom, winTo, winDays };
   }, [filtered, effStandMode, standMetric, startDate, endDate]);
 
