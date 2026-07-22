@@ -1166,6 +1166,7 @@ class CatalogCreateBody(BaseModel):
     sap_code: str
     name: Optional[str] = ""
     work_center: str
+    op: Optional[str] = None
     labor_time: Optional[float] = None
 
 
