@@ -232,7 +232,7 @@ export default function Downtime() {
     },
     dataLabels: {
       enabled: showTrendLabels,
-      formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
+      formatter: (v) => unit === "hrs" ? fmtHrs(v) : `${Math.round(v)}${minLabel}`,
       style: { fontSize: "10px", fontWeight: 700 },
       background: { enabled: true, foreColor: "#fff", borderRadius: 4, padding: 4, borderWidth: 0, dropShadow: { enabled: false } },
       offsetY: -6,
@@ -248,7 +248,7 @@ export default function Downtime() {
     yaxis: {
       labels: {
         style: { colors: labelColor, fontSize: "10px" },
-        formatter: (v) => unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${Math.round(v)}${minLabel}`,
+        formatter: (v) => unit === "hrs" ? fmtHrs(v) : `${Math.round(v)}${minLabel}`,
       },
       min: 0,
       max: trendMax,
