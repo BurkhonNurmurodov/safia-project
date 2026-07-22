@@ -638,7 +638,7 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
         {worst && <AlertTriangle size={15} className="ml-auto flex-shrink-0" style={{ color: tone }} />}
         <span title={`${T.thPlace}: ${e.place}`}
           className={`grid place-items-center rounded-full font-black tabular-nums flex-shrink-0 ${worst ? "" : "ml-auto"}`}
-          style={{ width: 26, height: 26, fontSize: 13, background: tone, color: MEDAL_INK,
+          style={{ minWidth: 26, height: 26, padding: "0 6px", fontSize: 13, background: tone, color: MEDAL_INK,
             boxShadow: `0 0 0 3px ${hexA(tone, 0.22)}` }}>{e.place}</span>
       </div>
 
