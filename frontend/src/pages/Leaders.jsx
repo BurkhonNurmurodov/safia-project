@@ -764,7 +764,11 @@ function StandCard({ e, worst, metric, T, name, cuts, trend }) {
         </span>
       </div>
 
-      <div className="relative mt-2"><TierChip value={ranked} T={T} cuts={cuts} /></div>
+      {/* The register drops the podium rows, so the card carries their trend chip. */}
+      <div className="relative mt-2 flex items-center gap-1.5">
+        <TierChip value={ranked} T={T} cuts={cuts} />
+        {trend && <DeltaChip trend={trend} e={e} T={T} />}
+      </div>
 
       <div className="relative grid grid-cols-3 gap-2 mt-2.5">
         <CardStat label={T.daysSent} pct={daysPct(e)} color={scoreColor(daysPct(e))} value={<DaysValue e={e} />} />
