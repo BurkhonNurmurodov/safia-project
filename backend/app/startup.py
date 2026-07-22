@@ -275,6 +275,22 @@ def add_leader_submission_columns() -> None:
         db.close()
 
 
+def add_pp_product_op() -> None:
+    """Add op («Опер.») to pp_products (idempotent). The фаза step used to be
+    readable only from the day's фаза upload; a catalog line may now pin its own,
+    which wins in the Positions table — so a position that is missing from (or
+    spelled differently in) the upload still shows the right operation."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE pp_products ADD COLUMN IF NOT EXISTS op VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] pp_products op column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_broadcast_rich_columns() -> None:
     """Add mode / media_names to broadcasts (idempotent). Rich broadcasts
     (sendRichMessage, Bot API 10.1+) record mode='rich' and the embedded media
