@@ -1141,6 +1141,7 @@ export default function Leaders({ botMode = false }) {
     const { from, days: winDays } = scoreWin;
     if (!filtered.length || !from || !winDays) return [];
     const leaders = new Set();
+    const onForm = new Set();                            // every question id the sheet carries
     const filedPerDay = new Array(winDays).fill(0);      // (leader, day) slots that exist
     const slots = new Map();                             // "leader|date" → { i, tasks }
     for (const r of filtered) {
@@ -1155,7 +1156,9 @@ export default function Leaders({ botMode = false }) {
       if (!s) { slots.set(k, (s = { i, tasks: new Map() })); filedPerDay[i]++; }
       for (const tk of r.tasks || []) {
         const id = Number(tk.id);
-        if (!Number.isFinite(id) || tk.answered === false) continue;
+        if (!Number.isFinite(id)) continue;
+        onForm.add(id);                                  // keeps its axis slot either way
+        if (tk.answered === false) continue;
         const a = s.tasks.get(id) || { done: 0, n: 0 };
         a.n++; if (tk.done) a.done++;
         s.tasks.set(id, a);
