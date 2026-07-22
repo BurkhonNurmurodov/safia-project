@@ -7,7 +7,7 @@ import {
   ChevronDown, Check,
   CalendarClock, UserRound, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
-  Layers, ArrowUp, ArrowDown, ArrowRight, History, LayoutGrid, Tag,
+  Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
   Droplets, CalendarRange, Users, FlaskConical, Wheat,
 } from "lucide-react";
