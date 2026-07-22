@@ -1288,7 +1288,7 @@ export default function Leaders({ botMode = false }) {
                 </tr>
               </thead>
               <tbody>
-                {standPageRows.map((e) => {
+                {standRows.map((e) => {
                   const ranked = standMetric === "consist" ? e.consist : e.rating;
                   return (
                     <tr key={e.name} className="transition-colors hover:bg-[var(--bg-inner)]"
