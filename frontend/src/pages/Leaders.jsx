@@ -1091,7 +1091,7 @@ export default function Leaders({ botMode = false }) {
     // window, so it can never split a pair the sub-rating already tied.
     const same = (a, b) => val(a) === val(b) && alt(a) === alt(b);
     list.forEach((e, i) => { e.place = i > 0 && same(list[i - 1], e) ? list[i - 1].place : i + 1; });
-    return { list, winFrom, winTo, winDays };
+    return { list, winFrom, winTo, winDays, dataMax };
   }, [filtered, effStandMode, standMetric, startDate, endDate]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
