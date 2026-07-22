@@ -1332,23 +1332,16 @@ export default function Leaders({ botMode = false }) {
       if (lowTask == null || t.rate < lowTask.val) lowTask = { id: t.id, val: t.rate };
     });
 
-    const worst = (keyFn) => {
-      const map = {};
-      for (const r of filtered) {
-        const k = keyFn(r);
-        if (!k || k === "N/A") continue;
-        (map[k] ||= { sum: 0, n: 0 });
-        map[k].sum += r.completion; map[k].n++;
-      }
+    // The badge is the Reyting off the leaderboard, not a private average: this
+    // card names the person at the bottom of the ranking, so it has to print the
+    // number their row prints. Ties keep the first name in ranking order.
+    const worst = (list) => {
       let lo = null;
-      for (const [name, v] of Object.entries(map)) {
-        const val = Math.round(v.sum / v.n);
-        if (lo == null || val < lo.val) lo = { name, val };
-      }
+      for (const e of list) if (lo == null || e.rating < lo.val) lo = { name: e.name, val: e.rating };
       return lo;
     };
-    return { lowTask, lowSup: worst((r) => r.supervisor), lowLeader: worst((r) => r.leader) };
-  }, [filtered, chartTasks]);
+    return { lowTask, lowSup: worst(supScores), lowLeader: worst(leaderScores) };
+  }, [chartTasks, supScores, leaderScores]);
 
   // table rows: search + score-band filter, then sortable columns
   const displayRows = useMemo(() => {
