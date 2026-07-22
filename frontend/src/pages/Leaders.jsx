@@ -520,7 +520,12 @@ const initialsOf = (s) => s.trim().split(/\s+/).map((p) => p[0] || "").join("").
 
 // Medals — gold / silver / bronze for the podium, one attention rose for all
 // three cards when the list is flipped (nobody gets a medal for finishing last).
-const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
+// Tuned for a dark card: the old silver was a mid grey that died next to gold at
+// low alpha. These three separate by HUE (yellow / cool white / orange-brown),
+// so they stay apart even for a colour-blind eye or a dimmed screen.
+const MEDAL = { 1: "#E3B341", 2: "#C9D3E0", 3: "#CD7F32" };
+// One ink for all three discs — every medal tone is light enough to carry it.
+const MEDAL_INK = "#0E1218";
 
 // Tier chip ("Daraja"). Cut from whichever metric is being ranked, so the chip
 // always describes the number the list is sorted by. The three cutoffs are org
