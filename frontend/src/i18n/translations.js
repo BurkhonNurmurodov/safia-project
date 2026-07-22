@@ -2414,6 +2414,10 @@ const t = {
 
     // ── Downtime ──────────────────────────────────────────────────────────────
     "downtime.title":        "Ожидания · Ускуналар Ожиданияси",
+    "downtime.tabStopped":   "Тўхтаганда",
+    "downtime.tabNotStopped":"Тўхтамаганда",
+    "downtime.tabStoppedSub":"Ячейкани тўхтатган ожидания",
+    "downtime.tabNotStoppedSub":"Ячейкани тўхтатмаган ожидания",
     "downtime.totalDowntime":"Жами Ожидания",
     "downtime.flaggedDays":  "Белгиланган Кунли Бригадирлар",
     "downtime.worstCategory":"Энг Кўп Таъсирланган Тоифа",
