@@ -814,7 +814,7 @@ export default function Leaders({ botMode = false }) {
       const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
       const d = String(r.date).slice(0, 10);
-      if (winFrom == null || d < winFrom) winFrom = d;
+      if (!startDate && (winFrom == null || d < winFrom)) winFrom = d;
       if (winTo == null || d > winTo) winTo = d;
       const e = (map[key] ||= { sum: 0, n: 0, days: new Map() });
       e.sum += r.completion; e.n++;
