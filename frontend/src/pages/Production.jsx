@@ -224,9 +224,14 @@ function CatalogFields({ draft, setDraft }) {
       <Field label={t("production.col.name")}>
         <ModalInput value={draft.name} onChange={setDraft("name")} />
       </Field>
-      <Field label={`${t("production.col.labor")} — ${t("production.col.laborHint")}`}>
-        <ModalInput value={draft.labor_time} onChange={setDraft("labor_time")} type="number" />
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={`${t("production.col.labor")} — ${t("production.col.laborHint")}`}>
+          <ModalInput value={draft.labor_time} onChange={setDraft("labor_time")} type="number" />
+        </Field>
+        <Field label={t("production.col.op")}>
+          <ModalInput value={draft.op ?? ""} onChange={setDraft("op")} className="font-mono" />
+        </Field>
+      </div>
     </>
   );
 }
