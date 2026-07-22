@@ -15,7 +15,6 @@ import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
-import Pagination from "../components/ui/Pagination";
 import { SectionHead, Th } from "../components/ui/DataTable";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
