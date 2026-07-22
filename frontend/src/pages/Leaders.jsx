@@ -1210,8 +1210,8 @@ export default function Leaders({ botMode = false }) {
     if (!roster) return empty;
     const dayScore = new Map();                          // date → Σ of that day's leader scores
     let dMin = null, dMax = null;
-    for (const days of perLeader.values())
-      for (const [d, v] of days) {
+    for (const filedDays of perLeader.values())
+      for (const [d, v] of filedDays) {
         dayScore.set(d, (dayScore.get(d) || 0) + v.sum / v.n);
         if (dMin == null || d < dMin) dMin = d;
         if (dMax == null || d > dMax) dMax = d;
