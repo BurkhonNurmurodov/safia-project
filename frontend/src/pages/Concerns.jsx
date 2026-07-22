@@ -1689,74 +1689,177 @@ export default function Concerns() {
         </InsightCard>
       </div>
 
-      {/* Charts — daily still-open trend + status donut, both computed from
-          the fully filtered rows so every filter reshapes them live. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
-        {/* Trend line + end-of-day status strip */}
-        <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
-          <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              <TrendingUp size={14} style={{ color: "var(--brand-text)" }} />
-              {t("concerns.chartTrend")}
-            </div>
-            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t("concerns.chartTrendSub")}</div>
-          </div>
-          {isLoading ? (
-            <div className="p-4"><SkeletonChart className="h-52" /></div>
-          ) : charts.trend.length ? (
-            <>
-              <div className="px-1 pt-1">
-                {chartsReady
-                  ? <ReactApexChart options={lineOpts} series={lineSeries} type="area" height={232} />
-                  : <div style={{ height: 232 }} />}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 mt-auto">
-                {openCards.map((c) => (
-                  <div key={c.label} className="px-4 py-3 flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
-                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
-                      <span className="truncate">{c.label}</span>
-                    </div>
-                    <div className="text-xl font-bold font-mono leading-none" style={{ color: c.color }}>{c.n}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="grid place-items-center text-xs" style={{ color: "var(--text-4)", height: 232 }}>{t("concerns.noData")}</div>
-          )}
-        </div>
-
-        {/* Status donut + side legend */}
-        <div className="rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
-          <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-            <PieChart size={14} style={{ color: "var(--brand-text)" }} />
-            {t("concerns.chartStatusTitle")}
-          </div>
-          {isLoading ? (
-            <div className="p-4"><SkeletonChart className="h-52" /></div>
-          ) : charts.total ? (
-            <div className="p-4 flex flex-col items-center gap-3">
-              {chartsReady
-                ? <ReactApexChart options={donutOpts} series={donutSeries} type="donut" height={180} />
-                : <div style={{ height: 180 }} />}
-              <div className="w-full space-y-2">
-                {donutRows.map((r) => (
-                  <div key={r.label} className="flex items-center gap-2 text-xs">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
-                    <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
-                    <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: 180 }}>{t("concerns.noData")}</div>
-          )}
-        </div>
+      {/* Page view tabs — register vs chart board. The search / Filtrlar
+          controls follow the view: on the register they live in the TableCard
+          toolbar, on the analytics board they sit here next to the tabs, so the
+          filters that reshape the charts are never hidden state. FilterPanel
+          stays a DIRECT child of this row (its fit check measures the row; the
+          flex-grow spacer counts as 0). */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[["list", t("concerns.viewList")], ["analytics", t("concerns.viewAnalytics")]]}
+        />
+        {view === "analytics" && (
+          <>
+            <div className="flex-1" />
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("concerns.search")}
+              className="w-full sm:w-44"
+            />
+            <FilterPanel
+              sections={filterSections}
+              activeCount={filterActiveCount}
+              anyActive={anyFilterActive}
+              onClearAll={clearAllFilters}
+            />
+          </>
+        )}
       </div>
 
-      {/* Concern table — canonical POSITIONS-style TableCard with per-column sort. */}
+      {/* ── Analytics tab — every board is computed from the fully filtered rows,
+          so period / shift / brigadir / status / search reshape them live. */}
+      {view === "analytics" && (
+        <div className="pb-8 space-y-3">
+          {/* Trend line + end-of-day status strip · status donut */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <ChartCard className="lg:col-span-2" icon={TrendingUp} title={t("concerns.chartTrend")} subtitle={t("concerns.chartTrendSub")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : charts.trend.length ? (
+                <>
+                  <div className="px-1 pt-1">
+                    <Chart ready={chartsReady} height={232} options={lineOpts} series={lineSeries} type="area" />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 mt-auto">
+                    {openCards.map((c) => (
+                      <div key={c.label} className="px-4 py-3 flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}>
+                        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-3)" }}>
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
+                          <span className="truncate">{c.label}</span>
+                        </div>
+                        <div className="text-xl font-bold font-mono leading-none" style={{ color: c.color }}>{c.n}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <NoChart height={232} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+
+            <ChartCard icon={PieChart} title={t("concerns.chartStatusTitle")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : charts.total ? (
+                <div className="p-4 flex flex-col items-center gap-3">
+                  <Chart ready={chartsReady} height={180} options={donutOpts} series={donutSeries} type="donut" />
+                  <div className="w-full space-y-2">
+                    {donutRows.map((r) => (
+                      <div key={r.label} className="flex items-center gap-2 text-xs">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                        <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
+                        <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <NoChart height={180} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+          </div>
+
+          {/* Inflow vs outflow per day · where the open pool sits on the chain */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <ChartCard className="lg:col-span-2" icon={ArrowLeftRight} title={t("concerns.chartFlow")} subtitle={t("concerns.chartFlowSub")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : charts.trend.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={244} options={flowOpts} series={flowSeries} type="bar" />
+                </div>
+              ) : (
+                <NoChart height={244} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+
+            <ChartCard icon={Layers} title={t("concerns.chartLevels")} subtitle={t("concerns.chartLevelsSub")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : analytics.openTotal ? (
+                <div className="p-4 flex flex-col items-center gap-3">
+                  <Chart ready={chartsReady} height={210} options={levelOpts} series={levelSeries} type="radialBar" />
+                  <div className="w-full space-y-2">
+                    {levelRows.map((r) => (
+                      <div key={r.key} className="flex items-center gap-2 text-xs">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                        <span className="flex-1 truncate" style={{ color: "var(--text-2)" }}>{r.label}</span>
+                        <span className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{r.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <NoChart height={210} text={t("concerns.allClear")} />
+              )}
+            </ChartCard>
+          </div>
+
+          {/* Status stacks by department and by brigadir */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <ChartCard icon={Tag} title={t("concerns.chartByCategory")} subtitle={t("concerns.chartByCategorySub")}>
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : catRows.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={stackHeight(catRows.length)} options={catOpts} series={catSeries} type="bar" />
+                </div>
+              ) : (
+                <NoChart height={220} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+
+            <ChartCard
+              icon={UserRound}
+              title={t("concerns.chartByBrigadir")}
+              subtitle={analytics.brigadirs.length > BRIG_TOP
+                ? `${t("concerns.chartByBrigadirSub")} · ${t("concerns.topN")} ${BRIG_TOP}`
+                : t("concerns.chartByBrigadirSub")}
+            >
+              {isLoading ? (
+                <div className="p-4"><SkeletonChart className="h-52" /></div>
+              ) : brigRows.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={stackHeight(brigRows.length)} options={brigOpts} series={brigSeries} type="bar" />
+                </div>
+              ) : (
+                <NoChart height={220} text={t("concerns.noData")} />
+              )}
+            </ChartCard>
+          </div>
+
+          {/* How long things take: resolved spans vs the wait of what is open */}
+          <ChartCard icon={Hourglass} title={t("concerns.chartAge")} subtitle={t("concerns.chartAgeSub")}>
+            {isLoading ? (
+              <div className="p-4"><SkeletonChart className="h-52" /></div>
+            ) : charts.total ? (
+              <div className="px-1 pt-1 pb-1">
+                <Chart ready={chartsReady} height={252} options={ageOpts} series={ageSeries} type="bar" />
+              </div>
+            ) : (
+              <NoChart height={252} text={t("concerns.noData")} />
+            )}
+          </ChartCard>
+        </div>
+      )}
+
+      {/* ── Concerns tab — the register: canonical POSITIONS-style TableCard
+          with per-column sort. */}
+      {view === "list" && (
       <TableCard
         className="mb-8"
         icon={ClipboardList}
@@ -1946,6 +2049,7 @@ export default function Concerns() {
                 })}
               </tbody>
       </TableCard>
+      )}
 
       {/* Create / edit modal */}
       {modalOpen && (
