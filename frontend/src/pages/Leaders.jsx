@@ -612,16 +612,28 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
   const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
+  // First place is the one the eye must find instantly, so it carries a heavier
+  // rim than the other two. Ties keep the same medal on purpose — two cards that
+  // look alike is the honest reading of "tied for 2nd".
+  const rim = worst ? 0.34 : e.place === 1 ? 0.6 : 0.38;
   return (
     <div className="relative rounded-2xl overflow-hidden p-3"
-      style={{ background: "var(--bg-inner)", border: `1px solid ${hexA(tone, 0.34)}` }}>
+      style={{ background: "var(--bg-inner)", border: `1px solid ${hexA(tone, rim)}` }}>
       <span aria-hidden className="absolute select-none tabular-nums font-black leading-none"
-        style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.1) }}>{e.place}</span>
+        style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.14) }}>{e.place}</span>
 
       <div className="relative flex items-center gap-2">
         <Avatar name={name} size={30} />
         <div className="min-w-0 text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
-        <Badge size={20} className="ml-auto flex-shrink-0" style={{ color: tone }} />
+        {/* Rank medallion — a FILLED chip carrying the trophy and the place digit
+          * together. The bare outline trophy it replaced tinted too few pixels to
+          * separate gold from bronze, and the ghost numeral behind the card is
+          * decoration, not a label: the place has to be spelled out somewhere. */}
+        <span className="ml-auto flex-shrink-0 inline-flex items-center gap-1 rounded-full pl-1.5 pr-2 py-1
+                         text-[13px] font-black tabular-nums leading-none"
+          style={{ background: hexA(tone, 0.18), border: `1px solid ${hexA(tone, 0.5)}`, color: tone }}>
+          <Badge size={14} />{e.place}
+        </span>
       </div>
 
       <div className="relative mt-2"><TierChip value={ranked} T={T} cuts={cuts} /></div>
