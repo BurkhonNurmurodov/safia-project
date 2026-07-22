@@ -59,7 +59,7 @@ const TXT = {
     standing: "Liderlar reytingi", supStanding: "Brigadirlar reytingi",
     toggleLeader: "Lider", toggleSup: "Brigadir",
     standRating: "Reyting", standConsist: "Barqarorlik",
-    thPlace: "O'rin", thDays: "Kunlar", thTier: "Daraja",
+    thPlace: "O'rin", thDays: "Yuborilgan kun", thTier: "Daraja",
     tierTop: "Chempion", tierGood: "A'lo", tierMid: "O'rta", tierBad: "Past",
     supSearchPh: "Brigadir qidirish…",
     standInfo: "Reyting — yuborilgan hisobotlarning o'rtachasi. Barqarorlik — o'sha ballar davrning HAR BIR kuniga taqsimlangani: hisobot yuborilmagan kun 0% hisoblanadi. Shu sababli barqarorlik hech qachon reytingdan yuqori bo'lmaydi.",
