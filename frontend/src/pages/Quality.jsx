@@ -1697,6 +1697,7 @@ export default function Quality() {
                 same split. */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
+                [RU.mNo, openRow.no || ""],
                 [RU.colPlace, openRow.pl || ""],
                 [RU.colProduct, openRow.pr || ""],
                 [RU.mCell, [openRow.fc, openRow.cn || ""].filter(Boolean).join(" · ")],
