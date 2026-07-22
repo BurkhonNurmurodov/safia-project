@@ -785,6 +785,10 @@ const t = {
 
     // ── Downtime ──────────────────────────────────────────────────────────────
     "downtime.title":        "Ojidaniya · Uskunalar Ojidaniyasi",
+    "downtime.tabStopped":   "To'xtaganda",
+    "downtime.tabNotStopped":"To'xtamaganda",
+    "downtime.tabStoppedSub":"Yacheykani to'xtatgan ojidaniya",
+    "downtime.tabNotStoppedSub":"Yacheykani to'xtatmagan ojidaniya",
     "downtime.totalDowntime":"Jami Ojidaniya",
     "downtime.flaggedDays":  "Belgilangan Kunli Brigadirlar",
     "downtime.worstCategory":"Eng Ko'p Ta'sirlangan Toifa",
