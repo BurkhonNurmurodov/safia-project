@@ -663,24 +663,39 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
  * run yet, so it greys out instead of accusing the whole shift; an empty day
  * INSIDE the data's range is a real collective miss and stays red.
  *
- * Columns divide the width evenly however many days are picked, so a week fills
- * the card edge to edge. Only when they would squeeze below HM_CELL_W does the
- * grid switch to a fixed column and scroll sideways under the pinned name
- * column — the width then follows HM_BASIS_DAYS, as the fleet heatmap does.
+ * Built on the fleet HeatmapChart's template — not imported from it, the way
+ * the Quality seasonality grid isn't either: that component reads utilisation
+ * objects, prints a % in every cell and pins an AVG/MAX/MIN column, none of
+ * which survives a two-state calendar. What carries over is everything that
+ * makes it read as one of this platform's heatmaps: brand-gold header strip,
+ * pinned name column, bordered square-ish cells, click a name or a date to
+ * isolate that row or column, hover brightening, and the BASIS_DAYS width —
+ * exactly 14 columns fill the card, a shorter window pads with blanks so the
+ * grid never changes width, a longer one scrolls sideways.
  */
-const HM_BASIS_DAYS = 14;   // columns visible at once once the grid has to scroll
-const HM_CELL_W     = 40;   // floor before columns stop stretching and scroll
+const HM_BASIS_DAYS = 14;   // columns that fill the width before it scrolls
+const HM_CELL_W     = 42;   // fleet CELL_W — the floor on narrow screens
 const HM_LABEL_W    = 188;
 const HM_LABEL_W_SM = 124;  // narrow containers give the grid back some room
 const HM_ROW_H      = 56;
 const HM_ROWS_OPEN  = 9;    // rows kept open before the grid scrolls vertically
 const HM_HEAD_H     = 30;
 
-const HM_SENT   = hexA("#22c55e", 0.9);
-const HM_MISSED = hexA("#ef4444", 0.85);
-// Diagonal hatch on the card's own inner tone — reads as "nothing here" rather
-// than as a fourth status colour.
-const HM_VOID = `repeating-linear-gradient(45deg, var(--bg-inner) 0 5px, var(--border) 5px 6px)`;
+// Solid, like the fleet's segment colours — the grid lines do the separating.
+const HM_SENT   = "#22c55e";
+const HM_MISSED = "#ef4444";
+// The fleet's "pending" hatch, reused for a day the sheet has not reached yet.
+const HM_VOID = "repeating-linear-gradient(45deg, var(--bg-inner), var(--bg-inner) 5px, transparent 5px, transparent 10px)";
+const HM_BORDER = "1px solid var(--border)";
+
+// Fleet header strip: brand-gold band, white uppercase micro-caps.
+const HM_TH = {
+  fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+  textTransform: "uppercase", color: "#fff", whiteSpace: "nowrap",
+  paddingTop: 4, paddingBottom: 6,
+  background: "var(--brand)", border: HM_BORDER,
+  position: "sticky", top: 0,
+};
 
 function HmLegend({ T, hasVoid }) {
   const chip = (bg, label) => (
