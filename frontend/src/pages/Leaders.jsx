@@ -848,7 +848,7 @@ export default function Leaders({ botMode = false }) {
     // Competition ranking — an equal metric value shares a place (4, 4, 6…).
     list.forEach((e, i) => { e.place = i > 0 && val(list[i - 1]) === val(e) ? list[i - 1].place : i + 1; });
     return { list, winFrom, winTo, winDays };
-  }, [filtered, effStandMode, standMetric, startDate]);
+  }, [filtered, effStandMode, standMetric, startDate, endDate]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).

@@ -211,7 +211,7 @@ const TXT = {
     fBrig: "Brigadir", fMgr: "Rahbar",
     yes: "Ha", no: "Yo‘q", rows: "yozuv", vsPrev: "oldingi davrga nisbatan",
     mDesc: "Shikoyat tavsifi", mAction: "Tuzatuvchi choralar", mComment: "Izohlar",
-    mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi",
+    mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi", mNo: "Nomuvofiqlik №",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
     fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", allBrig: "Barcha brigadirlar", mSheetName: "Jadvaldagi ism",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
