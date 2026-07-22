@@ -681,8 +681,8 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
  */
 const HM_BASIS_DAYS = 14;   // columns that fill the width before it scrolls
 const HM_CELL_W     = 42;   // fleet CELL_W — the floor on narrow screens
-const HM_LABEL_W    = 188;
-const HM_LABEL_W_SM = 124;  // narrow containers give the grid back some room
+const HM_LABEL_W    = 152;  // sized for "12  N. Nurbek" — no avatar, no surname
+const HM_LABEL_W_SM = 104;  // narrow containers give the grid back some room
 const HM_ROW_H      = 56;
 const HM_ROWS_OPEN  = 9;    // rows per page — the grid pages instead of scrolling
 const HM_HEAD_H     = 30;
