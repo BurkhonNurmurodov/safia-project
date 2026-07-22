@@ -286,10 +286,6 @@ const taskDetail = (id, lang) => {
 };
 
 const DAY = 86400000;
-// Standings row box: py-2 (16) + the 20px value line + the meter (mt-1 + 2.5px)
-// + the 1px row border; the head is py-2.5 (20) around the same 20px line.
-const STAND_ROW_H = 44;
-const STAND_HEAD_H = 41;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 // "2026-04-08T07:22:58" → "07:22"
 const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "");
