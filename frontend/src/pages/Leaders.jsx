@@ -1271,12 +1271,16 @@ export default function Leaders({ botMode = false }) {
     const val = (e) => (standMetric === "consist" ? e.consist : e.rating);
     const alt = (e) => (standMetric === "consist" ? e.rating : e.consist);
     list.sort((a, b) => val(b) - val(a) || alt(b) - alt(a) || a.name.localeCompare(b.name));
-    // Competition ranking on the PAIR — a place is shared only when the primary
-    // AND the sub-rating both match, i.e. the two are genuinely indistinguishable
-    // (1, 2, 2, 4…). `sent` is not a third tiebreak: it is consist over a fixed
-    // window, so it can never split a pair the sub-rating already tied.
+    // Dense ranking on the PAIR — a place is shared only when the primary AND
+    // the sub-rating both match, i.e. the two are genuinely indistinguishable,
+    // and the next distinct result is always place+1 (1, 2, 2, 3…): a six-way
+    // tie on 41 must be followed by 42, not 47. `sent` is not a third tiebreak:
+    // it is consist over a fixed window, so it can never split a pair the
+    // sub-rating already tied.
     const same = (a, b) => val(a) === val(b) && alt(a) === alt(b);
-    list.forEach((e, i) => { e.place = i > 0 && same(list[i - 1], e) ? list[i - 1].place : i + 1; });
+    list.forEach((e, i) => {
+      e.place = i === 0 ? 1 : same(list[i - 1], e) ? list[i - 1].place : list[i - 1].place + 1;
+    });
     return { list, winFrom, winTo, winDays };
   }, [leaderScores, supScores, scoreWin, effStandMode, standMetric]);
 
