@@ -2231,6 +2231,18 @@ def _file_id_echo(message: types.Message):
         logger.warning("Failed to echo file_id to %s", message.from_user.id, exc_info=True)
 
 
+@bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),
+                     content_types=["text"])
+def _typed_instead_of_contact(message: types.Message):
+    """Registration is waiting for the contact and the user typed instead —
+    usually the phone number itself. A typed number can't be trusted as the
+    account's own, so warn, re-show the button and keep waiting. Registered
+    last (before the fallback) so every other stateful flow gets first claim
+    on the message."""
+    tid = message.from_user.id
+    _ask_contact(tid, _get_lang(tid), "contact_typed_warning")
+
+
 @bot.message_handler(func=lambda m: True)
 def _fallback(message: types.Message):
     lang = _get_lang(message.from_user.id)
