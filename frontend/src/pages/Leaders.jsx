@@ -792,10 +792,12 @@ export default function Leaders({ botMode = false }) {
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
   // ── standings ───────────────────────────────────────────────────────────────
-  // One shared calendar window for everyone in view: it opens on the first day
-  // ANY report lands inside the selected period and closes on the last day that
-  // carries data — never the raw end date, since a sheet synced up to yesterday
-  // would otherwise hand every leader a phantom 0% for today.
+  // One shared calendar window for everyone in view: it opens on the SELECTED
+  // period's start date — not the first day a report happens to land, so a leader
+  // who only started filing halfway through the period is charged for the silent
+  // days before that — and closes on the last day that carries data, never the
+  // raw end date, since a sheet synced up to yesterday would otherwise hand
+  // every leader a phantom 0% for today.
   //
   //   Reyting     — the average of the reports they actually filed
   //   Barqarorlik — those same scores spread across EVERY day of the window, a
