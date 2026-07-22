@@ -216,8 +216,8 @@ export default function Downtime() {
   (chartData?.rows || []).forEach((r) => {
     if (!trendMap[r.date]) trendMap[r.date] = 0;
     trendMap[r.date] += filterActive
-      ? selectedCats.reduce((s, c) => s + (r.by_category?.[c] || 0), 0)
-      : (r.total || 0);
+      ? selectedCats.reduce((s, c) => s + (r[catKey]?.[c] || 0), 0)
+      : (r[totalKey] || 0);
   });
   const trendDates  = Object.keys(trendMap).sort((a, b) => dmyKey(a).localeCompare(dmyKey(b)));
   const trendValues = trendDates.map((d) => Math.round(trendMap[d]));
