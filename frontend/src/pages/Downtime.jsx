@@ -123,7 +123,7 @@ export default function Downtime() {
     name: cat,
     data: summary.map((s) => {
       const rows = data?.rows?.filter((r) => r.manager_name === s.manager_name) || [];
-      return rows.reduce((acc, r) => acc + (r.by_category?.[cat] || 0), 0);
+      return rows.reduce((acc, r) => acc + (r[catKey]?.[cat] || 0), 0);
     }),
   }));
   const zeros = summary.map(() => 0);
