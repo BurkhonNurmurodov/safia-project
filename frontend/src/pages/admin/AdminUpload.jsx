@@ -383,6 +383,15 @@ function SheetSourceEditor() {
                   placeholder={t("admin.sheetId")}
                   className="min-w-0 flex-1 bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-1.5 text-xs text-[var(--text-2)] outline-none font-mono"
                 />
+                <button
+                  onClick={() => openSheet(sheetId)}
+                  disabled={!sheetId}
+                  title={t("admin.openSheet")}
+                  aria-label={t("admin.openSheet")}
+                  className="flex-shrink-0 flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-[var(--bg-inner)] hover:bg-[var(--bg-accent)] text-[var(--text-2)] border border-[var(--border-md)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--bg-inner)]"
+                >
+                  <ExternalLink size={13} />
+                </button>
                 <button onClick={() => save(name)} className="flex-shrink-0 text-xs bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white font-semibold px-3 rounded-lg transition-colors">
                   {t("admin.save")}
                 </button>
