@@ -42,17 +42,26 @@ class _BotExceptionHandler(telebot.ExceptionHandler):
         return True
 
 
-# num_threads: every update — the handler-filter tests AND the handler body —
-# is serialised through this worker pool (process_new_updates only enqueues;
-# nothing runs on the caller's thread). Each Telegram API call inside a handler
-# blocks for up to CONNECT_TIMEOUT+READ_TIMEOUT ≈ 45 s, so with telebot's
-# default of 2 threads it took just two slow commands to starve the bot for
-# EVERY user — commands stopped being answered while the web app carried on
-# serving, which reads as "the bot is dead" with no error anywhere.
+# threaded=False: handlers MUST run inside the webhook request, not on a
+# telebot worker thread. With the default pool, process_new_updates() only
+# enqueues and returns, so /bot/webhook answers 200 while the handler has done
+# nothing yet — and under Passenger the process serving that request is reaped
+# between requests (app.log shows a fresh boot every few seconds). The pool's
+# threads are daemons, so they die with it: the command lands as pure silence,
+# no reply and nothing in the log. The pool swallowed crashes too — WorkerThread
+# logs them at DEBUG on telebot's own logger and parks them for
+# raise_exceptions(), which ONLY the polling loop calls, so under webhooks
+# _BotExceptionHandler below was never once reached.
+# Inline execution fixes both: the reply is sent before we return 200, and every
+# exception surfaces (handler → webhook route). It costs the webhook request one
+# Telegram round-trip of latency (Telegram allows far more), and no handler here
+# fans out to many chats — the broadcast send lives in routers/broadcast.py.
+# Starvation is no longer a risk either: each update is served by its own
+# Passenger worker instead of a shared 8-thread pool.
 bot = telebot.TeleBot(
     settings.telegram_bot_token,
     parse_mode=None,
-    num_threads=8,
+    threaded=False,
     exception_handler=_BotExceptionHandler(),
 )
 
