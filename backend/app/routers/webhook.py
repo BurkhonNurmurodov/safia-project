@@ -83,6 +83,11 @@ async def telegram_webhook(request: Request):
         if isinstance(msg, dict) and "rich_message" in msg and handle_incoming_rich_message(msg):
             return {"ok": True}
 
+        logger.info("Update %s — %s", update.update_id, _describe(update))
+
+        # Synchronous by design: the bot is built with threaded=False, so this
+        # runs the handler here and returns only once the reply has been sent
+        # (see the TeleBot construction in telegram_bot.py for why).
         bot.process_new_updates([update])
 
     except Exception:
