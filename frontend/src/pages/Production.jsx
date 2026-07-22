@@ -1053,16 +1053,19 @@ export default function Production() {
   const saveCatEdit = () => {
     const r = editRow;
     if (!r) return;
-    // Send only changed fields; sap_code/name/work_center never blanked.
+    // Send only changed fields; sap_code/name/work_center never blanked. `op` is
+    // optional, so a cleared box IS sent — it un-pins the фаза for this line.
     const body = {};
     const sap = catDraft.sap_code.trim();
     const name = catDraft.name.trim();
     const wc = catDraft.work_center.trim();
+    const op = (catDraft.op ?? "").trim();
     const laborRaw = String(catDraft.labor_time).trim();
     const labor = laborRaw === "" ? null : Number(laborRaw.replace(",", "."));
     if (sap && sap !== (r.sap_code ?? "")) body.sap_code = sap;
     if (name && name !== (r.name ?? "")) body.name = name;
     if (wc && wc !== (r.work_center ?? "")) body.work_center = wc;
+    if (op !== (r.op ?? "")) body.op = op;
     if (labor != null && !Number.isNaN(labor) && labor !== (r.labor_time ?? null)) body.labor_time = labor;
     const done = () => { setEditRow(null); setCatSel(null); };
     if (Object.keys(body).length) catalog.mutate({ id: r.id, body }, { onSuccess: done });
