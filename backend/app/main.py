@@ -8,6 +8,13 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
+# Configure logging before the rest of the app is imported, so anything that
+# logs during import lands in backend/logs/app.log. Mirrored in
+# passenger_wsgi.py — prod boots through there, not through the lifespan.
+from app.logging_setup import setup_logging  # noqa: E402
+
+setup_logging()
+
 import traceback
 from contextlib import asynccontextmanager
 

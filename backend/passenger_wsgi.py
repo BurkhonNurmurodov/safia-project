@@ -13,6 +13,7 @@ Then in your Passenger / cPanel config, point the WSGI app file to this file.
 
 import sys
 import os
+import logging
 
 # Cap native BLAS/OpenMP thread pools to 1 BEFORE numpy/pandas get imported
 # (app.main → production router → openpyxl → numpy). On this shared host the
@@ -27,6 +28,14 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+# Get logging up before anything else runs: prod boots through THIS file, so a
+# failure below is the only record of why the app is down. Mirrored in
+# app/main.py (which never reaches its lifespan under the a2wsgi bridge).
+from app.logging_setup import setup_logging  # noqa: E402
+
+setup_logging()
+logger = logging.getLogger("passenger_wsgi")
 
 # Run database creation, seeding, and Telegram webhook setup on startup.
 # NOTE: the FastAPI lifespan in app/main.py does NOT run under the a2wsgi
@@ -94,7 +103,9 @@ try:
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
 except Exception as e:
-    print(f"Startup task failed: {e}", file=sys.stderr, flush=True)
+    # .exception() keeps the traceback — the old bare print dropped it, which
+    # is what left the stale-connection startup failure undiagnosable.
+    logger.exception("Startup task failed: %s", e)
 
 # Import the FastAPI ASGI app
 from app.main import app as asgi_app  # noqa: E402
