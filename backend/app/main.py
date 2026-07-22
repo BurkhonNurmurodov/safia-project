@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
         add_concern_shift_manager, add_concern_category,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
-        add_leader_submission_columns, add_broadcast_rich_columns,
+        add_leader_submission_columns, add_broadcast_rich_columns, add_pp_product_op,
         seed_setup_times,
     )
     add_last_seen_column()
@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     add_task_comment_author_ref()
     add_leader_submission_columns()
     add_broadcast_rich_columns()
+    add_pp_product_op()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
