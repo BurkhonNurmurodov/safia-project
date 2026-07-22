@@ -503,6 +503,23 @@ def _registration_text(full_name: str, role: str, phone: str | None,
     return text
 
 
+def _send_burst(chat_id: int, text: str, reply_markup=None, attempts: int = 3):
+    """send_message for the case where we push SEVERAL messages into ONE chat
+    back-to-back (/pending re-listing every request). Telegram's per-chat
+    ceiling is ~1 msg/s, so a burst trips 429 — and a raised 429 used to make
+    the whole listing vanish with no reply at all. Honour retry_after instead
+    of dropping the message; only the rate-limited path pays the wait."""
+    for i in range(attempts):
+        try:
+            return bot.send_message(chat_id, text, reply_markup=reply_markup)
+        except telebot.apihelper.ApiTelegramException as e:
+            if e.error_code != 429 or i == attempts - 1:
+                raise
+            params = (getattr(e, "result_json", None) or {}).get("parameters") or {}
+            time.sleep(min(int(params.get("retry_after", 3) or 3), 30))
+    return None
+
+
 def _notify_admins_of_registration(db, target_id: int, text: str, role_ref: int | None = None):
     """Send the registration notification to every admin and record each sent
     message so it can be edited with the outcome later. Per-admin failures are
