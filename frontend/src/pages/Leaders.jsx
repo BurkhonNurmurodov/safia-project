@@ -651,6 +651,159 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
   );
 }
 
+/* ── day calendar ─────────────────────────────────────────────────────────────
+ * A binary heatmap under the register: rows are the ranking above, in the same
+ * order, and columns are every day of the same scoring window — so a row's green
+ * count is literally the "6/7" printed beside it. Cells are bare colour, no
+ * number: whether a report was filed is the only question here, how good it was
+ * is what the two metric columns are for.
+ *
+ * Days past the last one the sheet holds ANY data for are neither green nor red.
+ * A column of forty simultaneous failures is almost always a sync that has not
+ * run yet, so it greys out instead of accusing the whole shift; an empty day
+ * INSIDE the data's range is a real collective miss and stays red.
+ *
+ * Sizing follows the fleet HeatmapChart: exactly HM_BASIS_DAYS columns fill the
+ * width, a shorter window pads with blanks so the grid never changes width, and
+ * a longer one scrolls sideways under the pinned name column.
+ */
+const HM_BASIS_DAYS = 14;   // columns that fill the width with no scroll
+const HM_CELL_W     = 34;   // floor before the grid starts scrolling instead
+const HM_LABEL_W    = 188;
+const HM_LABEL_W_SM = 124;  // narrow containers give the grid back some room
+const HM_ROW_H      = 28;
+const HM_ROWS_OPEN  = 15;   // rows kept open before the grid scrolls vertically
+const HM_HEAD_H     = 30;
+
+const HM_SENT   = hexA("#22c55e", 0.9);
+const HM_MISSED = hexA("#ef4444", 0.85);
+// Diagonal hatch on the card's own inner tone — reads as "nothing here" rather
+// than as a fourth status colour.
+const HM_VOID = `repeating-linear-gradient(45deg, var(--bg-inner) 0 5px, var(--border) 5px 6px)`;
+
+function HmLegend({ T, hasVoid }) {
+  const chip = (bg, label) => (
+    <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>
+      <span style={{ width: 11, height: 11, borderRadius: 3, background: bg, flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      {chip(HM_SENT, T.daysSent)}
+      {chip(HM_MISSED, T.daysMissed)}
+      {hasVoid && chip(HM_VOID, T.noData)}
+    </div>
+  );
+}
+
+function DayGrid({ rows, dates, dataMax, T, nm }) {
+  const scrollRef = useRef(null);
+  const [containerW, setContainerW] = useState(0);
+  // Crosshair: only the hovered row's name and the hovered column's header light
+  // up. Re-styling all ~600 cells on every mouse move is what makes big grids
+  // feel heavy, and the two labels are the ones you actually need to read.
+  const [hover, setHover] = useState(null);   // { r, c }
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContainerW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const labelW = containerW && containerW < 560 ? HM_LABEL_W_SM : HM_LABEL_W;
+  // Column width depends on the container and the basis alone — never on how
+  // many days are picked — so cells don't grow and shrink as you change range.
+  const cellW = containerW > 0
+    ? Math.max(HM_CELL_W, Math.floor((containerW - labelW) / HM_BASIS_DAYS))
+    : HM_CELL_W;
+  const pads = Array.from({ length: Math.max(0, HM_BASIS_DAYS - dates.length) });
+  const tableWidth = labelW + Math.max(HM_BASIS_DAYS, dates.length) * cellW;
+
+  const stickyName = {
+    position: "sticky", left: 0, zIndex: 2,
+    width: labelW, minWidth: labelW, maxWidth: labelW,
+    background: "var(--bg-card)",
+    borderRight: "2px solid var(--border-md)",
+  };
+  const seam = "1px solid var(--bg-card)";
+
+  return (
+    <div ref={scrollRef} className="overflow-auto"
+      style={{ maxHeight: HM_HEAD_H + HM_ROWS_OPEN * HM_ROW_H }}
+      onMouseLeave={() => setHover(null)}>
+      <table style={{ borderCollapse: "separate", borderSpacing: 0, width: tableWidth, tableLayout: "fixed" }}>
+        <thead>
+          <tr>
+            <th style={{
+              ...stickyName, zIndex: 4, top: 0, position: "sticky",
+              height: HM_HEAD_H, textAlign: "left", paddingLeft: 12,
+              background: "var(--bg-inner)", borderBottom: "1px solid var(--border)",
+            }}>
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                {T.thLeader}
+              </span>
+            </th>
+            {dates.map((d, c) => (
+              <th key={d} style={{
+                position: "sticky", top: 0, zIndex: 1,
+                width: cellW, height: HM_HEAD_H,
+                background: "var(--bg-inner)", borderBottom: "1px solid var(--border)",
+                borderLeft: seam,
+              }}>
+                <span className="text-[10px] tabular-nums font-semibold"
+                  style={{ color: hover?.c === c ? "var(--brand-text)" : "var(--text-4)" }}>
+                  {ddmm(d)}
+                </span>
+              </th>
+            ))}
+            {pads.map((_, i) => (
+              <th key={`p${i}`} style={{
+                position: "sticky", top: 0, width: cellW, height: HM_HEAD_H,
+                background: "var(--bg-inner)", borderBottom: "1px solid var(--border)", borderLeft: seam,
+              }} />
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((e, r) => (
+            <tr key={e.name}>
+              <td style={{ ...stickyName, height: HM_ROW_H, borderBottom: "1px solid var(--border)" }}>
+                <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
+                  <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
+                    style={{ color: "var(--text-4)" }}>{e.place}</span>
+                  <Avatar name={nm(e.name)} size={18} />
+                  <span className="truncate text-[12px]"
+                    style={{ color: hover?.r === r ? "var(--text-1)" : "var(--text-2)" }}>{nm(e.name)}</span>
+                </span>
+              </td>
+              {dates.map((d, c) => {
+                const stale = dataMax != null && d > dataMax;
+                const sent = e.days.has(d);
+                const bg = stale ? HM_VOID : sent ? HM_SENT : HM_MISSED;
+                return (
+                  <td key={d}
+                    onMouseEnter={() => setHover({ r, c })}
+                    title={`${nm(e.name)} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
+                    style={{
+                      width: cellW, height: HM_ROW_H, background: bg,
+                      borderLeft: seam, borderBottom: seam, cursor: "default",
+                    }} />
+                );
+              })}
+              {pads.map((_, i) => (
+                <td key={`p${i}`} style={{ width: cellW, height: HM_ROW_H, borderLeft: seam, borderBottom: seam }} />
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
 // botMode: the admin-only COPY at /leaders-bot showing the in-bot checklist
 // submissions. Deliberately independent of the sheet-driven /leaders — two
