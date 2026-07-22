@@ -1721,7 +1721,7 @@ export default function Leaders({ botMode = false }) {
                 })}
                 {!standRows.length && (
                   <tr style={{ borderTop: "1px solid var(--border)" }}>
-                    <td colSpan={6} className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                    <td colSpan={effStandMode === "leader" && !isSupervisor ? 7 : 6} className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 )}
               </tbody>
