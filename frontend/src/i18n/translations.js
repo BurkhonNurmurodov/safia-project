@@ -3135,6 +3135,7 @@ const t = {
     "admin.error":            "Хато",
     "admin.uploadFailed":     "Юклаш бажарилмади",
     "admin.sheetId":          "Sheet ID...",
+    "admin.openSheet":        "Жадвални очиш",
     "admin.comparisonRanges": "Таққослаш жадвали оралиқлари",
     "admin.pPlanned":         "P — Режа %",
     "admin.perCellUtil":      "ҳар бир катак учун режадаги фойдаланиш",
