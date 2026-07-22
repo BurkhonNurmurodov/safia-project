@@ -1020,13 +1020,14 @@ export default function Production() {
       name: r.name ?? "",
       labor_time: r.labor_time == null ? "" : String(r.labor_time),
       work_center: r.work_center ?? "",
+      op: r.op ?? "",
     });
     setEditRow(r);
   };
   const setDraft = (k) => (v) => setCatDraft((d) => ({ ...d, [k]: v }));
   // «Qo'shish» opens the create modal with a blank draft (same four fields).
   const openCreate = () => {
-    setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "" });
+    setCatDraft({ sap_code: "", name: "", labor_time: "", work_center: "", op: "" });
     setCreateOpen(true);
   };
   const canSubmitCreate =
