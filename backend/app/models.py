@@ -88,8 +88,14 @@ class DowntimeData(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     manager_name = Column(String, nullable=False, index=True)
     date = Column(String(10), nullable=False)
+    # Every shift-report category is a column PAIR: the wait stopped the cell
+    # («тўхтаганда» → total_minutes / by_category) or it did not («тўхтамаганда»
+    # → the _ns pair below). One row carries both halves for a (brigadir, date);
+    # the Ojidaniya page shows one half per tab.
     total_minutes = Column(Numeric(10, 4), default=0.0)
     by_category = Column(JSONB, default=dict)
+    total_minutes_ns = Column(Numeric(10, 4), default=0.0)
+    by_category_ns = Column(JSONB, default=dict)
 
     __table_args__ = (UniqueConstraint("manager_name", "date", name="uq_downtime_manager_date"),)
 
