@@ -664,6 +664,23 @@ export default function Leaders({ botMode = false }) {
     },
   });
 
+  // Daraja cutoffs. One global row, so every viewer grades on the same scale;
+  // the server decides who may write it back rather than the client's own role.
+  const { data: tierData } = useQuery({
+    queryKey: ["leader-tiers"],
+    queryFn: () => api.get("/api/leader-tiers").then((r) => r.data),
+  });
+  const tierCuts = useMemo(() => ({
+    top:  tierData?.top  ?? TIER_CUTS.top,
+    good: tierData?.good ?? TIER_CUTS.good,
+    mid:  tierData?.mid  ?? TIER_CUTS.mid,
+  }), [tierData]);
+  const canEditTiers = !!tierData?.can_edit;
+  const tierMut = useMutation({
+    mutationFn: (cuts) => api.put("/api/leader-tiers", cuts).then((r) => r.data),
+    onSuccess: (d) => { qc.setQueryData(["leader-tiers"], d); setTierEdit(null); },
+  });
+
   // supervisor → leaders cascade
   const supLeaderMap = useMemo(() => {
     const map = { All: new Set() };
