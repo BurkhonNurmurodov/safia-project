@@ -1237,7 +1237,7 @@ export default function Leaders({ botMode = false }) {
                         <Meter pct={e.consist} color={scoreColor(e.consist)} />
                       </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
-                        <TierChip value={ranked} T={T} />
+                        <TierChip value={ranked} T={T} cuts={tierCuts} />
                       </td>
                     </tr>
                   );
