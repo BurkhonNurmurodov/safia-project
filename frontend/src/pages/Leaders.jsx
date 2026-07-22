@@ -784,15 +784,19 @@ const HmRow = memo(function HmRow({
   );
 });
 
-function DayGrid({ rows, dates, dataMax, T, nm }) {
+function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
   const scrollRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
-  // Crosshair: only the hovered row's name and the hovered column's header light
-  // up. Re-styling every cell on each mouse move is what makes big grids feel
-  // heavy, and those two labels are the ones you actually need to read.
-  const [hover, setHover] = useState(null);   // { r, c }
-  const onEnter = useCallback(
-    (r, c) => setHover((h) => (h && h.r === r && h.c === c ? h : { r, c })), []);
+  const [hover, setHover] = useState(null);           // { name, date }
+  const [selection, setSelection] = useState(null);   // { type: row|date, value }
+
+  const onEnter = useCallback((name, date) =>
+    setHover((h) => (h && h.name === name && h.date === date ? h : { name, date })), []);
+  const onLeave = useCallback(() => setHover(null), []);
+  // Clicking a name or a date isolates it; clicking it again — or anywhere off
+  // the cells — lets the whole grid back in.
+  const onPick = useCallback((type, value) =>
+    setSelection((s) => (s && s.type === type && s.value === value ? null : { type, value })), []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -803,64 +807,71 @@ function DayGrid({ rows, dates, dataMax, T, nm }) {
   }, []);
 
   const labelW = containerW && containerW < 560 ? HM_LABEL_W_SM : HM_LABEL_W;
-  // A window that can divide the width without starving its columns does exactly
-  // that: seven days fill the card, no dead strip on the right. Handing the
-  // stretching to `table-layout: fixed` (width 100%, no width on the day cells)
-  // keeps it exact — dividing by hand leaves a few unassigned pixels behind.
-  // Only when the columns would fall under HM_CELL_W does the grid go back to a
-  // fixed column sized off HM_BASIS_DAYS and scroll.
-  const avail = Math.max(0, containerW - labelW);
-  const fits = containerW > 0
-    ? dates.length > 0 && avail / dates.length >= HM_CELL_W
-    : dates.length <= HM_BASIS_DAYS;   // pre-measure guess: the common case
-  const cellW = fits ? undefined : Math.max(HM_CELL_W, Math.floor(avail / HM_BASIS_DAYS));
-  const tableWidth = fits ? "100%" : labelW + dates.length * cellW;
+  // Fleet sizing: the column width follows the container and BASIS_DAYS alone,
+  // never the number of days picked, so cells keep their size as you change the
+  // range — a fortnight fills the card, a week fills it with seven blanks on the
+  // end, a month runs past the edge and scrolls.
+  const cellW = containerW > 0
+    ? Math.max(HM_CELL_W, Math.floor((containerW - labelW) / HM_BASIS_DAYS))
+    : HM_CELL_W;
+  const padCount = Math.max(0, HM_BASIS_DAYS - dates.length);
+  const tableWidth = labelW + Math.max(HM_BASIS_DAYS, dates.length) * cellW;
 
-  const stickyName = {
-    position: "sticky", left: 0, zIndex: 2,
-    width: labelW, minWidth: labelW, maxWidth: labelW,
-    background: "var(--bg-card)",
-    borderRight: "2px solid var(--border-md)",
-  };
-  const seam = "1px solid var(--bg-card)";
+  const selDate = selection?.type === "date" ? selection.value : null;
 
   return (
     <div ref={scrollRef} className="overflow-auto"
       style={{ maxHeight: HM_HEAD_H + HM_ROWS_OPEN * HM_ROW_H }}
-      onMouseLeave={() => setHover(null)}>
+      onMouseLeave={onLeave}
+      onClick={() => setSelection(null)}>
       <table style={{ borderCollapse: "separate", borderSpacing: 0, width: tableWidth, tableLayout: "fixed" }}>
         <thead>
           <tr>
             <th style={{
-              ...stickyName, zIndex: 4, top: 0, position: "sticky",
+              ...HM_TH, left: 0, zIndex: 5,
+              width: labelW, minWidth: labelW,
               height: HM_HEAD_H, textAlign: "left", paddingLeft: 12,
-              background: "var(--bg-inner)", borderBottom: "1px solid var(--border)",
-            }}>
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                {T.thLeader}
-              </span>
-            </th>
-            {dates.map((d, c) => (
-              <th key={d} style={{
-                position: "sticky", top: 0, zIndex: 1,
-                width: cellW, height: HM_HEAD_H,
-                background: "var(--bg-inner)", borderBottom: "1px solid var(--border)",
-                borderLeft: seam,
-              }}>
-                <span className="text-[10px] tabular-nums font-semibold"
-                  style={{ color: hover?.c === c ? "var(--brand-text)" : "var(--text-4)" }}>
-                  {ddmm(d)}
-                </span>
-              </th>
+              borderRight: "2px solid var(--border-md)",
+            }}>{nameHead}</th>
+
+            {dates.map((d) => {
+              const isSel = selDate === d;
+              return (
+                <th key={d}
+                  onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
+                  style={{
+                    ...HM_TH, zIndex: 3,
+                    width: cellW, minWidth: cellW, height: HM_HEAD_H,
+                    textAlign: "center", cursor: "pointer", userSelect: "none",
+                    fontWeight: isSel ? 800 : 700,
+                    opacity: selDate != null && !isSel ? 0.45 : 1,
+                    transition: "opacity .1s",
+                  }}>
+                  <span className="tabular-nums">{ddmm(d)}</span>
+                  {isSel && <span style={{ display: "block", height: 2, borderRadius: 1, background: "#fff", marginTop: 3 }} />}
+                </th>
+              );
+            })}
+
+            {Array.from({ length: padCount }, (_, i) => (
+              <th key={`p${i}`} style={{ ...HM_TH, zIndex: 3, width: cellW, minWidth: cellW, height: HM_HEAD_H }} />
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((e, r) => (
-            <HmRow key={e.name} r={r} name={nm(e.name)} place={e.place} days={e.days}
-              dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW}
-              hovered={hover?.r === r} onEnter={onEnter} T={T} />
-          ))}
+          {rows.map((e) => {
+            const name = nm(e.name);
+            const rowSel = selection?.type === "row";
+            return (
+              <HmRow key={e.name} name={name} place={e.place} days={e.days}
+                dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW} padCount={padCount}
+                sel={rowSel && selection.value === name}
+                dim={rowSel && selection.value !== name}
+                selDate={selDate}
+                hoverRow={hover?.name === name} hoverDate={hover?.date ?? null}
+                onEnter={onEnter} onLeave={onLeave} onPick={onPick} T={T} />
+            );
+          })}
         </tbody>
       </table>
     </div>
