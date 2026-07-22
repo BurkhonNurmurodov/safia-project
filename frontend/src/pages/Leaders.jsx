@@ -862,15 +862,14 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
         </thead>
         <tbody>
           {rows.map((e) => {
-            const name = nm(e.name);
             const rowSel = selection?.type === "row";
             return (
-              <HmRow key={e.name} name={name} place={e.place} days={e.days}
+              <HmRow key={e.name} rowKey={e.name} name={nm(e.name)} place={e.place} days={e.days}
                 dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW} padCount={padCount}
-                sel={rowSel && selection.value === name}
-                dim={rowSel && selection.value !== name}
+                sel={rowSel && selection.value === e.name}
+                dim={rowSel && selection.value !== e.name}
                 selDate={selDate}
-                hoverRow={hover?.name === name} hoverDate={hover?.date ?? null}
+                hoverRow={hover?.name === e.name} hoverDate={hover?.date ?? null}
                 onEnter={onEnter} onLeave={onLeave} onPick={onPick} T={T} />
             );
           })}
