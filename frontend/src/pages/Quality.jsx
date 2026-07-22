@@ -1629,7 +1629,7 @@ export default function Quality() {
               <tbody>
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={lockOwn ? 8 : isProd ? 9 : 10} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                    <td colSpan={lockOwn ? 9 : isProd ? 10 : 11} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 ) : pageRows.map((r) => {
                   const SrcIcon = SRC_ICONS[r.s] || CircleDot;
