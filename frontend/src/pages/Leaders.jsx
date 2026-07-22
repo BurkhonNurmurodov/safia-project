@@ -757,13 +757,18 @@ function DayGrid({ rows, dates, dataMax, T, nm }) {
   }, []);
 
   const labelW = containerW && containerW < 560 ? HM_LABEL_W_SM : HM_LABEL_W;
-  // Column width depends on the container and the basis alone — never on how
-  // many days are picked — so cells don't grow and shrink as you change range.
-  const cellW = containerW > 0
-    ? Math.max(HM_CELL_W, Math.floor((containerW - labelW) / HM_BASIS_DAYS))
-    : HM_CELL_W;
-  const pads = Array.from({ length: Math.max(0, HM_BASIS_DAYS - dates.length) });
-  const tableWidth = labelW + Math.max(HM_BASIS_DAYS, dates.length) * cellW;
+  // A window that can divide the width without starving its columns does exactly
+  // that: seven days fill the card, no dead strip on the right. Handing the
+  // stretching to `table-layout: fixed` (width 100%, no width on the day cells)
+  // keeps it exact — dividing by hand leaves a few unassigned pixels behind.
+  // Only when the columns would fall under HM_CELL_W does the grid go back to a
+  // fixed column sized off HM_BASIS_DAYS and scroll.
+  const avail = Math.max(0, containerW - labelW);
+  const fits = containerW > 0
+    ? dates.length > 0 && avail / dates.length >= HM_CELL_W
+    : dates.length <= HM_BASIS_DAYS;   // pre-measure guess: the common case
+  const cellW = fits ? undefined : Math.max(HM_CELL_W, Math.floor(avail / HM_BASIS_DAYS));
+  const tableWidth = fits ? "100%" : labelW + dates.length * cellW;
 
   const stickyName = {
     position: "sticky", left: 0, zIndex: 2,
