@@ -1129,7 +1129,7 @@ export default function Leaders({ botMode = false }) {
           </div>
         </div>
 
-        {/* Standings — hidden for a leader (a single-bar ranking of themselves) */}
+        {/* Standings — hidden for a leader (a one-row ranking of themselves) */}
         {!isLeader && (
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Trophy} title={effStandMode === "leader" ? T.standing : T.supStanding}
@@ -1142,7 +1142,91 @@ export default function Leaders({ botMode = false }) {
                   options={[["desc", <ArrowDownNarrowWide key="d" size={13} />], ["asc", <ArrowUpNarrowWide key="a" size={13} />]]} />
               </div>
             } />
-          <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: standings.map((e) => e.val) }]} options={standOptions} height={standHeight} /></div>
+
+          {/* metric tabs (= the sort presets) + name search */}
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
+            <SegmentedToggle value={standMetric} onChange={setStandMetric}
+              options={[["rating", T.standRating], ["consist", T.standConsist]]} />
+            <button onClick={() => setStandInfo(true)} title={T.standInfo}
+              className="p-1 rounded transition-colors hover:bg-white/10" style={{ color: "var(--brand-text)" }}>
+              <Info size={15} />
+            </button>
+            {standings.winFrom && (
+              <span className="hidden md:inline text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                {T.winLabel}: {ddmm(standings.winFrom)} – {ddmm(standings.winTo)} · {standings.winDays} {T.dayAbbr}
+              </span>
+            )}
+            <SearchInput value={standSearch} onChange={setStandSearch} className="ml-auto w-full sm:w-56"
+              placeholder={effStandMode === "leader" ? T.searchPh : T.supSearchPh} />
+          </div>
+
+          {/* podium — the best three, or the three who need help when flipped */}
+          {!standSearch.trim() && standTop.length === 3 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3">
+              {standTop.map((e) => (
+                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} />
+              ))}
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <Th label={T.thPlace} cls="w-[58px]" />
+                  <Th label={effStandMode === "leader" ? T.thLeader : T.supervisor} cls="border-l" />
+                  <Th label={T.thDays} cls="border-l w-[92px]" hint={`${T.daysSent} – ${T.daysMissed}`} />
+                  <Th label={T.standRating} k="rating" sort={standSort} onSort={onStandSort} cls="border-l w-[104px]" />
+                  <Th label={T.standConsist} k="consist" sort={standSort} onSort={onStandSort} cls="border-l w-[112px]" />
+                  <Th label={T.thTier} cls="border-l w-[116px]" />
+                </tr>
+              </thead>
+              <tbody>
+                {standPageRows.map((e) => {
+                  const ranked = standMetric === "consist" ? e.consist : e.rating;
+                  return (
+                    <tr key={e.name} className="transition-colors hover:bg-[var(--bg-inner)]"
+                      style={{ borderTop: "1px solid var(--border)" }}>
+                      <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{e.place}</td>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <span className="inline-flex items-center gap-2">
+                          <Avatar name={nm(e.name)} size={24} />
+                          <span style={{ color: "var(--text-1)" }}>{nm(e.name)}</span>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <div className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
+                          {e.sent}<span className="font-normal" style={{ color: "var(--text-4)" }}> – {e.missed}</span>
+                        </div>
+                        <Meter pct={(e.sent / (e.sent + e.missed)) * 100} color={C_MID} />
+                      </td>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <div className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{e.rating}%</div>
+                        <Meter pct={e.rating} color={scoreColor(e.rating)} />
+                      </td>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <div className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{e.consist}%</div>
+                        <Meter pct={e.consist} color={scoreColor(e.consist)} />
+                      </td>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
+                        <TierChip value={ranked} T={T} />
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!standPageRows.length && (
+                  <tr style={{ borderTop: "1px solid var(--border)" }}>
+                    <td colSpan={6} className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="px-3 pb-3">
+            <Pagination page={standPageSafe} pageCount={standPageCount} total={standRows.length}
+              pageSize={STAND_PAGE} onPage={setStandPage} />
+          </div>
         </div>
         )}
 
