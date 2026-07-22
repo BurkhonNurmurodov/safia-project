@@ -717,7 +717,7 @@ function HmLegend({ T, hasVoid }) {
  * thousand cells, and without this boundary every unrelated re-render of the
  * page around the grid would walk all of them. */
 const HmRow = memo(function HmRow({
-  name, place, days, dates, dataMax, cellW, labelW, padCount,
+  rowKey, name, place, days, dates, dataMax, cellW, labelW, padCount,
   sel, dim, selDate, hoverRow, hoverDate, onEnter, onLeave, onPick, T,
 }) {
   const live = !sel && !dim && selDate == null;   // hover only reads when nothing is isolated
