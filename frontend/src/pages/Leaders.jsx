@@ -1271,7 +1271,7 @@ export default function Leaders({ botMode = false }) {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          <div ref={standScroll} className="overflow-auto" style={{ maxHeight: standViewH }}>
             <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
