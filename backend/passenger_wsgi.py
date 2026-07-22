@@ -47,6 +47,7 @@ try:
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns, add_pp_product_op,
+        add_downtime_ns_columns,
         seed_setup_times,
     )
     from app.telegram_bot import setup_webhook
