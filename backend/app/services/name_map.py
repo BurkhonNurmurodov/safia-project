@@ -190,6 +190,16 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
             if m is not None:
                 out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
                 continue
+        # An exact folded-name hit wins outright, before any fuzzy scoring: the
+        # scorer only compares surname + first name, so «Сувонов Элшод» and
+        # «Сувонов Элшод ОФ» tie at 1.0 against BOTH Suvonov units and iteration
+        # order would fold two real units onto one id. The leaders «Daily» sheet
+        # spells brigadirs exactly as the unit names, so this is also the path
+        # nearly every row takes.
+        m = by_norm.get(" ".join(tokens))
+        if m is not None:
+            out[raw] = {"name": m.name, "id": m.id, "shift": m.shift}
+            continue
         # Best candidate, not the first acceptable one: two supervisors can both
         # clear the bar (TALIPOVA MAMURA also half-resembles Арипова Манзура),
         # and the register hands those rows to the wrong unit if order decides.
