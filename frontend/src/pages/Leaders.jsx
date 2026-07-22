@@ -1029,6 +1029,14 @@ export default function Leaders({ botMode = false }) {
     }
     return map;
   }, [rows]);
+  // leader → supervisor (the cascade above, reversed) for the standings column
+  const leaderSup = useMemo(() => {
+    const m = {};
+    for (const r of rows)
+      if (r.leader && r.leader !== "N/A" && r.supervisor && r.supervisor !== "N/A")
+        m[r.leader] = r.supervisor;
+    return m;
+  }, [rows]);
   // supervisor → shift (from the row the backend tags with Manager.shift), so a
   // shift filter can also narrow the supervisor picker. An unmatched supervisor
   // has no shift and drops out once a shift is chosen.
