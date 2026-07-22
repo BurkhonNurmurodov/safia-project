@@ -520,7 +520,9 @@ const initialsOf = (s) => s.trim().split(/\s+/).map((p) => p[0] || "").join("").
 
 // Medals — gold / silver / bronze for the podium, one attention rose for all
 // three cards when the list is flipped (nobody gets a medal for finishing last).
-const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
+// Pushed apart in hue AND lightness on purpose: at icon-stroke weight a muted
+// gold and a muted bronze read as the same smudge, so the place is unreadable.
+const MEDAL = { 1: "#E0A82E", 2: "#C3CBD6", 3: "#C0703A" };
 
 // Tier chip ("Daraja"). Cut from whichever metric is being ranked, so the chip
 // always describes the number the list is sorted by. The three cutoffs are org
