@@ -1265,6 +1265,141 @@ export default function Concerns() {
     } } },
   };
 
+  // ── analytics-tab charts ────────────────────────────────────────────────────
+  // Shared axis/grid chrome so the six boards read as one system.
+  const axisLabel = { style: { colors: labelColor, fontSize: "11px" } };
+  const gridStyle = { borderColor: gridColor, strokeDashArray: 3, padding: { left: 6, right: 6 } };
+  const topLegend = {
+    show: true, position: "top", horizontalAlign: "right", fontSize: "11px",
+    labels: { colors: legendColor }, markers: { width: 8, height: 8, radius: 4 },
+    itemMargin: { horizontal: 8, vertical: 0 }, offsetY: -4,
+  };
+  // Whole-count value ticks: capping tickAmount at the data max keeps every step
+  // ≥ 1, so rounded labels never repeat (same trick as the trend axis).
+  const countAxis = (max) => ({
+    min: 0, max: Math.max(max, 1),
+    tickAmount: Math.min(Math.max(max, 1), 5),
+    labels: { ...axisLabel, formatter: (v) => (typeof v === "number" ? Math.round(v) : v) },
+  });
+
+  // 1 ─ opened vs closed per day: is the inflow being kept up with? Shares the
+  // trend chart's padded (≥ 7-day) day axis.
+  const flowSeries = [
+    { name: t("concerns.seriesOpened"), data: charts.trend.map((p) => p.opened) },
+    { name: t("concerns.seriesClosed"), data: charts.trend.map((p) => p.closed) },
+  ];
+  const flowOpts = {
+    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    theme: chartTheme,
+    colors: [CHART_BRAND, STATUS_COLOR.done],
+    plotOptions: { bar: { columnWidth: "60%", borderRadius: 3, borderRadiusApplication: "end" } },
+    dataLabels: { enabled: false },
+    stroke: { show: false },
+    xaxis: {
+      type: "category", categories: trendDays,
+      tickAmount: Math.min(Math.max(trendDays.length - 1, 1), 10),
+      labels: { rotate: 0, hideOverlappingLabels: true, formatter: dayTick, ...axisLabel },
+      axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+    },
+    yaxis: countAxis(charts.maxFlow),
+    grid: gridStyle,
+    legend: topLegend,
+    tooltip: {
+      theme: tooltipTheme,
+      x: { formatter: (_v, { dataPointIndex }) => fmtDate(trendDays[dataPointIndex] || "", lang) },
+    },
+  };
+
+  // 2 ─ where the still-open concerns currently sit on the escalation chain.
+  // Radial rings = share of the open pool per level; the legend carries counts.
+  const levelRows = LEVELS.map((l) => ({
+    key: l, label: levelLabel(l), color: LEVEL_COLOR[l], n: analytics.levels[l] || 0,
+  }));
+  const levelSeries = levelRows.map((r) =>
+    analytics.openTotal ? Math.round((r.n / analytics.openTotal) * 100) : 0);
+  const levelOpts = {
+    chart: { type: "radialBar", fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    theme: chartTheme,
+    labels: levelRows.map((r) => r.label),
+    colors: levelRows.map((r) => r.color),
+    stroke: { lineCap: "round" },
+    plotOptions: { radialBar: {
+      hollow: { size: "38%" },
+      track: { background: gridColor, strokeWidth: "100%", margin: 5 },
+      dataLabels: {
+        name: { fontSize: "11px", color: legendColor },
+        value: { fontSize: "20px", fontWeight: 700, color: "var(--text-1)", formatter: (v) => `${v}%` },
+        total: { show: true, label: t("concerns.openLower"), color: legendColor, fontSize: "11px", formatter: () => String(analytics.openTotal) },
+      },
+    } },
+    legend: { show: false },
+  };
+
+  // 3 ─ how long things take: resolution span of the done rows against the
+  // current wait of the open ones, over shared day buckets. Gold = the
+  // unresolved pool (the same reading as the "Hal qilinmagan" card).
+  const AGE_BUCKETS = ["0–1", "2–3", "4–7", "8–14", "15+"];
+  const ageSeries = [
+    { name: statusLabel("done"),        data: analytics.ageDone },
+    { name: t("concerns.cardUnresolved"), data: analytics.ageOpen },
+  ];
+  const ageOpts = {
+    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    theme: chartTheme,
+    colors: [STATUS_COLOR.done, CHART_BRAND],
+    plotOptions: { bar: { columnWidth: "56%", borderRadius: 3, borderRadiusApplication: "end" } },
+    dataLabels: { enabled: false },
+    stroke: { show: false },
+    xaxis: {
+      categories: AGE_BUCKETS, labels: axisLabel,
+      axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+    },
+    yaxis: countAxis(analytics.ageMax),
+    grid: gridStyle,
+    legend: topLegend,
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("concerns.itemsUnit")}` } },
+  };
+
+  // 4 + 5 ─ horizontal status stacks by department and by brigadir. One builder,
+  // same four donut buckets, so the two boards are directly comparable.
+  const STACK_COLORS = [STATUS_COLOR.done, STATUS_COLOR.doing, CHART_TODO, CHART_OVERDUE];
+  const stackSeries = (rows) => [
+    { name: statusLabel("done"),        data: rows.map((r) => r.done) },
+    { name: statusLabel("doing"),       data: rows.map((r) => r.doing) },
+    { name: statusLabel("todo"),        data: rows.map((r) => r.todo) },
+    { name: t("concerns.chartOverdue"), data: rows.map((r) => r.overdue) },
+  ];
+  const stackOpts = (labels, max) => ({
+    chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
+    theme: chartTheme,
+    colors: STACK_COLORS,
+    plotOptions: { bar: { horizontal: true, barHeight: "62%", borderRadius: 3, borderRadiusApplication: "end" } },
+    dataLabels: { enabled: false },
+    stroke: { show: false },
+    xaxis: {
+      categories: labels, ...countAxis(max),
+      axisBorder: { show: false }, axisTicks: { show: false },
+    },
+    yaxis: { labels: { ...axisLabel, maxWidth: 150 } },
+    grid: gridStyle,
+    legend: topLegend,
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("concerns.itemsUnit")}` } },
+  });
+  // Bars keep a constant thickness — the card grows with the row count instead
+  // of squeezing twelve departments into a fixed box.
+  const stackHeight = (n) => Math.max(200, n * 34 + 66);
+
+  const catRows = analytics.categories;
+  const catSeries = stackSeries(catRows);
+  const catOpts = stackOpts(catRows.map((r) => categoryLabel(r.key)), catRows[0]?.total || 0);
+
+  // Brigadirs are capped at the ten busiest — the count is spelled out in the
+  // card subtitle so a truncated board never reads as the whole picture.
+  const BRIG_TOP = 10;
+  const brigRows = analytics.brigadirs.slice(0, BRIG_TOP);
+  const brigSeries = stackSeries(brigRows);
+  const brigOpts = stackOpts(brigRows.map((r) => shortOwner(r.key)), brigRows[0]?.total || 0);
+
   // Per-row action buttons — one source for the desktop expanded row and the
   // expanded mobile card, so the two layouts always offer the same actions.
   const rowActions = (r) => (
