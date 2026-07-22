@@ -1296,27 +1296,38 @@ def _pending(message: types.Message):
         )
 
         if not rows:
-            bot.send_message(tid, "✅ Kutilayotgan so'rovlar yo'q.")
+            _send_burst(tid, "✅ Kutilayotgan so'rovlar yo'q.")
             return
 
-        bot.send_message(tid, f"⏳ {len(rows)} ta kutilayotgan so'rov:")
+        _send_burst(tid, f"⏳ {len(rows)} ta kutilayotgan so'rov:")
+        sent_n, last_err = 0, None
         for role_row, user in rows:
-            text = _registration_text(role_row.full_name, role_row.role, user.phone,
-                                      user.telegram_id, user.username)
+            # Everything per-row is guarded: one unrenderable request must not
+            # swallow the six behind it (building the text used to sit outside
+            # the try, so a single bad row killed the whole listing).
             try:
-                sent = bot.send_message(tid, text, reply_markup=_registration_kb(role_row.id))
-            except Exception:
-                logger.exception("Failed to send /pending row to admin %s", tid)
-                continue
-            # Track these too, so they also get edited with the outcome.
-            db.add(RegistrationNotice(
-                target_telegram_id=user.telegram_id,
-                role_ref=role_row.id,
-                admin_telegram_id=tid,
-                message_id=sent.message_id,
-                text=text,
-            ))
-        db.commit()
+                body = _registration_text(role_row.full_name, role_row.role, user.phone,
+                                          user.telegram_id, user.username)
+                sent = _send_burst(tid, body, reply_markup=_registration_kb(role_row.id))
+                # Track these too, so they also get edited with the outcome.
+                db.add(RegistrationNotice(
+                    target_telegram_id=user.telegram_id,
+                    role_ref=role_row.id,
+                    admin_telegram_id=tid,
+                    message_id=sent.message_id,
+                    text=body,
+                ))
+                db.commit()  # per row — a later failure can't orphan what already went out
+                sent_n += 1
+            except Exception as e:
+                db.rollback()
+                last_err = e
+                logger.exception("Failed to send /pending row %s to admin %s", role_row.id, tid)
+
+        # Never leave the admin staring at a count with nothing under it.
+        if sent_n < len(rows):
+            _send_burst(tid, f"⚠️ {sent_n}/{len(rows)} ta so'rov yuborildi. "
+                             f"Qolganini admin panelda ko'ring.\nXato: {last_err}")
 
 
 # ── /broadcast: admin free-form broadcast (copy-to-recipients) ────────────────
