@@ -1112,6 +1112,17 @@ export default function Leaders({ botMode = false }) {
   // card is standing right above it; the calendar is read as one block, and a
   // hole where first place should be would just look like a bug.
   const heatRows = standSearch.trim() ? standRows : standOrdered;
+  // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
+  // the filtered slice: narrowing to one leader must not turn that leader's own
+  // misses into "not synced yet". Everything past it greys out in the grid.
+  const dataMax = useMemo(() => {
+    let mx = null;
+    for (const r of rows) {
+      const d = String(r.date).slice(0, 10);
+      if (mx == null || d > mx) mx = d;
+    }
+    return mx;
+  }, [rows]);
   // One column per day of the SAME window the metrics are scored over, so a
   // row's green count is literally the "6/7" printed beside it in the register.
   const heatDates = useMemo(() => {
