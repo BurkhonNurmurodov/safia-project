@@ -582,8 +582,7 @@ function StandCard({ e, worst, metric, T, name }) {
       <div className="relative mt-2"><TierChip value={ranked} T={T} /></div>
 
       <div className="relative grid grid-cols-3 gap-2 mt-2.5">
-        <CardStat label={T.thDays} pct={(e.sent / (e.sent + e.missed)) * 100} color={C_MID}
-          value={<><span>{e.sent}</span><span className="font-normal" style={{ color: "var(--text-4)" }}> – {e.missed}</span></>} />
+        <CardStat label={T.daysSent} pct={daysPct(e)} color={scoreColor(daysPct(e))} value={<DaysValue e={e} />} />
         <CardStat label={T.standRating} value={`${e.rating}%`} pct={e.rating} color={scoreColor(e.rating)} active={metric === "rating"} />
         <CardStat label={T.standConsist} value={`${e.consist}%`} pct={e.consist} color={scoreColor(e.consist)} active={metric === "consist"} />
       </div>
