@@ -1576,11 +1576,9 @@ export default function Leaders({ botMode = false }) {
                     <tr key={e.name} className="transition-colors hover:bg-[var(--bg-inner)]"
                       style={{ borderTop: "1px solid var(--border)" }}>
                       <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{e.place}</td>
-                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
-                        <span className="inline-flex items-center gap-2">
-                          <Avatar name={nm(e.name)} size={24} />
-                          <span style={{ color: "var(--text-1)" }}>{nm(e.name)}</span>
-                        </span>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
+                        title={nm(e.name)}>
+                        <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
                       </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
