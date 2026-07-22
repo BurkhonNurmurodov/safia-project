@@ -613,6 +613,9 @@ export default function Leaders({ botMode = false }) {
   const [fLeader, setFLeader] = useState("All");
   const [standMode, setStandMode] = useState("leader");
   const [standDir, setStandDir] = useState("desc");
+  const [standMetric, setStandMetric] = useState("rating");  // rating | consist
+  const [standSearch, setStandSearch] = useState("");
+  const [standPage, setStandPage] = useState(1);
   const [detail, setDetail] = useState(null);
   const [taskInfo, setTaskInfo] = useState(false);
 
