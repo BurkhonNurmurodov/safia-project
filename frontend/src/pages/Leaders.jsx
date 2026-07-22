@@ -854,7 +854,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
             })}
 
             {Array.from({ length: padCount }, (_, i) => (
-              <th key={`p${i}`} style={{ ...HM_TH, zIndex: 3, width: cellW, minWidth: cellW, height: HM_HEAD_H }} />
+              <th key={`p${i}`} style={{ ...HM_TH, zIndex: 6, width: cellW, minWidth: cellW, height: HM_HEAD_H }} />
             ))}
           </tr>
         </thead>
