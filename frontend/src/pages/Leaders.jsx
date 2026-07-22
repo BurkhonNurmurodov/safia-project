@@ -741,15 +741,14 @@ const HmRow = memo(function HmRow({
           opacity: dim ? 0.35 : 1, cursor: "pointer", userSelect: "none",
           transition: "opacity .1s",
         }}>
-        <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
+        <span className="flex items-center gap-2.5 pl-3 pr-2 min-w-0" title={name}>
           <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
             style={{ color: "var(--text-4)" }}>{place}</span>
-          <Avatar name={name} size={22} />
           <span className="truncate text-[12.5px]"
             style={{
               color: sel || hoverRow ? "var(--text-1)" : "var(--text-2)",
               fontWeight: sel ? 700 : 500,
-            }}>{name}</span>
+            }}>{initialSurname(name)}</span>
         </span>
       </td>
 
