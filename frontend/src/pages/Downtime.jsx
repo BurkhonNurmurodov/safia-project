@@ -370,6 +370,21 @@ export default function Downtime() {
         </div>
       </div>
 
+      {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
+          Sits under the filters (which apply to both) and above everything it drives. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4">
+        <div className="overflow-x-auto">
+          <SegmentedToggle
+            value={tab}
+            onChange={setTab}
+            options={[["stopped", t("downtime.tabStopped")], ["notStopped", t("downtime.tabNotStopped")]]}
+          />
+        </div>
+        <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
+          {ns ? t("downtime.tabNotStoppedSub") : t("downtime.tabStoppedSub")}
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4 mb-6">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
