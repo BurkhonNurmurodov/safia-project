@@ -726,7 +726,9 @@ const HmRow = memo(function HmRow({
       {/* Name — pinned, and the handle that isolates this row */}
       <td onClick={(ev) => { ev.stopPropagation(); onPick("row", name); }}
         style={{
-          position: "sticky", left: 0, zIndex: 2,
+          // Above a lifted cell (z 3) so a hover at the left edge slides under
+          // the pinned column instead of over it.
+          position: "sticky", left: 0, zIndex: 4,
           width: labelW, minWidth: labelW, maxWidth: labelW,
           height: HM_ROW_H, background: "var(--bg-card)",
           borderRight: "2px solid var(--border-md)", borderBottom: HM_BORDER,
