@@ -472,6 +472,110 @@ function BotPhoto({ id, T }) {
   );
 }
 
+/* ══ standings (the leaderboard) ══════════════════════════════════════════════
+ * Identity hues for the initials chips — full-spectrum so neighbouring names
+ * never collide by accident. Decoration, not status: the traffic-light
+ * green/amber/rose stays reserved for the numbers themselves. */
+const AVA_HUES = ["#8b5cf6", "#2dd4bf", "#f472b6", "#38bdf8", "#fb923c", "#a3e635",
+                  "#818cf8", "#e879f9", "#22d3ee", "#facc15", "#fb7185", "#4ade80"];
+const hueOf = (s) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVA_HUES[h % AVA_HUES.length];
+};
+const initialsOf = (s) => s.trim().split(/\s+/).map((p) => p[0] || "").join("").slice(0, 2).toUpperCase();
+
+// Medals — gold / silver / bronze for the podium, one attention rose for all
+// three cards when the list is flipped (nobody gets a medal for finishing last).
+const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
+
+// Tier chip ("Daraja"). Cut from whichever metric is being ranked, so the chip
+// always describes the number the list is sorted by.
+const TIERS = [
+  { min: 95, key: "tierTop",  color: C_GOOD, Icon: Crown },
+  { min: 85, key: "tierGood", color: C_GOOD, Icon: Award },
+  { min: 50, key: "tierMid",  color: C_MID,  Icon: Shield },
+  { min: -1, key: "tierBad",  color: C_BAD,  Icon: ShieldAlert },
+];
+const tierOf = (v) => TIERS.find((t) => v >= t.min);
+
+function Avatar({ name, size = 24 }) {
+  const hue = hueOf(name);
+  return (
+    <span className="inline-flex items-center justify-center rounded-full font-bold flex-shrink-0"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.38), background: hexA(hue, 0.18), color: hue }}>
+      {initialsOf(name)}
+    </span>
+  );
+}
+
+// The dashed micro-gauge under every number — six segments, lit by the value's
+// own band, so a row reads at a glance without parsing the digits.
+function Meter({ pct, color }) {
+  const on = Math.max(0, Math.min(6, Math.round((pct / 100) * 6)));
+  return (
+    <span className="flex gap-[2px] mt-1" aria-hidden="true">
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <span key={i} style={{ width: 5, height: 2.5, borderRadius: 1, background: i < on ? color : "var(--border-md)" }} />
+      ))}
+    </span>
+  );
+}
+
+function TierChip({ value, T }) {
+  const t = tierOf(value);
+  return (
+    <span className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+      style={{ background: hexA(t.color, 0.14), color: t.color }}>
+      <t.Icon size={12} />{T[t.key]}
+    </span>
+  );
+}
+
+// One stat inside a podium card: label, value, micro-gauge. The metric the list
+// is ranked by gets a brand-gold label so the card says why it is on the card.
+function CardStat({ label, value, pct, color, active }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] uppercase tracking-wide truncate"
+        style={{ color: active ? "var(--brand-text)" : "var(--text-4)" }}>{label}</div>
+      <div className="text-[15px] font-bold tabular-nums leading-tight mt-0.5" style={{ color: "var(--text-1)" }}>{value}</div>
+      <Meter pct={pct} color={color} />
+    </div>
+  );
+}
+
+/* A podium card — places 1-3, or the bottom three when the list is flipped.
+ * Either way it keeps its REAL place number, so the flipped state reads as
+ * "the three who need help" rather than as a fake podium. */
+function StandCard({ e, worst, metric, T, name }) {
+  const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
+  const Badge = worst ? AlertTriangle : Trophy;
+  const ranked = metric === "consist" ? e.consist : e.rating;
+  return (
+    <div className="relative rounded-2xl overflow-hidden p-3"
+      style={{ background: "var(--bg-inner)", border: `1px solid ${hexA(tone, 0.34)}` }}>
+      <span aria-hidden className="absolute select-none tabular-nums font-black leading-none"
+        style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.1) }}>{e.place}</span>
+
+      <div className="relative flex items-center gap-2">
+        <Avatar name={name} size={30} />
+        <div className="min-w-0 text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
+        <Badge size={20} className="ml-auto flex-shrink-0" style={{ color: tone }} />
+      </div>
+
+      <div className="relative mt-2"><TierChip value={ranked} T={T} /></div>
+
+      <div className="relative grid grid-cols-3 gap-2 mt-2.5">
+        <CardStat label={T.thDays} pct={(e.sent / (e.sent + e.missed)) * 100} color={C_MID}
+          value={<><span>{e.sent}</span><span className="font-normal" style={{ color: "var(--text-4)" }}> – {e.missed}</span></>} />
+        <CardStat label={T.standRating} value={`${e.rating}%`} pct={e.rating} color={scoreColor(e.rating)} active={metric === "rating"} />
+        <CardStat label={T.standConsist} value={`${e.consist}%`} pct={e.consist} color={scoreColor(e.consist)} active={metric === "consist"} />
+      </div>
+    </div>
+  );
+}
+
 // ── main page ──────────────────────────────────────────────────────────────────
 // botMode: the admin-only COPY at /leaders-bot showing the in-bot checklist
 // submissions. Deliberately independent of the sheet-driven /leaders — two
