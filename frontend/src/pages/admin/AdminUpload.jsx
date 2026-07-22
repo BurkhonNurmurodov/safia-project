@@ -286,6 +286,19 @@ function SheetSourceEditor() {
     qc.invalidateQueries(["sheet-sources"]);
   }
 
+  // Open the Google Sheet — inside Telegram the WebView needs tg.openLink()
+  function openSheet(id) {
+    if (!id) return;
+    const url = `https://docs.google.com/spreadsheets/d/${id}/edit`;
+    const tg = window?.Telegram?.WebApp;
+    try {
+      if (tg?.openLink) tg.openLink(url);
+      else window.open(url, "_blank", "noopener");
+    } catch {
+      window.open(url, "_blank", "noopener");
+    }
+  }
+
   async function refresh(name) {
     setRefreshState((p) => ({ ...p, [name]: "loading" }));
     setRefreshMsg  ((p) => ({ ...p, [name]: "" }));
