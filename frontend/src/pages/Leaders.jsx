@@ -840,7 +840,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
                 <th key={d}
                   onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
                   style={{
-                    ...HM_TH, zIndex: 3,
+                    ...HM_TH, zIndex: 6,
                     width: cellW, minWidth: cellW, height: HM_HEAD_H,
                     textAlign: "center", cursor: "pointer", userSelect: "none",
                     fontWeight: isSel ? 800 : 700,
