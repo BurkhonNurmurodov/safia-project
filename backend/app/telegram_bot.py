@@ -46,6 +46,16 @@ _MESSAGES = {
             "📱 Iltimos, telefon raqamingizni ulashing:"
         ),
         "share_contact_btn": "📱 Raqamni ulashish",
+        "contact_typed_warning": (
+            "⚠️ Telefon raqamini matn sifatida yozmang — bunday raqam qabul qilinmaydi.\n\n"
+            "👇 Pastdagi «{btn}» tugmasini bosing — raqamingiz Telegram orqali "
+            "avtomatik yuboriladi.\n\n"
+            "Tugma ko'rinmasa, xabar maydonidagi klaviatura belgisini bosing."
+        ),
+        "contact_not_own": (
+            "⚠️ Bu boshqa odamning raqami.\n\n"
+            "👇 O'z raqamingizni yuborish uchun «{btn}» tugmasini bosing."
+        ),
         "waiting_approval":  (
             "⏳ So'rovingiz adminga yuborildi.\n"
             "Tasdiqlangach sizga xabar yuboriladi."
