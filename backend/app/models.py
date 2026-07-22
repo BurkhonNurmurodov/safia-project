@@ -490,6 +490,7 @@ class PPProduct(Base):
     sap_code    = Column(String, nullable=False, index=True)
     name        = Column(String, nullable=False, default="")
     work_center = Column(String, nullable=False, index=True)
+    op          = Column(String, nullable=True)           # «Опер.» / фаза step, hand-pinned; wins over the фаза upload
     labor_time  = Column(Numeric(12, 4), nullable=True)   # seconds/unit; NULL → warn
     sort_order  = Column(Integer, default=0)
     active      = Column(Boolean, nullable=False, server_default="true")
