@@ -1690,6 +1690,14 @@ export default function Leaders({ botMode = false }) {
                           <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
                         </span>
                       </td>
+                      {effStandMode === "leader" && !isSupervisor && (
+                        <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
+                          title={leaderSup[e.name] ? nm(leaderSup[e.name]) : undefined}>
+                          <span style={{ color: "var(--text-2)" }}>
+                            {leaderSup[e.name] ? initialSurname(nm(leaderSup[e.name])) : "—"}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
                         title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
                         <div className="font-bold" style={{ color: "var(--text-1)" }}>
