@@ -344,6 +344,15 @@ const abbrevName = (s) => {
   if (parts.length <= 1) return parts[0] || String(s ?? "");
   return `${parts[0]} ${parts.slice(1).map((w) => w[0].toUpperCase() + ".").join(" ")}`;
 };
+// The two registers print the OTHER way round — surname down to an initial, given
+// name in full ("Nurliboyev Nurbek" → "N. Nurbek"). A name column that reads as a
+// filing card is what makes those tables feel long; search, tooltips and the
+// podium cards still carry the whole name.
+const initialSurname = (s) => {
+  const parts = String(s ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || String(s ?? "");
+  return `${parts[0][0].toUpperCase()}. ${parts.slice(1).join(" ")}`;
+};
 
 // Shrinks a single-line label to fit its container between `max` and `min` px.
 // If even `min` overflows, it swaps in the shorter `short` text and re-fits — so
