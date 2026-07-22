@@ -542,8 +542,8 @@ function DaysValue({ e }) {
   );
 }
 
-function TierChip({ value, T }) {
-  const t = tierOf(value);
+function TierChip({ value, T, cuts }) {
+  const t = tierOf(value, cuts);
   return (
     <span className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"
       style={{ background: hexA(t.color, 0.14), color: t.color }}>
