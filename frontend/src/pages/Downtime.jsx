@@ -82,8 +82,16 @@ export default function Downtime() {
   // one id, "All" clears it. A multi-select made in the drawer shows as "All".
   const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
 
-  const summary     = data?.summary || [];
+  // The active tab's numbers are normalised onto `total` / `flagged_days` and
+  // re-sorted, so every consumer below (KPIs, bars, chart component) stays
+  // tab-agnostic and the biggest brigadir still leads the bar chart on both tabs.
   const catNames    = data?.cat_names || [];
+  const summary = useMemo(
+    () => (data?.summary || [])
+      .map((s) => ({ ...s, total: s[totalKey] || 0, flagged_days: s[flaggedKey] || 0 }))
+      .sort((a, b) => b.total - a.total),
+    [data, totalKey, flaggedKey],
+  );
   const flaggedCount  = summary.filter((s) => s.flagged_days > 0).length;
   const totalDowntime = summary.reduce((s, m) => s + m.total, 0);
   const mostAffectedCat = (() => {
@@ -91,7 +99,7 @@ export default function Downtime() {
     const totals = {};
     catNames.forEach((c) => { totals[c] = 0; });
     data.rows.forEach((r) => {
-      catNames.forEach((c) => { totals[c] = (totals[c] || 0) + (r.by_category?.[c] || 0); });
+      catNames.forEach((c) => { totals[c] = (totals[c] || 0) + (r[catKey]?.[c] || 0); });
     });
     return Object.entries(totals).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
   })();
