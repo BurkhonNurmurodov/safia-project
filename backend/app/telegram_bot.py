@@ -627,7 +627,10 @@ def _begin_registration(tid: int):
         lang     = user.language
         statuses = {r.status for r in roles}
         if "pending" in statuses:
-            bot.send_message(tid, _msg(lang, "already_pending"))
+            if _awaiting_contact(tid):
+                _ask_contact(tid, lang)
+            else:
+                bot.send_message(tid, _msg(lang, "already_pending"))
             return
         if "approved" in statuses:
             bot.send_message(tid, _msg(lang, "add_role_hint"), reply_markup=_webapp_register_kb(lang, tid))
