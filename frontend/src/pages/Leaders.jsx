@@ -1111,6 +1111,19 @@ export default function Leaders({ botMode = false }) {
     return standOrdered.filter((e) => nm(e.name).toLowerCase().includes(q) || e.name.toLowerCase().includes(q));
   }, [standRest, standOrdered, standSearch, lang]);
 
+  // The day calendar mirrors the ranking: same order, same toggle, same search —
+  // but the podium three stay IN the grid. The register can drop them because a
+  // card is standing right above it; the calendar is read as one block, and a
+  // hole where first place should be would just look like a bug.
+  const heatRows = standSearch.trim() ? standRows : standOrdered;
+  // One column per day of the SAME window the metrics are scored over, so a
+  // row's green count is literally the "6/7" printed beside it in the register.
+  const heatDates = useMemo(() => {
+    const { winFrom, winDays } = standings;
+    if (!winFrom || !winDays) return [];
+    return Array.from({ length: winDays }, (_, i) => isoShift(winFrom, i));
+  }, [standings]);
+
   // The register is one continuous ranking, so it scrolls instead of paging —
   // ten rows stay open and the rest is a flick away, no click needed to see 11th
   // place. Height is spelled out from the row box (px-3 py-2 around a 20px value
