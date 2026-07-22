@@ -1364,6 +1364,47 @@ export default function Leaders({ botMode = false }) {
     return { list, winFrom, winTo, winDays };
   }, [leaderScores, supScores, scoreWin, effStandMode, standMetric]);
 
+  // What the Trend column reads. Scoped by the SAME non-date filters as the
+  // ranking but over wider dates than `filtered` holds: the equal-length window
+  // just before the picked one (for the delta), and the picked period widened
+  // to at least 7 days ending on its last day (for the spark — the chart-window
+  // convention; the delta stays strictly on the picked range). Sparks stop at
+  // `dataMax` like the trend line: the un-synced tail is left off, not drawn as
+  // a dive to 0, while a missing day inside the data is a real 0.
+  const standTrend = useMemo(() => {
+    const { from: winFrom, to: winTo, days: winDays } = scoreWin;
+    if (!winFrom || !winTo || !winDays) return { prev: null, sparks: new Map() };
+    const keyFn = effStandMode === "leader" ? (r) => r.leader : (r) => r.supervisor;
+    const prevFrom = isoShift(winFrom, -winDays), prevTo = isoShift(winFrom, -1);
+    const weekAgo = isoShift(winTo, -6);
+    const sparkFrom = winFrom < weekAgo ? winFrom : weekAgo;
+    const sparkTo = dataMax && winTo > dataMax ? dataMax : winTo;
+    const lo = prevFrom < sparkFrom ? prevFrom : sparkFrom;
+    const prevRows = [], sparkRows = [];
+    for (const r of rows) {
+      if ((fShift != null && r.shift !== fShift)
+        || (fSup !== "All" && r.supervisor !== fSup)
+        || (fLeader !== "All" && r.leader !== fLeader)) continue;
+      const d = rowDate(r);
+      if (d < lo || d > winTo) continue;
+      if (d >= prevFrom && d <= prevTo) prevRows.push(r);
+      if (d >= sparkFrom && d <= sparkTo) sparkRows.push(r);
+    }
+    // Scored over the same day count as the ranking, so the two Reytings are
+    // commensurable; a person the previous window never saw is a real 0 there.
+    const prev = prevRows.length
+      ? new Map(scoreSlots(slotsBy(prevRows, keyFn), winDays).map((s) => [s.name, s.rating]))
+      : null;
+    const sparks = new Map();
+    if (sparkTo >= sparkFrom) {
+      const days = Array.from({ length: spanDays(sparkFrom, sparkTo) }, (_, i) => isoShift(sparkFrom, i));
+      if (days.length >= 2)
+        for (const [name, byDay] of slotsBy(sparkRows, keyFn))
+          sparks.set(name, days.map((d) => { const v = byDay.get(d); return v ? v.sum / v.n : 0; }));
+    }
+    return { prev, sparks };
+  }, [rows, scoreWin, dataMax, effStandMode, fShift, fSup, fLeader]);
+
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).
   const standOrdered = useMemo(
