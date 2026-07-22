@@ -246,19 +246,36 @@ export default function UsersManagement() {
                     {t("admin.users.empty")}
                   </td></tr>
                 )}
-                {!isLoading && filtered.map(({ user, role }) => (
+                {!isLoading && filtered.map(({ user, role }) => {
+                  // The row is named after the CLAIMED profile; the Telegram
+                  // account that filed it is a different string (shared shop
+                  // accounts like «Сех просеивание 8421» claim a brigadir
+                  // profile), so it gets its own muted line — otherwise the
+                  // request looks absent to an admin searching for the account.
+                  const shown = tl(role.full_name || user.full_name) || "";
+                  const account = tl(user.tg_name) || "";
+                  const showAccount =
+                    account && account.trim().toLowerCase() !== shown.trim().toLowerCase();
+                  return (
                   <tr key={`${user.id}-${role.id}`}>
                     {/* Role-scoped display name (+ multi-role marker) */}
-                    <td className="py-2.5 px-3 font-medium whitespace-nowrap" style={{ color: "var(--text-1)" }}>
-                      {tl(role.full_name || user.full_name) || "—"}
-                      {user.roles.length > 1 && (
-                        <span
-                          className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
-                          style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}
-                          title={`${user.roles.length} roles`}
-                        >
-                          ×{user.roles.length}
-                        </span>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      <div className="font-medium" style={{ color: "var(--text-1)" }}>
+                        {shown || "—"}
+                        {user.roles.length > 1 && (
+                          <span
+                            className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
+                            style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}
+                            title={`${user.roles.length} roles`}
+                          >
+                            ×{user.roles.length}
+                          </span>
+                        )}
+                      </div>
+                      {showAccount && (
+                        <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }} title={t("admin.users.colUsername")}>
+                          {account}
+                        </div>
                       )}
                     </td>
 
@@ -343,7 +360,8 @@ export default function UsersManagement() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
       </TableCard>
 
