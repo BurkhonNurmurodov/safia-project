@@ -13,7 +13,7 @@ import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
-import { fmtTime } from "../utils/formatters";
+import { fmtTime, fmtDuration } from "../utils/formatters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
