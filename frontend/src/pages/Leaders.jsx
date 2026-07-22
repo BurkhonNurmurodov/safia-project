@@ -1060,6 +1060,42 @@ export default function Leaders({ botMode = false }) {
       && (fLeader === "All" || r.leader === fLeader);
   }), [rows, startDate, endDate, fShift, fSup, fLeader]);
 
+  // The window EVERY number on this page is scored over — exactly the picked
+  // period, every calendar day in it. Nothing is inferred from where the data
+  // happens to begin or end; only a cleared date input falls back to the span
+  // the data itself covers, since an open edge has no other floor or ceiling.
+  const scoreWin = useMemo(() => {
+    let from = startDate || null, to = endDate || null;
+    for (const r of filtered) {
+      const d = rowDate(r);
+      if (!startDate && (from == null || d < from)) from = d;
+      if (!endDate && (to == null || d > to)) to = d;
+    }
+    return { from, to, days: from && to ? spanDays(from, to) : 0 };
+  }, [filtered, startDate, endDate]);
+
+  // The two rankings the page reads from: leaders, and units scored as the mean
+  // of their leaders (so a unit filing more rows than another can't inflate its
+  // calendar). Both are computed regardless of which standings tab is open —
+  // the insight cards need the other one too.
+  const leaderScores = useMemo(
+    () => scoreSlots(slotsBy(filtered, (r) => r.leader), scoreWin.days), [filtered, scoreWin.days]);
+  const supScores = useMemo(
+    () => scoreSlots(slotsBy(filtered, (r) => r.supervisor), scoreWin.days), [filtered, scoreWin.days]);
+
+  // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
+  // the filtered slice: narrowing to one leader must not turn that leader's own
+  // misses into "not synced yet". Everything past it greys out in the grid and
+  // is left off the trend line.
+  const dataMax = useMemo(() => {
+    let mx = null;
+    for (const r of rows) {
+      const d = rowDate(r);
+      if (mx == null || d > mx) mx = d;
+    }
+    return mx;
+  }, [rows]);
+
   // The trend chart uses a window widened to at least the last 7 days (ending
   // at the selected end date), so short periods still draw a meaningful line.
   const trendFrom = useMemo(() => {
@@ -1077,36 +1113,71 @@ export default function Leaders({ botMode = false }) {
 
   const hasData = filtered.length > 0;
 
-  // Aggregates over the selected period (KPIs, task chart, standings, table).
-  // Tasks are keyed by the sheet's question number, and a question nobody was
-  // asked (`answered: false` — it was added to the form after these submissions)
-  // is left out of its own rate instead of counting as a failure. Rows synced
-  // before the backend carried the flag have no `answered` key: those are real
-  // answers, so only an explicit `false` excludes one.
-  const { avg, taskStats } = useMemo(() => {
-    if (!filtered.length) return { avg: 0, taskStats: [] };
-    const acc = new Map();                                    // question id → {done, asked}
-    let total = 0;
+  // Headline number: the mean Reyting of everyone in the period, so it reads as
+  // "the average row of the leaderboard" — not the old mean of the reports that
+  // happened to arrive, which ignored every day nobody filed and therefore sat
+  // ~15 points above every row it was supposed to summarise.
+  const avg = useMemo(() => (leaderScores.length
+    ? Math.round(leaderScores.reduce((s, e) => s + e.score, 0) / leaderScores.length)
+    : 0), [leaderScores]);
+
+  // Per-question rates, on the same footing: the denominator is every day each
+  // leader owed an answer, so a day with no report is that question undone —
+  // exactly what a 0% day means in the ranking.
+  //
+  // Two things stay out of it. A question nobody was asked (`answered: false` —
+  // it was added to the form after these submissions) is left out of its own
+  // rate instead of counting as a failure; rows synced before the backend
+  // carried the flag have no `answered` key, so only an explicit `false`
+  // excludes one. And a question is only owed from the day it first appeared on
+  // the form: the missing days before that are not unanswered, they are days it
+  // did not exist — otherwise a freshly added question crashes to near 0% and
+  // takes the worst-task card on no evidence.
+  const taskStats = useMemo(() => {
+    const { from, days: winDays } = scoreWin;
+    if (!filtered.length || !from || !winDays) return [];
+    const leaders = new Set();
+    const filedPerDay = new Array(winDays).fill(0);      // (leader, day) slots that exist
+    const slots = new Map();                             // "leader|date" → { i, tasks }
     for (const r of filtered) {
-      total += r.completion;
+      const L = r.leader;
+      if (!L || L === "N/A") continue;
+      const d = rowDate(r);
+      const i = spanDays(from, d) - 1;
+      if (i < 0 || i >= winDays) continue;
+      leaders.add(L);
+      const k = `${L}|${d}`;
+      let s = slots.get(k);
+      if (!s) { slots.set(k, (s = { i, tasks: new Map() })); filedPerDay[i]++; }
       for (const tk of r.tasks || []) {
         const id = Number(tk.id);
-        if (!Number.isFinite(id)) continue;
-        const a = acc.get(id) || { done: 0, asked: 0 };
-        if (tk.answered !== false) { a.asked++; if (tk.done) a.done++; }
-        acc.set(id, a);
+        if (!Number.isFinite(id) || tk.answered === false) continue;
+        const a = s.tasks.get(id) || { done: 0, n: 0 };
+        a.n++; if (tk.done) a.done++;
+        s.tasks.set(id, a);
       }
     }
-    return {
-      avg: Math.round(total / filtered.length),
-      taskStats: [...acc.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([id, a]) => ({
-          id, asked: a.asked,
-          rate: a.asked ? Math.round((a.done / a.asked) * 100) : null,
-        })),
-    };
-  }, [filtered]);
+    // suffix[i] = slots filed on day i or later, to turn "days owed from day i"
+    // into "days missed from day i" without walking the calendar per question.
+    const suffix = new Array(winDays + 1).fill(0);
+    for (let i = winDays - 1; i >= 0; i--) suffix[i] = suffix[i + 1] + filedPerDay[i];
+
+    const acc = new Map();                               // question id → { done, asked, first }
+    for (const s of slots.values())
+      for (const [id, a] of s.tasks) {
+        const t = acc.get(id) || { done: 0, asked: 0, first: winDays };
+        t.done += a.done / a.n;                          // two shifts still settle one day
+        t.asked++;
+        if (s.i < t.first) t.first = s.i;
+        acc.set(id, t);
+      }
+    const nL = leaders.size;
+    return [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([id, t]) => {
+      const missed = Math.max(0, nL * (winDays - t.first) - suffix[t.first]);
+      const owed = t.asked + missed;
+      return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
+    });
+  }, [filtered, scoreWin]);
 
   // Every question on the form keeps its slot on the axis, but one nobody has
   // answered plots as null — an empty space under its label, not a 0% bar. A 0%
@@ -1117,21 +1188,37 @@ export default function Leaders({ botMode = false }) {
   // Trend series — daily points for short windows; aggregates into weekly /
   // monthly buckets as the span grows so the date axis stays readable.
   const { trendCats, trendVals, trendTips } = useMemo(() => {
-    if (!trendRows.length) return { trendCats: [], trendVals: [], trendTips: [] };
-    const byDay = {};
-    for (const r of trendRows) {
-      const d = String(r.date).slice(0, 10);
-      (byDay[d] ||= { sum: 0, n: 0 });
-      byDay[d].sum += r.completion; byDay[d].n++;
-    }
-    const days = Object.keys(byDay).sort();
-    const span = Math.round((new Date(days[days.length - 1] + "T00:00:00") - new Date(days[0] + "T00:00:00")) / DAY) + 1;
+    const empty = { trendCats: [], trendVals: [], trendTips: [] };
+    if (!trendRows.length) return empty;
+    // Scored like the ranking: a day is divided by everyone expected to file,
+    // not by whoever did, so the line dips on the days reports go missing. Days
+    // past the newest one the sheet holds anything for are left OFF the line
+    // rather than drawn as 0 — the grid greys those too, because a lagging sync
+    // is not a day of failures. That is only the un-synced tail; an empty day
+    // inside the data is a real 0, exactly as it is in the calendar.
+    const perLeader = slotsBy(trendRows, (r) => r.leader);
+    const roster = perLeader.size;
+    if (!roster) return empty;
+    const dayScore = new Map();                          // date → Σ of that day's leader scores
+    let dMin = null, dMax = null;
+    for (const days of perLeader.values())
+      for (const [d, v] of days) {
+        dayScore.set(d, (dayScore.get(d) || 0) + v.sum / v.n);
+        if (dMin == null || d < dMin) dMin = d;
+        if (dMax == null || d > dMax) dMax = d;
+      }
+    const from = trendFrom || dMin;
+    let to = endDate || dMax;
+    if (dataMax && to > dataMax) to = dataMax;
+    if (!from || !to || to < from) return empty;
+    const span = spanDays(from, to);
+    const days = Array.from({ length: span }, (_, i) => isoShift(from, i));
     const mode = span <= 31 ? "day" : span <= 180 ? "week" : "month";
     const buckets = {};
     for (const d of days) {
       const key = mode === "day" ? d : mode === "week" ? weekStartISO(d) : d.slice(0, 7);
       (buckets[key] ||= { sum: 0, n: 0 });
-      buckets[key].sum += byDay[d].sum; buckets[key].n += byDay[d].n;
+      buckets[key].sum += (dayScore.get(d) || 0) / roster; buckets[key].n++;
     }
     const keys = Object.keys(buckets).sort();
     const label = (k) => (mode === "month" ? `${k.slice(5, 7)}.${k.slice(0, 4)}` : ddmm(k));
@@ -1141,17 +1228,15 @@ export default function Leaders({ botMode = false }) {
       // weekly buckets get a full "start – end" range in the tooltip
       trendTips: keys.map((k) => (mode === "week" ? `${ddmm(k)} – ${ddmm(isoShift(k, 6))}` : label(k))),
     };
-  }, [trendRows]);
+  }, [trendRows, trendFrom, endDate, dataMax]);
 
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
   // ── standings ───────────────────────────────────────────────────────────────
-  // The scoring window is EXACTLY the picked period — start date to end date,
-  // every calendar day in it. Nothing is inferred from where the data happens to
-  // begin or end: a day with no report is a real 0%, whether it falls before a
-  // leader's first submission, on a Sunday, or after the last sheet sync. Only
-  // when a date input is cleared does that edge fall back to the data's own
-  // range, since an open-ended window has no other floor or ceiling.
+  // Both columns come straight out of the scoring core above, over `scoreWin` —
+  // the picked period, every calendar day in it. A day with no report is a real
+  // 0%, whether it falls before a leader's first submission, on a Sunday, or
+  // after the last sheet sync.
   //
   //   Reyting     — each day's score averaged over EVERY day of the window, a
   //                 day with no report counting as 0%
@@ -1159,42 +1244,16 @@ export default function Leaders({ botMode = false }) {
   //
   // So rating is consistency weighted by how good the filed reports were, and
   // can never exceed it; the gap between the two columns is exactly "he shows
-  // up, but the reports are weak". In supervisor mode a day's score is the mean
-  // of that unit's leaders, so one unit reporting more rows than another doesn't
-  // inflate its calendar.
+  // up, but the reports are weak".
   const standings = useMemo(() => {
-    const map = {};                                   // name → { days: Map }
-    let winFrom = startDate || null, winTo = endDate || null;
-    for (const r of filtered) {
-      const key = effStandMode === "leader" ? r.leader : r.supervisor;
-      if (!key || key === "N/A") continue;
-      const d = String(r.date).slice(0, 10);
-      if (!startDate && (winFrom == null || d < winFrom)) winFrom = d;
-      if (!endDate && (winTo == null || d > winTo)) winTo = d;
-      const e = (map[key] ||= { days: new Map() });
-      const day = e.days.get(d) || { sum: 0, n: 0 };
-      day.sum += r.completion; day.n++;
-      e.days.set(d, day);
-    }
+    const { from: winFrom, to: winTo, days: winDays } = scoreWin;
+    // Copied because `place` is written onto the entries below and the same
+    // arrays feed the insight cards.
+    const list = (effStandMode === "leader" ? leaderScores : supScores).map((e) => ({ ...e }));
     // Both edges can be pre-set from the picker, so an empty result set would
     // otherwise slip through with a valid-looking window and no rows.
-    if (!winFrom || !winTo || !Object.keys(map).length)
+    if (!winFrom || !winTo || !list.length)
       return { list: [], winFrom: null, winTo: null, winDays: 0 };
-    const winDays = Math.round((new Date(`${winTo}T00:00:00`) - new Date(`${winFrom}T00:00:00`)) / DAY) + 1;
-
-    const list = Object.entries(map).map(([name, e]) => {
-      let daySum = 0;
-      for (const day of e.days.values()) daySum += day.sum / day.n;
-      return {
-        name,
-        rating: Math.round(daySum / winDays),
-        consist: Math.round((e.days.size / winDays) * 100),
-        sent: e.days.size,
-        missed: winDays - e.days.size,
-        // Which days those were, for the calendar grid under the register.
-        days: new Set(e.days.keys()),
-      };
-    });
     // The two columns are ONE ranking, not two: the active tab is the primary
     // metric and the other column is its sub-rating. Ranking on the primary
     // alone put five people on 1st place — a whole shift shares a 6/7 calendar,
@@ -1210,7 +1269,7 @@ export default function Leaders({ botMode = false }) {
     const same = (a, b) => val(a) === val(b) && alt(a) === alt(b);
     list.forEach((e, i) => { e.place = i > 0 && same(list[i - 1], e) ? list[i - 1].place : i + 1; });
     return { list, winFrom, winTo, winDays };
-  }, [filtered, effStandMode, standMetric, startDate, endDate]);
+  }, [leaderScores, supScores, scoreWin, effStandMode, standMetric]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).
@@ -1234,17 +1293,6 @@ export default function Leaders({ botMode = false }) {
   // card is standing right above it; the calendar is read as one block, and a
   // hole where first place should be would just look like a bug.
   const heatRows = standSearch.trim() ? standRows : standOrdered;
-  // The newest day the sheet holds ANYTHING for. Read off the raw feed, never
-  // the filtered slice: narrowing to one leader must not turn that leader's own
-  // misses into "not synced yet". Everything past it greys out in the grid.
-  const dataMax = useMemo(() => {
-    let mx = null;
-    for (const r of rows) {
-      const d = String(r.date).slice(0, 10);
-      if (mx == null || d > mx) mx = d;
-    }
-    return mx;
-  }, [rows]);
   // One column per day of the SAME window the metrics are scored over, so a
   // row's green count is literally the "6/7" printed beside it in the register.
   const heatDates = useMemo(() => {
