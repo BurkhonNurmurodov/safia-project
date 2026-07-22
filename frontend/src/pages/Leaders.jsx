@@ -636,6 +636,7 @@ export default function Leaders({ botMode = false }) {
   const [standSearch, setStandSearch] = useState("");
   const [standPage, setStandPage] = useState(1);
   const [standInfo, setStandInfo] = useState(false);
+  const [tierEdit, setTierEdit] = useState(null);            // admin's draft cutoffs
   const [detail, setDetail] = useState(null);
   const [taskInfo, setTaskInfo] = useState(false);
 
