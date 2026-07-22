@@ -757,7 +757,7 @@ const HmRow = memo(function HmRow({
         const soft = live && !cellHov && (hoverRow || d === hoverDate);
         return (
           <td key={d}
-            onMouseEnter={() => onEnter(name, d)}
+            onMouseEnter={() => onEnter(rowKey, d)}
             onMouseLeave={onLeave}
             onClick={(ev) => { ev.stopPropagation(); onPick("date", d); }}
             title={`${name} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
