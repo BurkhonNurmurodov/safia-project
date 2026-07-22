@@ -1545,7 +1545,6 @@ export default function Leaders({ botMode = false }) {
               </tbody>
             </table>
           </div>
-
         </div>
         )}
 
