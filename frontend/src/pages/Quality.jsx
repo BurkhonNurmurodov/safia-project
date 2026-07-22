@@ -959,48 +959,54 @@ export default function Quality() {
     tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v} ${T.rows}` } },
   };
 
-  // Supervisor view: their own resolution-status split (a donut), replacing the
-  // per-supervisor comparison table + accountability bar that both collapse to a
-  // single brigadir. Slices reuse the status traffic-light + the waiting purple.
-  const myStat = lockOwn ? (supStatus[0] || { resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 }) : null;
-  const myStatusData = [
-    { k: "resolved",  v: myStat?.resolved  || 0, c: C_DONE,    label: T.stResolved },
-    { k: "notSolved", v: myStat?.notSolved || 0, c: C_OPEN,    label: T.stNotSolved },
-    { k: "waiting",   v: myStat?.waiting   || 0, c: C_WAITCOL, label: T.stWaitShort },
-    { k: "recurring", v: myStat?.recurring || 0, c: C_REPEAT,  label: T.stRecurring },
-  ];
-  const myStatusSeries = myStatusData.map((x) => x.v);
-  const myStatusOpts = {
-    chart: { ...baseChart, type: "donut" },
-    theme: chartTheme,
-    labels: myStatusData.map((x) => x.label),
-    colors: myStatusData.map((x) => x.c),
-    stroke: { width: 2, colors: [cardBg] },
-    dataLabels: {
-      enabled: true,
-      formatter: (v) => (v >= 6 ? `${Math.round(v)}%` : ""),
-      style: { fontSize: "10px", fontWeight: 700, colors: ["#fff"] },
-      dropShadow: { enabled: false },
-    },
-    plotOptions: {
-      pie: {
-        donut: {
-          size: "68%",
-          labels: {
-            show: true,
-            total: {
-              show: true, showAlways: true, label: T.stTotal, fontSize: "11px", color: labelColor,
-              formatter: () => (myStat?.total || 0).toLocaleString("ru-RU"),
-            },
-            value: { fontSize: "20px", fontWeight: 700, color: legendColor },
-            name: { fontSize: "11px", color: labelColor },
-          },
-        },
-      },
-    },
-    legend: { show: false },
-    tooltip: { theme: chartTheme.mode, y: { formatter: (v) => `${v} ${T.rows}` } },
-  };
+  // Supervisor view: the per-supervisor status matrix collapses to a single row,
+  // so it is rendered as a full-width closure ribbon instead — the same four
+  // buckets as one 100% band, plus per-bucket movement against the previous
+  // window (which the table never carried).
+  const myClosure = useMemo(() => {
+    if (!lockOwn) return null;
+    const cur = statusSplit(filtered), old = statusSplit(prev);
+    const rate = (m) => (m.total ? (m.resolved / m.total) * 100 : 0);
+    const d = (a, b) => (prevComparable ? a - b : null);
+    return {
+      ...cur,
+      rate: rate(cur),
+      // percentage points, one decimal — a share can't move in whole units here
+      dRate: prevComparable && old.total ? Math.round((rate(cur) - rate(old)) * 10) / 10 : null,
+      dResolved: d(cur.resolved, old.resolved),
+      dNotSolved: d(cur.notSolved, old.notSolved),
+      dRecurring: d(cur.recurring, old.recurring),
+      dWaiting: d(cur.waiting, old.waiting),
+    };
+  }, [lockOwn, filtered, prev, prevComparable]);
+
+  // …and what is still open, aged by days since the record's date — the ribbon
+  // says how much is closed, this says which of the rest is going stale.
+  const aging = useMemo(() => {
+    if (!lockOwn) return null;
+    const buckets = [7, 30, 90, Infinity].map((max, i) => ({ max, c: AGE_RAMP[i], n: 0 }));
+    let oldest = null;
+    for (const r of filtered) {
+      if (!OPEN_STATES.includes(r.st) || !r.d) continue;
+      const age = Math.max(0, daysBetween(r.d, today));
+      (buckets.find((b) => age <= b.max) || buckets[3]).n++;
+      if (!oldest || r.d < oldest) oldest = r.d;
+    }
+    return {
+      buckets, oldest,
+      total: buckets.reduce((s, b) => s + b.n, 0),
+      max: Math.max(1, ...buckets.map((b) => b.n)),
+    };
+  }, [lockOwn, filtered, today]);
+
+  // Ribbon segments / legs — status traffic-light + the waiting purple. `invert`
+  // is the direction that counts as good: only «resolved» wants to grow.
+  const closureLegs = myClosure ? [
+    { k: "resolved",  v: myClosure.resolved,  d: myClosure.dResolved,  c: C_DONE,    label: T.stResolved,  invert: false },
+    { k: "notSolved", v: myClosure.notSolved, d: myClosure.dNotSolved, c: C_OPEN,    label: T.stNotSolved, invert: true },
+    { k: "recurring", v: myClosure.recurring, d: myClosure.dRecurring, c: C_REPEAT,  label: T.stRecurring, invert: true },
+    { k: "waiting",   v: myClosure.waiting,   d: myClosure.dWaiting,   c: C_WAITCOL, label: T.stWaitShort, invert: true },
+  ] : [];
 
   const treeSeries = [{
     data: A.cats.map((x) => ({ x: L("cat", x.k), y: x.n, fillColor: CAT_COLORS[x.k] || C_NA })),
