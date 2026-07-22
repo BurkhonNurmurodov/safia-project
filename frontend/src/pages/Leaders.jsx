@@ -109,6 +109,7 @@ const TXT = {
     tierEditOrder: "Чегаралар камайиб бориши керак: Чемпион > Аъло > Ўрта.",
     save: "Сақлаш", cancel: "Бекор қилиш",
     winLabel: "Ҳисоб ойнаси", daysSent: "Юборилган", daysMissed: "Ўтказиб юборилган",
+    hmTitle: "Кунлар календари", hmNoSync: "Маълумот ҳали келмаган",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун",
