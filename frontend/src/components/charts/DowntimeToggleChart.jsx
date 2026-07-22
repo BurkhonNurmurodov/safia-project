@@ -1,6 +1,7 @@
 "use no memo";
 import { useMemo } from "react";
 import ReactApexChart from "react-apexcharts";
+import { fmtDuration } from "../../utils/formatters";
 
 const INDIGO = "#6366f1";
 
