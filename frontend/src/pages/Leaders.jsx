@@ -183,6 +183,7 @@ const TXT = {
     tierEditOrder: "Cutoffs must descend: Champion > Excellent > Average.",
     save: "Save", cancel: "Cancel",
     winLabel: "Scoring window", daysSent: "Filed", daysMissed: "Missed",
+    hmTitle: "Day calendar", hmNoSync: "Not synced yet",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
