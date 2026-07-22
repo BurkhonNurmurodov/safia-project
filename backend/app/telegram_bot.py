@@ -389,6 +389,37 @@ def _contact_kb(lang: str) -> types.ReplyKeyboardMarkup:
     return kb
 
 
+def _awaiting_contact(tid: int) -> bool:
+    """True while a registration is parked at the "share your contact" step.
+    The in-memory ref is the normal signal; the DB check keeps a user who was
+    prompted before a process restart recoverable — without it, someone who
+    typed their number instead of tapping the button is stuck on a pending row
+    the bot will never complete."""
+    if _state.get(tid, {}).get("pending_role_ref"):
+        return True
+    try:
+        with SessionLocal() as db:
+            user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
+            if not user or user.phone:
+                return False
+            return db.query(TelegramUserRole).filter_by(
+                telegram_id=tid, status="pending").first() is not None
+    except Exception:
+        logger.warning("awaiting-contact check failed for %s", tid, exc_info=True)
+        return False
+
+
+def _ask_contact(tid: int, lang: str, warn_key: str | None = None):
+    """(Re-)show the share-contact button. ``warn_key`` prefixes the prompt with
+    an explanation of why the last message didn't count."""
+    if warn_key:
+        bot.send_message(tid, _msg(lang, warn_key).format(
+            btn=_msg(lang, "share_contact_btn")), reply_markup=_contact_kb(lang))
+    else:
+        bot.send_message(tid, _msg(lang, "share_contact_prompt"),
+                         reply_markup=_contact_kb(lang))
+
+
 def _admin_panel_kb() -> types.InlineKeyboardMarkup:
     """Single button that opens the admin panel's Users tab pre-filtered to
     pending requests — the panel escape hatch / legacy fallback."""
