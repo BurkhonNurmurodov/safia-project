@@ -367,6 +367,7 @@ function SheetSourceEditor() {
           const rs    = refreshState[name] || "idle";
           const msg   = refreshMsg[name]   || "";
           const msgOk = refreshMsgOk[name] ?? true;
+          const sheetId = (editing[name] ?? current).trim();
           return (
             <div key={name}>
               <div className="text-[11px] text-[var(--text-3)] mb-1 capitalize">
