@@ -1510,6 +1510,7 @@ const t = {
     "admin.error":            "Xato",
     "admin.uploadFailed":     "Yuklash bajarilmadi",
     "admin.sheetId":          "Sheet ID...",
+    "admin.openSheet":        "Jadvalni ochish",
     "admin.comparisonRanges": "Taqqoslash jadvali oraliqlari",
     "admin.pPlanned":         "P — Reja %",
     "admin.perCellUtil":      "har bir katak uchun rejadagi foydalanish",
