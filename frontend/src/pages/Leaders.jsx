@@ -28,6 +28,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
 //    deliberately desaturated so they glow rather than glare against charcoal) ──
 const C_BAD = "#F43F5E", C_MID = "#F59E0B", C_GOOD = "#10B981";
+const C_FLAT = "#94A3B8";                           // no movement / no baseline — grey, never gold
 const C_TREND = "#D4A95C";                          // brand gold — the completion line
 const scoreColor = (v) => (v < 50 ? C_BAD : v < 85 ? C_MID : C_GOOD);
 
