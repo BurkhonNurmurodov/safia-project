@@ -824,11 +824,11 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
       style={{ maxHeight: HM_HEAD_H + HM_ROWS_OPEN * HM_ROW_H }}
       onMouseLeave={onLeave}
       onClick={() => setSelection(null)}>
-      <table style={{ borderCollapse: "separate", borderSpacing: 0, width: tableWidth, tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", borderSpacing: 0, width: tableWidth, tableLayout: "fixed" }}>
         <thead>
           <tr>
             <th style={{
-              ...HM_TH, left: 0, zIndex: 5,
+              ...HM_TH, left: 0, zIndex: 7,
               width: labelW, minWidth: labelW,
               height: HM_HEAD_H, textAlign: "left", paddingLeft: 12,
               borderRight: "2px solid var(--border-md)",
