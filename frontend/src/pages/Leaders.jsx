@@ -807,19 +807,13 @@ function DayGrid({ rows, dates, dataMax, T, nm }) {
                 </span>
               </th>
             ))}
-            {pads.map((_, i) => (
-              <th key={`p${i}`} style={{
-                position: "sticky", top: 0, width: cellW, height: HM_HEAD_H,
-                background: "var(--bg-inner)", borderBottom: "1px solid var(--border)", borderLeft: seam,
-              }} />
-            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((e, r) => (
             <HmRow key={e.name} r={r} name={nm(e.name)} place={e.place} days={e.days}
               dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW}
-              padCount={pads.length} hovered={hover?.r === r} onEnter={onEnter} T={T} />
+              hovered={hover?.r === r} onEnter={onEnter} T={T} />
           ))}
         </tbody>
       </table>
