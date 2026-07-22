@@ -1211,11 +1211,12 @@ export default function Leaders({ botMode = false }) {
                           <span style={{ color: "var(--text-1)" }}>{nm(e.name)}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
-                        <div className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>
-                          {e.sent}<span className="font-normal" style={{ color: "var(--text-4)" }}> – {e.missed}</span>
+                      <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}
+                        title={`${T.daysSent}: ${e.sent} · ${T.daysMissed}: ${e.missed}`}>
+                        <div className="font-bold" style={{ color: "var(--text-1)" }}>
+                          <DaysValue e={e} />
                         </div>
-                        <Meter pct={(e.sent / (e.sent + e.missed)) * 100} color={C_MID} />
+                        <Meter pct={daysPct(e)} color={scoreColor(daysPct(e))} />
                       </td>
                       <td className="px-3 py-2 border-l" style={{ borderColor: "var(--border)" }}>
                         <div className="font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{e.rating}%</div>
