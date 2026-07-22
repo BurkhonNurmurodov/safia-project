@@ -87,8 +87,15 @@ export default function DowntimeToggleChart({
 
   const options = useMemo(
     () => {
+      // Hours as a compound span, not a decimal: at one decimal every 0.1 h is a
+      // 6-minute bucket, so 3 min and 8 min both render "0.1 soat". Falls back to
+      // the decimal when a caller omits the unit words.
+      const hrsText = (v) =>
+        unitHourLabel
+          ? fmtDuration(v, { day: unitDayLabel, hour: unitHourLabel, min: unitMinLabel })
+          : `${(v / 60).toFixed(1)}${hrsLabel}`;
       const fmtVal = (v) =>
-        unit === "hrs" ? `${(v / 60).toFixed(1)}${hrsLabel}` : `${v.toFixed(0)}${minLabel}`;
+        unit === "hrs" ? hrsText(v) : `${v.toFixed(0)}${minLabel}`;
 
       // Does the centred label fit inside a bar of value `val`? Use the real plot width when
       // ApexCharts exposes it; otherwise fall back to a typical width so short bars still get
