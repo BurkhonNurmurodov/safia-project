@@ -291,6 +291,24 @@ def add_pp_product_op() -> None:
         db.close()
 
 
+def add_downtime_ns_columns() -> None:
+    """Add the «тўхтамаганда» half to downtime_data (idempotent). Every shift-report
+    category is a column PAIR — the wait stopped the cell, or it did not — and only
+    the "stopped" half was ever stored. These columns hold the other half, which the
+    Ojidaniya page shows in its second tab. Existing rows stay 0 until the next
+    shift-report sync (that sync wipes and reloads the table wholesale)."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE downtime_data ADD COLUMN IF NOT EXISTS total_minutes_ns NUMERIC(10, 4) DEFAULT 0.0"))
+        db.execute(text("ALTER TABLE downtime_data ADD COLUMN IF NOT EXISTS by_category_ns JSONB DEFAULT '{}'"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] downtime not-stopped columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_broadcast_rich_columns() -> None:
     """Add mode / media_names to broadcasts (idempotent). Rich broadcasts
     (sendRichMessage, Bot API 10.1+) record mode='rich' and the embedded media
