@@ -697,13 +697,58 @@ function HmLegend({ T, hasVoid }) {
   );
 }
 
+/* One leader's strip. Memoised on purpose: a wide window is well over a
+ * thousand cells, and without this boundary every mouse move — and every
+ * unrelated re-render of the page around it — would walk all of them. With it,
+ * a hover repaints the two rows whose highlight actually changed. */
+const HmRow = memo(function HmRow({ name, place, days, dates, dataMax, cellW, labelW, padCount, hovered, r, onEnter, T }) {
+  const seam = "1px solid var(--bg-card)";
+  return (
+    <tr>
+      <td style={{
+        position: "sticky", left: 0, zIndex: 2,
+        width: labelW, minWidth: labelW, maxWidth: labelW,
+        background: "var(--bg-card)", borderRight: "2px solid var(--border-md)",
+        height: HM_ROW_H, borderBottom: "1px solid var(--border)",
+      }}>
+        <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
+          <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
+            style={{ color: "var(--text-4)" }}>{place}</span>
+          <Avatar name={name} size={18} />
+          <span className="truncate text-[12px]"
+            style={{ color: hovered ? "var(--text-1)" : "var(--text-2)" }}>{name}</span>
+        </span>
+      </td>
+      {dates.map((d, c) => {
+        const stale = dataMax != null && d > dataMax;
+        const sent = days.has(d);
+        return (
+          <td key={d}
+            onMouseEnter={() => onEnter(r, c)}
+            title={`${name} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
+            style={{
+              width: cellW, height: HM_ROW_H,
+              background: stale ? HM_VOID : sent ? HM_SENT : HM_MISSED,
+              borderLeft: seam, borderBottom: seam, cursor: "default",
+            }} />
+        );
+      })}
+      {Array.from({ length: padCount }, (_, i) => (
+        <td key={`p${i}`} style={{ width: cellW, height: HM_ROW_H, borderLeft: seam, borderBottom: seam }} />
+      ))}
+    </tr>
+  );
+});
+
 function DayGrid({ rows, dates, dataMax, T, nm }) {
   const scrollRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
   // Crosshair: only the hovered row's name and the hovered column's header light
-  // up. Re-styling all ~600 cells on every mouse move is what makes big grids
-  // feel heavy, and the two labels are the ones you actually need to read.
+  // up. Re-styling every cell on each mouse move is what makes big grids feel
+  // heavy, and those two labels are the ones you actually need to read.
   const [hover, setHover] = useState(null);   // { r, c }
+  const onEnter = useCallback(
+    (r, c) => setHover((h) => (h && h.r === r && h.c === c ? h : { r, c })), []);
 
   useEffect(() => {
     const el = scrollRef.current;
