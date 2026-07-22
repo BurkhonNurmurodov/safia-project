@@ -1317,9 +1317,9 @@ def _pending(message: types.Message):
         bot.send_message(tid, _msg(lang, "unknown_command"))
         return
 
-    # The whole command is guarded: the webhook swallows handler exceptions and
-    # answers Telegram 200, so anything raised here used to reach the admin as
-    # pure silence — no listing, no error, nothing to act on.
+    # The whole command is guarded so the admin always gets an answer: a raise
+    # here only reaches the worker pool's exception handler (a log line), never
+    # the chat, so it used to read as pure silence — no listing, no error.
     try:
         _pending_list(tid)
     except Exception as e:
