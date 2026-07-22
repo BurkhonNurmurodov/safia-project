@@ -1459,18 +1459,38 @@ export default function Quality() {
             </ChartCard>
 
             {lockOwn ? (
-              <ChartCard icon={<ShieldCheck size={13} />} title={T.secMyStatus} subtitle={T.myStatusSub}
-                empty={!myStat || myStat.total === 0} height={330}>
-                <div className="px-3">
-                  <ReactApexChart options={myStatusOpts} series={myStatusSeries} type="donut" height={250} />
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center pb-2">
-                    {myStatusData.map((x) => (
-                      <span key={x.k} className="inline-flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-3)" }}>
-                        <span className="w-2 h-2 rounded-full" style={{ background: x.c }} />
-                        {x.label} <span className="tabular-nums font-semibold" style={{ color: "var(--text-2)" }}>{x.v}</span>
-                      </span>
-                    ))}
-                  </div>
+              /* the ribbon above says how much is closed; this says which of the
+                 rest is going stale — open rows aged from their record date. */
+              <ChartCard icon={<Hourglass size={13} />} title={T.secAging} subtitle={T.agingSub}
+                empty={!aging || myClosure?.total === 0} height={330}>
+                <div className="px-4 flex flex-col justify-center" style={{ minHeight: 300 }}>
+                  {aging?.total === 0 ? (
+                    <div className="text-center text-xs" style={{ color: C_DONE }}>{T.agAllClear}</div>
+                  ) : (
+                    <>
+                      <div className="mb-4">
+                        <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: "var(--text-4)" }}>{T.kOpen}</div>
+                        <div className="text-2xl font-bold leading-none tabular-nums" style={{ color: "var(--text-1)" }}>
+                          {(aging?.total || 0).toLocaleString("ru-RU")}
+                        </div>
+                      </div>
+                      {aging.buckets.map((b, i) => (
+                        <div key={i} className="grid items-center gap-3 mb-3" style={{ gridTemplateColumns: "76px 1fr 34px" }}>
+                          <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{T[`agB${i + 1}`]}</span>
+                          <span className="block h-5 rounded-md overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+                            <span className="block h-full rounded-md" style={{ width: `${(b.n / aging.max) * 100}%`, background: b.c }} />
+                          </span>
+                          <span className="text-xs font-bold text-right tabular-nums"
+                            style={{ color: b.n ? "var(--text-1)" : "var(--text-4)" }}>{b.n}</span>
+                        </div>
+                      ))}
+                      {aging.oldest && (
+                        <div className="text-[10px] mt-1" style={{ color: "var(--text-4)" }}>
+                          {T.agOldest}: <span style={{ color: "var(--text-3)" }}>{fmtDate(aging.oldest)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </ChartCard>
             ) : (
