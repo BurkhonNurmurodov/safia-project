@@ -1286,6 +1286,20 @@ def _pending(message: types.Message):
         bot.send_message(tid, _msg(lang, "unknown_command"))
         return
 
+    # The whole command is guarded: the webhook swallows handler exceptions and
+    # answers Telegram 200, so anything raised here used to reach the admin as
+    # pure silence — no listing, no error, nothing to act on.
+    try:
+        _pending_list(tid)
+    except Exception as e:
+        logger.exception("/pending failed for admin %s", tid)
+        try:
+            bot.send_message(tid, f"⚠️ /pending bajarilmadi.\nXato: {e}")
+        except Exception:
+            logger.exception("/pending: could not report the failure to admin %s", tid)
+
+
+def _pending_list(tid: int):
     with SessionLocal() as db:
         rows = (
             db.query(TelegramUserRole, TelegramUser)
