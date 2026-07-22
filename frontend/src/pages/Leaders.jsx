@@ -1191,7 +1191,7 @@ export default function Leaders({ botMode = false }) {
           {!standSearch.trim() && standTop.length === 3 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3">
               {standTop.map((e) => (
-                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} />
+                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} />
               ))}
             </div>
           )}
