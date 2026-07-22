@@ -964,25 +964,6 @@ export default function Leaders({ botMode = false }) {
     } },
   };
 
-  const standHeight = Math.max(220, standings.length * 30 + 36);
-  // Standings — slim pill bars, horizontal gradient, % set just inside the end in
-  // white with a soft shadow so it stays legible on any bar length.
-  const standOptions = {
-    chart: { ...chartBase, type: "bar" },
-    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 5, borderRadiusApplication: "end", barHeight: "88%" } },
-    colors: standings.map((e) => scoreColor(e.val)),
-    fill: { type: "gradient", gradient: { type: "horizontal", gradientToColors: standings.map((e) => mix(scoreColor(e.val), -0.24)), inverseColors: false, opacityFrom: 1, opacityTo: 1, stops: [0, 100] } },
-    states: { hover: { filter: { type: "lighten", value: 0.08 } } },
-    dataLabels: { enabled: true, textAnchor: "end", offsetX: -4, formatter: (v) => `${v}%`,
-      style: { fontSize: "11px", fontWeight: 700, colors: ["#fff"] },
-      dropShadow: { enabled: true, top: 0, left: 0, blur: 2, opacity: 0.5 } },
-    legend: { show: false },
-    grid: { ...grid("x"), padding: { top: 0, right: 14, bottom: 0, left: 10 } },
-    xaxis: { min: 0, max: 100, categories: standings.map((e) => nm(e.name)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
-    yaxis: { labels: { ...axisLabel, offsetX: -4, style: { colors: labelColor, fontSize: "11px" } } },
-    tooltip: { custom: ({ dataPointIndex }) => tipHTML(nm(standings[dataPointIndex].name), `${standings[dataPointIndex].val}%`, scoreColor(standings[dataPointIndex].val)) },
-  };
-
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <Layout title={botMode ? T.titleBot : T.title} showFilters={false}>
