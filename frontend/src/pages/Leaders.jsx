@@ -1431,6 +1431,38 @@ export default function Leaders({ botMode = false }) {
         </Modal>
       )}
 
+      {/* Daraja cutoffs — admin only, saved globally for every viewer */}
+      {tierEdit && (
+        <Modal maxWidth="max-w-md" title={T.tierEdit} subtitle={T.tierEditSub}
+          icon={<SlidersHorizontal size={18} style={{ color: "var(--brand-text)" }} />}
+          onClose={() => setTierEdit(null)}
+          footer={<>
+            <Button variant="secondary" onClick={() => setTierEdit(null)}>{T.cancel}</Button>
+            <Button onClick={() => tierMut.mutate(tierEdit)} loading={tierMut.isPending}
+              disabled={!tierOrderOk(tierEdit)}>{T.save}</Button>
+          </>}>
+          <div className="space-y-3">
+            {TIER_BANDS.map((b) => (
+              <FormField key={b.cut} label={<span className="inline-flex items-center gap-1.5">
+                <b.Icon size={12} style={{ color: b.color }} />{T[b.key]}
+              </span>}>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} max={100} value={tierEdit[b.cut]}
+                    onChange={(e) => setTierEdit({ ...tierEdit, [b.cut]: e.target.value === "" ? "" : Number(e.target.value) })}
+                    className="w-24 px-3 py-2 rounded-lg text-sm tabular-nums outline-none"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }} />
+                  <span className="text-xs" style={{ color: "var(--text-4)" }}>{T.tierEditRow}</span>
+                </div>
+              </FormField>
+            ))}
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-4)" }}>{T.tierEditHint}</p>
+            {!tierOrderOk(tierEdit) && (
+              <p className="text-xs" style={{ color: C_BAD }}>{T.tierEditOrder}</p>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {taskInfo && (
         <Modal maxWidth="max-w-3xl" title={T.taskInfoTitle} onClose={() => setTaskInfo(false)}>
           <table className="w-full text-sm border-collapse">
