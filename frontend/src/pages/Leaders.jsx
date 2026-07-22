@@ -146,7 +146,7 @@ const TXT = {
     standing: "Leader Standings", supStanding: "Supervisor Standings",
     toggleLeader: "Leader", toggleSup: "Supervisor",
     standRating: "Rating", standConsist: "Consistency",
-    thPlace: "Place", thDays: "Days", thTier: "Tier",
+    thPlace: "Place", thDays: "Days filed", thTier: "Tier",
     tierTop: "Champion", tierGood: "Excellent", tierMid: "Average", tierBad: "Low",
     supSearchPh: "Search supervisor…",
     standInfo: "Rating — the average of the reports actually filed. Consistency — those same scores spread across EVERY day of the period: a day with no report counts as 0%. Consistency can therefore never exceed the rating.",
