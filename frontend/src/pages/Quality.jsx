@@ -1635,6 +1635,7 @@ export default function Quality() {
                   const SrcIcon = SRC_ICONS[r.s] || CircleDot;
                   return (
                     <tr key={r.id} className="cursor-pointer" onClick={() => setOpenId(r.id)}>
+                      <td className="px-3 py-2 tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>{r.no || "—"}</td>
                       <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDate(r.d)}</td>
                       {!isProd && (
                         <td className="px-3 py-2">
