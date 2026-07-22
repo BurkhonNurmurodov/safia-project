@@ -1530,8 +1530,8 @@ export default function Leaders({ botMode = false }) {
           {heatDates.length > 0 && heatRows.length > 0 && (
             <div style={{ borderTop: "1px solid var(--border)" }}>
               <SectionHead icon={CalendarDays} title={T.hmTitle}
-                right={<HmLegend T={T} hasVoid={standings.dataMax != null && heatDates.some((d) => d > standings.dataMax)} />} />
-              <DayGrid rows={heatRows} dates={heatDates} dataMax={standings.dataMax} T={T} nm={nm} />
+                right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
+              <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm} />
             </div>
           )}
         </div>
