@@ -9,6 +9,29 @@ export function fmtTime(val, unit = "min", decimals = 1, minLabel, hrsLabel) {
   return `${Number(val).toFixed(decimals)} ${minLabel ?? "min"}`;
 }
 
+// Compound duration from minutes, dropping empty leading units: "8 daq",
+// "1 soat 35 daq", "3 kun 22 soat". Use this instead of fmtTime(…, "hrs")
+// wherever values can be small: fractional hours at one decimal is a 6-minute
+// bucket, so 3 min and 8 min both render "0.1 soat" — distinct numbers collapse
+// into the same label. Minutes are always emitted when nothing larger is
+// present, so a value never renders empty. Labels are passed in (not looked up)
+// to keep this a pure formatter — callers supply t("general.unitDay") etc.
+export function fmtDuration(mins, { day = "d", hour = "h", min = "m" } = {}) {
+  if (mins === null || mins === undefined) return "—";
+  const total = Math.round(Number(mins));
+  if (!Number.isFinite(total)) return "—";
+  const sign = total < 0 ? "-" : "";
+  const abs = Math.abs(total);
+  const days = Math.floor(abs / 1440);
+  const hrs = Math.floor((abs % 1440) / 60);
+  const rem = abs % 60;
+  const parts = [];
+  if (days) parts.push(`${days} ${day}`);
+  if (hrs) parts.push(`${hrs} ${hour}`);
+  if (rem || parts.length === 0) parts.push(`${rem} ${min}`);
+  return sign + parts.join(" ");
+}
+
 export function fmtNum(val, decimals = 1) {
   if (val === null || val === undefined) return "—";
   return Number(val).toFixed(decimals);
