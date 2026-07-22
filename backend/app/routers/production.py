@@ -1202,6 +1202,7 @@ class CatalogBody(BaseModel):
     name: Optional[str] = None
     sap_code: Optional[str] = None
     work_center: Optional[str] = None
+    op: Optional[str] = None
     active: Optional[bool] = None
 
 
