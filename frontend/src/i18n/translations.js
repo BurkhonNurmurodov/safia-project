@@ -4760,6 +4760,7 @@ const t = {
     "admin.error":            "Ошибка",
     "admin.uploadFailed":     "Загрузка не выполнена",
     "admin.sheetId":          "Sheet ID...",
+    "admin.openSheet":        "Открыть таблицу",
     "admin.comparisonRanges": "Диапазоны таблицы сравнения",
     "admin.pPlanned":         "P — План %",
     "admin.perCellUtil":      "плановое использование по ячейкам",
