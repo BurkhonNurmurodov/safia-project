@@ -608,33 +608,18 @@ function CardStat({ label, value, pct, color, active }) {
  * "the three who need help" rather than as a fake podium. */
 function StandCard({ e, worst, metric, T, name, cuts }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
-  const first = !worst && e.place === 1;
+  const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
-  // The medal used to live only in a 34%-alpha border and a 10%-alpha numeral,
-  // which on a dark card is three near-identical grey outlines — you could not
-  // tell 1st from 3rd, or whether 1st sat left or centre. The place now lands
-  // through four channels at once: a SOLID disc carrying the number, a
-  // full-strength ribbon across the top, a tinted wash, and a graded border
-  // whose glow physically lifts the winner out of the row.
   return (
     <div className="relative rounded-2xl overflow-hidden p-3"
-      style={{
-        background: `linear-gradient(180deg, ${hexA(tone, first ? 0.17 : 0.09)}, transparent 62%), var(--bg-inner)`,
-        border: `1px solid ${hexA(tone, first ? 0.62 : 0.4)}`,
-        boxShadow: first ? `0 10px 26px -12px ${hexA(tone, 0.7)}` : "none",
-      }}>
-      <span aria-hidden className="absolute inset-x-0 top-0" style={{ height: 3, background: tone }} />
+      style={{ background: "var(--bg-inner)", border: `1px solid ${hexA(tone, 0.34)}` }}>
       <span aria-hidden className="absolute select-none tabular-nums font-black leading-none"
-        style={{ right: 6, bottom: -18, fontSize: first ? 88 : 76, color: hexA(tone, 0.14) }}>{e.place}</span>
+        style={{ right: 6, bottom: -18, fontSize: 76, color: hexA(tone, 0.1) }}>{e.place}</span>
 
       <div className="relative flex items-center gap-2">
         <Avatar name={name} size={30} />
         <div className="min-w-0 text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
-        {worst && <AlertTriangle size={15} className="ml-auto flex-shrink-0" style={{ color: tone }} />}
-        <span title={`${T.thPlace}: ${e.place}`}
-          className={`grid place-items-center rounded-full font-black tabular-nums flex-shrink-0 ${worst ? "" : "ml-auto"}`}
-          style={{ minWidth: 26, height: 26, padding: "0 6px", fontSize: 13, background: tone, color: MEDAL_INK,
-            boxShadow: `0 0 0 3px ${hexA(tone, 0.22)}` }}>{e.place}</span>
+        <Badge size={20} className="ml-auto flex-shrink-0" style={{ color: tone }} />
       </div>
 
       <div className="relative mt-2"><TierChip value={ranked} T={T} cuts={cuts} /></div>
