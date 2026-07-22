@@ -7,6 +7,14 @@ from app.config import settings
 
 _gc: Optional[gspread.Client] = None
 
+# Shift-report waiting-time columns, 0-based (PI, PK, PM, PO, PQ, PS, PU, PW, PY).
+#
+# The form stores every category as a PAIR of adjacent columns — «Ячейка
+# тўхтаганда» (the wait stopped the cell) and «Ячейка тўхтамаганда» (it did
+# not). Ojidaniya deliberately counts ONLY the «тўхтаганда» half, which is why
+# these step by 2 and each pair's second column is never read: the page measures
+# waiting that actually halted the cell, not every wait the brigadir logged.
+# Confirmed intentional 2026-07-22 — do NOT "fix" this by adding the odd indices.
 SHIFT_CATEGORIES = [
     ("Cat A", 424), ("Cat B", 426), ("Cat C", 428),
     ("Cat D", 430), ("Cat D2", 432), ("Cat D3", 434),
