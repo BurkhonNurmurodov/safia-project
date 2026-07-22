@@ -146,6 +146,7 @@ const TXT = {
     tierEditOrder: "Границы должны убывать: Чемпион > Отлично > Средне.",
     save: "Сохранить", cancel: "Отмена",
     winLabel: "Окно расчёта", daysSent: "Сдано", daysMissed: "Пропущено",
+    hmTitle: "Календарь дней", hmNoSync: "Данные ещё не поступили",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.",
