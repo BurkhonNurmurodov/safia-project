@@ -1617,12 +1617,16 @@ export default function Leaders({ botMode = false }) {
           * order, same toggle, same search), so it carries the scoring window in
           * its header rather than repeating that card's controls. */}
         {!isLeader && heatDates.length > 0 && heatRows.length > 0 && (
-        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="mb-4">
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={CalendarDays} title={T.hmTitle}
             subtitle={`${ddmm(standings.winFrom)} – ${ddmm(standings.winTo)} · ${standings.winDays} ${T.dayAbbr}`}
             right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
-          <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm}
+          <DayGrid rows={heatPageRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm}
             nameHead={effStandMode === "leader" ? T.thLeader : T.supervisor} />
+        </div>
+        <Pagination page={hmPg} pageCount={hmPageCount} total={heatRows.length}
+          pageSize={HM_ROWS_OPEN} onPage={setHmPage} />
         </div>
         )}
 
