@@ -179,6 +179,12 @@ export default function UsersManagement() {
         }
         toolbar={
           <>
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder={t("common.search")}
+              className="w-full sm:w-56"
+            />
             {/* Status filter — single-select segmented toggle with live counts */}
             <SegmentedToggle
               value={statusFilter}
