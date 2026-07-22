@@ -1518,6 +1518,15 @@ export default function Leaders({ botMode = false }) {
               </tbody>
             </table>
           </div>
+
+          {/* day calendar — the same ranking, one green/red cell per day */}
+          {heatDates.length > 0 && heatRows.length > 0 && (
+            <div style={{ borderTop: "1px solid var(--border)" }}>
+              <SectionHead icon={CalendarDays} title={T.hmTitle}
+                right={<HmLegend T={T} hasVoid={standings.dataMax != null && heatDates.some((d) => d > standings.dataMax)} />} />
+              <DayGrid rows={heatRows} dates={heatDates} dataMax={standings.dataMax} T={T} nm={nm} />
+            </div>
+          )}
         </div>
         )}
 
