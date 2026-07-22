@@ -522,6 +522,21 @@ function Meter({ pct, color }) {
   );
 }
 
+/* Filed days. `sent + missed` is always the scoring window (missed is derived
+ * from it), so the pair is really ONE number out of a constant — rendered as
+ * the fraction "18/30". The old "18 – 12" read as a range or a subtraction. */
+const daysTotal = (e) => e.sent + e.missed;
+const daysPct = (e) => (daysTotal(e) ? (e.sent / daysTotal(e)) * 100 : 0);
+
+function DaysValue({ e }) {
+  return (
+    <span className="tabular-nums">
+      {e.sent}
+      <span className="font-normal text-[12px]" style={{ color: "var(--text-4)" }}>/{daysTotal(e)}</span>
+    </span>
+  );
+}
+
 function TierChip({ value, T }) {
   const t = tierOf(value);
   return (
