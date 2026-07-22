@@ -1044,6 +1044,7 @@ export default function Production() {
         sap_code: sap,
         name: catDraft.name.trim(),
         work_center: wc,
+        op: (catDraft.op ?? "").trim() || null,
         labor_time: labor != null && !Number.isNaN(labor) ? labor : null,
       },
       { onSuccess: () => setCreateOpen(false) },
