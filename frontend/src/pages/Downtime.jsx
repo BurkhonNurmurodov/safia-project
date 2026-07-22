@@ -156,7 +156,7 @@ export default function Downtime() {
 
   // Doughnut: fleet-wide downtime share per category (click a slice → filter left chart)
   const catTotals = catNames.map((cat) =>
-    Math.round((data?.rows || []).reduce((s, r) => s + (r.by_category?.[cat] || 0), 0))
+    Math.round((data?.rows || []).reduce((s, r) => s + (r[catKey]?.[cat] || 0), 0))
   );
   // Emphasise the selected slices by dimming the rest while a filter is active.
   const donutColors = filterActive
