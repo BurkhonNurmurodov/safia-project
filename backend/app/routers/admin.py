@@ -290,6 +290,9 @@ def list_users(
             "id":          u.id,
             "telegram_id": u.telegram_id,
             "full_name":   u.full_name,
+            # Telegram account name — the only field that identifies WHICH
+            # account filed a request (full_name mirrors the claimed profile).
+            "tg_name":     u.tg_name,
             "username":    u.username,
             "phone":       u.phone,
             "language":    u.language,
