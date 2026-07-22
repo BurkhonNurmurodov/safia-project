@@ -1188,7 +1188,8 @@ def admin_create_catalog(body: CatalogCreateBody,
         PPProduct.manager_id == body.manager_id).scalar() or 0
     p = PPProduct(
         manager_id=body.manager_id, sap_code=sap, name=(body.name or "").strip(),
-        work_center=wc, labor_time=body.labor_time, sort_order=max_sort + 1,
+        work_center=wc, op=((body.op or "").strip() or None),
+        labor_time=body.labor_time, sort_order=max_sort + 1,
     )
     db.add(p)
     db.commit()
