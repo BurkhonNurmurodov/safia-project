@@ -830,13 +830,19 @@ export default function Concerns() {
       let run = 0;
       for (const d = new Date(firstIso + "T00:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
         const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-        run += (opened.get(iso) || 0) - (closed.get(iso) || 0);
+        // Per-day inflow/outflow rides along on the trend rows — the analytics
+        // tab's "opened vs closed" columns share this exact day axis.
+        const inn = opened.get(iso) || 0;
+        const out = closed.get(iso) || 0;
+        run += inn - out;
         const open = Math.max(0, run);
         if (open > maxOpen) maxOpen = open;
-        trend.push({ day: iso, open });
+        if (inn > maxFlow) maxFlow = inn;
+        if (out > maxFlow) maxFlow = out;
+        trend.push({ day: iso, open, opened: inn, closed: out });
       }
     }
-    return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen };
+    return { done, doing, todo, overdue, total: filtered.length, trend, maxOpen, maxFlow };
   }, [filtered, chartFiltered, chartStart, endDate]);
 
   // ── column sort (asc → desc → off), applied over the filtered rows ──────────
