@@ -1546,14 +1546,18 @@ export default function Leaders({ botMode = false }) {
             </table>
           </div>
 
-          {/* day calendar — the same ranking, one green/red cell per day */}
-          {heatDates.length > 0 && heatRows.length > 0 && (
-            <div style={{ borderTop: "1px solid var(--border)" }}>
-              <SectionHead icon={CalendarDays} title={T.hmTitle}
-                right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
-              <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm} />
-            </div>
-          )}
+        </div>
+        )}
+
+        {/* Day calendar — its own card. It still mirrors the ranking above (same
+          * order, same toggle, same search), so it carries the scoring window in
+          * its header rather than repeating that card's controls. */}
+        {!isLeader && heatDates.length > 0 && heatRows.length > 0 && (
+        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={CalendarDays} title={T.hmTitle}
+            subtitle={`${ddmm(standings.winFrom)} – ${ddmm(standings.winTo)} · ${standings.winDays} ${T.dayAbbr}`}
+            right={<HmLegend T={T} hasVoid={dataMax != null && heatDates[heatDates.length - 1] > dataMax} />} />
+          <DayGrid rows={heatRows} dates={heatDates} dataMax={dataMax} T={T} nm={nm} />
         </div>
         )}
 
