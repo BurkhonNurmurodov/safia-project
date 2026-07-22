@@ -59,14 +59,21 @@ def get_downtime(
 
     cat_names = sorted(cat_names_set)
 
-    # Day-close gate: only confirmed (manager, date) days count anywhere.
+    # Day-close state — here it decides only whether an unreported day counts as
+    # a reported zero (see the loop below), not whether reported data is shown.
     confirmed = confirmed_pairs(db, date_from, date_to, [m.id for m in managers])
 
     rows = []
     for mgr in sorted(managers, key=lambda m: m.name or ""):
         for d_str in dates:
             d_obj = datetime.strptime(d_str, "%d.%m.%Y").date()
-            if (mgr.id, d_obj) not in confirmed:
+            # The shift report is a source of its own: the brigadir submits it
+            # once at end of shift and it carries no attendance, so a submitted
+            # report shows as soon as it syncs — open day or not. The day-close
+            # gate still governs the silent case: only on a confirmed day does
+            # "no report" mean a real zero rather than "not reported yet".
+            reported = d_str in dt_total.get(mgr.name, {})
+            if not reported and (mgr.id, d_obj) not in confirmed:
                 continue
             total = dt_total.get(mgr.name, {}).get(d_str, 0.0)
             cats = dt_by_cat.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
