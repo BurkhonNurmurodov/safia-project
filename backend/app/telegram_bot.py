@@ -527,6 +527,9 @@ def _registration_text(full_name: str, role: str, phone: str | None,
     return text
 
 
+_BURST_MAX_WAIT = 5  # seconds we're willing to block a pool worker for
+
+
 def _send_burst(chat_id: int, text: str, reply_markup=None, attempts: int = 3):
     """send_message for the case where we push SEVERAL messages into ONE chat
     back-to-back (/pending re-listing every request). Telegram's per-chat
