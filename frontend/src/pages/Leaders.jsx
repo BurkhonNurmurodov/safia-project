@@ -1206,16 +1206,17 @@ export default function Leaders({ botMode = false }) {
     return Array.from({ length: winDays }, (_, i) => isoShift(winFrom, i));
   }, [standings]);
 
-  // The register is one continuous ranking, so it scrolls instead of paging —
-  // ten rows stay open and the rest is a flick away, no click needed to see 11th
-  // place. Height is spelled out from the row box (px-3 py-2 around a 20px value
-  // line + the 7px meter = 44px) so it always lands on a whole row, never on a
-  // half-cut one that reads as the end of the list.
-  const STAND_ROWS_OPEN = 10;
-  const standViewH = STAND_HEAD_H + STAND_ROWS_OPEN * STAND_ROW_H;
-  // Re-ranking scrolls you back to the top: after flipping the sort or the tab,
-  // row 1 is the whole point, and staying at row 30 hides that anything changed.
-  useEffect(() => { if (standScroll.current) standScroll.current.scrollTop = 0; },
+  // Both registers page instead of scrolling: ten ranking rows and nine calendar
+  // strips per page, so the card ends on a whole row and the page underneath is
+  // reachable without trapping the wheel inside a table.
+  const STAND_PAGE_SIZE = 10;
+  const standPageCount = Math.max(1, Math.ceil(standRows.length / STAND_PAGE_SIZE));
+  const standPageRows = standRows.slice((standPage - 1) * STAND_PAGE_SIZE, standPage * STAND_PAGE_SIZE);
+  const hmPageCount = Math.max(1, Math.ceil(heatRows.length / HM_ROWS_OPEN));
+  const heatPageRows = heatRows.slice((hmPage - 1) * HM_ROWS_OPEN, hmPage * HM_ROWS_OPEN);
+  // Re-ranking sends you back to page 1: after flipping the sort or the tab,
+  // row 1 is the whole point, and staying on page 3 hides that anything changed.
+  useEffect(() => { setStandPage(1); setHmPage(1); },
     [standMetric, standDir, effStandMode, standSearch, startDate, endDate, fShift, fSup, fLeader]);
   // Tabs and sortable headers drive the same pair of knobs — re-picking the
   // column that is already active flips the direction, as a table should.
