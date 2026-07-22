@@ -11,15 +11,20 @@ _gc: Optional[gspread.Client] = None
 #
 # The form stores every category as a PAIR of adjacent columns — «Ячейка
 # тўхтаганда» (the wait stopped the cell) and «Ячейка тўхтамаганда» (it did
-# not). Ojidaniya deliberately counts ONLY the «тўхтаганда» half, which is why
-# these step by 2 and each pair's second column is never read: the page measures
-# waiting that actually halted the cell, not every wait the brigadir logged.
-# Confirmed intentional 2026-07-22 — do NOT "fix" this by adding the odd indices.
+# not). These are the «тўхтаганда» columns, which is why they step by 2: they
+# measure waiting that actually halted the cell, not every wait the brigadir
+# logged. Confirmed intentional 2026-07-22 — do NOT merge the odd indices in
+# here; they are a separate series, read via SHIFT_CATEGORIES_NS below.
 SHIFT_CATEGORIES = [
     ("Cat A", 424), ("Cat B", 426), ("Cat C", 428),
     ("Cat D", 430), ("Cat D2", 432), ("Cat D3", 434),
     ("Cat E", 436), ("Cat F", 438), ("Cat G", 440),
 ]
+
+# The second column of each pair — «Ячейка тўхтамаганда». Read since 2026-07-22
+# to feed the Ojidaniya page's second tab, kept strictly separate from the
+# «тўхтаганда» totals above so tab 1's numbers are unchanged.
+SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES]
 
 
 def get_client() -> gspread.Client:
