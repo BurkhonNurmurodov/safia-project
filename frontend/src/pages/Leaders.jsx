@@ -1504,7 +1504,8 @@ export default function Leaders({ botMode = false }) {
 
         {/* Standings — hidden for a leader (a one-row ranking of themselves) */}
         {!isLeader && (
-        <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="mb-4">
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SectionHead icon={Trophy} title={effStandMode === "leader" ? T.standing : T.supStanding}
             right={
               <div className="flex items-center gap-2">
@@ -1548,7 +1549,7 @@ export default function Leaders({ botMode = false }) {
             </div>
           )}
 
-          <div ref={standScroll} className="overflow-auto" style={{ maxHeight: standViewH }}>
+          <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -1565,7 +1566,7 @@ export default function Leaders({ botMode = false }) {
                 </tr>
               </thead>
               <tbody>
-                {standRows.map((e) => {
+                {standPageRows.map((e) => {
                   const ranked = standMetric === "consist" ? e.consist : e.rating;
                   return (
                     <tr key={e.name} className="transition-colors hover:bg-[var(--bg-inner)]"
@@ -1606,6 +1607,9 @@ export default function Leaders({ botMode = false }) {
               </tbody>
             </table>
           </div>
+        </div>
+        <Pagination page={standPg} pageCount={standPageCount} total={standRows.length}
+          pageSize={STAND_PAGE_SIZE} onPage={setStandPage} />
         </div>
         )}
 
