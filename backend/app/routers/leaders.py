@@ -30,6 +30,74 @@ def _relabel(name: str | None) -> str:
     return _SUPERVISOR_RELABEL.get(_fold_name(name or ""), name)
 
 
+# ── Daraja tier cutoffs ───────────────────────────────────────────────────────
+# The standings grade (Chempion / A'lo / O'rta / Past) cuts on the metric the
+# list is ranked by. Stored GLOBALLY, not per viewer: a grade has to mean the
+# same thing to the admin, the supervisor and the leader looking at their own
+# row, so an admin edit is org policy rather than a personal lens.
+#
+# Defaults are tuned to the metric's real ceiling — every calendar day in the
+# picked range counts, so a leader filing perfectly six days a week tops out
+# near 87% and a 95 cutoff would make Chempion unreachable.
+TIER_KEY = "leader_tier_cuts"
+TIER_DEFAULTS = {"top": 85, "good": 65, "mid": 40}
+
+
+def _read_tiers(db: Session) -> dict:
+    row = db.query(AppSetting).filter_by(key=TIER_KEY).first()
+    if not row:
+        return dict(TIER_DEFAULTS)
+    try:
+        saved = json.loads(row.value)
+    except (ValueError, TypeError):
+        return dict(TIER_DEFAULTS)
+    if not isinstance(saved, dict):
+        return dict(TIER_DEFAULTS)
+    # Merge over the defaults so a partial/older blob still yields three cuts.
+    return {k: saved.get(k, v) for k, v in TIER_DEFAULTS.items()}
+
+
+@router.get("/leader-tiers")
+def get_leader_tiers(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """The active cutoffs. Readable by anyone who can open the page — everyone
+    has to render the same chips — while writing stays admin-only."""
+    return {**_read_tiers(db), "can_edit": payload.get("role") == "admin"}
+
+
+@router.put("/leader-tiers")
+def put_leader_tiers(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    cuts = {}
+    for k in TIER_DEFAULTS:
+        try:
+            cuts[k] = int(body[k])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"Bad value for '{k}'")
+        if not 0 <= cuts[k] <= 100:
+            raise HTTPException(status_code=400, detail=f"'{k}' must be 0-100")
+    # Strictly descending, else a band would be unreachable (a value can never
+    # land in "good" if its floor sits at or above the "top" floor).
+    if not cuts["top"] > cuts["good"] > cuts["mid"]:
+        raise HTTPException(status_code=400, detail="Cutoffs must be strictly descending")
+
+    row = db.query(AppSetting).filter_by(key=TIER_KEY).first()
+    if row is None:
+        row = AppSetting(key=TIER_KEY, value="")
+        db.add(row)
+    row.value = json.dumps(cuts)
+    db.commit()
+    return {**cuts, "can_edit": True}
+
+
 @router.get("/leaders")
 def get_leaders(
     db: Session = Depends(get_db),
