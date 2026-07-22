@@ -526,7 +526,7 @@ export default function Kaizen() {
 
   const topPeople = A.people.slice(0, 10);
   const peopleOpts = {
-    chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: false } },
+    chart: { type: "bar", stacked: true, toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "62%", borderRadius: 3 } },
     colors: [C_DONE, C_PROG, C_TODO],
@@ -547,7 +547,7 @@ export default function Kaizen() {
   const topTypes = A.types.slice(0, 8);
   const typeCats = topTypes.map((t) => tl(t.type === "—" ? "—" : t.type));
   const typeOpts = {
-    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: false } },
+    chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
     plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 4, borderRadiusApplication: "end" } },
     colors: [BRAND],
