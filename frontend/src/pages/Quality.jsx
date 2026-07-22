@@ -63,6 +63,22 @@ const STATUS_COLORS = { done: C_DONE, open: C_OPEN, waiting: C_WAIT, repeat: C_R
 const ACTIONABLE = ["done", "open", "waiting", "repeat"];
 const OPEN_STATES = ["open", "waiting", "repeat"];
 
+// One brigadir's corrective-action split — the four buckets of the «status by
+// supervisor» table. Reused for the supervisor closure ribbon (current window)
+// and its previous-window twin that the ribbon's deltas are measured against.
+const statusSplit = (arr) => {
+  const m = { resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 };
+  for (const r of arr) {
+    if (!ACTIONABLE.includes(r.st)) continue;
+    if (r.st === "done") m.resolved++;
+    else if (r.st === "repeat") m.recurring++;
+    else if (r.st === "waiting") m.waiting++;
+    else m.notSolved++; // open
+    m.total++;
+  }
+  return m;
+};
+
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
