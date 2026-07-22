@@ -537,10 +537,14 @@ def _send_burst(chat_id: int, text: str, reply_markup=None, attempts: int = 3):
         try:
             return bot.send_message(chat_id, text, reply_markup=reply_markup)
         except telebot.apihelper.ApiTelegramException as e:
-            if e.error_code != 429 or i == attempts - 1:
-                raise
             params = (getattr(e, "result_json", None) or {}).get("parameters") or {}
-            time.sleep(min(int(params.get("retry_after", 3) or 3), 30))
+            wait = int(params.get("retry_after", 2) or 2)
+            # Never hold a worker thread hostage: the pool is what serves EVERY
+            # user's commands, so a long retry_after is reported to the caller
+            # rather than slept through.
+            if e.error_code != 429 or i == attempts - 1 or wait > _BURST_MAX_WAIT:
+                raise
+            time.sleep(wait)
     return None
 
 
