@@ -1525,7 +1525,7 @@ export default function Leaders({ botMode = false }) {
       {/* KPI / insight cards */}
       <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-3" : isLeader ? "lg:grid-cols-2" : "lg:grid-cols-4"} gap-3 mb-4`}>
         {/* Average success — hero: the only card with an accent glow */}
-        <StatCard label={T.avgSuccess} icon={Gauge} tip={T.avgSuccess}
+        <StatCard label={T.avgSuccess} icon={Gauge} tip={T.tipAvg}
           value={hasData ? `${avg}%` : "—"}
           valueColor={hasData ? scoreColor(avg) : "var(--text-4)"}
           accent={hasData ? scoreColor(avg) : undefined} />
