@@ -758,6 +758,7 @@ export default function Quality() {
   const sorted = useMemo(() => {
     const val = (r) => {
       switch (sort.key) {
+        case "no":      return r.no || "";
         case "date":    return r.d || "";
         case "src":     return L("src", r.s);
         case "place":   return r.pl || "";

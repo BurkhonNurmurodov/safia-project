@@ -259,6 +259,16 @@ _MESSAGES = {
             "📱 Please share your phone number:"
         ),
         "share_contact_btn": "📱 Share Contact",
+        "contact_typed_warning": (
+            "⚠️ Please don't type your number as text — it can't be accepted that way.\n\n"
+            "👇 Tap the «{btn}» button below — Telegram will send your number "
+            "automatically.\n\n"
+            "If you don't see the button, tap the keyboard icon next to the message field."
+        ),
+        "contact_not_own": (
+            "⚠️ That's someone else's contact.\n\n"
+            "👇 Tap «{btn}» to send your own number."
+        ),
         "waiting_approval":  (
             "⏳ Your request has been sent to the admin.\n"
             "You'll be notified once it's reviewed."
