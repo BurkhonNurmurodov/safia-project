@@ -1073,6 +1073,8 @@ export default function Leaders({ botMode = false }) {
         consist: Math.round((e.days.size / winDays) * 100),
         sent: e.days.size,
         missed: winDays - e.days.size,
+        // Which days those were, for the calendar grid under the register.
+        days: new Set(e.days.keys()),
       };
     });
     // The two columns are ONE ranking, not two: the active tab is the primary
