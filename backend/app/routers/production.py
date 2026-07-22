@@ -1086,11 +1086,17 @@ async def import_catalog(
             detail="Каталог не найден. Укажите имя листа (напр. «Sheet1 Торт») с колонками Трудоёмкость/Команда.",
         )
 
+    # Hand-pinned фаза values live only here (the sheet has no such column), so
+    # carry them across the wipe by their (SKU, work centre) key.
+    kept_ops = {(p.sap_code, p.work_center): p.op
+                for p in db.query(PPProduct).filter(PPProduct.manager_id == manager_id).all()
+                if p.op}
     db.query(PPProduct).filter(PPProduct.manager_id == manager_id).delete()
     for i, p in enumerate(parsed["products"]):
         db.add(PPProduct(
             manager_id=manager_id, sap_code=p["sap_code"], name=p.get("name") or "",
             work_center=p.get("work_center") or "", labor_time=p.get("labor_time"),
+            op=kept_ops.get((p["sap_code"], p.get("work_center") or "")),
             sort_order=i,
         ))
 
