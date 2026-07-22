@@ -1179,7 +1179,9 @@ export default function Leaders({ botMode = false }) {
         acc.set(id, t);
       }
     const nL = leaders.size;
-    return [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([id, t]) => {
+    return [...onForm].sort((a, b) => a - b).map((id) => {
+      const t = acc.get(id);
+      if (!t) return { id, asked: 0, rate: null };       // on the form, answered by nobody
       const missed = Math.max(0, nL * (winDays - t.first) - suffix[t.first]);
       const owed = t.asked + missed;
       return { id, asked: t.asked, rate: owed ? Math.round((t.done / owed) * 100) : null };
