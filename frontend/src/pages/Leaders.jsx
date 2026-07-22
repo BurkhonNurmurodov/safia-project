@@ -822,7 +822,9 @@ export default function Leaders({ botMode = false }) {
       day.sum += r.completion; day.n++;
       e.days.set(d, day);
     }
-    if (!winFrom) return { list: [], winFrom: null, winTo: null, winDays: 0 };
+    // winTo is the guard, not winFrom: with a picked start date winFrom is set
+    // before the loop runs, so an empty result set would otherwise slip through.
+    if (!winFrom || !winTo) return { list: [], winFrom: null, winTo: null, winDays: 0 };
     const winDays = Math.round((new Date(`${winTo}T00:00:00`) - new Date(`${winFrom}T00:00:00`)) / DAY) + 1;
 
     const list = Object.entries(map).map(([name, e]) => {
