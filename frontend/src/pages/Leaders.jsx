@@ -1209,11 +1209,15 @@ export default function Leaders({ botMode = false }) {
   // Both registers page instead of scrolling: ten ranking rows and nine calendar
   // strips per page, so the card ends on a whole row and the page underneath is
   // reachable without trapping the wheel inside a table.
+  // A shrinking list (a search that now matches five people) must not strand you
+  // on a page that no longer exists, so the live page is clamped as it renders.
   const STAND_PAGE_SIZE = 10;
   const standPageCount = Math.max(1, Math.ceil(standRows.length / STAND_PAGE_SIZE));
-  const standPageRows = standRows.slice((standPage - 1) * STAND_PAGE_SIZE, standPage * STAND_PAGE_SIZE);
+  const standPg = Math.min(standPage, standPageCount);
+  const standPageRows = standRows.slice((standPg - 1) * STAND_PAGE_SIZE, standPg * STAND_PAGE_SIZE);
   const hmPageCount = Math.max(1, Math.ceil(heatRows.length / HM_ROWS_OPEN));
-  const heatPageRows = heatRows.slice((hmPage - 1) * HM_ROWS_OPEN, hmPage * HM_ROWS_OPEN);
+  const hmPg = Math.min(hmPage, hmPageCount);
+  const heatPageRows = heatRows.slice((hmPg - 1) * HM_ROWS_OPEN, hmPg * HM_ROWS_OPEN);
   // Re-ranking sends you back to page 1: after flipping the sort or the tab,
   // row 1 is the whole point, and staying on page 3 hides that anything changed.
   useEffect(() => { setStandPage(1); setHmPage(1); },
