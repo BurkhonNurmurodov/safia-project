@@ -1057,7 +1057,7 @@ export default function Leaders({ botMode = false }) {
     // Both edges can be pre-set from the picker, so an empty result set would
     // otherwise slip through with a valid-looking window and no rows.
     if (!winFrom || !winTo || !Object.keys(map).length)
-      return { list: [], winFrom: null, winTo: null, winDays: 0, dataMax: null };
+      return { list: [], winFrom: null, winTo: null, winDays: 0 };
     const winDays = Math.round((new Date(`${winTo}T00:00:00`) - new Date(`${winFrom}T00:00:00`)) / DAY) + 1;
 
     const list = Object.entries(map).map(([name, e]) => {
