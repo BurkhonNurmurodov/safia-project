@@ -1321,18 +1321,13 @@ export default function Leaders({ botMode = false }) {
                     </tr>
                   );
                 })}
-                {!standPageRows.length && (
+                {!standRows.length && (
                   <tr style={{ borderTop: "1px solid var(--border)" }}>
                     <td colSpan={6} className="px-3 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 )}
               </tbody>
             </table>
-          </div>
-
-          <div className="px-3 pb-3">
-            <Pagination page={standPageSafe} pageCount={standPageCount} total={standRows.length}
-              pageSize={STAND_PAGE} onPage={setStandPage} />
           </div>
         </div>
         )}
