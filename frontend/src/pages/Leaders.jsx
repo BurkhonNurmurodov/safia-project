@@ -736,7 +736,7 @@ function CardStat({ label, value, pct, color, active }) {
 /* A podium card — places 1-3, or the bottom three when the list is flipped.
  * Either way it keeps its REAL place number, so the flipped state reads as
  * "the three who need help" rather than as a fake podium. */
-function StandCard({ e, worst, metric, T, name, cuts }) {
+function StandCard({ e, worst, metric, T, name, cuts, trend }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
   const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
