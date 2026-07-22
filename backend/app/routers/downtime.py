@@ -86,6 +86,8 @@ def get_downtime(
                 continue
             total = dt_total.get(mgr.name, {}).get(d_str, 0.0)
             cats = dt_by_cat.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
+            total_ns = dt_total_ns.get(mgr.name, {}).get(d_str, 0.0)
+            cats_ns = dt_by_cat_ns.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
             rows.append({
                 "manager_name": mgr.name,
                 "shift": mgr.shift,
@@ -93,16 +95,26 @@ def get_downtime(
                 "total": total,
                 "flagged": total > 50,
                 "by_category": cats,
+                "total_ns": total_ns,
+                "flagged_ns": total_ns > 50,
+                "by_category_ns": cats_ns,
             })
 
     summary: dict[str, dict] = {}
     for r in rows:
         n = r["manager_name"]
         if n not in summary:
-            summary[n] = {"manager_name": n, "shift": r["shift"], "total": 0.0, "flagged_days": 0}
+            summary[n] = {
+                "manager_name": n, "shift": r["shift"],
+                "total": 0.0, "flagged_days": 0,
+                "total_ns": 0.0, "flagged_days_ns": 0,
+            }
         summary[n]["total"] += r["total"]
+        summary[n]["total_ns"] += r["total_ns"]
         if r["flagged"]:
             summary[n]["flagged_days"] += 1
+        if r["flagged_ns"]:
+            summary[n]["flagged_days_ns"] += 1
 
     return {
         "dates": dates,
