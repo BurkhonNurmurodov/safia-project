@@ -623,20 +623,27 @@ export default function Concerns() {
   // A pick that fell out of the current shift is ignored, not an empty page.
   const supSel = fSup && supFilterOptions.some((o) => o.value === fSup) ? fSup : "All";
 
+  // Page view tabs — the register ("list") and the chart board ("analytics").
+  // KPIs and the period/shift/brigadir bar stay above both; everything else is
+  // split so each tab shows one thing well.
+  const [view, setView] = useState("list");
+
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
   // the data render lands. Hold the charts back until layout has settled, then
   // mount them once at the right width — no global resize nudges, no
-  // mid-render redraw flashes (same fix as Kaizen).
+  // mid-render redraw flashes (same fix as Kaizen). Switching tabs mounts a
+  // fresh set of containers, so the settle runs again on every view change.
   const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => {
     if (isLoading) return undefined;
+    setChartsReady(false);
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => setChartsReady(true));
     });
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
-  }, [isLoading]);
+  }, [isLoading, view]);
 
   // Period + shift + supervisor filters (client-side, over the fetched rows).
   const scoped = useMemo(() => {
