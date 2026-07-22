@@ -54,7 +54,7 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
     # endpoints resolve those spellings back to the canonical Manager.name.
     manager_names = set(sheet_alias_map(db, (m.name for m in managers)).keys())
 
-    dt_total, dt_by_cat, cat_names = read_downtime_data(sheet_id, manager_names)
+    dt_total, dt_by_cat, dt_total_ns, dt_by_cat_ns, cat_names = read_downtime_data(sheet_id, manager_names)
 
     db.query(DowntimeData).delete()
 
@@ -67,6 +67,10 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
                 date=date_str,
                 total_minutes=total,
                 by_category=by_cat,
+                # Same sheet row, second column of each pair — the waits that did
+                # not stop the cell (Ojidaniya's «To'xtamaganda» tab).
+                total_minutes_ns=dt_total_ns.get(name, {}).get(date_str, 0.0),
+                by_category_ns=dt_by_cat_ns.get(name, {}).get(date_str, {}),
             ))
             count += 1
 
