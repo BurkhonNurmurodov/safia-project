@@ -792,39 +792,40 @@ export default function Leaders({ botMode = false }) {
   const effStandMode = (isSupervisor || isLeader) ? "leader" : standMode;
 
   // ── standings ───────────────────────────────────────────────────────────────
-  // One shared calendar window for everyone in view: it opens on the SELECTED
-  // period's start date — not the first day a report happens to land, so a leader
-  // who only started filing halfway through the period is charged for the silent
-  // days before that — and closes on the last day that carries data, never the
-  // raw end date, since a sheet synced up to yesterday would otherwise hand
-  // every leader a phantom 0% for today.
+  // The scoring window is EXACTLY the picked period — start date to end date,
+  // every calendar day in it. Nothing is inferred from where the data happens to
+  // begin or end: a day with no report is a real 0%, whether it falls before a
+  // leader's first submission, on a Sunday, or after the last sheet sync. Only
+  // when a date input is cleared does that edge fall back to the data's own
+  // range, since an open-ended window has no other floor or ceiling.
   //
-  //   Reyting     — the average of the reports they actually filed
-  //   Barqarorlik — those same scores spread across EVERY day of the window, a
+  //   Reyting     — each day's score averaged over EVERY day of the window, a
   //                 day with no report counting as 0%
+  //   Barqarorlik — how many of those days carry a report at all, as a %
   //
-  // Consistency can therefore never exceed the rating, and the gap between the
-  // two columns is exactly "good when he shows up, but he doesn't show up".
-  // In supervisor mode a day's score is the mean of that unit's leaders, so one
-  // unit reporting more rows than another doesn't inflate its calendar.
+  // So rating is consistency weighted by how good the filed reports were, and
+  // can never exceed it; the gap between the two columns is exactly "he shows
+  // up, but the reports are weak". In supervisor mode a day's score is the mean
+  // of that unit's leaders, so one unit reporting more rows than another doesn't
+  // inflate its calendar.
   const standings = useMemo(() => {
-    const map = {};                                   // name → { sum, n, days: Map }
-    let winFrom = startDate || null, winTo = null;
+    const map = {};                                   // name → { days: Map }
+    let winFrom = startDate || null, winTo = endDate || null;
     for (const r of filtered) {
       const key = effStandMode === "leader" ? r.leader : r.supervisor;
       if (!key || key === "N/A") continue;
       const d = String(r.date).slice(0, 10);
       if (!startDate && (winFrom == null || d < winFrom)) winFrom = d;
-      if (winTo == null || d > winTo) winTo = d;
-      const e = (map[key] ||= { sum: 0, n: 0, days: new Map() });
-      e.sum += r.completion; e.n++;
+      if (!endDate && (winTo == null || d > winTo)) winTo = d;
+      const e = (map[key] ||= { days: new Map() });
       const day = e.days.get(d) || { sum: 0, n: 0 };
       day.sum += r.completion; day.n++;
       e.days.set(d, day);
     }
-    // winTo is the guard, not winFrom: with a picked start date winFrom is set
-    // before the loop runs, so an empty result set would otherwise slip through.
-    if (!winFrom || !winTo) return { list: [], winFrom: null, winTo: null, winDays: 0 };
+    // Both edges can be pre-set from the picker, so an empty result set would
+    // otherwise slip through with a valid-looking window and no rows.
+    if (!winFrom || !winTo || !Object.keys(map).length)
+      return { list: [], winFrom: null, winTo: null, winDays: 0 };
     const winDays = Math.round((new Date(`${winTo}T00:00:00`) - new Date(`${winFrom}T00:00:00`)) / DAY) + 1;
 
     const list = Object.entries(map).map(([name, e]) => {
@@ -832,8 +833,8 @@ export default function Leaders({ botMode = false }) {
       for (const day of e.days.values()) daySum += day.sum / day.n;
       return {
         name,
-        rating: Math.round(e.sum / e.n),
-        consist: Math.round(daySum / winDays),
+        rating: Math.round(daySum / winDays),
+        consist: Math.round((e.days.size / winDays) * 100),
         sent: e.days.size,
         missed: winDays - e.days.size,
       };
