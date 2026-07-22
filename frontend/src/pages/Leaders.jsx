@@ -1196,6 +1196,12 @@ export default function Leaders({ botMode = false }) {
               className="p-1 rounded transition-colors hover:bg-white/10" style={{ color: "var(--brand-text)" }}>
               <Info size={15} />
             </button>
+            {canEditTiers && (
+              <button onClick={() => setTierEdit(tierCuts)} title={T.tierEdit}
+                className="p-1 rounded transition-colors hover:bg-white/10" style={{ color: "var(--text-3)" }}>
+                <SlidersHorizontal size={15} />
+              </button>
+            )}
             {standings.winFrom && (
               <span className="hidden md:inline text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
                 {T.winLabel}: {ddmm(standings.winFrom)} – {ddmm(standings.winTo)} · {standings.winDays} {T.dayAbbr}
