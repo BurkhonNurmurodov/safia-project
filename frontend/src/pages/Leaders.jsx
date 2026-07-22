@@ -302,6 +302,48 @@ const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
 const todayISO = () => localISO(new Date());
 const isoShift = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); };
 const weekStartISO = (iso) => { const d = new Date(iso + "T00:00:00"); return isoShift(iso, -((d.getDay() + 6) % 7)); };
+const spanDays = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / DAY) + 1;
+const rowDate = (r) => String(r.date).slice(0, 10);
+
+// ── scoring core ────────────────────────────────────────────────────────────
+// ONE rule scores this whole page — the KPI cards, the trend line, the task
+// bars and the leaderboard all run through here, so a card can never disagree
+// with the row it summarises. The unit is a (person, day) slot: a day is worth
+// the mean of that person's rows on it — filing twice, once per shift, still
+// settles exactly one day — and every day of the window with no slot at all is
+// a real 0%, not a gap to skip over.
+//   key → Map(date → { sum, n })
+const slotsBy = (rows, keyFn) => {
+  const map = new Map();
+  for (const r of rows) {
+    const key = keyFn(r);
+    if (!key || key === "N/A") continue;
+    let e = map.get(key);
+    if (!e) map.set(key, (e = new Map()));
+    const d = rowDate(r);
+    const day = e.get(d) || { sum: 0, n: 0 };
+    day.sum += r.completion; day.n++;
+    e.set(d, day);
+  }
+  return map;
+};
+// …scored over a fixed window: Reyting = Σ day means ÷ every day of it,
+// Barqarorlik = how many of those days carry a report at all.
+const scoreSlots = (map, winDays) =>
+  [...map.entries()].map(([name, days]) => {
+    let sum = 0;
+    for (const day of days.values()) sum += day.sum / day.n;
+    const score = winDays ? sum / winDays : 0;
+    return {
+      name, score,
+      rating: Math.round(score),
+      consist: winDays ? Math.round((days.size / winDays) * 100) : 0,
+      sent: days.size,
+      missed: Math.max(0, winDays - days.size),
+      // Which days those were, for the calendar grid under the register.
+      days: new Set(days.keys()),
+    };
+  });
 
 // ── localized long-date formatter ("19th June, 2026" and its translations) ──────
 const MONTHS = {
