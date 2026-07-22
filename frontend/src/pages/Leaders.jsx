@@ -814,34 +814,9 @@ function DayGrid({ rows, dates, dataMax, T, nm }) {
         </thead>
         <tbody>
           {rows.map((e, r) => (
-            <tr key={e.name}>
-              <td style={{ ...stickyName, height: HM_ROW_H, borderBottom: "1px solid var(--border)" }}>
-                <span className="flex items-center gap-2 pl-3 pr-2 min-w-0">
-                  <span className="text-[11px] tabular-nums flex-shrink-0 w-[20px] text-right"
-                    style={{ color: "var(--text-4)" }}>{e.place}</span>
-                  <Avatar name={nm(e.name)} size={18} />
-                  <span className="truncate text-[12px]"
-                    style={{ color: hover?.r === r ? "var(--text-1)" : "var(--text-2)" }}>{nm(e.name)}</span>
-                </span>
-              </td>
-              {dates.map((d, c) => {
-                const stale = dataMax != null && d > dataMax;
-                const sent = e.days.has(d);
-                const bg = stale ? HM_VOID : sent ? HM_SENT : HM_MISSED;
-                return (
-                  <td key={d}
-                    onMouseEnter={() => setHover({ r, c })}
-                    title={`${nm(e.name)} · ${ddmm(d)} — ${stale ? T.hmNoSync : sent ? T.daysSent : T.daysMissed}`}
-                    style={{
-                      width: cellW, height: HM_ROW_H, background: bg,
-                      borderLeft: seam, borderBottom: seam, cursor: "default",
-                    }} />
-                );
-              })}
-              {pads.map((_, i) => (
-                <td key={`p${i}`} style={{ width: cellW, height: HM_ROW_H, borderLeft: seam, borderBottom: seam }} />
-              ))}
-            </tr>
+            <HmRow key={e.name} r={r} name={nm(e.name)} place={e.place} days={e.days}
+              dates={dates} dataMax={dataMax} cellW={cellW} labelW={labelW}
+              padCount={pads.length} hovered={hover?.r === r} onEnter={onEnter} T={T} />
           ))}
         </tbody>
       </table>
