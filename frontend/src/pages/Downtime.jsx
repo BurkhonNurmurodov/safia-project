@@ -28,6 +28,15 @@ export default function Downtime() {
   const { t } = useLang();
   const { tl, lang } = useTranslit();
   const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
+  // Page tabs: every shift-report category is a column PAIR — the wait stopped the
+  // cell («тўхтаганда») or it did not («тўхтамаганда»). One fetch carries both
+  // halves, so the tab only swaps which fields the whole page reads; filters, the
+  // 50-min threshold and the doughnut selection are shared across both.
+  const [tab, setTab] = useState("stopped"); // "stopped" | "notStopped"
+  const ns = tab === "notStopped";
+  const totalKey   = ns ? "total_ns" : "total";
+  const catKey     = ns ? "by_category_ns" : "by_category";
+  const flaggedKey = ns ? "flagged_days_ns" : "flagged_days";
   const [chartView, setChartView] = useState("total"); // "total" | "category"
   const [selectedCats, setSelectedCats] = useState([]); // categories chosen via doughnut clicks → filter the left chart
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
