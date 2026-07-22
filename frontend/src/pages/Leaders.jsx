@@ -1663,6 +1663,9 @@ export default function Leaders({ botMode = false }) {
                 <tr>
                   <Th label={T.thPlace} cls="w-[58px]" />
                   <Th label={effStandMode === "leader" ? T.thLeader : T.supervisor} cls="border-l border-[var(--border)]" />
+                  {effStandMode === "leader" && !isSupervisor && (
+                    <Th label={T.supervisor} cls="border-l border-[var(--border)] w-[180px]" />
+                  )}
                   <Th label={T.thDays} cls="border-l border-[var(--border)] w-[132px]" hint={`${T.daysSent} / ${T.winLabel}`} />
                   <Th label={T.standRating} k="rating" sort={standSort} onSort={onStandSort}
                     hint={standMetric === "rating" ? T.standPrimaryHint : T.standSubHint}
