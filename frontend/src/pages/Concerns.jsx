@@ -341,6 +341,33 @@ function Subject({ text, title }) {
   );
 }
 
+// ── chart board primitives ──────────────────────────────────────────────────
+// Card shell for every chart on the analytics tab: cardStyle + the canonical
+// SectionHead, so all boards carry identical chrome.
+function ChartCard({ icon, title, subtitle, className = "", children }) {
+  return (
+    <div className={`rounded-2xl overflow-hidden flex flex-col ${className}`} style={cardStyle}>
+      <SectionHead icon={icon} title={title} subtitle={subtitle} />
+      {children}
+    </div>
+  );
+}
+
+// Mount guard: holds a fixed-height slot until the grid cell has settled, so
+// ApexCharts measures its final width once (see `chartsReady`).
+function Chart({ ready, height, ...rest }) {
+  return ready ? <ReactApexChart height={height} {...rest} /> : <div style={{ height }} />;
+}
+
+// "No data" body for a chart card — centred in the slot the chart would fill.
+function NoChart({ height, text }) {
+  return (
+    <div className="grid place-items-center text-xs flex-1" style={{ color: "var(--text-4)", minHeight: height }}>
+      {text}
+    </div>
+  );
+}
+
 // Placeholder body when a card has nothing meaningful to surface; my-auto
 // centres it inside the reserved body height so empty cards don't collapse.
 function Empty({ icon: Icon, color, text }) {

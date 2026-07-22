@@ -383,12 +383,19 @@ def read_leader_data(sheet_id: str, tab: str = "Data") -> list[dict]:
 
 
 def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optional[datetime] = None):
-    """Read equipment downtime from shift report Sheet1."""
+    """Read equipment downtime from shift report Sheet1.
+
+    Returns both halves of every category pair: the «тўхтаганда» totals (the wait
+    stopped the cell) and the «тўхтамаганда» ones (it did not), each keyed by
+    brigadir → date. Same rows, same categories — only the source column differs.
+    """
     rows = _fetch_sheet_rows(sheet_id, "Sheet1", unformatted=False)
 
     cat_names = [c for c, _ in SHIFT_CATEGORIES]
     downtime_total: dict[str, dict[str, float]] = {}
     downtime_by_cat: dict[str, dict[str, dict[str, float]]] = {}
+    downtime_total_ns: dict[str, dict[str, float]] = {}
+    downtime_by_cat_ns: dict[str, dict[str, dict[str, float]]] = {}
 
     for row in rows[1:]:
         if not row or not row[3].strip():
