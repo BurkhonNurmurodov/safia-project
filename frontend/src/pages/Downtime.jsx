@@ -101,7 +101,10 @@ export default function Downtime() {
     data.rows.forEach((r) => {
       catNames.forEach((c) => { totals[c] = (totals[c] || 0) + (r[catKey]?.[c] || 0); });
     });
-    return Object.entries(totals).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    // An all-zero half (e.g. before the first sync fills «тўхтамаганда») has no
+    // "most affected" category — don't crown Cat A on a tie of zeros.
+    const [topCat, topVal] = Object.entries(totals).sort((a, b) => b[1] - a[1])[0] || [];
+    return topVal > 0 ? topCat : "—";
   })();
   // Worst-category KPI tooltip: the generic explanation + what THIS category means.
   const worstCatTip = (() => {
