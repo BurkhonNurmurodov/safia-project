@@ -584,7 +584,7 @@ function StandCard({ e, worst, metric, T, name, cuts }) {
         <Badge size={20} className="ml-auto flex-shrink-0" style={{ color: tone }} />
       </div>
 
-      <div className="relative mt-2"><TierChip value={ranked} T={T} /></div>
+      <div className="relative mt-2"><TierChip value={ranked} T={T} cuts={cuts} /></div>
 
       <div className="relative grid grid-cols-3 gap-2 mt-2.5">
         <CardStat label={T.daysSent} pct={daysPct(e)} color={scoreColor(daysPct(e))} value={<DaysValue e={e} />} />
