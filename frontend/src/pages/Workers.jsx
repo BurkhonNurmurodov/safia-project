@@ -665,7 +665,7 @@ export default function Workers() {
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
           </ChartCard>
 
-          {/* Штат vs явка — the attendance gap vs the plan, per brigadir (full width) */}
+          {/* Явка % — plan attainment (present ÷ штат) per brigadir, traffic-light (full width) */}
           <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={t("workers.info.rosterVsPresent")} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
               : rvpRows.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={rvpH} />
