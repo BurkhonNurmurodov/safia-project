@@ -48,10 +48,7 @@ const loadColor = (v) => (v == null ? "var(--text-4)" : v > 1.001 ? RED : v >= 0
 
 // per-команда identity colour — stable for a given work-center code (hash → palette),
 // so the same team keeps its colour across the cards and the table regardless of order.
-const WC_PALETTE = [
-  "#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899",
-  "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#a855f7",
-];
+const WC_PALETTE = CATEGORY_COLORS; // shared generic-first category order
 const wcColor = (wc) => {
   const s = String(wc ?? "");
   let h = 0;
