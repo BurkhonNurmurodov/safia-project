@@ -41,6 +41,17 @@ const SRC_ICONS  = { production: Factory,   guest: UserRound,  store: Store };
 const SUP_PALETTE = CATEGORY_COLORS;
 const OTHER_KEY = "__other__";
 
+// «Виновная ячейка»: prefer the canonical cells-registry workshop name (resolved
+// server-side from fault_code, carried in the `cells` map keyed by row.ci) in the
+// viewer's language, falling back to the sheet's own cell_name and then the raw
+// code. cellMap comes from the /api/quality payload's `cells` object.
+const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
+const cellNameOf = (r, cellMap, lang) => {
+  const c = r?.ci != null ? cellMap[r.ci] : null;
+  if (c) for (const l of [lang, ...CELL_LANGS]) if (c[l]) return c[l];
+  return r?.cn || r?.fc || "";
+};
+
 const TYPE_COLORS = {
   risk: "#ef4444", foreign: "#22c55e", storage: "#3b82f6", sanitation: "#eab308",
   recipe: "#f97316", review: "#a855f7", labeling: "#14b8a6", mold: "#ec4899",
