@@ -5770,7 +5770,7 @@ const t = {
     "workers.tmAll":           "Total",
     "workers.tmZagruzka":      "Zagruzka",
     "workers.tmUnit":          "workers",
-    "workers.info.rosterVsPresent":"Two bars per brigadir: grey = roster (all workers seen under their name in the period), green = average actually present per day. The gap between the bars is the attendance shortfall.",
+    "workers.info.rosterVsPresent":"Two bars per brigadir: blue = official (planned) headcount, green = average actual daily attendance. The gap between them is the attendance shortfall against the plan. Only brigadirs with official data are shown.",
     "workers.info.roleMix":    "Each spoke is a role. The filled shape is the selected brigadir's role counts; the grey shape is the average across all brigadirs — compare the two shapes.",
     "workers.info.trend":      "Workers present per day, split by role and stacked. The window is always at least 7 days.",
     "workers.info.heatmap":    "Rows = brigadirs, columns = days. Greener/darker cells mean more workers present that day; blank cells mean the day was not confirmed.",
