@@ -3,7 +3,7 @@
 Data source: «Copy of Рекрутинг Safia.xlsx», sheet "Liders" (2026-07-11) —
 93 leaders across 18 supervisor units, keyed by prod managers.id. Names are
 Title-Case full FIO with apostrophes normalized to ' and Cyrillic Х homoglyphs
-fixed. Cells are first-class rows now (`cells`: code UNIQUE + leader_id):
+fixed. Cells are first-class rows now (`cells`: verifix_code UNIQUE + leader_id):
 each leader profile is created first, then one cells row per Verifix code.
 Excluded per Burkhon's decisions: Abduvaxitov/Burxonov groups (units not in
 the system), O'rozov Asqar & Ochilov Murodali as leaders of O'rozov's cells,
