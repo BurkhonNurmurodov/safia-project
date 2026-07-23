@@ -279,7 +279,8 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
            "leaders": [], "admins": [], "guests": []}
     for p in profiles:
-        item = {"id": p.id, "name": p.name}
+        item = {"id": p.id, "name": p.name, "name_uz_cyrl": p.name_uz_cyrl,
+                "name_ru": p.name_ru, "name_en": p.name_en}
         if p.role == "top-manager":
             item["bindings"] = [binding(r) for r in by_key.get(("top-manager", p.id), [])]
             out["top_managers"].append(item)
