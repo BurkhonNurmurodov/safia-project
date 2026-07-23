@@ -21,6 +21,7 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 // ── palettes ────────────────────────────────────────────────────────────────
 // Status keeps the traffic-light encoding used across the platform; the
