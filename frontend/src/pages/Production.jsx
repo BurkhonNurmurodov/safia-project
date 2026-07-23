@@ -570,7 +570,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
           ))}
           {!loading && wcs.map((w) => (
             <tr key={w.work_center} className={PT_ROW}>
-              <td className="px-3 py-2">{chip(w.work_center)}</td>
+              <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
               <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-2)" }}>{fmt(w.shtatka_cfg, 0)}</td>
               <td className="px-3 py-2 text-center tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmt(suggest(w, appliedPm), 0)}</td>
             </tr>
