@@ -82,12 +82,13 @@ const TXT = {
   },
 };
 
-// one on-brand colour per weekday for the trend's multi-line view
-const WD_COLORS = ["#C8973F", "#E8A0B0", "#5DCAA5", "#7FB3E8", "#D4A95C", "#C088D8", "#E0A458"];
+// one colour per weekday for the trend's multi-line view — the shared
+// generic-first category order (red, green, blue, yellow, …)
+const WD_COLORS = CATEGORY_COLORS.slice(0, 7);
 
-// stable palette for individual brigadir lines on the plan-vs-fakt chart (gold reserved for the avg)
-const BRIGADIR_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#a855f7", "#f43f5e"];
-const PF_AVG_COLOR = "#C8973F";
+// stable palette for individual brigadir lines on the plan-vs-fakt chart
+const BRIGADIR_COLORS = CATEGORY_COLORS;
+const PF_AVG_COLOR = "#f59e0b"; // avg-line accent (amber — matches the fleet AVG line)
 const PF_MA_COLOR = "#94a3b8";   // neutral dashed overlay — reads as a smoothed reference
 const MA_WINDOW = 7;             // trailing window (data points ≈ days) for the moving average
 const MA_TREND_WINDOW = 3;       // trailing window (weeks) for the weekday-trend reference line
