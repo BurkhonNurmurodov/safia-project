@@ -121,8 +121,13 @@ export default function ProfilesManagement() {
 
   const busy = createMut.isPending || updateMut.isPending || switchMut.isPending;
   const activeType = TYPES.find((x) => x.key === type);
+  const isCells = type === "cells";
   const items = data?.[activeType.listKey] ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
+  // Workshop name in the viewer's language, first known language as fallback.
+  const wname = (c) =>
+    c[`name_workshop_${lang}`] || c.name_workshop_uz || c.name_workshop_uz_cyrl ||
+    c.name_workshop_ru || c.name_workshop_en || "";
 
   // Per-column sort — key:null keeps the server order until a header is clicked.
   const [sort, setSort] = useState({ key: null, dir: "asc" });
