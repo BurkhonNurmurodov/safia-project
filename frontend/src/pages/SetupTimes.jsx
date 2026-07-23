@@ -30,6 +30,7 @@ const TXT = {
     delTitle: "Qatorni o'chirish", delMsg: "{cell} yacheykasining qatori o'chiriladi. Davom etasizmi?",
     fSupervisor: "Supervayzer", fCustom: "Ism (ro'yxatda yo'q)", fCell: "Yacheyka", fMinutes: "Perenaladka vaqti (min)",
     fSku: "SKU raqami", fReason: "Sabab", customOpt: "Boshqa ism…", minSuffix: "min",
+    fCellCustom: "Yacheyka (ro'yxatda yo'q)", customCellOpt: "Boshqa yacheyka…",
   },
   uz_cyrl: {
     title: "Переналадка вақтлари", subtitle: "Ҳар бир ячейка бўйича ўртача переналадка вақти, сабаби ва SKU",
