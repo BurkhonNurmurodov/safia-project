@@ -201,7 +201,6 @@ export default function Workers() {
   const legendCfg    = { labels: { colors: legendColor }, fontSize: "11px", position: "top" };
   // Solid hairline grid — dashed gridlines read as thresholds/projections.
   const gridCfg      = { borderColor: gridColor, strokeDashArray: 0 };
-  const chartH       = Math.max(300, headcount.length * 28 + 60);
 
   // Dynamic role set for the role-share donut + attendance trend. `by_role` now
   // carries every present job title; the toggle switches between all roles and
