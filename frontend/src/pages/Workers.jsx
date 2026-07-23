@@ -650,11 +650,11 @@ export default function Workers() {
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
           </ChartCard>
 
-          {/* Roster vs present — the attendance gap per brigadir (full width) */}
+          {/* Штат vs явка — the attendance gap vs the plan, per brigadir (full width) */}
           <ChartCard icon={BarChart3} title={t("workers.rosterVsPresent")} info={t("workers.info.rosterVsPresent")} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
-              : headcount.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={chartH} />
-              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
+              : rvpRows.length ? <ReactApexChart type="bar" series={rvpSeries} options={rvpOptions} height={rvpH} />
+              : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noOfficialMsg")} />}
           </ChartCard>
 
           {/* Attendance heatmap (full width) — same component as the fleet heatmap */}
