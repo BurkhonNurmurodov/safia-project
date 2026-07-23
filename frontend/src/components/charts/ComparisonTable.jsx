@@ -40,6 +40,36 @@ export const DEFAULT_DIFF_SEGMENTS = [
   { from: 6,     color: "#ef4444" },
 ];
 
+// Admin-only calculation factors: the three deductions inside the A (fact)
+// value. All ON = the backend's official net_util.
+export const DEFAULT_CALC_FACTORS = { downtime: true, early: true, kaizen: true };
+
+const CALC_FACTOR_DEFS = [
+  { key: "downtime", label: "zagruzka.calcFactorIdle",   sub: "zagruzka.calcFactorIdleSub" },
+  { key: "early",    label: "zagruzka.calcFactorEarly",  sub: "zagruzka.calcFactorEarlySub" },
+  { key: "kaizen",   label: "zagruzka.calcFactorKaizen", sub: "zagruzka.calcFactorKaizenSub" },
+];
+
+// A (fact) utilization honoring the factor toggles. With every factor ON this
+// returns the backend's net_util verbatim; with any OFF it re-derives the same
+// formula (kpi_calculator.py) from the cell's raw components, dropping the
+// excluded deductions: prod_actual ÷ (effective_hc × (avail_min − …)).
+function actualUtil(cell, f) {
+  if (!cell) return null;
+  if (!f || (f.downtime && f.early && f.kaizen)) return cell.net_util ?? null;
+  const pa  = cell.prod_actual;
+  const ehc = cell.effective_hc;
+  const base = cell.avail_min != null
+    ? cell.avail_min
+    : cell.prod_plan ? 480 * (cell.prod_actual / cell.prod_plan) : null;
+  if (pa == null || ehc == null || base == null) return cell.net_util ?? null;
+  const den = ehc * (base
+    - (f.downtime ? (cell.equip_downtime || 0) : 0)
+    - (f.early    ? (cell.avg_early_arrival || 0) : 0)
+    - (f.kaizen   ? KAIZEN_BUFFER : 0));
+  return den > 0 ? pa / den : null;
+}
+
 // Legend bands derived from the admin-panel thresholds, so the labels follow
 // whatever the admin saves. Wording per language comes from template keys.
 function diffLegendBands(segs, t) {
