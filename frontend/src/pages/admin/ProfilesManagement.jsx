@@ -301,6 +301,11 @@ export default function ProfilesManagement() {
 
     // uz: "" clears any stale uz override — it would shadow the canonical name in tl()
     const body = { name, overrides: { ...form.overrides, uz: "" } };
+    // The same inputs persist as name_* columns on role_profiles too ("" clears);
+    // supervisors are managers rows — no columns there, overrides only.
+    if (type !== "supervisor") {
+      for (const l of NAME_LANGS) body[`name_${l}`] = (form.overrides?.[l] || "").trim();
+    }
     if (type === "shift-manager" || type === "supervisor") body.shift = Number(form.shift);
     if (type === "leader" && form.manager_id) body.manager_id = Number(form.manager_id);
     // Always send the full list on edit — removals must reach the server too.
