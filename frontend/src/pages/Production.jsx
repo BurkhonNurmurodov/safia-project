@@ -24,6 +24,7 @@ import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 // Timezone-safe: build/shift dates from calendar parts, never via toISOString()
