@@ -498,13 +498,15 @@ export default function ComparisonTable({
               });
               const aVals = dates.map(d => {
                 const cell = data[name]?.[d];
-                return isApproved(name, d) && cell?.net_util != null ? Math.round(cell.net_util * 100) : null;
+                const a = actualUtil(cell, factors);
+                return isApproved(name, d) && a != null ? Math.round(a * 100) : null;
               });
               const dVals = dates.map(d => {
                 const cell = data[name]?.[d];
                 if (!isApproved(name, d)) return null;
                 const pv = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-                const av = cell?.net_util      != null ? Math.round(cell.net_util      * 100) : null;
+                const a  = actualUtil(cell, factors);
+                const av = a != null ? Math.round(a * 100) : null;
                 return (pv !== null && av !== null) ? pv - av : null;
               });
 
