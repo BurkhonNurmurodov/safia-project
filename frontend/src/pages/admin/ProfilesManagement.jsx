@@ -19,7 +19,9 @@ import { useTranslit, transliterate, convertFromUz } from "../../utils/translite
 
 // The profile sections. `listKey` = field in GET /api/profiles/admin/list.
 // Guests are self-created at registration — the section manages (rename /
-// delete / unassign) but never creates them.
+// delete / unassign) but never creates them. "cells" is not a profile type —
+// it's the first-class cell registry (verifix/sap codes + workshop names),
+// rendered with its own columns and modal.
 const TYPES = [
   { key: "top-manager",   listKey: "top_managers",   tKey: "admin.profiles.topManagers",   icon: Star },
   { key: "shift-manager", listKey: "shift_managers", tKey: "admin.profiles.shiftManagers", icon: UserCog },
@@ -27,7 +29,11 @@ const TYPES = [
   { key: "leader",        listKey: "leaders",        tKey: "admin.profiles.leaders",       icon: Flag },
   { key: "admin",         listKey: "admins",         tKey: "admin.profiles.admins",        icon: Shield },
   { key: "guest",         listKey: "guests",         tKey: "admin.profiles.guests",        icon: UserRound },
+  { key: "cells",         listKey: "cells",          tKey: "admin.profiles.cellsTab",      icon: LayoutGrid },
 ];
+
+// name_* / name_workshop_* column suffixes beyond canonical uz Latin.
+const NAME_LANGS = ["uz_cyrl", "ru", "en"];
 
 function HolderChip({ b, onUnassign, disabled }) {
   const { t } = useLang();
