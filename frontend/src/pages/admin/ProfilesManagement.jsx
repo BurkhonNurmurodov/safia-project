@@ -377,6 +377,15 @@ export default function ProfilesManagement() {
         }
       >
         <thead>
+          {isCells ? (
+            <tr>
+              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} />
+              <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} />
+              <Th icon={Users} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} />
+              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} />
+              <Th icon={Settings2} label={t("admin.profiles.colActions")} />
+            </tr>
+          ) : (
           <tr>
             <Th icon={UserRound} label={t("admin.profiles.colName")} k="name" sort={sort} onSort={onSort} />
             {(type === "shift-manager" || type === "supervisor") && (
@@ -394,6 +403,7 @@ export default function ProfilesManagement() {
             <Th icon={Link2} label={t("admin.profiles.colHolders")} />
             <Th icon={Settings2} label={t("admin.profiles.colActions")} />
           </tr>
+          )}
         </thead>
         <tbody>
           {isLoading && Array.from({ length: 6 }).map((_, i) => (
