@@ -860,6 +860,13 @@ export default function Production() {
 
   const rows = data?.rows ?? [];
   const wcs = data?.work_centers ?? [];
+  // work-center code → canonical cell (workshop name / owner), from the staffing
+  // list; every positions row's WC also appears here, so one map covers both.
+  const wcCell = useMemo(
+    () => Object.fromEntries(wcs.filter((w) => w.cell).map((w) => [w.work_center, w.cell])),
+    [wcs]
+  );
+  const wcName = (code) => pickCellName(wcCell[code], lang);
   const totals = data?.totals ?? {};
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
