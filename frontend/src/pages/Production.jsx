@@ -522,16 +522,11 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
         />
         <span className="text-sm" style={{ color: "var(--text-3)" }}>%</span>
       </span>
-      {/* both readings follow the % as it is typed — the table waits for Apply */}
+      {/* the minutes follow the % as it is typed — the table waits for Apply */}
       <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
-        title={`${fmt(NOMINAL_BASE, 0)} ${t("production.minUnit")} × ${fmt(typedPct, 1)}%`}
+        title={`${fmt(shiftMin, 0)} ${t("production.minUnit")} × ${fmt(typedPct, 1)}%`}
         style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
         = {fmt(previewPm, 0)} {t("production.minUnit")} / {t("production.perPerson")}
-      </span>
-      <span className="text-[11px] tabular-nums px-2 py-1 rounded-md"
-        title={`${fmt(previewPm, 0)} ${t("production.minUnit")} ÷ ${fmt(shiftMin, 0)} ${t("production.minUnit")}`}
-        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-        {fmt(shareOf(previewPm), 1)}% {t("production.ofShift")}
       </span>
       {canEdit && (
         <Button size="lg" variant="secondary" className="ml-auto" onClick={apply}
