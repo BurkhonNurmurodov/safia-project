@@ -48,7 +48,7 @@ try:
         add_edit_requests_batch_id, add_last_seen_column, migrate_multi_roles,
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
-        relax_pp_upload_manager,
+        relax_pp_upload_manager, rescale_pp_efficiency_base,
         backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns,
         backfill_role_profiles,
