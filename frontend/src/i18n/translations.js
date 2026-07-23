@@ -6488,6 +6488,7 @@ const t = {
     "workers.noTrend":           "No trend data",
     "workers.noTrendMsg":        "Upload verifix files to see attendance trends.",
     "workers.noTableMsg":        "Upload verifix files to populate this table.",
+    "workers.noOfficialMsg":     "No official headcount data for the selected period.",
     "workers.avgDailyHC":        "Avg daily headcount",
     "workers.tip.avgDailyHC":    "Average number of workers present per confirmed day.",
     "workers.days":              "Days",
