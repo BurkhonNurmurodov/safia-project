@@ -40,8 +40,11 @@ const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-cou
 // order after the three fixed zagruzka hues (yellow, orange, purple, …).
 // Used only by the role-share donut + trend.
 const ROLE_EXTRA_COLORS = CATEGORY_COLORS.slice(3);
-const OFFICIAL_COLOR = "#3b82f6";   // штат / official planned headcount bar (blue, matches the «Состав» KPI)
-const PRESENT_COLOR  = "#22c55e";   // явка / actual present bar (green, matches the «Явка» KPI + table)
+const PRESENT_COLOR  = "#22c55e";   // явка / actual present (green) — used by the attendance table
+// Traffic-light bands for the явка plan-attainment bar (present ÷ штат): green
+// fully staffed, yellow moderate shortfall, red serious shortfall.
+const ATTAIN_RED = "#ef4444", ATTAIN_YELLOW = "#eab308", ATTAIN_GREEN = "#22c55e";
+const attainColor = (pct) => (pct >= 95 ? ATTAIN_GREEN : pct >= 85 ? ATTAIN_YELLOW : ATTAIN_RED);
 // Folded small-role band in the attendance trend reuses the shared FOLD_COLOR
 // slate: "everything else" is a bucket, so it must not compete for a hue.
 // Request-type categories take the first two shared generic hues.
