@@ -422,6 +422,8 @@ export default function Quality() {
   });
 
   const rows = data?.rows || [];
+  // id → cell name-set for every fault code that resolved to a known cell.
+  const cellMap = data?.cells || {};
 
   // Default window: year-to-date — from Jan 1 of the current year through today.
   const today = iso(new Date());
