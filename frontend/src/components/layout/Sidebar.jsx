@@ -40,6 +40,11 @@ const ALL_LINKS = [
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
 ];
 
+// Layout (and this sidebar) remounts on every route change, which would reset
+// the nav list's scroll to the top. Keep the last offset at module level and
+// restore it on mount so the list stays where the user left it.
+let savedNavScroll = 0;
+
 function fmtDate(iso) {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-");
