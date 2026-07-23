@@ -390,6 +390,39 @@ def migrate_cells_table() -> None:
         db.close()
 
 
+def migrate_cells_leaders_columns() -> None:
+    """2026-07-23 cells/leaders model: cells.code becomes verifix_code and the
+    table gains nullable sap_code + per-language workshop names; role_profiles
+    gain nullable per-language name columns (`name` stays canonical uz-Latin).
+    Leader name columns backfill once from any existing name.{canonical}
+    translation overrides. Idempotent; runs after migrate_cells_table."""
+    db = SessionLocal()
+    try:
+        old_col = db.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='cells' AND column_name='code'"
+        )).first()
+        if old_col:
+            db.execute(text("ALTER TABLE cells RENAME COLUMN code TO verifix_code"))
+        for col in ("sap_code", "name_workshop_uz", "name_workshop_uz_cyrl",
+                    "name_workshop_ru", "name_workshop_en"):
+            db.execute(text(f"ALTER TABLE cells ADD COLUMN IF NOT EXISTS {col} VARCHAR"))
+        for col in ("name_uz_cyrl", "name_ru", "name_en"):
+            db.execute(text(f"ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS {col} VARCHAR"))
+        for col, lang in (("name_uz_cyrl", "uz_cyrl"), ("name_ru", "ru"), ("name_en", "en")):
+            db.execute(text(
+                f"UPDATE role_profiles p SET {col} = t.value FROM translations t "
+                f"WHERE p.{col} IS NULL AND t.lang = :lang "
+                f"AND t.key = 'name.' || p.name AND t.value <> ''"
+            ), {"lang": lang})
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cells/leaders columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
