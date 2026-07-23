@@ -334,6 +334,10 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
 class CreateProfilePayload(BaseModel):
     role:       str
     name:       str
+    # Per-language display names (columns on role_profiles; `name` = uz Latin)
+    name_uz_cyrl: Optional[str] = None
+    name_ru:      Optional[str] = None
+    name_en:      Optional[str] = None
     shift:      Optional[int] = None        # shift-manager | supervisor
     manager_id: Optional[int] = None        # leader → supervisor unit
     cells:      Optional[list[str]] = None  # leader → owned cell codes (optional)
