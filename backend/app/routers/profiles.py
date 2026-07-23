@@ -270,11 +270,11 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     admin_rows = db.query(Admin).all()
     admins_by_profile = {a.profile_id: a for a in admin_rows if a.profile_id}
-    cell_rows = db.query(Cell).order_by(Cell.code).all()
+    cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
     cells_by_leader: dict[int, list[str]] = {}
     for c in cell_rows:
         if c.leader_id:
-            cells_by_leader.setdefault(c.leader_id, []).append(c.code)
+            cells_by_leader.setdefault(c.leader_id, []).append(c.verifix_code)
 
     out = {"supervisors": supervisors, "top_managers": [], "shift_managers": [],
            "leaders": [], "admins": [], "guests": []}
