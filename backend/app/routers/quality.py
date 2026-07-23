@@ -52,6 +52,29 @@ def get_quality(
     managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
     sup = supervisor_match(managers, {r.brigadir for r in rows if r.brigadir})
 
+    # Resolve each row's «виновная ячейка» code against the canonical cells
+    # registry so the page can show the platform's workshop name / owner instead
+    # of the sheet's own «код производ.» spelling. fault_code is a Verifix cell
+    # code (store/warehouse codes and unseeded cells simply don't match → raw).
+    # Each matched cell's name set rides ONE top-level `cells` map keyed by id;
+    # rows carry only `ci` so the ~12k-row array stays compact.
+    cells_tbl = by_verifix(db, with_leader=True)
+    matched: dict[int, dict] = {}
+    out_rows = []
+    for r in rows:
+        cell = resolve_verifix(cells_tbl, r.fault_code)
+        if cell:
+            matched[cell["id"]] = cell
+        out_rows.append({
+            "id": r.id, "d": r.date, "s": r.source, "pl": r.place, "pr": r.product,
+            "t": r.ctype, "c": r.category, "f": r.fault, "fc": r.fault_code,
+            "cn": r.cell_name, "ci": (cell["id"] if cell else None),
+            "b": r.brigadir, "m": r.manager, "r": r.returned,
+            "st": r.status, "no": r.ref_no,
+            "sup": (sup.get(r.brigadir) or {}).get("name", ""),
+            "sh": (sup.get(r.brigadir) or {}).get("shift"),
+        })
+
     return {
         # Refresh is offered to every profile that can open the page.
         "can_refresh": True,
@@ -62,20 +85,15 @@ def get_quality(
             ({"name": m.name, "id": m.id, "shift": m.shift} for m in managers),
             key=lambda m: m["name"],
         ),
+        # id → {verifix_code, sap_code, per-language workshop names, leader} for
+        # every cell any row resolved to; the frontend renders the name in the
+        # viewer's language and falls back to the sheet cell_name / raw code.
+        "cells": matched,
         # Short keys: this array carries ~12k rows.
         # sup / sh = the matched supervisor unit and its shift (absent when the
         # responsible person isn't a supervisor).
-        "rows": [
-            {
-                "id": r.id, "d": r.date, "s": r.source, "pl": r.place, "pr": r.product,
-                "t": r.ctype, "c": r.category, "f": r.fault, "fc": r.fault_code,
-                "cn": r.cell_name, "b": r.brigadir, "m": r.manager, "r": r.returned,
-                "st": r.status, "no": r.ref_no,
-                "sup": (sup.get(r.brigadir) or {}).get("name", ""),
-                "sh": (sup.get(r.brigadir) or {}).get("shift"),
-            }
-            for r in rows
-        ],
+        # ci = matched cells.id (null when the fault code isn't a known cell).
+        "rows": out_rows,
     }
 
 
