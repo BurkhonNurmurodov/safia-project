@@ -252,6 +252,12 @@ function SupervisorDaily() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <SegmentedToggle
+            size="sm"
+            value={unit}
+            onChange={setUnit}
+            options={[["min", t("general.min")], ["hrs", t("general.hrs")]]}
+          />
           {!managerId || !approval ? null : (isConfirmed || isWaiting) ? (
             <>
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
