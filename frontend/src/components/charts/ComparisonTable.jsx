@@ -881,6 +881,35 @@ export default function ComparisonTable({
           onClose={() => setShowGuide(false)}
         />
       )}
+
+      {showCalc && (
+        <Modal
+          title={t("zagruzka.calcTitle")}
+          subtitle={t("zagruzka.calcSubtitle")}
+          icon={<Calculator size={18} style={{ color: "var(--brand)" }} />}
+          onClose={() => setShowCalc(false)}
+          maxWidth="max-w-sm"
+          footer={<Button onClick={() => setShowCalc(false)}>{t("zagruzka.calcDone")}</Button>}
+        >
+          {CALC_FACTOR_DEFS.map(f => (
+            <div key={f.key} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium" style={{ color: "var(--text-1)" }}>{t(f.label)}</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--text-4)" }}>{t(f.sub)}</div>
+              </div>
+              <SegmentedToggle
+                size="sm"
+                value={!!factors[f.key]}
+                onChange={(v) => onCalcFactorsChange?.({ ...factors, [f.key]: v })}
+                options={[[true, t("zagruzka.calcOn")], [false, t("zagruzka.calcOff")]]}
+              />
+            </div>
+          ))}
+          <div className="text-[11px] pt-2" style={{ color: "var(--text-4)", borderTop: "1px dashed var(--border)" }}>
+            {t("zagruzka.calcHint")}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
