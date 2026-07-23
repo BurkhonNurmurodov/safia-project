@@ -171,7 +171,7 @@ export default function ComparisonTable({
 
   const isAdmin = auth?.role === "admin";
   const factors = calcFactors || DEFAULT_CALC_FACTORS;
-  const calcModified = !(factors.downtime && factors.early && factors.kaizen);
+  const calcModified = !(factors.downtime && factors.early && factors.kaizen && factors.perenalatka);
   const excludedNames = CALC_FACTOR_DEFS
     .filter(f => !factors[f.key]).map(f => t(f.label)).join(", ");
   const [nameAsc, setNameAsc]     = useState(true);
