@@ -33,7 +33,7 @@ const C_WAITCOL = "#8b5cf6"; // "waiting" (awaiting payment/delivery) status col
 const AGE_RAMP = ["#eab308", "#f59e0b", "#f97316", "#ef4444"];
 const BRAND = "#C8973F";
 
-const SRC_COLORS = { production: "#6366f1", guest: "#f97316", store: "#14b8a6" };
+const SRC_COLORS = { production: "#ef4444", guest: "#22c55e", store: "#3b82f6" };
 const SRC_ICONS  = { production: Factory,   guest: UserRound,  store: Store };
 
 // Supervisor identity palette for the Production-tab trend (stacked by responsible
