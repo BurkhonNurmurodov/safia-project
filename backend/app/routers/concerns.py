@@ -120,7 +120,7 @@ def _cell_leader_recipient(db: Session, cell_code: str):
     row = (
         db.query(Cell.leader_id, RoleProfile.name)
         .join(RoleProfile, RoleProfile.id == Cell.leader_id)
-        .filter(Cell.code == code, RoleProfile.role == "leader")
+        .filter(Cell.verifix_code == code, RoleProfile.role == "leader")
         .first()
     )
     if not row:
