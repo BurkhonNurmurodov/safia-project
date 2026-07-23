@@ -94,13 +94,14 @@ def _sm_names(db: Session) -> dict:
 
 
 def _cell_leaders(db: Session) -> dict:
-    """cell code → owning leader's name. Cells are first-class rows (cells.code
-    UNIQUE + leader_id → role_profiles.id); the Concerns table shows the leader
-    who owns a concern's cell, resolved live so re-assignments stay current."""
+    """cell code → owning leader's name. Cells are first-class rows
+    (cells.verifix_code UNIQUE + leader_id → role_profiles.id); the Concerns
+    table shows the leader who owns a concern's cell, resolved live so
+    re-assignments stay current."""
     return {
         code: name
         for code, name in (
-            db.query(Cell.code, RoleProfile.name)
+            db.query(Cell.verifix_code, RoleProfile.name)
             .join(RoleProfile, RoleProfile.id == Cell.leader_id)
             .filter(RoleProfile.role == "leader")
         )
