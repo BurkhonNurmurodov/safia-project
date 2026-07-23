@@ -134,6 +134,8 @@ export default function SetupTimes() {
   const canEdit = data?.can_edit;
   const allRows = data?.rows ?? [];
   const managers = data?.supervisors ?? [];
+  const cells = data?.cells ?? [];
+  const knownCells = useMemo(() => new Set(cells.map((c) => c.code)), [cells]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["setup-times"] });
   const saveRow = useMutation({
