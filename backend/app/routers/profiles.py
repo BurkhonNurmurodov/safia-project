@@ -316,8 +316,16 @@ def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_
             out["admins"].append(item)
 
     out["assigned_admin_count"] = sum(1 for a in admin_rows)
-    # Every known cell code, sorted — informational for the admin UI.
-    out["cells"] = [c.code for c in cell_rows]
+    # Full cell registry (unassigned rows included) for the admin cells tab.
+    prof_names = {p.id: p.name for p in profiles}
+    out["cells"] = [{
+        "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+        "name_workshop_uz": c.name_workshop_uz,
+        "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
+        "name_workshop_ru": c.name_workshop_ru,
+        "name_workshop_en": c.name_workshop_en,
+        "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
+    } for c in cell_rows]
     return out
 
 
