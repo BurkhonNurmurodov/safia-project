@@ -408,10 +408,9 @@ const PT_ROW = "h-[48px]";
 function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
   const { t } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
-  const curPm = Number(constants?.productive_min) || 425;
-  const pctOf = (min) => Math.round((min / NOMINAL_BASE) * 1000) / 10;   // 425 → 85
-  const minOf = (p) => (p * NOMINAL_BASE) / 100;                         // 85 → 425
-  const shareOf = (min) => Math.round((min / shiftMin) * 1000) / 10;     // 425 → 88.5
+  const curPm = Number(constants?.productive_min) || 408;
+  const pctOf = (min) => Math.round((min / shiftMin) * 1000) / 10;   // 408 → 85
+  const minOf = (p) => (p * shiftMin) / 100;                         // 85 → 408
 
   const [effPct, setEffPct] = useState(() => String(pctOf(curPm)));
   const [appliedPm, setAppliedPm] = useState(curPm);
