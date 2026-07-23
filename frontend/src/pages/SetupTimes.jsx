@@ -43,6 +43,7 @@ const TXT = {
     delTitle: "Қаторни ўчириш", delMsg: "{cell} ячейкасининг қатори ўчирилади. Давом этасизми?",
     fSupervisor: "Супервайзер", fCustom: "Исм (рўйхатда йўқ)", fCell: "Ячейка", fMinutes: "Переналадка вақти (мин)",
     fSku: "SKU рақами", fReason: "Сабаб", customOpt: "Бошқа исм…", minSuffix: "мин",
+    fCellCustom: "Ячейка (рўйхатда йўқ)", customCellOpt: "Бошқа ячейка…",
   },
   ru: {
     title: "Время переналадки", subtitle: "Среднее время переналадки по ячейкам — с причиной и SKU",
