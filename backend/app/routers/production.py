@@ -302,6 +302,16 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
         "productive_min_global": global_pm,
         "productive_pinned": pinned_pm is not None,
     })
+
+    # Resolve each «Команда» (SAP work center) against the cells registry by
+    # matching pp_work_centers.code → cells.sap_code, so the Positions column,
+    # the Команда filter, the staffing cards and the «Odamlar soni» tab can all
+    # show the canonical workshop name / owner next to the raw code. Every WC in
+    # the positions rows also appears here, so this one map covers them client-
+    # side. Empty until admins fill SAP codes in the Cells tab (unmatched → null).
+    sap_tbl = by_sap(db, with_leader=True)
+    for wc in result["work_centers"]:
+        wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"))
     return result
 
 
