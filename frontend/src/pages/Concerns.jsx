@@ -1321,7 +1321,7 @@ export default function Concerns() {
   const flowOpts = {
     chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent", animations: { enabled: false } },
     theme: chartTheme,
-    colors: [CHART_BRAND, STATUS_COLOR.done],
+    colors: [CHART_OPEN, STATUS_COLOR.done],
     plotOptions: { bar: { columnWidth: "60%", borderRadius: 3, borderRadiusApplication: "end" } },
     dataLabels: { enabled: false },
     stroke: { show: false },
