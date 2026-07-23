@@ -186,9 +186,10 @@ def _user_info(db: Session) -> dict[int, dict]:
 
 def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     """Reconcile a leader's owned cells to exactly `codes`: release rows no
-    longer listed (deleted — the registry only holds owned cells), claim or
-    create the rest. A code owned by ANOTHER leader is a 409 — cells are
-    unique, reassign it from its current owner first."""
+    longer listed (leader_id → NULL — cells are first-class rows now, their
+    sap_code/workshop names survive reassignment), claim or create the rest.
+    A code owned by ANOTHER leader is a 409 — cells are unique, reassign it
+    from its current owner first."""
     want: list[str] = []
     for c in codes or []:
         c = " ".join((c or "").split())
@@ -196,13 +197,13 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
             want.append(c)
     existing = db.query(Cell).filter_by(leader_id=leader_id).all()
     for row in existing:
-        if row.code not in want:
-            db.delete(row)
-    have = {row.code for row in existing}
+        if row.verifix_code not in want:
+            row.leader_id = None
+    have = {row.verifix_code for row in existing}
     for code in want:
         if code in have:
             continue
-        row = db.query(Cell).filter_by(code=code).first()
+        row = db.query(Cell).filter_by(verifix_code=code).first()
         if row and row.leader_id not in (None, leader_id):
             owner = db.query(RoleProfile).filter_by(id=row.leader_id).first()
             raise HTTPException(
@@ -212,12 +213,13 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
         if row:
             row.leader_id = leader_id
         else:
-            db.add(Cell(code=code, leader_id=leader_id))
+            db.add(Cell(verifix_code=code, leader_id=leader_id))
 
 
 def _release_leader_cells(db: Session, leader_id: int) -> None:
-    """Drop every cell owned by the profile (delete + role switch away from leader)."""
-    db.query(Cell).filter_by(leader_id=leader_id).delete()
+    """Unassign every cell owned by the profile (delete + role switch away from
+    leader). The rows stay — cell metadata outlives its owner."""
+    db.query(Cell).filter_by(leader_id=leader_id).update({"leader_id": None})
 
 
 def _manager_has_data(db: Session, manager_id: int) -> bool:
