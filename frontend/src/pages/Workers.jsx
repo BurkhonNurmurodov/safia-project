@@ -238,21 +238,33 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Roster vs present — grouped horizontal bars per brigadir (the attendance gap).
+  // Штат vs явка — official (planned) headcount against the actual average daily
+  // attendance, per brigadir. The old chart compared roster (unique workers over
+  // the window) with present, but both derive from the same attendance data, so
+  // with stable crews the bars collapsed onto each other. official_hc is an
+  // INDEPENDENT baseline (the штатка), so the two bars genuinely diverge and the
+  // gap between them is the real attendance shortfall. Only brigadirs with
+  // official data appear, ordered by shortfall so the biggest gaps sit on top
+  // (ApexCharts renders the first category at the bottom → sort ascending).
+  const rvpRows = headcount
+    .filter((m) => m.official_hc != null)
+    .map((m) => ({ ...m, _gap: (m.official_hc || 0) - (m.avg_daily_hc || 0) }))
+    .sort((a, b) => a._gap - b._gap);
+  const rvpH = Math.max(300, rvpRows.length * 28 + 60);
   const rvpSeries = [
-    { name: t("workers.roster"),  data: headcount.map((m) => m.total) },
-    { name: t("workers.present"), data: headcount.map((m) => m.avg_daily_hc || 0) },
+    { name: t("workers.official"), data: rvpRows.map((m) => m.official_hc || 0) },
+    { name: t("workers.present"),  data: rvpRows.map((m) => m.avg_daily_hc || 0) },
   ];
   const rvpOptions = {
     chart: { ...baseChart, type: "bar" },
     plotOptions: { bar: { horizontal: true, barHeight: "78%", borderRadius: 2 } },
     colors: [OFFICIAL_COLOR, PRESENT_COLOR],
     dataLabels: { enabled: false },
-    xaxis: { categories: headcount.map((m) => tl(m.name)), labels: axisLabels },
+    xaxis: { categories: rvpRows.map((m) => tl(m.name)), labels: axisLabels },
     yaxis: { labels: axisLabelsMd },
     legend: legendCfg,
     grid: gridCfg,
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => fmt1(v) } },
+    tooltip: { theme: tooltipTheme, shared: true, intersect: false, y: { formatter: (v) => fmt1(v) } },
     theme: chartTheme,
   };
 
