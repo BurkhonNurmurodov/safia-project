@@ -394,11 +394,11 @@ function RawView({ fileType, date, managerParam, ready = true }) {
 // ЛЮДИ, Минут, KPIs) then recomputes off them, for THIS date only.
 const roundHalfUp = (x) => Math.floor(x + 0.5);
 
-// The Excel's «Для 85% труд» is 85% of FIVE HUNDRED minutes — that is where the
-// 425 comes from (425 / 0.85 = 500 exactly), NOT 85% of the 480-minute shift.
-// So the box carries both readings: the nominal % the brigadirs know (editable)
-// and the true share of the shift it works out to (425 / 480 = 88.5%).
-const NOMINAL_BASE = 500;
+// The efficiency % is anchored to the real shift clock: N% × shift_min (480) =
+// productive minutes per head, so 85% → 408. (The Excel's legacy «Для 85% труд»
+// = 425 was 85% of a 500-minute nominal base — deliberately dropped: it made the
+// suggestion staff cells to 88.5%+ of the shift while the load cards divide by
+// 480, so a cell staffed "at 85%" showed ~100% load.)
 
 // Both tables pin every row to ONE height so the cell rows sit side by side —
 // a text row and a row of inputs are naturally 10px apart, which compounds down
