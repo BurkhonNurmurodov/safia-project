@@ -244,6 +244,23 @@ export default function ProfilesManagement() {
   function submit() {
     setFormError("");
 
+    if (isCells) {
+      const code = (form.verifix_code || "").trim();
+      if (!code) { setFormError(t("admin.profiles.verifixCodeRequired")); return; }
+      const body = {
+        verifix_code: code,
+        sap_code: form.sap_code || "",
+        name_workshop_uz: form.name_workshop_uz || "",
+        name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
+        name_workshop_ru: form.name_workshop_ru || "",
+        name_workshop_en: form.name_workshop_en || "",
+        leader_id: form.leader_id ? Number(form.leader_id) : 0,
+      };
+      if (modal.mode === "add") cellCreateMut.mutate(body);
+      else cellUpdateMut.mutate({ cid: modal.item.id, body });
+      return;
+    }
+
     if (roleChanged) {
       const body = { ptype: type, pid: modal.item.id, new_role: form.role };
       if (form.role === "shift-manager" || form.role === "supervisor") {
