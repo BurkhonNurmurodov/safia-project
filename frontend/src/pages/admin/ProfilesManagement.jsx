@@ -158,19 +158,42 @@ export default function ProfilesManagement() {
   }, [items, sort, tl]);
 
   // name + holders + actions, plus the per-type extras.
-  const colSpan = 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
+  const colSpan = isCells
+    ? 5
+    : 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
 
   function openAdd() {
-    setForm({ name: "", shift: 1, manager_id: "", cells: [], cellInput: "", verifix_id: "" });
+    if (isCells) {
+      setForm({ verifix_code: "", sap_code: "", leader_id: "",
+                name_workshop_uz: "", name_workshop_uz_cyrl: "",
+                name_workshop_ru: "", name_workshop_en: "" });
+    } else {
+      setForm({ name: "", shift: 1, manager_id: "", cells: [], cellInput: "", verifix_id: "" });
+    }
     setFormError("");
     setModal({ mode: "add" });
   }
 
   function openEdit(item) {
+    if (isCells) {
+      setForm({
+        verifix_code: item.verifix_code || "",
+        sap_code: item.sap_code || "",
+        leader_id: item.leader_id ? String(item.leader_id) : "",
+        name_workshop_uz: item.name_workshop_uz || "",
+        name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
+        name_workshop_ru: item.name_workshop_ru || "",
+        name_workshop_en: item.name_workshop_en || "",
+      });
+      setFormError("");
+      setModal({ mode: "edit", item });
+      return;
+    }
     const ov = {};
     for (const l of languages) {
       if (l.code === "uz") continue; // canonical IS the Uzbek name — no override input
-      ov[l.code] = nameOverrides?.[l.code]?.[`name.${item.name}`] || "";
+      // Prefer the profile's name_* column; translation override is the legacy fallback.
+      ov[l.code] = item[`name_${l.code}`] || nameOverrides?.[l.code]?.[`name.${item.name}`] || "";
     }
     setForm({
       role: type,
