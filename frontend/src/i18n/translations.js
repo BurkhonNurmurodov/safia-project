@@ -5691,6 +5691,8 @@ const t = {
     "zagruzka.calcFactorEarlySub":  "Average early-arrival minutes",
     "zagruzka.calcFactorKaizen":    "Kaizen time",
     "zagruzka.calcFactorKaizenSub": "10-minute kaizen buffer",
+    "zagruzka.calcFactorSetup":     "Changeover 15%",
+    "zagruzka.calcFactorSetupSub":  "15% changeover allowance on Verifix hours",
     "zagruzka.calcOn":       "On",
     "zagruzka.calcOff":      "Off",
     "zagruzka.calcDone":     "Done",
