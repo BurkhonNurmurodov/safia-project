@@ -696,6 +696,8 @@ const t = {
     "zagruzka.calcFactorEarlySub":  "O'rtacha erta kelish daqiqalari",
     "zagruzka.calcFactorKaizen":    "Kayzen vaqti",
     "zagruzka.calcFactorKaizenSub": "10 daqiqalik kayzen zaxirasi",
+    "zagruzka.calcFactorSetup":     "Perenaladka 15%",
+    "zagruzka.calcFactorSetupSub":  "Verifix soatlaridagi 15% perenaladka zaxirasi",
     "zagruzka.calcOn":       "Yoniq",
     "zagruzka.calcOff":      "O'chiq",
     "zagruzka.calcDone":     "Tayyor",
