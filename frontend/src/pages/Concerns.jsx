@@ -40,13 +40,13 @@ const CATEGORIES = [
   "it", "washing", "plan", "hr", "technologist", "raw_material",
 ];
 
-// Per-category identity hue for the category chip — deliberately NOT the
-// traffic-light palette (category is a bucket, not a status). A fixed spread of
-// distinct tints keyed by the category so each department reads consistently.
+// Per-category identity hue for the category chip — the shared generic-first
+// category order (red, green, blue, yellow, … — see utils/chartPalette), keyed
+// by the department so each one reads consistently everywhere.
 const CATEGORY_COLOR = {
-  ars: "#6366f1", inventory: "#0ea5e9", warehouse: "#14b8a6", fridge: "#06b6d4",
-  procurement: "#8b5cf6", logistics: "#f97316", it: "#3b82f6", washing: "#10b981",
-  plan: "#a855f7", hr: "#ec4899", technologist: "#f59e0b", raw_material: "#84cc16",
+  ars: "#ef4444", inventory: "#22c55e", warehouse: "#3b82f6", fridge: "#eab308",
+  procurement: "#f97316", logistics: "#a855f7", it: "#14b8a6", washing: "#ec4899",
+  plan: "#6366f1", hr: "#84cc16", technologist: "#06b6d4", raw_material: "#d946ef",
 };
 
 // Icon per department — same visual language as the downtime category legend
