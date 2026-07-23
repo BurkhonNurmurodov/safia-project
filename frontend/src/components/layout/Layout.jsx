@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import Sidebar from "./Sidebar";
-import GlobalFilters from "./GlobalFilters";
 import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
-import { useFilters } from "../../context/FilterContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, SlidersHorizontal, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
+import { Sun, Moon, Menu, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import MyNameEditor from "../ui/MyNameEditor";
