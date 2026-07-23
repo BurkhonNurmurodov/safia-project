@@ -497,10 +497,10 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
   const totalActPeople = wcs.reduce((s, w) => s + effOf(w, "people"), 0);
   const totalActShtat = wcs.reduce((s, w) => s + effOf(w, "shtatka"), 0);
 
-  const chip = (code) => {
+  const chip = (code, cell) => {
     const c = wcColor(code);
     return (
-      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md"
+      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md" title={pickCellName(cell, lang) || code}
         style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}` }}>{code}</span>
     );
   };
