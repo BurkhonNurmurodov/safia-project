@@ -1711,7 +1711,7 @@ export default function Quality() {
                 [RU.mNo, openRow.no || ""],
                 [RU.colPlace, openRow.pl || ""],
                 [RU.colProduct, openRow.pr || ""],
-                [RU.mCell, [openRow.fc, openRow.cn || ""].filter(Boolean).join(" · ")],
+                [RU.mCell, [...new Set([openRow.fc, cellNameOf(openRow, cellMap, lang)].filter(Boolean))].join(" · ")],
                 [RU.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
                 [RU.colBrig, tl(who(openRow))],
                 ...(openRow.sup ? [[RU.mSheetName, tl(openRow.b || "")]] : []),
