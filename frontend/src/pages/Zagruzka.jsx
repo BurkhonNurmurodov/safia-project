@@ -109,6 +109,9 @@ export default function Zagruzka() {
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);
   const [comment, setComment] = useState(null);
+  // Admin-only comparison-table factor toggles — lifted here so the inline and
+  // fullscreen table instances share one state. Resets to all-ON per visit.
+  const [calcFactors, setCalcFactors] = useState(DEFAULT_CALC_FACTORS);
 
   function handleCellClick(name, d, _v, cell) {
     setComment({ managerId: managerIds[name], managerName: name, date: d, rawCell: cell, mode: heatmapMode });
