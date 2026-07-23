@@ -130,7 +130,8 @@ export default function ProfilesManagement() {
     },
   });
 
-  const busy = createMut.isPending || updateMut.isPending || switchMut.isPending;
+  const busy = createMut.isPending || updateMut.isPending || switchMut.isPending ||
+    cellCreateMut.isPending || cellUpdateMut.isPending;
   const activeType = TYPES.find((x) => x.key === type);
   const isCells = type === "cells";
   const items = data?.[activeType.listKey] ?? [];
