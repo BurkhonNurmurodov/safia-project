@@ -98,6 +98,20 @@ function ModalInput({ value, onChange, type = "text", className = "" }) {
 
 const EMPTY_DRAFT = { manager_id: null, supervisor: "", cell: "", minutes: "", sku: "", reason: "" };
 
+// Cell-registry helpers: pick the workshop name for the viewer language (falling
+// back across languages) and label a picker option "code — name".
+const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
+const CUSTOM_CELL = "__custom__";
+const pickName = (obj, lang) => {
+  if (!obj) return "";
+  for (const l of [lang, ...CELL_LANGS]) if (obj[l]) return obj[l];
+  return "";
+};
+const cellOptLabel = (c, lang) => {
+  const nm = pickName(c, lang);
+  return nm ? `${c.code} — ${nm}` : c.code;
+};
+
 export default function SetupTimes() {
   const { lang } = useLang();
   const { tl } = useTranslit();
