@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
     resync_production_catalog()
     relax_pp_upload_manager()
     backfill_pp_actual_from_deliv()
+    rescale_pp_efficiency_base()
     backfill_day_approvals()
     backfill_day_closures()
     backfill_deletion_batch_ids()
