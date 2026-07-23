@@ -19,9 +19,9 @@ import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
 import { Info } from "lucide-react";
 
-const INDIGO = "#6366f1";
-// Cat D3 now uses indigo (was golden #C8973F) — shared by the merged bar chart and the doughnut
-const CAT_COLORS = ["#ef4444","#f97316","#eab308","#22c55e","#06b6d4", INDIGO, "#a78bfa","#ec4899","#14b8a6"];
+// Downtime-category identity colors — the shared generic-first order, one hue
+// per category index, shared by the merged bar chart, the doughnut and the chips.
+import { CATEGORY_COLORS as CAT_COLORS } from "../utils/chartPalette";
 
 export default function Downtime() {
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
