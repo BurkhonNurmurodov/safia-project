@@ -54,7 +54,12 @@ function WorkCenters({ managerId }) {
           <tbody>
             {data.map((w) => (
               <tr key={w.id} className="border-t border-[var(--border)]">
-                <td className="py-2 font-semibold">{w.code}</td>
+                <td className="py-2 font-semibold">
+                  {w.code}
+                  {wsName(w.cell) && (
+                    <div className="text-[11px] font-normal text-[var(--text-4)]">{wsName(w.cell)}</div>
+                  )}
+                </td>
                 <td className="py-2 text-right">
                   <input type="number" value={val(w, "shtatka")} onChange={(e) => set(w.id, "shtatka", e.target.value)}
                     className={`${input} w-20 text-right`} />
