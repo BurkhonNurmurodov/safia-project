@@ -238,33 +238,45 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Штат vs явка — official (planned) headcount against the actual average daily
-  // attendance, per brigadir. The old chart compared roster (unique workers over
-  // the window) with present, but both derive from the same attendance data, so
-  // with stable crews the bars collapsed onto each other. official_hc is an
-  // INDEPENDENT baseline (the штатка), so the two bars genuinely diverge and the
-  // gap between them is the real attendance shortfall. Only brigadirs with
-  // official data appear, ordered by shortfall so the biggest gaps sit on top
-  // (ApexCharts renders the first category at the bottom → sort ascending).
+  // Явка % (plan attainment) — one bar per brigadir: actual average daily
+  // attendance as a share of the official (planned) headcount, present ÷ штат.
+  // official_hc is an INDEPENDENT baseline (the штатка), so unlike the old
+  // roster-vs-present pair this genuinely varies. Traffic-light coloured by
+  // attainment (green fully staffed → red serious shortfall); sorted so the
+  // worst attainment sits on top (ApexCharts renders the first category at the
+  // bottom → sort descending). Only brigadirs with official data appear.
   const rvpRows = headcount
-    .filter((m) => m.official_hc != null)
-    .map((m) => ({ ...m, _gap: (m.official_hc || 0) - (m.avg_daily_hc || 0) }))
-    .sort((a, b) => a._gap - b._gap);
-  const rvpH = Math.max(300, rvpRows.length * 28 + 60);
-  const rvpSeries = [
-    { name: t("workers.official"), data: rvpRows.map((m) => m.official_hc || 0) },
-    { name: t("workers.present"),  data: rvpRows.map((m) => m.avg_daily_hc || 0) },
-  ];
+    .filter((m) => m.official_hc != null && m.official_hc > 0)
+    .map((m) => ({ ...m, attain: Math.round(((m.avg_daily_hc || 0) / m.official_hc) * 100) }))
+    .sort((a, b) => b.attain - a.attain);
+  const rvpH = Math.max(300, rvpRows.length * 32 + 60);
+  const rvpSeries = [{ name: t("workers.attRate"), data: rvpRows.map((m) => m.attain) }];
   const rvpOptions = {
     chart: { ...baseChart, type: "bar" },
-    plotOptions: { bar: { horizontal: true, barHeight: "78%", borderRadius: 2 } },
-    colors: [OFFICIAL_COLOR, PRESENT_COLOR],
-    dataLabels: { enabled: false },
-    xaxis: { categories: rvpRows.map((m) => tl(m.name)), labels: axisLabels },
+    plotOptions: { bar: { horizontal: true, barHeight: "68%", borderRadius: 2, distributed: true } },
+    colors: rvpRows.map((m) => attainColor(m.attain)),
+    dataLabels: {
+      enabled: true,
+      formatter: (v) => `${v}%`,
+      style: { fontSize: "11px", fontWeight: 600, colors: ["#fff"] },
+    },
+    xaxis: {
+      categories: rvpRows.map((m) => tl(m.name)),
+      labels: { ...axisLabels, formatter: (v) => `${v}%` },
+      max: Math.max(100, ...rvpRows.map((m) => m.attain)),
+    },
     yaxis: { labels: axisLabelsMd },
-    legend: legendCfg,
+    legend: { show: false },   // distributed bars → one legend entry per brigadir is noise
     grid: gridCfg,
-    tooltip: { theme: tooltipTheme, shared: true, intersect: false, y: { formatter: (v) => fmt1(v) } },
+    tooltip: {
+      theme: tooltipTheme,
+      y: {
+        formatter: (v, { dataPointIndex }) => {
+          const m = rvpRows[dataPointIndex];
+          return `${v}% — ${t("workers.present")} ${fmt1(m.avg_daily_hc)} / ${t("workers.official")} ${fmt1(m.official_hc)}`;
+        },
+      },
+    },
     theme: chartTheme,
   };
 
