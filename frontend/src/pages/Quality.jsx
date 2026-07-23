@@ -42,16 +42,16 @@ const SUP_PALETTE = CATEGORY_COLORS;
 const OTHER_KEY = "__other__";
 
 const TYPE_COLORS = {
-  risk: "#6366f1", foreign: "#ef4444", storage: "#f97316", sanitation: "#06b6d4",
-  recipe: "#8b5cf6", review: "#14b8a6", labeling: "#3b82f6", mold: "#84cc16",
-  special_order: "#ec4899", standard: "#a855f7", poisoning: "#dc2626",
-  packing: "#0ea5e9", damage: "#f59e0b", documentation: "#64748b", writeoff: "#94a3b8",
+  risk: "#ef4444", foreign: "#22c55e", storage: "#3b82f6", sanitation: "#eab308",
+  recipe: "#f97316", review: "#a855f7", labeling: "#14b8a6", mold: "#ec4899",
+  special_order: "#6366f1", standard: "#84cc16", poisoning: "#06b6d4",
+  packing: "#d946ef", damage: "#0ea5e9", documentation: "#b45309", writeoff: "#15803d",
 };
 
 const CAT_COLORS = {
-  hair: "#8b5cf6", polyethylene: "#06b6d4", metal: "#64748b", plastic: "#3b82f6",
-  paper: "#f59e0b", organic: "#84cc16", dirt: "#a16207", wood: "#b45309",
-  raw: "#14b8a6", insect: "#65a30d", glass: "#22d3ee", other: "#94a3b8",
+  hair: "#ef4444", polyethylene: "#22c55e", metal: "#3b82f6", plastic: "#eab308",
+  paper: "#f97316", organic: "#a855f7", dirt: "#14b8a6", wood: "#ec4899",
+  raw: "#6366f1", insect: "#84cc16", glass: "#06b6d4", other: "#94a3b8",
 };
 
 const STATUS_COLORS = { done: C_DONE, open: C_OPEN, waiting: C_WAIT, repeat: C_REPEAT, not_required: C_NA };
