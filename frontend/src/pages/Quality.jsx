@@ -37,11 +37,8 @@ const SRC_COLORS = { production: "#ef4444", guest: "#22c55e", store: "#3b82f6" }
 const SRC_ICONS  = { production: Factory,   guest: UserRound,  store: Store };
 
 // Supervisor identity palette for the Production-tab trend (stacked by responsible
-// supervisor). Full-spectrum and distinct per band; the folded tail is slate.
-const SUP_PALETTE = [
-  "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#3b82f6", "#84cc16",
-  "#a855f7", "#eab308", "#06b6d4", "#8b5cf6", "#f43f5e", "#10b981",
-];
+// supervisor) — the shared generic-first order; the folded tail is slate.
+const SUP_PALETTE = CATEGORY_COLORS;
 const OTHER_KEY = "__other__";
 
 const TYPE_COLORS = {
