@@ -522,7 +522,7 @@ class PPWorkCenter(Base):
     shtatka (W)  — establishment headcount for the work center.
     capacity (S) — planned productive minutes the roster can deliver ("Для 85%
                    труд", ≈ W × 0.85 × 480). Hand-tuned per work center; when
-                   NULL the engine falls back to W × productive_min (default 425).
+                   NULL the engine falls back to W × productive_min (default 408).
     People needed (N) = ROUND(W × Σlabor / S); see services/pp_calc.py."""
     __tablename__ = "pp_work_centers"
 
