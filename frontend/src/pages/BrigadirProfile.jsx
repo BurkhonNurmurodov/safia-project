@@ -321,7 +321,7 @@ export default function BrigadirProfile() {
   ];
 
   return (
-    <Layout title={tl(name)} showFilters>
+    <Layout title={tl(name)}>
       <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-[var(--text-2)] hover:text-[var(--text-1)] text-sm mb-5 transition-colors">
         <ArrowLeft size={15} /> {t("profile.back")}
       </button>
