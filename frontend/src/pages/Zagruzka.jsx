@@ -283,6 +283,8 @@ export default function Zagruzka() {
               managerIds={managerIds}
               approvedCells={approvedCells}
               commentedCells={commentedCells}
+              calcFactors={calcFactors}
+              onCalcFactorsChange={setCalcFactors}
               fullscreen
               onToggleFullscreen={() => setCompFullscreen(false)}
             />
