@@ -772,7 +772,7 @@ const t = {
     "workers.tmAll":           "Jami",
     "workers.tmZagruzka":      "Zagruzka",
     "workers.tmUnit":          "ishchi",
-    "workers.info.rosterVsPresent":"Har bir brigadir uchun ikki ustun: kulrang — ro'yxat (davrda uning nomi ostida ko'rilgan barcha ishchilar), yashil — kuniga o'rtacha haqiqatda kelgan. Ustunlar orasidagi farq — davomatdagi yetishmovchilik.",
+    "workers.info.rosterVsPresent":"Har bir brigadir uchun ikki ustun: ko'k — rasmiy (rejadagi) xodimlar soni, yashil — kuniga o'rtacha haqiqiy kelgan. Ular orasidagi farq — rejaga nisbatan davomat yetishmovchiligi. Faqat rasmiy ma'lumoti bor brigadirlar ko'rsatiladi.",
     "workers.info.roleMix":    "Har bir nur — bitta lavozim. To'ldirilgan shakl tanlangan brigadirning lavozimlar soni; kulrang shakl — barcha brigadirlar bo'yicha o'rtacha. Ikki shaklni solishtiring.",
     "workers.info.trend":      "Har kuni ishga kelgan ishchilar, lavozim bo'yicha ajratilgan va ustma-ust joylashgan. Oyna doim kamida 7 kun.",
     "workers.info.heatmap":    "Qatorlar — brigadirlar, ustunlar — kunlar. Yashilroq/quyuqroq katakcha o'sha kuni ko'proq ishchi kelganini bildiradi; bo'sh katakcha kun tasdiqlanmaganini bildiradi.",
