@@ -573,8 +573,62 @@ export default function ProfilesManagement() {
             </>
           }
         >
+              {/* Cell registry form — verifix/sap codes, workshop names, owner */}
+              {isCells && (
+                <>
+                  <FormField label={t("admin.profiles.colVerifixCode")} required>
+                    <input
+                      type="text"
+                      value={form.verifix_code || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, verifix_code: e.target.value }))}
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </FormField>
+                  <FormField label={t("admin.profiles.colSapCode")}>
+                    <input
+                      type="text"
+                      value={form.sap_code || ""}
+                      onChange={(e) => setForm((f) => ({ ...f, sap_code: e.target.value }))}
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </FormField>
+                  <div className="pt-1">
+                    <div className={labelCls} style={{ color: "var(--text-3)" }}>
+                      {t("admin.profiles.colWorkshop")}
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {["uz", ...NAME_LANGS].map((l) => (
+                        <label key={l} className="flex items-center gap-2">
+                          <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
+                                style={{ color: "var(--text-4)" }}>{l}</span>
+                          <input
+                            type="text"
+                            value={form[`name_workshop_${l}`] || ""}
+                            onChange={(e) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: e.target.value }))}
+                            className={inputCls + " !mt-0"}
+                            style={inputStyle}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <FormField label={t("admin.profiles.colOwner")}>
+                    <StyledSelect
+                      value={form.leader_id || ""}
+                      onChange={(v) => setForm((f) => ({ ...f, leader_id: v }))}
+                      options={[
+                        { value: "", label: t("admin.profiles.cellUnassigned") },
+                        ...(data?.leaders ?? []).map((l) => ({ value: String(l.id), label: tl(l.name) })),
+                      ]}
+                    />
+                  </FormField>
+                </>
+              )}
+
               {/* Role — switching moves only the name; other values are asked fresh */}
-              {modal.mode === "edit" && (
+              {!isCells && modal.mode === "edit" && (
                 <FormField label={t("admin.profiles.roleLabel")}>
                   <StyledSelect
                     value={form.role}
@@ -588,7 +642,8 @@ export default function ProfilesManagement() {
                         : { ...f, role: v, name: modal.item.name,
                             shift: "", manager_id: "", cells: [], cellInput: "", verifix_id: "" });
                     }}
-                    options={TYPES.map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
+                    options={TYPES.filter((x) => x.key !== "cells")
+                      .map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
                   />
                   {roleChanged && (
                     <p className="mt-1 text-[10px] leading-snug text-yellow-500">
@@ -599,6 +654,7 @@ export default function ProfilesManagement() {
               )}
 
               {/* Canonical name — entered in Uzbek; other languages render automatically */}
+              {!isCells && (
               <FormField label={t("admin.profiles.nameLabel")}>
                 <input
                   type="text"
@@ -621,6 +677,7 @@ export default function ProfilesManagement() {
                   </p>
                 )}
               </FormField>
+              )}
 
               {(effType === "shift-manager" || effType === "supervisor") && (
                 <FormField label={t("admin.profiles.shiftLabel")}>
