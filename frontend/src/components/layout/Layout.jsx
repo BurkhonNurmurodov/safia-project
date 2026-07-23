@@ -371,19 +371,13 @@ function SettingsButton() {
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
 const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 
-export default function Layout({ children, title, showFilters = true, filterSlot = null }) {
-  const { t } = useLang();
-  const { dateFrom, dateTo, shift, unit, brigadirIds } = useFilters();
+export default function Layout({ children, title }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
   );
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-  const [menuPanelTop, setMenuPanelTop] = useState(56);
-  const [isMobileMenu, setIsMobileMenu] = useState(() => window.innerWidth < 640);
 
   function toggleSidebarPin() {
     setSidebarPinned(v => {
@@ -392,48 +386,6 @@ export default function Layout({ children, title, showFilters = true, filterSlot
       return next;
     });
   }
-
-  // Active global-filter count — only meaningful where the Filters section shows.
-  const activeCount = [
-    !!(dateFrom || dateTo),
-    shift !== null,
-    unit !== "min",
-    brigadirIds.length > 0,
-  ].filter(Boolean).length;
-
-  useEffect(() => {
-    function handleClickOutside(e) {
-      // Popovers portaled to <body> from inside the panel (e.g. the date
-      // picker calendar) live outside menuRef — don't treat them as outside.
-      if (e.target.closest?.("[data-popover-portal]")) return;
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const update = () => setIsMobileMenu(window.innerWidth < 640);
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  useEffect(() => {
-    if (menuOpen && menuRef.current) {
-      const r = menuRef.current.getBoundingClientRect();
-      setMenuPanelTop(r.bottom + 8);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuOpen]);
-
-  // Badge: global filters use the active-filter count; pages that only inject a
-  // unit slot (e.g. Daily) flag a single active filter when not on minutes.
-  const filterBadgeCount = showFilters ? activeCount : (filterSlot && unit !== "min" ? 1 : 0);
-
-  // The filters menu only appears on pages that actually expose filters.
-  const hasFilters = showFilters || !!filterSlot;
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
