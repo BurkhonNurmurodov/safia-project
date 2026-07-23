@@ -305,6 +305,7 @@ export default function Workers() {
       formatter: (text, op) => [text, String(op.value)],
     },
     plotOptions: { treemap: { distributed: true, enableShades: false } },
+    stroke: { width: 2, colors: [cardBg] },
     tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.tmUnit")}` } },
     theme: chartTheme,
   };
