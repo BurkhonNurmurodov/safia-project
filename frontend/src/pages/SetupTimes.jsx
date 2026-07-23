@@ -178,9 +178,12 @@ export default function SetupTimes() {
   }, [allRows, search, supSel, sort, tl, lang]);
 
   // ── edit modal helpers ─────────────────────────────────────────────────────
-  const openCreate = () => setModal({ draft: { ...EMPTY_DRAFT } });
+  const openCreate = () => setModal({ draft: { ...EMPTY_DRAFT }, cellCustom: false });
   const openEdit = (r) => setModal({
     id: r.id,
+    // A stored code that isn't in the registry (unseeded / suffixed sub-cell like
+    // "2312 Б") opens straight into the free-text fallback so it survives a save.
+    cellCustom: !!r.cell && !knownCells.has(r.cell),
     draft: {
       manager_id: r.manager_id,
       supervisor: r.manager_id ? "" : r.supervisor,
@@ -188,6 +191,17 @@ export default function SetupTimes() {
     },
   });
   const setDraft = (key) => (v) => setModal((m) => ({ ...m, draft: { ...m.draft, [key]: v } }));
+
+  // Cell picker: the whole registry as options + a «Custom…» escape hatch that
+  // reveals a free-text input (unknown codes are legitimate, so never reject).
+  const cellSelectOpts = [
+    ...cells.map((c) => ({ value: c.code, label: cellOptLabel(c, lang) })),
+    { value: CUSTOM_CELL, label: T.customCellOpt },
+  ];
+  const cellSelValue = modal?.cellCustom ? CUSTOM_CELL : (modal?.draft.cell || "");
+  const onCellPick = (v) => setModal((m) => v === CUSTOM_CELL
+    ? { ...m, cellCustom: true, draft: { ...m.draft, cell: "" } }
+    : { ...m, cellCustom: false, draft: { ...m.draft, cell: v } });
 
   const supValue = modal?.draft.manager_id != null ? `m${modal.draft.manager_id}` : "custom";
   const supSelectOpts = [
