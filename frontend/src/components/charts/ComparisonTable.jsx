@@ -13,7 +13,7 @@ import ColorGuideModal from "../ui/ColorGuideModal";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
-import { pValueNumbers, pValueInputs, KAIZEN_BUFFER } from "../../utils/formulas";
+import { pValueNumbers, pValueInputs, KAIZEN_BUFFER, VERIFIX_EFFICIENCY } from "../../utils/formulas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
