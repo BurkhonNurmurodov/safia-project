@@ -88,11 +88,13 @@ function CommentsBox({ managerId, date }) {
   );
 }
 
+// KPI-stage identity hues follow the shared generic-first category order
+// (baseline stays neutral grey as the reference; net is status-colored live).
 const WORKLOAD_BAR_DEFS = [
   { key: "baseline_util",    tKey: "profile.kpi.planned",   color: "#6b7280" },
-  { key: "adjusted_util",    tKey: "profile.kpi.adjusted",  color: "#C8973F" },
-  { key: "after_idle_util",  tKey: "profile.kpi.afterIdle", color: "#E8A0B0" },
-  { key: "after_early_util", tKey: "profile.kpi.afterEarly",color: "#f59e0b" },
+  { key: "adjusted_util",    tKey: "profile.kpi.adjusted",  color: "#ef4444" },
+  { key: "after_idle_util",  tKey: "profile.kpi.afterIdle", color: "#22c55e" },
+  { key: "after_early_util", tKey: "profile.kpi.afterEarly",color: "#3b82f6" },
   { key: "net_util",         tKey: "profile.kpi.final",     color: null, bold: true },
 ];
 
