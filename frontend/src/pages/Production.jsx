@@ -60,6 +60,16 @@ const hexToRgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
+// «Команда» → canonical workshop name: the backend resolves each work-center
+// code against the cells registry (code → cells.sap_code) and rides the result
+// on work_centers[].cell. Pick the viewer language, fall back across the rest.
+const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
+const pickCellName = (cell, lang) => {
+  if (!cell) return "";
+  for (const l of [lang, ...CELL_LANGS]) if (cell[l]) return cell[l];
+  return "";
+};
+
 // Column definitions — labels/hints resolved via t() at render (see COLS map below).
 // Order matches the ABC Excel ("Sheet1 ...").
 const COLS = [
