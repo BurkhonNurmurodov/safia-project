@@ -16,6 +16,9 @@ const card = "bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5";
 const label = "text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider";
 const input = "bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-2 text-sm text-[var(--text-1)] outline-none focus:border-[var(--brand)]";
 
+// Workshop name of a resolved cell (RU-only admin panel → prefer the Russian name).
+const wsName = (cell) => (cell ? cell.ru || cell.uz || cell.uz_cyrl || cell.en || "" : "");
+
 // ── штатка / capacity editor ─────────────────────────────────────────────────
 function WorkCenters({ managerId }) {
   const qc = useQueryClient();
