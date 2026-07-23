@@ -1143,9 +1143,12 @@ def admin_work_centers(manager_id: int = Query(...), _: dict = Depends(_verify_a
                        db: Session = Depends(get_db)):
     wcs = db.query(PPWorkCenter).filter(PPWorkCenter.manager_id == manager_id).order_by(
         PPWorkCenter.sort_order, PPWorkCenter.id).all()
+    # Resolve each work-center code against the cells registry (code → sap_code)
+    # so the admin capacity table can show the workshop name / owner beside it.
+    sap_tbl = by_sap(db, with_leader=True)
     return [{"id": w.id, "code": w.code, "shtatka": w.shtatka,
              "capacity": (float(w.capacity) if w.capacity is not None else None),
-             "active": w.active} for w in wcs]
+             "active": w.active, "cell": resolve_sap(sap_tbl, w.code)} for w in wcs]
 
 
 class WorkCenterBody(BaseModel):
