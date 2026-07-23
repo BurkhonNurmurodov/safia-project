@@ -84,6 +84,9 @@ const STATUS_COLOR = { todo: "#94a3b8", doing: "#eab308", done: "#22c55e" };
 const CHART_BRAND = "#C8973F";
 const CHART_TODO = "#94a3b8";
 const CHART_OVERDUE = "#ef4444";
+// Opened/unresolved series in the multi-series bar charts — first generic
+// category hue (red); gold never sits among category series.
+const CHART_OPEN = "#ef4444";
 
 // Localized ISO-date formatter (mirrors the Leaders page) — turns 2026-07-02
 // into "2-iyul, 2026" / "2 июля 2026" / "2nd July, 2026" per the active lang.
