@@ -190,15 +190,15 @@ try:
         owned = db.query(Cell).filter_by(leader_id=leader_id).all()
         changes = 0
         for row in owned:
-            if row.code not in want:
-                print(f"      - released cell {row.code}")
-                db.delete(row)
+            if row.verifix_code not in want:
+                print(f"      - released cell {row.verifix_code}")
+                row.leader_id = None  # cells are first-class rows — keep metadata
                 changes += 1
-        have = {row.code for row in owned}
+        have = {row.verifix_code for row in owned}
         for code in want:
             if code in have:
                 continue
-            row = db.query(Cell).filter_by(code=code).first()
+            row = db.query(Cell).filter_by(verifix_code=code).first()
             if row and row.leader_id and row.leader_id != leader_id:
                 other = db.query(RoleProfile).filter_by(id=row.leader_id).first()
                 print(f"      ! cell {code} already owned by "
@@ -207,7 +207,7 @@ try:
             if row:
                 row.leader_id = leader_id
             else:
-                db.add(Cell(code=code, leader_id=leader_id))
+                db.add(Cell(verifix_code=code, leader_id=leader_id))
             changes += 1
         return changes
 
