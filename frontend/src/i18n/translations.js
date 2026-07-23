@@ -4822,6 +4822,7 @@ const t = {
     "workers.noTrend":           "Нет данных о динамике",
     "workers.noTrendMsg":        "Загрузите файлы verifix, чтобы увидеть динамику посещаемости.",
     "workers.noTableMsg":        "Загрузите файлы verifix, чтобы заполнить эту таблицу.",
+    "workers.noOfficialMsg":     "Нет официальных данных о численности за выбранный период.",
     "workers.avgDailyHC":        "Средний штат в день",
     "workers.tip.avgDailyHC":    "Среднее число сотрудников, вышедших на работу в подтверждённые дни.",
     "workers.days":              "Дней",
