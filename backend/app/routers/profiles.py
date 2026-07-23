@@ -491,6 +491,82 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     return {"ok": True, "id": pid}
 
 
+# ── Admin: cells registry ─────────────────────────────────────────────────────
+
+class CellPayload(BaseModel):
+    verifix_code:          Optional[str] = None   # required on create
+    sap_code:              Optional[str] = None   # "" clears; None = untouched
+    name_workshop_uz:      Optional[str] = None
+    name_workshop_uz_cyrl: Optional[str] = None
+    name_workshop_ru:      Optional[str] = None
+    name_workshop_en:      Optional[str] = None
+    leader_id:             Optional[int] = None   # 0 = unassign; None = untouched
+
+
+_CELL_TEXT_COLS = ("sap_code", "name_workshop_uz", "name_workshop_uz_cyrl",
+                   "name_workshop_ru", "name_workshop_en")
+
+
+def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
+    for col in _CELL_TEXT_COLS:
+        val = getattr(payload, col)
+        if val is not None:
+            setattr(row, col, val.strip() or None)
+    if payload.leader_id is not None:
+        if payload.leader_id:
+            p = db.query(RoleProfile).filter_by(id=payload.leader_id, role="leader").first()
+            if not p:
+                raise HTTPException(status_code=400, detail="Leader profile not found")
+            row.leader_id = payload.leader_id
+        else:
+            row.leader_id = None
+
+
+@router.post("/admin/cells")
+def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
+                      _: dict = Depends(verify_admin)):
+    code = " ".join((payload.verifix_code or "").split())
+    if not code:
+        raise HTTPException(status_code=400, detail="Verifix code is required")
+    if db.query(Cell).filter_by(verifix_code=code).first():
+        raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
+    row = Cell(verifix_code=code)
+    _apply_cell_fields(db, row, payload)
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}
+
+
+@router.put("/admin/cells/{cid}")
+def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_db),
+                      _: dict = Depends(verify_admin)):
+    row = db.query(Cell).filter_by(id=cid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    if payload.verifix_code is not None:
+        code = " ".join(payload.verifix_code.split())
+        if not code:
+            raise HTTPException(status_code=400, detail="Verifix code is required")
+        dup = db.query(Cell).filter(Cell.verifix_code == code, Cell.id != cid).first()
+        if dup:
+            raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
+        row.verifix_code = code
+    _apply_cell_fields(db, row, payload)
+    db.commit()
+    return {"ok": True, "id": cid}
+
+
+@router.delete("/admin/cells/{cid}")
+def admin_delete_cell(cid: int, db: Session = Depends(get_db),
+                      _: dict = Depends(verify_admin)):
+    row = db.query(Cell).filter_by(id=cid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Cell not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 def _rekey_manager_id(db: Session, mgr: Manager, new_id: int) -> int:
     """Change a unit's Verifix ID: insert a fresh managers row under the new id,
     re-point every referencing table, drop the old row. One transaction —
