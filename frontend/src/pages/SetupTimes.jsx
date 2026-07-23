@@ -56,6 +56,7 @@ const TXT = {
     delTitle: "Удалить строку", delMsg: "Строка ячейки {cell} будет удалена. Продолжить?",
     fSupervisor: "Супервайзер", fCustom: "Имя (не из списка)", fCell: "Ячейка", fMinutes: "Время переналадки (мин)",
     fSku: "Номер SKU", fReason: "Причина", customOpt: "Другое имя…", minSuffix: "мин",
+    fCellCustom: "Ячейка (не из списка)", customCellOpt: "Другая ячейка…",
   },
   en: {
     title: "Setup times", subtitle: "Average changeover time per production cell — with reason and SKU",
