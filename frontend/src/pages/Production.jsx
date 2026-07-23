@@ -914,7 +914,8 @@ export default function Production() {
     key: "wc", icon: Users, label: t("production.col.wc"),
     active: wcSel.length > 0,
     display: `${wcSel.length} ${t("filter.selected2")}`,
-    render: () => <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel} />,
+    render: () => <OptsFilter opts={wcOptions} sel={wcSel} onChange={setWcSel}
+      render={(code) => (wcName(code) ? `${code} — ${wcName(code)}` : code)} />,
   }];
   const filterActiveCount = wcSel.length > 0 ? 1 : 0;
 
