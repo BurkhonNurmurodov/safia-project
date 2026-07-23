@@ -1366,7 +1366,7 @@ export default function Concerns() {
   };
 
   // 3 ─ how long things take: resolution span of the done rows against the
-  // current wait of the open ones, over shared day buckets. Gold = the
+  // current wait of the open ones, over shared day buckets. Red = the
   // unresolved pool (the same reading as the "Hal qilinmagan" card).
   const AGE_BUCKETS = ["0–1", "2–3", "4–7", "8–14", "15+"];
   const ageSeries = [
