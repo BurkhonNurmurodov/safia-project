@@ -758,8 +758,10 @@ export default function ProfilesManagement() {
                 </FormField>
               )}
 
-              {/* Per-language display names — edit only; creation is Uzbek-only */}
-              {modal.mode === "edit" && !roleChanged && (
+              {/* Per-language display names — edit only; creation is Uzbek-only.
+                  These inputs persist both as role_profiles name_* columns and
+                  as translation overrides for tl(). */}
+              {!isCells && modal.mode === "edit" && !roleChanged && (
                 <div className="pt-1">
                   <div className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.langNames")}
