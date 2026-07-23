@@ -401,12 +401,26 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
 
 class UpdateProfilePayload(BaseModel):
     name:           Optional[str] = None
+    # Per-language name columns ("" clears; None = leave untouched)
+    name_uz_cyrl:   Optional[str] = None
+    name_ru:        Optional[str] = None
+    name_en:        Optional[str] = None
     shift:          Optional[int] = None
     manager_id:     Optional[int] = None        # leader → move to another unit
     cells:          Optional[list[str]] = None  # leader → replace owned cell codes
     new_verifix_id: Optional[int] = None        # supervisor → re-key managers.id
     archived:       Optional[bool] = None       # supervisor only
     overrides:      Optional[dict[str, str]] = None  # lang → display name ("" clears)
+
+
+_NAME_LANG_COLS = ("name_uz_cyrl", "name_ru", "name_en")
+
+
+def _apply_name_columns(p: RoleProfile, payload) -> None:
+    for col in _NAME_LANG_COLS:
+        val = getattr(payload, col)
+        if val is not None:
+            setattr(p, col, val.strip() or None)
 
 
 def _apply_overrides(db: Session, canonical: str, overrides: dict[str, str]) -> None:
