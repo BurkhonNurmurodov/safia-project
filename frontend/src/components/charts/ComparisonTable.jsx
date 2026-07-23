@@ -140,9 +140,14 @@ export default function ComparisonTable({
   commentedCells = new Set(),
   fullscreen = false,
   onToggleFullscreen,
+  // Admin-only factor toggles — lifted to the page so the inline and
+  // fullscreen instances stay in sync. Button hidden when the handler is absent.
+  calcFactors = DEFAULT_CALC_FACTORS,
+  onCalcFactorsChange = null,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
+  const { auth } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
   const [mode, setMode]           = useState("compare"); // "compare" | "diff"
@@ -151,6 +156,13 @@ export default function ComparisonTable({
   const [comment, setComment]     = useState(null);
   const [pendingInfo, setPendingInfo] = useState(null); // { name, date, reason }
   const [showGuide, setShowGuide] = useState(false); // info icon → color meanings modal
+  const [showCalc, setShowCalc]   = useState(false); // calculator icon → factors modal
+
+  const isAdmin = auth?.role === "admin";
+  const factors = calcFactors || DEFAULT_CALC_FACTORS;
+  const calcModified = !(factors.downtime && factors.early && factors.kaizen);
+  const excludedNames = CALC_FACTOR_DEFS
+    .filter(f => !factors[f.key]).map(f => t(f.label)).join(", ");
   const [nameAsc, setNameAsc]     = useState(true);
   const [hoveredRow, setHoveredRow] = useState(null);
   const [hoveredCol, setHoveredCol] = useState(null);
