@@ -286,7 +286,14 @@ export default function SetupTimes() {
               <td className="px-3 py-2">
                 <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(r.supervisor)}</span>
               </td>
-              <td className="px-3 py-2 font-mono tabular-nums" style={{ color: "var(--text-2)" }}>{r.cell}</td>
+              <td className="px-3 py-2">
+                <div className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>{r.cell}</div>
+                {pickName(r.cell_name, lang) && (
+                  <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }}>
+                    {pickName(r.cell_name, lang)}
+                  </div>
+                )}
+              </td>
               <td className="px-3 py-2 text-right">
                 <span
                   className="inline-block min-w-[42px] text-center px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums"
