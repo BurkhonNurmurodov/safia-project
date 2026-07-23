@@ -256,9 +256,6 @@ function SettingsButton() {
               </div>
             </div>
 
-            {/* My name — per-language display names of the caller's profiles */}
-            <MyNameEditor />
-
             {/* Appearance — theme + ghost (admin) */}
             <div className="px-5 py-4" style={{ borderTop: "1px solid var(--border)" }}>
               <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
