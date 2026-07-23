@@ -57,11 +57,11 @@ function HeatmapHeader({ heatmap, heatmapMode, setHeatmapMode, segments, fullscr
           />
           <button
             onClick={onToggleFullscreen}
-            className="p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-white/10"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
             title={fullscreen ? t("common.exitFullscreen") : t("common.fullscreen")}
+            className="flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}
           >
-            {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
       </div>
