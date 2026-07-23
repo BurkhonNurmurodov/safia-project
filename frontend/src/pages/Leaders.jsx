@@ -693,18 +693,22 @@ function DeltaChip({ trend, e, T }) {
   );
 }
 
-/* The spark is one polyline — a wide window is a few hundred points but still a
- * single DOM node, so no SVG filters and nothing per-cell to freeze on. */
+/* The spark is one polyline plus one flat polygon wash — a wide window is a few
+ * hundred points but still two DOM nodes, so no SVG filters (or gradients, per
+ * the solid-fill convention) and nothing per-cell to freeze on. Line, wash and
+ * end dot all take the trend tone; flat/no-baseline rows stay grey. */
 const SPARK_W = 84, SPARK_H = 24;
 function Spark({ vals, tone }) {
   if (!vals || vals.length < 2) return null;
   const pt = (v, i) => [3 + (i / (vals.length - 1)) * (SPARK_W - 6),
     SPARK_H - 3 - (Math.min(100, Math.max(0, v)) / 100) * (SPARK_H - 6)];
+  const pts = vals.map((v, i) => pt(v, i).join(",")).join(" ");
   const [ex, ey] = pt(vals[vals.length - 1], vals.length - 1);
   return (
     <svg width={SPARK_W} height={SPARK_H} className="flex-shrink-0" aria-hidden="true">
-      <polyline points={vals.map((v, i) => pt(v, i).join(",")).join(" ")} fill="none"
-        stroke="var(--text-4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polygon points={`${pts} ${ex},${SPARK_H - 1} 3,${SPARK_H - 1}`} fill={hexA(tone, 0.14)} />
+      <polyline points={pts} fill="none"
+        stroke={tone} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={ex} cy={ey} r="2.5" fill={tone} />
     </svg>
   );
