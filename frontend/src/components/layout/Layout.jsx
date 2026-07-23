@@ -163,20 +163,40 @@ function UserProfile() {
             <UserPlus size={14} />
             <span>{t("menu.addProfile") || "Add new profile"}</span>
           </button>
-
-          {/* Settings — language, theme, ghost, sign out */}
-          <button
-            onClick={() => { setOpen(false); setSettingsOpen(true); }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
-            style={{ color: "var(--text-2)" }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
-            onMouseLeave={e => e.currentTarget.style.background = ""}
-          >
-            <Settings size={14} />
-            <span>{t("menu.settings") || "Settings"}</span>
-          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── SettingsButton ───────────────────────────────────────────────────────────
+// Header gear shown on every page — language, name, theme, ghost, sign out.
+
+function SettingsButton() {
+  const { auth, leaveRole } = useAuth();
+  const { lang, setLang, t, languages } = useLang();
+  const { theme, toggle } = useTheme();
+  const { ghost, toggleGhost } = useGhost();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  if (!auth || auth.status !== "approved") return null;
+
+  return (
+    <div className="flex-shrink-0">
+      <button
+        onClick={() => setSettingsOpen(true)}
+        className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+        style={{
+          background: settingsOpen ? "var(--brand)" : "var(--bg-inner)",
+          border: `1px solid ${settingsOpen ? "var(--brand)" : "var(--border)"}`,
+          color: settingsOpen ? "#fff" : "var(--text-2)",
+        }}
+        title={t("menu.settings") || "Settings"}
+        aria-label={t("menu.settings") || "Settings"}
+      >
+        <Settings size={15} />
+      </button>
 
       {settingsOpen && (
         <div
