@@ -814,7 +814,7 @@ export default function ProfilesManagement() {
         message={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archiveMsg")
           : t("admin.profiles.deleteMsg")
-        ).replace("{name}", confirmDelete.name)}
+        ).replace("{name}", confirmDelete.name || confirmDelete.verifix_code || "")}
         confirmLabel={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete"))}
         cancelLabel={t("admin.users.cancel")}
