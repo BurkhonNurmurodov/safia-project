@@ -785,7 +785,7 @@ export default function Quality() {
     };
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => String(val(a)).localeCompare(String(val(b)), undefined, { numeric: true }) * dir);
-  }, [filtered, sort, tl, li]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, sort, tl, li, cellMap, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
