@@ -41,13 +41,14 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Manager, AppSetting, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    Manager, AppSetting, Cell, ProductionData, PPProduct, PPWorkCenter, PPWorkCenterDaily,
     PPDaily, PPDaySetting, PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser,
     TelegramUserRole, RoleProfile,
 )
 from app.permissions import require_page
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
+from app.services.cell_lookup import by_sap, resolve_sap
 from app.services.name_map import sheet_alias_map
 
 router = APIRouter(tags=["production"])
