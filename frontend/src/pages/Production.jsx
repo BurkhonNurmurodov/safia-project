@@ -416,7 +416,7 @@ const roundHalfUp = (x) => Math.floor(x + 0.5);
 const PT_ROW = "h-[48px]";
 
 function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const shiftMin = Number(constants?.shift_min) || 480;
   const curPm = Number(constants?.productive_min) || 408;
   const pctOf = (min) => Math.round((min / shiftMin) * 1000) / 10;   // 408 → 85
