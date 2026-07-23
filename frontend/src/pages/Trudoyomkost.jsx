@@ -582,8 +582,8 @@ export default function Trudoyomkost() {
             right={
               <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="flex items-center gap-2.5 text-[11px] tabular-nums">
-                  <span style={{ color: "#C8973F" }}>{T.plan} {fmt(planFakt.totalPlan)}</span>
-                  <span style={{ color: "#5DCAA5" }}>{T.fakt} {fmt(planFakt.totalFakt)}</span>
+                  <span style={{ color: "#94a3b8" }}>{T.plan} {fmt(planFakt.totalPlan)}</span>
+                  <span style={{ color: "#22c55e" }}>{T.fakt} {fmt(planFakt.totalFakt)}</span>
                   {planFakt.totalPlan > 0 && (
                     <span className="font-semibold px-1.5 py-0.5 rounded-md"
                       style={{ color: pfColor(planFakt.overallPct), background: pfColor(planFakt.overallPct) + "1f" }}>
