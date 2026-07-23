@@ -2361,6 +2361,8 @@ const t = {
     "zagruzka.calcFactorEarlySub":  "Ўртача эрта келиш дақиқалари",
     "zagruzka.calcFactorKaizen":    "Кайзен вақти",
     "zagruzka.calcFactorKaizenSub": "10 дақиқалик кайзен захираси",
+    "zagruzka.calcFactorSetup":     "Переналадка 15%",
+    "zagruzka.calcFactorSetupSub":  "Verifix соатларидаги 15% переналадка захираси",
     "zagruzka.calcOn":       "Ёниқ",
     "zagruzka.calcOff":      "Ўчиқ",
     "zagruzka.calcDone":     "Тайёр",
