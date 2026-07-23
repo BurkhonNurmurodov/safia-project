@@ -35,12 +35,12 @@ const CATS = [
   { key: "kir", icon: UserCheck,      weight: 0.25 },
 ];
 
-/* Category identity hues — one per statistic, validated colourblind-safe
- * against both chart surfaces (dark #1a1d27 / light #ffffff). Kept in JS like
- * SUP_COLORS: an identity palette, not chrome. */
+/* Category identity hues — one per statistic in the shared generic-first
+ * order (red, green, blue, yellow, orange), with darker light-theme variants
+ * for contrast. Kept in JS like SUP_COLORS: an identity palette, not chrome. */
 const CAT_HUES = {
-  dark:  { zag: "#3b82f6", naz: "#ea580c", kai: "#a855f7", xav: "#ec4899", kir: "#0891b2" },
-  light: { zag: "#2563eb", naz: "#c2410c", kai: "#9333ea", xav: "#db2777", kir: "#0891b2" },
+  dark:  { zag: "#ef4444", naz: "#22c55e", kai: "#3b82f6", xav: "#eab308", kir: "#f97316" },
+  light: { zag: "#dc2626", naz: "#16a34a", kai: "#2563eb", xav: "#ca8a04", kir: "#ea580c" },
 };
 
 /* Traffic-light status bands (fill + higher-contrast ink per theme). */
