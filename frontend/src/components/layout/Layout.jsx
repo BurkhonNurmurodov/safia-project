@@ -421,86 +421,13 @@ export default function Layout({ children, title }) {
               </h1>
             </div>
 
-            {/* Right: notifications bell + filters menu (hidden when no filters) + account */}
+            {/* Right: notifications bell + settings + account */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Notifications — standalone bell in the header */}
               <NotificationsBell {...notif} />
 
-              {/* Filters menu — only on pages that actually have filters */}
-              {hasFilters && (
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setMenuOpen(v => !v)}
-                    className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    style={{
-                      background: menuOpen ? "var(--brand)" : "var(--bg-inner)",
-                      border: `1px solid ${menuOpen ? "var(--brand)" : "var(--border)"}`,
-                      color: menuOpen ? "#fff" : "var(--text-2)",
-                    }}
-                  >
-                    <SlidersHorizontal size={14} />
-                    <span>{t("filter.filters") || "Filters"}</span>
-                    {/* Active-filter count */}
-                    {filterBadgeCount > 0 && (
-                      <span
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
-                        style={{ background: "var(--brand)", color: "#fff", border: "2px solid var(--bg-base)" }}
-                      >
-                        {filterBadgeCount}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Dropdown panel */}
-                  {menuOpen && (
-                    <div
-                      className="z-50 rounded-xl shadow-2xl flex flex-col"
-                      style={isMobileMenu ? {
-                        position: "fixed",
-                        top: menuPanelTop,
-                        left: 8,
-                        right: 8,
-                        maxHeight: `calc(100vh - ${menuPanelTop}px - 12px)`,
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border-md)",
-                      } : {
-                        position: "absolute",
-                        top: "calc(100% + 8px)",
-                        right: 0,
-                        width: 288,
-                        maxHeight: "80vh",
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border-md)",
-                      }}
-                    >
-                      {/* Panel header */}
-                      <div
-                        className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-                        style={{ borderBottom: "1px solid var(--border)" }}
-                      >
-                        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                          {t("filter.filters") || "Filters"}
-                        </span>
-                        <button
-                          onClick={() => setMenuOpen(false)}
-                          className="p-0.5 rounded transition-colors hover:bg-white/10"
-                          style={{ color: "var(--text-3)" }}
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-
-                      {/* Scrollable body */}
-                      <div className="flex-1 min-h-0 overflow-y-auto">
-                        <div className="p-4">
-                          {showFilters && <GlobalFilters />}
-                          {filterSlot && <div className={showFilters ? "mt-3" : ""}>{filterSlot}</div>}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Settings — shown on every page */}
+              <SettingsButton />
 
               {/* User profile */}
               <UserProfile />
