@@ -7,7 +7,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import StyledSelect from "../components/ui/StyledSelect";
 import HeatmapChart, { DEFAULT_SEGMENTS } from "../components/charts/HeatmapChart";
-import ComparisonTable, { DEFAULT_DIFF_SEGMENTS } from "../components/charts/ComparisonTable";
+import ComparisonTable, { DEFAULT_DIFF_SEGMENTS, DEFAULT_CALC_FACTORS } from "../components/charts/ComparisonTable";
 import DifferenceBreakdown from "../components/ui/DifferenceBreakdown";
 import CommentModal from "../components/ui/CommentModal";
 import ColorGuideModal from "../components/ui/ColorGuideModal";
