@@ -49,11 +49,9 @@ const STATUS = {
   light: { ok: "#16a34a", okInk: "#15803d", warn: "#ca8a04", warnInk: "#a16207", bad: "#dc2626", badInk: "#b91c1c", none: "#94a3b8" },
 };
 
-/* Per-brigadir identity colours — the Workers.jsx SUP_COLORS spectrum. */
-const SUP_COLORS = [
-  "#2563eb", "#22c55e", "#f97316", "#8b5cf6", "#eab308", "#ec4899",
-  "#0d9488", "#ef4444", "#0ea5e9", "#65a30d", "#d946ef", "#C8973F",
-];
+/* Per-brigadir identity colours — the shared generic-first category order
+ * (same spectrum as Workers.jsx SUP_COLORS). */
+const SUP_COLORS = CATEGORY_COLORS;
 
 /* Podium medal palette — gold / silver / bronze, keyed by finishing place.
  * A decoration set (like SUP_COLORS), not chrome: translucent overlays of the
