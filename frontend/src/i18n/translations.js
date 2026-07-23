@@ -4026,6 +4026,8 @@ const t = {
     "zagruzka.calcFactorEarlySub":  "Средние минуты раннего прихода",
     "zagruzka.calcFactorKaizen":    "Время кайдзен",
     "zagruzka.calcFactorKaizenSub": "10-минутный буфер кайдзен",
+    "zagruzka.calcFactorSetup":     "Переналадка 15%",
+    "zagruzka.calcFactorSetupSub":  "15% запас на переналадку в часах Verifix",
     "zagruzka.calcOn":       "Вкл",
     "zagruzka.calcOff":      "Выкл",
     "zagruzka.calcDone":     "Готово",
