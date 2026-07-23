@@ -650,7 +650,7 @@ export default function Quality() {
     const cellRows = filtered.filter((r) => r.f && (r.cn || r.fc));
     const cellCounts = {};
     for (const r of cellRows) {
-      const k = r.cn || r.fc;
+      const k = cellNameOf(r, cellMap, lang) || r.fc;
       const c = cellCounts[k] || (cellCounts[k] = { k, n: 0, code: r.fc });
       c.n++;
     }
