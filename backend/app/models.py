@@ -252,20 +252,33 @@ class RoleProfile(Base):
     id         = Column(Integer, primary_key=True, autoincrement=True)
     role       = Column(String, nullable=False, index=True)  # top-manager | shift-manager | leader | admin
     name       = Column(String, nullable=False)              # canonical (Uzbek Latin) display name
+    # Per-language display names (uz Latin stays in `name`). Nullable — filled
+    # in as values become known; migrate_cells_leaders_columns backfills them
+    # from any existing name.{canonical} translation overrides.
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
     shift      = Column(Integer, nullable=True)              # shift-managers only: 1 | 2
     manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Cell(Base):
-    """A production cell (Verifix cell code) owned by at most one leader
-    profile; a leader can own several cells. Replaced the old comma-joined
-    role_profiles.cell string (migrate_cells_table split it into rows)."""
+    """A production cell, first-class entity: Verifix code (unique), optional
+    SAP code and per-language workshop names, owned by at most one leader
+    profile (a leader can own several; leader_id NULL = unassigned — releasing
+    a cell keeps the row so its metadata survives reassignment)."""
     __tablename__ = "cells"
 
-    id        = Column(Integer, primary_key=True, autoincrement=True)
-    code      = Column(String, nullable=False, unique=True)
-    leader_id = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    verifix_code = Column(String, nullable=False, unique=True)
+    sap_code     = Column(String, nullable=True)
+    # Workshop name per language — all nullable until the values are known.
+    name_workshop_uz      = Column(String, nullable=True)
+    name_workshop_uz_cyrl = Column(String, nullable=True)
+    name_workshop_ru      = Column(String, nullable=True)
+    name_workshop_en      = Column(String, nullable=True)
+    leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
 
 
 class Notification(Base):
