@@ -14,6 +14,7 @@ import Button from "../components/ui/Button";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
 import { useTranslit } from "../utils/transliterate";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 /* ══════════════════════════════════════════════════════════════════════
  * Leaderboard — brigadir ranking across every platform statistic.
