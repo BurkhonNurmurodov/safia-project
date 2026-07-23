@@ -23,59 +23,35 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { padChartParams } from "../utils/chartRange";
 import { fmtLongDate } from "./Staff";
 import api from "../utils/api";
+import { CATEGORY_COLORS, FOLD_COLOR } from "../utils/chartPalette";
 
 // ── palette ──────────────────────────────────────────────────────────────────
-// Role identity hues (kept stable across the app); the rest of the page borrows
-// the admin-panel palette so KPIs and charts read colourful, not monochrome.
+// Role identity hues follow the shared generic-first category order (see
+// utils/chartPalette): red, green, blue, … — one fixed hue per role, stable
+// across every chart on the page.
 const ROLE_COLORS = {
-  Konditer:    "#C8973F",
-  Fasovshik:   "#f97316",
-  Zagatovitel: "#22c55e",
-  Other:       "#94a3b8",
+  Konditer:    CATEGORY_COLORS[0], // red
+  Fasovshik:   CATEGORY_COLORS[1], // green
+  Zagatovitel: CATEGORY_COLORS[2], // blue
+  Other:       FOLD_COLOR,
 };
 const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-counted roles
-// Extra (non-zagruzka) roles — every other real job title — get identity hues
-// from this full-spectrum palette, chosen to stay distinct from the four
-// zagruzka role colours above. Used only by the role-share donut + trend.
-const ROLE_EXTRA_COLORS = [
-  "#2563eb", "#8b5cf6", "#ec4899", "#0d9488", "#0ea5e9",
-  "#d946ef", "#6366f1", "#eab308", "#15803d", "#b45309",
-  "#06b6d4", "#6d28d9",
-];
+// Extra (non-zagruzka) roles — every other real job title — continue the shared
+// order after the three fixed zagruzka hues (yellow, orange, purple, …).
+// Used only by the role-share donut + trend.
+const ROLE_EXTRA_COLORS = CATEGORY_COLORS.slice(3);
 const OFFICIAL_COLOR = "#94a3b8";
 const PRESENT_COLOR  = "#22c55e";
-// Folded small-role band in the attendance trend — de-emphasis slate, not an
-// identity hue: "everything else" is a bucket, so it must not compete for one.
-const FOLD_COLOR     = "#94a3b8";
-// roleChange is a deepened brand-gold chart step: blue+violet collapses under
-// red-green colorblindness (violet reads as blue), and lavender sat below 3:1
-// contrast on the light surface. Blue+gold clears both.
-const REQ_COLORS = { exchange: "#3b82f6", roleChange: "#b58434" };
+// Folded small-role band in the attendance trend reuses the shared FOLD_COLOR
+// slate: "everything else" is a bucket, so it must not compete for a hue.
+// Request-type categories take the first two shared generic hues.
+const REQ_COLORS = { exchange: CATEGORY_COLORS[0], roleChange: CATEGORY_COLORS[1] };
 
-// Per-supervisor identity hues for the treemap — a full-spectrum categorical
-// palette (every block is coloured, so hues read as identity, not status).
-// Ordered so consecutive brigadirs land on contrasting hues, and large enough
-// that colours stay unique for the realistic brigadir count (cycles past 18).
-const SUP_COLORS = [
-  "#2563eb", // blue
-  "#22c55e", // green
-  "#f97316", // orange
-  "#8b5cf6", // violet
-  "#eab308", // yellow
-  "#ec4899", // pink
-  "#0d9488", // teal
-  "#ef4444", // red
-  "#0ea5e9", // sky
-  "#65a30d", // lime
-  "#d946ef", // fuchsia
-  "#C8973F", // gold
-  "#6366f1", // indigo
-  "#b45309", // brown
-  "#06b6d4", // cyan
-  "#6d28d9", // deep violet
-  "#64748b", // slate
-  "#15803d", // dark green
-];
+// Per-supervisor identity hues for the treemap — the shared generic-first
+// categorical palette (every block is coloured, so hues read as identity, not
+// status); large enough that colours stay unique for the realistic brigadir
+// count (cycles past 18).
+const SUP_COLORS = CATEGORY_COLORS;
 
 // The attendance heatmap reuses the fleet HeatmapChart, so it takes the same
 // banded {from,color} segments — but a single-hue sequential green ramp (shades
