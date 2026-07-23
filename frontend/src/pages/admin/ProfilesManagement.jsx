@@ -420,7 +420,40 @@ export default function ProfilesManagement() {
               </td>
             </tr>
           )}
-          {!isLoading && sorted.map((item) => (
+          {!isLoading && isCells && sorted.map((item) => (
+            <tr key={item.id}>
+              <td className="px-3 py-2 font-mono text-[var(--text-1)] whitespace-nowrap">{item.verifix_code}</td>
+              <td className="px-3 py-2 font-mono text-[var(--text-2)] whitespace-nowrap">{item.sap_code || "—"}</td>
+              <td className="px-3 py-2 text-[var(--text-2)]">{wname(item) || "—"}</td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {item.leader
+                  ? <span className="text-[var(--text-2)]">{tl(item.leader)}</span>
+                  : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => openEdit(item)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                    style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
+                  >
+                    <Pencil size={10} /> {t("admin.profiles.edit")}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(item)}
+                    disabled={deleteMut.isPending}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                    style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; e.currentTarget.style.color = "#ef4444"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; }}
+                  >
+                    <Trash2 size={10} /> {t("admin.profiles.delete")}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {!isLoading && !isCells && sorted.map((item) => (
             <tr key={item.id}>
               <td className="px-3 py-2 font-medium text-[var(--text-1)] whitespace-nowrap">
                 {tl(item.name)}
