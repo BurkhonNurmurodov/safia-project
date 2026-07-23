@@ -766,7 +766,7 @@ const t = {
     "workers.shortfall":       "Yetishmovchilik",
     "workers.hm.none":         "tasdiqlangan kun yo'q",
     "workers.info.composition":"Har bir bo'lak — bitta lavozimning butun ishchi kuchidagi ulushi; markazda umumiy ishchilar soni. Brigadir bo'yicha lavozim sonlari quyidagi jadvalda.",
-    "workers.rosterVsPresent": "Ro'yxat va kelgan",
+    "workers.rosterVsPresent": "Rasmiy va kelgan",
     "workers.roleShare":       "Lavozimlar ulushi",
     "workers.info.treemap":    "Har bir blok — bitta brigadir; o'lchami ishchilar soniga qarab, har bir brigadir o'z rangida. Tugma barcha ishchilar va faqat zagruzka hisobiga kiradigan ishchilar o'rtasida almashtiradi. Katta blok = ko'proq ishchi.",
     "workers.tmAll":           "Jami",
