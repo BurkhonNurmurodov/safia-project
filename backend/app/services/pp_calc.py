@@ -26,9 +26,11 @@ Totals (header row):
     total_actual_labor (F1) = Σ actual_labor
     completion         (E1) = F1 / I1
 
-The two constants come from the Excel and are configurable (app_settings):
+The two constants are configurable (app_settings):
     SHIFT_MIN      = 480  full clock minutes per person per shift
-    PRODUCTIVE_MIN = 425  planned *productive* minutes per person ("Для 85% труд")
+    PRODUCTIVE_MIN = 408  planned *productive* minutes per person = 85% × SHIFT_MIN.
+                          (The Excel's «Для 85% труд» = 425 was 85% of a 500-minute
+                          nominal base; dropped so the % is honest against the shift.)
 """
 from __future__ import annotations
 
@@ -36,7 +38,7 @@ import math
 from typing import Optional
 
 DEFAULT_SHIFT_MIN = 480.0
-DEFAULT_PRODUCTIVE_MIN = 425.0
+DEFAULT_PRODUCTIVE_MIN = 408.0
 
 
 def _round_half_up(x: float) -> int:
