@@ -224,10 +224,10 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
   const trendSeries = {
     workload: [
       { name: "Trudoyomkost (Plan)", data: daily.map(d => d.prod_plan),    color: "#6b7280", dashed: true },
-      { name: "Verifix Time",        data: daily.map(d => d.verifix_labor), color: "#C8973F" },
+      { name: "Verifix Time",        data: daily.map(d => d.verifix_labor), color: "#3b82f6" },
     ],
     headcount: [
-      { name: "Official HC", data: daily.map(d => d.official_hc), color: "#C8973F", dashed: true },
+      { name: "Official HC", data: daily.map(d => d.official_hc), color: "#6b7280", dashed: true },
       { name: "Verifix HC",  data: daily.map(d => d.verifix_hc),  color: "#22c55e" },
     ],
     idle: [
