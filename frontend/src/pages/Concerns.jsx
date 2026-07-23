@@ -64,14 +64,14 @@ const CATEGORY_ICON = {
 // sit below the chain: they create and edit but never hold a level.
 const LEVELS = ["supervisor", "shift-manager", "top-manager"];
 
-// Level → identity hue (never traffic-light — level is a position, not a
-// status): teal → blue → violet as the concern climbs the chain. "leader"
+// Level → identity hue in the shared generic-first order (red → green → blue
+// as the concern climbs the chain — identity, not traffic-light). "leader"
 // stays only so pre-migration escalation-history entries keep rendering.
 const LEVEL_COLOR = {
   leader: "#94a3b8",
-  supervisor: "#14b8a6",
-  "shift-manager": "#3b82f6",
-  "top-manager": "#8b5cf6",
+  supervisor: "#ef4444",
+  "shift-manager": "#22c55e",
+  "top-manager": "#3b82f6",
 };
 
 // status → traffic-light tint from the admin-panel palette. Not-started stays
