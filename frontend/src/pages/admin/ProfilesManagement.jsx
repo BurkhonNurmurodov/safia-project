@@ -99,9 +99,20 @@ export default function ProfilesManagement() {
     onError: fail,
   });
   const deleteMut = useMutation({
+    // "cells" rides the same admin prefix but its own registry endpoints.
     mutationFn: ({ ptype, pid }) => api.delete(`/api/profiles/admin/${ptype}/${pid}`),
     onSuccess: () => { done(); setConfirmDelete(null); },
     onError: (e) => { setConfirmDelete(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
+  });
+  const cellCreateMut = useMutation({
+    mutationFn: (body) => api.post("/api/profiles/admin/cells", body),
+    onSuccess: () => { done(); setModal(null); },
+    onError: fail,
+  });
+  const cellUpdateMut = useMutation({
+    mutationFn: ({ cid, body }) => api.put(`/api/profiles/admin/cells/${cid}`, body),
+    onSuccess: () => { done(); setModal(null); },
+    onError: fail,
   });
   const unassignMut = useMutation({
     mutationFn: (body) => api.post("/api/profiles/admin/unassign", body),
