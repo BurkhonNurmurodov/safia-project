@@ -40,14 +40,17 @@ export const DEFAULT_DIFF_SEGMENTS = [
   { from: 6,     color: "#ef4444" },
 ];
 
-// Admin-only calculation factors: the three deductions inside the A (fact)
-// value. All ON = the backend's official net_util.
-export const DEFAULT_CALC_FACTORS = { downtime: true, early: true, kaizen: true };
+// Admin-only calculation factors: the deductions inside the A (fact) value.
+// All ON = the backend's official net_util. downtime/early/kaizen are minute
+// deductions from avail_min; perenalatka is the 15% changeover allowance
+// (VERIFIX_EFFICIENCY 0.85) applied to Verifix hours inside effective_hc.
+export const DEFAULT_CALC_FACTORS = { downtime: true, early: true, kaizen: true, perenalatka: true };
 
 const CALC_FACTOR_DEFS = [
-  { key: "downtime", label: "zagruzka.calcFactorIdle",   sub: "zagruzka.calcFactorIdleSub" },
-  { key: "early",    label: "zagruzka.calcFactorEarly",  sub: "zagruzka.calcFactorEarlySub" },
-  { key: "kaizen",   label: "zagruzka.calcFactorKaizen", sub: "zagruzka.calcFactorKaizenSub" },
+  { key: "downtime",    label: "zagruzka.calcFactorIdle",   sub: "zagruzka.calcFactorIdleSub" },
+  { key: "early",       label: "zagruzka.calcFactorEarly",  sub: "zagruzka.calcFactorEarlySub" },
+  { key: "kaizen",      label: "zagruzka.calcFactorKaizen", sub: "zagruzka.calcFactorKaizenSub" },
+  { key: "perenalatka", label: "zagruzka.calcFactorSetup",  sub: "zagruzka.calcFactorSetupSub" },
 ];
 
 // A (fact) utilization honoring the factor toggles. With every factor ON this
@@ -56,13 +59,21 @@ const CALC_FACTOR_DEFS = [
 // excluded deductions: prod_actual ÷ (effective_hc × (avail_min − …)).
 function actualUtil(cell, f) {
   if (!cell) return null;
-  if (!f || (f.downtime && f.early && f.kaizen)) return cell.net_util ?? null;
+  if (!f || (f.downtime && f.early && f.kaizen && f.perenalatka)) return cell.net_util ?? null;
   const pa  = cell.prod_actual;
-  const ehc = cell.effective_hc;
+  let ehc = cell.effective_hc;
   const base = cell.avail_min != null
     ? cell.avail_min
     : cell.prod_plan ? 480 * (cell.prod_actual / cell.prod_plan) : null;
   if (pa == null || ehc == null || base == null) return cell.net_util ?? null;
+  if (!f.perenalatka && cell.official_hc != null && base > 0) {
+    // Undo the 15% changeover allowance: rebuild verifix_labor from the labor
+    // surplus (surplus = (vl − pa) ÷ base), credit the reported hours at 100%
+    // instead of ×0.85, and re-derive effective_hc from the new surplus.
+    const surplus = ehc - cell.official_hc;
+    const verifixLabor = surplus * base + pa;
+    ehc = cell.official_hc + (verifixLabor / VERIFIX_EFFICIENCY - pa) / base;
+  }
   const den = ehc * (base
     - (f.downtime ? (cell.equip_downtime || 0) : 0)
     - (f.early    ? (cell.avg_early_arrival || 0) : 0)
