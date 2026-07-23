@@ -7,7 +7,6 @@ import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
-import MyNameEditor from "../ui/MyNameEditor";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
