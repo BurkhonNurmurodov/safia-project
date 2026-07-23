@@ -389,6 +389,7 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
             raise HTTPException(status_code=409, detail="Profile with this name already exists")
         p = RoleProfile(role=role, name=name)
 
+    _apply_name_columns(p, payload)
     db.add(p)
     if role == "leader" and payload.cells:
         db.flush()  # p.id must exist before cells can point at it
