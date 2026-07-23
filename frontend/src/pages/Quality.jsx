@@ -672,7 +672,7 @@ export default function Quality() {
     const acc = accOf(accMode === "brig" ? who : (r) => r.m);
 
     return { trend, trendKeys, types, cats, topProducts, topPlaces, topCells, acc };
-  }, [filtered, gran, accMode, isProd]);
+  }, [filtered, gran, accMode, isProd, cellMap, lang]);
 
   // ── Seasonality card, its own time axis (independent of the page filters that
   // still narrow every row): yearly = 12 calendar months of a chosen year;
