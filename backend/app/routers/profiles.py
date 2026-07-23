@@ -472,6 +472,7 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
 
     if payload.name is not None:
         _rename_profile(db, ptype, pid, payload.name)
+    _apply_name_columns(p, payload)
     if ptype == "shift-manager" and payload.shift in (1, 2):
         p.shift = payload.shift
     if ptype == "leader" and payload.manager_id and payload.manager_id != p.manager_id:
