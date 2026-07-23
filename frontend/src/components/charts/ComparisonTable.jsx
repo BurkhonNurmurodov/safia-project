@@ -276,13 +276,30 @@ export default function ComparisonTable({
           </button>
         </div>
 
-        {/* Mode toggle + fullscreen — 2nd row on mobile */}
+        {/* Mode toggle + calculator + fullscreen — 2nd row on mobile */}
         <div className="flex items-center gap-2">
           <SegmentedToggle
             value={mode}
             onChange={setMode}
             options={[["compare", t("zagruzka.modeCompare")], ["diff", t("zagruzka.modeDiff")]]}
           />
+          {isAdmin && onCalcFactorsChange && (
+            <button
+              onClick={() => setShowCalc(true)}
+              title={t("zagruzka.calcTitle")}
+              className="relative flex-shrink-0 h-[32px] w-[32px] flex items-center justify-center rounded-lg transition-colors"
+              style={{
+                background: "var(--bg-inner)",
+                border: `1px solid ${calcModified ? "var(--brand)" : "var(--border-md)"}`,
+                color: calcModified ? "var(--brand)" : "var(--text-3)",
+              }}
+            >
+              <Calculator size={16} />
+              {calcModified && (
+                <span style={{ position: "absolute", top: 3, right: 3, width: 6, height: 6, borderRadius: "50%", background: "var(--brand)" }} />
+              )}
+            </button>
+          )}
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
