@@ -258,6 +258,11 @@ export default function ComparisonTable({
                 ? t("zagruzka.diffSubtitle")
                 : t("zagruzka.compareSubtitle")}
             </div>
+            {calcModified && (
+              <div className="text-[10px] mt-0.5 font-medium" style={{ color: "var(--brand)" }}>
+                {t("zagruzka.calcActive").replace("{list}", excludedNames)}
+              </div>
+            )}
           </div>
           {/* Info icon right after title */}
           <button
