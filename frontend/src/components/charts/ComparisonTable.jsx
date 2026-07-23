@@ -558,7 +558,8 @@ export default function ComparisonTable({
                   {dates.map((d, i) => {
                     const cell = data[name]?.[d];
                     const pv = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
-                    const av = cell?.net_util      != null ? Math.round(cell.net_util      * 100) : null;
+                    const aRaw = actualUtil(cell, factors);
+                    const av = aRaw != null ? Math.round(aRaw * 100) : null;
                     const dv = (pv !== null && av !== null) ? pv - av : null;
 
                     const pColor = pv !== null
