@@ -1306,7 +1306,7 @@ export default function Production() {
             return (
               <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}` }}>{w.work_center}</span>
+                  <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcName(w.work_center) || w.work_center} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}` }}>{w.work_center}</span>
                   {/* The staffing pin governs BOTH numbers below, so its control sits
                       in the header — above the pair — not appended to one of them. */}
                   <span className="flex items-center gap-2 shrink-0">
