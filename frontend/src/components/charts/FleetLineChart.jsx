@@ -4,14 +4,12 @@ import { Users, ChevronDown } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
+import { CATEGORY_COLORS } from "../../utils/chartPalette";
 
-const LINE_COLORS = [
-  "#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6",
-  "#ec4899", "#14b8a6", "#f97316", "#C8973F", "#84cc16",
-  "#06b6d4", "#a855f7",
-];
+// Per-manager identity colors — the shared generic-first category order.
+const LINE_COLORS = CATEGORY_COLORS;
 
-const AVG_COLOR = "#f59e0b"; // brand golden
+const AVG_COLOR = "#f59e0b"; // fleet-average accent (amber)
 
 const DEFAULT_HEATMAP_SEGMENTS = [
   { from: 0,   color: "#ef4444" },

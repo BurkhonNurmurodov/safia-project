@@ -21,6 +21,7 @@ import Tooltip from "../components/ui/Tooltip";
 import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import api from "../utils/api";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 import {
   AttendanceTable,
   DeleteWorkersModal,
