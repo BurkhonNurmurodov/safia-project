@@ -69,6 +69,7 @@ const TXT = {
     delTitle: "Delete row", delMsg: "The row for cell {cell} will be deleted. Continue?",
     fSupervisor: "Supervisor", fCustom: "Name (not on the list)", fCell: "Cell", fMinutes: "Setup time (min)",
     fSku: "SKU number", fReason: "Reason", customOpt: "Custom name…", minSuffix: "min",
+    fCellCustom: "Cell (not on the list)", customCellOpt: "Custom cell…",
   },
 };
 
