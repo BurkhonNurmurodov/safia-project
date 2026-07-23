@@ -156,7 +156,7 @@ function UserProfile() {
               }
             }}
             className="w-full flex items-center gap-3 px-4 py-3 text-xs"
-            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            style={{ color: "var(--text-2)" }}
             onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
             onMouseLeave={e => e.currentTarget.style.background = ""}
           >
