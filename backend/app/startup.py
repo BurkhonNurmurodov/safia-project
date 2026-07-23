@@ -1151,6 +1151,50 @@ def backfill_pp_actual_from_deliv() -> None:
         db.close()
 
 
+PP_EFF_BASE_FLAG = "pp_efficiency_base_480"
+
+
+def rescale_pp_efficiency_base() -> None:
+    """One-time rescale of the efficiency store from the legacy 500-minute
+    nominal base to the real 480-minute shift (85% is now 408 min/head).
+
+    Only values that are PROVABLY legacy are touched — exactly 425/head, the
+    Excel's «Для 85% труд» constant (85% × 500). The new UI can never produce
+    425.00 (88.5% × 480 = 424.8), so re-running after fresh saves is safe, and
+    already-shift-based configs (e.g. manager 5's ≈407.5/head) stay untouched.
+
+    - pp_work_centers.capacity: rate 425/head → shtatka × 408.
+    - pp_day_settings.productive_min: 425 → 408 (the pin was saved by a
+      brigadir typing «85» into the old 500-base box).
+    """
+    from app.models import PPWorkCenter, PPDaySetting
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=PP_EFF_BASE_FLAG).first():
+            return
+        caps = pins = 0
+        for wc in db.query(PPWorkCenter).all():
+            if wc.capacity and wc.shtatka:
+                rate = float(wc.capacity) / int(wc.shtatka)
+                if abs(rate - 425.0) < 0.05:
+                    wc.capacity = int(wc.shtatka) * 408
+                    caps += 1
+        for ds in db.query(PPDaySetting).all():
+            if ds.productive_min is not None and abs(float(ds.productive_min) - 425.0) < 0.05:
+                ds.productive_min = 408
+                pins += 1
+        db.add(AppSetting(key=PP_EFF_BASE_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] pp efficiency base 500→480: {caps} capacity row(s), "
+              f"{pins} day pin(s) rescaled 425→408/head")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] pp efficiency base rescale skipped: {exc}")
+    finally:
+        db.close()
+
+
 MANAGERS_SEEDED_FLAG = "managers_seeded"
 
 
