@@ -14,8 +14,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Manager, SetupTime
+from app.models import Cell, Manager, SetupTime
 from app.permissions import require_page
+from app.services.cell_lookup import by_verifix, resolve_verifix
 
 router = APIRouter(prefix="/api/setup-times", tags=["setup-times"])
 
