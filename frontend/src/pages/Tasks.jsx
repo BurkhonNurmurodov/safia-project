@@ -868,7 +868,7 @@ export default function Tasks() {
 
 
   return (
-    <Layout title={t("tasks.title")} showFilters={false}>
+    <Layout title={t("tasks.title")}>
       {/* Filters — period + shift + supervisor/leader cascade (role-scoped) */}
       <div className={`grid grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-2 sm:gap-3 mb-3`}>
         {/* Period — same range picker as the Leaders page (presets + calendar).

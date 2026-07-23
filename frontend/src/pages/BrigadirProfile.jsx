@@ -220,7 +220,7 @@ export default function BrigadirProfile() {
 
   if (isLoading) {
     return (
-      <Layout title={t("profile.title")} showFilters>
+      <Layout title={t("profile.title")}>
         <div className="space-y-4 animate-pulse">
           <SkeletonBlock className="h-5 w-24 mb-5" />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">

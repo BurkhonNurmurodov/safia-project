@@ -3539,7 +3539,7 @@ export default function Staff() {
   }
 
   return (
-    <Layout title={t("nav.staff")} showFilters={false}>
+    <Layout title={t("nav.staff")}>
       {/* Tabs — the shared view-tab template (scroll wrapper for phones) */}
       <div className="mb-6 max-w-full overflow-x-auto">
         <SegmentedToggle

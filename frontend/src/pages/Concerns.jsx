@@ -1609,7 +1609,7 @@ export default function Concerns() {
   );
 
   return (
-    <Layout title={t("concerns.title")} showFilters={false}>
+    <Layout title={t("concerns.title")}>
       {/* Top filter bar — the standard inline period + shift + supervisor row
           (shift/supervisor only for multi-unit viewers); status / owner / level
           live behind the Filtrlar button. */}

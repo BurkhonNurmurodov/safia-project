@@ -1105,7 +1105,7 @@ export default function Production() {
   const isToday = date === todayISO();
 
   return (
-    <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`} showFilters={false}>
+    <Layout title={`${t("production.title")}${data?.manager_name ? " — " + data.manager_name : ""}`}>
       {/* Export success toast — fixed top-right, outside normal flow */}
       {exportDone && (
         <div

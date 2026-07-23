@@ -155,7 +155,7 @@ export default function ShiftDaily() {
   );
 
   return (
-    <Layout title={t("shiftDaily.title")} showFilters={false}>
+    <Layout title={t("shiftDaily.title")}>
       {/* Controls: date + unit */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <DayStepper value={date} onChange={setDate} />

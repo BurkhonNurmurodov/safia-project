@@ -603,7 +603,7 @@ export default function Kaizen() {
 
   // ── render ───────────────────────────────────────────────────────────────────
   return (
-    <Layout title={T.title} showFilters={false}>
+    <Layout title={T.title}>
       {/* Welcome banner: personalised greeting + last-synced chip + refresh */}
       <div className="flex items-end justify-between gap-3 mb-5 flex-wrap">
         <div className="min-w-0">

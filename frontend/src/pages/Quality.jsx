@@ -1140,7 +1140,7 @@ export default function Quality() {
   );
 
   return (
-    <Layout title={T.title} showFilters={false}>
+    <Layout title={T.title}>
       {/* header: title + last-synced + refresh */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">

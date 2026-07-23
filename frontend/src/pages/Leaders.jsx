@@ -1564,7 +1564,7 @@ export default function Leaders({ botMode = false }) {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <Layout title={botMode ? T.titleBot : T.title} showFilters={false}>
+    <Layout title={botMode ? T.titleBot : T.title}>
       {/* header: title + last-updated + refresh (right side, all profiles) */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">

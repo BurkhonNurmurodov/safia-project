@@ -198,7 +198,7 @@ export default function SetupTimes() {
   };
 
   return (
-    <Layout title={T.title} showFilters={false}>
+    <Layout title={T.title}>
       {/* Header */}
       <div className="flex items-end justify-between gap-3 mb-5 flex-wrap">
         <div className="min-w-0">

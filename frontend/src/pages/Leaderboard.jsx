@@ -470,7 +470,7 @@ export default function Leaderboard() {
   const sortOptions = [["overall", t("leaderboard.overallShort")], ...CATS.map((c) => [c.key, catMeta[c.key].short])];
 
   return (
-    <Layout title={t("leaderboard.subtitle")} showFilters={false}>
+    <Layout title={t("leaderboard.subtitle")}>
       <div className="flex flex-col gap-4 max-w-[1200px] mx-auto">
 
         {/* ── page toolbar (single filter zone): the standard inline period +
