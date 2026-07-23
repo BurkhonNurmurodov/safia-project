@@ -59,18 +59,39 @@ def list_setup_times(
     managers = {m.id: m for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
     rows = db.query(SetupTime).order_by(SetupTime.id).all()
 
+    # The free-text `cell` column holds Verifix cell codes; resolve each against
+    # the canonical registry so the page can label the row with the workshop name
+    # and flag codes that aren't a known cell (unseeded / suffixed sub-cells).
+    cells_tbl = by_verifix(db, with_leader=True)
+
     def resolved(r: SetupTime):
         m = managers.get(r.manager_id)
+        cell = resolve_verifix(cells_tbl, r.cell)
         return {
             "id": r.id,
             "manager_id": r.manager_id,
             "supervisor": m.name if m else r.supervisor,
             "shift": m.shift if m else None,
             "cell": r.cell,
+            "cell_id": (cell["id"] if cell else None),
+            "cell_name": {k: cell[k] for k in ("uz", "uz_cyrl", "ru", "en")} if cell else None,
+            "cell_known": cell is not None,
             "minutes": float(r.minutes) if r.minutes is not None else None,
             "reason": r.reason,
             "sku": r.sku,
         }
+
+    # Full cell registry for the edit-form picker: verifix code + per-language
+    # workshop name + owning leader, in code order. Admin-only page, so serving
+    # the whole (~100-row) catalog is cheap and keeps the picker offline-fast.
+    cell_opts = [
+        {
+            "code": c.verifix_code,
+            "uz": c.name_workshop_uz, "uz_cyrl": c.name_workshop_uz_cyrl,
+            "ru": c.name_workshop_ru, "en": c.name_workshop_en,
+        }
+        for c in db.query(Cell).order_by(Cell.verifix_code).all()
+    ]
 
     return {
         "can_edit": payload.get("role") == "admin",
@@ -78,6 +99,7 @@ def list_setup_times(
             ({"id": m.id, "name": m.name, "shift": m.shift} for m in managers.values()),
             key=lambda m: m["name"],
         ),
+        "cells": cell_opts,
         "rows": [resolved(r) for r in rows],
     }
 
