@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Maximize2, Minimize2, Info } from "lucide-react";
+import { Maximize2, Minimize2, Info, Calculator } from "lucide-react";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import { orderedSegments } from "../../utils/segments";
+import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import FormulaModal from "../ui/FormulaModal";
@@ -10,7 +11,9 @@ import CommentModal from "../ui/CommentModal";
 import PendingInfoModal from "../ui/PendingInfoModal";
 import ColorGuideModal from "../ui/ColorGuideModal";
 import SegmentedToggle from "../ui/SegmentedToggle";
-import { pValueNumbers, pValueInputs } from "../../utils/formulas";
+import Modal from "../ui/Modal";
+import Button from "../ui/Button";
+import { pValueNumbers, pValueInputs, KAIZEN_BUFFER } from "../../utils/formulas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
