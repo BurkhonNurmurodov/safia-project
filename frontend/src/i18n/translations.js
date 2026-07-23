@@ -3156,6 +3156,7 @@ const t = {
     "workers.noTrend":           "Тенденция маълумоти йўқ",
     "workers.noTrendMsg":        "Давомат тенденцияларини кўриш учун verifix файлларини юкланг.",
     "workers.noTableMsg":        "Ушбу жадвални тўлдириш учун verifix файлларини юкланг.",
+    "workers.noOfficialMsg":     "Танланган давр учун расмий ходимлар сони маълумоти йўқ.",
     "workers.avgDailyHC":        "Ўртача кунлик ходимлар",
     "workers.tip.avgDailyHC":    "Тасдиқланган кунларда кунига ўртача ишга келган ишчилар сони.",
     "workers.days":              "Кунлар",
