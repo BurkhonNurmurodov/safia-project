@@ -87,6 +87,16 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   // Sliding active-page indicator — measure the active NavLink and move one
   // shared pill to it (glides between items instead of the highlight cutting).
   const navRef = useRef(null);
+
+  // Restore the pre-navigation scroll offset once the links have rendered.
+  // links.length is a dep because page access can resolve after mount — the
+  // list grows and the earlier restore would have been clamped to 0. Once the
+  // user scrolls, onScroll keeps savedNavScroll current, so re-running this is
+  // a no-op.
+  useLayoutEffect(() => {
+    if (navRef.current) navRef.current.scrollTop = savedNavScroll;
+  }, [links.length]);
+
   const [ind, setInd] = useState({ top: 0, height: 0, show: false, anim: false });
   useLayoutEffect(() => {
     const el = navRef.current?.querySelector('[aria-current="page"]');
