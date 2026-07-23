@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
+from app.services.cell_lookup import by_verifix, resolve_verifix
 from app.services.name_map import supervisor_match
 from app.services.sheets_sync import sync_quality_sheet
 
