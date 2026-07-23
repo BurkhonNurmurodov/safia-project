@@ -1463,7 +1463,7 @@ export default function Production() {
         <Modal
           onClose={() => setWcEdit(null)}
           title={t("production.wcEditTitle")}
-          subtitle={`${wcEdit.work_center} · ${ddmmyyyy(date)}`}
+          subtitle={`${wcEdit.work_center}${wcName(wcEdit.work_center) ? ` — ${wcName(wcEdit.work_center)}` : ""} · ${ddmmyyyy(date)}`}
           icon={<Users size={16} style={{ color: "var(--brand-text)" }} />}
           dismissable={!wcOverride.isPending}
           footer={
