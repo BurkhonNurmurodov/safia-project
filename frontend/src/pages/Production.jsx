@@ -614,7 +614,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
               const d = draft[w.work_center] || { people: "", shtatka: "" };
               return (
                 <tr key={w.work_center} className={PT_ROW}>
-                  <td className="px-3 py-2">{chip(w.work_center)}</td>
+                  <td className="px-3 py-2">{chip(w.work_center, w.cell)}</td>
                   {[["people", w.people_calc], ["shtatka", w.shtatka_cfg]].map(([key, fallback]) => (
                     <td key={key} className="px-3 py-1 text-center">
                       {canEdit ? (
