@@ -53,7 +53,8 @@ const STAT_TIPS = {
 };
 
 function utilColor(val) {
-  if (val === null || val === undefined) return "#C8973F";
+  if (val === null || val === undefined) return "#94a3b8"; // no data → neutral grey, never gold
+
   const pct = val * 100;
   if (pct >= 105) return "#f59e0b";
   if (pct >= 95)  return "#22c55e";
