@@ -116,8 +116,10 @@ const ROLE_TKEYS = {
   "shift-manager": "role.manager", supervisor: "role.supervisor", leader: "role.leader",
   guest: "role.guest",
 };
+// Role identity hues in the shared generic-first category order; guest stays
+// de-emphasis slate.
 const ROLE_COLOR = {
-  admin: BRAND, "top-manager": C_USERS, "shift-manager": C_ONLINE, supervisor: C_NEW, leader: C_TIME,
+  admin: "#ef4444", "top-manager": "#22c55e", "shift-manager": "#3b82f6", supervisor: "#eab308", leader: "#f97316",
   guest: "#94a3b8",
 };
 
