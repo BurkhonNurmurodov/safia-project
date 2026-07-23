@@ -354,12 +354,17 @@ export default function SetupTimes() {
           )}
           <div className="grid grid-cols-2 gap-3">
             <FormField label={T.fCell} required>
-              <ModalInput value={modal.draft.cell} onChange={setDraft("cell")} className="font-mono" />
+              <StyledSelect value={cellSelValue} onChange={onCellPick} options={cellSelectOpts} searchable />
             </FormField>
             <FormField label={T.fMinutes}>
               <ModalInput value={modal.draft.minutes} onChange={setDraft("minutes")} type="number" />
             </FormField>
           </div>
+          {modal.cellCustom && (
+            <FormField label={T.fCellCustom} required>
+              <ModalInput value={modal.draft.cell} onChange={setDraft("cell")} className="font-mono" />
+            </FormField>
+          )}
           <FormField label={T.fSku}>
             <ModalInput value={modal.draft.sku} onChange={setDraft("sku")} className="font-mono" />
           </FormField>
