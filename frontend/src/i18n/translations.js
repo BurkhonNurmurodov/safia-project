@@ -5764,7 +5764,7 @@ const t = {
     "workers.shortfall":       "Shortfall",
     "workers.hm.none":         "no confirmed day",
     "workers.info.composition":"Each slice is one role's share of the whole workforce; the center shows the total number of workers. Per-brigadir role counts are in the table below.",
-    "workers.rosterVsPresent": "Official vs present",
+    "workers.rosterVsPresent": "Attendance vs plan (%)",
     "workers.roleShare":       "Role share",
     "workers.info.treemap":    "One block per brigadir, sized by how many workers they have, each brigadir in their own colour. The toggle switches between all workers and only those counted in the zagruzka calculation. Bigger block = more workers.",
     "workers.tmAll":           "Total",
