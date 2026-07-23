@@ -143,6 +143,10 @@ export default function ProfilesManagement() {
         case "supervisor": return tl(it.supervisor) || "";
         case "cell":       return (it.cells || []).join(", ");
         case "verifix":    return it.id;
+        case "verifix_code": return it.verifix_code || "";
+        case "sap_code":     return it.sap_code || "";
+        case "workshop":     return wname(it);
+        case "owner":        return tl(it.leader) || "";
         default:           return tl(it.name) || "";
       }
     };
