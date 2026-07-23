@@ -253,7 +253,7 @@ export default function Trudoyomkost() {
   };
 
   // ── plan vs fakt over time — average line + per-brigadir lines (Overview-style)
-  const pfColor = (pct) => (pct >= 100 ? "#22c55e" : pct >= 85 ? "#D4A95C" : "#ef4444");
+  const pfColor = (pct) => (pct >= 100 ? "#22c55e" : pct >= 85 ? "#eab308" : "#ef4444");
   const pfIsDiff = pfMode === "diff";
 
   // close the brigadir filter dropdown on an outside click
