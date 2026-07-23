@@ -25,8 +25,8 @@ import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 // ── palettes ────────────────────────────────────────────────────────────────
 // Status keeps the traffic-light encoding used across the platform; the
-// identity palettes (source / type / category) are full-spectrum and unique
-// per item, since these are many-category sets, not status encodings.
+// identity palettes (source / type / category) follow the shared generic-first
+// category order (red, green, blue, yellow, … — see utils/chartPalette).
 const C_DONE = "#22c55e", C_OPEN = "#ef4444", C_WAIT = "#eab308", C_REPEAT = "#f97316", C_NA = "#94a3b8";
 const C_WAITCOL = "#8b5cf6"; // "waiting" (awaiting payment/delivery) status column — deliberate purple, per request
 // Aging ramp for still-open corrective actions: fresh → stale, 0–7 · 8–30 · 31–90 · 90+ days.
