@@ -302,7 +302,7 @@ export default function UsersActivity() {
     chart: { type: "line", stacked: false, toolbar: { show: false }, zoom: { enabled: false }, fontFamily: "inherit", background: "transparent" },
     theme: chartTheme,
     stroke: { width: [0, 2.5], curve: "smooth" },
-    colors: [hexA(BRAND, 0.7), C_USERS],
+    colors: [hexA("#ef4444", 0.7), "#22c55e"],
     fill: { type: ["solid", "solid"] },
     plotOptions: { bar: { columnWidth: shownDaily.length > 45 ? "82%" : shownDaily.length > 14 ? "58%" : "40%", borderRadius: 3 } },
     dataLabels: { enabled: false },
