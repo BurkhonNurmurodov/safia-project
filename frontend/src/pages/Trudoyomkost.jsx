@@ -21,6 +21,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { useDragSelect } from "../hooks/useDragSelect";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 // ── localized copy (kept local — only nav.trudoyomkost lives in translations.js)
 const WD = {
