@@ -24,9 +24,11 @@ const CAT_ICON = {
   D: Warehouse,      // goods / raw material from the warehouse
   D2: PackagePlus,   // raw material via an extra warehouse request
   D3: Building2,     // product from other departments
+  D4: Hourglass,     // waiting for the previous shift to finish
   E: Truck,          // goods from internal logistics
   F: FlaskConical,   // technologist's decision
   G: ClipboardList,  // plan department
+  H: Sparkles,       // cleaning (Тозалаш)
 };
 
 /**
