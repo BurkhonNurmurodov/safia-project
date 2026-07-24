@@ -354,12 +354,14 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         }
         toolbar={
           <>
-            {/* Type pills — the shared segmented-toggle template (scroll for phones) */}
+            {/* Type pills — the shared segmented-toggle template (scroll for phones).
+                Hidden on the dedicated Cells tab, where cells is the only view. */}
+            {!cellsOnly && (
             <div className="no-scrollbar max-w-full overflow-x-auto">
               <SegmentedToggle
                 value={type}
                 onChange={(v) => { setType(v); setSort({ key: null, dir: "asc" }); }}
-                options={TYPES.map(({ key, tKey, icon: Icon, listKey }) => ({
+                options={TYPES.filter((x) => x.key !== "cells").map(({ key, tKey, icon: Icon, listKey }) => ({
                   value: key,
                   label: (
                     <span className="inline-flex items-center gap-1.5">
@@ -373,6 +375,15 @@ export default function ProfilesManagement({ cellsOnly = false }) {
                 }))}
               />
             </div>
+            )}
+            {isCells && (
+              <SearchInput
+                value={cellSearch}
+                onChange={setCellSearch}
+                placeholder={t("admin.profiles.cellSearchPh")}
+                className="w-full sm:w-72"
+              />
+            )}
             {type !== "guest" && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
                 {t("admin.profiles.add")}
