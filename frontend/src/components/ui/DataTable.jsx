@@ -83,6 +83,10 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *   toolbar   – row under the header (search + filters), px-4 py-3, bordered
  *   maxHeight – scroll container cap (default "70vh")
  *   wrap      – allow cell text to wrap (default false = whitespace-nowrap)
+ *   fixed     – table-layout:fixed so column widths come from the header
+ *               (set each column's width via its Th `cls`, e.g. "w-[20%]"),
+ *               NOT row content — keeps columns from re-sizing when rows are
+ *               filtered/sorted. Give overflow-prone cells wrap/truncate.
  *   hover     – row hover highlight (default true)
  *   mobile    – optional stacked-card list for phones: when given, the table
  *               renders from `sm:` up only and this node takes its place
