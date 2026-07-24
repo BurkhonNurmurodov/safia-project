@@ -864,6 +864,8 @@ const t = {
     "downtime.cat.D2.note":  "Qo'shimcha zayavka orqali hom ashyo yetishmovchiligi sababli yacheykada ishning to'xtab qolishini keltirib chiqaradi.",
     "downtime.cat.D3.label": "Otdellardan mahsulot kutish",
     "downtime.cat.D3.note":  "Otdellar o'rtasida mahsulot (krem, malina, biskvit va h.k.) kutib qolish natijasida yacheyka to'xtab kutib qolish vaqti.",
+    "downtime.cat.D4.label": "Oldingi smena ishi tugashini kutish",
+    "downtime.cat.D4.note":  "Oldingi smena o'z ishini tugatmagani sababli yacheyka to'xtab kutib qolish vaqti.",
     "downtime.cat.E.label":  "Ichki logistikadan mahsulot yoki hom ashyo kutish",
     "downtime.cat.E.note":   "Ichki logistika xodimlari tomonidan mahsulot kech yetib kelishi natijasida yacheyka to'xtab kutib qolish vaqti.",
     "downtime.cat.F.label":  "Texnologlar qarorini kutish",
