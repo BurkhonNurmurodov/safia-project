@@ -7,9 +7,11 @@ import {
   Warehouse,
   PackagePlus,
   Building2,
+  Hourglass,
   Truck,
   FlaskConical,
   ClipboardList,
+  Sparkles,
   Layers,
 } from "lucide-react";
 import { useLang } from "../../context/LangContext";
