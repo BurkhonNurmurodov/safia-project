@@ -1258,6 +1258,7 @@ const t = {
     "admin.profiles.cellOther":      "Boshqa (yangi yacheyka)…",
     "admin.profiles.cellNewPlaceholder": "Yangi yacheyka nomi",
     "admin.profiles.cellsTab":       "Yacheykalar",
+    "admin.profiles.cellSearchPh":   "Kod, sex yoki lider bo'yicha qidirish…",
     "admin.profiles.colVerifixCode": "Verifix kod",
     "admin.profiles.colSapCode":     "SAP kod",
     "admin.profiles.colWorkshop":    "Sex nomi",
