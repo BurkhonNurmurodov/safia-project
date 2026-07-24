@@ -453,11 +453,11 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         <thead>
           {isCells ? (
             <tr>
-              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} filter={colFilter("verifix_code")} />
-              <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} filter={colFilter("sap_code")} />
-              <Th icon={Users} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} filter={colFilter("workshop")} />
-              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} filter={colFilter("owner")} />
-              <Th icon={Settings2} label={t("admin.profiles.colActions")} />
+              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} filter={colFilter("verifix_code")} cls="w-[13%]" />
+              <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} filter={colFilter("sap_code")} cls="w-[13%]" />
+              <Th icon={Users} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} filter={colFilter("workshop")} cls="w-[32%]" />
+              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} filter={colFilter("owner")} cls="w-[20%]" />
+              <Th icon={Settings2} label={t("admin.profiles.colActions")} cls="w-[22%]" />
             </tr>
           ) : (
           <tr>
