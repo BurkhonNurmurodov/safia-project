@@ -872,6 +872,8 @@ const t = {
     "downtime.cat.F.note":   "Retseptura, yangi mahsulot parametrlari yoki muammoli holatlarda texnologning yakuniy qarori talab etiladi. Bu kutish ishlab chiqarishning to'xtab qolishiga olib keladi va ishchilar tomonidan boshqarilmaydi.",
     "downtime.cat.G.label":  "Plan bo'limi",
     "downtime.cat.G.note":   "Plan bo'limi rejani kech yoki xato tashlashi natijasida yacheyka to'xtab kutib qolish vaqti.",
+    "downtime.cat.H.label":  "Tozalash",
+    "downtime.cat.H.note":   "Yacheyka tozalash ishlari sababli to'xtab turgan vaqt.",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Brigadir Profili",
