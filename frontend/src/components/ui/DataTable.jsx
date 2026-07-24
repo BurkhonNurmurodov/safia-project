@@ -123,7 +123,7 @@ export default function TableCard({
       )}
       <div className={`overflow-auto${mobile != null ? " hidden sm:block" : ""}`} style={{ maxHeight }}>
         <table
-          className={`w-full text-xs ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
+          className={`w-full text-xs ${fixed ? "table-fixed" : ""} ${wrap ? "" : "whitespace-nowrap"} [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] ${hover ? "[&_tbody_tr:hover]:bg-[var(--bg-inner)]" : ""}`}
           style={{ color: "var(--text-1)" }}
         >
           {children}
