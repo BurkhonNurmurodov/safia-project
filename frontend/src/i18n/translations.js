@@ -5885,6 +5885,8 @@ const t = {
     "downtime.cat.F.note":   "Recipes, new product parameters or problem situations require the technologist's final decision. This wait stops production and is not controlled by the workers.",
     "downtime.cat.G.label":  "Planning department",
     "downtime.cat.G.note":   "Cell idle time caused by the planning department issuing the plan late or incorrectly.",
+    "downtime.cat.H.label":  "Cleaning",
+    "downtime.cat.H.note":   "Cell idle time caused by cleaning work.",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Supervisor Profile",
