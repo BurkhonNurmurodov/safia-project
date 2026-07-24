@@ -2925,6 +2925,7 @@ const t = {
     "admin.profiles.cellOther":      "Бошқа (янги ячейка)…",
     "admin.profiles.cellNewPlaceholder": "Янги ячейка номи",
     "admin.profiles.cellsTab":       "Ячейкалар",
+    "admin.profiles.cellSearchPh":   "Код, цех ёки лидер бўйича қидириш…",
     "admin.profiles.colVerifixCode": "Verifix код",
     "admin.profiles.colSapCode":     "SAP код",
     "admin.profiles.colWorkshop":    "Сех номи",
