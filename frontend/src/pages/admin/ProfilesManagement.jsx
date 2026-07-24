@@ -177,12 +177,12 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         default:           return tl(it.name) || "";
       }
     };
-    return [...items].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const va = val(a), vb = val(b);
       if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
     });
-  }, [items, sort, tl]);
+  }, [filtered, sort, tl]);
 
   // name + holders + actions, plus the per-type extras.
   const colSpan = isCells
