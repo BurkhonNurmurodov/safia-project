@@ -149,18 +149,64 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
-  // Cells view free-text filter (verifix / SAP / workshop name / owner). The
-  // registry is 140+ rows now, so a search box is worth it; profiles are left
-  // untouched (their lists are short and stay server-ordered).
+  // ── Google-Sheets-style per-column filters (cells registry) ─────────────────
+  // A funnel on each column opens a searchable checkbox list of that column's
+  // distinct values; empty selection = column unfiltered, several columns AND.
+  const FILT_COLS = ["verifix_code", "sap_code", "workshop", "owner"];
+  const colVal = {
+    verifix_code: (c) => c.verifix_code || "",
+    sap_code:     (c) => c.sap_code || "",
+    workshop:     (c) => wname(c) || "",
+    owner:        (c) => c.leader || "",
+  };
+  const colRender = { owner: (o) => (o ? tl(o) : t("admin.profiles.cellUnassigned")) };
+  const colOpts = useMemo(() => {
+    const m = {};
+    for (const k of FILT_COLS)
+      m[k] = [...new Set(items.map(colVal[k]))]
+        .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, lang]);
+
+  const [colSel, setColSel] = useState({ verifix_code: [], sap_code: [], workshop: [], owner: [] });
+  const [colQ, setColQ] = useState({ verifix_code: "", sap_code: "", workshop: "", owner: "" });
+
+  // The funnel node handed to each cells <Th> — search box (for long lists) over
+  // a checkbox list of distinct values, both from the shared filter templates.
+  const colFilter = (k) => {
+    const opts = colOpts[k] || [];
+    const q = (colQ[k] || "").trim().toLowerCase();
+    const shown = q
+      ? opts.filter((o) => String(colRender[k] ? colRender[k](o) : (o || "—")).toLowerCase().includes(q))
+      : opts;
+    return (
+      <ColFilter active={colSel[k].length > 0}>
+        {opts.length > 8 && (
+          <div className="mb-1.5">
+            <TxtFilter value={colQ[k]} onChange={(v) => setColQ((s) => ({ ...s, [k]: v }))} />
+          </div>
+        )}
+        <OptsFilter opts={shown} sel={colSel[k]} render={colRender[k]}
+          onChange={(v) => setColSel((s) => ({ ...s, [k]: v }))} />
+      </ColFilter>
+    );
+  };
+
+  // Cells view: the global search box (all columns) AND the per-column funnels.
+  // Profiles views stay untouched (short lists, server-ordered).
   const filtered = useMemo(() => {
     if (!isCells) return items;
     const q = cellSearch.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((c) =>
-      `${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.leader) || ""}`
-        .toLowerCase().includes(q));
+    return items.filter((c) => {
+      if (q && !`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.leader) || ""}`
+            .toLowerCase().includes(q)) return false;
+      for (const k of FILT_COLS)
+        if (colSel[k].length && !colSel[k].includes(colVal[k](c))) return false;
+      return true;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isCells, cellSearch, tl, lang]);
+  }, [items, isCells, cellSearch, colSel, tl, lang]);
 
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;
