@@ -105,6 +105,7 @@ export default function TableCard({
   toolbar,
   maxHeight = "70vh",
   wrap = false,
+  fixed = false,
   hover = true,
   mobile,
   mobileCards = false,
