@@ -69,7 +69,8 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
-  const [type, setType] = useState("top-manager");
+  const [type, setType] = useState(cellsOnly ? "cells" : "top-manager");
+  const [cellSearch, setCellSearch] = useState("");   // cells view free-text filter
   const [modal, setModal] = useState(null);        // {mode:"add"|"edit", item?} — form modal
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
