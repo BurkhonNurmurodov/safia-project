@@ -7,7 +7,8 @@ from app.config import settings
 
 _gc: Optional[gspread.Client] = None
 
-# Shift-report waiting-time columns, 0-based (PI, PK, PM, PO, PQ, PS, PU, PW, PY).
+# Shift-report waiting-time columns, 0-based (PI, PK, PM, PO, PQ, PS, PU, PW,
+# PY, QA, QC).
 #
 # The form stores every category as a PAIR of adjacent columns — «Ячейка
 # тўхтаганда» (the wait stopped the cell) and «Ячейка тўхтамаганда» (it did
@@ -15,16 +16,26 @@ _gc: Optional[gspread.Client] = None
 # measure waiting that actually halted the cell, not every wait the brigadir
 # logged. Confirmed intentional 2026-07-22 — do NOT merge the odd indices in
 # here; they are a separate series, read via SHIFT_CATEGORIES_NS below.
+#
+# Naming vs the sheet: the sheet header calls the pair at QC/QD «Категория I»
+# (Oldingi smena ishi tugashini kutish), but the platform shows it as Cat D4 —
+# it belongs to the D «кутиш» family (user directive 2026-07-24). Cat H is the
+# sheet's «Категория H (Тозалаш)» — cleaning.
 SHIFT_CATEGORIES = [
     ("Cat A", 424), ("Cat B", 426), ("Cat C", 428),
     ("Cat D", 430), ("Cat D2", 432), ("Cat D3", 434),
     ("Cat E", 436), ("Cat F", 438), ("Cat G", 440),
+    ("Cat H", 442), ("Cat D4", 444),
 ]
 
 # The second column of each pair — «Ячейка тўхтамаганда». Read since 2026-07-22
 # to feed the Ojidaniya page's second tab, kept strictly separate from the
 # «тўхтаганда» totals above so tab 1's numbers are unchanged.
-SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES]
+#
+# Cat H is EXCLUDED: its second column (QB) is «Нечта одам тозалади?» — a
+# people-count, not minutes — so it must never be summed into the NS series.
+# Cat H simply stays 0 on the «тўхтамаганда» tab.
+SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES if name != "Cat H"]
 
 
 def get_client() -> gspread.Client:
