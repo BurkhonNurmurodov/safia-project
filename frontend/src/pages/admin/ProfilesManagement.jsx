@@ -344,12 +344,12 @@ export default function ProfilesManagement({ cellsOnly = false }) {
       {/* Canonical POSITIONS-style TableCard: count in the head, type pills +
           actions in the toolbar, per-column sort. */}
       <TableCard
-        icon={IdCard}
-        title={t("admin.profiles.title")}
+        icon={cellsOnly ? LayoutGrid : IdCard}
+        title={cellsOnly ? t("admin.profiles.cellsTab") : t("admin.profiles.title")}
         wrap
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-            {items.length}
+            {sorted.length}
           </span>
         }
         toolbar={
