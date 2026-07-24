@@ -693,21 +693,28 @@ function DeltaChip({ trend, e, T }) {
   );
 }
 
-/* The spark is one polyline plus one flat polygon wash — a wide window is a few
- * hundred points but still two DOM nodes, so no SVG filters (or gradients, per
- * the solid-fill convention) and nothing per-cell to freeze on. Line, wash and
- * end dot all take the trend tone; flat/no-baseline rows stay grey. */
+/* The spark is one smooth Catmull-Rom path plus the same path closed as a flat
+ * wash — a wide window is a few hundred points but still two DOM nodes, so no
+ * SVG filters (or gradients, per the solid-fill convention) and nothing
+ * per-cell to freeze on. Line, wash and end dot all take the trend tone;
+ * flat/no-baseline rows stay grey. */
 const SPARK_W = 84, SPARK_H = 24;
 function Spark({ vals, tone }) {
   if (!vals || vals.length < 2) return null;
   const pt = (v, i) => [3 + (i / (vals.length - 1)) * (SPARK_W - 6),
     SPARK_H - 3 - (Math.min(100, Math.max(0, v)) / 100) * (SPARK_H - 6)];
-  const pts = vals.map((v, i) => pt(v, i).join(",")).join(" ");
-  const [ex, ey] = pt(vals[vals.length - 1], vals.length - 1);
+  const p = vals.map(pt), r = (n) => Math.round(n * 10) / 10;
+  let d = `M${r(p[0][0])},${r(p[0][1])}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
+    d += `C${r(p1[0] + (p2[0] - p0[0]) / 6)},${r(p1[1] + (p2[1] - p0[1]) / 6)} ` +
+      `${r(p2[0] - (p3[0] - p1[0]) / 6)},${r(p2[1] - (p3[1] - p1[1]) / 6)} ${r(p2[0])},${r(p2[1])}`;
+  }
+  const [ex, ey] = p[p.length - 1];
   return (
     <svg width={SPARK_W} height={SPARK_H} className="flex-shrink-0" aria-hidden="true">
-      <polygon points={`${pts} ${ex},${SPARK_H - 1} 3,${SPARK_H - 1}`} fill={hexA(tone, 0.14)} />
-      <polyline points={pts} fill="none"
+      <path d={`${d} L${r(ex)},${SPARK_H - 1} L3,${SPARK_H - 1} Z`} fill={hexA(tone, 0.14)} />
+      <path d={d} fill="none"
         stroke={tone} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={ex} cy={ey} r="2.5" fill={tone} />
     </svg>
