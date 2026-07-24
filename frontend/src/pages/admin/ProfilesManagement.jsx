@@ -13,6 +13,7 @@ import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import SearchInput from "../../components/ui/SearchInput";
+import { ColFilter, TxtFilter, OptsFilter } from "../../components/ui/ColumnFilter";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
