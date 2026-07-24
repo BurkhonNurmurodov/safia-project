@@ -6259,6 +6259,7 @@ const t = {
     "admin.profiles.cellOther":      "Other (new cell)…",
     "admin.profiles.cellNewPlaceholder": "New cell name",
     "admin.profiles.cellsTab":       "Cells",
+    "admin.profiles.cellSearchPh":   "Search: code, workshop or leader…",
     "admin.profiles.colVerifixCode": "Verifix code",
     "admin.profiles.colSapCode":     "SAP code",
     "admin.profiles.colWorkshop":    "Workshop name",
