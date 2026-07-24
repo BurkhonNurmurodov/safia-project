@@ -4592,6 +4592,7 @@ const t = {
     "admin.profiles.cellOther":      "Другое (новая ячейка)…",
     "admin.profiles.cellNewPlaceholder": "Название новой ячейки",
     "admin.profiles.cellsTab":       "Ячейки",
+    "admin.profiles.cellSearchPh":   "Поиск: код, цех или лидер…",
     "admin.profiles.colVerifixCode": "Verifix код",
     "admin.profiles.colSapCode":     "SAP код",
     "admin.profiles.colWorkshop":    "Название цеха",
