@@ -505,7 +505,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
                   : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
               </td>
               <td className="px-3 py-2">
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <button
                     onClick={() => openEdit(item)}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
