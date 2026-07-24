@@ -26,6 +26,13 @@ Scope / decisions — sap_code is the piece that links a cell to its Production
 SAP/name are written only when the sheet has a value (a blank never wipes an
 existing SAP code or name). Cells absent from the sheet are left untouched.
 
+142 cells embedded. Against the seed baseline this is ~108 existing cells
+updated (SAP + names filled) and ~34 new cells created, with 2 unknown-leader
+warnings (O'rozov 4122, Ochilov 4123). ALWAYS run --dry-run on prod first and
+review the reported "unassigned (blank in sheet)" lines: re-sync sets leader_id
+to NULL for any sheet cell whose leader column is blank, which on prod may drop
+an owner an admin set via the Cells tab since the last seed.
+
 Usage (from backend/):
     python3 seed_cells_from_sheet.py --dry-run   # report only, nothing written
     python3 seed_cells_from_sheet.py             # apply + commit
