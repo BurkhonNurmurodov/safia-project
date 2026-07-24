@@ -750,6 +750,8 @@ export default function AdminUpload() {
 
       {adminTab === "profiles" && <ProfilesManagement />}
 
+      {adminTab === "cells" && <ProfilesManagement cellsOnly />}
+
       {adminTab === "access" && <PageAccess />}
 
       {adminTab === "broadcast" && <Broadcast />}
