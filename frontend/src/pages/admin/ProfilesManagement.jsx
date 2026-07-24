@@ -64,7 +64,7 @@ function HolderChip({ b, onUnassign, disabled }) {
   );
 }
 
-export default function ProfilesManagement() {
+export default function ProfilesManagement({ cellsOnly = false }) {
   const { t, lang, languages, nameOverrides, reloadTranslations } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
