@@ -148,8 +148,21 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
+  // Cells view free-text filter (verifix / SAP / workshop name / owner). The
+  // registry is 140+ rows now, so a search box is worth it; profiles are left
+  // untouched (their lists are short and stay server-ordered).
+  const filtered = useMemo(() => {
+    if (!isCells) return items;
+    const q = cellSearch.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((c) =>
+      `${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.leader) || ""}`
+        .toLowerCase().includes(q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, isCells, cellSearch, tl, lang]);
+
   const sorted = useMemo(() => {
-    if (!sort.key) return items;
+    if (!sort.key) return filtered;
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (it) => {
       switch (sort.key) {
