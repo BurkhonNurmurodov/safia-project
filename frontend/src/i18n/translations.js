@@ -5877,6 +5877,8 @@ const t = {
     "downtime.cat.D2.note":  "A shortage of raw material requested through an extra order causes the cell's work to stop.",
     "downtime.cat.D3.label": "Waiting for product from other departments",
     "downtime.cat.D3.note":  "Cell idle time caused by waiting for product (cream, raspberry, sponge, etc.) between departments.",
+    "downtime.cat.D4.label": "Waiting for the previous shift to finish",
+    "downtime.cat.D4.note":  "Cell idle time caused by the previous shift not finishing its work.",
     "downtime.cat.E.label":  "Waiting for goods or raw material from internal logistics",
     "downtime.cat.E.note":   "Cell idle time caused by product arriving late from internal logistics staff.",
     "downtime.cat.F.label":  "Waiting for the technologist's decision",
