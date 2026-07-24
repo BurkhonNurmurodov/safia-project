@@ -394,6 +394,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         icon={cellsOnly ? LayoutGrid : IdCard}
         title={cellsOnly ? t("admin.profiles.cellsTab") : t("admin.profiles.title")}
         wrap
+        fixed={isCells}
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
             {sorted.length}
