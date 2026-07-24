@@ -50,7 +50,7 @@ export function SortIcon({ active, dir }) {
  *   hint   – tooltip text (title attribute)
  *   cls    – extra classes (e.g. responsive "hidden sm:table-cell")
  */
-export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, cls = "" }) {
+export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, cls = "", filter }) {
   const sortable = !!(k && onSort);
   const active = sortable && sort?.key === k;
   const alignCls = align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
@@ -67,6 +67,11 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
         {Icon && <Icon size={12} style={{ color: "var(--brand-text)" }} />}
         {label}
         {sortable && <SortIcon active={active} dir={sort.dir} />}
+        {/* Optional per-column filter funnel (Google-Sheets style). Its own click
+            must not fall through to the header's sort toggle. */}
+        {filter && (
+          <span className="inline-flex" onClick={(e) => e.stopPropagation()}>{filter}</span>
+        )}
       </span>
     </th>
   );
