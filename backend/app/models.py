@@ -1128,3 +1128,55 @@ class SetupTime(Base):
     sku        = Column(String, nullable=False, default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProfileCapability(Base):
+    """One admin capability granted to ONE profile.
+
+    Capabilities are the per-person half of the permission system: the
+    page-access matrix (app/permissions.py) decides which PAGES a ROLE may
+    open, this decides which admin-only ACTIONS a single PROFILE may perform.
+    Grants are additive — every hardcoded rule (admin, shift-manager, the
+    receiving supervisor of a transfer…) keeps working untouched; a grant only
+    widens the set of people who may act.
+
+    Keyed by ``profile_key`` ("supervisor:42" — see app/identity.py), never by
+    telegram_user_roles.id: a profile is a person, so every holder of that
+    profile wields the grant and it survives an unassign→re-claim. A person
+    switched into a DIFFERENT profile does not carry it over.
+
+    ``scope`` decides how much data the action reaches:
+      own → the profile's normal row scoping (supervisor→their unit,
+            shift-manager→their shift); the grant only adds the action.
+      all → admin reach: every unit, shift and date.
+    """
+    __tablename__ = "profile_capabilities"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=False, index=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=False, default="own")   # own | all
+    granted_by  = Column(String, nullable=True)                   # admin's display name
+    granted_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("profile_key", "capability", name="uq_profile_capability"),
+    )
+
+
+class CapabilityAudit(Base):
+    """Append-only log of every capability grant / revoke / scope change.
+
+    Grants hand out admin-level powers, so who widened whose access — and when
+    — must stay answerable long after the grant itself was revoked and its
+    ProfileCapability row deleted."""
+    __tablename__ = "capability_audit"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=False, index=True)
+    capability  = Column(String, nullable=False)
+    action      = Column(String, nullable=False)   # granted | revoked | rescoped
+    scope       = Column(String, nullable=True)    # the scope after the change
+    actor_name  = Column(String, nullable=True)
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
