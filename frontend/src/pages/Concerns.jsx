@@ -1436,6 +1436,9 @@ export default function Concerns() {
   // expanded mobile card, so the two layouts always offer the same actions.
   const rowActions = (r) => (
     <>
+      {/* Always first: the table clamps long texts, so every viewer needs a
+          way to read the whole concern even with no rights over it. */}
+      <ActionBtn icon={Eye} label={t("concerns.view")} onClick={() => setViewRow(r)} />
       {r.can_edit && (
         <ActionBtn icon={Pencil} label={t("concerns.edit")} onClick={() => openEdit(r)} />
       )}
