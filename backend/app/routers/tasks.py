@@ -242,26 +242,32 @@ def list_assignable_leaders(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("tasks")),
 ):
-    """Create-form picker source: admins get every approved leader (with their
-    unit's brigadir for the grouped label); supervisors only their own."""
+    """Create-form picker source: one entry per leader PROFILE — per person.
+
+    Built from role_profiles, never from registrations: a profile claimed by
+    three Telegram accounts is still ONE person and must appear once. Unclaimed
+    profiles are listed too (``holders: 0``) — a leader exists as an
+    organizational post before anyone registers, and work assigned to them waits
+    in the bell until the profile is claimed.
+    """
     role = payload.get("role")
     if role not in ("admin", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
-    q = db.query(TelegramUserRole).filter(
-        TelegramUserRole.role == "leader", TelegramUserRole.status == "approved",
+    profiles = identity.list_leader_profiles(
+        db, payload.get("role_id") if role == "supervisor" else None
     )
-    if role == "supervisor":
-        q = q.filter(TelegramUserRole.role_id == payload.get("role_id"))
-    rows = q.order_by(TelegramUserRole.full_name).all()
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     return [
         {
-            "role_ref": r.id,
-            "name": r.full_name,
-            "supervisor_manager_id": r.role_id,
-            "supervisor_name": mgr_names.get(r.role_id),
+            "leader_profile_id": p.id,
+            "name": p.name,
+            "supervisor_manager_id": p.manager_id,
+            "supervisor_name": mgr_names.get(p.manager_id),
+            # How many logins currently work as this person — shown as a hint,
+            # never as a reason to split them into several options.
+            "holders": len(identity.profile_holders(db, f"leader:{p.id}")),
         }
-        for r in rows
+        for p in profiles
     ]
 
 
