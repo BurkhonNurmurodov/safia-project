@@ -57,6 +57,7 @@ def get_attendance(
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
+    _: dict = Depends(require_auth),
 ):
     q = db.query(Attendance).join(Manager).filter(_CALC_FILTER)
     if manager_id:
