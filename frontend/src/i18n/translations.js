@@ -1283,6 +1283,8 @@ const t = {
     "admin.profiles.leaders":        "Liderlar",
     "admin.profiles.admins":         "Adminlar",
     "admin.profiles.guests":         "Mehmonlar",
+    "admin.profiles.noShift":        "Smena ko'rsatilmagan",
+    "admin.profiles.noSupervisor":   "Brigadir tayinlanmagan",
     "admin.profiles.add":            "Profil qo'shish",
     "admin.profiles.addTitle":       "Yangi profil",
     "admin.profiles.editTitle":      "Profilni tahrirlash",
