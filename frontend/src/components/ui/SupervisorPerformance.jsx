@@ -75,7 +75,9 @@ function CommentsBox({ managerId, date }) {
                   {tl(c.author_name) || "—"} · {c.created_at ? new Date(c.created_at).toLocaleString() : ""}
                 </div>
               </div>
-              {c.author_telegram_id === Number(auth?.telegram_id) && (
+              {/* The server decides ownership per PROFILE — every account
+                  working as the author is the same person. */}
+              {(c.is_own ?? (c.author_telegram_id === Number(auth?.telegram_id))) && (
                 <button onClick={() => delMut.mutate(c.id)} style={{ color: "var(--text-4)" }} title={t("daily.delete")}>
                   <Trash2 size={13} />
                 </button>
