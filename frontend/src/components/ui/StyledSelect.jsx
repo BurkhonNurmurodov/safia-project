@@ -337,25 +337,8 @@ export default function StyledSelect({
                       <Trash2 size={13} />
                     </span>
                   )}
-                  <span
-                    style={{
-                      flexShrink:     0,
-                      width:          18,
-                      height:         18,
-                      // square tick-box for multi-select, radio dot for single
-                      borderRadius:   multiple ? 5 : "50%",
-                      border:         isSelected
-                        ? "2px solid var(--brand, #C8973F)"
-                        : "2px solid var(--text-4)",
-                      display:        "flex",
-                      alignItems:     "center",
-                      justifyContent: "center",
-                      background:     isSelected ? "var(--brand, #C8973F)" : "transparent",
-                      transition:     "all 0.1s",
-                    }}
-                  >
-                    {isSelected && <Check size={10} strokeWidth={3} color="#fff" />}
-                  </span>
+                  {/* square tick-box for multi-select, radio dot for single */}
+                  <Box state={isSelected ? "on" : "off"} />
                 </span>
               </button>
             );
