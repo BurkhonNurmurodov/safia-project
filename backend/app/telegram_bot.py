@@ -761,6 +761,7 @@ def _webapp_data(message: types.Message):
         # A name that matches no profile is dropped silently: the pickers only
         # offer real profiles, so this can only be a stale/forged payload.
         role_id = None
+        leader_profile_id = None
         if role == "supervisor":
             mgr = db.query(Manager).filter(Manager.name == full_name,
                                            Manager.archived.is_(False)).first()
