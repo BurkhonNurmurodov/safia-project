@@ -1366,7 +1366,9 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
     elif role == "shift-manager":
         if not role_id:
             return []
-        shift       = 1 if role_id in [1, 2] else 2
+        # The shift comes from the PROFILE. The old id<=2 guess sent every
+        # shift-1 profile created after the original four slots to shift 2.
+        shift       = _sm_shift(db, role_id)
         mgr_ids     = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
     # admin sees all
@@ -1861,7 +1863,7 @@ def _scope_deletion_requests(caller, db: Session):
     elif role == "shift-manager":
         if not role_id:
             return []
-        shift   = 1 if role_id in [1, 2] else 2
+        shift   = _sm_shift(db, role_id)   # from the profile, not an id guess
         mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         q = q.filter(EditRequest.manager_id.in_(mgr_ids))
     # admin → all
@@ -1888,7 +1890,7 @@ def _scope_documents(q, caller, db: Session):
     if role == "shift-manager":
         if not role_id:
             return q.filter(HrDocument.id < 0)   # always-empty
-        shift   = 1 if role_id in [1, 2] else 2
+        shift   = _sm_shift(db, role_id)   # from the profile, not an id guess
         mgr_ids = [m.id for m in db.query(Manager).filter(Manager.shift == shift, Manager.archived.is_(False)).all()]
         return q.filter(HrDocument.manager_id.in_(mgr_ids))
     # admin → everything

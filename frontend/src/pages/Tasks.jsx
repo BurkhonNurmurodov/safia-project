@@ -454,7 +454,7 @@ function CommentsModal({ task, canComment, onClose }) {
 
 const emptyForm = () => ({
   id: null,
-  leader_ref: null,
+  leader_profile_id: null,
   leader_name: "",
   task_text: "",
   due_date: "",
@@ -526,7 +526,9 @@ export default function Tasks() {
     const m = new Map();
     for (const r of rows) {
       if (r.status === "done") continue;
-      m.set(r.leader_role_ref, (m.get(r.leader_role_ref) || 0) + 1);
+      // Count per PERSON (profile), not per registration — a leader held by
+      // two accounts used to split into two counts and two priority queues.
+      m.set(r.leader_profile_id, (m.get(r.leader_profile_id) || 0) + 1);
     }
     return m;
   }, [rows]);
@@ -549,10 +551,12 @@ export default function Tasks() {
   const leaderFilterOptions = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
-      if (r.leader_role_ref == null) continue;
+      if (r.leader_profile_id == null) continue;
       if (fShift != null && r.supervisor_shift !== fShift) continue;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) continue;
-      if (!m.has(r.leader_role_ref)) m.set(r.leader_role_ref, r.leader_name || "—");
+      // Keyed by profile, so one person is one option however many logins
+      // they use.
+      if (!m.has(r.leader_profile_id)) m.set(r.leader_profile_id, r.leader_name || "—");
     }
     return [...m.entries()]
       .map(([id, name]) => ({ value: String(id), label: tl(name) }))
@@ -569,7 +573,7 @@ export default function Tasks() {
       if (endDate && !(day && day <= endDate)) return false;
       if (fShift != null && r.supervisor_shift !== fShift) return false;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
-      if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
+      if (fLeader !== "All" && String(r.leader_profile_id) !== fLeader) return false;
       return true;
     });
   }, [rows, startDate, endDate, fShift, fSup, fLeader]);
@@ -586,7 +590,7 @@ export default function Tasks() {
       if (endDate && !(day && day <= endDate)) return false;
       if (fShift != null && r.supervisor_shift !== fShift) return false;
       if (fSup !== "All" && String(r.supervisor_manager_id) !== fSup) return false;
-      if (fLeader !== "All" && String(r.leader_role_ref) !== fLeader) return false;
+      if (fLeader !== "All" && String(r.leader_profile_id) !== fLeader) return false;
       return true;
     });
   }, [rows, scoped, chartStart, startDate, endDate, fShift, fSup, fLeader]);
@@ -716,7 +720,7 @@ export default function Tasks() {
         ? api.put(`/api/tasks/${form.id}`, { task_text: form.task_text.trim(), due_date: form.due_date }).then((r) => r.data)
         : api.post("/api/tasks", {
             task_text: form.task_text.trim(),
-            leader_ref: form.leader_ref,
+            leader_profile_id: form.leader_profile_id,
             due_date: form.due_date,
             comment: form.comment.trim() || null,
           }).then((r) => r.data),
@@ -743,14 +747,14 @@ export default function Tasks() {
 
   // ── modal helpers ─────────────────────────────────────────────────────────
   function openCreate() {
-    setForm({ ...emptyForm(), leader_ref: fLeader !== "All" ? Number(fLeader) : null });
+    setForm({ ...emptyForm(), leader_profile_id: fLeader !== "All" ? Number(fLeader) : null });
     setFormError("");
     setModalOpen(true);
   }
   function openEdit(r) {
     setForm({
       id: r.id,
-      leader_ref: r.leader_role_ref,
+      leader_profile_id: r.leader_profile_id,
       leader_name: r.leader_name || "",
       task_text: r.task_text || "",
       due_date: r.due_date || "",
@@ -765,14 +769,18 @@ export default function Tasks() {
     setFormError("");
   }
   function submit() {
-    if (!form.id && !form.leader_ref) return setFormError(t("tasks.pickLeader"));
+    if (!form.id && !form.leader_profile_id) return setFormError(t("tasks.pickLeader"));
     if (!form.task_text.trim()) return setFormError(t("tasks.textRequired"));
     if (!form.due_date) return setFormError(t("tasks.dueRequired"));
     saveMutation.mutate();
   }
 
+  // One option per leader PROFILE — per person. The backend used to return one
+  // row per registration, so a leader whose profile is claimed by three
+  // Telegram accounts appeared three times with identical labels and the
+  // supervisor could not tell which to pick.
   const leaderOptions = leaders.map((l) => ({
-    value: String(l.role_ref),
+    value: String(l.leader_profile_id),
     label: isAdmin && l.supervisor_name ? `${tl(l.name)} · ${tl(l.supervisor_name)}` : tl(l.name),
   }));
 
@@ -1040,7 +1048,7 @@ export default function Tasks() {
                   const expanded = expandedId === r.id;
                   const overdue = isOverdue(r);
                   const canEditRow = r.can_edit;
-                  const nActive = activeCounts.get(r.leader_role_ref) || 0;
+                  const nActive = activeCounts.get(r.leader_profile_id) || 0;
                   return (
                     <Fragment key={r.id}>
                       <tr
@@ -1148,8 +1156,8 @@ export default function Tasks() {
                   </div>
                 ) : (
                   <StyledSelect
-                    value={form.leader_ref ? String(form.leader_ref) : ""}
-                    onChange={(v) => setForm((f) => ({ ...f, leader_ref: v ? Number(v) : null }))}
+                    value={form.leader_profile_id ? String(form.leader_profile_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, leader_profile_id: v ? Number(v) : null }))}
                     options={leaderOptions}
                     placeholder={t("tasks.pickLeader")}
                   />
