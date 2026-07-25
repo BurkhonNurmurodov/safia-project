@@ -663,34 +663,43 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
 
 
 class CapabilitiesPayload(BaseModel):
-    caps: dict[str, str]   # {capability: "own" | "all"}
+    keys:    list[str]            # profile keys to apply the change to
+    grants:  dict[str, str] = {}  # {capability: "own" | "all"} to add / rescope
+    revokes: list[str] = []       # capabilities to remove
 
 
-@router.put("/capabilities/{profile_key}")
+@router.put("/capabilities")
 def admin_set_capabilities(
-    profile_key: str,
     payload: CapabilitiesPayload,
     db: Session = Depends(get_db),
     admin_payload: dict = Depends(verify_admin),
 ):
-    """Replace one profile's grants. Admin profiles are rejected outright — they
-    already hold the whole catalog, so a row would be a confusing no-op."""
-    role, ref = identity.parse_profile_key(profile_key)
-    if not role or not ref:
-        raise HTTPException(status_code=400, detail="Invalid profile key")
-    if role in UNGRANTABLE_ROLES:
-        raise HTTPException(status_code=400, detail="Admins already hold every capability")
+    """Apply one capability DIFF to one or many profiles.
 
-    unknown = [k for k in payload.caps if k not in CAPABILITY_KEYS]
+    A diff rather than a whole-set replace because the Permissions tab selects
+    several profiles at once and they rarely hold the same grants — replacing
+    would wipe whatever the admin wasn't looking at. Admin profiles are rejected
+    outright: they already hold the entire catalog."""
+    if not payload.keys:
+        raise HTTPException(status_code=400, detail="No profiles selected")
+
+    for key in payload.keys:
+        role, ref = identity.parse_profile_key(key)
+        if not role or not ref:
+            raise HTTPException(status_code=400, detail=f"Invalid profile key: {key}")
+        if role in UNGRANTABLE_ROLES:
+            raise HTTPException(status_code=400, detail="Admins already hold every capability")
+
+    unknown = [k for k in list(payload.grants) + payload.revokes if k not in CAPABILITY_KEYS]
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown capability: {unknown[0]}")
 
-    caps = set_caps_for_profile(
-        db, profile_key, payload.caps,
+    caps = apply_caps(
+        db, payload.keys, payload.grants, payload.revokes,
         actor_name=admin_payload.get("full_name"),
         actor_telegram_id=int(admin_payload["sub"]),
     )
-    return {"status": "ok", "profile_key": profile_key, "caps": caps}
+    return {"status": "ok", "caps": caps}
 
 
 @router.get("/capabilities/audit")
