@@ -353,7 +353,6 @@ export default function Downtime() {
   // («тўхтаганда» / «тўхтамаганда») the shares are taken from.
   const [seasonMode, setSeasonMode] = useState("month"); // "day" | "week" | "month"
   const [seasonYear, setSeasonYear] = useState(null);
-  const seasonScrollRef = useRef(null);
 
   const seasonParams = useMemo(() => ({
     ...(shift ? { shift } : {}),
