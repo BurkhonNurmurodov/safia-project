@@ -652,6 +652,49 @@ export default function Downtime() {
         )}
       </div>
 
+      {/* Seasonality — category × month (or × ISO week) share of the waiting
+          minutes, on the shared SeasonalityHeatmap grid. */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+            {t("downtime.season")}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {seasonMode === "year" && seasonYears.length > 0 && (
+              <StyledSelect
+                value={seasonYear || ""}
+                onChange={setSeasonYear}
+                options={seasonYears.map((y) => ({ value: String(y), label: String(y) }))}
+                triggerClassName="px-2.5 py-1.5 text-xs"
+              />
+            )}
+            <SegmentedToggle
+              size="sm"
+              value={seasonMode}
+              onChange={setSeasonMode}
+              options={[["year", t("downtime.seasonYear")], ["week", t("downtime.seasonWeek")]]}
+            />
+          </div>
+        </div>
+        <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+          {seasonMode === "week" ? t("downtime.seasonSubWeek") : t("downtime.seasonSub")}
+        </div>
+        {(seasonMode === "year" ? seasonLoading : isLoading) ? (
+          <SkeletonChart className="h-64" />
+        ) : seasonRows.length ? (
+          <SeasonalityHeatmap
+            scrollRef={seasonScrollRef}
+            labels={season.labels}
+            colTotals={season.colTotals}
+            rows={seasonRows}
+            firstColLabel={t("downtime.filterCat")}
+            firstColWidth={190}
+          />
+        ) : (
+          <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} height="h-32" />
+        )}
+      </div>
+
       {showCatGuide && (
         <CategoryLegendModal
           catNames={catNames}
