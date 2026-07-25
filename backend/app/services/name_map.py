@@ -211,3 +211,55 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
         if best is not None:
             out[raw] = {"name": best.name, "id": best.id, "shift": best.shift}
     return out
+
+
+def leader_match(profiles: Iterable, entries: Iterable) -> dict[tuple, dict]:
+    """Map each (sheet leader name, unit) pair to the leader PROFILE it names.
+
+    The leaders sheet identifies people by whatever spelling the form captured,
+    so identity there is a name string. That makes one person two people the
+    moment a spelling drifts (their score splits in half across two rows), and
+    merges two different leaders who happen to share a surname+first name in
+    different units. Resolving to a profile fixes both: the profile is the
+    person.
+
+    ``entries`` are ``(sheet_name, manager_id | None)`` pairs. The unit is the
+    disambiguator — two leaders with the same name in different units are
+    different people and must never collapse — so candidates are restricted to
+    that unit whenever it is known. Returns
+    ``{(sheet_name, manager_id): {"id", "name", "manager_id"}}``, omitting names
+    that match no profile confidently (they keep their raw sheet spelling
+    rather than being attributed to the wrong person).
+    """
+    canon = [(p, _name_tokens(p.name)) for p in profiles]
+    by_unit: dict = {}
+    for p, ctok in canon:
+        by_unit.setdefault(p.manager_id, []).append((p, ctok))
+
+    out: dict[tuple, dict] = {}
+    for raw, manager_id in entries:
+        if not raw:
+            continue
+        tokens = _name_tokens(raw)
+        if len(tokens) < 2:
+            continue
+        # Same unit first; fall back to the whole roster only when the row's
+        # unit is unknown, never when it is known but has no match (that would
+        # hand the row to a same-named leader of another brigade).
+        pool = by_unit.get(manager_id) if manager_id is not None else canon
+        if not pool:
+            continue
+        exact = next((p for p, ctok in pool if " ".join(ctok) == " ".join(tokens)), None)
+        if exact is not None:
+            out[(raw, manager_id)] = {"id": exact.id, "name": exact.name,
+                                      "manager_id": exact.manager_id}
+            continue
+        best, best_score = None, 0.0
+        for p, ctok in pool:
+            score = _pair_score(tokens, ctok)
+            if score > best_score:
+                best, best_score = p, score
+        if best is not None and best_score > 0:
+            out[(raw, manager_id)] = {"id": best.id, "name": best.name,
+                                      "manager_id": best.manager_id}
+    return out

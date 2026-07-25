@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AppSetting, LeaderChecklist, LeaderSyncMeta, Manager
 from app.permissions import require_page
+from app import identity
+from app.models import RoleProfile
 from app.services.name_map import (
     _norm as _fold_name,
     _name_tokens,
     _pair_score,
+    leader_match,
     supervisor_match,
 )
 
@@ -141,18 +144,34 @@ def get_leaders(
             if (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
             == payload.get("role_id")
         ]
-    elif role == "leader":
-        # Scope a leader to their OWN checklist rows: the sheet's «Лидер ФИО» is a
-        # full passport-form name in either alphabet, while the JWT carries the
-        # canonical profile name — so match with the same fuzzy scorer the
-        # supervisor units use (surname + first name, alphabet/form tolerant).
-        # No confident name match ⇒ no rows, never another leader's data.
-        me = _name_tokens(payload.get("full_name") or "")
-        rows = (
-            [r for r in rows if r.leader and _pair_score(_name_tokens(r.leader), me) > 0]
-            if len(me) >= 2
-            else []
+    # Resolve every row's «Лидер ФИО» to a leader PROFILE — the person. The sheet
+    # spells people freely, so identity-by-name split one leader's score across
+    # two spellings and merged two same-named leaders from different units; the
+    # matched unit disambiguates. Unmatched rows keep their raw spelling.
+    lead_match = leader_match(
+        db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+        {(r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
+         for r in rows if r.leader},
+    )
+
+    def _leader_of(r):
+        return lead_match.get(
+            (r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
         )
+
+    if role == "leader":
+        # Scope a leader to their OWN rows by profile identity — from any of
+        # their logins, and immune to the sheet's spelling of their name.
+        # No confident match ⇒ no rows, never another leader's data.
+        my_pid = identity.viewer_leader_profile_id(db, payload)
+        if my_pid:
+            rows = [r for r in rows if (_leader_of(r) or {}).get("id") == my_pid]
+        else:
+            me = _name_tokens(payload.get("full_name") or "")
+            rows = (
+                [r for r in rows if r.leader and _pair_score(_name_tokens(r.leader), me) > 0]
+                if len(me) >= 2 else []
+            )
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
@@ -170,7 +189,10 @@ def get_leaders(
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
                 "supervisor": _relabel(r.supervisor),
                 "shift": sup_shift.get(_relabel(r.supervisor)),
-                "leader": r.leader,
+                # The PERSON: a stable profile id plus their canonical profile
+                # name, so every spelling of one leader groups as one person.
+                "leader_id": (_leader_of(r) or {}).get("id"),
+                "leader": (_leader_of(r) or {}).get("name") or r.leader,
                 "completion": float(r.completion or 0),
                 "tasks": r.tasks or [],
             }
