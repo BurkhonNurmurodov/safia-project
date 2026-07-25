@@ -1118,7 +1118,7 @@ def bulk_delete_attendance(
     affected = 0
     pending_admin_batch = None   # (batch_id, manager_id, date, supervisor_name, names) for supervisor batches
 
-    if role == "admin":
+    if direct:
         # One batch_id per bulk action so the logged requests appear as a
         # single grouped row in the Requests tab.
         admin_batch_id = str(uuid4())
