@@ -999,8 +999,7 @@ class DirectUpdateBody(BaseModel):
 
 @router.post("/attendance/update")
 def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+    _require_cap_over_unit(caller, db, CAP_ATTENDANCE_EDIT, body.manager_id)
 
     d = date.fromisoformat(body.attend_date)
     row = db.query(Attendance).filter(
