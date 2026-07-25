@@ -420,7 +420,12 @@ def _uniq(seq: list[int]) -> list[int]:
 def _profile_holders(db: Session) -> list[dict]:
     """The full role → profile → holder-telegram-ids structure, in the same
     role order the admin panel uses. A profile with no approved holder keeps an
-    empty ``user_ids`` (the UI shows it disabled as "no registered users")."""
+    empty ``user_ids`` (the UI shows it disabled as "no registered users").
+
+    Each profile also carries the org-chart position the picker groups by —
+    ``shift`` for shift-managers and supervisors, ``unit``/``unit_id`` (their
+    supervisor) for leaders. They stay structured, never a pre-joined caption,
+    so the frontend renders them through t()/tl() in the viewer's language."""
 
     def approved(role: str, role_id: int) -> list[int]:
         return _uniq([
@@ -429,12 +434,14 @@ def _profile_holders(db: Session) -> list[dict]:
             if r.telegram_id
         ])
 
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     blocks: list[dict] = []
     for role in ("top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"):
         profiles: list[dict] = []
         if role == "supervisor":
             for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
                 profiles.append({"key": f"supervisor:{m.id}", "name": m.name,
+                                 "shift": m.shift,
                                  "user_ids": approved("supervisor", m.id)})
         elif role == "leader":
             for p in db.query(RoleProfile).filter_by(role="leader").order_by(RoleProfile.name).all():
@@ -443,7 +450,10 @@ def _profile_holders(db: Session) -> list[dict]:
                     .filter_by(role="leader", role_id=p.manager_id, status="approved").all()
                     if r.telegram_id and r.full_name == p.name
                 ])
-                profiles.append({"key": f"leader:{p.id}", "name": p.name, "user_ids": ids})
+                profiles.append({"key": f"leader:{p.id}", "name": p.name,
+                                 "unit_id": p.manager_id,
+                                 "unit": mgr_names.get(p.manager_id),
+                                 "user_ids": ids})
         elif role == "admin":
             for p in db.query(RoleProfile).filter_by(role="admin").order_by(RoleProfile.name).all():
                 ids = _uniq([a.telegram_id for a in db.query(Admin).filter_by(profile_id=p.id).all()
@@ -452,6 +462,7 @@ def _profile_holders(db: Session) -> list[dict]:
         else:  # top-manager, shift-manager, guest — RoleProfile keyed by its own id
             for p in db.query(RoleProfile).filter_by(role=role).order_by(RoleProfile.name).all():
                 profiles.append({"key": f"{role}:{p.id}", "name": p.name,
+                                 "shift": p.shift if role == "shift-manager" else None,
                                  "user_ids": approved(role, p.id)})
         if profiles:
             blocks.append({"role": role, "profiles": profiles})
