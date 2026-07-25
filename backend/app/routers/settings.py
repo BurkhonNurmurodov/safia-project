@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AppSetting
 from app.permissions import get_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
+from app.security import require_auth
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
