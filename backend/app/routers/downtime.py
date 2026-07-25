@@ -19,6 +19,12 @@ def get_downtime(
     date_to: date = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    # kpi_only=1: strip the Ojidaniya-page-only categories (OJIDANIYA_ONLY_CATS)
+    # from totals, breakdowns and flags. Every consumer of this endpoint OTHER
+    # than the Ojidaniya page itself (today: the Daily performance block) must
+    # pass it, so those categories exist nowhere outside /downtime and the
+    # totals shown match the equip_downtime used by the загрузка KPIs.
+    kpi_only: bool = Query(default=False),
     db: Session = Depends(get_db),
     _: dict = Depends(require_page("downtime", "daily")),
 ):
