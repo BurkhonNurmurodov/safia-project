@@ -24,6 +24,35 @@ import { Info } from "lucide-react";
 // per category index, shared by the merged bar chart, the doughnut and the chips.
 import { CATEGORY_COLORS as CAT_COLORS } from "../utils/chartPalette";
 
+// ── date helpers for the seasonality card's weekly axis ──────────────────────
+// Local-calendar ISO stamps (never toISOString — that shifts UTC+5 back a day).
+const isoLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (s, n) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + n); return isoLocal(d); };
+// Monday of the ISO week the date falls in — the weekly column key.
+const weekStart = (s) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoLocal(d); };
+const ddmm = (s) => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
+// The shift report speaks "DD.MM.YYYY"; the pickers and week keys speak ISO.
+const isoOfDmy = (s) => { const [d, m, y] = (s || "").split("."); return `${y}-${m}-${d}`; };
+
+// Category × column minutes → the heatmap's percent matrix. Rows are the
+// categories that actually occur, biggest share first (as in the reference
+// grid); each cell is that category's share of ITS OWN column, so a column
+// always adds up to 100%.
+const seasonMatrix = (labels, colTotals, catCol) => {
+  const n = labels.length;
+  const sum = (a) => (a || []).reduce((s, v) => s + (v || 0), 0);
+  const cats = Object.keys(catCol)
+    .filter((c) => sum(catCol[c]) > 0)
+    .sort((a, b) => sum(catCol[b]) - sum(catCol[a]));
+  const matrix = cats.map((c) => ({
+    k: c,
+    data: Array.from({ length: n }, (_, i) =>
+      colTotals[i] ? Math.round(((catCol[c][i] || 0) / colTotals[i]) * 1000) / 10 : 0),
+  }));
+  return { labels, colTotals, matrix };
+};
+
 export default function Downtime() {
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
