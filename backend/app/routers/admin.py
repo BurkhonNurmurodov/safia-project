@@ -21,8 +21,8 @@ from app.capabilities import (
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Manager, Attendance, CapabilityAudit, ProfileCapability, RoleProfile, SheetSource,
-    AppSetting, TelegramUser, TelegramUserRole,
+    Admin, Manager, Attendance, CapabilityAudit, ProfileCapability, RoleProfile,
+    SheetSource, AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
 )
 from app.services.verifix_parser import parse_verifix_file
