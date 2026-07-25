@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api", tags=["attendance"])
 
 
 @router.get("/attendance/range")
-def get_attendance_range(db: Session = Depends(get_db)):
+def get_attendance_range(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     """Return the min and max dates available in the attendance table."""
     result = db.query(func.min(Attendance.date), func.max(Attendance.date)).first()
     min_date, max_date = result
