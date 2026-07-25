@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import ReactApexChart from "react-apexcharts";
 import {
   AlertTriangle, ArrowLeft,
-  Clock, Lock, FileText, Trash2, BarChart2, Unlock, Eye, Loader2,
+  Clock, Lock, FileText, Trash2, BarChart2, Unlock, Eye, Loader2, Info,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
