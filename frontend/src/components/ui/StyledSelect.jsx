@@ -278,14 +278,18 @@ export default function StyledSelect({
                 key={opt.value}
                 type="button"
                 data-selected={isSelected}
+                title={opt.title}
                 onClick={() => pick(opt.value)}
-                className="w-full text-left px-4 py-3 text-sm flex items-center justify-between gap-3 transition-colors"
+                className="w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 transition-colors"
                 style={{
-                  borderBottom: "1px solid var(--border)",
-                  background:   isSelected
+                  background: isSelected
                     ? "var(--brand-hover, rgba(200,151,63,.12))"
                     : "transparent",
-                  color: isSelected ? "var(--brand-text, #C8973F)" : "var(--text-1)",
+                  // Multi rows say "picked" with the tick-box, so the label keeps
+                  // its normal colour — gold-on-gold is unreadable at this size.
+                  color: isSelected && !multiple
+                    ? "var(--brand-text, #C8973F)"
+                    : "var(--text-1)",
                 }}
                 onMouseEnter={(e) => {
                   if (!isSelected) e.currentTarget.style.background = "var(--bg-inner)";
