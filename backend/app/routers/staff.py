@@ -1903,26 +1903,15 @@ def _doc_label(doc_type: str, lang: str) -> str:
 
 
 def _caller_unit_ids(caller, db: Session) -> list[int] | None:
-    """Unit (manager) ids the caller's OWN row scoping covers; None = no
-    restriction.
+    """Unit ids the caller's OWN row scoping covers; None = no restriction.
 
-    Mirrors ``_scope_documents`` / ``_scope_deletion_requests`` exactly, so an
-    "own"-scoped capability grant reaches precisely the rows the person already
-    sees and not one row more. Roles those functions leave unfiltered
-    (top-manager and friends) return None here for the same reason. A
-    supervisor with no unit is the one deliberate difference — it returns the
-    empty list rather than falling back to "rows I created", because a grant
-    must never be broader than the scoping it claims to reuse."""
-    role, role_id = caller.get("role"), caller.get("role_id")
-    if role == "supervisor":
-        return [role_id] if role_id else []
-    if role == "shift-manager":
-        if not role_id:
-            return []
-        shift = _sm_shift(db, role_id)
-        return [m.id for m in db.query(Manager).filter(
-            Manager.shift == shift, Manager.archived.is_(False)).all()]
-    return None
+    Delegates to the shared definition in app/capabilities so an "own"-scoped
+    grant reaches exactly the rows the person already sees — and exactly the
+    rows they get notified about. Mirrors ``_scope_documents`` /
+    ``_scope_deletion_requests``, with one deliberate difference: a supervisor
+    with no unit gets the empty list rather than a fallback to "rows I created",
+    because a grant must never be broader than the scoping it claims to reuse."""
+    return profile_unit_ids(db, identity.viewer_profile_key(db, caller))
 
 
 def _scope_deletion_requests(caller, db: Session):
