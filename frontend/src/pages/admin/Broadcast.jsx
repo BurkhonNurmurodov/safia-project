@@ -20,6 +20,19 @@ import { buildRecipientGroups } from "../../utils/broadcastTree";
 
 const ATTACH_ICONS = { photo: ImageIcon, video: Video, document: FileText };
 
+// Attachment whitelist — MUST mirror BROADCAST_EXTS in backend/app/upload_guard.py.
+// `accept` filters the OS picker; the Set re-checks (drag-drop / "all files")
+// and the backend re-checks again on /api/broadcast/send.
+const BROADCAST_ACCEPT =
+  "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z";
+const BROADCAST_ALLOWED_EXT = new Set([
+  "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "svg",
+  "mp4", "mov", "m4v", "avi", "mkv", "webm", "3gp",
+  "mp3", "ogg", "oga", "wav", "m4a", "aac", "flac", "opus",
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+  "txt", "csv", "rtf", "zip", "rar", "7z",
+]);
+
 const attachKind = (f) =>
   f.type.startsWith("image/") ? "photo" : f.type.startsWith("video/") ? "video" : "document";
 
