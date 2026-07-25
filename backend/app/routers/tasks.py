@@ -296,30 +296,44 @@ def create_task(
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
 
-    lr = db.query(TelegramUserRole).filter(
-        TelegramUserRole.id == body.leader_ref,
-        TelegramUserRole.role == "leader",
-        TelegramUserRole.status == "approved",
+    # Resolve the assignee to a PROFILE. A legacy leader_ref (registration id)
+    # is translated to the profile that registration claimed.
+    profile_id = body.leader_profile_id
+    if profile_id is None and body.leader_ref is not None:
+        lr = db.query(TelegramUserRole).filter(
+            TelegramUserRole.id == body.leader_ref,
+            TelegramUserRole.role == "leader",
+        ).first()
+        _, profile_id = identity.parse_profile_key(
+            identity.role_row_profile_key(db, lr) if lr else None
+        )
+    if profile_id is None:
+        raise HTTPException(status_code=400, detail="Leader is required")
+
+    prof = db.query(RoleProfile).filter(
+        RoleProfile.id == profile_id, RoleProfile.role == "leader",
     ).first()
-    if not lr:
+    if not prof:
         raise HTTPException(status_code=404, detail="Leader not found")
-    if role == "supervisor" and lr.role_id != payload.get("role_id"):
+    if role == "supervisor" and prof.manager_id != payload.get("role_id"):
         raise HTTPException(status_code=403, detail="You can only assign tasks to your own leaders")
 
-    mgr = db.query(Manager).filter(Manager.id == lr.role_id).first()
+    mgr = db.query(Manager).filter(Manager.id == prof.manager_id).first()
     sub = int(payload["sub"])
+    owner = LeaderTask.leader_profile_id == prof.id
 
-    _lock_leader_queue(db, lr.id)
+    _lock_leader_queue(db, prof.id)
     t = LeaderTask(
-        leader_role_ref=lr.id,
-        leader_name=lr.full_name,
-        supervisor_manager_id=lr.role_id,
+        leader_profile_id=prof.id,
+        leader_name=prof.name,
+        supervisor_manager_id=prof.manager_id,
         supervisor_name=(mgr.name if mgr else None),
         task_text=body.task_text.strip(),
-        priority=_active_tasks(db, lr.id).count() + 1,   # joins at the back
+        priority=_active_tasks(db, owner).count() + 1,   # joins at the back
         status="todo",
         due_date=body.due_date,
         created_by=sub,
+        created_by_profile=identity.viewer_profile_key(db, payload),
         created_by_name=payload.get("full_name"),
     )
     db.add(t)
@@ -331,25 +345,27 @@ def create_task(
             task_id=t.id,
             author_telegram_id=sub,
             author_role_ref=_profile_ref(payload),
+            author_profile=identity.viewer_profile_key(db, payload),
             author_name=payload.get("full_name"),
             text=body.comment.strip(),
         ))
         comment_count = 1
 
-    if lr.telegram_id != sub:
-        _notify(
-            db, lr.telegram_id, type="info", nkey="task_created",
-            params={
-                "creator_name": payload.get("full_name"),
-                "date": body.due_date,
-                "task": _snippet(t.task_text),
-            },
-            profile=_role_row_profile_key(db, lr),
-        )
+    # Reaches every account working as this leader — and waits in the bell if
+    # nobody has claimed the profile yet.
+    notify_profile(
+        db, f"leader:{prof.id}", nkey="task_created",
+        params={
+            "creator_name": payload.get("full_name"),
+            "date": body.due_date,
+            "task": _snippet(t.task_text),
+        },
+        exclude_account=sub,
+    )
 
     db.commit()
     db.refresh(t)
-    return _serialize(t, comment_count, payload)
+    return _serialize(t, comment_count, payload, db, live_name=prof.name)
 
 
 class TaskUpdate(BaseModel):
