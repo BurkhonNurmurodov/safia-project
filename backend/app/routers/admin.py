@@ -546,12 +546,18 @@ def delete_user_role(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
+    caller: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     user = db.query(TelegramUser).filter(TelegramUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     telegram_id = user.telegram_id
+    # "A grantee can never touch admin profiles" applies to the accounts that
+    # hold them too — otherwise deleting the admins out of the way would be the
+    # way around every other guard. Role assignment needs no such check:
+    # VALID_ROLES has no "admin", so no user-role endpoint can mint one.
+    if caller.get("role") != "admin" and db.query(Admin).filter_by(telegram_id=telegram_id).first():
+        raise HTTPException(status_code=403, detail="Only an admin can remove an admin account")
     db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
     db.delete(user)
     db.commit()
