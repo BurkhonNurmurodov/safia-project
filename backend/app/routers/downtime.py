@@ -136,3 +136,81 @@ def get_downtime(
         "rows": rows,
         "summary": sorted(summary.values(), key=lambda x: x["total"], reverse=True),
     }
+
+
+@router.get("/downtime/seasonality")
+def get_downtime_seasonality(
+    year: Optional[int] = Query(default=None),
+    shift: Optional[int] = Query(default=None),
+    manager_id: List[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_page("downtime", "daily")),
+):
+    """Category × calendar-month waiting minutes for one year (the Ojidaniya
+    seasonality grid). Its own time axis — deliberately independent of the page
+    date range, which still narrows nothing here beyond shift/supervisor — so a
+    whole year is one small aggregate instead of ~11k daily rows on the wire.
+
+    `col_totals` is the SUM OF THE CATEGORIES of that month, not the reported
+    `total_minutes`: it is the denominator the grid's percentages divide by, so
+    a column always adds up to 100%.
+    """
+    managers = db.query(Manager).filter(Manager.archived.is_(False))
+    if shift:
+        managers = managers.filter(Manager.shift == shift)
+    if manager_id:
+        managers = managers.filter(Manager.id.in_(manager_id))
+    managers = managers.all()
+    alias = sheet_alias_map(db, (m.name for m in managers))
+    manager_names = set(alias.keys())
+
+    if not manager_names:
+        return {"years": [], "year": year, "cat_names": [],
+                "col_totals": [0.0] * 12, "col_totals_ns": [0.0] * 12,
+                "by_category": {}, "by_category_ns": {}}
+
+    # Years that actually hold shift reports for the scoped supervisors, newest
+    # first — the card's year selector.
+    years = sorted({
+        int(d[-4:]) for (d,) in db.query(DowntimeData.date)
+        .filter(DowntimeData.manager_name.in_(manager_names)).distinct().all()
+        if d and len(d) >= 4 and d[-4:].isdigit()
+    }, reverse=True)
+    if year is None:
+        today_year = date.today().year
+        year = today_year if today_year in years else (years[0] if years else today_year)
+
+    dt_rows = db.query(DowntimeData).filter(
+        DowntimeData.manager_name.in_(manager_names),
+        DowntimeData.date.like(f"%.{year}"),
+    ).all()
+
+    col_totals = [0.0] * 12
+    col_totals_ns = [0.0] * 12
+    by_cat: dict[str, list[float]] = {}
+    by_cat_ns: dict[str, list[float]] = {}
+    for r in dt_rows:
+        try:
+            m = int((r.date or "").split(".")[1]) - 1
+        except (IndexError, ValueError):
+            continue
+        if not 0 <= m <= 11:
+            continue
+        for cats, cols, dest in (
+            (r.by_category or {}, col_totals, by_cat),
+            (r.by_category_ns or {}, col_totals_ns, by_cat_ns),
+        ):
+            for cat, val in cats.items():
+                v = float(val or 0)
+                dest.setdefault(cat, [0.0] * 12)[m] += v
+                cols[m] += v
+
+    return {
+        "years": years,
+        "year": year,
+        "cat_names": sorted(set(by_cat) | set(by_cat_ns)),
+        "col_totals": [round(v, 2) for v in col_totals],
+        "col_totals_ns": [round(v, 2) for v in col_totals_ns],
+        "by_category": {k: [round(v, 2) for v in vals] for k, vals in by_cat.items()},
+        "by_category_ns": {k: [round(v, 2) for v in vals] for k, vals in by_cat_ns.items()},
+    }
