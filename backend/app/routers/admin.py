@@ -16,7 +16,7 @@ from app import identity
 from app.capabilities import (
     CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
     CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, SCOPES, UNGRANTABLE_ROLES,
-    cap_scope, profile_unit_ids, require_cap, set_caps_for_profile,
+    apply_caps, cap_scope, profile_unit_ids, require_cap,
 )
 from app.config import settings
 from app.database import get_db
