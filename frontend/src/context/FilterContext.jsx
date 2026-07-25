@@ -37,6 +37,7 @@ function initArr(key) {
 
 export function FilterProvider({ children }) {
   const [, setSearchParams] = useSearchParams();
+  const { auth } = useAuth();
 
   const [dateFrom,    setDateFromState]    = useState(() => init("date_from"));
   const [dateTo,      setDateToState]      = useState(() => init("date_to"));
