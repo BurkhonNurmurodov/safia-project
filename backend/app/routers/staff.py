@@ -1862,6 +1862,29 @@ def _doc_label(doc_type: str, lang: str) -> str:
     return by_lang.get(lang) or by_lang.get("en") or doc_type
 
 
+def _caller_unit_ids(caller, db: Session) -> list[int] | None:
+    """Unit (manager) ids the caller's OWN row scoping covers; None = no
+    restriction.
+
+    Mirrors ``_scope_documents`` / ``_scope_deletion_requests`` exactly, so an
+    "own"-scoped capability grant reaches precisely the rows the person already
+    sees and not one row more. Roles those functions leave unfiltered
+    (top-manager and friends) return None here for the same reason. A
+    supervisor with no unit is the one deliberate difference — it returns the
+    empty list rather than falling back to "rows I created", because a grant
+    must never be broader than the scoping it claims to reuse."""
+    role, role_id = caller.get("role"), caller.get("role_id")
+    if role == "supervisor":
+        return [role_id] if role_id else []
+    if role == "shift-manager":
+        if not role_id:
+            return []
+        shift = _sm_shift(db, role_id)
+        return [m.id for m in db.query(Manager).filter(
+            Manager.shift == shift, Manager.archived.is_(False)).all()]
+    return None
+
+
 def _scope_deletion_requests(caller, db: Session):
     """Return deletion EditRequests visible to the caller — the FULL history:
     pending, approved, rejected (incl. withdrawn) and undone, so processed
@@ -1874,6 +1897,10 @@ def _scope_deletion_requests(caller, db: Session):
         EditRequest.changes["_action"].astext == "delete",
         EditRequest.status.in_(["pending", "approved", "rejected", "undone"]),
     )
+    # An "all"-scoped grant means admin reach: the queue this person was given
+    # is the whole factory's, so lift the role filters entirely.
+    if scope_is_all(db, caller, CAP_REQUESTS_APPROVE):
+        return q.order_by(EditRequest.date.desc()).all()
     if role == "supervisor":
         if role_id:
             q = q.filter(EditRequest.manager_id == role_id)
