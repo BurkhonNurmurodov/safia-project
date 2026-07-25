@@ -7,8 +7,9 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
-    Admin, AppSetting, Attendance, DayApproval, EditRequest, ExchangeTask,
-    HrDocument, Language, LeaderConcern, Manager, RoleProfile, SheetSource,
+    Admin, AppSetting, Attendance, Comment, DayApproval, EditRequest,
+    ExchangeTask, HrDocument, Language, LeaderConcern, LeaderTask,
+    LeaderTaskComment, Manager, RoleProfile, SheetSource,
     TelegramUser, TelegramUserRole,
 )
 
@@ -1358,5 +1359,233 @@ def seed_setup_times() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] setup-times seed skipped: {exc}")
+    finally:
+        db.close()
+
+
+# ── profile identity ──────────────────────────────────────────────────────────
+# A PROFILE is a person; a telegram_user_roles row is only a login that may act
+# as that person. Anything keyed to a registration splits one person into as
+# many people as they have accounts, and orphans on unassign→re-claim. These
+# migrations move the remaining ownership keys onto profiles. See app/identity.py.
+
+def add_profile_identity_columns() -> None:
+    """Add the profile keys (idempotent).
+
+    ``telegram_user_roles.profile_key`` is the keystone: it records WHICH
+    profile a registration claimed. Without it, leader identity had to be
+    re-derived by matching a name string on every read, so a renamed leader
+    silently lost their holders and their work.
+    """
+    db = SessionLocal()
+    stmts = [
+        "ALTER TABLE telegram_user_roles ADD COLUMN IF NOT EXISTS profile_key VARCHAR",
+        "CREATE INDEX IF NOT EXISTS ix_telegram_user_roles_profile_key "
+        "ON telegram_user_roles (profile_key)",
+        "ALTER TABLE leader_tasks ADD COLUMN IF NOT EXISTS leader_profile_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS ix_leader_tasks_leader_profile_id "
+        "ON leader_tasks (leader_profile_id)",
+        # The registration key becomes optional: a task may be assigned to a
+        # profile nobody has claimed yet.
+        "ALTER TABLE leader_tasks ALTER COLUMN leader_role_ref DROP NOT NULL",
+        "ALTER TABLE leader_tasks ADD COLUMN IF NOT EXISTS created_by_profile VARCHAR",
+        "ALTER TABLE leader_task_comments ADD COLUMN IF NOT EXISTS author_profile VARCHAR",
+        "ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_profile VARCHAR",
+    ]
+    try:
+        for s in stmts:
+            db.execute(text(s))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] profile identity columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_role_profile_keys() -> None:
+    """Stamp every registration with the profile it claimed.
+
+    Direct roles carry their profile in role_id already; leaders are matched by
+    (unit, name) — the last time that fragile match is needed, since the stamped
+    key survives later renames. Rows that resolve to nothing are left NULL and
+    keep working through the legacy fallbacks."""
+    db = SessionLocal()
+    try:
+        rows = db.query(TelegramUserRole).filter(
+            TelegramUserRole.profile_key.is_(None)).all()
+        if not rows:
+            return
+        leader_profiles = {
+            (p.manager_id, p.name): p.id
+            for p in db.query(RoleProfile).filter_by(role="leader").all()
+        }
+        admin_profiles = {
+            a.telegram_id: a.profile_id
+            for a in db.query(Admin).all() if a.profile_id
+        }
+        stamped = 0
+        for r in rows:
+            key = None
+            if r.role in ("top-manager", "shift-manager", "guest", "supervisor") and r.role_id:
+                key = f"{r.role}:{r.role_id}"
+            elif r.role == "leader":
+                pid = leader_profiles.get((r.role_id, r.full_name))
+                key = f"leader:{pid}" if pid else None
+            elif r.role == "admin":
+                pid = admin_profiles.get(r.telegram_id)
+                key = f"admin:{pid}" if pid else None
+            if key:
+                r.profile_key = key
+                stamped += 1
+        if stamped:
+            db.commit()
+            print(f"[startup] stamped {stamped} registration(s) with their profile")
+        unresolved = sum(1 for r in rows if not r.profile_key)
+        if unresolved:
+            print(f"[startup] {unresolved} registration(s) matched no profile "
+                  f"— they keep the legacy account fallback")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] role profile key backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_task_profiles() -> None:
+    """Move leader tasks and comment authorship onto profiles, then merge the
+    per-registration priority queues that keying-by-login had split.
+
+    A leader held by two accounts previously had TWO independent dense 1..N
+    queues — two different tasks both numbered 1, each visible from only one
+    login. Once the tasks share a profile the union has duplicate positions, so
+    the active queue is renumbered per profile, preserving the existing order
+    (priority, then creation time) and keeping it dense.
+    """
+    db = SessionLocal()
+    try:
+        role_rows = {t.id: t for t in db.query(TelegramUserRole).all()}
+        leader_profiles = {
+            (p.manager_id, p.name): p.id
+            for p in db.query(RoleProfile).filter_by(role="leader").all()
+        }
+
+        def _leader_pid(t):
+            """Profile of a task: via its registration, else via the snapshots
+            the task itself carries (which survive the role row's deletion)."""
+            r = role_rows.get(t.leader_role_ref)
+            if r is not None:
+                if r.profile_key and r.profile_key.startswith("leader:"):
+                    return int(r.profile_key.split(":", 1)[1])
+                pid = leader_profiles.get((r.role_id, r.full_name))
+                if pid:
+                    return pid
+            return leader_profiles.get((t.supervisor_manager_id, t.leader_name))
+
+        tasks = db.query(LeaderTask).filter(LeaderTask.leader_profile_id.is_(None)).all()
+        moved = 0
+        for t in tasks:
+            pid = _leader_pid(t)
+            if pid:
+                t.leader_profile_id = pid
+                moved += 1
+
+        # Creator profile: supervisor-created tasks resolve from the unit
+        # (managers.id IS the supervisor profile); others from the creator's
+        # registration at the time.
+        by_account: dict[int, list] = {}
+        for r in role_rows.values():
+            if r.telegram_id:
+                by_account.setdefault(r.telegram_id, []).append(r)
+        creators = 0
+        for t in db.query(LeaderTask).filter(LeaderTask.created_by_profile.is_(None)):
+            if not t.created_by:
+                continue
+            held = by_account.get(t.created_by, [])
+            key = None
+            if t.supervisor_manager_id and any(
+                r.role == "supervisor" and r.role_id == t.supervisor_manager_id for r in held
+            ):
+                key = f"supervisor:{t.supervisor_manager_id}"
+            else:
+                approved = [r for r in held if r.status == "approved" and r.profile_key]
+                if len(approved) == 1:
+                    key = approved[0].profile_key
+            if key:
+                t.created_by_profile = key
+                creators += 1
+
+        # Comment authorship: author_role_ref → the profile that role row claimed.
+        authors = 0
+        for c in db.query(LeaderTaskComment).filter(LeaderTaskComment.author_profile.is_(None)):
+            r = role_rows.get(c.author_role_ref) if c.author_role_ref else None
+            if r is not None and r.profile_key:
+                c.author_profile = r.profile_key
+                authors += 1
+
+        db.flush()
+
+        # Renumber each profile's active queue: dense 1..N, order preserved.
+        renumbered = 0
+        active = db.query(LeaderTask).filter(
+            LeaderTask.status != "done",
+            LeaderTask.leader_profile_id.isnot(None),
+        ).all()
+        per_profile: dict[int, list] = {}
+        for t in active:
+            per_profile.setdefault(t.leader_profile_id, []).append(t)
+        for pid, rows in per_profile.items():
+            rows.sort(key=lambda x: (
+                x.priority if x.priority is not None else 10**6,
+                x.created_at or datetime.min.replace(tzinfo=timezone.utc),
+                x.id,
+            ))
+            for i, t in enumerate(rows, start=1):
+                if t.priority != i:
+                    t.priority = i
+                    renumbered += 1
+
+        if moved or creators or authors or renumbered:
+            db.commit()
+            print(f"[startup] tasks → profiles: {moved} assigned, {creators} creators, "
+                  f"{authors} comment authors, {renumbered} queue position(s) merged")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] task profile backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_comment_profiles() -> None:
+    """Unit-dashboard comments: attribute each to the profile that wrote it, so
+    a co-holder (or a successor after handover) can edit and delete it. Only
+    unambiguous authors are resolved — an account that held several profiles at
+    once is left NULL and keeps the account fallback."""
+    db = SessionLocal()
+    try:
+        rows = db.query(Comment).filter(
+            Comment.author_profile.is_(None),
+            Comment.author_telegram_id.isnot(None),
+        ).all()
+        if not rows:
+            return
+        # A unit comment is written by that unit's supervisor profile whenever
+        # the author actually held it; managers.id IS the supervisor profile.
+        sup = {
+            (r.telegram_id, r.role_id)
+            for r in db.query(TelegramUserRole).filter(
+                TelegramUserRole.role == "supervisor").all()
+        }
+        done = 0
+        for c in rows:
+            if (c.author_telegram_id, c.manager_id) in sup:
+                c.author_profile = f"supervisor:{c.manager_id}"
+                done += 1
+        if done:
+            db.commit()
+            print(f"[startup] attributed {done} unit comment(s) to their profile")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] comment profile backfill skipped: {exc}")
     finally:
         db.close()
