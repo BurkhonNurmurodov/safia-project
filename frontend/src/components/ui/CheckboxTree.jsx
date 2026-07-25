@@ -89,7 +89,7 @@ function TreeNode({ node, depth, sel, expanded, toggleExpand, toggleLeaf, toggle
             </span>
           )}
         </span>
-        {node.disabled && node.hint && (
+        {node.hint && (
           <span
             className="ml-auto flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
             style={{ background: "var(--bg-accent)", color: "var(--text-4)", border: "1px solid var(--border)" }}
