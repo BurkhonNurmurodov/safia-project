@@ -989,8 +989,13 @@ class LeaderTask(Base):
     __tablename__ = "leader_tasks"
 
     id                    = Column(Integer, primary_key=True, autoincrement=True)
-    # Ownership key: the assigned leader's telegram_user_roles.id.
-    leader_role_ref       = Column(Integer, nullable=False, index=True)
+    # OWNERSHIP KEY: the assigned leader PROFILE (role_profiles.id). The profile
+    # is the person — every account holding it sees and works the same queue,
+    # and the task survives an unassign→re-claim (role rows churn, profiles do
+    # not). ``leader_role_ref`` below is the legacy registration key, kept only
+    # as a read fallback for rows the backfill could not resolve.
+    leader_profile_id     = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    leader_role_ref       = Column(Integer, nullable=True, index=True)
     leader_name           = Column(String, nullable=False)         # snapshot of the leader's name
     supervisor_manager_id = Column(Integer, nullable=True)         # managers.id (leader's unit)
     supervisor_name       = Column(String, nullable=True)          # snapshot of the unit/brigadir name
