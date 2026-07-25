@@ -4,6 +4,8 @@
 // borders and a sticky row-name column. Held to `cols` data columns (12): scroll
 // past that many, blank-pad under it, so the card never resizes between modes.
 //
+import { useEffect, useRef, useState } from "react";
+
 // Shared by the Quality «Мавсумийлик» card (rows = complaint types) and the
 // Ojidaniya one (rows = waiting categories). Values are percentages already —
 // the caller divides by its own column denominator.
