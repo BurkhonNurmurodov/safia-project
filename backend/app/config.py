@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     def admin_telegram_ids(self) -> list[int]:
         return [int(x) for x in self.admin_telegram_id.replace(" ", "").split(",") if x]
 
+    @property
+    def webhook_secret(self) -> str:
+        """The secret token registered with Telegram's setWebhook and verified on
+        every incoming update. Uses an explicit telegram_webhook_secret when set,
+        otherwise derives a stable one from secret_key so the check works without
+        extra configuration. Telegram allows 1-256 chars of [A-Za-z0-9_-]; a hex
+        digest satisfies that."""
+        explicit = (self.telegram_webhook_secret or "").strip()
+        if explicit:
+            return explicit
+        import hashlib
+        return hashlib.sha256(f"tg-webhook:{self.secret_key}".encode()).hexdigest()
+
     class Config:
         env_file = _ENV_FILE
 
