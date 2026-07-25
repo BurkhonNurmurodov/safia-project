@@ -204,6 +204,37 @@ export default function StyledSelect({
             </div>
           )}
 
+          {/* Multi mode: select-all / clear links, pinned under the search box */}
+          {multiple && (
+            <div
+              className="sticky flex items-center justify-between gap-3 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider"
+              style={{
+                top:          searchable ? 37 : 0,
+                background:   "var(--bg-card)",
+                borderBottom: "1px solid var(--border)",
+                color:        "var(--text-4)",
+                zIndex:       1,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onChange(opts.map((o) => o.value))}
+                style={{ color: allPicked ? "var(--text-4)" : "var(--brand, #C8973F)" }}
+                disabled={allPicked}
+              >
+                {t("cols.showAll")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                style={{ color: picked.length ? "var(--brand, #C8973F)" : "var(--text-4)" }}
+                disabled={picked.length === 0}
+              >
+                {t("filter.clear")}
+              </button>
+            </div>
+          )}
+
           {/* Optional placeholder row */}
           {placeholder && (
             <div
