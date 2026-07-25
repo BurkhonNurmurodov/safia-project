@@ -129,6 +129,8 @@ const t = {
     "concerns.colDeadline":    "Muddat (kun)",
     "concerns.colResolution":  "O'tgan vaqt",
     "concerns.colActions":     "Amallar",
+    "concerns.view":           "Ko'rish",
+    "concerns.viewTitle":      "Xavotir tafsiloti",
     "concerns.edit":           "Tahrirlash",
     "concerns.delete":         "O'chirish",
     "concerns.deleteTitle":    "Xavotirni o'chirish",
