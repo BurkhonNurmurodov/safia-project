@@ -125,6 +125,30 @@ def _require_staff(caller=Depends(_get_caller), db: Session = Depends(get_db)):
     return caller
 
 
+def _cap_covers_unit(caller, db: Session, capability: str, manager_id: int | None) -> bool:
+    """True if the caller may perform an otherwise admin-only action on one
+    unit — as a real admin, or through a capability grant that reaches it.
+
+    "all" reaches every unit; "own" only the units the profile's normal row
+    scoping already covers (see ``_caller_unit_ids``)."""
+    if caller.get("role") == "admin":
+        return True
+    scope = cap_scope(db, caller, capability)
+    if scope is None:
+        return False
+    if scope == "all":
+        return True
+    units = _caller_unit_ids(caller, db)
+    return units is None or manager_id in units
+
+
+def _require_cap_over_unit(caller, db: Session, capability: str, manager_id: int | None) -> None:
+    """``_cap_covers_unit`` as a guard. Keeps the original 403 wording so a
+    caller with no grant sees exactly what they saw before."""
+    if not _cap_covers_unit(caller, db, capability, manager_id):
+        raise HTTPException(status_code=403, detail="Admin only")
+
+
 # ── Notification helpers ───────────────────────────────────────────────────────
 
 _MONTHS = {
