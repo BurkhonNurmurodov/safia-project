@@ -350,17 +350,29 @@ export default function Permissions() {
                                   {t(`caps.${c.key}.hint`)}
                                 </span>
                               </button>
-                              <StyledSelect
-                                value={caps[c.key] ?? "own"}
-                                onChange={(v) => setScope(c.key, v)}
-                                disabled={!on}
-                                triggerClassName="px-2.5 py-1.5 text-xs"
-                                className="w-32 flex-shrink-0"
-                                options={[
-                                  { value: "own", label: t("admin.perms.scope.own") },
-                                  { value: "all", label: t("admin.perms.scope.all") },
-                                ]}
-                              />
+                              {/* Identity capabilities have no unit dimension
+                                  to narrow, so they show a static "all" chip
+                                  instead of a selector that changes nothing. */}
+                              {c.scoped ? (
+                                <StyledSelect
+                                  value={caps[c.key] ?? "own"}
+                                  onChange={(v) => setScope(c.key, v)}
+                                  disabled={!on}
+                                  triggerClassName="px-2.5 py-1.5 text-xs"
+                                  className="w-32 flex-shrink-0"
+                                  options={[
+                                    { value: "own", label: t("admin.perms.scope.own") },
+                                    { value: "all", label: t("admin.perms.scope.all") },
+                                  ]}
+                                />
+                              ) : (
+                                <span
+                                  className="w-32 flex-shrink-0 text-center text-[11px] px-2.5 py-1.5 rounded-lg"
+                                  style={{ color: "var(--text-4)", border: "1px solid var(--border)" }}
+                                >
+                                  {t("admin.perms.scope.all")}
+                                </span>
+                              )}
                             </div>
                           );
                         })}
