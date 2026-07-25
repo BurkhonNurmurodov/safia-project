@@ -662,7 +662,7 @@ export default function Downtime() {
         )}
       </div>
 
-      {/* Seasonality — category × month (or × ISO week) share of the waiting
+      {/* Seasonality — category × day / ISO week / month share of the waiting
           minutes, on the shared SeasonalityHeatmap grid. */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
         <div className="flex items-start justify-between gap-3 mb-1">
