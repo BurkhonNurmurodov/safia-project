@@ -17,15 +17,15 @@ _gc: Optional[gspread.Client] = None
 # logged. Confirmed intentional 2026-07-22 — do NOT merge the odd indices in
 # here; they are a separate series, read via SHIFT_CATEGORIES_NS below.
 #
-# Naming vs the sheet: the sheet header calls the pair at QC/QD «Категория I»
-# (Oldingi smena ishi tugashini kutish), but the platform shows it as Cat D4 —
-# it belongs to the D «кутиш» family (user directive 2026-07-24). Cat H is the
-# sheet's «Категория H (Тозалаш)» — cleaning.
+# Cat H is the sheet's «Категория H (Тозалаш)» — cleaning. Cat I is «Категория
+# I» (Oldingi smena ishi tugashini kutish — waiting for the previous shift to
+# finish). Cat I briefly shipped as "Cat D4" on 2026-07-24; renamed to the
+# sheet's own letter 2026-07-25 (user asked for «Category I» by name).
 SHIFT_CATEGORIES = [
     ("Cat A", 424), ("Cat B", 426), ("Cat C", 428),
     ("Cat D", 430), ("Cat D2", 432), ("Cat D3", 434),
     ("Cat E", 436), ("Cat F", 438), ("Cat G", 440),
-    ("Cat H", 442), ("Cat D4", 444),
+    ("Cat H", 442), ("Cat I", 444),
 ]
 
 # The second column of each pair — «Ячейка тўхтамаганда». Read since 2026-07-22
