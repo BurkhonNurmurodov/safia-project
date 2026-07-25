@@ -1005,6 +1005,11 @@ class LeaderTask(Base):
     due_date              = Column(Date, nullable=False)           # Срок выполнения
     completed_at          = Column(DateTime(timezone=True), nullable=True)  # set when flipped to done
     created_by            = Column(BigInteger, nullable=True)      # telegram_id of creator (supervisor or admin)
+    # Creator PROFILE key ("role:id"). Creator rights (edit/delete, "your task
+    # was completed" notices) belong to the profile, so a co-holder of the same
+    # brigadir profile can act on it and a role switch does not carry the rights
+    # into an unrelated profile. NULL rows fall back to ``created_by``.
+    created_by_profile    = Column(String, nullable=True, index=True)
     created_by_name       = Column(String, nullable=True)          # snapshot of the creator's display name
     created_at            = Column(DateTime(timezone=True), server_default=func.now())
     updated_at            = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
