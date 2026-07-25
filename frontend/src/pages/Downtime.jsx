@@ -141,18 +141,19 @@ export default function Downtime() {
   const catOptions = catNames.map((cat, i) => {
     const code = cat.replace(/^Cat\s*/i, "");
     const meaning = t(`downtime.cat.${code}.label`);
+    const full = cat + (meaning && !meaning.startsWith("downtime.cat.") ? ` — ${meaning}` : "");
     return {
       value: cat,
+      // Long meanings ellipsise inside the panel — `title` keeps the full text
+      // reachable on hover.
+      title: full,
       label: (
         <span className="flex items-center gap-2 min-w-0">
           <span
             className="shrink-0 rounded-full"
             style={{ width: 8, height: 8, background: CAT_COLORS[i % CAT_COLORS.length] }}
           />
-          <span className="truncate">
-            {cat}
-            {meaning && !meaning.startsWith("downtime.cat.") ? ` — ${meaning}` : ""}
-          </span>
+          <span className="truncate">{full}</span>
         </span>
       ),
     };

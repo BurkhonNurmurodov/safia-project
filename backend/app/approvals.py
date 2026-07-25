@@ -78,6 +78,7 @@ _LABELS = {
         "toast_approved": "✅ Tasdiqlandi",
         "toast_rejected": "❌ Rad etildi",
         "toast_already":  "Bu so'rov allaqachon ko'rib chiqilgan",
+        "toast_no_rights": "Sizda bu so'rovni ko'rib chiqish huquqi yo'q",
         "toast_error":    "Xatolik yuz berdi",
     },
     "ru": {
@@ -110,6 +111,7 @@ _LABELS = {
         "toast_approved": "✅ Одобрено",
         "toast_rejected": "❌ Отклонено",
         "toast_already":  "Этот запрос уже обработан",
+        "toast_no_rights": "У вас нет прав обрабатывать этот запрос",
         "toast_error":    "Произошла ошибка",
     },
     "en": {
@@ -142,6 +144,7 @@ _LABELS = {
         "toast_approved": "✅ Approved",
         "toast_rejected": "❌ Rejected",
         "toast_already":  "This request was already handled",
+        "toast_no_rights": "You are not allowed to handle this request",
         "toast_error":    "Something went wrong",
     },
 }
