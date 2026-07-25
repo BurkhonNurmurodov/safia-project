@@ -51,6 +51,21 @@ def _validate_init_data(init_data: str) -> dict | None:
     if not hmac.compare_digest(calc_hash, recv_hash):
         return None
 
+    # Freshness: initData is signed once at launch and its hash stays valid
+    # forever (the bot token never changes), so without an age limit a captured
+    # string is replayable indefinitely. Reject anything older than the
+    # configured window. Missing/garbled auth_date is treated as invalid.
+    max_age = settings.init_data_max_age_hours * 3600
+    if max_age > 0:
+        try:
+            auth_age = time.time() - int(params.get("auth_date", ""))
+        except (TypeError, ValueError):
+            return None
+        # A small negative skew (client clock ahead of server) is fine; a large
+        # future auth_date is not.
+        if auth_age > max_age or auth_age < -300:
+            return None
+
     user_str = params.get("user")
     if user_str:
         try:
