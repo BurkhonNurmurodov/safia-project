@@ -1027,6 +1027,10 @@ class LeaderTaskComment(Base):
     # account can hold several profiles, so ownership is per-profile; NULL rows
     # predate the column and fall back to account-scoped ownership.
     author_role_ref    = Column(Integer, nullable=True)
+    # Author PROFILE key ("role:id") — THE ownership key: any account holding
+    # the authoring profile may edit/delete, and rights survive a re-claim.
+    # ``author_role_ref`` above stays as the legacy fallback for NULL rows.
+    author_profile     = Column(String, nullable=True, index=True)
     author_name        = Column(String, nullable=True)                 # snapshot of the author's display name
     text               = Column(Text, nullable=False)
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
