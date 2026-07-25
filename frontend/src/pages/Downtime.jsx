@@ -705,10 +705,10 @@ export default function Downtime() {
             rows={seasonRows}
             firstColLabel={t("downtime.filterCat")}
             firstColWidth={190}
-            // 14 data columns wide (a fortnight of days — the page's default
-            // range): past 14 the grid scrolls, under 14 it pads with blanks so
-            // the card never resizes between modes.
-            cols={14}
+            // 12 data columns wide (the component default, kept explicit — it
+            // is the axis budget, not a style): past 12 the grid scrolls, under
+            // 12 it pads with blanks so the card never resizes between modes.
+            cols={12}
             colWidth={seasonMode === "week" ? 104 : seasonMode === "day" ? 74 : 96}
           />
         ) : (
