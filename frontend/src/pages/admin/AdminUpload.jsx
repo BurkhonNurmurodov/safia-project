@@ -1,16 +1,19 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck, Factory, Copy, Check, AtSign, IdCard, LayoutGrid, Sun, Moon, Megaphone, Trash2, Image as ImageIcon, ListChecks, ExternalLink } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck, Factory, Copy, Check, AtSign, IdCard, LayoutGrid, Sun, Moon, Megaphone, Trash2, Image as ImageIcon, ListChecks, ExternalLink, KeyRound } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTheme } from "../../context/ThemeContext";
+import { useAuth } from "../../context/AuthContext";
+import { useCapabilities } from "../../hooks/useCapabilities";
 import TranslationsEditor from "./TranslationsEditor";
 import UsersManagement from "./UsersManagement";
 import ProfilesManagement from "./ProfilesManagement";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import PageAccess from "./PageAccess";
+import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
@@ -644,16 +647,31 @@ function ComparisonThresholdEditor() {
 
 // ─── Upload panel ─────────────────────────────────────────────────────────────
 
-const ADMIN_TABS = ["data", "production", "translations", "users", "profiles", "cells", "access", "broadcast", "media", "cleanup", "ltasks"];
+const ADMIN_TABS = ["data", "production", "translations", "users", "profiles", "cells", "access", "broadcast", "media", "cleanup", "ltasks", "permissions"];
 
 export default function AdminUpload() {
   const navigate = useNavigate();
   const { t } = useLang();
   const { theme, toggle } = useTheme();
+  const { auth } = useAuth();
+  // Non-admins reach this panel only through a capability grant, and then see
+  // ONLY the tabs that grant covers (RequireAdmin in App.jsx lets them in on
+  // the same list). "permissions" is deliberately absent from every grant path:
+  // handing out powers stays a real admin's job.
+  const { capTabs, isLoading: capsLoading } = useCapabilities();
+  const isAdmin = auth?.role === "admin";
+  const allowedTabs = isAdmin ? ADMIN_TABS : ADMIN_TABS.filter((id) => capTabs.includes(id));
   // ?tab=users deep-links a specific tab (used by the bot's notification button)
   const [searchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
   const [adminTab, setAdminTab] = useState(ADMIN_TABS.includes(urlTab) ? urlTab : "data");
+  // A grantee's landing tab can't be the hardcoded "data" — settle on their
+  // first allowed tab once the grants arrive, unless the URL already named a
+  // tab they may open.
+  useEffect(() => {
+    if (capsLoading || allowedTabs.length === 0) return;
+    if (!allowedTabs.includes(adminTab)) setAdminTab(allowedTabs[0]);
+  }, [capsLoading, allowedTabs.join(","), adminTab]);
   const [fileStates, setFileStates] = useState([]);
   const [uploading,  setUploading]  = useState(false);
 
@@ -731,7 +749,7 @@ export default function AdminUpload() {
         <SegmentedToggle
           value={adminTab}
           onChange={setAdminTab}
-          options={[["data", t("admin.tabData"), Database], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["cells", t("admin.profiles.cellsTab"), LayoutGrid], ["access", t("admin.tabAccess"), ShieldCheck], ["broadcast", t("admin.tabBroadcast"), Megaphone], ["media", t("admin.tabMedia"), ImageIcon], ["cleanup", t("admin.tabCleanup"), Trash2], ["ltasks", t("admin.tabLtasks"), ListChecks]].map(([id, label, Icon]) => ({
+          options={[["data", t("admin.tabData"), Database], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["cells", t("admin.profiles.cellsTab"), LayoutGrid], ["access", t("admin.tabAccess"), ShieldCheck], ["permissions", t("admin.tabPermissions"), KeyRound], ["broadcast", t("admin.tabBroadcast"), Megaphone], ["media", t("admin.tabMedia"), ImageIcon], ["cleanup", t("admin.tabCleanup"), Trash2], ["ltasks", t("admin.tabLtasks"), ListChecks]].filter(([id]) => allowedTabs.includes(id)).map(([id, label, Icon]) => ({
             value: id,
             label: <span className="inline-flex items-center gap-1.5"><Icon size={14} /> {label}</span>,
           }))}
@@ -753,6 +771,8 @@ export default function AdminUpload() {
       {adminTab === "cells" && <ProfilesManagement cellsOnly />}
 
       {adminTab === "access" && <PageAccess />}
+
+      {adminTab === "permissions" && <Permissions />}
 
       {adminTab === "broadcast" && <Broadcast />}
 

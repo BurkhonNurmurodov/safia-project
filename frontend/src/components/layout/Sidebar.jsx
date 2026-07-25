@@ -61,8 +61,11 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
-  const { capPages } = useCapabilities();
+  const { capPages, capTabs } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
+  // A grantee holding a panel-tab capability needs the entry point too — the
+  // panel itself then shows only the tabs they were granted.
+  const showAdminPanel = isAdmin || capTabs.length > 0;
 
   const BADGE_ROLES = ["admin", "shift-manager"];
   const showBadge = BADGE_ROLES.includes(auth?.role);
@@ -284,7 +287,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
         {/* Footer */}
         <div className="px-2 py-3 space-y-1 overflow-hidden" style={{ borderTop: "1px solid var(--border)" }}>
-          {isAdmin && (
+          {showAdminPanel && (
             <NavLink
               to={withSearch("/admin/upload")}
               onClick={onClose}
