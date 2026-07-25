@@ -1959,11 +1959,10 @@ export default function Concerns() {
                   const overdue = dueIso != null && isoDiffDays(dueIso, localTodayIso()) < 0;
                   return (
                     <Fragment key={r.id}>
-                      {/* Click a row to reveal its action bar (Staff-style);
-                          rows the viewer can't act on stay inert. */}
+                      {/* Click a row to reveal its action bar (Staff-style). */}
                       <tr
-                        onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
-                        className={`align-top ${hasActions ? "cursor-pointer" : ""}`}
+                        onClick={() => setExpandedId(expanded ? null : r.id)}
+                        className="align-top cursor-pointer"
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
