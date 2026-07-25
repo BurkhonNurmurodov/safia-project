@@ -230,35 +230,29 @@ export default function StyledSelect({
             </div>
           )}
 
-          {/* Multi mode: select-all / clear links, pinned under the search box */}
-          {multiple && (
-            <div
-              className="sticky flex items-center justify-between gap-3 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider"
+          {/* Multi mode: one tri-state select-all row pinned under the search box.
+              Same geometry as an option row so the tick-boxes line up; ticking it
+              selects everything, unticking clears. */}
+          {multiple && opts.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange(allPicked ? [] : opts.map((o) => o.value))}
+              className="sticky w-full text-left px-3 py-2.5 text-sm font-semibold flex items-center justify-between gap-3 transition-colors"
               style={{
                 top:          searchable ? 37 : 0,
                 background:   "var(--bg-card)",
                 borderBottom: "1px solid var(--border)",
-                color:        "var(--text-4)",
+                color:        "var(--text-2)",
                 zIndex:       1,
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-inner)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; }}
             >
-              <button
-                type="button"
-                onClick={() => onChange(opts.map((o) => o.value))}
-                style={{ color: allPicked ? "var(--text-4)" : "var(--brand, #C8973F)" }}
-                disabled={allPicked}
-              >
-                {t("cols.showAll")}
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                style={{ color: picked.length ? "var(--brand, #C8973F)" : "var(--text-4)" }}
-                disabled={picked.length === 0}
-              >
-                {t("filter.clear")}
-              </button>
-            </div>
+              <span className="min-w-0 flex-1 truncate">
+                {allPicked ? t("filter.deselectAll") : t("filter.selectAll")}
+              </span>
+              <Box state={allPicked ? "on" : picked.length ? "some" : "off"} />
+            </button>
           )}
 
           {/* Optional placeholder row */}
