@@ -1476,8 +1476,6 @@ export default function Concerns() {
       )}
       {!isLoading && sorted.map((r) => {
         const expanded = expandedId === r.id;
-        const hasActions =
-          r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
         // Deadline as a state, not arithmetic: days remaining until
         // entry_date + deadline_days, negative = overdue (matches the charts'
         // isOverdue convention — the due date itself is not yet overdue).
