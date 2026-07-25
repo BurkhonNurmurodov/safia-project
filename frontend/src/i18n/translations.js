@@ -4197,6 +4197,8 @@ const t = {
     "downtime.label":        "Ожидания",
     "downtime.viewTotal":    "Итого",
     "downtime.viewCategory": "Категории",
+    "downtime.filterCat":    "Категория",
+    "downtime.allCats":      "Все категории",
     "downtime.catShare":     "Доля категорий",
     "downtime.catShareSub":  "Нажмите на категорию — левый график фильтруется по ней",
     "downtime.bySupervisorTrend": "Тренд по бригадирам",
