@@ -1087,15 +1087,24 @@ def bulk_delete_attendance(
     db: Session = Depends(get_db),
 ):
     role = caller.get("role")
-    if role not in ("admin", "supervisor"):
+    # `direct` = delete the rows outright instead of filing pending requests.
+    # Admins always did; a staff.attendance.delete grant is precisely the power
+    # to do the same, so a granted supervisor stops queueing their own requests
+    # and deletes — which is what "fix attendance directly" was granted for.
+    granted = has_cap(db, caller, CAP_ATTENDANCE_DELETE)
+    if role not in ("admin", "supervisor") and not granted:
         raise HTTPException(status_code=403, detail="Not allowed")
     if not body.worker_names:
         raise HTTPException(status_code=400, detail="No workers specified")
 
-    if role == "admin":
-        if not body.manager_id:
+    direct = role == "admin" or granted
+    if direct:
+        # Grantees act from their own unit's page, which sends no manager_id —
+        # fall back to their unit before demanding one.
+        manager_id = body.manager_id or caller.get("role_id")
+        if not manager_id:
             raise HTTPException(status_code=400, detail="manager_id required for admin")
-        manager_id = body.manager_id
+        _require_cap_over_unit(caller, db, CAP_ATTENDANCE_DELETE, manager_id)
     else:
         manager_id = caller.get("role_id")
         if not manager_id:
