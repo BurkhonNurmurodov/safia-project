@@ -58,6 +58,8 @@ try:
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns, add_pp_product_op,
         add_downtime_ns_columns,
+        add_profile_identity_columns, backfill_role_profile_keys,
+        backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
     )
     from app.telegram_bot import setup_webhook
@@ -84,6 +86,7 @@ try:
     add_broadcast_rich_columns()
     add_pp_product_op()
     add_downtime_ns_columns()
+    add_profile_identity_columns()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()
@@ -92,6 +95,9 @@ try:
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()
+    backfill_role_profile_keys()
+    backfill_task_profiles()
+    backfill_comment_profiles()
     seed_exchange_tasks()
     seed_production_pilot()
     seed_setup_times()

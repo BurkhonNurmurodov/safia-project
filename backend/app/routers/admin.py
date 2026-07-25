@@ -430,21 +430,40 @@ def add_user_role(
         role_id, full_name = p.id, p.name
 
     now = datetime.now(timezone.utc)
-    existing = db.query(TelegramUserRole).filter_by(
+    # The profile being granted. payload.role_id already IS the profile id for
+    # every role (managers.id for supervisors), so the grant records the exact
+    # identity instead of leaving it to be re-derived from (unit, name) later.
+    pkey = f"{payload.role}:{payload.role_id}"
+
+    # Leaders share role_id (the unit) across every leader profile in it, so a
+    # (telegram_id, role, role_id) lookup would collide with a DIFFERENT leader
+    # profile the user already holds — 409ing, or silently re-pointing that
+    # registration and stripping the first profile of its holder. Match the
+    # profile itself.
+    q = db.query(TelegramUserRole).filter_by(
         telegram_id=user.telegram_id, role=payload.role, role_id=role_id,
-    ).first()
+    )
+    if payload.role == "leader":
+        existing = q.filter(or_(TelegramUserRole.profile_key == pkey,
+                                and_(TelegramUserRole.profile_key.is_(None),
+                                     TelegramUserRole.full_name == full_name))).first()
+    else:
+        existing = q.first()
+
     if existing:
         if existing.status == "approved":
             raise HTTPException(status_code=409, detail="User already has this role")
         existing.status = "approved"
         existing.approved_at = now
         existing.full_name = full_name
+        existing.profile_key = pkey
     else:
         db.add(TelegramUserRole(
             telegram_id=user.telegram_id,
             role=payload.role,
             role_id=role_id,
             full_name=full_name,
+            profile_key=pkey,
             status="approved",
             approved_at=now,
         ))
