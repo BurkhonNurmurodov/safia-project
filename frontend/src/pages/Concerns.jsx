@@ -1591,17 +1591,15 @@ export default function Concerns() {
 
             {/* explicit actions affordance — the whole card toggles too, but
                 older users need a button that says so */}
-            {hasActions && (
-              <div className="flex justify-end pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-                <span
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
-                >
-                  {t("concerns.actions")}
-                  <ChevronDown size={13} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
-                </span>
-              </div>
-            )}
+            <div className="flex justify-end pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+              <span
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
+              >
+                {t("concerns.actions")}
+                <ChevronDown size={13} style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />
+              </span>
+            </div>
             {expanded && (
               <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 {rowActions(r)}
