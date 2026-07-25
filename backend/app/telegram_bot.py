@@ -2437,8 +2437,10 @@ def setup_webhook():
         return
 
     try:
-        bot.set_webhook(url=webhook_url)
-        logger.info("Webhook set to %s", webhook_url)
+        # secret_token is echoed back in X-Telegram-Bot-Api-Secret-Token on every
+        # update so the /bot/webhook handler can reject forged posts.
+        bot.set_webhook(url=webhook_url, secret_token=settings.webhook_secret)
+        logger.info("Webhook set to %s (with secret token)", webhook_url)
     except Exception as e:
         logger.warning("Failed to set webhook (Telegram unreachable?): %s", e)
 
