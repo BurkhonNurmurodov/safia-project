@@ -5888,6 +5888,8 @@ const t = {
     "downtime.cat.G.note":   "Cell idle time caused by the planning department issuing the plan late or incorrectly.",
     "downtime.cat.H.label":  "Cleaning",
     "downtime.cat.H.note":   "Cell idle time caused by cleaning work.",
+    "downtime.cat.I.label":  "Waiting for the previous shift to finish",
+    "downtime.cat.I.note":   "Cell idle time caused by the previous shift not finishing its work.",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Supervisor Profile",
