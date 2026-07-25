@@ -1405,7 +1405,8 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
 # ── Approve / Reject ───────────────────────────────────────────────────────────
 
 def _process_request(req_id: int, action: str, caller: dict, db: Session):
-    if caller.get("role") not in ("admin", "shift-manager"):
+    granted = has_cap(db, caller, CAP_REQUESTS_APPROVE)
+    if caller.get("role") not in ("admin", "shift-manager") and not granted:
         raise HTTPException(status_code=403, detail="Not authorised")
 
     req = db.query(EditRequest).filter_by(id=req_id).first()
@@ -1413,6 +1414,16 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != "pending":
         raise HTTPException(status_code=409, detail="Request already processed")
+
+    # A grant at "own" scope adds the ACTION but not the reach: the request must
+    # still sit inside the rows this profile already sees. Roles that could
+    # already approve (admin, shift-manager) are unaffected — grants are
+    # additive and never narrow an existing authority.
+    if (granted and caller.get("role") not in ("admin", "shift-manager")
+            and not scope_is_all(db, caller, CAP_REQUESTS_APPROVE)):
+        units = _caller_unit_ids(caller, db)
+        if units is not None and req.manager_id not in units:
+            raise HTTPException(status_code=403, detail="Not authorised")
 
     processor_tg_id = int(caller["sub"])
     processor_name  = caller.get("full_name", "")
