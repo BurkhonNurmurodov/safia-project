@@ -1333,17 +1333,15 @@ def list_requests(caller=Depends(_require_staff), db: Session = Depends(get_db))
     q = db.query(EditRequest)
 
     if role == "supervisor":
-        # Own requests + admin's logged actions on their manager's workers,
-        # scoped to the active role's unit for multi-role users
-        q = q.filter(or_(
-            EditRequest.supervisor_telegram_id == tg_id,
-            and_(
-                EditRequest.manager_id == role_id,
-                EditRequest.changes["_initiated_by"].astext == "admin",
-            ),
-        ))
+        # Everything filed for the unit — the unit IS this person's profile, so
+        # a co-holder's requests are this person's requests. (Previously each
+        # account saw only what it had personally filed, so the other holder's
+        # pending requests were invisible while still blocking the day.)
+        # Includes admin's logged actions on the unit's workers.
         if role_id:
             q = q.filter(EditRequest.manager_id == role_id)
+        else:
+            q = q.filter(EditRequest.supervisor_telegram_id == tg_id)
     elif role == "shift-manager":
         if not role_id:
             return []
