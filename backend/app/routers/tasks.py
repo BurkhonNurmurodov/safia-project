@@ -190,9 +190,17 @@ def list_tasks(
     if role == "supervisor":
         q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
     elif role == "leader":
-        q = q.filter(LeaderTask.leader_role_ref == payload.get("role_ref"))
+        # The person's whole queue, from whichever account they logged in with.
+        pid = identity.viewer_leader_profile_id(db, payload)
+        own = [LeaderTask.leader_profile_id == pid] if pid else []
+        if payload.get("role_ref"):
+            # legacy rows the backfill could not resolve to a profile
+            own.append(and_(LeaderTask.leader_profile_id.is_(None),
+                            LeaderTask.leader_role_ref == payload.get("role_ref")))
+        q = q.filter(or_(*own)) if own else q.filter(False)
 
     rows = q.order_by(
+        LeaderTask.leader_profile_id,
         LeaderTask.leader_role_ref,
         LeaderTask.priority.is_(None),          # active first
         LeaderTask.priority,
@@ -209,9 +217,16 @@ def list_tasks(
     # the supervisor picker. Attached to the list rows only (mutation responses
     # trigger a full list refetch, which carries the shift).
     mgr_shift = {m.id: m.shift for m in db.query(Manager).all()}
+    # Current profile names, so a renamed leader doesn't read as two people.
+    live_names = {
+        p.id: p.name for p in db.query(RoleProfile).filter(
+            RoleProfile.id.in_([r.leader_profile_id for r in rows if r.leader_profile_id] or [0])
+        )
+    }
 
     def _row(r):
-        d = _serialize(r, counts.get(r.id, 0), payload)
+        d = _serialize(r, counts.get(r.id, 0), payload, db,
+                       live_name=live_names.get(r.leader_profile_id))
         d["supervisor_shift"] = mgr_shift.get(r.supervisor_manager_id)
         return d
 
