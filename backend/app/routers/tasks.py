@@ -524,10 +524,15 @@ def _profile_ref(payload: dict) -> Optional[int]:
     return ADMIN_ROLE_REF if payload.get("role") == "admin" else payload.get("role_ref")
 
 
-def _is_comment_author(c: LeaderTaskComment, payload: dict) -> bool:
-    """Ownership is per-PROFILE, not per-account: one telegram account can hold
-    several profiles via role switching. Legacy rows (NULL ref, written before
-    author_role_ref existed) match by account only."""
+def _is_comment_author(c: LeaderTaskComment, payload: dict, db: Session) -> bool:
+    """Ownership is per-PROFILE, not per-account: the profile wrote it, so any
+    account working as that profile may edit or delete it — including a
+    successor after a handover — while the same account switched into a
+    different profile may not. Rows predating author_profile fall back to the
+    old (account + role row) pair."""
+    if c.author_profile:
+        return identity.same_profile(c.author_profile,
+                                     identity.viewer_profile_key(db, payload))
     if c.author_telegram_id != int(payload["sub"]):
         return False
     return c.author_role_ref is None or c.author_role_ref == _profile_ref(payload)
