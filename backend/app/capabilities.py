@@ -231,7 +231,7 @@ def set_caps_for_profile(db: Session, key: str, caps: dict[str, str],
     Diffs against what was stored so the audit log records grants, revokes and
     scope changes individually rather than "someone saved the form"."""
     clean = {
-        k: (v if v in SCOPES else DEFAULT_SCOPE)
+        k: ("all" if k in UNSCOPED_CAPABILITIES else (v if v in SCOPES else DEFAULT_SCOPE))
         for k, v in (caps or {}).items() if k in CAPABILITY_KEYS
     }
 
