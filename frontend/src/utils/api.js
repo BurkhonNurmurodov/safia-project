@@ -21,6 +21,14 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("tg_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Telegram-origin proof on EVERY request: the backend re-verifies this
+  // initData hash (not just at login) so no endpoint can be reached from
+  // outside a genuine Telegram WebView. initData is a static per-session string
+  // set by telegram-web-app.js before this bundle runs; read it fresh each call.
+  // Outside Telegram we send "__dev__", which the backend accepts only when
+  // DEV_AUTH is on (and rejects in production, same as the login endpoint).
+  const initData = window.Telegram?.WebApp?.initData || "__dev__";
+  config.headers["X-Telegram-Init-Data"] = initData;
   // Ghost Mode (admin header toggle): suppress change-notifications server-side.
   // sessionStorage (not localStorage) so closing the app always clears it.
   if (sessionStorage.getItem("ghost_mode") === "1") config.headers["X-Ghost-Mode"] = "1";
