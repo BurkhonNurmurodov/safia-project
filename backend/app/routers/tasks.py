@@ -47,13 +47,17 @@ def _snippet(text: str, n: int = 140) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def _serialize(t: LeaderTask, comment_count: int, payload: dict) -> dict:
-    role = payload.get("role")
-    sub = int(payload["sub"])
+def _serialize(t: LeaderTask, comment_count: int, payload: dict,
+               db: Session, live_name: str | None = None) -> dict:
     return {
         "id": t.id,
+        # The PERSON the task belongs to. leader_role_ref is emitted only for
+        # legacy rows the backfill could not resolve; nothing keys off it.
+        "leader_profile_id": t.leader_profile_id,
         "leader_role_ref": t.leader_role_ref,
-        "leader_name": t.leader_name,
+        # Read live from the profile so a rename propagates to every task
+        # instead of leaving one person listed under two names.
+        "leader_name": live_name or t.leader_name,
         "supervisor_manager_id": t.supervisor_manager_id,
         "supervisor_name": t.supervisor_name,
         "task_text": t.task_text,
@@ -65,12 +69,15 @@ def _serialize(t: LeaderTask, comment_count: int, payload: dict) -> dict:
         "created_by_name": t.created_by_name,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "comment_count": comment_count,
-        # Core fields (text / due date) + delete: creator or admin only.
-        "can_edit": role == "admin" or t.created_by == sub,
+        # Core fields (text / due date) + delete: the creating PROFILE or admin.
+        "can_edit": _can_edit_core(db, payload, t),
     }
 
 
 # ── access helpers ────────────────────────────────────────────────────────────
+# Every check below compares PROFILES. Two accounts holding one brigadir profile
+# are the same person and must have identical rights over that unit's work; the
+# same account switched into a different profile must not.
 
 def _is_unit_supervisor(payload: dict, t: LeaderTask) -> bool:
     return (
@@ -80,8 +87,15 @@ def _is_unit_supervisor(payload: dict, t: LeaderTask) -> bool:
     )
 
 
-def _is_owning_leader(payload: dict, t: LeaderTask) -> bool:
-    return payload.get("role") == "leader" and t.leader_role_ref == payload.get("role_ref")
+def _is_owning_leader(db: Session, payload: dict, t: LeaderTask) -> bool:
+    """True when the viewer IS the leader the task belongs to — from any of
+    that person's logins. Legacy rows without a profile fall back to the old
+    registration match so nothing becomes unreachable mid-migration."""
+    if payload.get("role") != "leader":
+        return False
+    if t.leader_profile_id is not None:
+        return t.leader_profile_id == identity.viewer_leader_profile_id(db, payload)
+    return t.leader_role_ref is not None and t.leader_role_ref == payload.get("role_ref")
 
 
 def _get_visible_task(task_id: int, payload: dict, db: Session) -> LeaderTask:
@@ -91,22 +105,26 @@ def _get_visible_task(task_id: int, payload: dict, db: Session) -> LeaderTask:
     role = payload.get("role")
     if role == "supervisor" and not _is_unit_supervisor(payload, t):
         raise HTTPException(status_code=403, detail="Not your unit's task")
-    if role == "leader" and not _is_owning_leader(payload, t):
+    if role == "leader" and not _is_owning_leader(db, payload, t):
         raise HTTPException(status_code=403, detail="Not your task")
     return t
 
 
-def _assert_can_edit_core(payload: dict, t: LeaderTask):
-    """Task text / due date / delete: the creator or an admin."""
+def _can_edit_core(db: Session, payload: dict, t: LeaderTask) -> bool:
+    """Task text / due date / delete: the creating PROFILE or an admin."""
     if payload.get("role") == "admin":
-        return
-    if t.created_by != int(payload["sub"]):
+        return True
+    return identity.owns(db, payload, t.created_by_profile, t.created_by)
+
+
+def _assert_can_edit_core(db: Session, payload: dict, t: LeaderTask):
+    if not _can_edit_core(db, payload, t):
         raise HTTPException(status_code=403, detail="Only the task's creator or an admin can do this")
 
 
-def _assert_can_set_status(payload: dict, t: LeaderTask):
+def _assert_can_set_status(db: Session, payload: dict, t: LeaderTask):
     """Status: admin, the unit's supervisor, or the owning leader."""
-    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(payload, t):
+    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(db, payload, t):
         return
     raise HTTPException(status_code=403, detail="You can't change this task's status")
 
@@ -118,33 +136,43 @@ def _assert_can_reorder(payload: dict, t: LeaderTask):
     raise HTTPException(status_code=403, detail="Only a supervisor or admin can change priorities")
 
 
-def _assert_can_comment(payload: dict, t: LeaderTask):
-    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(payload, t):
+def _assert_can_comment(db: Session, payload: dict, t: LeaderTask):
+    if payload.get("role") == "admin" or _is_unit_supervisor(payload, t) or _is_owning_leader(db, payload, t):
         return
     raise HTTPException(status_code=403, detail="You can't comment on this task")
 
 
 # ── queue helpers ─────────────────────────────────────────────────────────────
+# The priority queue belongs to the PERSON: one dense 1..N per leader profile,
+# shared by all their logins. Keying it to a registration gave one person as
+# many independent queues as they had accounts, each with its own "priority 1".
 
-def _lock_leader_queue(db: Session, leader_ref: int):
-    """Serialise all priority mutations for one leader by locking their role
-    row — cheaper and simpler than range-locking the task rows themselves."""
-    db.query(TelegramUserRole).filter(TelegramUserRole.id == leader_ref).with_for_update().first()
+def _owned_by(t: LeaderTask):
+    """Filter matching every task of the same leader as ``t`` — by profile when
+    it has one, else by the legacy registration key."""
+    if t.leader_profile_id is not None:
+        return LeaderTask.leader_profile_id == t.leader_profile_id
+    return and_(LeaderTask.leader_profile_id.is_(None),
+                LeaderTask.leader_role_ref == t.leader_role_ref)
 
 
-def _active_tasks(db: Session, leader_ref: int):
-    return db.query(LeaderTask).filter(
-        LeaderTask.leader_role_ref == leader_ref,
-        LeaderTask.status != "done",
-    )
+def _lock_leader_queue(db: Session, profile_id: Optional[int]):
+    """Serialise a leader's priority mutations by locking their PROFILE row —
+    the one object all their registrations share."""
+    if profile_id is not None:
+        db.query(RoleProfile).filter(RoleProfile.id == profile_id).with_for_update().first()
 
 
-def _close_ranks_behind(db: Session, leader_ref: int, gone_priority: Optional[int]):
+def _active_tasks(db: Session, owner):
+    return db.query(LeaderTask).filter(owner, LeaderTask.status != "done")
+
+
+def _close_ranks_behind(db: Session, owner, gone_priority: Optional[int]):
     """After a task leaves the active queue at ``gone_priority``, pull every
     task behind it one position forward."""
     if gone_priority is None:
         return
-    for row in _active_tasks(db, leader_ref).filter(LeaderTask.priority > gone_priority).all():
+    for row in _active_tasks(db, owner).filter(LeaderTask.priority > gone_priority).all():
         row.priority = row.priority - 1
 
 
