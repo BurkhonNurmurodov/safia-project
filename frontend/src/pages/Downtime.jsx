@@ -409,12 +409,6 @@ export default function Downtime() {
     return seasonMatrix(labels, colTotals, catCol);
   }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
 
-  // A long day/week axis lands on the most recent columns, not the oldest.
-  useEffect(() => {
-    const el = seasonScrollRef.current;
-    if (el && seasonMode !== "month") el.scrollLeft = el.scrollWidth;
-  }, [seasonMode, season.labels.length]);
-
   // Identity hue per category — the page's own order (donut, chips, bars), with
   // the year's own category list as a fallback for a code the picked range lacks.
   const catHue = (cat) => {
