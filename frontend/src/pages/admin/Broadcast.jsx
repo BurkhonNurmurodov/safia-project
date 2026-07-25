@@ -155,7 +155,7 @@ export default function Broadcast() {
             />
 
             <div className="flex items-center gap-2 flex-wrap">
-              <input ref={fileRef} type="file" className="hidden" onChange={pickFile} />
+              <input ref={fileRef} type="file" accept={BROADCAST_ACCEPT} className="hidden" onChange={pickFile} />
               {rich ? (
                 msg.media.length > 0 && (
                   <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
