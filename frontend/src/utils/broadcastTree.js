@@ -27,7 +27,7 @@ const SHIFT_ROLES = new Set(["shift-manager", "supervisor"]);
  * loose bucket last. A role where NOTHING has a position stays flat, so an
  * unfilled org chart never adds a pointless single wrapper.
  */
-function bucketProfiles(role, nodes, metaOf, looseLabel) {
+function bucketProfiles(role, nodes, metaOf, looseLabel, icon) {
   const buckets = new Map();
   const loose = [];
   for (const n of nodes) {
@@ -37,7 +37,9 @@ function bucketProfiles(role, nodes, metaOf, looseLabel) {
       continue;
     }
     if (!buckets.has(m.id)) {
-      buckets.set(m.id, { key: `${role}::${m.id}`, label: m.label, sort: m.sort, children: [] });
+      buckets.set(m.id, {
+        key: `${role}::${m.id}`, label: m.label, sort: m.sort, icon, children: [],
+      });
     }
     buckets.get(m.id).children.push(n);
   }
