@@ -1951,10 +1951,6 @@ export default function Concerns() {
                   // Every row is expandable — the action bar always carries at
                   // least «Ko'rish», even for a viewer with no rights over it.
                   const colSpan = 9;
-                  // Per-row rights come from the backend (responsibility moves up
-                  // the chain): a row with no actions at all stays inert.
-                  const hasActions =
-                    r.can_edit || r.can_escalate || r.can_deescalate || r.escalation_count > 0;
                   // Overdue = still open and past entry_date + deadline_days
                   // (same convention as the mobile card and the charts).
                   const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
