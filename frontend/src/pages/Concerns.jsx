@@ -1489,8 +1489,8 @@ export default function Concerns() {
         return (
           <div
             key={r.id}
-            onClick={hasActions ? () => setExpandedId(expanded ? null : r.id) : undefined}
-            className={`rounded-xl p-3 flex flex-col gap-2.5 ${hasActions ? "cursor-pointer" : ""}`}
+            onClick={() => setExpandedId(expanded ? null : r.id)}
+            className="rounded-xl p-3 flex flex-col gap-2.5 cursor-pointer"
             style={{
               border: "1px solid var(--border)",
               borderLeft: `3px solid ${strip}`,
