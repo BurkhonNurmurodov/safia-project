@@ -3483,6 +3483,11 @@ export default function Staff() {
   const { t } = useLang();
   const qc = useQueryClient();
   const role = auth?.role;
+  // Deleting rows outright rather than filing a delete request: admins always,
+  // plus anyone granted staff.attendance.delete. The backend re-checks both the
+  // grant and its scope, so this only decides which modal wording appears.
+  const { can } = useCapabilities();
+  const canDeleteRowsDirectly = role === "admin" || can(CAP.ATTENDANCE_DELETE);
 
   const [tab, setTab] = useState(role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
