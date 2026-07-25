@@ -850,8 +850,17 @@ def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff))
 # ── Supervisors list (admin picker) ───────────────────────────────────────────
 
 @router.get("/supervisors")
-def list_supervisors(caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    if caller.get("role") not in ("admin", "shift-manager"):
+def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db)):
+    """Unit reference list — names and shifts only, no attendance data.
+
+    Deliberately NOT behind `_require_staff`: it is the unit picker the admin
+    panel's Cleanup tab needs, and a cleanup grantee has no business holding the
+    whole /staff page just to read unit names. Everyone else is unchanged, and
+    the rows are still narrowed to what the caller may see."""
+    if (caller.get("role") not in ("admin", "shift-manager")
+            and not has_cap(db, caller, CAP_CLEANUP)
+            and not role_can_access(caller.get("role"), ["staff", "daily"],
+                                    get_page_access(db), capability_pages(db, caller))):
         raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     q = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name)
     vis = _visible_manager_ids(db, caller)  # None = all (admin); shift-managers see their shift only
