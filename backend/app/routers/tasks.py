@@ -538,19 +538,20 @@ def _is_comment_author(c: LeaderTaskComment, payload: dict, db: Session) -> bool
     return c.author_role_ref is None or c.author_role_ref == _profile_ref(payload)
 
 
-def _serialize_comment(c: LeaderTaskComment, payload: dict) -> dict:
+def _serialize_comment(c: LeaderTaskComment, payload: dict, db: Session) -> dict:
     return {
         "id": c.id,
         "task_id": c.task_id,
         "author_telegram_id": c.author_telegram_id,
         "author_role_ref": c.author_role_ref,
+        "author_profile": c.author_profile,
         "author_name": c.author_name,
         "text": c.text,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "edited_at": c.edited_at.isoformat() if c.edited_at else None,
         # Edit/delete rights of the CALLER, resolved server-side so the client
         # never has to re-derive the profile-ownership rule.
-        "is_own": _is_comment_author(c, payload),
+        "is_own": _is_comment_author(c, payload, db),
     }
 
 
@@ -571,7 +572,7 @@ def list_task_comments(
         .order_by(LeaderTaskComment.created_at, LeaderTaskComment.id)
         .all()
     )
-    return [_serialize_comment(c, payload) for c in rows]
+    return [_serialize_comment(c, payload, db) for c in rows]
 
 
 @router.post("/{task_id}/comments")
@@ -584,41 +585,41 @@ def add_task_comment(
     if not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Comment text is required")
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_comment(payload, t)
+    _assert_can_comment(db, payload, t)
     sub = int(payload["sub"])
     c = LeaderTaskComment(
         task_id=t.id,
         author_telegram_id=sub,
         author_role_ref=_profile_ref(payload),
+        author_profile=identity.viewer_profile_key(db, payload),
         author_name=payload.get("full_name"),
         text=body.text.strip(),
     )
     db.add(c)
 
-    # Notify the other side(s) of the thread: the task's creator and the
-    # assigned leader, minus the author. The leader's row is addressed to their
-    # profile; the creator is recorded as an account, so theirs stays account-keyed.
-    recipients: dict[int, str | None] = {}
-    lr = db.query(TelegramUserRole).filter(TelegramUserRole.id == t.leader_role_ref).first()
-    if lr:
-        recipients[lr.telegram_id] = _role_row_profile_key(db, lr)
-    if t.created_by:
-        recipients.setdefault(t.created_by, None)
-    recipients.pop(sub, None)
-    for tg_id, prof in recipients.items():
-        _notify(
-            db, tg_id, type="info", nkey="task_comment",
-            params={
-                "author_name": payload.get("full_name"),
-                "comment": _snippet(body.text, 200),
-                "task": _snippet(t.task_text),
-            },
-            profile=prof,
-        )
+    # Notify the other side(s) of the thread — the assigned leader and the task's
+    # creator — as PEOPLE: each gets one bell row on their profile and a DM to
+    # every account working as them, minus the author's own account.
+    params = {
+        "author_name": payload.get("full_name"),
+        "comment": _snippet(body.text, 200),
+        "task": _snippet(t.task_text),
+    }
+    targets = []
+    if t.leader_profile_id:
+        targets.append(f"leader:{t.leader_profile_id}")
+    if t.created_by_profile:
+        targets.append(t.created_by_profile)
+    for prof in dict.fromkeys(targets):          # de-duplicated, order kept
+        notify_profile(db, prof, nkey="task_comment", params=params,
+                       exclude_account=sub)
+    if not targets and t.created_by and t.created_by != sub:
+        # legacy rows with no profile on either side
+        _notify(db, t.created_by, type="info", nkey="task_comment", params=params)
 
     db.commit()
     db.refresh(c)
-    return _serialize_comment(c, payload)
+    return _serialize_comment(c, payload, db)
 
 
 def _get_own_comment(task_id: int, comment_id: int, payload: dict, db: Session) -> LeaderTaskComment:
@@ -627,7 +628,7 @@ def _get_own_comment(task_id: int, comment_id: int, payload: dict, db: Session) 
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if not _is_comment_author(c, payload):
+    if not _is_comment_author(c, payload, db):
         raise HTTPException(status_code=403, detail="Only the author profile can modify a comment")
     return c
 
@@ -648,7 +649,7 @@ def edit_task_comment(
     c.edited_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(c)
-    return _serialize_comment(c, payload)
+    return _serialize_comment(c, payload, db)
 
 
 @router.delete("/{task_id}/comments/{comment_id}", status_code=204)
