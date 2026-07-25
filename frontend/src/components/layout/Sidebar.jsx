@@ -15,6 +15,7 @@ import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
+import { useCapabilities } from "../../hooks/useCapabilities";
 import { canAccessPage } from "../../config/pages";
 
 const ALL_LINKS = [
@@ -58,6 +59,9 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const { auth } = useAuth();
   const { t }    = useLang();
   const { access } = usePageAccess();
+  // Personal capability grants unlock nav entries too — a granted approver
+  // needs the /staff link to reach the queue they were given.
+  const { capPages } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
 
   const BADGE_ROLES = ["admin", "shift-manager"];
@@ -73,7 +77,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   const withSearch = (path) => `${path}${location.search}`;
   const links = ALL_LINKS.filter(l =>
-    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access));
+    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages));
 
   const { data: range } = useQuery({
     queryKey: ["attendance-range"],

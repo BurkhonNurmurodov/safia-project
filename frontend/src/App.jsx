@@ -65,6 +65,7 @@ import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import FindInPage from "./components/FindInPage";
 import { usePageAccess } from "./hooks/usePageAccess";
+import { useCapabilities } from "./hooks/useCapabilities";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
 import { useTranslit } from "./utils/transliterate";
 
@@ -219,10 +220,19 @@ function AuthGate({ children }) {
   return children;
 }
 
+/**
+ * Gates the /admin panel. Admins always pass. A non-admin passes only while
+ * holding at least one capability whose tab lives in the panel — they then see
+ * ONLY those tabs (AdminUpload filters by the same list), so "run the Users
+ * tab" never becomes "run the admin panel".
+ */
 function RequireAdmin({ children }) {
   const { auth } = useAuth();
-  if (auth?.role !== "admin") return <Navigate to="/" replace />;
-  return children;
+  const { capTabs, isLoading } = useCapabilities();
+  if (auth?.role === "admin") return children;
+  if (isLoading) return <PageLoader />;
+  if (capTabs.length > 0) return children;
+  return <Navigate to="/" replace />;
 }
 
 /**
@@ -290,9 +300,10 @@ function NoAccess() {
 function RequirePage({ page, children }) {
   const { auth } = useAuth();
   const { access, isLoading } = usePageAccess();
-  if (isLoading) return <PageLoader />;
-  if (canAccessPage(auth?.role, page, access)) return children;
-  const dest = firstAccessibleRoute(auth?.role, access);
+  const { capPages, isLoading: capsLoading } = useCapabilities();
+  if (isLoading || capsLoading) return <PageLoader />;
+  if (canAccessPage(auth?.role, page, access, capPages)) return children;
+  const dest = firstAccessibleRoute(auth?.role, access, capPages);
   if (!dest || dest === window.location.pathname) return <NoAccess />;
   return <Navigate to={dest} replace />;
 }

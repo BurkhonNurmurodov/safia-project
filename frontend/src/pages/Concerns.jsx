@@ -2372,6 +2372,101 @@ export default function Concerns() {
         </Modal>
       )}
 
+      {/* Read-only detail view — the table clamps the concern text and the
+          solution to two lines, so this is where a row is read in full. Every
+          viewer gets it, including those with no rights over the row. */}
+      {viewRow && (
+        <Modal
+          onClose={() => setViewRow(null)}
+          title={t("concerns.viewTitle")}
+          subtitle={`${fmtDate(viewRow.entry_date, lang)}${viewRow.cell_code ? ` · ${viewRow.cell_code}` : ""}`}
+          icon={<Eye size={16} />}
+          footer={
+            <Button variant="secondary" onClick={() => setViewRow(null)}>{t("concerns.cancel")}</Button>
+          }
+        >
+          <div className="space-y-3">
+            {/* the concern itself, unclamped */}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
+                {t("concerns.colConcern")}
+              </div>
+              <div className="text-sm leading-snug whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>
+                {tl(viewRow.concern_text)}
+              </div>
+            </div>
+
+            {viewRow.solution && (
+              <div className="flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-snug"
+                   style={{ background: `${STATUS_COLOR.done}14` }}>
+                <Check size={13} className="flex-shrink-0 mt-px" style={{ color: STATUS_COLOR.done }} />
+                <span className="min-w-0">
+                  <span className="font-semibold" style={{ color: STATUS_COLOR.done }}>{t("concerns.fieldSolution")}: </span>
+                  <span className="whitespace-pre-wrap break-words" style={{ color: "var(--text-2)" }}>{tl(viewRow.solution)}</span>
+                </span>
+              </div>
+            )}
+
+            {/* labelled facts — same order as the table columns */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3 rounded-lg p-3"
+                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              <MobField label={t("concerns.colDate")}>{fmtDate(viewRow.entry_date, lang)}</MobField>
+              <MobField label={t("concerns.colCell")}>
+                {viewRow.cell_code || "—"}
+                {viewRow.cell_leader_name && (
+                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(viewRow.cell_leader_name)}</div>
+                )}
+              </MobField>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  {t("concerns.colCategory")}
+                </div>
+                <CategoryChip category={viewRow.category} label={categoryLabel(viewRow.category)} />
+              </div>
+              <MobField label={t("concerns.colOwner")}>
+                {shortOwner(viewRow.owner_name)}
+                {viewRow.owner_role && (
+                  <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{roleLabel(viewRow.owner_role)}</div>
+                )}
+              </MobField>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  {t("concerns.colStatus")}
+                </div>
+                <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap"
+                      style={{
+                        background: `${STATUS_COLOR[viewRow.status] || "var(--text-3)"}1f`,
+                        color: STATUS_COLOR[viewRow.status] || "var(--text-3)",
+                      }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: STATUS_COLOR[viewRow.status] || "var(--text-3)" }} />
+                  {statusLabel(viewRow.status)}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
+                  {t("concerns.colLevel")}
+                </div>
+                <LevelChip
+                  level={viewRow.level || "supervisor"}
+                  label={levelLabel(viewRow.level || "supervisor")}
+                  title={viewRow.top_manager_name ? tl(viewRow.top_manager_name) : undefined}
+                />
+              </div>
+              <MobField label={t("concerns.responsible")}>
+                {viewRow.responsible_name ? shortOwner(viewRow.responsible_name) : levelLabel(viewRow.level || "supervisor")}
+              </MobField>
+              <MobField label={t("concerns.colDeadline")}>{viewRow.deadline_days ?? "—"}</MobField>
+              <MobField label={t("concerns.colResolution")}>
+                <span className="inline-flex items-center gap-1 tabular-nums">
+                  <Timer size={12} className="flex-shrink-0" style={{ color: "var(--text-3)" }} />
+                  {fmtResolution(resolutionMinutes(viewRow))}
+                </span>
+              </MobField>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Escalation history modal — the trail lives here (not inline in the
           table) so row heights stay uniform. */}
       {historyRow && (
