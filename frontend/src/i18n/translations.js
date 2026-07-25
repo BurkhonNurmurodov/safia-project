@@ -2785,6 +2785,7 @@ const t = {
     "admin.broadcast.removeAttach":   "Файлни олиб ташлаш",
     "admin.broadcast.attachLimit":    "Файл бириктирилганда матн 1024 белгидан ошмаслиги керак",
     "admin.broadcast.attachTooLarge": "Файл ҳажми жуда катта (расм — 10 MB, бошқа файллар — 50 MB гача)",
+    "admin.broadcast.attachBadType": "Файл тури қўллаб-қувватланмайди (расм, видео, аудио ёки ҳужжат юборинг)",
     "admin.broadcast.send":           "Юбориш",
     "admin.broadcast.selected":       "Танланди: {n}",
     "admin.broadcast.selectAll":      "Ҳаммасини танлаш",
