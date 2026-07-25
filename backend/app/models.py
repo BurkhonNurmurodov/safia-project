@@ -54,6 +54,11 @@ class Comment(Base):
     text = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     author_telegram_id = Column(BigInteger, nullable=True)
+    # Author PROFILE key ("role:id"). The profile owns the comment: any account
+    # holding it — including a successor after handover — may edit/delete, while
+    # the same account switched into a DIFFERENT profile may not. NULL rows
+    # predate the column and fall back to author_telegram_id.
+    author_profile = Column(String, nullable=True, index=True)
     author_name = Column(String, nullable=True)
 
     manager = relationship("Manager", back_populates="comments")
