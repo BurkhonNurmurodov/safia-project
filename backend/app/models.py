@@ -229,6 +229,15 @@ class TelegramUserRole(Base):
     role    = Column(String, nullable=False)   # top-manager | shift-manager | supervisor
     role_id = Column(Integer, nullable=True)   # supervisor→managers.id | shift-manager→slot 1-4 | top-manager→null
     full_name = Column(String, nullable=False)
+    # Canonical key of the PROFILE this registration claimed ("role:id" — see
+    # app/identity.py). A profile is a person: several accounts may hold the
+    # same one and they are all that person, so every people-list, assignment
+    # and row-level permission keys off this, never off the row's own id.
+    # Derivable for supervisor/shift-manager/top-manager/guest (role_id IS the
+    # profile), but NOT for leaders — their role_id is the unit and the profile
+    # was matched by name string, which silently broke on any rename. Stamped
+    # at claim time; NULL only for rows a backfill could not resolve.
+    profile_key = Column(String, nullable=True, index=True)
     status = Column(String, default="pending")  # pending | approved | rejected
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
