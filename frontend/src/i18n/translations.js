@@ -1806,6 +1806,8 @@ const t = {
     "concerns.colDeadline":    "Муддат (кун)",
     "concerns.colResolution":  "Ўтган вақт",
     "concerns.colActions":     "Амаллар",
+    "concerns.view":           "Кўриш",
+    "concerns.viewTitle":      "Хавотир тафсилоти",
     "concerns.edit":           "Таҳрирлаш",
     "concerns.delete":         "Ўчириш",
     "concerns.deleteTitle":    "Хавотирни ўчириш",
