@@ -2420,6 +2420,9 @@ def setup_webhook():
                 },
                 "admin_menu": [(c.command, c.description) for c in admin_menu],
                 "admin_ids": admin_ids,
+                # A digest (not the raw value) so rotating the secret re-registers
+                # the webhook, without persisting the secret into app_meta.
+                "webhook_secret": hashlib.sha256(settings.webhook_secret.encode()).hexdigest(),
             },
             sort_keys=True,
             ensure_ascii=False,
