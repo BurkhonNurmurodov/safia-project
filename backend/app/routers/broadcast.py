@@ -602,6 +602,7 @@ async def send_broadcast(
             raise HTTPException(status_code=422, detail=f"At most {MAX_RICH_MEDIA} media files")
         by_id = {}
         for m, f in zip(meta, uploads):
+            validate_broadcast_media(f)   # extension whitelist (400 on disallowed type)
             blob = await f.read()
             limit = MAX_PHOTO_BYTES if m.get("kind") == "photo" else MAX_FILE_BYTES
             if len(blob) > limit:
