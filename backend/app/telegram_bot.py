@@ -774,10 +774,12 @@ def _webapp_data(message: types.Message):
                                            Manager.archived.is_(False)).first()
             if not mgr:
                 return
-            if not db.query(RoleProfile).filter_by(role="leader", manager_id=mgr.id,
-                                                   name=full_name).first():
+            lp = db.query(RoleProfile).filter_by(role="leader", manager_id=mgr.id,
+                                                 name=full_name).first()
+            if not lp:
                 return
             role_id = mgr.id
+            leader_profile_id = lp.id   # the claimed profile — stamped on the role row
         elif role == "shift-manager":
             p = db.query(RoleProfile).filter_by(role="shift-manager", name=full_name).first()
             if not p:
@@ -893,6 +895,11 @@ def _webapp_data(message: types.Message):
                 role=role,
                 role_id=role_id,
                 full_name=full_name,
+                # Record WHICH profile is being claimed. For leaders role_id is
+                # the unit, so without this the profile could only be guessed by
+                # name-matching later — and a rename broke the link silently.
+                profile_key=(f"leader:{leader_profile_id}" if role == "leader" and leader_profile_id
+                             else (f"{role}:{role_id}" if role_id else None)),
                 status=new_status,
                 approved_at=now if is_admin else None,
             )
@@ -991,7 +998,7 @@ def _adminreg_pick(call: types.CallbackQuery):
         else:
             role_row = TelegramUserRole(
                 telegram_id=tid, role="admin", role_id=pid,
-                full_name=p.name, status="pending",
+                full_name=p.name, profile_key=f"admin:{pid}", status="pending",
             )
             db.add(role_row)
 
