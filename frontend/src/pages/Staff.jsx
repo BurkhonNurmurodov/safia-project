@@ -2402,7 +2402,16 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
+  const { can } = useCapabilities();
   const isManager = role === "admin" || role === "shift-manager";
+  // Personal grants sit ALONGSIDE the role rules, never instead of them. The
+  // two queues are granted separately: deletion rows are edit_requests,
+  // everything else is an hr_document. Rows a grantee may not touch are already
+  // filtered out server-side, so "holds the grant" is the right question here.
+  const grantDocs = can(CAP.DOCUMENTS_APPROVE);
+  const grantReqs = can(CAP.REQUESTS_APPROVE);
+  const canManageDocs = isManager || grantDocs;   // hr_documents
+  const canManageReqs = isManager || grantReqs;   // edit_requests (deletion rows)
 
   const [selected, setSelected]     = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
@@ -2737,26 +2746,26 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                 //  • role change / deletion: admin or shift-manager (isManager)
                 const canApproveDoc = isExchange
                   ? (doc.target_type === "supervisor"
-                      ? (role === "admin" || isExchangeReceiver)
-                      : (role === "admin" || role === "shift-manager"))
-                  : isManager;
+                      ? (role === "admin" || isExchangeReceiver || grantDocs)
+                      : (role === "admin" || role === "shift-manager" || grantDocs))
+                  : canManageDocs;
                 const st = docStatus(doc);   // pending | approved | rejected (both sources)
-                const canApprove = isDeletion ? (isManager && hasPending) : (canApproveDoc && st === "pending");
-                const canCancel  = isDeletion ? (isManager && hasPending) : (canApproveDoc && st === "approved");
+                const canApprove = isDeletion ? (canManageReqs && hasPending) : (canApproveDoc && st === "pending");
+                const canCancel  = isDeletion ? (canManageReqs && hasPending) : (canApproveDoc && st === "approved");
                 const canEdit    = isDeletion
                   ? (isCreatorRole && hasPending)
                   : isExchange
                     ? (st === "pending" && (canApproveDoc || isCreator))
-                    : (st === "pending" && (isManager || isCreatorRole));
+                    : (st === "pending" && (canManageDocs || isCreatorRole));
                 // Pending documents are REJECTED (record kept, like the bot's ❌);
                 // hard delete only remains for approved (revert) / rejected (cleanup).
                 const canReject  = !isDeletion && st === "pending"
-                  && (isExchange ? (canApproveDoc || isManager || isCreator) : (isManager || isCreatorRole));
+                  && (isExchange ? (canApproveDoc || canManageDocs || isCreator) : (canManageDocs || isCreatorRole));
                 const canDelete  = isDeletion
-                  ? ((isCreatorRole && hasPending) || (isManager && hasPending))
+                  ? ((isCreatorRole && hasPending) || (canManageReqs && hasPending))
                   : st === "approved"
-                    ? (isExchange ? canApproveDoc : isManager)
-                    : st === "rejected" && (isManager || isCreator);
+                    ? (isExchange ? canApproveDoc : canManageDocs)
+                    : st === "rejected" && (canManageDocs || isCreator);
                 const rKey    = rowKey(doc);
                 const expanded   = expandedId === rKey;
                 const colSpan = isManager ? 7 : 6;

@@ -342,6 +342,94 @@ export default function Downtime() {
     theme: chartTheme,
   };
 
+  // ── Seasonality: category × month share of the waiting minutes ─────────────
+  // The card owns its own time axis, independent of the page date range (which
+  // here only contributes the shift / supervisor scope): yearly = the 12
+  // calendar months of a chosen year, served pre-aggregated by
+  // /api/downtime/seasonality so a whole year costs one small response instead
+  // of ~11k daily rows; weekly = one ISO week per column over the page range,
+  // computed from the rows the page already holds. The page tab decides which
+  // half («тўхтаганда» / «тўхтамаганда») the shares are taken from.
+  const [seasonMode, setSeasonMode] = useState("year");
+  const [seasonYear, setSeasonYear] = useState(null);
+  const seasonScrollRef = useRef(null);
+
+  const seasonParams = useMemo(() => ({
+    ...(shift ? { shift } : {}),
+    ...(brigadirIds.length ? { manager_id: brigadirIds } : {}),
+    ...(seasonYear ? { year: seasonYear } : {}),
+  }), [shift, brigadirIds, seasonYear]);
+  const { data: seasonData, isLoading: seasonLoading } = useQuery({
+    queryKey: ["downtime-season", seasonParams],
+    queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
+    enabled: ready,
+    staleTime: 300_000,
+  });
+  // First response decides the year (this year when it has reports, else the
+  // newest one that does) — after that the selector owns it.
+  useEffect(() => {
+    if (seasonYear == null && seasonData?.year) setSeasonYear(String(seasonData.year));
+  }, [seasonData, seasonYear]);
+  const seasonYears = seasonData?.years || [];
+
+  const MONTHS = useMemo(() => {
+    const f = new Intl.DateTimeFormat(lang === "en" ? "en" : "ru", { month: "short" });
+    return Array.from({ length: 12 }, (_, m) => f.format(new Date(2025, m, 1)).replace(".", ""));
+  }, [lang]);
+
+  const season = useMemo(() => {
+    if (seasonMode === "week") {
+      // Every ISO week (Mon-start) in the page range gets a column, including
+      // silent ones, so the axis reads as a continuous timeline.
+      const keys = [];
+      const endW = weekStart(dateTo);
+      for (let w = weekStart(dateFrom); w <= endW; w = addDays(w, 7)) keys.push(w);
+      const pos = new Map(keys.map((k, i) => [k, i]));
+      const labels = keys.map((k) => `${ddmm(k)}–${ddmm(addDays(k, 6))}`);
+      const colTotals = Array(labels.length).fill(0);
+      const catCol = {};
+      for (const r of data?.rows || []) {
+        const c = pos.get(weekStart(isoOfDmy(r.date)));
+        if (c == null) continue;
+        for (const [cat, val] of Object.entries(r[catKey] || {})) {
+          const v = Number(val) || 0;
+          (catCol[cat] || (catCol[cat] = Array(labels.length).fill(0)))[c] += v;
+          colTotals[c] += v;
+        }
+      }
+      return seasonMatrix(labels, colTotals, catCol);
+    }
+    return seasonMatrix(
+      MONTHS,
+      (ns ? seasonData?.col_totals_ns : seasonData?.col_totals) || Array(12).fill(0),
+      (ns ? seasonData?.by_category_ns : seasonData?.by_category) || {},
+    );
+  }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
+
+  // Identity hue per category — the page's own order (donut, chips, bars), with
+  // the year's own category list as a fallback for a code the picked range lacks.
+  const catHue = (cat) => {
+    const i = catNames.indexOf(cat);
+    const j = i >= 0 ? i : (seasonData?.cat_names || []).indexOf(cat);
+    return CAT_COLORS[(j >= 0 ? j : 0) % CAT_COLORS.length];
+  };
+  // "Cat A — Xoladilnikdan mahsulot kutish" (plain code when untranslated).
+  const catFull = (cat) => {
+    const meaning = t(`downtime.cat.${cat.replace(/^Cat\s*/i, "")}.label`);
+    return meaning && !meaning.startsWith("downtime.cat.") ? `${cat} — ${meaning}` : cat;
+  };
+  const seasonRows = season.matrix.map((s) => ({
+    key: s.k,
+    title: catFull(s.k),
+    data: s.data,
+    label: (
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: catHue(s.k) }} />
+        <span className="truncate">{catFull(s.k)}</span>
+      </span>
+    ),
+  }));
+
   const chartH = Math.max(300, summary.length * 28 + 60);
 
   // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
