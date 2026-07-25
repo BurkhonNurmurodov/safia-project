@@ -23,6 +23,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app import identity
+from app.capabilities import (
+    CAP_ATTENDANCE_DELETE, CAP_ATTENDANCE_EDIT, CAP_DAY_REOPEN,
+    CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
+    capability_pages, has_cap, profiles_with_cap, scope_is_all,
+)
 from app.config import settings
 from app.database import get_db
 from app.notify_ctx import notifications_suppressed
