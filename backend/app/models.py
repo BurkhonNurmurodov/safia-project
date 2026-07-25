@@ -878,6 +878,14 @@ class UserActivity(Base):
 
     id             = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id    = Column(BigInteger, nullable=False, index=True)
+    # The PROFILE that was active for these pings ("role:id"). The dashboard
+    # reports PEOPLE, so rows aggregate by profile: two accounts working as one
+    # profile are one person with one combined time-in-app, while one account
+    # switching profiles mid-day splits into a row per profile instead of having
+    # the whole day relabelled by whichever profile pinged last.
+    # NULL for identities that cannot be resolved (seeded admins) — those still
+    # aggregate by account.
+    profile_key    = Column(String, nullable=True, index=True)
     day            = Column(Date, nullable=False, index=True)   # UTC calendar day
     full_name      = Column(String, nullable=True)              # snapshot from JWT
     role           = Column(String, nullable=True)              # snapshot from JWT
@@ -887,7 +895,11 @@ class UserActivity(Base):
     event_count    = Column(Integer, nullable=False, default=0)
 
     __table_args__ = (
-        UniqueConstraint("telegram_id", "day", name="uq_user_activity_tid_day"),
+        # Uniqueness now spans the profile too. Enforced in the DB by a unique
+        # INDEX over COALESCE(profile_key, '') — a plain constraint would treat
+        # NULL profiles as distinct and let duplicate rows accumulate.
+        UniqueConstraint("telegram_id", "profile_key", "day",
+                         name="uq_user_activity_tid_profile_day"),
     )
 
 
