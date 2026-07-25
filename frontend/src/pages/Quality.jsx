@@ -708,12 +708,6 @@ export default function Quality() {
     return { labels, colTotals, matrix };
   }, [rows, view, matchesFilters, seasonMode, seasonYear, dateFrom, dateTo, MONTHS]);
 
-  // Weekly axis is long — land on the most recent weeks, not the oldest.
-  useEffect(() => {
-    const el = seasonScrollRef.current;
-    if (el && seasonMode === "week") el.scrollLeft = el.scrollWidth;
-  }, [seasonMode, season.labels.length, chartsReady]);
-
   // Brigadirs tab — per-supervisor resolution matrix for the status table that
   // sits under the KPI strip. The four actionable statuses map one-to-one onto
   // the four columns the table shows (done → resolved, open → not solved,
