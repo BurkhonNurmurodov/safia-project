@@ -1,9 +1,11 @@
+import hmac
 import logging
 from collections import deque
 
 import telebot
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
+from app.config import settings
 from app.telegram_bot import bot, handle_incoming_rich_message
 
 logger = logging.getLogger(__name__)
