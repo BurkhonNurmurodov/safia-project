@@ -22,6 +22,7 @@ from sqlalchemy import distinct, func, or_, and_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from app import identity
 from app.config import settings
 from app.database import get_db
 from app.notify_ctx import notifications_suppressed
