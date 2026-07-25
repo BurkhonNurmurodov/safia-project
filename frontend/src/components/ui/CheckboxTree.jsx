@@ -17,7 +17,9 @@ import { Check, ChevronRight, Minus } from "lucide-react";
  *   groups   – [{ key, label, icon, children:[…] }]; a child may be a leaf
  *              { key, label, sub, disabled, hint } or another branch with its
  *              own `children`. `sub` renders muted under the label; `hint`
- *              renders as a chip on disabled rows (e.g. "no registered users").
+ *              renders as a right-aligned chip on ANY leaf — a reason on
+ *              disabled rows ("no registered users"), or a count/badge on
+ *              selectable ones (the Permissions tree shows grants held).
  *   selected – array of selected LEAF keys (controlled)
  *   onChange – (nextSelectedArray) => void
  *   filter   – search string: matches leaf label/sub; a branch-label match
