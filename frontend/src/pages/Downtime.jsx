@@ -378,38 +378,42 @@ export default function Downtime() {
   }, [lang]);
 
   const season = useMemo(() => {
-    if (seasonMode === "week") {
-      // Every ISO week (Mon-start) in the page range gets a column, including
-      // silent ones, so the axis reads as a continuous timeline.
-      const keys = [];
-      const endW = weekStart(dateTo);
-      for (let w = weekStart(dateFrom); w <= endW; w = addDays(w, 7)) keys.push(w);
-      const pos = new Map(keys.map((k, i) => [k, i]));
-      const labels = keys.map((k) => `${ddmm(k)}–${ddmm(addDays(k, 6))}`);
-      const colTotals = Array(labels.length).fill(0);
-      const catCol = {};
-      for (const r of data?.rows || []) {
-        const c = pos.get(weekStart(isoOfDmy(r.date)));
-        if (c == null) continue;
-        for (const [cat, val] of Object.entries(r[catKey] || {})) {
-          const v = Number(val) || 0;
-          (catCol[cat] || (catCol[cat] = Array(labels.length).fill(0)))[c] += v;
-          colTotals[c] += v;
-        }
-      }
-      return seasonMatrix(labels, colTotals, catCol);
+    if (seasonMode === "month") {
+      return seasonMatrix(
+        MONTHS,
+        (ns ? seasonData?.col_totals_ns : seasonData?.col_totals) || Array(12).fill(0),
+        (ns ? seasonData?.by_category_ns : seasonData?.by_category) || {},
+      );
     }
-    return seasonMatrix(
-      MONTHS,
-      (ns ? seasonData?.col_totals_ns : seasonData?.col_totals) || Array(12).fill(0),
-      (ns ? seasonData?.by_category_ns : seasonData?.by_category) || {},
-    );
+    // Daily / weekly: every day (resp. every Mon-start ISO week) in the page
+    // range gets a column, including silent ones, so the axis reads as a
+    // continuous timeline rather than a list of the days that reported.
+    const step = seasonMode === "day" ? 1 : 7;
+    const keys = [];
+    const start = seasonMode === "day" ? dateFrom : weekStart(dateFrom);
+    const end = seasonMode === "day" ? dateTo : weekStart(dateTo);
+    for (let k = start; k <= end; k = addDays(k, step)) keys.push(k);
+    const pos = new Map(keys.map((k, i) => [k, i]));
+    const labels = keys.map((k) => (seasonMode === "day" ? ddmm(k) : `${ddmm(k)}–${ddmm(addDays(k, 6))}`));
+    const bucket = (d) => (seasonMode === "day" ? d : weekStart(d));
+    const colTotals = Array(labels.length).fill(0);
+    const catCol = {};
+    for (const r of data?.rows || []) {
+      const c = pos.get(bucket(isoOfDmy(r.date)));
+      if (c == null) continue;
+      for (const [cat, val] of Object.entries(r[catKey] || {})) {
+        const v = Number(val) || 0;
+        (catCol[cat] || (catCol[cat] = Array(labels.length).fill(0)))[c] += v;
+        colTotals[c] += v;
+      }
+    }
+    return seasonMatrix(labels, colTotals, catCol);
   }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
 
-  // A long weekly axis lands on the most recent weeks, not the oldest.
+  // A long day/week axis lands on the most recent columns, not the oldest.
   useEffect(() => {
     const el = seasonScrollRef.current;
-    if (el && seasonMode === "week") el.scrollLeft = el.scrollWidth;
+    if (el && seasonMode !== "month") el.scrollLeft = el.scrollWidth;
   }, [seasonMode, season.labels.length]);
 
   // Identity hue per category — the page's own order (donut, chips, bars), with
