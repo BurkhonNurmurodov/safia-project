@@ -37,7 +37,7 @@ def get_heatmap_thresholds(db: Session = Depends(get_db), _: dict = Depends(requ
 
 
 @router.get("/comparison-thresholds")
-def get_comparison_thresholds(db: Session = Depends(get_db)):
+def get_comparison_thresholds(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     p_row = db.query(AppSetting).filter(AppSetting.key == "comparison_p_segments").first()
     d_row = db.query(AppSetting).filter(AppSetting.key == "comparison_diff_segments").first()
     return {
