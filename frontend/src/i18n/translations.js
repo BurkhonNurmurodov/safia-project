@@ -3483,6 +3483,8 @@ const t = {
     "concerns.colDeadline":    "Срок (дн.)",
     "concerns.colResolution":  "Прошло времени",
     "concerns.colActions":     "Действия",
+    "concerns.view":           "Просмотр",
+    "concerns.viewTitle":      "Детали обеспокоенности",
     "concerns.edit":           "Редактировать",
     "concerns.delete":         "Удалить",
     "concerns.deleteTitle":    "Удалить обеспокоенность",
