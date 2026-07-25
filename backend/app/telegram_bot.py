@@ -889,6 +889,10 @@ def _webapp_data(message: types.Message):
             existing.full_name   = full_name
             existing.status      = new_status
             existing.approved_at = now if is_admin else None
+            existing.profile_key = (
+                f"leader:{leader_profile_id}" if role == "leader" and leader_profile_id
+                else (f"{role}:{role_id}" if role_id else None)
+            )
             role_row = existing
         else:
             role_row = TelegramUserRole(

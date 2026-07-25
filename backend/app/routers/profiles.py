@@ -606,10 +606,13 @@ class SwitchRolePayload(BaseModel):
 
 
 def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
-                      new_role_id: int) -> None:
+                      new_role_id: int, new_profile_id: int | None = None) -> None:
     """Re-point one binding at the profile's new role. If the user already
     holds exactly that binding (uq_user_role_instance), keep the stronger row
-    and drop the other."""
+    and drop the other.
+
+    The profile key moves with the binding — a stale key would leave the holder
+    attached to the profile's OLD identity, i.e. invisible under the new one."""
     dup = (
         db.query(TelegramUserRole)
         .filter(TelegramUserRole.telegram_id == row.telegram_id,
@@ -802,6 +805,7 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             else:
                 row = TelegramUserRole(telegram_id=a.telegram_id, role=new_role,
                                        role_id=target_role_id, full_name=name,
+                                       profile_key=f"{new_role}:{target_role_id if new_role == 'supervisor' else target_profile.id}",
                                        status="approved", approved_at=now)
                 db.add(row)
             db.flush()
