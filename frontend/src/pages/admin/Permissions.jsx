@@ -393,10 +393,13 @@ export default function Permissions() {
                                   selector that changes nothing. */}
                               {c.scoped ? (
                                 <StyledSelect
-                                  value={scope ?? "own"}
+                                  /* scope === null means the selected profiles
+                                     disagree — show "Mixed" rather than picking
+                                     one of them and quietly implying it. */
+                                  value={scope ?? ""}
                                   onChange={(v) => setScope(c.key, v)}
                                   disabled={state === "off"}
-                                  placeholder={t("admin.perms.scope.mixed")}
+                                  placeholder={scope == null ? t("admin.perms.scope.mixed") : undefined}
                                   triggerClassName="px-2.5 py-1.5 text-xs"
                                   className="w-32 flex-shrink-0"
                                   options={[
