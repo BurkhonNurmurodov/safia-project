@@ -275,7 +275,11 @@ def list_assignable_leaders(
 
 class TaskIn(BaseModel):
     task_text: str
-    leader_ref: int
+    # The assignee PROFILE (role_profiles.id). ``leader_ref`` is the retired
+    # registration-keyed field, still accepted so a browser tab left open across
+    # the deploy keeps working; it is resolved to a profile below.
+    leader_profile_id: Optional[int] = None
+    leader_ref: Optional[int] = None
     due_date: date
     comment: Optional[str] = None   # optional first message of the task's thread
 
