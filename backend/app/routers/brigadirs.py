@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.permissions import require_page
+from app.security import require_auth
 from app.models import Manager, Attendance, ProductionData, HeadcountData, DowntimeData, DayApproval
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
