@@ -1,8 +1,9 @@
 // ── Seasonality heatmap — THE template for "share of a period" matrices ──────
 // A native grid (not ApexCharts) styled after the fleet HeatmapChart: brand-gold
 // sticky header, solid gold-ramp cells with auto-contrast labels, collapsed 1px
-// borders and a sticky row-name column. Held to `cols` data columns: scroll past
-// that many, blank-pad under it, so the card never resizes between modes.
+// borders and a sticky row-name column. Held to `cols` data columns (12 by
+// default, 14 on Ojidaniya): scroll past that many, blank-pad under it, so the
+// card never resizes between modes.
 //
 // Shared by the Quality «Мавсумийлик» card (rows = complaint types) and the
 // Ojidaniya one (rows = waiting categories). Values are percentages already —
