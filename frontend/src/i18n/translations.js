@@ -525,6 +525,7 @@ const t = {
     "filter.deselectAll":     "Barchasini olib tashlash",
     "filter.selected2":       "tanlangan",
     "filter.clear":           "Tozalash",
+    "select.selected":        "ta tanlandi",
     "filter.noResults":       "Natija yo'q",
     "filter.noData":          "Ma'lumot yo'q",
     "filter.selectDates":  "Sanalarni tanlang",
