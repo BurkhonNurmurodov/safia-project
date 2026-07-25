@@ -114,15 +114,10 @@ export default function Permissions() {
   const groups = data?.groups ?? [];
   const byKey = useMemo(() => Object.fromEntries(people.map((p) => [p.key, p])), [people]);
 
-  // Sub-line under a profile: its shift or its supervisor's unit, localised
-  // here rather than pre-joined by the backend.
-  const subOf = (p) => {
-    if (p.shift) return t("admin.cleanup.shiftN").replace("{n}", p.shift);
-    if (p.unit) return tl(p.unit);
-    return undefined;
-  };
-
-  // role ▸ profile, in the Broadcast tree's section order.
+  // role ▸ [shift | supervisor] ▸ profile, in the Broadcast tree's section
+  // order — the org-chart level comes from the shared grouper, so this picker
+  // and the Broadcast recipient tree read identically. A profile's shift/unit
+  // is therefore its group label and no longer needs a sub-line.
   const tree = useMemo(() => {
     const order = Object.keys(ROLE_SECTIONS);
     const byRole = new Map();
@@ -134,21 +129,24 @@ export default function Permissions() {
       .filter((role) => byRole.has(role))
       .map((role) => {
         const meta = ROLE_SECTIONS[role] || {};
+        const profiles = byRole.get(role).map((p) => {
+          const n = Object.keys(p.caps || {}).length;
+          return {
+            key: p.key,
+            label: tl(p.name),
+            shift: p.shift,
+            unit: p.unit,
+            unitId: p.unit_id,
+            // Held capabilities are the one thing worth seeing without
+            // opening a profile, so they ride the row as a chip.
+            hint: n > 0 ? String(n) : undefined,
+          };
+        });
         return {
           key: role,
           label: meta.tKey ? t(meta.tKey) : role,
           icon: meta.icon,
-          children: byRole.get(role).map((p) => {
-            const n = Object.keys(p.caps || {}).length;
-            return {
-              key: p.key,
-              label: tl(p.name),
-              sub: subOf(p),
-              // Held capabilities are the one thing worth seeing without
-              // opening a profile, so they ride the row as a chip.
-              hint: n > 0 ? String(n) : undefined,
-            };
-          }),
+          children: groupProfileNodes(role, profiles, t, tl),
         };
       });
   }, [people, t, tl]);
