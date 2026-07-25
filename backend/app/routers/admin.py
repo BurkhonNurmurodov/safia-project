@@ -136,7 +136,7 @@ class DeleteAttendanceBody(BaseModel):
 @router.post("/delete-attendance")
 def delete_attendance(
     body: DeleteAttendanceBody,
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_cap(CAP_CLEANUP)),
     db: Session = Depends(get_db),
 ):
     """Wipe a whole day's footprint for the given supervisors (units) — used to
@@ -292,7 +292,7 @@ def update_settings(
 @router.get("/users")
 def list_users(
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     users = db.query(TelegramUser).order_by(TelegramUser.created_at.desc()).all()
     roles_by_tid: dict[int, list[TelegramUserRole]] = {}
@@ -342,7 +342,7 @@ def update_user_role(
     role_ref: int,
     payload: RoleUpdatePayload,
     db: Session = Depends(get_db),
-    admin_payload: dict = Depends(verify_admin),
+    admin_payload: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     user = db.query(TelegramUser).filter(TelegramUser.id == user_id).first()
     if not user:
@@ -396,7 +396,7 @@ def add_user_role(
     user_id: int,
     payload: AddRolePayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     """Admin-create an extra role for an existing Telegram user, approved
     immediately. Mirrors the role_id/full_name derivation the bot uses on
@@ -504,7 +504,7 @@ def delete_user_role(
     user_id: int,
     role_ref: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     """Remove a single role from a user. Removing the last role deletes the
     whole account, exactly like deleting the user."""
@@ -546,7 +546,7 @@ def delete_user_role(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     user = db.query(TelegramUser).filter(TelegramUser.id == user_id).first()
     if not user:

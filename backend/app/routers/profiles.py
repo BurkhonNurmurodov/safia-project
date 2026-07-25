@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -245,7 +246,8 @@ def _manager_has_data(db: Session, manager_id: int) -> bool:
 # ── Admin: list ───────────────────────────────────────────────────────────────
 
 @router.get("/admin/list")
-def admin_list_profiles(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def admin_list_profiles(db: Session = Depends(get_db),
+                        _: dict = Depends(require_cap(CAP_PROFILES_MANAGE, CAP_CELLS_MANAGE))):
     users = _user_info(db)
 
     def binding(r: TelegramUserRole) -> dict:
@@ -354,7 +356,8 @@ class CreateProfilePayload(BaseModel):
 
 @router.post("/admin")
 def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(get_db),
-                         _: dict = Depends(verify_admin)):
+                         caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    _deny_admin_profile(caller, payload.role)
     role = payload.role
     name = (payload.name or "").strip()
     if role not in PROFILE_TYPES:
@@ -441,7 +444,7 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
 
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
-                      _: dict = Depends(verify_admin)):
+                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     code = " ".join((payload.verifix_code or "").split())
     if not code:
         raise HTTPException(status_code=400, detail="Verifix code is required")
@@ -456,7 +459,7 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
 
 @router.put("/admin/cells/{cid}")
 def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_db),
-                      _: dict = Depends(verify_admin)):
+                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
@@ -475,7 +478,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
 
 @router.delete("/admin/cells/{cid}")
 def admin_delete_cell(cid: int, db: Session = Depends(get_db),
-                      _: dict = Depends(verify_admin)):
+                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
@@ -530,7 +533,9 @@ def _apply_overrides(db: Session, canonical: str, overrides: dict[str, str]) -> 
 
 @router.put("/admin/{ptype}/{pid}")
 def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
-                         db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+                         db: Session = Depends(get_db),
+                         caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    _deny_admin_profile(caller, ptype)
     if ptype not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
 
@@ -644,7 +649,7 @@ def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
 
 @router.post("/admin/switch-role")
 def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
-                      _: dict = Depends(verify_admin)):
+                      caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
     """Move a profile to another role. Only the name (and its per-language
     display overrides, keyed by name) moves along — every role-specific value
     comes from the payload. Holders migrate in place: their binding rows switch
@@ -852,7 +857,8 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
 
 @router.delete("/admin/{ptype}/{pid}")
 def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
-                         _: dict = Depends(verify_admin)):
+                         caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    _deny_admin_profile(caller, ptype)
     if ptype not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
 
@@ -909,7 +915,8 @@ class UnassignPayload(BaseModel):
 
 @router.post("/admin/unassign")
 def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_db),
-                           _: dict = Depends(verify_admin)):
+                           caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    _deny_admin_profile(caller, payload.ptype)
     if payload.ptype == "admin":
         holder = db.query(Admin).filter_by(telegram_id=payload.telegram_id,
                                            profile_id=payload.pid).first()
