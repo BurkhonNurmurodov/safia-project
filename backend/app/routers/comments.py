@@ -51,6 +51,7 @@ def list_comments(
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ):
     q = db.query(Comment)
     if manager_id:
