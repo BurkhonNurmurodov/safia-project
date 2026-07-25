@@ -2522,6 +2522,8 @@ const t = {
     "downtime.label":        "Ожидания",
     "downtime.viewTotal":    "Жами",
     "downtime.viewCategory": "Тоифалар",
+    "downtime.filterCat":    "Тоифа",
+    "downtime.allCats":      "Барча тоифалар",
     "downtime.catShare":     "Тоифалар Улуши",
     "downtime.catShareSub":  "Тоифани босинг — чап диаграмма шу тоифа бўйича филтрланади",
     "downtime.bySupervisorTrend": "Бригадир бўйича тренд",
