@@ -4741,6 +4741,8 @@ const t = {
     "admin.profiles.leaders":        "Лидеры",
     "admin.profiles.admins":         "Админы",
     "admin.profiles.guests":         "Гости",
+    "admin.profiles.noShift":        "Смена не указана",
+    "admin.profiles.noSupervisor":   "Бригадир не назначен",
     "admin.profiles.add":            "Добавить профиль",
     "admin.profiles.addTitle":       "Новый профиль",
     "admin.profiles.editTitle":      "Редактировать профиль",
