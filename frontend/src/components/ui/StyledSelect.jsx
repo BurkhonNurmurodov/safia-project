@@ -74,7 +74,18 @@ export default function StyledSelect({
     ? opts.filter((o) => String(o.label ?? "").toLowerCase().includes(q))
     : opts;
 
-  const selectedOpt = opts.find((o) => o.value === value);
+  // Multi mode keeps the selection as an array; single mode as before.
+  const picked      = multiple ? (Array.isArray(value) ? value : []) : [];
+  const isPicked    = (v) => (multiple ? picked.includes(v) : v === value);
+  const selectedOpt = multiple ? null : opts.find((o) => o.value === value);
+  const allPicked   = multiple && opts.length > 0 && picked.length === opts.length;
+
+  // Trigger label in multi mode: nothing (or everything) ticked reads as "all".
+  const multiLabel = (() => {
+    if (picked.length === 0 || allPicked) return allLabel ?? placeholder ?? "—";
+    if (picked.length === 1) return opts.find((o) => o.value === picked[0])?.label ?? picked[0];
+    return countLabel ? countLabel(picked.length) : `${picked.length} · ${t("select.selected")}`;
+  })();
 
   // ── position helpers ────────────────────────────────────────────────────────
   function computeDropStyle() {
