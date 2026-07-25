@@ -111,8 +111,11 @@ def _get_caller(token: Annotated[str, Depends(_oauth2)]):
 
 def _require_staff(caller=Depends(_get_caller), db: Session = Depends(get_db)):
     # Staff endpoints back both the Staff and Daily pages; allow the caller if
-    # their role may access either page (admin always passes).
-    if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db)):
+    # their role may access either page (admin always passes) — or if a personal
+    # capability grant unlocks one of them, so a granted approver can reach the
+    # queue they were given without opening /staff for their whole role.
+    if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
+                           capability_pages(db, caller)):
         raise HTTPException(status_code=403, detail="Access denied")
     return caller
 
