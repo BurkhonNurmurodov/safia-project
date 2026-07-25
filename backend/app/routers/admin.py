@@ -639,7 +639,8 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
     people = []
     for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
         people.append({"key": f"supervisor:{m.id}", "role": "supervisor",
-                       "name": m.name, "shift": m.shift, "unit": None})
+                       "name": m.name, "shift": m.shift, "unit": None,
+                       "unit_id": None})
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     for p in db.query(RoleProfile).order_by(RoleProfile.role, RoleProfile.name).all():
         if p.role in UNGRANTABLE_ROLES:
@@ -647,7 +648,10 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
         people.append({
             "key": f"{p.role}:{p.id}", "role": p.role, "name": p.name,
             "shift": p.shift if p.role == "shift-manager" else None,
-            "unit":  mgr_names.get(p.manager_id) if p.role == "leader" else None,
+            # `unit_id` keys the leaders-by-supervisor grouping in the picker;
+            # `unit` is the name it labels the group with.
+            "unit":    mgr_names.get(p.manager_id) if p.role == "leader" else None,
+            "unit_id": p.manager_id if p.role == "leader" else None,
         })
 
     for person in people:
