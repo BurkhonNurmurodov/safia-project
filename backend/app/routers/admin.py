@@ -23,6 +23,7 @@ from app.services.sheets_sync import (
 )
 from app.permissions import get_page_access, set_page_access, role_can_access, PAGE_KEYS, TOGGLEABLE_ROLES
 from app.routers.auth import VALID_ROLES
+from app.upload_guard import validate_spreadsheet
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
