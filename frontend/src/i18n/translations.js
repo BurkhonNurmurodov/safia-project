@@ -5872,6 +5872,8 @@ const t = {
     "downtime.label":        "Downtime",
     "downtime.viewTotal":    "Total",
     "downtime.viewCategory": "Categories",
+    "downtime.filterCat":    "Category",
+    "downtime.allCats":      "All categories",
     "downtime.catShare":     "Category Share",
     "downtime.catShareSub":  "Click a category — filters the left chart by it",
     "downtime.bySupervisorTrend": "Trend by Supervisor",
