@@ -239,7 +239,11 @@ export default function StyledSelect({
           {multiple && opts.length > 1 && (
             <button
               type="button"
-              onClick={() => onChange(allPicked ? [] : opts.map((o) => o.value))}
+              onClick={() =>
+                // With a search query active this adds the visible rows to the
+                // selection rather than silently ticking hidden ones too.
+                onChange(allPicked ? [] : [...new Set([...picked, ...shown.map((o) => o.value)])])
+              }
               className="sticky w-full text-left px-3 py-2.5 text-sm font-semibold flex items-center justify-between gap-3 transition-colors"
               style={{
                 top:          searchable ? 37 : 0,
