@@ -516,35 +516,43 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
     db.commit()
 
 
-def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,
-                           params: dict, type: str = "info") -> None:
-    """Notify the supervisor PROFILE of a unit: ONE bell row (addressed to the
-    profile, so every account holding it sees it in-app) plus a Telegram DM to
-    EVERY account that holds an approved supervisor role for the unit — each
-    rendered in that account's own language. When nobody holds the profile yet
-    it queues a single unclaimed bell row, delivered as a DM once someone claims
-    (see flush_queued_supervisor_dms). Use this instead of a single-recipient
-    _notify when the whole profile — not one chosen holder — should be reached."""
-    if notifications_suppressed():
+def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
+                   type: str = "info", exclude_account: int | None = None) -> None:
+    """Notify a PROFILE — the person — wherever they are.
+
+    Writes ONE bell row addressed to the profile (so every account holding it
+    sees exactly one copy, and a future claimer inherits it) plus a Telegram DM
+    to EVERY approved holder, each rendered in that account's own language.
+    A profile nobody has claimed yet queues the bell row with no DM; it is
+    delivered on claim (see flush_queued_supervisor_dms).
+
+    This is the ONLY correct way to notify a person. A single-recipient _notify
+    picks one registration, which means: co-holders never hear about work
+    addressed to them, and after a handover the DM goes to whoever registered
+    first — typically the person who left the post.
+
+    ``exclude_account`` suppresses the DM to the account that triggered the
+    event (no "you did this" buzz) while STILL writing the profile's bell row,
+    so the person's colleagues are not silenced by the actor's own action.
+    """
+    if notifications_suppressed() or not profile:
         return
-    prof = _profile_key("supervisor", manager_id)
-    holder_ids = sorted({
-        r.telegram_id for r in db.query(TelegramUserRole).filter(
-            TelegramUserRole.role == "supervisor",
-            TelegramUserRole.role_id == manager_id,
-            TelegramUserRole.status == "approved",
-        ) if r.telegram_id
-    })
+    from app.identity import profile_holders
+
+    holder_ids = profile_holders(db, profile)
     if not holder_ids:
         # unclaimed profile → queue the bell row only; no account to DM yet
-        _notify(db, None, nkey=nkey, params=params, type=type, profile=prof)
+        _notify(db, None, nkey=nkey, params=params, type=type, profile=profile)
         return
-    # one profile-addressed bell row (dm handled per-holder below) …
-    _notify(db, holder_ids[0], nkey=nkey, params=params, type=type, dm=False, profile=prof)
+    # one profile-addressed bell row (DMs handled per-holder below) …
+    _notify(db, holder_ids[0], nkey=nkey, params=params, type=type, dm=False,
+            profile=profile)
     # … then a DM to each holder in their own language (HTML variant when the
     # notification defines one, e.g. the call-forecast blockquote)
     from app.telegram_bot import send_tg_notification
     for tid in holder_ids:
+        if exclude_account is not None and tid == exclude_account:
+            continue
         lang = _get_user_lang(db, tid)
         title, body = _mk_notif(nkey, params, lang)
         html = _mk_notif_tg(nkey, params, lang)
@@ -552,6 +560,12 @@ def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,
             send_tg_notification(tid, title, body, html=html)
         except Exception:
             pass
+
+
+def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,
+                           params: dict, type: str = "info") -> None:
+    """Notify the supervisor profile of a unit (managers.id IS its profile id)."""
+    notify_profile(db, _profile_key("supervisor", manager_id), nkey, params, type)
 
 
 # ── profile addressing ────────────────────────────────────────────────────────
