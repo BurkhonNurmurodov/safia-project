@@ -2198,6 +2198,7 @@ const t = {
     "filter.deselectAll":     "Барчасини олиб ташлаш",
     "filter.selected2":       "танланган",
     "filter.clear":           "Тозалаш",
+    "select.selected":        "та танланди",
     "filter.noResults":       "Натижа йўқ",
     "filter.noData":          "Маълумот йўқ",
     "filter.selectDates":  "Саналарни танланг",
