@@ -88,15 +88,20 @@ export default function Downtime() {
   const fmtHrs = (v) => fmtDuration(v, durLabels);
   const fmt = (v, d = 1) => (unit === "hrs" ? fmtHrs(v) : fmtTime(v, unit, d, minLabel, hrsLabel));
 
+  // The scope toggle rides in the query params, so each scope is its own cache
+  // entry and flipping back is instant.
+  const scopedParams = useMemo(
+    () => (kpiOnly ? { ...params, kpi_only: 1 } : params),
+    [params, kpiOnly]);
   const { data, isLoading } = useQuery({
-    queryKey: ["downtime", params],
-    queryFn: () => api.get("/api/downtime", { params }).then((r) => r.data),
+    queryKey: ["downtime", scopedParams],
+    queryFn: () => api.get("/api/downtime", { params: scopedParams }).then((r) => r.data),
     enabled: ready,
   });
 
   // Trend chart never spans fewer than 7 days: a short selection fetches a
   // window padded back to end-6d (same key = same request when no padding).
-  const chartParams = useMemo(() => padChartParams(params), [params]);
+  const chartParams = useMemo(() => padChartParams(scopedParams), [scopedParams]);
   const { data: chartData, isLoading: chartLoading } = useQuery({
     queryKey: ["downtime", chartParams],
     queryFn: () => api.get("/api/downtime", { params: chartParams }).then((r) => r.data),
