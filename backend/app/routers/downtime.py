@@ -74,6 +74,8 @@ def get_downtime(
         cat_names_set.update((r.by_category_ns or {}).keys())
 
     cat_names = sorted(cat_names_set)
+    if kpi_only:
+        cat_names = [c for c in cat_names if c not in OJIDANIYA_ONLY_CATS]
 
     # Day-close state — here it decides only whether an unreported day counts as
     # a reported zero (see the loop below), not whether reported data is shown.
