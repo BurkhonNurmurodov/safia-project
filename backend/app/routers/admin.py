@@ -634,21 +634,21 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
         if name not in holders.setdefault(key, []):
             holders[key].append(name)
 
+    # `shift` / `unit` stay structured rather than a pre-joined caption, so the
+    # frontend renders them through t()/tl() in the viewer's language.
     people = []
     for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
         people.append({"key": f"supervisor:{m.id}", "role": "supervisor",
-                       "name": m.name, "detail": f"shift {m.shift}" if m.shift else None})
+                       "name": m.name, "shift": m.shift, "unit": None})
     mgr_names = {m.id: m.name for m in db.query(Manager).all()}
     for p in db.query(RoleProfile).order_by(RoleProfile.role, RoleProfile.name).all():
         if p.role in UNGRANTABLE_ROLES:
             continue
-        detail = None
-        if p.role == "shift-manager" and p.shift:
-            detail = f"shift {p.shift}"
-        elif p.role == "leader":
-            detail = mgr_names.get(p.manager_id)
-        people.append({"key": f"{p.role}:{p.id}", "role": p.role,
-                       "name": p.name, "detail": detail})
+        people.append({
+            "key": f"{p.role}:{p.id}", "role": p.role, "name": p.name,
+            "shift": p.shift if p.role == "shift-manager" else None,
+            "unit":  mgr_names.get(p.manager_id) if p.role == "leader" else None,
+        })
 
     for person in people:
         person["holders"] = holders.get(person["key"], [])
