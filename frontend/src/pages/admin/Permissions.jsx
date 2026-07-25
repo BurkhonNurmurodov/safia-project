@@ -1,16 +1,17 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  KeyRound, Check, Users, Shield, ClipboardCheck, CalendarClock, UserCog, History,
+  KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { ROLE_LABEL_KEYS } from "../../config/pages";
+import { ROLE_SECTIONS } from "../../utils/broadcastTree";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import CheckboxTree, { collectLeafKeys } from "../../components/ui/CheckboxTree";
 import EmptyState from "../../components/ui/EmptyState";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
@@ -22,9 +23,15 @@ import { SkeletonBlock } from "../../components/ui/Skeleton";
  * admin-only ACTIONS may this ONE person perform", so a supervisor can be made
  * the factory's transfer handler without becoming an admin.
  *
+ * The picker is the shared CheckboxTree, same as the Broadcast recipient tree —
+ * but two levels (role ▸ profile) instead of three: a capability belongs to a
+ * PROFILE, so the tree stops there and never descends to Telegram accounts.
+ * Multi-select is the point: granting five supervisors the same power is one
+ * pass, and saving sends a DIFF so each keeps whatever else they already held.
+ *
  * Two deliberate omissions, enforced server-side too: this tab is itself never
  * grantable (handing out powers stays a real admin's job), and admin profiles
- * never appear in the list — they already hold everything.
+ * never appear in the tree — they already hold everything.
  */
 
 // Group → the icon shown on its chip. Mirrors CAPABILITY_GROUPS in
@@ -60,16 +67,35 @@ function GroupChip({ group, label }) {
   );
 }
 
+/** Tri-state box for a capability across the whole selection. */
+function CapBox({ state }) {   // "on" | "some" | "off"
+  const on = state !== "off";
+  return (
+    <span
+      className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
+      style={on
+        ? { background: "var(--brand)", border: "1px solid var(--brand)", color: "#fff" }
+        : { background: "transparent", border: "1px solid var(--border-md)" }}
+    >
+      {state === "on" && <Check size={12} strokeWidth={3} />}
+      {state === "some" && <Minus size={12} strokeWidth={3} />}
+    </span>
+  );
+}
+
 export default function Permissions() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
-  const [search, setSearch]   = useState("");
-  const [selected, setSelected] = useState(null);   // profile key
-  const [draft, setDraft]     = useState(null);     // { capability: scope }
-  const [view, setView]       = useState("grants"); // grants | audit
-  const [saving, setSaving]   = useState(false);
+  const [search, setSearch]     = useState("");
+  const [selected, setSelected] = useState([]);   // profile keys (leaf keys)
+  // Explicit admin edits only: { capability: "own" | "all" | null }, null =
+  // revoke. Anything untouched stays absent and is left alone on save — that's
+  // what makes multi-select safe.
+  const [draft, setDraft]       = useState({});
+  const [view, setView]         = useState("grants"); // grants | audit
+  const [saving, setSaving]     = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
 
   const { data, isLoading } = useQuery({
@@ -86,59 +112,91 @@ export default function Permissions() {
   const people = data?.people ?? [];
   const capabilities = data?.capabilities ?? [];
   const groups = data?.groups ?? [];
+  const byKey = useMemo(() => Object.fromEntries(people.map((p) => [p.key, p])), [people]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return people;
-    return people.filter((p) =>
-      (tl(p.name) || p.name || "").toLowerCase().includes(q)
-      || (p.detail || "").toLowerCase().includes(q)
-      || (p.holders || []).some((h) => h.toLowerCase().includes(q)));
-  }, [people, search, tl]);
+  // Sub-line under a profile: its shift or its supervisor's unit, localised
+  // here rather than pre-joined by the backend.
+  const subOf = (p) => {
+    if (p.shift) return t("admin.cleanup.shiftN").replace("{n}", p.shift);
+    if (p.unit) return tl(p.unit);
+    return undefined;
+  };
 
-  const current = people.find((p) => p.key === selected) ?? null;
-  // `draft` is null until the admin touches something — until then the saved
-  // grants are the truth, so re-fetches stay visible instead of being shadowed
-  // by a stale local copy.
-  const caps = draft ?? current?.caps ?? {};
-  const dirty = draft !== null;
+  // role ▸ profile, in the Broadcast tree's section order.
+  const tree = useMemo(() => {
+    const order = Object.keys(ROLE_SECTIONS);
+    const byRole = new Map();
+    for (const p of people) {
+      if (!byRole.has(p.role)) byRole.set(p.role, []);
+      byRole.get(p.role).push(p);
+    }
+    return order
+      .filter((role) => byRole.has(role))
+      .map((role) => {
+        const meta = ROLE_SECTIONS[role] || {};
+        return {
+          key: role,
+          label: meta.tKey ? t(meta.tKey) : role,
+          icon: meta.icon,
+          children: byRole.get(role).map((p) => {
+            const n = Object.keys(p.caps || {}).length;
+            return {
+              key: p.key,
+              label: tl(p.name),
+              sub: subOf(p),
+              // Held capabilities are the one thing worth seeing without
+              // opening a profile, so they ride the row as a chip.
+              hint: n > 0 ? String(n) : undefined,
+            };
+          }),
+        };
+      });
+  }, [people, t, tl]);
 
-  function pick(person) {
-    setSelected(person.key);
-    setDraft(null);
-    setSaveStatus("idle");
+  const allKeys = useMemo(() => collectLeafKeys(tree), [tree]);
+  const chosen = selected.map((k) => byKey[k]).filter(Boolean);
+
+  /** Current state of a capability across the selection, with the draft on top. */
+  function capState(key) {
+    if (key in draft) return draft[key] == null ? "off" : "on";
+    if (!chosen.length) return "off";
+    const held = chosen.filter((p) => (p.caps || {})[key] != null).length;
+    return held === 0 ? "off" : held === chosen.length ? "on" : "some";
+  }
+
+  /** Common scope across the selection, or null when they differ. */
+  function capScope(key) {
+    if (key in draft) return draft[key];
+    const scopes = new Set(chosen.map((p) => (p.caps || {})[key]).filter(Boolean));
+    return scopes.size === 1 ? [...scopes][0] : null;
   }
 
   function toggleCap(key) {
-    setDraft((prev) => {
-      const base = { ...(prev ?? current?.caps ?? {}) };
-      if (base[key] != null) delete base[key];
-      // Unit-scoped grants start narrow on purpose; the identity ones have no
-      // narrower option (see UNSCOPED_CAPABILITIES on the backend).
-      else base[key] = (capabilities.find((c) => c.key === key)?.scoped === false) ? "all" : "own";
-      return base;
-    });
+    const meta = capabilities.find((c) => c.key === key);
+    const next = capState(key) === "on" ? null
+      : (meta?.scoped === false ? "all" : (capScope(key) ?? "own"));
+    setDraft((prev) => ({ ...prev, [key]: next }));
   }
 
   function setScope(key, scope) {
-    setDraft((prev) => {
-      const base = { ...(prev ?? current?.caps ?? {}) };
-      if (base[key] != null) base[key] = scope;
-      return base;
-    });
+    setDraft((prev) => ({ ...prev, [key]: scope }));
   }
 
+  const dirty = Object.keys(draft).length > 0;
+
   async function save() {
-    if (!current) return;
+    if (!selected.length || !dirty) return;
     setSaving(true);
     try {
-      await api.put(`/admin/capabilities/${encodeURIComponent(current.key)}`, { caps });
+      const grants = Object.fromEntries(
+        Object.entries(draft).filter(([, v]) => v != null));
+      const revokes = Object.entries(draft).filter(([, v]) => v == null).map(([k]) => k);
+      await api.put("/admin/capabilities", { keys: selected, grants, revokes });
       qc.invalidateQueries({ queryKey: ["admin-capabilities"] });
       qc.invalidateQueries({ queryKey: ["admin-capabilities-audit"] });
-      // The grantee's own session reads these live — refresh ours too so an
-      // admin editing their own peers sees the panel react immediately.
+      // Grants are read live by their holders; refresh our own copy too.
       qc.invalidateQueries({ queryKey: ["my-capabilities"] });
-      setDraft(null);
+      setDraft({});
       setSaveStatus("ok");
       setTimeout(() => setSaveStatus("idle"), 2500);
     } catch {
@@ -149,7 +207,14 @@ export default function Permissions() {
     }
   }
 
-  const grantedCount = (p) => Object.keys(p.caps || {}).length;
+  const headTitle = chosen.length === 1
+    ? tl(chosen[0].name)
+    : t("admin.perms.nSelected").replace("{n}", chosen.length);
+  const headSub = chosen.length === 1
+    ? ((chosen[0].holders || []).length
+        ? t("admin.perms.heldBy").replace("{names}", chosen[0].holders.map(tl).join(", "))
+        : t("admin.perms.noHolders"))
+    : t("admin.perms.bulkHint");
 
   return (
     <div className="max-w-6xl mx-auto p-4 sm:p-8 space-y-4">
@@ -194,7 +259,7 @@ export default function Permissions() {
               <table className="w-full text-xs min-w-[560px]">
                 <tbody>
                   {audit.map((r) => {
-                    const person = people.find((p) => p.key === r.profile_key);
+                    const person = byKey[r.profile_key];
                     const tone = r.action === "revoked" ? "#ef4444"
                       : r.action === "granted" ? "#22c55e" : "#eab308";
                     return (
@@ -231,64 +296,44 @@ export default function Permissions() {
           )}
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start">
-          {/* People */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start">
+          {/* Profile tree — role ▸ profile, same template as the Broadcast picker */}
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead
-              icon={Users}
+              icon={KeyRound}
               title={t("admin.perms.peopleTitle")}
-              right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{filtered.length}</span>}
+              right={
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] mr-1" style={{ color: "var(--text-4)" }}>
+                    {selected.length}/{allKeys.length}
+                  </span>
+                  <Button variant="ghost" size="sm" disabled={!selected.length}
+                          onClick={() => { setSelected([]); setDraft({}); }}>
+                    {t("admin.broadcast.clearAll")}
+                  </Button>
+                </div>
+              }
             />
-            {isLoading ? (
-              <div className="p-3 space-y-2">
-                {[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-9 w-full" />)}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-10 text-center text-xs" style={{ color: "var(--text-4)" }}>
-                {t("admin.perms.noPeople")}
-              </div>
-            ) : (
-              <div className="max-h-[28rem] overflow-y-auto">
-                {filtered.map((p) => {
-                  const active = p.key === selected;
-                  const n = grantedCount(p);
-                  return (
-                    <button
-                      key={p.key}
-                      onClick={() => pick(p)}
-                      className="w-full text-left px-4 py-2.5 flex items-center gap-2 transition-colors"
-                      style={{
-                        borderBottom: "1px solid var(--border)",
-                        background: active ? "var(--brand-bg)" : "transparent",
-                      }}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm truncate" style={{ color: "var(--text-1)" }}>
-                          {tl(p.name)}
-                        </span>
-                        <span className="block text-[11px] truncate" style={{ color: "var(--text-4)" }}>
-                          {t(ROLE_LABEL_KEYS[p.role] ?? "role.guest")}
-                          {p.detail ? ` · ${tl(p.detail)}` : ""}
-                        </span>
-                      </span>
-                      {n > 0 && (
-                        <span
-                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0"
-                          style={{ background: "var(--brand-bg)", color: "var(--brand-text)" }}
-                        >
-                          {n}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="px-2 py-2 overflow-y-auto" style={{ maxHeight: 460 }}>
+              {isLoading ? (
+                <div className="space-y-2 px-2 py-1">
+                  {[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-7 w-full" />)}
+                </div>
+              ) : (
+                <CheckboxTree
+                  groups={tree}
+                  selected={selected}
+                  onChange={(next) => { setSelected(next); setDraft({}); }}
+                  filter={search}
+                  emptyText={t("admin.perms.noPeople")}
+                />
+              )}
+            </div>
           </div>
 
-          {/* Capabilities for the picked person */}
+          {/* Capabilities for the selection */}
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            {!current ? (
+            {!chosen.length ? (
               <EmptyState
                 title={t("admin.perms.pickTitle")}
                 message={t("admin.perms.pickHint")}
@@ -299,12 +344,8 @@ export default function Permissions() {
               <>
                 <SectionHead
                   icon={KeyRound}
-                  title={tl(current.name)}
-                  subtitle={
-                    (current.holders || []).length
-                      ? t("admin.perms.heldBy").replace("{names}", current.holders.map(tl).join(", "))
-                      : t("admin.perms.noHolders")
-                  }
+                  title={headTitle}
+                  subtitle={headSub}
                   right={
                     <Button
                       size="md"
@@ -326,19 +367,14 @@ export default function Permissions() {
                       <GroupChip group={group} label={t(`admin.perms.group.${group}`)} />
                       <div className="space-y-1.5 pl-8">
                         {capabilities.filter((c) => c.group === group).map((c) => {
-                          const on = caps[c.key] != null;
+                          const state = capState(c.key);
+                          const scope = capScope(c.key);
                           return (
                             <div key={c.key} className="flex items-center gap-3 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => toggleCap(c.key)}
-                                aria-pressed={on}
-                                className="inline-flex items-center justify-center w-5 h-5 rounded-md border transition-colors flex-shrink-0"
-                                style={on
-                                  ? { background: "var(--brand)", borderColor: "transparent" }
-                                  : { background: "transparent", borderColor: "var(--border-md)" }}
-                              >
-                                {on && <Check size={12} className="text-white" />}
+                              <button type="button" onClick={() => toggleCap(c.key)}
+                                      aria-checked={state === "some" ? "mixed" : state === "on"}
+                                      role="checkbox" className="flex-shrink-0">
+                                <CapBox state={state} />
                               </button>
                               <button
                                 type="button"
@@ -352,14 +388,15 @@ export default function Permissions() {
                                   {t(`caps.${c.key}.hint`)}
                                 </span>
                               </button>
-                              {/* Identity capabilities have no unit dimension
-                                  to narrow, so they show a static "all" chip
-                                  instead of a selector that changes nothing. */}
+                              {/* Identity capabilities have no unit dimension to
+                                  narrow, so they show a static chip instead of a
+                                  selector that changes nothing. */}
                               {c.scoped ? (
                                 <StyledSelect
-                                  value={caps[c.key] ?? "own"}
+                                  value={scope ?? "own"}
                                   onChange={(v) => setScope(c.key, v)}
-                                  disabled={!on}
+                                  disabled={state === "off"}
+                                  placeholder={t("admin.perms.scope.mixed")}
                                   triggerClassName="px-2.5 py-1.5 text-xs"
                                   className="w-32 flex-shrink-0"
                                   options={[
