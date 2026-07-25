@@ -66,7 +66,9 @@ export default function SeasonalityHeatmap({
         style={{
           borderCollapse: "collapse",
           width: scroll ? firstColWidth + real * colWidth : "100%",
-          minWidth: scroll ? undefined : 760,
+          // Under the column budget the grid stretches to the card, but never
+          // squeezes a column below 52px — narrower and the % labels collide.
+          minWidth: scroll ? undefined : firstColWidth + cols * 52,
           tableLayout: "fixed",
         }}
       >
