@@ -1113,6 +1113,7 @@ const t = {
     "admin.broadcast.removeAttach":   "Faylni olib tashlash",
     "admin.broadcast.attachLimit":    "Fayl biriktirilganda matn 1024 belgidan oshmasligi kerak",
     "admin.broadcast.attachTooLarge": "Fayl hajmi juda katta (rasm — 10 MB, boshqa fayllar — 50 MB gacha)",
+    "admin.broadcast.attachBadType": "Fayl turi qo'llab-quvvatlanmaydi (rasm, video, audio yoki hujjat yuboring)",
     "admin.broadcast.send":           "Yuborish",
     "admin.broadcast.selected":       "Tanlandi: {n}",
     "admin.broadcast.selectAll":      "Hammasini tanlash",
