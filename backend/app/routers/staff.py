@@ -1922,6 +1922,10 @@ def _scope_documents(q, caller, db: Session):
     role_id = caller.get("role_id")
     tg_id   = int(caller["sub"])
 
+    # An "all"-scoped grant means admin reach — the transfer queue this person
+    # handles is every unit's, not just their own.
+    if scope_is_all(db, caller, CAP_DOCUMENTS_APPROVE):
+        return q
     if role == "supervisor":
         if not role_id:
             return q.filter(HrDocument.created_by_telegram_id == tg_id)
