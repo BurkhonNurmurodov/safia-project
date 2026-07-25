@@ -659,43 +659,65 @@ def _notify_all_parties(
     When ``admin_dm`` is False, admins still get the in-app (bell) notification
     but NOT the plain Telegram DM — used on request-creation events where admins
     instead receive the rich approve/reject button-message (see app.approvals)."""
+    # ONE bell row per addressed PROFILE — per person. Building the recipient
+    # set out of registrations instead gave a profile held by two accounts two
+    # identical bell rows (three holders → three), because each holder
+    # contributed its own row for the same person.
     admin_rows = db.query(Admin).all()
     admin_ids: set[int] = {a.telegram_id for a in admin_rows}
-    # One bell row per (account, PROFILE): an account holding several relevant
-    # profiles sees the event under each of them, in the right profile's bell.
-    recipients: set[tuple[int, str | None]] = {
-        (a.telegram_id, _profile_key("admin", a.profile_id)) for a in admin_rows
+    profiles: set[str] = {
+        _profile_key("admin", a.profile_id) for a in admin_rows if a.profile_id
     }
 
-    # Shift-managers for this manager's shift — anyone holding such a role,
-    # regardless of which role they are currently switched into
+    # Shift-managers for this manager's shift — the profiles themselves, so a
+    # profile is addressed once whether it is held by nobody, one person or three.
     shift    = _get_shift_for_manager(db, manager_id)
     role_ids = _sm_role_ids_for_shift(db, shift)
-    recipients.update(
-        (r.telegram_id, _profile_key("shift-manager", r.role_id))
-        for r in db.query(TelegramUserRole).filter(
-            TelegramUserRole.role == "shift-manager",
-            TelegramUserRole.role_id.in_(role_ids),
-            TelegramUserRole.status == "approved",
-        ).all()
-    )
+    profiles.update(_profile_key("shift-manager", rid) for rid in role_ids)
 
     # Supervisor
     if include_supervisor:
-        sup = _find_supervisor(db, manager_id)
-        if sup:
-            recipients.add((sup.telegram_id, _profile_key("supervisor", sup.role_id)))
+        profiles.add(_profile_key("supervisor", manager_id))
+    profiles.discard(None)
+
+    # The actor's own profile is skipped (no "you did this" notice), but their
+    # COLLEAGUES on that same profile are not: excluding by account used to
+    # silence the whole profile whenever one of its holders acted.
+    actor_profiles = {
+        r.profile_key or _role_row_profile_key(db, r)
+        for r in db.query(TelegramUserRole).filter(
+            TelegramUserRole.telegram_id == actor_tg_id,
+            TelegramUserRole.status == "approved",
+        ).all()
+    } if actor_tg_id else set()
 
     dmed: set[int] = set()
-    for tg_id, prof in recipients:
-        if tg_id == actor_tg_id:
+    for prof in sorted(profiles):
+        holders = identity.profile_holders(db, prof)
+        if not holders:
+            # unclaimed profile → queue the bell row, nobody to DM yet
+            _notify(db, None, type=ntype, nkey=nkey, params=params, profile=prof)
             continue
-        # The DM goes to the ACCOUNT — never twice, however many of the
-        # account's profiles receive a bell row.
-        dm = (admin_dm or tg_id not in admin_ids) and tg_id not in dmed
-        if dm:
+        # One bell row for the profile …
+        _notify(db, holders[0], type=ntype, dm=False, nkey=nkey, params=params,
+                profile=prof)
+        # … then at most one DM per ACCOUNT, however many profiles it holds.
+        if prof in actor_profiles:
+            continue
+        for tg_id in holders:
+            if tg_id == actor_tg_id or tg_id in dmed:
+                continue
+            if not admin_dm and tg_id in admin_ids:
+                continue
             dmed.add(tg_id)
-        _notify(db, tg_id, type=ntype, dm=dm, nkey=nkey, params=params, profile=prof)
+            lang = _get_user_lang(db, tg_id)
+            title, body = _mk_notif(nkey, params, lang)
+            html = _mk_notif_tg(nkey, params, lang)
+            try:
+                from app.telegram_bot import send_tg_notification
+                send_tg_notification(tg_id, title, body, html=html)
+            except Exception:
+                pass
 
 
 def notify_supervisor_verifix_upload(db: Session, manager_id: int, d: date):
@@ -1460,8 +1482,13 @@ def withdraw_request(req_id: int, caller=Depends(_require_staff), db: Session = 
     if req.status != "pending":
         raise HTTPException(status_code=409, detail="Can only withdraw pending requests")
 
-    # Supervisor may only withdraw their own requests
-    if role == "supervisor" and req.supervisor_telegram_id != tg_id:
+    # A supervisor may withdraw anything filed for their own unit: the unit IS
+    # their profile, so a co-holder's request is this same person's request.
+    # Comparing accounts here 403'd two people who run one unit together.
+    if role == "supervisor" and not (
+        (caller.get("role_id") and req.manager_id == caller["role_id"])
+        or req.supervisor_telegram_id == tg_id
+    ):
         raise HTTPException(status_code=403, detail="Not your request")
 
     req.status = "rejected"
@@ -1763,7 +1790,10 @@ def withdraw_batch(
         EditRequest.status   == "pending",
     )
     if role == "supervisor":
-        q = q.filter(EditRequest.supervisor_telegram_id == tg_id)
+        # Scope to the unit (= the profile), not the login, so a batch filed by
+        # the other holder of this brigadir profile can still be withdrawn.
+        q = q.filter(EditRequest.manager_id == role_id) if role_id else \
+            q.filter(EditRequest.supervisor_telegram_id == tg_id)
 
     reqs = q.all()
     if not reqs:
@@ -1825,12 +1855,10 @@ def _scope_deletion_requests(caller, db: Session):
         EditRequest.status.in_(["pending", "approved", "rejected", "undone"]),
     )
     if role == "supervisor":
-        q = q.filter(or_(
-            EditRequest.supervisor_telegram_id == tg_id,
-            EditRequest.manager_id == role_id,
-        ))
         if role_id:
             q = q.filter(EditRequest.manager_id == role_id)
+        else:
+            q = q.filter(EditRequest.supervisor_telegram_id == tg_id)
     elif role == "shift-manager":
         if not role_id:
             return []
@@ -2861,6 +2889,22 @@ class DocUpdateBody(BaseModel):
     return_time:       Optional[str] = None
 
 
+def _is_doc_creator(doc: HrDocument, caller: dict) -> bool:
+    """Was this document created by the caller's PROFILE?
+
+    A document belongs to the unit that filed it, and the unit IS the
+    supervisor's profile — so every account working as that brigadir may edit,
+    withdraw or reject its own unit's draft. Comparing Telegram accounts made
+    two people running one unit unable to touch each other's drafts even though
+    the org model says they are the same person. Non-supervisor callers keep the
+    account comparison (their profile is not the unit).
+    """
+    if (caller.get("role") == "supervisor" and caller.get("role_id")
+            and doc.manager_id == caller["role_id"]):
+        return True
+    return doc.created_by_telegram_id == int(caller["sub"])
+
+
 @router.put("/documents/{doc_id}")
 def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
@@ -2868,7 +2912,7 @@ def update_document(doc_id: int, body: DocUpdateBody, caller=Depends(_require_st
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft (Нет) documents can be edited")
-    is_creator = doc.created_by_telegram_id == int(caller["sub"])
+    is_creator = _is_doc_creator(doc, caller)
     if caller.get("role") not in ("admin", "shift-manager") and not is_creator:
         raise HTTPException(status_code=403, detail="Not allowed to edit this document")
     if not body.employees:
@@ -3022,7 +3066,7 @@ def _may_reject_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     (rejecting your own draft = withdrawing it)."""
     return (_can_approve_doc(doc, caller, db)
             or caller.get("role") in ("admin", "shift-manager")
-            or doc.created_by_telegram_id == int(caller["sub"]))
+            or _is_doc_creator(doc, caller))
 
 
 @router.post("/documents/{doc_id}/approve")
@@ -3083,7 +3127,7 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    is_creator = doc.created_by_telegram_id == int(caller["sub"])
+    is_creator = _is_doc_creator(doc, caller)
     # Approved docs may only be removed by an approver (reverts effects first).
     if doc.status == "approved":
         if not _can_approve_doc(doc, caller, db):
@@ -3141,7 +3185,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
             if doc.doc_type == "people_exchange":
                 _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
         elif body.action == "delete":
-            is_creator = doc.created_by_telegram_id == int(caller["sub"])
+            is_creator = _is_doc_creator(doc, caller)
             if doc.status == "approved":
                 if not _can_approve_doc(doc, caller, db):
                     continue
