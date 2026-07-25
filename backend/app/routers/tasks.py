@@ -25,15 +25,17 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app import identity
 from app.database import get_db
-from app.models import LeaderTask, LeaderTaskComment, Manager, TelegramUserRole
+from app.models import (
+    LeaderTask, LeaderTaskComment, Manager, RoleProfile, TelegramUserRole,
+)
 from app.permissions import require_page
 from app.routers.auth import ADMIN_ROLE_REF
-# Shared notification helpers: _notify writes the bell row (rendered per-viewer)
-# + DM; _role_row_profile_key addresses the row to the recipient's PROFILE so it
-# only shows under that profile (creator-addressed rows stay account-keyed —
-# tasks record their creator as an account, not a profile).
-from app.routers.staff import _notify, _role_row_profile_key
+# Shared notification helpers: _notify writes a single bell row; notify_profile
+# addresses the PERSON — one bell row on the profile plus a DM to every account
+# holding it, so co-holders and successors are never silently skipped.
+from app.routers.staff import _notify, notify_profile
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
