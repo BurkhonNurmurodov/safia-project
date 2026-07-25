@@ -1,7 +1,9 @@
 """
 User-activity tracking + the admin "Users Activity & Usage Statistics" dashboard.
 
-Data model: one UserActivity row per (telegram_id, UTC day). The web app pings
+Data model: one UserActivity row per (telegram_id, PROFILE, UTC day). The
+dashboard reports PEOPLE — rows aggregate by profile, so several accounts
+working as one profile are one person. The web app pings
 POST /api/activity/ping every ~60 s while open and visible; each ping folds into
 today's row (see the folding rule below). Reads are admin/page-gated and derive
 every metric — active users, average time-in-app, the GitHub-style contribution
@@ -20,6 +22,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import identity
 from app.config import settings
 from app.database import get_db
 from app.models import UserActivity, TelegramUser, Admin
@@ -64,10 +67,16 @@ def ping(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db))
     now = datetime.now(timezone.utc)
     today = now.date()
 
-    row = db.query(UserActivity).filter_by(telegram_id=tid, day=today).first()
+    # The heartbeat belongs to the PROFILE the person is working as, so two
+    # accounts holding one profile fold into a single person-day and a role
+    # switch starts that profile's own row instead of relabelling the whole day.
+    pkey = identity.viewer_profile_key(db, payload)
+
+    row = db.query(UserActivity).filter_by(
+        telegram_id=tid, profile_key=pkey, day=today).first()
     if row is None:
         row = UserActivity(
-            telegram_id=tid, day=today,
+            telegram_id=tid, profile_key=pkey, day=today,
             first_seen=now, last_seen=now,
             active_seconds=0, event_count=0,
         )
@@ -94,7 +103,8 @@ def ping(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(get_db))
         # A concurrent ping (another tab/device) inserted today's row first —
         # fold this ping into the existing row instead of 500-ing the client.
         db.rollback()
-        existing = db.query(UserActivity).filter_by(telegram_id=tid, day=today).first()
+        existing = db.query(UserActivity).filter_by(
+            telegram_id=tid, profile_key=pkey, day=today).first()
         if existing is not None:
             existing.last_seen = now
             existing.event_count = (existing.event_count or 0) + 1
@@ -177,11 +187,14 @@ def overview(
 
         # Calendar (full span)
         cal_seconds[dkey] = cal_seconds.get(dkey, 0) + secs
-        cal_users.setdefault(dkey, set()).add(r.telegram_id)
+        # Identity of the PERSON these seconds belong to.
+        pid = r.profile_key or f"tg:{r.telegram_id}"
+        cal_users.setdefault(dkey, set()).add(pid)
 
         # Track the freshest identity + global last_seen across the whole span
-        u = per_user.setdefault(r.telegram_id, {
-            "telegram_id": r.telegram_id, "full_name": None, "role": None,
+        u = per_user.setdefault(pid, {
+            "telegram_id": r.telegram_id, "profile_key": r.profile_key,
+            "full_name": None, "role": None,
             "last_seen": None, "active_days": 0, "total_seconds": 0,
             "event_count": 0, "_name_at": None,
         })
@@ -199,22 +212,28 @@ def overview(
             u["active_days"] += 1
             u["total_seconds"] += secs
             u["event_count"] += int(r.event_count or 0)
-            day_users.setdefault(dkey, set()).add(r.telegram_id)
+            day_users.setdefault(dkey, set()).add(pid)
             day_seconds[dkey] = day_seconds.get(dkey, 0) + secs
 
     users = []
-    for tid, u in per_user.items():
+    for pid, u in per_user.items():
+        tid = u["telegram_id"]
         info = ident.get(tid, {})
         last_seen = u["last_seen"]
         online = bool(last_seen and (now - last_seen).total_seconds() <= ONLINE_SECONDS)
         active_days = u["active_days"]
         total_seconds = u["total_seconds"]
         avg_seconds = round(total_seconds / active_days) if active_days else 0
-        name = u["full_name"] or info.get("reg_name") or (
-            "Admin" if info.get("is_admin") else f"#{tid}")
+        # The person's name comes from their PROFILE when we know it, so a
+        # renamed profile doesn't read as two different people across rows.
+        name = (identity.profile_display_name(db, u["profile_key"])
+                or u["full_name"] or info.get("reg_name")
+                or ("Admin" if info.get("is_admin") else f"#{tid}"))
         role = u["role"] or ("admin" if info.get("is_admin") else None)
         users.append({
+            "id":               pid,
             "telegram_id":      tid,
+            "profile_key":      u["profile_key"],
             "full_name":        name,
             "username":         info.get("username"),
             "role":             role,
@@ -232,7 +251,8 @@ def overview(
 
     # ── KPI counters ──
     def active_within(day_cut) -> int:
-        return len({tid for tid, u in per_user.items()
+        # Counts PEOPLE, not logins.
+        return len({pid for pid, u in per_user.items()
                     if u["last_seen"] and u["last_seen"].date() >= day_cut})
 
     total_user_days = sum(len(s) for s in day_users.values())
@@ -284,18 +304,29 @@ def overview(
 @router.get("/heatmap")
 def heatmap(
     telegram_id: Optional[int] = None,
+    person: Optional[str] = None,
     days: int = CALENDAR_DAYS,
     db: Session = Depends(get_db),
     _: dict = Depends(require_page("activity")),
 ):
-    """Per-day usage series for the GitHub-style calendar. With ``telegram_id`` it
-    is one person's grid; without it, the aggregate across everyone."""
+    """Per-day usage series for the GitHub-style calendar.
+
+    ``person`` is the identity key from the users list ("role:id", or
+    "tg:<account>" for unresolved ones) and gives one PERSON's grid — every
+    login they work from, combined. Filtering by ``telegram_id`` alone showed
+    only one login's share, so a person using two accounts got a misleadingly
+    sparse calendar. Without either, the aggregate across everyone."""
     days = max(7, min(days, CALENDAR_DAYS))
     today = datetime.now(timezone.utc).date()
     start = today - timedelta(days=days - 1)
 
     q = db.query(UserActivity).filter(UserActivity.day >= start)
-    if telegram_id is not None:
+    if person and person.startswith("tg:"):
+        q = q.filter(UserActivity.telegram_id == int(person[3:]),
+                     UserActivity.profile_key.is_(None))
+    elif person:
+        q = q.filter(UserActivity.profile_key == person)
+    elif telegram_id is not None:
         q = q.filter(UserActivity.telegram_id == telegram_id)
 
     by_day: dict[str, dict] = {}
@@ -315,4 +346,4 @@ def heatmap(
             "minutes": round(b["minutes"], 1) if b else 0,
             "count":   b["count"] if b else 0,
         })
-    return {"telegram_id": telegram_id, "series": series}
+    return {"telegram_id": telegram_id, "person": person, "series": series}

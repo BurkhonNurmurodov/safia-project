@@ -199,7 +199,7 @@ function AvatarStack({ users, tl, emptyText }) {
   return (
     <div className="flex items-center h-[30px]">
       {shown.map((u) => (
-        <div key={u.telegram_id} title={tl(u.full_name)}
+        <div key={u.id ?? u.telegram_id} title={tl(u.full_name)}
           className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white -ml-1.5 first:ml-0 flex-shrink-0"
           style={{ background: nameToColor(u.full_name), border: "2px solid var(--bg-card)" }}>
           {nameInitials(u.full_name)}
@@ -221,7 +221,7 @@ export default function UsersActivity() {
 
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState("");
-  const [calUser, setCalUser] = useState("all");   // 'all' | telegram_id
+  const [calUser, setCalUser] = useState("all");   // 'all' | person identity key
   const [sort, setSort] = useState({ key: null, dir: "asc" });
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" } : s.dir === "asc" ? { key: k, dir: "desc" } : { key: null, dir: "asc" });
@@ -235,7 +235,8 @@ export default function UsersActivity() {
   // Per-user calendar drilldown (only when a specific user is picked).
   const { data: userCal } = useQuery({
     queryKey: ["activity", "heatmap", calUser],
-    queryFn: () => api.get("/api/activity/heatmap", { params: { telegram_id: calUser } }).then((r) => r.data),
+    // Keyed by PERSON, so the grid covers every login they work from.
+    queryFn: () => api.get("/api/activity/heatmap", { params: { person: calUser } }).then((r) => r.data),
     enabled: calUser !== "all",
   });
 
@@ -277,13 +278,13 @@ export default function UsersActivity() {
   }, [users, search, sort, tl, lang]);
 
   const calSeries = calUser === "all" ? calendar : (userCal?.series || []);
-  const calUserName = calUser === "all" ? T.calAll : (users.find((u) => String(u.telegram_id) === String(calUser))?.full_name || "");
+  const calUserName = calUser === "all" ? T.calAll : (users.find((u) => String(u.id ?? u.telegram_id) === String(calUser))?.full_name || "");
 
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
   const periodOpts = [{ value: 7, label: T.p7 }, { value: 30, label: T.p30 }, { value: 90, label: T.p90 }];
   const userOpts = [{ value: "all", label: T.calAll },
     ...[...users].sort((a, b) => tl(a.full_name).localeCompare(tl(b.full_name)))
-      .map((u) => ({ value: String(u.telegram_id), label: tl(u.full_name) }))];
+      .map((u) => ({ value: String(u.id ?? u.telegram_id), label: tl(u.full_name) }))];
   const medals = ["🥇", "🥈", "🥉", "🏅", "🏅"];
 
   const onlineUsers = useMemo(() => users.filter((u) => u.online), [users]);
@@ -462,7 +463,7 @@ export default function UsersActivity() {
                 {topUsers.map((u, i) => {
                   const maxT = topUsers[0].total_minutes || 1;
                   return (
-                    <div key={u.telegram_id} className="rounded-xl p-3" style={{ background: "var(--bg-inner)" }}>
+                    <div key={u.id ?? u.telegram_id} className="rounded-xl p-3" style={{ background: "var(--bg-inner)" }}>
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-base">{medals[i]}</span>
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: nameToColor(u.full_name) }}>
@@ -514,7 +515,7 @@ export default function UsersActivity() {
                 </thead>
                 <tbody>
                   {rows.map((u) => (
-                    <tr key={u.telegram_id}>
+                    <tr key={u.id ?? u.telegram_id}>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 relative" style={{ background: nameToColor(u.full_name) }}>

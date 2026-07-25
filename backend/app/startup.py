@@ -1589,3 +1589,31 @@ def backfill_comment_profiles() -> None:
         print(f"[startup] comment profile backfill skipped: {exc}")
     finally:
         db.close()
+
+
+def add_activity_profile_key() -> None:
+    """Key the usage ledger by (account, PROFILE, day).
+
+    The dashboard counts PEOPLE. Keeping one row per account made a profile
+    held by two accounts read as two users with half the time each, and inflated
+    every headline counter. Replaces the (telegram_id, day) uniqueness with a
+    functional unique index that also spans the profile — COALESCE, because a
+    plain constraint treats NULL profiles as distinct and would let duplicates
+    accumulate for unresolved identities.
+    """
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE user_activity ADD COLUMN IF NOT EXISTS profile_key VARCHAR"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_user_activity_profile_key "
+                        "ON user_activity (profile_key)"))
+        db.execute(text("ALTER TABLE user_activity "
+                        "DROP CONSTRAINT IF EXISTS uq_user_activity_tid_day"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_activity_tid_profile_day "
+            "ON user_activity (telegram_id, COALESCE(profile_key, ''), day)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] user_activity profile_key migration skipped: {exc}")
+    finally:
+        db.close()
