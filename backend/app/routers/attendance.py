@@ -6,6 +6,7 @@ from sqlalchemy import distinct, func, or_, and_
 
 from app.database import get_db
 from app.models import Attendance, Manager
+from app.security import require_auth
 
 # Rows included in display & calculations:
 # matching job title (or empty) AND hours_worked > 0 (actually came to work)
