@@ -220,13 +220,22 @@ function AuthGate({ children }) {
   return children;
 }
 
-/**
- * Gates the /admin panel. Admins always pass. A non-admin passes only while
- * holding at least one capability whose tab lives in the panel — they then see
- * ONLY those tabs (AdminUpload filters by the same list), so "run the Users
- * tab" never becomes "run the admin panel".
- */
+/** Strictly admin-only. Used by pages that are not part of the capability
+ *  catalog (e.g. /leaders-bot) — a grant must never widen those. */
 function RequireAdmin({ children }) {
+  const { auth } = useAuth();
+  if (auth?.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
+/**
+ * Gates the /admin panel specifically. Admins always pass. A non-admin passes
+ * only while holding at least one capability whose tab lives in the panel —
+ * and then sees ONLY those tabs (AdminUpload filters by the same list), so
+ * "run the Users tab" never becomes "run the admin panel". Deliberately
+ * separate from RequireAdmin so widening the panel can't widen anything else.
+ */
+function RequireAdminPanel({ children }) {
   const { auth } = useAuth();
   const { capTabs, isLoading } = useCapabilities();
   if (auth?.role === "admin") return children;
@@ -365,7 +374,7 @@ function AppWithLang() {
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route
               path="/admin/upload"
-              element={<AuthGate><RequireAdmin><AdminUpload /></RequireAdmin></AuthGate>}
+              element={<AuthGate><RequireAdminPanel><AdminUpload /></RequireAdminPanel></AuthGate>}
             />
             {/* /broadcast mini-app recipient picker — opened from the bot's inline
                 button; admin membership is enforced server-side (active role may

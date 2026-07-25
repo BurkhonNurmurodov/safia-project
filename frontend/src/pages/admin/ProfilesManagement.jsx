@@ -17,6 +17,7 @@ import { ColFilter, TxtFilter, OptsFilter } from "../../components/ui/ColumnFilt
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
+import { useAuth } from "../../context/AuthContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
 
 // The profile sections. `listKey` = field in GET /api/profiles/admin/list.
@@ -66,6 +67,11 @@ function HolderChip({ b, onUnassign, disabled }) {
 }
 
 export default function ProfilesManagement({ cellsOnly = false }) {
+  // A capability grantee may run this tab but never touch ADMIN identities
+  // (the backend refuses every write; hiding the section keeps the UI honest
+  // rather than showing buttons that 403).
+  const { auth: capAuth } = useAuth();
+  const sections = capAuth?.role === "admin" ? TYPES : TYPES.filter((x) => x.key !== "admin");
   const { t, lang, languages, nameOverrides, reloadTranslations } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
@@ -409,7 +415,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
               <SegmentedToggle
                 value={type}
                 onChange={(v) => { setType(v); setSort({ key: null, dir: "asc" }); }}
-                options={TYPES.filter((x) => x.key !== "cells").map(({ key, tKey, icon: Icon, listKey }) => ({
+                options={sections.filter((x) => x.key !== "cells").map(({ key, tKey, icon: Icon, listKey }) => ({
                   value: key,
                   label: (
                     <span className="inline-flex items-center gap-1.5">

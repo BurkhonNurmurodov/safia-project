@@ -342,15 +342,16 @@ export default function Downtime() {
     theme: chartTheme,
   };
 
-  // ── Seasonality: category × month share of the waiting minutes ─────────────
-  // The card owns its own time axis, independent of the page date range (which
-  // here only contributes the shift / supervisor scope): yearly = the 12
-  // calendar months of a chosen year, served pre-aggregated by
+  // ── Seasonality: category × period share of the waiting minutes ────────────
+  // Three resolutions on one grid. Monthly owns its own time axis, independent
+  // of the page date range (which there only contributes the shift / supervisor
+  // scope): the 12 calendar months of a chosen year, served pre-aggregated by
   // /api/downtime/seasonality so a whole year costs one small response instead
-  // of ~11k daily rows; weekly = one ISO week per column over the page range,
-  // computed from the rows the page already holds. The page tab decides which
-  // half («тўхтаганда» / «тўхтамаганда») the shares are taken from.
-  const [seasonMode, setSeasonMode] = useState("year");
+  // of ~11k daily rows. Daily and weekly bucket the page range itself — one
+  // column per day / per ISO week — computed from the rows the page already
+  // holds, so they cost nothing. The page tab decides which half
+  // («тўхтаганда» / «тўхтамаганда») the shares are taken from.
+  const [seasonMode, setSeasonMode] = useState("month"); // "day" | "week" | "month"
   const [seasonYear, setSeasonYear] = useState(null);
   const seasonScrollRef = useRef(null);
 
@@ -362,7 +363,7 @@ export default function Downtime() {
   const { data: seasonData, isLoading: seasonLoading } = useQuery({
     queryKey: ["downtime-season", seasonParams],
     queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
-    enabled: ready,
+    enabled: ready && seasonMode === "month",
     staleTime: 300_000,
   });
   // Until the user picks, the year is the backend's own choice (this year when it
