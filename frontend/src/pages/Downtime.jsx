@@ -136,6 +136,28 @@ export default function Downtime() {
     setSelectedCats((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
   const clearCats = () => setSelectedCats([]);
 
+  // Toolbar multi-select mirror of that filter — same identity hue as the
+  // doughnut slice, plus the category's meaning so the codes aren't a riddle.
+  const catOptions = catNames.map((cat, i) => {
+    const code = cat.replace(/^Cat\s*/i, "");
+    const meaning = t(`downtime.cat.${code}.label`);
+    return {
+      value: cat,
+      label: (
+        <span className="flex items-center gap-2 min-w-0">
+          <span
+            className="shrink-0 rounded-full"
+            style={{ width: 8, height: 8, background: CAT_COLORS[i % CAT_COLORS.length] }}
+          />
+          <span className="truncate">
+            {cat}
+            {meaning && !meaning.startsWith("downtime.cat.") ? ` — ${meaning}` : ""}
+          </span>
+        </span>
+      ),
+    };
+  });
+
   const mergedSeries = filterActive
     ? [
         { name: totalLabel, data: zeros },
