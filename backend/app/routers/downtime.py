@@ -143,6 +143,9 @@ def get_downtime_seasonality(
     year: Optional[int] = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    # Same meaning as on /downtime: drop the Ojidaniya-only categories so the
+    # grid shows only the waiting that the загрузка KPIs count.
+    kpi_only: bool = Query(default=False),
     db: Session = Depends(get_db),
     _: dict = Depends(require_page("downtime", "daily")),
 ):
