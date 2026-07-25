@@ -3532,10 +3532,10 @@ def close_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = 
 
 @router.post("/approvals/reopen")
 def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can re-open a closed day")
     if not body.manager_id:
         raise HTTPException(status_code=400, detail="manager_id required")
+    if not _cap_covers_unit(caller, db, CAP_DAY_REOPEN, body.manager_id):
+        raise HTTPException(status_code=403, detail="Only an admin can re-open a closed day")
     try:
         d = date.fromisoformat(body.date)
     except ValueError:
