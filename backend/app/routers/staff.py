@@ -790,7 +790,7 @@ def _log_admin_action(
 # ── Field options ──────────────────────────────────────────────────────────────
 
 @router.get("/field-options")
-def field_options(db: Session = Depends(get_db)):
+def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff)):
     job_titles = [
         r[0] for r in db.query(distinct(Attendance.job_title))
         .filter(Attendance.job_title.isnot(None), Attendance.job_title != "nan", Attendance.job_title != "")
