@@ -1095,7 +1095,9 @@ async def import_catalog(
     on the backfilled dates — other brigadirs are untouched."""
     if not db.query(Manager).filter(Manager.id == manager_id).first():
         raise HTTPException(status_code=404, detail=f"Manager {manager_id} not found")
-    parsed = parse_catalog_workbook(await file.read(), sheet_name)
+    content = await file.read()
+    validate_spreadsheet(file, content)   # extension + OOXML signature (400 on mismatch)
+    parsed = parse_catalog_workbook(content, sheet_name)
     if not parsed["products"]:
         raise HTTPException(
             status_code=400,
