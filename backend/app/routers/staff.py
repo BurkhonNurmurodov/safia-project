@@ -3466,7 +3466,7 @@ def approval_day(
         "closed_by":        closure.approved_by_name if closure else None,
         "closed_at":        closure.approved_at.isoformat() if closure and closure.approved_at else None,
         "pending_requests": counts["pending_requests"] + counts["draft_docs"],
-        "can_reopen":       role == "admin",
+        "can_reopen":       _cap_covers_unit(caller, db, CAP_DAY_REOPEN, manager_id),
     }
 
 
