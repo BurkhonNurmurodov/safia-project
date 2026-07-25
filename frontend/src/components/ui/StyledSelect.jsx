@@ -30,8 +30,9 @@ import { useLang } from "../../context/LangContext";
  *   multiple     – boolean; Google-Sheets-style multi-select. `value` becomes a
  *                  string[] and `onChange` receives the next array. Rows carry
  *                  square checkboxes, the panel stays open while you tick, and a
- *                  sticky "select all / clear" header sits on top. An empty
- *                  array means "no filter" → the trigger shows `allLabel`.
+ *                  sticky tri-state "select all" row sits on top (it flips to
+ *                  "deselect all" once everything is ticked). An empty array
+ *                  means "no filter" → the trigger shows `allLabel`.
  *   allLabel     – trigger text in `multiple` mode when nothing (or everything)
  *                  is selected, e.g. "All categories" (optional)
  *   countLabel   – (n) => string; trigger text in `multiple` mode when 2+ options
