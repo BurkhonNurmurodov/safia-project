@@ -746,6 +746,11 @@ def broadcast_recipients(db: Session = Depends(get_db),
         "profiles": [{
             "key": p["key"],
             "name": p["name"],
+            # Grouping metadata: shift (shift-managers, supervisors) or the
+            # owning supervisor (leaders). Absent on roles that aren't grouped.
+            "shift": p.get("shift"),
+            "unit": p.get("unit"),
+            "unit_id": p.get("unit_id"),
             "users": [uinfo(t) for t in p["user_ids"]],
         } for p in b["profiles"]],
     } for b in blocks]
