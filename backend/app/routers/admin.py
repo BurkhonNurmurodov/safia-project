@@ -136,7 +136,7 @@ class DeleteAttendanceBody(BaseModel):
 @router.post("/delete-attendance")
 def delete_attendance(
     body: DeleteAttendanceBody,
-    _: dict = Depends(require_cap(CAP_CLEANUP)),
+    caller: dict = Depends(require_cap(CAP_CLEANUP)),
     db: Session = Depends(get_db),
 ):
     """Wipe a whole day's footprint for the given supervisors (units) — used to
