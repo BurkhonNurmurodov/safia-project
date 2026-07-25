@@ -14,6 +14,17 @@ class Settings(BaseSettings):
     access_token_expire_hours: int = 24
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
+    # Max age of a Telegram initData string (its auth_date). initData is signed
+    # once at launch and never refreshes, so a leaked/captured string would
+    # otherwise stay replayable forever. Every request re-checks this window, so
+    # a session that stays open past it must relaunch to get fresh initData —
+    # this mirrors the JWT lifetime above. 0 disables the freshness check.
+    init_data_max_age_hours: int = 24
+    # Shared secret Telegram echoes back in the X-Telegram-Bot-Api-Secret-Token
+    # header on every webhook delivery, so /bot/webhook can reject forged
+    # updates. Blank → derived deterministically from secret_key (see
+    # webhook_secret), so protection is on out of the box.
+    telegram_webhook_secret: str = ""
     # Comma-separated Telegram IDs. Only used to seed the admins DB table
     # (see startup.seed_admins) — after seeding, the DB is the source of truth.
     admin_telegram_id: str = ""
