@@ -5544,6 +5544,7 @@ const t = {
     "filter.deselectAll":     "Deselect All",
     "filter.selected2":       "selected",
     "filter.clear":           "Clear",
+    "select.selected":        "selected",
     "filter.noResults":       "No results",
     "filter.noData":          "No data",
     "filter.selectDates":  "Select dates",
