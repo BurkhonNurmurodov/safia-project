@@ -3012,6 +3012,8 @@ const t = {
     "admin.profiles.leaders":        "Лидерлар",
     "admin.profiles.admins":         "Админлар",
     "admin.profiles.guests":         "Меҳмонлар",
+    "admin.profiles.noShift":        "Смена кўрсатилмаган",
+    "admin.profiles.noSupervisor":   "Бригадир тайинланмаган",
     "admin.profiles.add":            "Профиль қўшиш",
     "admin.profiles.addTitle":       "Янги профиль",
     "admin.profiles.editTitle":      "Профилни таҳрирлаш",
