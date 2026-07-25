@@ -81,6 +81,19 @@ def _caller(token: Annotated[str, Depends(_oauth2)]) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+def _deny_admin_profile(caller: dict, *ptypes: str | None) -> None:
+    """The escalation stop: someone holding `admin.profiles.manage` may run the
+    Profiles tab, but ADMIN identities are off-limits to them.
+
+    Without this, a grantee could create an admin profile (or switch their own
+    to admin), claim it, and become a full admin — turning one delegated job
+    into total control. Real admins pass through untouched."""
+    if caller.get("role") == "admin":
+        return
+    if any(p == "admin" for p in ptypes):
+        raise HTTPException(status_code=403, detail="Only an admin can manage admin profiles")
+
+
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 def _rekey_name_overrides(db: Session, old_name: str, new_name: str) -> None:
