@@ -20,6 +20,7 @@ import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragSelect } from "../hooks/useDragSelect";
 import api from "../utils/api";
@@ -2402,7 +2403,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
-  const { can } = useCapabilities();
+  const { can, canAll } = useCapabilities();
   const isManager = role === "admin" || role === "shift-manager";
   // Personal grants sit ALONGSIDE the role rules, never instead of them. The
   // two queues are granted separately: deletion rows are edit_requests,
@@ -2412,6 +2413,12 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const grantReqs = can(CAP.REQUESTS_APPROVE);
   const canManageDocs = isManager || grantDocs;   // hr_documents
   const canManageReqs = isManager || grantReqs;   // edit_requests (deletion rows)
+  const canBulk = canManageDocs || canManageReqs;
+  // The supervisor column and its filter only earn their space for someone who
+  // sees more than one unit — managers, and grantees scoped to "all". An
+  // "own"-scoped grantee sees a single unit, so the column would be one value
+  // repeated down the page.
+  const crossUnit = isManager || canAll(CAP.DOCUMENTS_APPROVE) || canAll(CAP.REQUESTS_APPROVE);
 
   const [selected, setSelected]     = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
@@ -2567,7 +2574,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             rendered so selecting rows never shifts the table. ───────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Bulk actions — always visible; enabled only when rows are selected */}
-        {isManager && (
+        {canBulk && (
           <>
             <button onClick={() => handleBulk("approve")} disabled={selected.size === 0}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-opacity"
@@ -2633,7 +2640,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
             activeCount={[createdFilter, supervisorFilter.length > 0, typeFilter.length > 0, statusFilter !== "all", approverFilter.length > 0, dateFilter].filter(Boolean).length}
           >
             <DatePicker value={dateFilter} onChange={setDateFilter} availableDates={availableDates} />
-            {isManager && (
+            {crossUnit && (
               <FilterDropdown icon={Users} label={t("staff.colSupervisor")}
                 active={supervisorFilter.length > 0}
                 display={supervisorFilter.length === 1 ? tl(supervisorFilter[0]) : `${supervisorFilter.length} ${t("filter.selected2")}`}>
@@ -2666,7 +2673,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
 
         <FilterBottomSheet
           open={sheetOpen} onClose={() => setSheetOpen(false)}
-          isManager={isManager} tl={tl} t={t}
+          isManager={crossUnit} tl={tl} t={t}
           createdFilter={createdFilter} setCreatedFilter={setCreatedFilter}
           supervisorFilter={supervisorFilter} setSupervisorFilter={setSupervisorFilter} distinctSupervisors={distinctSupervisors}
           typeFilter={typeFilter} setTypeFilter={setTypeFilter} distinctTypes={distinctTypes}
@@ -2693,7 +2700,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                   </div>
                 </th>
                 {/* RAHBAR */}
-                {isManager && (
+                {crossUnit && (
                   <th className={`text-left ${thCls}`} style={{ color: "var(--text-3)" }}>
                     <div className="flex items-center gap-1">
                       <span style={{ color: "var(--text-3)" }}>{t("staff.colSupervisor")}</span>
@@ -2744,6 +2751,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                 //  • exchange → supervisor: admin or the receiving supervisor
                 //  • exchange → task:       admin or a shift-manager
                 //  • role change / deletion: admin or shift-manager (isManager)
+                //  …plus, additively, whoever holds the matching capability
                 const canApproveDoc = isExchange
                   ? (doc.target_type === "supervisor"
                       ? (role === "admin" || isExchangeReceiver || grantDocs)
@@ -2768,7 +2776,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                     : st === "rejected" && (canManageDocs || isCreator);
                 const rKey    = rowKey(doc);
                 const expanded   = expandedId === rKey;
-                const colSpan = isManager ? 7 : 6;
+                const colSpan = crossUnit ? 7 : 6;
                 return (
                   <Fragment key={rKey}>
                     <tr
@@ -2779,7 +2787,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                         <input type="checkbox" checked={selected.has(rKey)} onChange={() => toggleSel(rKey)} className="w-4 h-4 cursor-pointer" style={{ accentColor: "var(--brand)" }} />
                       </td>
                       <td className="px-3 py-3 font-mono whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtDateLabel(doc.date)}</td>
-                      {isManager && <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(doc.supervisor_name) || "—"}</td>}
+                      {crossUnit && <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--text-2)" }}>{tl(doc.supervisor_name) || "—"}</td>}
                       <td className="px-3 py-3" style={{ color: "var(--text-1)" }}>
                         <span className="font-medium">
                           {DOC_TYPE_TKEY[doc.doc_type] ? t(DOC_TYPE_TKEY[doc.doc_type]) : (doc.doc_type_label || doc.doc_type)}
