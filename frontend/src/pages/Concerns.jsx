@@ -1948,6 +1948,8 @@ export default function Concerns() {
                 )}
                 {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
+                  // Every row is expandable — the action bar always carries at
+                  // least «Ko'rish», even for a viewer with no rights over it.
                   const colSpan = 9;
                   // Per-row rights come from the backend (responsibility moves up
                   // the chain): a row with no actions at all stays inert.
