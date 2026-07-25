@@ -47,7 +47,7 @@ def get_comparison_thresholds(db: Session = Depends(get_db), _: dict = Depends(r
 
 
 @router.get("/page-access")
-def get_page_access_matrix(db: Session = Depends(get_db)):
+def get_page_access_matrix(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     """Public read of the page-access matrix so every role can render its own
     navigation. Admin always has full access (not represented in the matrix)."""
     return {
