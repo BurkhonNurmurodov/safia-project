@@ -113,7 +113,9 @@ export default function Permissions() {
     setDraft((prev) => {
       const base = { ...(prev ?? current?.caps ?? {}) };
       if (base[key] != null) delete base[key];
-      else base[key] = "own";   // grants start at the narrower scope on purpose
+      // Unit-scoped grants start narrow on purpose; the identity ones have no
+      // narrower option (see UNSCOPED_CAPABILITIES on the backend).
+      else base[key] = (capabilities.find((c) => c.key === key)?.scoped === false) ? "all" : "own";
       return base;
     });
   }
@@ -305,7 +307,7 @@ export default function Permissions() {
                   }
                   right={
                     <Button
-                      size="lg"
+                      size="md"
                       onClick={save}
                       loading={saving}
                       disabled={!dirty}
