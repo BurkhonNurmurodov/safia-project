@@ -1951,6 +1951,28 @@ def _can_approve(caller) -> bool:
     return caller.get("role") in ("admin", "shift-manager")
 
 
+def _granted_over_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """True if a ``staff.documents.approve`` grant covers THIS document.
+
+    "all" covers everything; "own" covers only documents inside the profile's
+    normal unit scoping — including a transfer addressed TO their unit, which
+    is the incoming leg a receiving supervisor already sees."""
+    scope = cap_scope(db, caller, CAP_DOCUMENTS_APPROVE)
+    if scope is None:
+        return False
+    if scope == "all":
+        return True
+    units = _caller_unit_ids(caller, db)
+    if units is None:
+        return True
+    if doc.manager_id in units:
+        return True
+    payload = doc.payload or {}
+    return (doc.doc_type == "people_exchange"
+            and payload.get("target_type") == "supervisor"
+            and payload.get("target_manager_id") in units)
+
+
 def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     """Approval authority, per document type. One approval is always enough.
 
