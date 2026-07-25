@@ -30,7 +30,7 @@ DEFAULT_DIFF_SEGMENTS = [
 
 
 @router.get("/heatmap-thresholds")
-def get_heatmap_thresholds(db: Session = Depends(get_db)):
+def get_heatmap_thresholds(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     row = db.query(AppSetting).filter(AppSetting.key == "heatmap_segments").first()
     segments = json.loads(row.value) if row else DEFAULT_HEATMAP_SEGMENTS
     return {"segments": segments}
