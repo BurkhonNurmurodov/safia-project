@@ -133,7 +133,7 @@ def build_metrics_list(
 
 
 @router.get("/managers/all")
-def list_all_managers(db: Session = Depends(get_db)):
+def list_all_managers(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
     """Returns active managers as {manager_id, name, shift} for filter
     dropdowns. Archived units are hidden everywhere (their data stays stored).
     The old public /managers registration picker is gone — registration lists
