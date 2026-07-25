@@ -365,12 +365,11 @@ export default function Downtime() {
     enabled: ready,
     staleTime: 300_000,
   });
-  // First response decides the year (this year when it has reports, else the
-  // newest one that does) — after that the selector owns it.
-  useEffect(() => {
-    if (seasonYear == null && seasonData?.year) setSeasonYear(String(seasonData.year));
-  }, [seasonData, seasonYear]);
+  // Until the user picks, the year is the backend's own choice (this year when it
+  // has reports, else the newest one that does) — shown, but never written back
+  // into the params, so the first load stays a single request.
   const seasonYears = seasonData?.years || [];
+  const seasonYearShown = seasonYear || (seasonData?.year != null ? String(seasonData.year) : "");
 
   const MONTHS = useMemo(() => {
     const f = new Intl.DateTimeFormat(lang === "en" ? "en" : "ru", { month: "short" });

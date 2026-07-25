@@ -3328,9 +3328,14 @@ function ApprovalsCalendar({ role, supervisors }) {
   const { auth } = useAuth();
   const { t } = useLang();
   const isAdmin = role === "admin";
+  // Re-opening a closed day is grantable; picking somebody else's unit needs
+  // the wider "all" scope, since an own-scoped grantee only has their own.
+  const { can, canAll } = useCapabilities();
+  const canReopen = isAdmin || can(CAP.DAY_REOPEN);
+  const crossUnit = isAdmin || canAll(CAP.DAY_REOPEN);
 
   const [selManagerId, setSelManagerId] = useState(null);
-  const effManagerId = isAdmin ? selManagerId : auth?.role_id;
+  const effManagerId = crossUnit ? selManagerId : auth?.role_id;
 
   const now = new Date();
   const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -3370,7 +3375,7 @@ function ApprovalsCalendar({ role, supervisors }) {
       if (window.confirm(t("staff.apprCloseConfirm"))) {
         closeMut.mutate(iso);
       }
-    } else if ((status === "closed" || status === "confirmed") && isAdmin) {
+    } else if ((status === "closed" || status === "confirmed") && canReopen) {
       if (window.confirm(t("staff.apprReopenConfirm"))) {
         reopenMut.mutate(iso);
       }
@@ -3390,7 +3395,7 @@ function ApprovalsCalendar({ role, supervisors }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {isAdmin && (
+        {crossUnit && (
           <SupervisorSelect value={selManagerId} onChange={setSelManagerId} supervisors={supervisors} />
         )}
         <div className="flex items-center gap-1 ml-auto">
@@ -3433,10 +3438,10 @@ function ApprovalsCalendar({ role, supervisors }) {
               const future = iso > todayIso;
               const clickable = !future && (
                 (status === "open" && (role === "supervisor" || isAdmin)) ||
-                ((status === "closed" || status === "confirmed") && isAdmin)
+                ((status === "closed" || status === "confirmed") && canReopen)
               );
               const title = (status === "confirmed" || status === "closed")
-                ? `${t("staff.apprClosedByPrefix")}${info?.closed_by ? ` ${info.closed_by}` : ""}${isAdmin ? ` · ${t("staff.apprClickReopen")}` : ""}`
+                ? `${t("staff.apprClosedByPrefix")}${info?.closed_by ? ` ${info.closed_by}` : ""}${canReopen ? ` · ${t("staff.apprClickReopen")}` : ""}`
                 : status === "open"   ? (clickable ? `${t("staff.apprOpen")} · ${t("staff.apprClickClose")}` : t("staff.apprOpen"))
                 : t("staff.apprNoData");
               return (
@@ -3695,7 +3700,7 @@ export default function Staff() {
               : (supervisors.find(s => s.manager_id === selectedManagerId)?.name || "")
           }
           date={selectedDate}
-          isAdmin={role === "admin"}
+          isAdmin={canDeleteRowsDirectly}
           onClose={() => setShowDeleteModal(false)}
           onDeleted={handleDeleted}
         />

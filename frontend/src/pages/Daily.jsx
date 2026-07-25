@@ -11,6 +11,7 @@ import SegmentedToggle from "../components/ui/SegmentedToggle";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import ShiftDaily from "./ShiftDaily";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { useTheme } from "../context/ThemeContext";
 import { useLang } from "../context/LangContext";
 import { useFilters } from "../context/FilterContext";
@@ -140,6 +141,10 @@ function SupervisorDaily() {
   const role = auth?.role;
   const isSupervisor = role === "supervisor";
   const isAdmin      = role === "admin";
+  // Personal grants, additive to the role rules above.
+  const { can } = useCapabilities();
+  const canReopen = isAdmin || can(CAP.DAY_REOPEN);
+  const canDeleteRows = isAdmin || can(CAP.ATTENDANCE_DELETE);
   // Shift-manager drill-down: a specific supervisor + date passed in the URL.
   const drillId   = searchParams.get("manager_id");
   const drillDate = searchParams.get("date");
@@ -264,7 +269,7 @@ function SupervisorDaily() {
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("daily.closedBadge")}{approval?.closed_by ? ` · ${approval.closed_by}` : ""}
               </span>
-              {isAdmin && (
+              {canReopen && (
                 <button
                   onClick={() => { if (window.confirm(t("staff.apprReopenConfirm"))) reopenMut.mutate(); }}
                   disabled={reopenMut.isPending}
@@ -491,7 +496,7 @@ function SupervisorDaily() {
           managerId={managerId}
           managerName={isSupervisor ? (auth?.name || "") : selectedSupName}
           date={date}
-          isAdmin={isAdmin}
+          isAdmin={canDeleteRows}
           onClose={() => setShowDeleteModal(false)}
           onDeleted={handleDeleted}
         />
