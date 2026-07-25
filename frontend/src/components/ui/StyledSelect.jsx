@@ -356,7 +356,7 @@ export default function StyledSelect({
         }}
       >
         <span className="truncate min-w-0">
-          {selectedOpt?.label ?? placeholder ?? "—"}
+          {multiple ? multiLabel : (selectedOpt?.label ?? placeholder ?? "—")}
         </span>
         <ChevronDown
           size={14}
