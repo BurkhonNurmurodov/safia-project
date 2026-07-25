@@ -12,7 +12,9 @@ import { useLang } from "../../context/LangContext";
  * Props:
  *   value        – current selected value (string)
  *   onChange     – (value: string) => void
- *   options      – string[] | { value: string, label: string }[]
+ *   options      – string[] | { value, label, title? }[]; `label` may be a node,
+ *                  `title` is the plain-text tooltip (and what `searchable`
+ *                  matches on) for labels that ellipsise in the panel
  *   placeholder  – text shown when nothing is selected (optional)
  *   className    – extra classes on the wrapper element (optional)
  *   triggerClassName – size/spacing classes for the trigger button; override to
