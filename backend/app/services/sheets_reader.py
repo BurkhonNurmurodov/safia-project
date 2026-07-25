@@ -41,7 +41,10 @@ SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES if name
 # count against the загрузка KPIs — equip_downtime, after_idle/net util, the
 # idle flag, the Daily idle donut — so build_metrics_list strips them from both
 # the downtime total and the per-category breakdown (user directive 2026-07-25).
-OJIDANIYA_ONLY_CATS = {"Cat H", "Cat D4"}
+# "Cat D4" is the pre-rename key Cat I data was stored under by syncs taken on
+# 2026-07-24/25; kept here so those rows stay excluded until the next
+# wipe-and-reload shift-report sync retires the old key.
+OJIDANIYA_ONLY_CATS = {"Cat H", "Cat I", "Cat D4"}
 
 
 def get_client() -> gspread.Client:
