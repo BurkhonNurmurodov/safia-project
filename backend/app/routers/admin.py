@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
