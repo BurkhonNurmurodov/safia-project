@@ -170,6 +170,45 @@ def profiles_with_cap(db: Session, capability: str) -> list[str]:
     return sorted({r.profile_key for r in rows if r.profile_key})
 
 
+def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
+    """Unit (manager) ids a profile's OWN row scoping covers; None = no
+    restriction.
+
+    The one definition of "own scope", shared by the request guards (via the
+    caller's active profile) and by notification fan-out (via a stored grant),
+    so what a grantee is *told about* can never drift from what they may act on.
+    Roles the staff scoping leaves unfiltered — admin, top-manager, leader —
+    return None here for the same reason."""
+    role, ref = parse_profile_key(key)
+    if role == "supervisor":
+        return [ref] if ref else []
+    if role == "shift-manager":
+        p = db.query(RoleProfile).filter_by(id=ref, role="shift-manager").first() if ref else None
+        if not p or not p.shift:
+            return []
+        return [m.id for m in db.query(Manager).filter(
+            Manager.shift == p.shift, Manager.archived.is_(False)).all()]
+    return None
+
+
+def cap_recipients(db: Session, capability: str, *manager_ids: Optional[int]) -> set[int]:
+    """Telegram ids to notify about work a capability covers.
+
+    Every holder of every profile granted ``capability`` whose scope reaches at
+    least one of ``manager_ids`` — "all" always does, "own" only for its own
+    units. A profile fans out to EVERY account holding it (they are all that one
+    person), which is why this keys off profile_holders rather than a single id."""
+    units_wanted = [m for m in manager_ids if m]
+    out: set[int] = set()
+    for key in profiles_with_cap(db, capability):
+        if caps_for_profile(db, key).get(capability) != "all":
+            units = profile_unit_ids(db, key)
+            if units is not None and not any(m in units for m in units_wanted):
+                continue
+        out.update(profile_holders(db, key))
+    return out
+
+
 # ── writing grants ────────────────────────────────────────────────────────────
 
 def set_caps_for_profile(db: Session, key: str, caps: dict[str, str],
