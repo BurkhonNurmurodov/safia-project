@@ -121,6 +121,8 @@ export default function Broadcast() {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    if (!BROADCAST_ALLOWED_EXT.has(ext)) { alert(t("admin.broadcast.attachBadType")); return; }
     const limit = attachKind(f) === "photo" ? 10 * 1048576 : 50 * 1048576;
     if (f.size > limit) { alert(t("admin.broadcast.attachTooLarge")); return; }
     setAttachment(f);
