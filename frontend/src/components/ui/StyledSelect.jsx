@@ -350,7 +350,7 @@ export default function StyledSelect({
         style={{
           background: "var(--bg-inner)",
           border:     `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,
-          color:      selectedOpt ? "var(--text-1)" : "var(--text-4)",
+          color:      (multiple ? picked.length > 0 : selectedOpt) ? "var(--text-1)" : "var(--text-4)",
           cursor:     disabled ? "not-allowed" : "pointer",
           opacity:    disabled ? 0.5 : 1,
         }}
