@@ -2459,8 +2459,17 @@ def setup_webhook():
         except Exception as e:
             logger.warning("Failed to set admin commands for %s: %s", admin_id, e)
 
-    # Persist the signature even if some calls 429'd: a rate-limit response means
-    # Telegram already holds these commands from an earlier boot, so retrying on
-    # every future boot only deepens the throttle. A real content change yields a
-    # new signature and re-runs this block once.
-    _meta_set("bot_setup_sig", signature)
+    # Persist the signature even if the menu calls 429'd: a rate-limit response
+    # means Telegram already holds these commands from an earlier boot, so
+    # retrying on every future boot only deepens the throttle. A real content
+    # change yields a new signature and re-runs this block once.
+    #
+    # The webhook registration is the exception: if it did NOT succeed, do not
+    # persist — otherwise a transient failure would mark setup "done" while the
+    # secret token was never registered with Telegram, and every real update
+    # would then be rejected (403) by the secret check until the next content
+    # change. Leaving the signature unset simply retries on the next boot.
+    if webhook_ok:
+        _meta_set("bot_setup_sig", signature)
+    else:
+        logger.warning("Skipping bot_setup_sig persist — webhook not registered; will retry next boot")
