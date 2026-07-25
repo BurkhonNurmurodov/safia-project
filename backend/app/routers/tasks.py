@@ -513,7 +513,7 @@ def set_priority(
         db.refresh(t)
 
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
-    return _serialize(t, count, payload)
+    return _serialize(t, count, payload, db)
 
 
 # ── comments ──────────────────────────────────────────────────────────────────
