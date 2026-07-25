@@ -15,6 +15,7 @@ import Button from "../components/ui/Button";
 import Pagination from "../components/ui/Pagination";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
+import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
@@ -91,34 +92,6 @@ const statusSplit = (arr) => {
 const hexA = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-};
-
-// ── Seasonality heatmap (native grid, styled after the fleet HeatmapChart) ──
-// Brand-gold ramp for a type's share of a month's findings. The low buckets are
-// tight because most type-months sit under 20%; coarse buckets flattened the
-// whole matrix into one shade of gold and hid the seasonality. Ordered high→low
-// for a first-match lookup.
-const SEASON_RAMP = [
-  { from: 35,     color: "#7d5c21" },
-  { from: 25,     color: "#a87c2f" },
-  { from: 18,     color: "#C8973F" },
-  { from: 12,     color: "#d3ac60" },
-  { from: 7,      color: "#e0c48c" },
-  { from: 3,      color: "#eddcb9" },
-  { from: 0.0001, color: "#f6ecd9" },
-];
-const seasonColor = (v) => {
-  for (const s of SEASON_RAMP) if (v >= s.from) return s.color;
-  return null; // 0% / no share → neutral cell, no fill
-};
-// Black or white label so the % stays legible across the whole light→dark ramp
-// (WCAG perceived-luminance split) — the fleet heatmap's contrast trick, which
-// beats forcing one text colour on every cell.
-const contrastText = (hex) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#3d2c10" : "#ffffff";
 };
 
 const tipHTML = (label, val, color) => `
@@ -877,12 +850,6 @@ export default function Quality() {
   // ── charts ────────────────────────────────────────────────────────────────
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
-  // Brand-gold header cell for the seasonality grid (mirrors the fleet heatmap head).
-  const seasonTh = {
-    fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase",
-    color: "#fff", background: "var(--brand)", padding: "7px 4px",
-    whiteSpace: "nowrap", border: "1px solid var(--border)",
-  };
   // zoom/selection off: Apex turns a drag on an area chart into a zoom-selection
   // box, which does nothing useful here (the date range is the toolbar's job) and
   // just leaves the chart stuck in a zoomed state with no toolbar to reset it.
@@ -1515,103 +1482,33 @@ export default function Quality() {
             )}
           </div>
 
-          {/* ── seasonality — native grid heatmap, styled after the fleet HeatmapChart:
-                 brand-gold header, solid ramp cells with auto-contrast labels,
-                 collapsed 1px borders, sticky type-name column. Yearly = 12 month
+          {/* ── seasonality — the shared SeasonalityHeatmap grid. Yearly = 12 month
                  columns of the chosen year; weekly = one column per ISO week over
-                 the page date range, held to 12 data columns (scroll past 12,
-                 blank-pad under 12) so the card never resizes between modes. ── */}
-          {(() => {
-            const COLS = 12, COLW = 96;
-            const real = season.labels.length;
-            const scroll = real > COLS;
-            const pad = scroll ? 0 : Math.max(0, COLS - real);
-            const totalCols = scroll ? real : COLS;
-            const blankHead = { ...seasonTh, background: "var(--bg-inner)", borderColor: "var(--border)" };
-            return (
-              <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason}
-                subtitle={seasonMode === "week" ? T.seasonSubWeek : T.seasonSub}
-                empty={season.matrix.length === 0} height={280}
-                right={
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {seasonMode === "year" && (
-                      <StyledSelect value={seasonYear || ""} onChange={setSeasonYear}
-                        options={seasonYears.map((y) => ({ value: y, label: y }))}
-                        triggerClassName="px-2.5 py-1.5 text-xs" />
-                    )}
-                    <SegmentedToggle size="sm" value={seasonMode} onChange={setSeasonMode}
-                      options={[["year", T.byYear], ["week", T.byWeek]]} />
-                  </div>
-                }>
-                <div className="px-3">
-                <div ref={seasonScrollRef} className="overflow-x-auto pb-1">
-                  <table className="season-heat" style={{ borderCollapse: "collapse", width: scroll ? 134 + real * COLW : "100%", minWidth: scroll ? undefined : 760, tableLayout: "fixed" }}>
-                    <colgroup>
-                      <col style={{ width: 134 }} />
-                      {Array.from({ length: totalCols }).map((_, i) => (
-                        <col key={i} style={scroll ? { width: COLW } : undefined} />
-                      ))}
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th style={{ ...seasonTh, position: "sticky", left: 0, zIndex: 2, textAlign: "left", paddingLeft: 12 }}>
-                          {T.colType}
-                        </th>
-                        {season.labels.map((lb, m) => (
-                          <th key={m} style={{ ...seasonTh, textAlign: "center", opacity: season.colTotals[m] ? 1 : 0.5 }}>{lb}</th>
-                        ))}
-                        {Array.from({ length: pad }).map((_, i) => (
-                          <th key={`p${i}`} style={blankHead} />
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {season.matrix.map((s) => (
-                        <tr key={s.k}>
-                          <td
-                            title={L("type", s.k)}
-                            style={{
-                              position: "sticky", left: 0, zIndex: 1,
-                              background: "var(--bg-card)",
-                              borderRight: "2px solid var(--border-md)",
-                              borderBottom: "1px solid var(--border)",
-                              padding: "0 10px", height: 40, whiteSpace: "nowrap",
-                              fontSize: 12, fontWeight: 600, color: "var(--text-2)",
-                            }}
-                          >
-                            <span className="block truncate" style={{ maxWidth: 114 }}>{L("type", s.k)}</span>
-                          </td>
-                          {s.data.map((v, m) => {
-                            const noData = season.colTotals[m] === 0;
-                            const bg = noData ? null : seasonColor(v);
-                            return (
-                              <td
-                                key={m}
-                                title={noData ? undefined : `${L("type", s.k)} · ${season.labels[m]} — ${v}%`}
-                                style={{
-                                  height: 40, textAlign: "center",
-                                  fontSize: 11, fontWeight: 700, letterSpacing: "-0.2px",
-                                  border: "1px solid var(--border)",
-                                  background: bg || "var(--bg-inner)",
-                                  color: bg ? contrastText(bg) : "var(--text-4)",
-                                }}
-                              >
-                                {noData || !bg ? "" : v >= 1 ? `${Math.round(v)}%` : "<1%"}
-                              </td>
-                            );
-                          })}
-                          {Array.from({ length: pad }).map((_, i) => (
-                            <td key={`p${i}`} style={{ height: 40, border: "1px solid var(--border)", background: "var(--bg-inner)" }} />
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                </div>
-              </ChartCard>
-            );
-          })()}
+                 the page date range. ── */}
+          <ChartCard icon={<CalendarClock size={13} />} title={T.secSeason}
+            subtitle={seasonMode === "week" ? T.seasonSubWeek : T.seasonSub}
+            empty={season.matrix.length === 0} height={280}
+            right={
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {seasonMode === "year" && (
+                  <StyledSelect value={seasonYear || ""} onChange={setSeasonYear}
+                    options={seasonYears.map((y) => ({ value: y, label: y }))}
+                    triggerClassName="px-2.5 py-1.5 text-xs" />
+                )}
+                <SegmentedToggle size="sm" value={seasonMode} onChange={setSeasonMode}
+                  options={[["year", T.byYear], ["week", T.byWeek]]} />
+              </div>
+            }>
+            <div className="px-3">
+              <SeasonalityHeatmap
+                scrollRef={seasonScrollRef}
+                labels={season.labels}
+                colTotals={season.colTotals}
+                firstColLabel={T.colType}
+                rows={season.matrix.map((s) => ({ key: s.k, label: L("type", s.k), data: s.data }))}
+              />
+            </div>
+          </ChartCard>
 
           {/* ── register ── */}
           <div>
