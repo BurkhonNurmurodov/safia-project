@@ -54,33 +54,31 @@ const DONUT_COLORS = CATEGORY_COLORS; // idle categories, shared generic-first o
 const idleEntries = (byCategory) =>
   Object.entries(byCategory || {}).filter(([, v]) => (v || 0) > 0).sort((a, b) => b[1] - a[1]);
 
-// Info-icon content for the donut: the explanation + what each category is worth.
-function IdleTip({ byCategory }) {
+// Pressable info icon on the donut header — opens the same category guide as
+// the Downtime («Ojidaniya») page, listing what every Cat X actually means.
+function IdleCatGuide({ byCategory }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
-  const minLabel = t("general.min");
+  const [open, setOpen] = useState(false);
   const entries = idleEntries(byCategory);
-  const total = entries.reduce((a, [, v]) => a + v, 0);
   return (
-    <span className="block">
-      <span className="block">{t("daily.idleTip")}</span>
-      {entries.length > 0 && (
-        <span className="block mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-          <span className="block mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-            {t("daily.idleCats")}
-          </span>
-          {entries.map(([k, v], i) => (
-            <span key={k} className="flex items-center gap-1.5 py-0.5">
-              <span className="rounded-full flex-shrink-0" style={{ width: 7, height: 7, background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-              <span className="truncate" style={{ color: "var(--text-2)" }}>{tl(k)}</span>
-              <span className="ml-auto flex-shrink-0 tabular-nums" style={{ color: "var(--text-3)" }}>
-                {Math.round(v)} {minLabel} · {total ? Math.round((v / total) * 100) : 0}%
-              </span>
-            </span>
-          ))}
-        </span>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        aria-label={t("downtime.catGuide")}
+        title={t("downtime.catGuide")}
+        className="flex-shrink-0 p-1 rounded-full transition-colors hover:bg-white/10"
+        style={{ color: "var(--text-2)", border: "1px solid var(--border-md)" }}
+      >
+        <Info size={15} />
+      </button>
+      {open && (
+        <CategoryLegendModal
+          catNames={entries.map(([k]) => k)}
+          catColors={entries.map((_, i) => DONUT_COLORS[i % DONUT_COLORS.length])}
+          onClose={() => setOpen(false)}
+        />
       )}
-    </span>
+    </>
   );
 }
 
