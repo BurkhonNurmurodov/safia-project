@@ -46,6 +46,7 @@ from app.models import (
     TelegramUserRole, RoleProfile,
 )
 from app.permissions import require_page
+from app.upload_guard import validate_spreadsheet
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap
