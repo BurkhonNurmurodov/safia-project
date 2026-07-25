@@ -3871,6 +3871,7 @@ const t = {
     "filter.deselectAll":     "Снять все",
     "filter.selected2":       "выбрано",
     "filter.clear":           "Очистить",
+    "select.selected":        "выбрано",
     "filter.noResults":       "Нет результатов",
     "filter.noData":          "Нет данных",
     "filter.selectDates":  "Выберите даты",
