@@ -581,6 +581,119 @@ def admin_update_page_access(
     return {"status": "ok", "pages": pages}
 
 
+# ── Per-profile capabilities ──────────────────────────────────────────────────
+# The per-person half of the permission system (see app/capabilities.py). Always
+# `verify_admin`, never `require_cap`: the power to hand out powers is
+# deliberately absent from the catalog, so a grantee can never widen their own
+# access or a colleague's.
+
+@router.get("/capabilities")
+def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """The catalog plus every grant, keyed by profile.
+
+    Also returns the grantable profiles — every profile EXCEPT admins, who
+    already hold everything — so the Permissions tab can render a picker
+    without a second round-trip. Names come from the profile rows themselves,
+    so a profile with no holder yet can still be granted (the power activates
+    when someone claims it)."""
+    grants: dict[str, dict[str, str]] = {}
+    for row in db.query(ProfileCapability).all():
+        if row.capability in CAPABILITY_KEYS:
+            grants.setdefault(row.profile_key, {})[row.capability] = (
+                row.scope if row.scope in SCOPES else "own")
+
+    holders: dict[str, list[str]] = {}
+    users = {u.telegram_id: u for u in db.query(TelegramUser).all()}
+    for r in db.query(TelegramUserRole).filter(TelegramUserRole.status == "approved").all():
+        key = identity.role_row_profile_key(db, r, heal=False)
+        if not key:
+            continue
+        u = users.get(r.telegram_id)
+        name = (u.full_name if u and u.full_name else None) or f"#{r.telegram_id}"
+        if name not in holders.setdefault(key, []):
+            holders[key].append(name)
+
+    people = []
+    for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
+        people.append({"key": f"supervisor:{m.id}", "role": "supervisor",
+                       "name": m.name, "detail": f"shift {m.shift}" if m.shift else None})
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    for p in db.query(RoleProfile).order_by(RoleProfile.role, RoleProfile.name).all():
+        if p.role in UNGRANTABLE_ROLES:
+            continue
+        detail = None
+        if p.role == "shift-manager" and p.shift:
+            detail = f"shift {p.shift}"
+        elif p.role == "leader":
+            detail = mgr_names.get(p.manager_id)
+        people.append({"key": f"{p.role}:{p.id}", "role": p.role,
+                       "name": p.name, "detail": detail})
+
+    for person in people:
+        person["holders"] = holders.get(person["key"], [])
+        person["caps"] = grants.get(person["key"], {})
+
+    return {
+        "capabilities": CAPABILITIES,
+        "groups":       CAPABILITY_GROUPS,
+        "scopes":       list(SCOPES),
+        "people":       people,
+    }
+
+
+class CapabilitiesPayload(BaseModel):
+    caps: dict[str, str]   # {capability: "own" | "all"}
+
+
+@router.put("/capabilities/{profile_key}")
+def admin_set_capabilities(
+    profile_key: str,
+    payload: CapabilitiesPayload,
+    db: Session = Depends(get_db),
+    admin_payload: dict = Depends(verify_admin),
+):
+    """Replace one profile's grants. Admin profiles are rejected outright — they
+    already hold the whole catalog, so a row would be a confusing no-op."""
+    role, ref = identity.parse_profile_key(profile_key)
+    if not role or not ref:
+        raise HTTPException(status_code=400, detail="Invalid profile key")
+    if role in UNGRANTABLE_ROLES:
+        raise HTTPException(status_code=400, detail="Admins already hold every capability")
+
+    unknown = [k for k in payload.caps if k not in CAPABILITY_KEYS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown capability: {unknown[0]}")
+
+    caps = set_caps_for_profile(
+        db, profile_key, payload.caps,
+        actor_name=admin_payload.get("full_name"),
+        actor_telegram_id=int(admin_payload["sub"]),
+    )
+    return {"status": "ok", "profile_key": profile_key, "caps": caps}
+
+
+@router.get("/capabilities/audit")
+def admin_capability_audit(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """Newest-first grant/revoke history. Survives the grant itself: a revoked
+    capability deletes its ProfileCapability row but never its audit trail."""
+    rows = (db.query(CapabilityAudit)
+              .order_by(CapabilityAudit.id.desc())
+              .limit(max(1, min(limit, 1000))).all())
+    return [{
+        "id":          r.id,
+        "profile_key": r.profile_key,
+        "capability":  r.capability,
+        "action":      r.action,
+        "scope":       r.scope,
+        "actor_name":  r.actor_name,
+        "created_at":  r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+
+
 # ── Telegram file_id viewer ───────────────────────────────────────────────────
 # The bot answers any media an admin sends with its file_id; the admin panel's
 # «Media» tab pastes that id back here to look at the file. Telegram's file URL
