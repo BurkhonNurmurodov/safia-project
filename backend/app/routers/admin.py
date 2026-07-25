@@ -68,6 +68,11 @@ async def upload_verifix(
     results = []
     for f in files:
         content = await f.read()
+        try:
+            validate_spreadsheet(f, content)
+        except HTTPException as e:
+            results.append({"file": f.filename, "status": "error", "detail": e.detail})
+            continue
         mgr_id, date, rows = parse_verifix_file(content, f.filename)
         if mgr_id is None or date is None:
             results.append({"file": f.filename, "status": "error", "detail": "Invalid filename format"})
