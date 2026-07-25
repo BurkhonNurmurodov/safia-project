@@ -122,8 +122,6 @@ def main():
         # ── A) one profile, several accounts ─────────────────────────────────
         say()
         say("[2] CAUSE A — same (name, unit) claimed by several accounts")
-        a = {k: v for k, v in
-             {(r.full_name, r.role_id): None for r in rows}.items()}
         by_pair = defaultdict(list)
         for r in rows:
             by_pair[(r.full_name, r.role_id)].append(r)
