@@ -258,7 +258,7 @@ export default function StyledSelect({
           {/* Optional placeholder row */}
           {placeholder && (
             <div
-              className="px-4 py-3 text-sm"
+              className="px-3 py-2.5 text-sm"
               style={{ color: "var(--text-4)", borderBottom: "1px solid var(--border)" }}
             >
               {placeholder}
