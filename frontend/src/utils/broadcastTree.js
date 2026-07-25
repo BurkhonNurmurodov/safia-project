@@ -89,6 +89,7 @@ export function groupProfileNodes(role, nodes, t, tl) {
         sort: tl(n.unit),
       } : null),
       t("admin.profiles.noSupervisor"),
+      Users,
     );
   }
   return nodes;
