@@ -70,11 +70,12 @@ export default function StyledSelect({
     typeof o === "string" ? { value: o, label: o } : o,
   );
 
-  // Filtered view when searchable — match against the label's plain text
-  // (labels are usually strings here; non-string nodes fall through unfiltered).
+  // Filtered view when searchable — match against the option's plain text: the
+  // label when it is a string, else the `title` a node label should carry.
   const q = query.trim().toLowerCase();
+  const plain = (o) => String((typeof o.label === "string" ? o.label : o.title) ?? "");
   const shown = searchable && q
-    ? opts.filter((o) => String(o.label ?? "").toLowerCase().includes(q))
+    ? opts.filter((o) => plain(o).toLowerCase().includes(q))
     : opts;
 
   // Multi mode keeps the selection as an array; single mode as before.
