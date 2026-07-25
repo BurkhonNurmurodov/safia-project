@@ -649,8 +649,8 @@ export default function Quality() {
 
   // ── Seasonality card, its own time axis (independent of the page filters that
   // still narrow every row): yearly = 12 calendar months of a chosen year;
-  // weekly = one column per ISO week across the page date range. Fixed 12 data
-  // columns wide — scroll past 12, blank-pad under 12 (see the render).
+  // weekly = one column per ISO week across the page date range. 12 VISIBLE data
+  // columns — scroll past 12, blank-pad under 12 (see SeasonalityHeatmap).
   const [seasonMode, setSeasonMode] = useState("year");
   const [seasonYear, setSeasonYear] = useState(null);
 
