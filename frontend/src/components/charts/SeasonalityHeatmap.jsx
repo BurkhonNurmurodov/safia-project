@@ -42,15 +42,44 @@ const contrastText = (hex) => {
  *                               data at all (dimmed head, blank cells)
  * @param {object[]}  rows       [{ key, label, title?, data: number[] (percent) }]
  * @param {string}    firstColLabel  header of the sticky name column
+ * @param {number}    cols        the visible column budget (12)
+ * @param {number}    colWidth    MINIMUM data-column width; the real width is
+ *                                whatever makes exactly `cols` of them fill the
+ *                                card, so the 13th column always starts off-screen
+ * @param {boolean}   scrollToEnd start scrolled to the newest columns (time axes)
  */
 export default function SeasonalityHeatmap({
   labels, colTotals, rows, firstColLabel,
-  cols = 12, colWidth = 96, firstColWidth = 134, scrollRef,
+  cols = 12, colWidth = 96, firstColWidth = 134, scrollToEnd = false,
 }) {
   const real = labels.length;
   const scroll = real > cols;
   const pad = scroll ? 0 : Math.max(0, cols - real);
   const totalCols = scroll ? real : cols;
+
+  // The budget is a VISIBLE-column count, so a scrolling grid can't use a fixed
+  // column width — on a wide card that would fit 15+ columns on screen and the
+  // "12 columns, rest on scroll" promise would break. Measure the viewport and
+  // size the columns so exactly `cols` of them span it (never below colWidth,
+  // which keeps narrow phones readable and just scrolls sooner).
+  const boxRef = useRef(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    setBoxW(el.clientWidth);
+    if (typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(([e]) => setBoxW(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fitW = boxW ? Math.max(colWidth, Math.floor((boxW - firstColWidth) / cols)) : colWidth;
+
+  // Time axes read newest-first: land on the last columns, not the oldest.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (el && scrollToEnd) el.scrollLeft = el.scrollWidth;
+  }, [scrollToEnd, real, fitW]);
 
   const th = {
     fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase",
