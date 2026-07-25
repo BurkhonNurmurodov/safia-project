@@ -699,17 +699,17 @@ export default function Downtime() {
           <SkeletonChart className="h-64" />
         ) : seasonRows.length ? (
           <SeasonalityHeatmap
-            scrollRef={seasonScrollRef}
             labels={season.labels}
             colTotals={season.colTotals}
             rows={seasonRows}
             firstColLabel={t("downtime.filterCat")}
             firstColWidth={190}
-            // 12 data columns wide (the component default, kept explicit — it
-            // is the axis budget, not a style): past 12 the grid scrolls, under
-            // 12 it pads with blanks so the card never resizes between modes.
+            // 12 VISIBLE data columns: a longer axis (a month of days) starts its
+            // 13th column off-screen and scrolls, a shorter one pads with blanks,
+            // so the card never resizes between modes.
             cols={12}
             colWidth={seasonMode === "week" ? 104 : seasonMode === "day" ? 74 : 96}
+            scrollToEnd={seasonMode !== "month"}
           />
         ) : (
           <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} height="h-32" />
