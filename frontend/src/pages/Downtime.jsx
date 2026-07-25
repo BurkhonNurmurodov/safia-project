@@ -64,6 +64,13 @@ export default function Downtime() {
   // 50-min threshold and the doughnut selection are shared across both.
   const [tab, setTab] = useState("stopped"); // "stopped" | "notStopped"
   const ns = tab === "notStopped";
+  // Second axis, orthogonal to the halves above: WHICH categories count.
+  // «загрузкада» (default) = only the categories the загрузка KPIs count, i.e.
+  // the endpoint's kpi_only view; «hammasi» = every category the shift report
+  // has, including the Ojidaniya-only ones (Cat H / Cat I). Server-side so the
+  // totals, flags and shares below stay consistent with the picked scope.
+  const [scope, setScope] = useState("zagruzka"); // "zagruzka" | "all"
+  const kpiOnly = scope === "zagruzka";
   const totalKey   = ns ? "total_ns" : "total";
   const catKey     = ns ? "by_category_ns" : "by_category";
   const flaggedKey = ns ? "flagged_days_ns" : "flagged_days";
