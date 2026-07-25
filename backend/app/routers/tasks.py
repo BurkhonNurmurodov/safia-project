@@ -487,20 +487,21 @@ def set_priority(
     if t.status == "done" or t.priority is None:
         raise HTTPException(status_code=400, detail="Done tasks have no priority")
 
-    _lock_leader_queue(db, t.leader_role_ref)
-    n = _active_tasks(db, t.leader_role_ref).count()
+    owner = _owned_by(t)
+    _lock_leader_queue(db, t.leader_profile_id)
+    n = _active_tasks(db, owner).count()
     new_p, old_p = body.priority, t.priority
     if not (1 <= new_p <= n):
         raise HTTPException(status_code=400, detail=f"Priority must be between 1 and {n}")
 
     if new_p != old_p:
         if body.mode == "swap":
-            other = _active_tasks(db, t.leader_role_ref).filter(LeaderTask.priority == new_p).first()
+            other = _active_tasks(db, owner).filter(LeaderTask.priority == new_p).first()
             if other:
                 other.priority = old_p
         else:
             # Re-insert at new_p: the span between old and new shifts by one.
-            span = _active_tasks(db, t.leader_role_ref)
+            span = _active_tasks(db, owner)
             if new_p > old_p:
                 for row in span.filter(LeaderTask.priority > old_p, LeaderTask.priority <= new_p).all():
                     row.priority = row.priority - 1
