@@ -179,9 +179,14 @@ class NoStoreAPIMiddleware:
 # and the route handlers have run.
 app.add_middleware(NoStoreAPIMiddleware)
 
+# Routers exposing /admin/* API routes need the initData guard applied at the
+# router level too — the global dep only covers /api/*. (These same three also
+# have /api/* routes, already covered globally; the admin guard skips those.)
+_admin_guard = [Depends(enforce_telegram_origin_admin)]
+
 app.include_router(auth_router.router)
 app.include_router(webhook_router.router)
-app.include_router(admin.router)
+app.include_router(admin.router, dependencies=_admin_guard)
 app.include_router(brigadirs.router)
 app.include_router(attendance.router)
 app.include_router(heatmap.router)
