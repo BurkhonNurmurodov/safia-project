@@ -401,14 +401,14 @@ def delete_task(
     payload: dict = Depends(require_page("tasks")),
 ):
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_edit_core(payload, t)
-    leader_ref = t.leader_role_ref
+    _assert_can_edit_core(db, payload, t)
+    owner = _owned_by(t)
     gone = t.priority if t.status != "done" else None
-    _lock_leader_queue(db, leader_ref)
+    _lock_leader_queue(db, t.leader_profile_id)
     db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).delete()
     db.delete(t)
     db.flush()
-    _close_ranks_behind(db, leader_ref, gone)
+    _close_ranks_behind(db, owner, gone)
     db.commit()
 
 
