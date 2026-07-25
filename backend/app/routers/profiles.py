@@ -674,6 +674,9 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
     ptype, new_role = payload.ptype, payload.new_role
     if ptype not in PROFILE_TYPES or new_role not in PROFILE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid profile type")
+    # Both ends: a grantee may neither demote an admin nor promote anyone into
+    # one — the latter is the self-promotion path this guard exists to close.
+    _deny_admin_profile(caller, ptype, new_role)
     if ptype == new_role:
         raise HTTPException(status_code=400, detail="Profile already has this role")
 
