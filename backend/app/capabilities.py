@@ -223,47 +223,65 @@ def cap_recipients(db: Session, capability: str, *manager_ids: Optional[int]) ->
 
 # ── writing grants ────────────────────────────────────────────────────────────
 
-def set_caps_for_profile(db: Session, key: str, caps: dict[str, str],
-                         actor_name: str | None = None,
-                         actor_telegram_id: int | None = None) -> dict[str, str]:
-    """Replace a profile's whole grant set with ``caps`` ({capability: scope}).
+def apply_caps(db: Session, profile_keys: list[str],
+               grants: dict[str, str] | None = None,
+               revokes: list[str] | None = None,
+               actor_name: str | None = None,
+               actor_telegram_id: int | None = None) -> dict[str, dict[str, str]]:
+    """Apply a DIFF — grant/rescope ``grants``, revoke ``revokes`` — to every
+    listed profile, leaving their other capabilities untouched.
 
-    Diffs against what was stored so the audit log records grants, revokes and
-    scope changes individually rather than "someone saved the form"."""
+    Deliberately a diff and not a whole-set replace: the Permissions tab can
+    select several profiles at once, and those profiles rarely hold the same
+    grants. Replacing would silently wipe whatever the admin wasn't looking at.
+    With a diff, ticking one box for five people means exactly that.
+
+    Returns the resulting {profile_key: {capability: scope}}. The audit log
+    records each capability separately, so history reads as individual grants
+    rather than "someone saved the form"."""
     clean = {
         k: ("all" if k in UNSCOPED_CAPABILITIES else (v if v in SCOPES else DEFAULT_SCOPE))
-        for k, v in (caps or {}).items() if k in CAPABILITY_KEYS
+        for k, v in (grants or {}).items() if k in CAPABILITY_KEYS
     }
+    drop = [k for k in (revokes or []) if k in CAPABILITY_KEYS]
 
-    existing = {r.capability: r for r in db.query(ProfileCapability).filter(
-        ProfileCapability.profile_key == key).all()}
+    out: dict[str, dict[str, str]] = {}
+    for key in profile_keys:
+        existing = {r.capability: r for r in db.query(ProfileCapability).filter(
+            ProfileCapability.profile_key == key).all()}
 
-    def _audit(capability: str, action: str, scope: str | None) -> None:
-        db.add(CapabilityAudit(
-            profile_key=key, capability=capability, action=action, scope=scope,
-            actor_name=actor_name, actor_telegram_id=actor_telegram_id,
-        ))
-
-    for capability, scope in clean.items():
-        row = existing.get(capability)
-        if row is None:
-            db.add(ProfileCapability(
-                profile_key=key, capability=capability, scope=scope,
-                granted_by=actor_name,
+        def _audit(capability: str, action: str, scope: str | None, _key=key) -> None:
+            db.add(CapabilityAudit(
+                profile_key=_key, capability=capability, action=action, scope=scope,
+                actor_name=actor_name, actor_telegram_id=actor_telegram_id,
             ))
-            _audit(capability, "granted", scope)
-        elif row.scope != scope:
-            row.scope = scope
-            row.granted_by = actor_name
-            _audit(capability, "rescoped", scope)
 
-    for capability, row in existing.items():
-        if capability not in clean:
-            db.delete(row)
-            _audit(capability, "revoked", None)
+        for capability, scope in clean.items():
+            row = existing.get(capability)
+            if row is None:
+                db.add(ProfileCapability(
+                    profile_key=key, capability=capability, scope=scope,
+                    granted_by=actor_name,
+                ))
+                existing[capability] = None      # mark as held for the result map
+                _audit(capability, "granted", scope)
+            elif row.scope != scope:
+                row.scope = scope
+                row.granted_by = actor_name
+                _audit(capability, "rescoped", scope)
+
+        for capability in drop:
+            row = existing.pop(capability, None)
+            if row is not None:
+                db.delete(row)
+                _audit(capability, "revoked", None)
+            elif capability in existing:
+                existing.pop(capability, None)
 
     db.commit()
-    return clean
+    for key in profile_keys:
+        out[key] = caps_for_profile(db, key)
+    return out
 
 
 # ── FastAPI guards ────────────────────────────────────────────────────────────
