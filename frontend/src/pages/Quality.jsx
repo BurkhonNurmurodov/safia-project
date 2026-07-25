@@ -653,7 +653,6 @@ export default function Quality() {
   // columns wide — scroll past 12, blank-pad under 12 (see the render).
   const [seasonMode, setSeasonMode] = useState("year");
   const [seasonYear, setSeasonYear] = useState(null);
-  const seasonScrollRef = useRef(null);
 
   const seasonYears = useMemo(() => {
     const ys = new Set();
