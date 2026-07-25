@@ -1494,7 +1494,7 @@ export default function Quality() {
             }>
             <div className="px-3">
               <SeasonalityHeatmap
-                scrollRef={seasonScrollRef}
+                scrollToEnd={seasonMode === "week"}
                 labels={season.labels}
                 colTotals={season.colTotals}
                 firstColLabel={T.colType}
