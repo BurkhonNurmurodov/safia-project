@@ -118,17 +118,25 @@ def _remove_role_row(db: Session, role_row: TelegramUserRole) -> None:
 
 
 def _bound_role_rows(db: Session, ptype: str, pid: int) -> list[TelegramUserRole]:
-    if ptype == "supervisor":
-        return db.query(TelegramUserRole).filter_by(role="supervisor", role_id=pid).all()
-    if ptype in ("shift-manager", "top-manager", "guest"):
+    """Every registration that holds a profile — the accounts working as this
+    person. Drives the Holders column, unassign, and the switch-role impacts.
+
+    Leaders match on the stamped profile_key first: matching on the name alone
+    meant a holder whose name drifted from the profile silently vanished from
+    this list while keeping full access, so an admin could neither see nor
+    unassign them. Unstamped legacy rows still fall back to the name."""
+    if ptype in ("supervisor", "shift-manager", "top-manager", "guest"):
         return db.query(TelegramUserRole).filter_by(role=ptype, role_id=pid).all()
     if ptype == "leader":
         p = db.query(RoleProfile).filter_by(id=pid, role="leader").first()
         if not p:
             return []
-        return db.query(TelegramUserRole).filter_by(
-            role="leader", role_id=p.manager_id, full_name=p.name,
-        ).all()
+        key = f"leader:{pid}"
+        return [
+            r for r in db.query(TelegramUserRole).filter_by(
+                role="leader", role_id=p.manager_id).all()
+            if r.profile_key == key or (not r.profile_key and r.full_name == p.name)
+        ]
     return []
 
 
@@ -630,6 +638,8 @@ def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
         db.flush()  # the DELETE must land before the UPDATE re-uses the unique key
     row.role = new_role
     row.role_id = new_role_id
+    row.profile_key = (f"{new_role}:{new_profile_id}" if new_profile_id
+                       else (f"{new_role}:{new_role_id}" if new_role != "leader" else None))
 
 
 @router.post("/admin/switch-role")
@@ -784,7 +794,8 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             db.delete(r)
     else:
         for r in rows:
-            _migrate_role_row(db, r, new_role, target_role_id)
+            _migrate_role_row(db, r, new_role, target_role_id,
+                              target_role_id if new_role == "supervisor" else target_profile.id)
         for a in admin_holders:  # ptype == "admin": convert admins rows to role rows
             user = db.query(TelegramUser).filter_by(telegram_id=a.telegram_id).first()
             if not user:
