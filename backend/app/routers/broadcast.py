@@ -35,6 +35,7 @@ from app.models import (
     TelegramUserRole,
 )
 from app.routers.admin import oauth2_scheme, verify_admin
+from app.upload_guard import validate_broadcast_media
 
 logger = logging.getLogger(__name__)
 
