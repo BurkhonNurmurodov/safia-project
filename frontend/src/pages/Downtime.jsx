@@ -368,6 +368,18 @@ export default function Downtime() {
             triggerClassName="w-full px-3 py-2 text-sm"
           />
         </div>
+        <div className="sm:w-64 min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("downtime.filterCat")}</label>
+          {/* Same selection the doughnut drives — tick several at once here. */}
+          <StyledSelect
+            multiple
+            value={selectedCats}
+            onChange={setSelectedCats}
+            options={catOptions}
+            allLabel={t("downtime.allCats")}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
       </div>
 
       {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
