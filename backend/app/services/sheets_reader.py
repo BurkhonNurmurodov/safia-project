@@ -37,6 +37,12 @@ SHIFT_CATEGORIES = [
 # Cat H simply stays 0 on the «тўхтамаганда» tab.
 SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES if name != "Cat H"]
 
+# Categories shown ONLY on the Ojidaniya page (/api/downtime). They must never
+# count against the загрузка KPIs — equip_downtime, after_idle/net util, the
+# idle flag, the Daily idle donut — so build_metrics_list strips them from both
+# the downtime total and the per-category breakdown (user directive 2026-07-25).
+OJIDANIYA_ONLY_CATS = {"Cat H", "Cat D4"}
+
 
 def get_client() -> gspread.Client:
     global _gc
