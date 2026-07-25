@@ -10,6 +10,7 @@ from app.models import Manager, Attendance, ProductionData, HeadcountData, Downt
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
 from app.services.name_map import sheet_alias_map
+from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api", tags=["brigadirs"])
 
