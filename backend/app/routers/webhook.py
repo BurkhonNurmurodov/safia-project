@@ -66,6 +66,16 @@ def _already_seen(update_id: int) -> bool:
 
 @router.post("/bot/webhook")
 async def telegram_webhook(request: Request):
+    # Telegram echoes the secret token we registered with setWebhook back in this
+    # header on every delivery. Reject anything else so a forged POST to this
+    # public URL can't drive the bot (register accounts, trigger commands, etc.).
+    # This endpoint carries no Telegram initData, so it is exempt from the
+    # initData guard and relies solely on this shared secret.
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not hmac.compare_digest(provided, settings.webhook_secret):
+        logger.warning("Rejected webhook POST with bad/absent secret token")
+        return Response(status_code=403)
+
     try:
         data   = await request.json()
         update = telebot.types.Update.de_json(data)
