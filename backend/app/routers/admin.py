@@ -4,8 +4,6 @@ import mimetypes
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-
-from app.upload_guard import validate_spreadsheet
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 import jwt
