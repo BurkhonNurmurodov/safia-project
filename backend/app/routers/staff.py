@@ -1958,9 +1958,16 @@ def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
     people_exchange → • to a supervisor: admin OR the RECEIVING supervisor.
                       • to a task:        admin OR a shift-manager of the
                         sending unit's shift.
+
+    Plus, additively, anyone granted ``staff.documents.approve``: at "all"
+    scope over every document, at "own" scope only over documents inside their
+    normal reach. This never removes an authority above — it is the mechanism
+    for "this person handles transfers", without making them an admin.
     """
     role = caller.get("role")
     if role == "admin":
+        return True
+    if _granted_over_doc(doc, caller, db):
         return True
     if doc.doc_type != "people_exchange":
         return _can_approve(caller)
