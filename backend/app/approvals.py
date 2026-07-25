@@ -363,11 +363,31 @@ def _exchange_supervisor_recipients(db, doc) -> set[int]:
     return {sup.telegram_id}
 
 
+def _grantee_recipients(db, capability: str, *manager_ids,
+                        skip_telegram_id: int | None = None) -> set[int]:
+    """Holders of a capability that reaches these units — the inline card goes
+    to them too, so someone granted "handle transfers" is told a transfer
+    arrived instead of having to go looking for it.
+
+    Admins are NOT replaced here: ``_broadcast`` always unions this with
+    ``_admin_ids()``, so oversight stays intact and a grantee is purely an extra
+    pair of hands. The requester never gets their own request back."""
+    from app.capabilities import cap_recipients
+    ids = cap_recipients(db, capability, *manager_ids)
+    ids.discard(skip_telegram_id)
+    return ids
+
+
 def send_edit_request_to_admins(db, req) -> None:
-    _broadcast(db, "edit_request", req.id, _edit_request_data(db, req), _render_edit_request)
+    from app.capabilities import CAP_REQUESTS_APPROVE
+    _broadcast(db, "edit_request", req.id, _edit_request_data(db, req), _render_edit_request,
+               extra_recipients=_grantee_recipients(
+                   db, CAP_REQUESTS_APPROVE, req.manager_id,
+                   skip_telegram_id=req.supervisor_telegram_id))
 
 
 def send_edit_batch_to_admins(db, batch_id, manager_id, attend_date, supervisor_name, worker_names) -> None:
+    from app.capabilities import CAP_REQUESTS_APPROVE
     mgr = db.query(Manager).filter_by(id=manager_id).first()
     data = {
         "unit":       mgr.name if mgr else f"#{manager_id}",
@@ -376,12 +396,17 @@ def send_edit_batch_to_admins(db, batch_id, manager_id, attend_date, supervisor_
         "count":      len(worker_names),
         "workers":    list(worker_names),
     }
-    _broadcast(db, "edit_batch", batch_id, data, _render_edit_batch)
+    _broadcast(db, "edit_batch", batch_id, data, _render_edit_batch,
+               extra_recipients=_grantee_recipients(db, CAP_REQUESTS_APPROVE, manager_id))
 
 
 def send_hr_document_to_admins(db, doc) -> None:
+    from app.capabilities import CAP_DOCUMENTS_APPROVE
     _broadcast(db, "hr_document", doc.id, _hr_document_data(db, doc), _render_hr_document,
-               extra_recipients=_exchange_supervisor_recipients(db, doc))
+               extra_recipients=_exchange_supervisor_recipients(db, doc) | _grantee_recipients(
+                   db, CAP_DOCUMENTS_APPROVE,
+                   doc.manager_id, (doc.payload or {}).get("target_manager_id"),
+                   skip_telegram_id=doc.created_by_telegram_id))
 
 
 # ── Cross-edit primitive — the single source of "decision happened" ───────────
