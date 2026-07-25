@@ -934,7 +934,11 @@ async def upload_phase(
     # The SAP фаза/заголовок export is ONE plant-wide file, so parse it once
     # (unfiltered — empty scope sets skip the per-brigadir filter) into global
     # slices, then fan out to each configured brigadir below.
-    blobs = [(f.filename, await f.read()) for f in files]
+    blobs = []
+    for f in files:
+        content = await f.read()
+        validate_spreadsheet(f, content)   # extension + OOXML signature (400 on mismatch)
+        blobs.append((f.filename, content))
     faza_ops: list[dict] = []          # raw operation dicts (no SKU yet)
     faza_dates: set = set()
     order_sku: dict[str, str] = {}     # order → SKU, from заголовок (global)
