@@ -128,6 +128,17 @@ export default function Downtime() {
   // re-sorted, so every consumer below (KPIs, bars, chart component) stays
   // tab-agnostic and the biggest brigadir still leads the bar chart on both tabs.
   const catNames    = data?.cat_names || [];
+  // Narrowing the scope can drop a category the doughnut filter still holds
+  // (picking Cat H, then switching to «загрузкада») — that would filter every
+  // chart down to nothing. Prune the selection to the categories the loaded
+  // scope actually has; never while the response is still in flight.
+  const catKeyList = catNames.join("|");
+  useEffect(() => {
+    if (!catNames.length) return;
+    setSelectedCats((prev) =>
+      prev.every((c) => catNames.includes(c)) ? prev : prev.filter((c) => catNames.includes(c)));
+  }, [catKeyList]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const summary = useMemo(
     () => (data?.summary || [])
       .map((s) => ({ ...s, total: s[totalKey] || 0, flagged_days: s[flaggedKey] || 0 }))
