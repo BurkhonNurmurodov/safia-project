@@ -542,10 +542,15 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
     from app.telegram_bot import bot
     lang = _get_caller_lang(call)
     try:
-        if code == "er":
-            _decide_edit_request(int(ref), status, _caller_from_call(call))
-        elif code == "eb":
-            _decide_edit_batch(ref, status, _caller_from_call(call))
+        if code in ("er", "eb"):
+            caller = _caller_for_request(call)
+            if caller is None:
+                bot.answer_callback_query(call.id, _L(lang, "toast_no_rights"), show_alert=True)
+                return
+            if code == "er":
+                _decide_edit_request(int(ref), status, caller)
+            else:
+                _decide_edit_batch(ref, status, caller)
         elif code == "hr":
             _decide_hr_document(int(ref), status, call)
         else:
