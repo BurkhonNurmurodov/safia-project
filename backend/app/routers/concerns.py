@@ -48,7 +48,11 @@ from app.models import Admin, Cell, ConcernEscalation, LeaderConcern, Manager, R
 from app.permissions import require_page
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
-from app.routers.staff import _find_supervisor, _notify, _profile_key
+from app import identity
+from app.routers.staff import (
+    _find_supervisor, _get_user_lang, _mk_notif, _mk_notif_tg, _notify,
+    _profile_key,
+)
 
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
@@ -109,10 +113,10 @@ def _cell_leaders(db: Session) -> dict:
 
 
 def _cell_leader_recipient(db: Session, cell_code: str):
-    """(telegram_id, profile_key, leader_name) for the leader who owns
+    """(holder_telegram_ids, profile_key, leader_name) for the leader who owns
     ``cell_code`` — the person a concern is *about*. On create they get a
-    "concern added for you" bell/DM. telegram_id None = the leader profile is
-    unclaimed, so the bell row queues on the profile and is inherited on
+    "concern added for you" bell/DM. An empty holder list = the leader profile
+    is unclaimed, so the bell row queues on the profile and is inherited on
     registration. Returns None when the cell has no owning leader."""
     code = (cell_code or "").strip()
     if not code:
@@ -126,11 +130,12 @@ def _cell_leader_recipient(db: Session, cell_code: str):
     if not row:
         return None
     leader_id, leader_name = row
-    claim = db.query(TelegramUserRole).filter_by(
-        role="leader", role_id=leader_id, status="approved",
-    ).first()
-    return (claim.telegram_id if claim else None,
-            _profile_key("leader", leader_id), leader_name or "")
+    # Every account working as this leader. A leader role row's role_id is the
+    # UNIT, not the profile, so filtering role_id=leader_id matched whichever
+    # unit happened to share the profile's id — delivering the concern text to
+    # an unrelated leader — or nothing at all. Resolve through the profile.
+    holders = identity.profile_holders(db, _profile_key("leader", leader_id))
+    return (holders, _profile_key("leader", leader_id), leader_name or "")
 
 
 def _level(c: LeaderConcern) -> str:
@@ -905,21 +910,31 @@ def create_concern(
     # leader logging on their own cell) and never DM one account twice.
     rec = _cell_leader_recipient(db, c.cell_code)
     if rec is not None:
-        tg, prof_key, _ = rec
-        if tg != author:
-            dm = tg is not None and tg not in dmed
-            if dm:
+        holders, prof_key, _ = rec
+        if author not in holders:
+            params = {
+                "actor_name": payload.get("full_name") or "",
+                "owner": c.concern_owner,
+                "date": entry,
+                "concern": snippet,
+            }
+            # One bell row on the leader's profile; a DM to each account working
+            # as them (queued for an unclaimed profile), skipping any account
+            # already DMed about this concern.
+            _notify(db, holders[0] if holders else None, type="info", dm=False,
+                    nkey="concern_assigned", params=params, profile=prof_key)
+            for tg in holders:
+                if tg == author or tg in dmed:
+                    continue
                 dmed.add(tg)
-            _notify(
-                db, tg, type="info", dm=dm, nkey="concern_assigned",
-                params={
-                    "actor_name": payload.get("full_name") or "",
-                    "owner": c.concern_owner,
-                    "date": entry,
-                    "concern": snippet,
-                },
-                profile=prof_key,
-            )
+                lang = _get_user_lang(db, tg)
+                title, body_txt = _mk_notif("concern_assigned", params, lang)
+                try:
+                    from app.telegram_bot import send_tg_notification
+                    send_tg_notification(tg, title, body_txt,
+                                         html=_mk_notif_tg("concern_assigned", params, lang))
+                except Exception:
+                    pass
             sent = True
 
     if sent:
