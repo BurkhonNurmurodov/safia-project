@@ -46,13 +46,16 @@ export function FilterProvider({ children }) {
   const [brigadirIds, setBrigadirIdsState] = useState(() => initArr("manager_id"));
   const [ready,       setReady]            = useState(false);
 
-  // On mount: if dates are known (URL or localStorage), go ready immediately.
-  // Otherwise fetch the available range from the DB.
+  // If dates are known (URL or localStorage), go ready immediately. Otherwise
+  // fetch the available range from the DB — but only once the session is
+  // approved, since /api/attendance/range now requires auth (and the initData
+  // guard). Re-runs when auth resolves so a first-ever login still populates it.
   useEffect(() => {
     if (dateFrom && dateTo) {
       setReady(true);
       return;
     }
+    if (auth?.status !== "approved") return;
     api.get("/api/attendance/range")
       .then((r) => {
         const from = r.data?.date_from;
@@ -66,9 +69,10 @@ export function FilterProvider({ children }) {
           setDateFromState(from);  LS.set("date_from", from);
         }
       })
+      .catch(() => {})
       .finally(() => setReady(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [auth?.status]);
 
   // Sync all filter state → URL and localStorage whenever it changes.
   // Skip the very first render to avoid overwriting URL with empty values.
