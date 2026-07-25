@@ -14,8 +14,13 @@ always dense 1..N:
   - a reopened task rejoins at the back;
   - an explicit re-prioritisation either swaps two positions or shifts the
     span between the old and new position by one (``mode``: swap | shift).
-Every queue mutation first locks the leader's telegram_user_roles row, which
+Every queue mutation first locks the leader's role_profiles row, which
 serialises concurrent renumbering per leader.
+
+Identity note: a task belongs to a leader PROFILE — the person — not to the
+registration that happened to be picked. Several Telegram accounts may work as
+one leader; they share one board, one queue and one set of rights, and the work
+survives an unassign→re-claim. See app/identity.py.
 """
 from datetime import date, datetime, timezone
 from typing import Optional
