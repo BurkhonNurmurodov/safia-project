@@ -4457,6 +4457,7 @@ const t = {
     "admin.broadcast.removeAttach":   "Убрать файл",
     "admin.broadcast.attachLimit":    "С файлом текст не должен превышать 1024 символа",
     "admin.broadcast.attachTooLarge": "Файл слишком большой (фото — до 10 MB, остальные — до 50 MB)",
+    "admin.broadcast.attachBadType": "Неподдерживаемый тип файла (отправьте фото, видео, аудио или документ)",
     "admin.broadcast.send":           "Отправить",
     "admin.broadcast.selected":       "Выбрано: {n}",
     "admin.broadcast.selectAll":      "Выбрать все",
