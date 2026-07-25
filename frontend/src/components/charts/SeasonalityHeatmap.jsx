@@ -89,12 +89,12 @@ export default function SeasonalityHeatmap({
   const blankHead = { ...th, background: "var(--bg-inner)", borderColor: "var(--border)" };
 
   return (
-    <div ref={scrollRef} className="overflow-x-auto pb-1">
+    <div ref={boxRef} className="overflow-x-auto pb-1">
       <table
         className="season-heat"
         style={{
           borderCollapse: "collapse",
-          width: scroll ? firstColWidth + real * colWidth : "100%",
+          width: scroll ? firstColWidth + real * fitW : "100%",
           // Under the column budget the grid stretches to the card, but never
           // squeezes a column below 52px — narrower and the % labels collide.
           minWidth: scroll ? undefined : firstColWidth + cols * 52,
@@ -104,7 +104,7 @@ export default function SeasonalityHeatmap({
         <colgroup>
           <col style={{ width: firstColWidth }} />
           {Array.from({ length: totalCols }).map((_, i) => (
-            <col key={i} style={scroll ? { width: colWidth } : undefined} />
+            <col key={i} style={scroll ? { width: fitW } : undefined} />
           ))}
         </colgroup>
         <thead>
