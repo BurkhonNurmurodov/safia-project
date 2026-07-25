@@ -370,7 +370,8 @@ export default function Downtime() {
     ...(shift ? { shift } : {}),
     ...(brigadirIds.length ? { manager_id: brigadirIds } : {}),
     ...(seasonYear ? { year: seasonYear } : {}),
-  }), [shift, brigadirIds, seasonYear]);
+    ...(kpiOnly ? { kpi_only: 1 } : {}),
+  }), [shift, brigadirIds, seasonYear, kpiOnly]);
   const { data: seasonData, isLoading: seasonLoading } = useQuery({
     queryKey: ["downtime-season", seasonParams],
     queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
