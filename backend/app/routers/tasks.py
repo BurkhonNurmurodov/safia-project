@@ -383,7 +383,7 @@ def update_task(
     """Core-field edit (text + due date). The leader is never reassigned —
     that would mean re-queueing across two leaders; delete and recreate."""
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_edit_core(payload, t)
+    _assert_can_edit_core(db, payload, t)
     if not (body.task_text or "").strip():
         raise HTTPException(status_code=400, detail="Task text is required")
     t.task_text = body.task_text.strip()
@@ -391,7 +391,7 @@ def update_task(
     db.commit()
     db.refresh(t)
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
-    return _serialize(t, count, payload)
+    return _serialize(t, count, payload, db)
 
 
 @router.delete("/{task_id}", status_code=204)
