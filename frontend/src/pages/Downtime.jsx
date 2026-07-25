@@ -670,7 +670,7 @@ export default function Downtime() {
             {t("downtime.season")}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {seasonMode === "year" && seasonYears.length > 0 && (
+            {seasonMode === "month" && seasonYears.length > 0 && (
               <StyledSelect
                 value={seasonYearShown}
                 onChange={setSeasonYear}
@@ -682,14 +682,20 @@ export default function Downtime() {
               size="sm"
               value={seasonMode}
               onChange={setSeasonMode}
-              options={[["year", t("downtime.seasonYear")], ["week", t("downtime.seasonWeek")]]}
+              options={[
+                ["day", t("downtime.seasonDay")],
+                ["week", t("downtime.seasonWeek")],
+                ["month", t("downtime.seasonMonth")],
+              ]}
             />
           </div>
         </div>
         <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
-          {seasonMode === "week" ? t("downtime.seasonSubWeek") : t("downtime.seasonSub")}
+          {seasonMode === "day" ? t("downtime.seasonSubDay")
+            : seasonMode === "week" ? t("downtime.seasonSubWeek")
+              : t("downtime.seasonSub")}
         </div>
-        {(seasonMode === "year" ? seasonLoading : isLoading) ? (
+        {(seasonMode === "month" ? seasonLoading : isLoading) ? (
           <SkeletonChart className="h-64" />
         ) : seasonRows.length ? (
           <SeasonalityHeatmap
@@ -699,6 +705,11 @@ export default function Downtime() {
             rows={seasonRows}
             firstColLabel={t("downtime.filterCat")}
             firstColWidth={190}
+            // 14 data columns wide (a fortnight of days — the page's default
+            // range): past 14 the grid scrolls, under 14 it pads with blanks so
+            // the card never resizes between modes.
+            cols={14}
+            colWidth={seasonMode === "week" ? 104 : seasonMode === "day" ? 74 : 96}
           />
         ) : (
           <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} height="h-32" />
