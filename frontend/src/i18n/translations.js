@@ -872,6 +872,8 @@ const t = {
     "downtime.cat.G.note":   "Plan bo'limi rejani kech yoki xato tashlashi natijasida yacheyka to'xtab kutib qolish vaqti.",
     "downtime.cat.H.label":  "Tozalash",
     "downtime.cat.H.note":   "Yacheyka tozalash ishlari sababli to'xtab turgan vaqt.",
+    "downtime.cat.I.label":  "Oldingi smena ishi tugashini kutish",
+    "downtime.cat.I.note":   "Oldingi smena o'z ishini tugatmagani sababli yacheyka to'xtab kutib qolish vaqti.",
 
     // ── Brigadir Profile ──────────────────────────────────────────────────────
     "profile.title":         "Brigadir Profili",
