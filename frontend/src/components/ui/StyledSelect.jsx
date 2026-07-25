@@ -175,6 +175,29 @@ export default function StyledSelect({
     setOpen(false);
   }
 
+  // Tick-box / radio dot — `state` is "on" | "off" | "some" (partial, multi only)
+  const Box = ({ state }) => (
+    <span
+      style={{
+        flexShrink:     0,
+        width:          18,
+        height:         18,
+        borderRadius:   multiple ? 5 : "50%",
+        border:         state === "off"
+          ? "2px solid var(--text-4)"
+          : "2px solid var(--brand, #C8973F)",
+        display:        "flex",
+        alignItems:     "center",
+        justifyContent: "center",
+        background:     state === "off" ? "transparent" : "var(--brand, #C8973F)",
+        transition:     "all 0.1s",
+      }}
+    >
+      {state === "on"   && <Check size={10} strokeWidth={3} color="#fff" />}
+      {state === "some" && <Minus size={10} strokeWidth={3} color="#fff" />}
+    </span>
+  );
+
   // ── portal dropdown ─────────────────────────────────────────────────────────
   const dropdown = open
     ? createPortal(
