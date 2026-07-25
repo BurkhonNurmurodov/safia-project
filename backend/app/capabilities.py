@@ -243,18 +243,19 @@ def apply_caps(db: Session, profile_keys: list[str],
         k: ("all" if k in UNSCOPED_CAPABILITIES else (v if v in SCOPES else DEFAULT_SCOPE))
         for k, v in (grants or {}).items() if k in CAPABILITY_KEYS
     }
-    drop = [k for k in (revokes or []) if k in CAPABILITY_KEYS]
+    # A capability can't be granted and revoked in one call; the grant wins so
+    # a malformed payload can never leave the profile half-changed.
+    drop = [k for k in (revokes or []) if k in CAPABILITY_KEYS and k not in clean]
 
-    out: dict[str, dict[str, str]] = {}
+    def _audit(key: str, capability: str, action: str, scope: str | None) -> None:
+        db.add(CapabilityAudit(
+            profile_key=key, capability=capability, action=action, scope=scope,
+            actor_name=actor_name, actor_telegram_id=actor_telegram_id,
+        ))
+
     for key in profile_keys:
         existing = {r.capability: r for r in db.query(ProfileCapability).filter(
             ProfileCapability.profile_key == key).all()}
-
-        def _audit(capability: str, action: str, scope: str | None, _key=key) -> None:
-            db.add(CapabilityAudit(
-                profile_key=_key, capability=capability, action=action, scope=scope,
-                actor_name=actor_name, actor_telegram_id=actor_telegram_id,
-            ))
 
         for capability, scope in clean.items():
             row = existing.get(capability)
@@ -263,25 +264,20 @@ def apply_caps(db: Session, profile_keys: list[str],
                     profile_key=key, capability=capability, scope=scope,
                     granted_by=actor_name,
                 ))
-                existing[capability] = None      # mark as held for the result map
-                _audit(capability, "granted", scope)
+                _audit(key, capability, "granted", scope)
             elif row.scope != scope:
                 row.scope = scope
                 row.granted_by = actor_name
-                _audit(capability, "rescoped", scope)
+                _audit(key, capability, "rescoped", scope)
 
         for capability in drop:
-            row = existing.pop(capability, None)
+            row = existing.get(capability)
             if row is not None:
                 db.delete(row)
-                _audit(capability, "revoked", None)
-            elif capability in existing:
-                existing.pop(capability, None)
+                _audit(key, capability, "revoked", None)
 
     db.commit()
-    for key in profile_keys:
-        out[key] = caps_for_profile(db, key)
-    return out
+    return {key: caps_for_profile(db, key) for key in profile_keys}
 
 
 # ── FastAPI guards ────────────────────────────────────────────────────────────
