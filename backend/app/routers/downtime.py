@@ -97,6 +97,11 @@ def get_downtime(
             cats = dt_by_cat.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
             total_ns = dt_total_ns.get(mgr.name, {}).get(d_str, 0.0)
             cats_ns = dt_by_cat_ns.get(mgr.name, {}).get(d_str, {c: 0.0 for c in cat_names})
+            if kpi_only:
+                total = max(total - sum(float(cats.get(c) or 0) for c in OJIDANIYA_ONLY_CATS), 0.0)
+                total_ns = max(total_ns - sum(float(cats_ns.get(c) or 0) for c in OJIDANIYA_ONLY_CATS), 0.0)
+                cats = {k: v for k, v in cats.items() if k not in OJIDANIYA_ONLY_CATS}
+                cats_ns = {k: v for k, v in cats_ns.items() if k not in OJIDANIYA_ONLY_CATS}
             rows.append({
                 "manager_name": mgr.name,
                 "shift": mgr.shift,
