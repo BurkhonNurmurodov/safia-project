@@ -76,6 +76,7 @@ export function groupProfileNodes(role, nodes, t, tl) {
         sort: Number(n.shift),
       }),
       t("admin.profiles.noShift"),
+      Clock,
     );
   }
   if (role === "leader") {
