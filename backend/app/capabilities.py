@@ -75,24 +75,28 @@ CAP_CELLS_MANAGE      = "admin.cells.manage"
 #         access, so a grant is never dead — see capability_pages)
 # tab   → admin-panel tab this capability unlocks, if any
 #
-# On scope: the four unit-scoped capabilities (documents, requests, attendance
-# edit/delete, day reopen) and admin.cleanup honour "own" vs "all". The three
-# identity capabilities do not — profiles, users and cells are factory-wide
-# registers with no unit dimension to narrow, so a grant there always reaches
-# the whole register. The scope selector still stores a value for them; the
-# guards simply never consult it. What DOES bound them is the escalation rule:
-# admin identities are untouchable for anyone but a real admin.
+# scoped→ whether "own" vs "all" means anything for this capability. The
+#         unit-scoped ones (requests, attendance, cleanup) honour it. The
+#         identity ones do not: profiles, users and cells are factory-wide
+#         registers with no unit dimension to narrow, so they are always stored
+#         at "all" and the UI hides the selector rather than offering a choice
+#         that does nothing. What DOES bound them is the escalation rule —
+#         admin identities stay untouchable for anyone but a real admin.
 CAPABILITIES = [
-    {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None},
-    {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None},
-    {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None},
-    {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None},
-    {"key": CAP_DAY_REOPEN,        "group": "attendance", "pages": ["staff", "daily"], "tab": None},
-    {"key": CAP_CLEANUP,           "group": "attendance", "pages": [],                 "tab": "cleanup"},
-    {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users"},
-    {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles"},
-    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "cells"},
+    {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True},
+    {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True},
+    {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True},
+    {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True},
+    {"key": CAP_DAY_REOPEN,        "group": "attendance", "pages": ["staff", "daily"], "tab": None,        "scoped": True},
+    {"key": CAP_CLEANUP,           "group": "attendance", "pages": [],                 "tab": "cleanup",   "scoped": True},
+    {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False},
+    {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False},
+    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "cells",     "scoped": False},
 ]
+
+# Capabilities whose stored scope is meaningless — normalised to "all" on save
+# so the DB never implies a narrowing the guards don't perform.
+UNSCOPED_CAPABILITIES = frozenset(c["key"] for c in CAPABILITIES if not c["scoped"])
 
 CAPABILITY_KEYS = [c["key"] for c in CAPABILITIES]
 CAPABILITY_GROUPS = ["requests", "attendance", "identity"]
