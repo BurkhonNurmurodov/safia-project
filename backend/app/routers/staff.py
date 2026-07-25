@@ -853,17 +853,24 @@ def field_options(db: Session = Depends(get_db), caller=Depends(_require_staff))
 def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db)):
     """Unit reference list — names and shifts only, no attendance data.
 
-    Deliberately NOT behind `_require_staff`: it is the unit picker the admin
-    panel's Cleanup tab needs, and a cleanup grantee has no business holding the
-    whole /staff page just to read unit names. Everyone else is unchanged, and
-    the rows are still narrowed to what the caller may see."""
-    if (caller.get("role") not in ("admin", "shift-manager")
-            and not has_cap(db, caller, CAP_CLEANUP)
-            and not role_can_access(caller.get("role"), ["staff", "daily"],
-                                    get_page_access(db), capability_pages(db, caller))):
-        raise HTTPException(status_code=403, detail="Admin or shift-manager only")
+    Deliberately NOT behind `_require_staff`: it is also the unit picker the
+    admin panel's Cleanup tab needs, and a cleanup grantee has no business
+    holding the whole /staff page just to read unit names. That grant is the
+    ONLY new way in — every other caller goes through the original two checks
+    (staff/daily page access, then admin-or-shift-manager) unchanged."""
+    cleanup_scope = cap_scope(db, caller, CAP_CLEANUP)
+    if cleanup_scope is None:
+        if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
+                               capability_pages(db, caller)):
+            raise HTTPException(status_code=403, detail="Access denied")
+        if caller.get("role") not in ("admin", "shift-manager"):
+            raise HTTPException(status_code=403, detail="Admin or shift-manager only")
     q = db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name)
     vis = _visible_manager_ids(db, caller)  # None = all (admin); shift-managers see their shift only
+    # A cleanup grant at "all" is admin reach by definition — the tab exists to
+    # undo an upload that landed on the wrong unit, which needs every unit.
+    if cleanup_scope == "all":
+        vis = None
     if vis is not None:
         q = q.filter(Manager.id.in_(vis))
     return [{"manager_id": m.id, "full_name": m.name, "shift": m.shift} for m in q.all()]
