@@ -27,6 +27,15 @@ import { useLang } from "../../context/LangContext";
  *                  dropdown and narrows the list by label as you type. Use for
  *                  long option lists (optional)
  *   searchPlaceholder – placeholder text for the search box (optional)
+ *   multiple     – boolean; Google-Sheets-style multi-select. `value` becomes a
+ *                  string[] and `onChange` receives the next array. Rows carry
+ *                  square checkboxes, the panel stays open while you tick, and a
+ *                  sticky "select all / clear" header sits on top. An empty
+ *                  array means "no filter" → the trigger shows `allLabel`.
+ *   allLabel     – trigger text in `multiple` mode when nothing (or everything)
+ *                  is selected, e.g. "All categories" (optional)
+ *   countLabel   – (n) => string; trigger text in `multiple` mode when 2+ options
+ *                  are ticked. Defaults to the shared "n selected" key.
  */
 export default function StyledSelect({
   value,
@@ -41,7 +50,11 @@ export default function StyledSelect({
   removeTitle,
   searchable = false,
   searchPlaceholder,
+  multiple = false,
+  allLabel,
+  countLabel,
 }) {
+  const { t } = useLang();
   const [open, setOpen]           = useState(false);
   const [dropStyle, setDropStyle] = useState({});
   const [query, setQuery]         = useState("");
