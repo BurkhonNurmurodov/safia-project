@@ -12,10 +12,17 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app import identity
+from app.capabilities import (
+    CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
+    CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, SCOPES, UNGRANTABLE_ROLES,
+    require_cap, set_caps_for_profile,
+)
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Manager, Attendance, RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole,
+    Manager, Attendance, CapabilityAudit, ProfileCapability, RoleProfile, SheetSource,
+    AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
 )
 from app.services.verifix_parser import parse_verifix_file
