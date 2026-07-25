@@ -204,6 +204,8 @@ def get_downtime_seasonality(
             (r.by_category_ns or {}, col_totals_ns, by_cat_ns),
         ):
             for cat, val in cats.items():
+                if kpi_only and cat in OJIDANIYA_ONLY_CATS:
+                    continue
                 v = float(val or 0)
                 dest.setdefault(cat, [0.0] * 12)[m] += v
                 cols[m] += v
