@@ -6129,6 +6129,7 @@ const t = {
     "admin.broadcast.removeAttach":   "Remove file",
     "admin.broadcast.attachLimit":    "With an attachment the text is limited to 1024 characters",
     "admin.broadcast.attachTooLarge": "File is too large (photos up to 10 MB, other files up to 50 MB)",
+    "admin.broadcast.attachBadType": "Unsupported file type (send a photo, video, audio, or document)",
     "admin.broadcast.send":           "Send",
     "admin.broadcast.selected":       "Selected: {n}",
     "admin.broadcast.selectAll":      "Select all",
