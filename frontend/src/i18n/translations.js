@@ -847,6 +847,8 @@ const t = {
     "downtime.label":        "Ojidaniya",
     "downtime.viewTotal":    "Jami",
     "downtime.viewCategory": "Toifalar",
+    "downtime.filterCat":    "Toifa",
+    "downtime.allCats":      "Barcha toifalar",
     "downtime.catShare":     "Toifalar Ulushi",
     "downtime.catShareSub":  "Toifani bosing — chap diagramma shu toifa bo'yicha filtrlanadi",
     "downtime.bySupervisorTrend": "Brigadir bo'yicha trend",
