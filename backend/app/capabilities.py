@@ -74,6 +74,14 @@ CAP_CELLS_MANAGE      = "admin.cells.manage"
 # pages → page keys this capability unlocks (rule: a capability IMPLIES page
 #         access, so a grant is never dead — see capability_pages)
 # tab   → admin-panel tab this capability unlocks, if any
+#
+# On scope: the four unit-scoped capabilities (documents, requests, attendance
+# edit/delete, day reopen) and admin.cleanup honour "own" vs "all". The three
+# identity capabilities do not — profiles, users and cells are factory-wide
+# registers with no unit dimension to narrow, so a grant there always reaches
+# the whole register. The scope selector still stores a value for them; the
+# guards simply never consult it. What DOES bound them is the escalation rule:
+# admin identities are untouchable for anyone but a real admin.
 CAPABILITIES = [
     {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None},
     {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None},
