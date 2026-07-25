@@ -729,20 +729,19 @@ def notify_supervisor_verifix_upload(db: Session, manager_id: int, d: date):
 
     Verifix uploads are admin-only (/admin/upload is verify_admin-gated), so the
     supervisor is never the person who uploaded — the notification always fires
-    for the unit's current brigadir. When the unit has no approved supervisor it
-    is a no-op, logged at WARNING so a missing link is visible instead of being
-    silently dropped. The caller must commit; the bell row is added to ``db`` and
-    the DM sent inline. An unclaimed supervisor profile (no telegram_id) still
-    gets the bell queued to its profile — delivered as a DM once it is claimed."""
-    sup = _find_supervisor(db, manager_id)
-    if not sup:
+    for the unit's current brigadir. Addressed to the PROFILE, so EVERY account
+    working as that brigadir is told the data landed; picking one registration
+    meant only the earliest-approved holder heard about it, which after a
+    handover is the person who left the post. An unclaimed supervisor profile
+    still gets the bell queued — delivered as a DM once it is claimed.
+    The caller must commit; the bell row is added to ``db``, DMs sent inline."""
+    prof = _profile_key("supervisor", manager_id)
+    if not identity.profile_holders(db, prof):
         logger.warning(
             "verifix upload for manager %s on %s: no approved supervisor to notify",
             manager_id, d,
         )
-        return
-    _notify(db, sup.telegram_id, type="info", nkey="verifix_uploaded", params={"date": d},
-            profile=_profile_key("supervisor", sup.role_id))
+    notify_profile(db, prof, nkey="verifix_uploaded", params={"date": d})
 
 
 def _log_admin_action(
