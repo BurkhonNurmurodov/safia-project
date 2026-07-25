@@ -56,3 +56,23 @@ def get_page_access_matrix(db: Session = Depends(get_db), _: dict = Depends(requ
         "page_keys":        PAGE_KEYS,
         "toggleable_roles": TOGGLEABLE_ROLES,
     }
+
+
+@router.get("/my-capabilities")
+def my_capabilities(db: Session = Depends(get_db), caller: dict = Depends(require_auth)):
+    """The caller's OWN capability grants, so the UI can show the buttons and
+    admin tabs they were given.
+
+    Read live rather than baked into the JWT: a grant — and, more importantly, a
+    revoke — must take effect on the next page load, not at the next login.
+    Admins get the whole catalog at "all", which is the baseline grants imitate.
+
+    `pages` are the page keys these grants unlock on their own, so navigation
+    can show a page the role × page matrix alone would hide; `tabs` are the
+    admin-panel tabs a non-admin grantee may open.
+    """
+    return {
+        "caps":  caller_caps(db, caller),
+        "pages": capability_pages(db, caller),
+        "tabs":  capability_tabs(db, caller),
+    }
