@@ -428,38 +428,42 @@ def set_status(
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     t = _get_visible_task(task_id, payload, db)
-    _assert_can_set_status(payload, t)
+    _assert_can_set_status(db, payload, t)
 
     old = t.status
     if body.status != old:
-        _lock_leader_queue(db, t.leader_role_ref)
+        owner = _owned_by(t)
+        _lock_leader_queue(db, t.leader_profile_id)
         if body.status == "done":
             # Leaves the queue; everything behind closes ranks.
             gone = t.priority
             t.priority = None
             t.completed_at = datetime.now(timezone.utc)
-            _close_ranks_behind(db, t.leader_role_ref, gone)
+            _close_ranks_behind(db, owner, gone)
         elif old == "done":
             # Reopened → rejoins at the back of the queue.
-            t.priority = _active_tasks(db, t.leader_role_ref).count() + 1
+            t.priority = _active_tasks(db, owner).count() + 1
             t.completed_at = None
         t.status = body.status
 
         sub = int(payload["sub"])
-        if t.created_by and t.created_by != sub:
-            _notify(
-                db, t.created_by, type="info", nkey="task_status_changed",
-                params={
-                    "actor_name": payload.get("full_name"),
-                    "task_status": body.status,
-                    "task": _snippet(t.task_text),
-                },
-            )
+        params = {
+            "actor_name": payload.get("full_name"),
+            "task_status": body.status,
+            "task": _snippet(t.task_text),
+        }
+        if t.created_by_profile:
+            # Everyone working as the brigadir who set the task hears about it.
+            notify_profile(db, t.created_by_profile, nkey="task_status_changed",
+                           params=params, exclude_account=sub)
+        elif t.created_by and t.created_by != sub:
+            _notify(db, t.created_by, type="info", nkey="task_status_changed",
+                    params=params)
         db.commit()
         db.refresh(t)
 
     count = db.query(LeaderTaskComment).filter(LeaderTaskComment.task_id == t.id).count()
-    return _serialize(t, count, payload)
+    return _serialize(t, count, payload, db)
 
 
 # ── priority ──────────────────────────────────────────────────────────────────
