@@ -621,6 +621,7 @@ async def send_broadcast(
         if not plain:
             raise HTTPException(status_code=422, detail="Message text is empty")
         if file is not None and file.filename:
+            validate_broadcast_media(file)   # extension whitelist (400 on disallowed type)
             data = await file.read()
             ct = (file.content_type or "").lower()
             kind = "photo" if ct.startswith("image/") else \
