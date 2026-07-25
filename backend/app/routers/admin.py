@@ -156,6 +156,14 @@ def delete_attendance(
     if not body.manager_ids:
         raise HTTPException(status_code=400, detail="No supervisors selected")
 
+    # This wipes a day irreversibly, so an "own"-scoped grant must not reach a
+    # unit outside the profile's normal scoping. Refuse the whole call rather
+    # than silently skipping units — a partial wipe is worse than none.
+    if caller.get("role") != "admin" and cap_scope(db, caller, CAP_CLEANUP) != "all":
+        allowed = profile_unit_ids(db, identity.viewer_profile_key(db, caller))
+        if allowed is not None and any(m not in allowed for m in body.manager_ids):
+            raise HTTPException(status_code=403, detail="Some units are outside your scope")
+
     results = []
     total_rows = 0
     for mgr_id in body.manager_ids:
