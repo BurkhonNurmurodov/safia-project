@@ -102,13 +102,15 @@ export default function StyledSelect({
     // a narrow trigger — a 4-char select like a year picker would otherwise clip
     // its rows. Never narrower than the trigger; anchor to whichever edge keeps
     // the menu on-screen (right-anchor once the trigger is past the midline).
+    // Multi-select lists carry descriptive labels ("Cat A — …"), so they get a
+    // wider cap; anything past it truncates with an ellipsis + title tooltip.
     const rightAnchored = rect.left > vw / 2;
     return {
       position:  "fixed",
       ...(rightAnchored ? { right: vw - rect.right } : { left: rect.left }),
       minWidth:  rect.width,
       width:     "max-content",
-      maxWidth:  Math.min(340, vw - 16),
+      maxWidth:  Math.min(multiple ? 420 : 340, vw - 16),
       zIndex:    9999,
       maxHeight: maxH,
       ...(openUp
