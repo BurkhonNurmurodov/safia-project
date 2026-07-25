@@ -560,8 +560,22 @@ export default function Downtime() {
             options={[["stopped", t("downtime.tabStopped")], ["notStopped", t("downtime.tabNotStopped")]]}
           />
         </div>
+        {/* Which categories count — the загрузка KPI set (default) or every
+            category the shift report carries. */}
+        <div className="overflow-x-auto">
+          <SegmentedToggle
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "zagruzka", label: t("downtime.scopeZagruzka"), title: t("downtime.scopeZagruzkaSub") },
+              { value: "all", label: t("downtime.scopeAll"), title: t("downtime.scopeAllSub") },
+            ]}
+          />
+        </div>
         <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
           {ns ? t("downtime.tabNotStoppedSub") : t("downtime.tabStoppedSub")}
+          {" · "}
+          {kpiOnly ? t("downtime.scopeZagruzkaSub") : t("downtime.scopeAllSub")}
         </span>
       </div>
 
