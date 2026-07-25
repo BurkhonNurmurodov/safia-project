@@ -113,11 +113,10 @@ def main():
                 m = mgrs.get(r.role_id)
                 shift = f"shift {m.shift}" if m and m.shift else "shift ?"
                 arch = " ARCHIVED" if m and m.archived else ""
+                when = f"{r.approved_at:%Y-%m-%d}" if r.approved_at else "?"
                 say(f"    role_ref={r.id:<6} manager_id={r.role_id} ({shift}{arch})"
                     f"  tasks={tasks_all[r.id]} (active {tasks_active[r.id]})"
-                    f"  approved={r.approved_at:%Y-%m-%d}" if r.approved_at
-                    else f"    role_ref={r.id:<6} manager_id={r.role_id} ({shift}{arch})"
-                         f"  tasks={tasks_all[r.id]} (active {tasks_active[r.id]})")
+                    f"  approved={when}")
                 say(f"           {_acct(users.get(r.telegram_id), r.telegram_id)}")
 
         # ── A) one profile, several accounts ─────────────────────────────────
