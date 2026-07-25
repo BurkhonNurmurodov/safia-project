@@ -144,18 +144,29 @@ def set_page_access(db: Session, matrix: dict) -> dict:
     return clean
 
 
-def role_can_access(role: str | None, pages: list[str], access: dict) -> bool:
+def role_can_access(role: str | None, pages: list[str], access: dict,
+                    cap_pages: list[str] | None = None) -> bool:
     """True if the role may access at least one of the given pages. Admin is
-    always allowed."""
+    always allowed.
+
+    ``cap_pages`` are pages unlocked by the caller's *personal* capability
+    grants (``app/capabilities.capability_pages``). A capability implies page
+    access, so a grant is never dead — and unlike ticking the page in the
+    role × page matrix, it opens the page for that ONE profile instead of for
+    every peer holding the same role. Callers that have no payload at hand may
+    omit it and keep the pure role check."""
     if role == "admin":
         return True
-    return any(role in access.get(p, []) for p in pages)
+    if any(role in access.get(p, []) for p in pages):
+        return True
+    return any(p in (cap_pages or []) for p in pages)
 
 
 def require_page(*pages: str):
     """FastAPI dependency factory. Allows the request if the caller's role can
-    access at least one of ``pages`` (admin always passes). Shared endpoints
-    pass several page keys (OR semantics)."""
+    access at least one of ``pages`` (admin always passes), or if a personal
+    capability grant unlocks one of them. Shared endpoints pass several page
+    keys (OR semantics)."""
     page_list = list(pages)
 
     def _dep(
@@ -167,7 +178,13 @@ def require_page(*pages: str):
         except JWTError:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-        if not role_can_access(payload.get("role"), page_list, get_page_access(db)):
+        # Imported lazily: capabilities.py imports identity/models only, but
+        # keeping the import local documents that page access is the older,
+        # standalone axis and never depends on a grant existing.
+        from app.capabilities import capability_pages
+
+        if not role_can_access(payload.get("role"), page_list, get_page_access(db),
+                               capability_pages(db, payload)):
             raise HTTPException(status_code=403, detail="You don't have access to this page")
         return payload
 
