@@ -315,7 +315,8 @@ export default function StyledSelect({
                       flexShrink:     0,
                       width:          18,
                       height:         18,
-                      borderRadius:   "50%",
+                      // square tick-box for multi-select, radio dot for single
+                      borderRadius:   multiple ? 5 : "50%",
                       border:         isSelected
                         ? "2px solid var(--brand, #C8973F)"
                         : "2px solid var(--text-4)",
