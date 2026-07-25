@@ -86,8 +86,15 @@ def build_metrics_list(
     dt_by_cat: dict[str, dict[str, dict]] = {}
     for r in dt_rows:
         canon = alias.get(r.manager_name, r.manager_name)
-        dt_total.setdefault(canon, {})[r.date] = float(r.total_minutes or 0)
-        dt_by_cat.setdefault(canon, {})[r.date] = r.by_category or {}
+        by_cat = r.by_category or {}
+        # Ojidaniya-only categories (Cat H/Тозалаш, Cat D4) are analytics for
+        # the /downtime page alone — they must not depress the загрузка KPIs,
+        # so both the total and the breakdown lose them here.
+        extra = sum(float(by_cat.get(c) or 0) for c in OJIDANIYA_ONLY_CATS)
+        dt_total.setdefault(canon, {})[r.date] = max(float(r.total_minutes or 0) - extra, 0.0)
+        dt_by_cat.setdefault(canon, {})[r.date] = {
+            k: v for k, v in by_cat.items() if k not in OJIDANIYA_ONLY_CATS
+        }
 
     # Gate: only include days the supervisor has closed. When use_confirmed_only=True
     # (used for individual profile pages) we additionally require all requests to
