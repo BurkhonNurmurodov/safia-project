@@ -667,7 +667,7 @@ export default function Downtime() {
           <div className="flex items-center gap-2 flex-shrink-0">
             {seasonMode === "year" && seasonYears.length > 0 && (
               <StyledSelect
-                value={seasonYear || ""}
+                value={seasonYearShown}
                 onChange={setSeasonYear}
                 options={seasonYears.map((y) => ({ value: String(y), label: String(y) }))}
                 triggerClassName="px-2.5 py-1.5 text-xs"
