@@ -38,6 +38,7 @@ def get_attendance_range(db: Session = Depends(get_db), _: dict = Depends(requir
 def get_attendance_dates(
     manager_id: int = Query(...),
     db: Session = Depends(get_db),
+    _: dict = Depends(require_auth),
 ):
     """Return all distinct dates that have attendance data for a manager, newest first."""
     rows = (
