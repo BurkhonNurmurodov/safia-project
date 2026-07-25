@@ -1302,11 +1302,15 @@ def pending_count(caller=Depends(_require_staff), db: Session = Depends(get_db))
     q = db.query(EditRequest).filter(EditRequest.status == "pending")
 
     if role == "supervisor":
-        # Scope to the active role's unit — a multi-role user switched into one
-        # of several supervisor roles only counts that unit's requests
-        q = q.filter(EditRequest.supervisor_telegram_id == tg_id)
+        # The unit IS the supervisor profile (managers.id), so scoping by it
+        # counts everything the PERSON filed — from any of their logins — and
+        # nothing from the other units a multi-role user also supervises.
+        # Counting by account instead gave two people running one unit two
+        # different pending totals.
         if caller.get("role_id"):
             q = q.filter(EditRequest.manager_id == caller["role_id"])
+        else:
+            q = q.filter(EditRequest.supervisor_telegram_id == tg_id)
     elif role == "shift-manager":
         sm_slot = caller.get("role_id")
         if not sm_slot:
