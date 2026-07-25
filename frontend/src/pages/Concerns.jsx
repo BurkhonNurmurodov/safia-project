@@ -531,6 +531,7 @@ export default function Concerns() {
   const [escSM, setEscSM] = useState(null);             // shift-manager profile_id (up from supervisor)
   const [escError, setEscError] = useState("");
   const [historyRow, setHistoryRow] = useState(null);   // row whose escalation trail is open
+  const [viewRow, setViewRow] = useState(null);         // row open in the read-only detail modal
   // Inline "done" needs a resolution note first — this holds the row whose pill
   // was flipped to done until the note is entered.
   const [resolveRow, setResolveRow] = useState(null);
