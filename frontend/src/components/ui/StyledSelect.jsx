@@ -298,7 +298,10 @@ export default function StyledSelect({
                   if (!isSelected) e.currentTarget.style.background = "transparent";
                 }}
               >
-                <span className="leading-snug">{opt.label}</span>
+                {/* min-w-0 lets the label actually shrink — without it the flex
+                    item keeps its intrinsic width and shoves the tick-box off
+                    the panel edge instead of ellipsising. */}
+                <span className="leading-snug min-w-0 flex-1 truncate">{opt.label}</span>
                 <span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
                   {onRemove && opt.removable && (
                     <span

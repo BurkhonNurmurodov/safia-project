@@ -468,6 +468,38 @@ def _caller_from_call(call) -> dict:
     return {"sub": str(call.from_user.id), "role": "admin", "full_name": _display_name(call.from_user)}
 
 
+def _grantee_caller(call, capability: str) -> dict | None:
+    """The tapper's own profile that holds ``capability``, as a staff caller.
+
+    A non-admin only ever reaches an er/eb button by holding an ApprovalNotice
+    addressed to them, which we only create for a grant whose scope covered the
+    unit. Even so, build their REAL caller rather than borrowing the admin one:
+    the staff core then re-checks the grant server-side (defence in depth, in
+    case a grant was revoked between the send and the tap) and the audit trail
+    records the role they actually acted as."""
+    from app import identity
+    from app.capabilities import caps_for_profile
+    u = call.from_user
+    with SessionLocal() as db:
+        rows = db.query(TelegramUserRole).filter_by(
+            telegram_id=u.id, status="approved").order_by(TelegramUserRole.id).all()
+        for r in rows:
+            key = identity.role_row_profile_key(db, r, heal=False)
+            if key and capability in caps_for_profile(db, key):
+                return {"sub": str(u.id), "role": r.role, "role_id": r.role_id,
+                        "full_name": r.full_name or _display_name(u)}
+    return None
+
+
+def _caller_for_request(call) -> dict | None:
+    """Caller for an er/eb tap: the admin path, else a requests-approve grantee."""
+    from app.capabilities import CAP_REQUESTS_APPROVE
+    from app.telegram_bot import _admin_ids
+    if call.from_user.id in _admin_ids():
+        return _caller_from_call(call)
+    return _grantee_caller(call, CAP_REQUESTS_APPROVE)
+
+
 def _caller_for_doc(call, doc, db) -> dict | None:
     """Build the staff caller for whoever tapped an hr_document button. Admins
     get an admin caller; a non-admin is treated as the receiving supervisor and
