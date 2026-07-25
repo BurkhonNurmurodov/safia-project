@@ -162,6 +162,12 @@ export default function StyledSelect({
   }, [open, searchable]);
 
   function pick(val) {
+    // Multi mode toggles and keeps the panel open — ticking several boxes in a
+    // row is the whole point; closing after each one would defeat it.
+    if (multiple) {
+      onChange(picked.includes(val) ? picked.filter((v) => v !== val) : [...picked, val]);
+      return;
+    }
     onChange(val);
     setOpen(false);
   }
