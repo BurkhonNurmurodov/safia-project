@@ -287,7 +287,12 @@ export default function Permissions() {
           {/* Capabilities for the picked person */}
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             {!current ? (
-              <EmptyState icon={KeyRound} title={t("admin.perms.pickTitle")} hint={t("admin.perms.pickHint")} />
+              <EmptyState
+                title={t("admin.perms.pickTitle")}
+                message={t("admin.perms.pickHint")}
+                showUploadLink={false}
+                height="h-64"
+              />
             ) : (
               <>
                 <SectionHead
