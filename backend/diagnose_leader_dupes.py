@@ -44,7 +44,7 @@ def say(line=""):
     print(line)
 
 
-def _acct(u: TelegramUser | None, tid: int) -> str:
+def _acct(u, tid):
     if not u:
         return f"tg:{tid} (no telegram_users row!)"
     bits = [f"tg:{tid}"]
