@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 import jwt
 from jwt import PyJWTError as JWTError
 
+from app import identity
 from app.config import settings
 from app.database import get_db
 from app.models import Comment
@@ -32,15 +33,27 @@ class CommentUpdate(BaseModel):
     text: str
 
 
-def _serialize(c: Comment) -> dict:
+def _is_author(c: Comment, user: dict, db: Session) -> bool:
+    """A unit comment belongs to the PROFILE that wrote it, not to the login.
+    Two people running one unit share their team's comments — either may fix or
+    remove one — and rights survive a handover. The same account switched into a
+    different profile has no rights here."""
+    return identity.owns(db, user, c.author_profile, c.author_telegram_id)
+
+
+def _serialize(c: Comment, user: dict | None = None, db: Session | None = None) -> dict:
     return {
         "id": c.id,
         "manager_id": c.manager_id,
         "date": c.date.isoformat(),
         "text": c.text,
         "author_telegram_id": c.author_telegram_id,
+        "author_profile": c.author_profile,
         "author_name": c.author_name,
         "created_at": c.created_at.isoformat() if c.created_at else None,
+        # Resolved server-side so no client has to re-derive the ownership rule
+        # (two frontend copies of it had already drifted).
+        "is_own": _is_author(c, user, db) if (user and db is not None) else False,
     }
 
 
@@ -51,7 +64,7 @@ def list_comments(
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     q = db.query(Comment)
     if manager_id:
@@ -62,7 +75,7 @@ def list_comments(
         q = q.filter(Comment.date >= date_from)
     if date_to:
         q = q.filter(Comment.date <= date_to)
-    return [_serialize(c) for c in q.order_by(Comment.created_at).all()]
+    return [_serialize(c, user, db) for c in q.order_by(Comment.created_at).all()]
 
 
 @router.post("/comments")
@@ -76,12 +89,13 @@ def create_comment(
         date=payload.date,
         text=payload.text,
         author_telegram_id=int(user["sub"]),
+        author_profile=identity.viewer_profile_key(db, user),
         author_name=user.get("full_name", ""),
     )
     db.add(c)
     db.commit()
     db.refresh(c)
-    return _serialize(c)
+    return _serialize(c, user, db)
 
 
 @router.put("/comments/{comment_id}")
@@ -94,12 +108,12 @@ def update_comment(
     c = db.query(Comment).filter_by(id=comment_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if c.author_telegram_id != int(user["sub"]):
+    if not _is_author(c, user, db):
         raise HTTPException(status_code=403, detail="Not your comment")
     c.text = payload.text
     db.commit()
     db.refresh(c)
-    return _serialize(c)
+    return _serialize(c, user, db)
 
 
 @router.delete("/comments/{comment_id}", status_code=204)
@@ -111,7 +125,7 @@ def delete_comment(
     c = db.query(Comment).filter_by(id=comment_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if c.author_telegram_id != int(user["sub"]):
+    if not _is_author(c, user, db):
         raise HTTPException(status_code=403, detail="Not your comment")
     db.delete(c)
     db.commit()

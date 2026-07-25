@@ -62,7 +62,12 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
     setEditText("");
   }
 
-  const isOwn = (c) => myId && String(c.author_telegram_id) === myId;
+  // Ownership is a PROFILE question, answered by the backend: a profile can be
+  // held by several Telegram accounts and they are all the same person, so
+  // comparing account ids here hid the controls from the author's own
+  // colleagues. Legacy fallback for responses predating is_own.
+  const isOwn = (c) =>
+    c.is_own ?? (myId && String(c.author_telegram_id) === myId);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }} onClick={onClose}>
