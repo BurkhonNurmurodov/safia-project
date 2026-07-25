@@ -252,7 +252,7 @@ export default function StyledSelect({
           )}
 
           {shown.map((opt) => {
-            const isSelected = opt.value === value;
+            const isSelected = isPicked(opt.value);
             return (
               <button
                 key={opt.value}
