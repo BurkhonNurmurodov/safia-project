@@ -72,16 +72,21 @@ export const DEFAULT_PAGE_ACCESS = {
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
 };
 
-export function canAccessPage(role, pageKey, access) {
+// `capPages` are pages unlocked by the viewer's PERSONAL capability grants
+// (useCapabilities → capPages, mirroring app/capabilities.capability_pages). A
+// capability implies page access, so a grant is never dead — and unlike ticking
+// the matrix, it opens the page for that one profile, not for every peer
+// holding the same role.
+export function canAccessPage(role, pageKey, access, capPages) {
   if (role === "admin") return true;
   const allowed = access?.[pageKey] ?? DEFAULT_PAGE_ACCESS[pageKey] ?? [];
-  return allowed.includes(role);
+  return allowed.includes(role) || (capPages ?? []).includes(pageKey);
 }
 
 // Returns the route of the first page this role may access, or null if none.
-export function firstAccessibleRoute(role, access) {
+export function firstAccessibleRoute(role, access, capPages) {
   for (const p of PAGES) {
-    if (canAccessPage(role, p.key, access)) return p.route;
+    if (canAccessPage(role, p.key, access, capPages)) return p.route;
   }
   return null;
 }
