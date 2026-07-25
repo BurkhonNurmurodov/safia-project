@@ -6,7 +6,7 @@ import {
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import { ROLE_SECTIONS } from "../../utils/broadcastTree";
+import { ROLE_SECTIONS, groupProfileNodes } from "../../utils/broadcastTree";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import StyledSelect from "../../components/ui/StyledSelect";
