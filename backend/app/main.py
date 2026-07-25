@@ -97,7 +97,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Zagruzka KPI API", version="1.0.0", lifespan=lifespan)
+# Every /api/* request must carry a valid Telegram initData header (verified
+# hash + freshness), enforced app-wide. /admin/* API routes are guarded per
+# router below (so SPA navigations to /admin/* aren't mistaken for API calls).
+app = FastAPI(title="Zagruzka KPI API", version="1.0.0", lifespan=lifespan,
+              dependencies=[Depends(enforce_telegram_origin_global)])
 
 
 @app.exception_handler(Exception)
