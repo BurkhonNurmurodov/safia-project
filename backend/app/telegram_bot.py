@@ -2025,7 +2025,7 @@ def _lt_callback(call: types.CallbackQuery):
             bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
             return
 
-        date = effective_date()
+        date = effective_date(_lt_shift(db, prof))
         day = _lt_day(db, pid, date)
         closed = bool(day and day.closed_at)
         cfg = effective_leader_config(db, prof)
