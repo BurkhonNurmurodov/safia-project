@@ -2,10 +2,12 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
+  LayoutGrid,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+import { PAGES } from "../../config/pages";
 import { ROLE_SECTIONS, groupProfileNodes } from "../../utils/broadcastTree";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
