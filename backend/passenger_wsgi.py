@@ -77,6 +77,7 @@ try:
     add_profiles_columns()
     migrate_cells_table()
     migrate_cells_leaders_columns()
+    migrate_cell_supervisor_column()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()
