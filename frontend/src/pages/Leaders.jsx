@@ -21,6 +21,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
