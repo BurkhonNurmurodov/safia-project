@@ -2367,12 +2367,21 @@ def _card_active_role(db, tid: int) -> dict | None:
 
 def _caller_shift(db, payload: dict) -> int | None:
     """The caller's own shift, mirroring the web app's scoping. The JWT carries
-    no shift field, so derive it from the profile's manager row (see the
-    shift-scoping note on /api/summary & friends). Admins see every shift."""
-    if payload.get("role") == "admin" or not payload.get("role_id"):
+    no shift field, so derive it from the profile (see the shift-scoping note
+    on /api/summary & friends). role_id points at DIFFERENT tables per role
+    (see RoleProfile's docstring): managers.id for supervisor/leader,
+    role_profiles.id for shift-manager — reading the wrong one would scope to
+    an unrelated brigadir's shift. Admins and top-managers see every shift."""
+    role, rid = payload.get("role"), payload.get("role_id")
+    if role == "admin" or not rid:
         return None
-    mgr = db.query(Manager).filter_by(id=payload["role_id"]).first()
-    return mgr.shift if mgr else None
+    if role == "shift-manager":
+        prof = db.query(RoleProfile).filter_by(id=rid, role="shift-manager").first()
+        return prof.shift if prof else None
+    if role in ("supervisor", "leader"):
+        mgr = db.query(Manager).filter_by(id=rid).first()
+        return mgr.shift if mgr else None
+    return None
 
 
 @bot.message_handler(commands=["ojidaniya"])
