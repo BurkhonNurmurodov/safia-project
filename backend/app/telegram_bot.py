@@ -24,7 +24,7 @@ from app.models import (
 from app.reg_token import make_reg_token
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
-    effective_leader_config,
+    effective_leader_config, promote_due,
 )
 from app.translit import transliterate as _to_uz_latin
 
