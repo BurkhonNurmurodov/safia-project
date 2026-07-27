@@ -292,7 +292,7 @@ export default function Permissions() {
                           {person ? tl(person.name) : r.profile_key}
                         </td>
                         <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
-                          {t(`caps.${r.capability}.label`)}
+                          {capLabel(r.capability)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span
