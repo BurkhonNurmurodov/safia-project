@@ -169,7 +169,7 @@ def _launch(p):
     raise ShotError("No usable Chromium. Tried:\n" + "\n".join(errors))
 
 
-def _run(url: str, out_path: str) -> None:
+def _run(url: str, out_path: str, debug: bool = False) -> None:
     from playwright.sync_api import Error as PlaywrightError, sync_playwright
 
     width, height = VIEWPORT
