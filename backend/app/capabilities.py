@@ -138,7 +138,7 @@ CAPABILITIES = [
 UNSCOPED_CAPABILITIES = frozenset(c["key"] for c in CAPABILITIES if not c["scoped"])
 
 CAPABILITY_KEYS = [c["key"] for c in CAPABILITIES]
-CAPABILITY_GROUPS = ["requests", "attendance", "identity"]
+CAPABILITY_GROUPS = ["requests", "attendance", "identity", "pages"]
 
 SCOPES = ("own", "all")
 DEFAULT_SCOPE = "own"
