@@ -2383,8 +2383,9 @@ def _file_id_echo(message: types.Message):
 
 
 # ── Dashboard cards ───────────────────────────────────────────────────────────
-# `/ojidaniya` answers with a PNG of today's Ojidaniya numbers, drawn server-side
-# from the same /api/downtime payload the page reads (app/services/downtime_card).
+# `/ojidaniya` answers with a PNG of yesterday's Ojidaniya numbers (today's are
+# always still mid-collection), drawn server-side from the same /api/downtime
+# payload the page reads (app/services/downtime_card). A date argument overrides.
 # Scoped to the caller's own profile — their role, their shift, their brigadirs.
 
 
