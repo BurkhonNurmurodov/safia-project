@@ -45,6 +45,7 @@ from app.models import (
     PPDaily, PPDaySetting, PPReconciliation, PPUpload, ForecastCallNotice, TelegramUser,
     TelegramUserRole, RoleProfile,
 )
+from app.capabilities import page_scope_is_all
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
