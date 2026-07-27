@@ -22,6 +22,7 @@ export function useCapabilities() {
   });
 
   const caps = data?.caps ?? {};
+  const pageScopes = data?.page_scopes ?? {};
   return {
     caps,
     // Pages these grants unlock on their own — merged into the page-access
@@ -30,12 +31,24 @@ export function useCapabilities() {
     capPages: data?.pages ?? [],
     // Admin-panel tabs a non-admin grantee may open.
     capTabs: data?.tabs ?? [],
+    // {page: "own" | "all"} for the personal page-view grants this person holds.
+    pageScopes,
     /** Does this person hold the capability at all? */
     can: (key) => caps[key] != null,
     /** "own" | "all" | undefined — how far the grant reaches. */
     scopeOf: (key) => caps[key],
     /** Full admin reach (every unit, shift and date) for this capability. */
     canAll: (key) => caps[key] === "all",
+    /**
+     * Does this person read the WHOLE factory on `pageKey`?
+     *
+     * The flag a scoped page asks before pinning its viewer to their own unit:
+     * true means drop the pin and offer the picker, exactly as the backend has
+     * already decided (app/capabilities.page_scope_is_all). Admins come back
+     * true for every page. Undefined while the query is in flight, which reads
+     * as false — the narrow view — so a slow response never briefly widens one.
+     */
+    seesAllOn: (pageKey) => pageScopes[pageKey] === "all",
     isLoading,
   };
 }
