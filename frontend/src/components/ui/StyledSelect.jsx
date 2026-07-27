@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check, Minus, Trash2, Search } from "lucide-react";
+import { ChevronDown, Check, Minus, Trash2, Search, Plus } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 
 /**
