@@ -970,6 +970,76 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         </Modal>
       )}
 
+      {/* Inline cell creation from the leader modal — full cell details; the new
+          cell is unassigned until the leader is saved, then claimed. Sits above
+          the leader modal (z=60). */}
+      {newCell && (
+        <Modal
+          onClose={() => setNewCell(null)}
+          dismissable={!inlineCellCreateMut.isPending}
+          title={t("admin.profiles.cellCreateTitle")}
+          maxWidth="max-w-sm"
+          zIndex={80}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setNewCell(null)}
+                      disabled={inlineCellCreateMut.isPending}>
+                {t("admin.users.cancel")}
+              </Button>
+              <Button size="sm" icon={<Plus size={12} />} loading={inlineCellCreateMut.isPending}
+                      onClick={submitNewCell}>
+                {t("admin.profiles.create")}
+              </Button>
+            </>
+          }
+        >
+          <FormField label={t("admin.profiles.colVerifixCode")} required>
+            <input
+              type="text"
+              value={newCell.verifix_code || ""}
+              onChange={(e) => setNewCell((c) => ({ ...c, verifix_code: e.target.value }))}
+              className={inputCls}
+              style={inputStyle}
+              autoFocus
+            />
+          </FormField>
+          <FormField label={t("admin.profiles.colSapCode")}>
+            <input
+              type="text"
+              value={newCell.sap_code || ""}
+              onChange={(e) => setNewCell((c) => ({ ...c, sap_code: e.target.value }))}
+              className={inputCls}
+              style={inputStyle}
+            />
+          </FormField>
+          <div className="pt-1">
+            <div className={labelCls} style={{ color: "var(--text-3)" }}>
+              {t("admin.profiles.colWorkshop")}
+            </div>
+            <div className="mt-2 space-y-2">
+              {["uz", ...NAME_LANGS].map((l) => (
+                <label key={l} className="flex items-center gap-2">
+                  <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
+                        style={{ color: "var(--text-4)" }}>{l}</span>
+                  <input
+                    type="text"
+                    value={newCell[`name_workshop_${l}`] || ""}
+                    onChange={(e) => setNewCell((c) => ({ ...c, [`name_workshop_${l}`]: e.target.value }))}
+                    className={inputCls + " !mt-0"}
+                    style={inputStyle}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+          <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
+            {t("admin.profiles.colSupervisor")}:{" "}
+            {tl(units.find((u) => String(u.id) === String(form.manager_id))?.name) || "—"}
+          </p>
+          {newCellError && <p className="mt-2 text-[11px] font-medium text-red-400">{newCellError}</p>}
+        </Modal>
+      )}
+
       {/* Delete / archive confirmation */}
       <ConfirmDialog
         open={!!confirmDelete}
