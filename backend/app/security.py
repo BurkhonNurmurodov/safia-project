@@ -64,6 +64,15 @@ def _check_init_data(request: Request) -> None:
     DEV_AUTH is on, mirroring /api/auth/webapp."""
     init_data = request.headers.get(_INIT_DATA_HEADER, "")
 
+    # Server-side page screenshots: a headless Chromium has no Telegram WebView
+    # and so no initData. A bot-minted, 3-minute, HMAC-signed render token is
+    # the stand-in credential — it proves the request came from this server on
+    # behalf of one Telegram id, and buys only that user's own session (see
+    # app/render_token.py). Checked before the empty/dev branches so a render
+    # never depends on DEV_AUTH.
+    if read_init_data_render_token(init_data) is not None:
+        return
+
     if init_data == "__dev__":
         if settings.dev_auth:
             return
