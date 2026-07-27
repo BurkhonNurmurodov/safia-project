@@ -424,6 +424,31 @@ def migrate_cells_leaders_columns() -> None:
         db.close()
 
 
+def migrate_cell_supervisor_column() -> None:
+    """2026-07-27: cells gain a direct supervisor link (manager_id → managers.id,
+    nullable). A cell now belongs to a supervisor independently of its leader —
+    leaderless cells can still name their owning unit, and going forward the
+    leader is optional. Existing rows backfill their supervisor from the owning
+    leader's unit (role_profiles.manager_id); leaderless rows stay NULL until an
+    admin sets one. Idempotent; runs after migrate_cells_leaders_columns."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE cells ADD COLUMN IF NOT EXISTS manager_id INTEGER"))
+        # Backfill only rows without a supervisor yet, from their leader's unit.
+        db.execute(text(
+            "UPDATE cells c SET manager_id = p.manager_id "
+            "FROM role_profiles p "
+            "WHERE c.leader_id = p.id AND c.manager_id IS NULL "
+            "AND p.manager_id IS NOT NULL"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell supervisor column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
