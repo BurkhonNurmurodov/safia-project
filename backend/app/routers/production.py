@@ -594,13 +594,17 @@ def list_production_managers(
     """Brigadir units to offer in the dashboard picker, scoped to the caller:
     supervisor → only their own unit; shift-manager → configured units in their
     shift; top-manager / admin → every configured unit. 'Configured' = has an ABC
-    catalog or an uploaded daily snapshot (see _configured_manager_ids)."""
+    catalog or an uploaded daily snapshot (see _configured_manager_ids).
+
+    A "see all" page grant offers every configured unit whatever the role, so
+    the picker matches what _resolve_manager_id will actually let through."""
     role = payload.get("role")
+    sees_all = page_scope_is_all(db, payload, "production")
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if role == "supervisor":
+    if role == "supervisor" and not sees_all:
         mgrs = q.filter(Manager.id == payload.get("role_id")).all()
-    elif role in ("admin", "top-manager", "shift-manager"):
-        if role == "shift-manager":
+    elif sees_all or role in ("admin", "top-manager", "shift-manager"):
+        if role == "shift-manager" and not sees_all:
             q = q.filter(Manager.shift == _shift_manager_shift(payload, db))
         configured = _configured_manager_ids(db)
         mgrs = [m for m in q.order_by(Manager.name).all() if m.id in configured]
