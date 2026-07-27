@@ -319,9 +319,13 @@ def _owner_filter(payload: dict):
 
 def _scope_query(query, payload: dict, db: Session):
     """Restrict a LeaderConcern query to what the caller may see: their own
-    creations, concerns assigned to them, and the chain below them in scope."""
+    creations, concerns assigned to them, and the chain below them in scope.
+
+    A personal ``page.view.concerns`` grant at "all" lifts the chain filter
+    entirely — that scope is what the grant means. It widens READING only;
+    _can_edit / _assert_can_edit still decide who may touch a row."""
     role = payload.get("role")
-    if role in ("admin", "top-manager"):
+    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, "concerns"):
         return query
     if role == "shift-manager":
         unit_ids = _shift_unit_ids(db, _viewer_shift(db, payload))
