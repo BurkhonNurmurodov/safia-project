@@ -100,7 +100,7 @@ class CellIn(BaseModel):
     weight: int
     # Per-supervisor rename: value = override, "" or missing lang = inherit
     # the global name. None = leave the stored names untouched.
-    names: dict[str, str] | None = None
+    names: dict[str, str | None] | None = None
     when: str = "now"
 
 
@@ -144,7 +144,7 @@ class LeaderCellIn(BaseModel):
     enabled: bool | None = None
     min_media: int | None = None
     weight: int | None = None
-    names: dict[str, str] | None = None
+    names: dict[str, str | None] | None = None
     reset: bool = False
     when: str = "now"
 
@@ -169,7 +169,7 @@ class TaskCellIn(BaseModel):
     enabled: bool
     min_media: int
     weight: int
-    names: dict[str, str] | None = None
+    names: dict[str, str | None] | None = None
 
 
 class SupervisorBatchIn(BaseModel):
@@ -197,7 +197,7 @@ class TaskIn(BaseModel):
     """Global task definition edit — names / notes / default weight. Touches
     only LeaderTaskDef, never a supervisor row (decoupled from the bulk push)."""
     task_id: int
-    names: dict[str, str] | None = None
+    names: dict[str, str | None] | None = None
     note: dict[str, str] | None = None
     default_weight: int | None = None
     when: str = "now"
