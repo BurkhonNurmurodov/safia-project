@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AppSetting, LeaderChecklist, LeaderSyncMeta, Manager
+from app.capabilities import page_scope_is_all
 from app.permissions import require_page
 from app import identity
 from app.models import RoleProfile
