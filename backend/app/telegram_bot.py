@@ -1991,12 +1991,11 @@ def _lt_callback(call: types.CallbackQuery):
         date = effective_date()
         day = _lt_day(db, pid, date)
         closed = bool(day and day.closed_at)
-        defs = {td.id: td for td in ensure_task_defs(db)}
-        cfg = effective_settings(db, prof.manager_id)
+        cfg = effective_leader_config(db, prof)
 
         def tname(tid_):
-            td = defs.get(tid_)
-            return task_name(td, lang) if td else f"T{tid_}"
+            entry = cfg.get(tid_)
+            return config_name(entry, lang) if entry else f"T{tid_}"
 
         if action == "prof":
             _lt_clear(tid)
