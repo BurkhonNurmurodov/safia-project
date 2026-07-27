@@ -710,8 +710,11 @@ export default function Production() {
 
   // Supervisors are pinned to their own unit (the backend derives it from the
   // JWT). Everyone above them picks a configured brigadir: shift-managers within
-  // their own shift, top-managers and admins across every unit.
-  const canPickManager = ["admin", "top-manager", "shift-manager"].includes(auth?.role);
+  // their own shift, top-managers and admins across every unit — as does anyone
+  // holding a personal «Sahifalar ▸ Ishlab chiqarish» grant at "all", which is
+  // exactly the scope that unpins them (mirrors _resolve_manager_id).
+  const canPickManager = ["admin", "top-manager", "shift-manager"].includes(auth?.role)
+    || seesAllOn("production");
   const [selManager, setSelManager] = useState(null);
 
   const { data: mgrData } = useQuery({
