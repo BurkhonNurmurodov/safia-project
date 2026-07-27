@@ -888,14 +888,17 @@ def get_attendance(
 ):
     role    = caller.get("role")
     role_id = caller.get("role_id")
+    # A personal page.view.staff grant at "all" reads like admin: any unit, with
+    # a supervisor's own still the default when the page sends no manager_id.
+    sees_all = page_scope_is_all(db, caller, "staff")
 
-    if role == "admin":
-        if not manager_id:
-            raise HTTPException(status_code=400, detail="manager_id required for admin")
-    elif role == "supervisor":
+    if role == "supervisor" and not (sees_all and manager_id):
         manager_id = role_id
         if not manager_id:
             raise HTTPException(status_code=400, detail="Supervisor has no linked manager")
+    elif role == "admin" or sees_all:
+        if not manager_id:
+            raise HTTPException(status_code=400, detail="manager_id required for admin")
     elif role == "shift-manager":
         if not manager_id:
             raise HTTPException(status_code=400, detail="manager_id required")
