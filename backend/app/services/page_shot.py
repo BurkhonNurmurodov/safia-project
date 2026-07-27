@@ -49,6 +49,29 @@ class ShotError(RuntimeError):
     log; callers show the user a generic failure instead."""
 
 
+def _interpreter() -> str:
+    """Python that runs the screenshot subprocess — and it must be the venv's.
+
+    ``sys.executable`` is NOT reliable here: under Passenger it reported an
+    interpreter whose site-packages had no playwright, so the child imported
+    ``app.services.page_shot`` fine (cwd is on sys.path) and then died on
+    ``import playwright``. ``sys.prefix`` points at the venv root in the same
+    process, so its ``bin/python`` is the interpreter that actually holds the
+    installed dependencies. RENDER_PYTHON overrides everything for the case
+    where neither is right.
+    """
+    candidates = [
+        settings.render_python,
+        os.path.join(sys.prefix, "bin", "python"),
+        os.path.join(sys.prefix, "bin", "python3"),
+        sys.executable,
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return sys.executable
+
+
 def page_url(path: str, telegram_id: int) -> str:
     origin = settings.render_origin
     if not origin:
