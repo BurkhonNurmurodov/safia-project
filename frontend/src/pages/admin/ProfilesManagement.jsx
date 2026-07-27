@@ -209,7 +209,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
     if (!isCells) return items;
     const q = cellSearch.trim().toLowerCase();
     return items.filter((c) => {
-      if (q && !`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.leader) || ""}`
+      if (q && !`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`
             .toLowerCase().includes(q)) return false;
       for (const k of FILT_COLS)
         if (colSel[k].length && !colSel[k].includes(colVal[k](c))) return false;
