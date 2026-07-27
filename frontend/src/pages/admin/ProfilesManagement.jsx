@@ -158,14 +158,18 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   // ── Google-Sheets-style per-column filters (cells registry) ─────────────────
   // A funnel on each column opens a searchable checkbox list of that column's
   // distinct values; empty selection = column unfiltered, several columns AND.
-  const FILT_COLS = ["verifix_code", "sap_code", "workshop", "owner"];
+  const FILT_COLS = ["verifix_code", "sap_code", "workshop", "supervisor", "owner"];
   const colVal = {
     verifix_code: (c) => c.verifix_code || "",
     sap_code:     (c) => c.sap_code || "",
     workshop:     (c) => wname(c) || "",
+    supervisor:   (c) => c.supervisor || "",
     owner:        (c) => c.leader || "",
   };
-  const colRender = { owner: (o) => (o ? tl(o) : t("admin.profiles.cellUnassigned")) };
+  const colRender = {
+    supervisor: (o) => (o ? tl(o) : "—"),
+    owner:      (o) => (o ? tl(o) : t("admin.profiles.cellUnassigned")),
+  };
   const colOpts = useMemo(() => {
     const m = {};
     for (const k of FILT_COLS)
