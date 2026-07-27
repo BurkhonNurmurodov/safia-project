@@ -3350,14 +3350,25 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
 #  Only an admin can re-open a closed day (deletes the row → back to OPEN).
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _staff_sees_all(db: Session, caller) -> bool:
+    """True when a personal page grant lifts this caller's unit pin on the
+    staff/daily reads.
+
+    Both pages share these endpoints, so either grant at "all" counts — the
+    scope means "reads every unit's day", and which of the two pages the person
+    was handed doesn't change what that sentence promises."""
+    return (page_scope_is_all(db, caller, "staff")
+            or page_scope_is_all(db, caller, "daily"))
+
+
 def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
     """Manager ids a caller may see/approve. None = all (admin).
 
-    A personal ``page.view.staff`` grant at "all" is admin reach by definition —
+    A personal staff/daily page grant at "all" is admin reach by definition —
     the whole point of that scope is that this person reads every unit's day."""
     role    = caller.get("role")
     role_id = caller.get("role_id")
-    if role == "admin" or page_scope_is_all(db, caller, "staff"):
+    if role == "admin" or _staff_sees_all(db, caller):
         return None
     if role == "supervisor":
         return [role_id] if role_id else []
