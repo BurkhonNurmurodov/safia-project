@@ -83,11 +83,30 @@ CAP_USERS_MANAGE      = "admin.users.manage"
 CAP_PROFILES_MANAGE   = "admin.profiles.manage"
 CAP_CELLS_MANAGE      = "admin.cells.manage"
 
+# Page-view grants: one per page key, ids built from the page so the catalog
+# never drifts from permissions.PAGE_KEYS.
+CAP_PAGE_PREFIX = "page.view."
+
+
+def page_cap(page: str) -> str:
+    """``page.view.<page>`` — the capability id granting sight of one page."""
+    return f"{CAP_PAGE_PREFIX}{page}"
+
+
+# The pages whose data actually narrows to the viewer — the only ones where
+# "own" and "all" mean different things. Every other page is already
+# factory-wide for whoever may open it, so its grant is stored at "all" and the
+# Permissions tab shows a static chip instead of a selector that does nothing.
+SCOPED_PAGES = ("staff", "daily", "production", "concerns", "tasks", "leaders", "quality")
+
 # key   → the capability id, also the i18n key suffix (caps.<key>.label/.hint)
 # group → UI grouping on the Permissions tab
 # pages → page keys this capability unlocks (rule: a capability IMPLIES page
 #         access, so a grant is never dead — see capability_pages)
 # tab   → admin-panel tab this capability unlocks, if any
+# page  → set only on the page-view family; the Permissions tab labels those
+#         from the page's own nav label instead of a caps.<key>.label string,
+#         so adding a page needs no new translation keys.
 #
 # scoped→ whether "own" vs "all" means anything for this capability. The
 #         unit-scoped ones (requests, attendance, cleanup) honour it. The
