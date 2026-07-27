@@ -1,4 +1,5 @@
 import axios from "axios";
+import { IS_RENDER, RENDER_INIT_DATA } from "./renderMode";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "",
