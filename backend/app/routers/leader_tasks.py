@@ -146,47 +146,22 @@ class LeaderCellIn(BaseModel):
     weight: int | None = None
     names: dict[str, str] | None = None
     reset: bool = False
+    when: str = "now"
 
 
 @router.put("/admin/leader-tasks/leader-cell")
 def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
-                    _: dict = Depends(verify_admin)):
-    prof = db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first()
-    if not prof:
+                    admin: dict = Depends(verify_admin)):
+    if not db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first():
         raise HTTPException(status_code=404, detail="Unknown leader")
     if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
-
-    row = db.query(LeaderTaskLeaderSetting).filter_by(
-        leader_id=cell.leader_id, task_id=cell.task_id).first()
-
-    if cell.names is not None:
-        names = {l: (cell.names.get(l) or "").strip() or None for l in _LANGS}
-    elif row:  # names omitted — keep what's stored (mirrors put_cell)
-        names = {l: getattr(row, f"name_{l}") for l in _LANGS}
-    else:
-        names = {l: None for l in _LANGS}
-    all_inherit = (
-        cell.enabled is None and cell.min_media is None and cell.weight is None
-        and not any(names.values())
-    )
-    if cell.reset or all_inherit:
-        # Nothing overridden anymore — the row would be a no-op, drop it.
-        if row:
-            db.delete(row)
-            db.commit()
-        return {"ok": True}
-
-    if not row:
-        row = LeaderTaskLeaderSetting(leader_id=cell.leader_id, task_id=cell.task_id)
-        db.add(row)
-    row.enabled = cell.enabled
-    row.min_media = None if cell.min_media is None else max(0, min(20, int(cell.min_media)))
-    row.weight = None if cell.weight is None else max(0, min(100, int(cell.weight)))
-    for l in _LANGS:
-        setattr(row, f"name_{l}", names[l])
-    db.commit()
-    return {"ok": True}
+    payload = {
+        "leader_id": cell.leader_id, "task_id": cell.task_id,
+        "enabled": cell.enabled, "min_media": cell.min_media, "weight": cell.weight,
+        "names": cell.names, "reset": cell.reset,
+    }
+    return write_change(db, "leader", payload, cell.when, _actor(admin))
 
 
 class ColumnIn(BaseModel):
