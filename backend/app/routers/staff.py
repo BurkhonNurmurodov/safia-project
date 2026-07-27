@@ -892,9 +892,9 @@ def get_attendance(
 ):
     role    = caller.get("role")
     role_id = caller.get("role_id")
-    # A personal page.view.staff grant at "all" reads like admin: any unit, with
+    # A personal staff/daily page grant at "all" reads like admin: any unit, with
     # a supervisor's own still the default when the page sends no manager_id.
-    sees_all = page_scope_is_all(db, caller, "staff")
+    sees_all = _staff_sees_all(db, caller)
 
     if role == "supervisor" and not (sees_all and manager_id):
         manager_id = role_id
