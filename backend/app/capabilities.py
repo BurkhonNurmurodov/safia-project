@@ -7,8 +7,9 @@ The platform has two independent permission axes:
     Coarse, shared by everyone holding that role, edited on the admin Access
     tab.
   * **capabilities × profiles** (this module) — which admin-only ACTIONS ONE
-    person may perform. Fine-grained, per individual, edited on the admin
-    Permissions tab.
+    person may perform, and which PAGES ONE person may open and how much of
+    each page's data they see. Fine-grained, per individual, edited on the
+    admin Permissions tab.
 
 THE RULES, in one place:
 
