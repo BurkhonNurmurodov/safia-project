@@ -36,8 +36,13 @@ _LANGS = ("uz", "uz_cyrl", "ru", "en")
 
 # ── Admin: config matrix ──────────────────────────────────────────────────────
 
+def _actor(admin: dict) -> str | None:
+    return admin.get("profile_key") or admin.get("name") or admin.get("sub")
+
+
 @router.get("/admin/leader-tasks/config")
 def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    promote_all_shifts(db)  # apply anything now due before showing live state
     defs = ensure_task_defs(db)
     managers = (
         db.query(Manager)
