@@ -122,8 +122,10 @@ def put_cell(cell: CellIn, db: Session = Depends(get_db), _: dict = Depends(veri
 
 
 class LeaderCellIn(BaseModel):
-    """Per-leader override. Null field = inherit from the supervisor's
-    effective value; reset=True drops the whole override row."""
+    """Per-leader override. Null config field = inherit from the supervisor's
+    effective value; `names` values: "" = inherit, None/omitted dict = keep the
+    stored names untouched (same semantics as CellIn); reset=True drops the
+    whole override row."""
     leader_id: int
     task_id: int
     enabled: bool | None = None
