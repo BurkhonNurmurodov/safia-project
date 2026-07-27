@@ -3465,9 +3465,7 @@ def approval_day(
     db: Session = Depends(get_db),
 ):
     """Day-close state for a single (manager, date) — used by the Daily/Staff pages."""
-    role = caller.get("role")
-    if role == "supervisor":
-        manager_id = caller.get("role_id")
+    manager_id = _staff_target_manager(db, caller, manager_id)
     if not manager_id:
         raise HTTPException(status_code=400, detail="manager_id required")
     if not _can_touch_manager(db, caller, manager_id):
