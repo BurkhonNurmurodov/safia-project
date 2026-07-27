@@ -176,7 +176,22 @@ def _run(url: str, out_path: str) -> None:
                 locale="ru-RU",
             )
             page = ctx.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=READY_TIMEOUT_MS)
+
+            # index.html pulls Inter from fonts.googleapis.com, and that <link>
+            # sits ABOVE the scripts — a stylesheet the datacenter can't reach
+            # blocks every script after it, so React never mounts and
+            # DOMContentLoaded never fires. Answer those requests ourselves with
+            # empty CSS: the page falls back to the system sans (near-identical
+            # metrics to Inter) and renders immediately. A screenshot must never
+            # depend on a third party being reachable.
+            for pattern in ("**://fonts.googleapis.com/**", "**://fonts.gstatic.com/**"):
+                page.route(pattern, lambda route: route.fulfill(
+                    status=200, content_type="text/css", body=""))
+
+            # "commit" = as soon as the response starts, NOT once sub-resources
+            # settle. Readiness is __RENDER_READY__'s job (below); waiting on
+            # load events here only re-introduces the third-party stall.
+            page.goto(url, wait_until="commit", timeout=READY_TIMEOUT_MS)
             try:
                 page.wait_for_function("window.__RENDER_READY__ === true",
                                        timeout=READY_TIMEOUT_MS)
