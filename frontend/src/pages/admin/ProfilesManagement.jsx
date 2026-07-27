@@ -84,6 +84,8 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   const [confirmDelete, setConfirmDelete] = useState(null);   // profile item
   const [confirmUnassign, setConfirmUnassign] = useState(null); // {item, binding}
   const [confirmSwitch, setConfirmSwitch] = useState(null);   // {body, detail} — 409 confirm_required
+  const [newCell, setNewCell] = useState(null);       // inline cell-create form (leader flow) or null
+  const [newCellError, setNewCellError] = useState("");
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-profiles"],
