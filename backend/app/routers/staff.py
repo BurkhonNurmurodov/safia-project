@@ -3366,6 +3366,19 @@ def _can_touch_manager(db: Session, caller, manager_id: int) -> bool:
     return vis is None or manager_id in vis
 
 
+def _staff_target_manager(db: Session, caller, manager_id: Optional[int]) -> Optional[int]:
+    """The unit a staff/daily READ targets.
+
+    A supervisor is pinned to their own unit, so their pages never need to send
+    manager_id — except when a ``page.view.staff`` grant at "all" widens them,
+    in which case an explicitly requested unit wins and their own stays the
+    default. ``_can_touch_manager`` still has the last word on the result."""
+    if caller.get("role") == "supervisor" and not (
+            manager_id and page_scope_is_all(db, caller, "staff")):
+        return caller.get("role_id")
+    return manager_id
+
+
 @router.get("/approvals/calendar")
 def approvals_calendar(
     year: int,
