@@ -192,6 +192,19 @@ def _run(url: str, out_path: str, debug: bool = False) -> None:
             )
             page = ctx.new_page()
 
+            if debug:
+                # Everything needed to tell "the bundle has no render mode" from
+                # "render mode ran but readiness never fired" apart.
+                page.on("console", lambda m: print(f"[console.{m.type}] {m.text}",
+                                                   file=sys.stderr))
+                page.on("pageerror", lambda e: print(f"[pageerror] {e}", file=sys.stderr))
+                page.on("requestfailed", lambda r: print(
+                    f"[reqfail] {r.url} — {r.failure}", file=sys.stderr))
+                page.on("framenavigated", lambda f: (
+                    f == page.main_frame and print(f"[nav] {f.url}", file=sys.stderr)))
+                page.on("response", lambda r: r.status >= 400 and print(
+                    f"[http {r.status}] {r.url}", file=sys.stderr))
+
             # index.html pulls Inter from fonts.googleapis.com, and that <link>
             # sits ABOVE the scripts — a stylesheet the datacenter can't reach
             # blocks every script after it, so React never mounts and
