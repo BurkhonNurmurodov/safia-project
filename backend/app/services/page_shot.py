@@ -220,14 +220,40 @@ def _run(url: str, out_path: str, debug: bool = False) -> None:
             # settle. Readiness is __RENDER_READY__'s job (below); waiting on
             # load events here only re-introduces the third-party stall.
             page.goto(url, wait_until="commit", timeout=READY_TIMEOUT_MS)
-            try:
-                page.wait_for_function("window.__RENDER_READY__ === true",
-                                       timeout=READY_TIMEOUT_MS)
-            except PlaywrightError:
-                # Never signalled ready — a page that renders no queries, or one
-                # stuck on a slow fetch. Shoot what is on screen rather than
-                # failing outright; a partial page beats no reply.
+
+            # Poll from Python on a wall-clock deadline instead of
+            # page.wait_for_function(). Its timeout did NOT hold in practice: a
+            # page that navigates (a reload, a redirect) restarts the wait, so a
+            # reloading app kept one 45 s wait alive for minutes. This loop can't
+            # be extended by anything the page does.
+            ready_timeout = (READY_TIMEOUT_MS if not debug else 15_000) / 1000
+            deadline = time.monotonic() + ready_timeout
+            ready = False
+            while time.monotonic() < deadline:
+                try:
+                    if page.evaluate("window.__RENDER_READY__ === true"):
+                        ready = True
+                        break
+                except PlaywrightError:
+                    pass  # mid-navigation; the context is briefly gone
+                page.wait_for_timeout(250)
+
+            if not ready:
+                # Shoot what is on screen rather than failing outright — a
+                # partial page beats no reply, and the state below says why.
                 print("warning: __RENDER_READY__ never became true", file=sys.stderr)
+                try:
+                    state = page.evaluate(
+                        "({url: location.href, title: document.title,"
+                        " ready: typeof window.__RENDER_READY__,"
+                        " rootHtml: (document.getElementById('root')||{}).innerHTML"
+                        "            ? 'non-empty' : 'EMPTY',"
+                        " bodyText: document.body ? document.body.innerText.slice(0,300) : ''})"
+                    )
+                    print(f"page state: {state}", file=sys.stderr)
+                except PlaywrightError as exc:
+                    print(f"page state unavailable: {exc}", file=sys.stderr)
+
             page.wait_for_timeout(SETTLE_MS)
             page.screenshot(path=out_path, full_page=True)
         finally:
@@ -235,7 +261,9 @@ def _run(url: str, out_path: str, debug: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("usage: python -m app.services.page_shot <url> <out.png>", file=sys.stderr)
+    args = [a for a in sys.argv[1:] if a != "--debug"]
+    if len(args) != 2:
+        print("usage: python -m app.services.page_shot <url> <out.png> [--debug]",
+              file=sys.stderr)
         raise SystemExit(2)
-    _run(sys.argv[1], sys.argv[2])
+    _run(args[0], args[1], debug="--debug" in sys.argv)
