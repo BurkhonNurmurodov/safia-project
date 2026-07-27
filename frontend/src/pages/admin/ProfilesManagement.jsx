@@ -870,9 +870,24 @@ export default function ProfilesManagement({ cellsOnly = false }) {
 
               {effType === "leader" && (
                 <FormField label={t("admin.profiles.cellLabel")}>
-                  {/* Owned cells as removable badges; the input below adds codes. */}
+                  {/* Searchable multi-select of unassigned cells; the creatable row
+                      mints a brand-new cell inline. Picked cells show as removable
+                      badges below (assigning re-points a cell to this leader's unit). */}
+                  <StyledSelect
+                    multiple
+                    searchable
+                    hideSelectAll
+                    creatable
+                    value={form.cells || []}
+                    onChange={(next) => setForm((f) => ({ ...f, cells: next }))}
+                    options={leaderCellOpts}
+                    onCreate={openCellCreate}
+                    createLabel={(q) => `${t("admin.profiles.cellCreate")}${q ? ` "${q}"` : ""}`}
+                    allLabel={t("admin.profiles.cellPickPlaceholder")}
+                    searchPlaceholder={t("admin.profiles.cellSearchOrCreate")}
+                  />
                   {(form.cells || []).length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {form.cells.map((c) => (
                         <span key={c} className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded-full"
                           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
@@ -888,21 +903,6 @@ export default function ProfilesManagement({ cellsOnly = false }) {
                       ))}
                     </div>
                   )}
-                  <div className="mt-1 flex items-stretch gap-1.5">
-                    <input
-                      type="text"
-                      value={form.cellInput || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, cellInput: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCell(); } }}
-                      placeholder={t("admin.profiles.cellNewPlaceholder")}
-                      className={inputCls + " mt-0 flex-1"}
-                      style={inputStyle}
-                    />
-                    <Button variant="secondary" size="md" onClick={addCell}
-                            disabled={!(form.cellInput || "").trim()}>
-                      <Plus className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
                 </FormField>
               )}
 
