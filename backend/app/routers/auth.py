@@ -250,7 +250,9 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     # Active role: the one last used, as long as it is still approved
     active = next((r for r in approved if r.id == user.active_role_ref), approved[0])
 
-    user.last_seen = datetime.now(timezone.utc)
+    # See the admin branch above — a render session leaves no activity trace.
+    if render_tid is None:
+        user.last_seen = datetime.now(timezone.utc)
     user.active_role_ref = active.id
     user.tg_name = tg_name or user.tg_name
     db.commit()
