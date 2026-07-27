@@ -6374,7 +6374,7 @@ const t = {
     "admin.cleanup.successToast": "Deleted {rows} attendance rows for {n} supervisor(s)",
     "admin.cleanup.fail":         "Deletion failed",
     "admin.ltasks.title":        "Leader daily tasks",
-    "admin.ltasks.desc":         "Configure the tasks for each supervisor's leaders: click a cell to toggle it and set the minimum photo count and the weight. A column header overwrites the whole column.",
+    "admin.ltasks.desc":         "Configure the tasks for each supervisor's leaders: click a cell to toggle it and set the minimum photo count and the weight. A column header overwrites the whole column. Expand a supervisor's row to configure each leader individually.",
     "admin.ltasks.channel":      "Archive channel ID",
     "admin.ltasks.channelHint":  "Proof photos are relayed to this channel — the bot must be a channel admin (e.g. -1001234567890).",
     "admin.ltasks.save":         "Save",
