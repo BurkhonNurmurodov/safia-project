@@ -1617,3 +1617,21 @@ def add_activity_profile_key() -> None:
         print(f"[startup] user_activity profile_key migration skipped: {exc}")
     finally:
         db.close()
+
+
+def add_leader_task_setting_names() -> None:
+    """Per-supervisor task renames: leader_task_settings gains nullable
+    per-language name overrides (NULL = the global LeaderTaskDef name).
+    The per-LEADER override table (leader_task_leader_settings) is new and
+    comes from Base.metadata.create_all — no ALTER needed. Idempotent."""
+    db = SessionLocal()
+    try:
+        for col in ("name_uz", "name_uz_cyrl", "name_ru", "name_en"):
+            db.execute(text(
+                f"ALTER TABLE leader_task_settings ADD COLUMN IF NOT EXISTS {col} VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader_task_settings name columns migration skipped: {exc}")
+    finally:
+        db.close()
