@@ -813,11 +813,13 @@ class LeaderTaskLeaderSetting(Base):
 
 class LeaderTaskDay(Base):
     """One leader's in-bot checklist day. Created lazily on the first saved
-    task; closed_at set by «KUNNI YOPISH» after which entries are immutable and
-    the day (only then) surfaces on the /leaders dashboard — where a Google-
-    Sheet row for the same (leader, date) still wins over this one. The `date`
-    follows the 09:00 boundary: a day runs 09:01 → 09:00 next morning, so the
-    21:00 night shift stays on its starting date."""
+    task; closed_at set by «KUNNI YOPISH», or auto-set when a bygone open day
+    is finalized on the leader's next /tasks (its unanswered tasks recorded as
+    not-done, reason "-"). Once closed, entries are immutable and the day
+    surfaces on the /leaders dashboard — where a Google-Sheet row for the same
+    (leader, date) still wins over this one. The `date` follows the leader's
+    shift boundary (services/leader_tasks.effective_date): shift 1 is the plain
+    calendar day, shift 2 runs 17:00 → 16:59 next morning."""
     __tablename__ = "leader_task_days"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
