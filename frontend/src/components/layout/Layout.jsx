@@ -378,9 +378,23 @@ const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 function useRenderReady() {
   const fetching = useIsFetching();
   const started = useRef(false);
+  const forced = useRef(false);
 
+  // Hard deadline from mount. Readiness below depends on every query settling,
+  // and one query that retries forever (or polls) would hold the page "not
+  // ready" until the screenshot times out — a blank PNG instead of a late one.
+  // After this, whatever is on screen is what gets shot.
   useEffect(() => {
     if (!IS_RENDER) return;
+    const t = setTimeout(() => {
+      forced.current = true;
+      window.__RENDER_READY__ = true;
+    }, 12000);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!IS_RENDER || forced.current) return;
     if (fetching > 0) {
       started.current = true;
       window.__RENDER_READY__ = false;
