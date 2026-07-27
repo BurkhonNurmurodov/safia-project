@@ -88,6 +88,7 @@ try:
     add_broadcast_rich_columns()
     add_pp_product_op()
     add_downtime_ns_columns()
+    add_leader_task_setting_names()
     add_profile_identity_columns()
     add_activity_profile_key()
     migrate_multi_roles()
