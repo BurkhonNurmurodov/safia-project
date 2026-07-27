@@ -269,7 +269,21 @@ def _run(url: str, out_path: str, debug: bool = False, blind: bool = False) -> N
                     print(f"page state unavailable: {exc}", file=sys.stderr)
 
             page.wait_for_timeout(SETTLE_MS)
-            page.screenshot(path=out_path, full_page=True)
+            # full_page makes Chromium stitch the entire document in one pass —
+            # the step that timed out here. Resize the viewport to the content
+            # instead (capped) and take an ordinary viewport shot: same result,
+            # far cheaper, and a runaway document height can't turn into a
+            # gigapixel bitmap. Height query is skipped in blind mode, where the
+            # page's main thread may be exactly what's stuck.
+            if not blind:
+                try:
+                    height = page.evaluate(
+                        "Math.min(document.documentElement.scrollHeight, %d)" % MAX_HEIGHT)
+                    page.set_viewport_size({"width": width, "height": int(height) or height})
+                    page.wait_for_timeout(200)
+                except PlaywrightError as exc:
+                    print(f"warning: could not size viewport: {exc}", file=sys.stderr)
+            page.screenshot(path=out_path, timeout=SCREENSHOT_TIMEOUT_MS)
         finally:
             browser.close()
 
