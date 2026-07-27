@@ -271,9 +271,9 @@ def _run(url: str, out_path: str, debug: bool = False, blind: bool = False) -> N
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--debug"]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if len(args) != 2:
-        print("usage: python -m app.services.page_shot <url> <out.png> [--debug]",
-              file=sys.stderr)
+        print("usage: python -m app.services.page_shot <url> <out.png> "
+              "[--debug] [--blind]", file=sys.stderr)
         raise SystemExit(2)
-    _run(args[0], args[1], debug="--debug" in sys.argv)
+    _run(args[0], args[1], debug="--debug" in sys.argv, blind="--blind" in sys.argv)
