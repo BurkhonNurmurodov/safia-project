@@ -6767,6 +6767,8 @@ const t = {
     "admin.profiles.colWorkshop":    "Workshop name",
     "admin.profiles.colOwner":       "Leader",
     "admin.profiles.cellUnassigned": "Unassigned",
+    "admin.profiles.cellNoSupervisor": "No supervisor",
+    "admin.profiles.cellSupervisorFromOwner": "Inherited from the owner",
     "admin.profiles.verifixCodeRequired": "Verifix code is required",
     "admin.profiles.verifixRequired":"Verifix ID is required",
     "admin.profiles.verifixLabel":   "Verifix ID",
