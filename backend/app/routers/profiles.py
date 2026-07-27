@@ -352,6 +352,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
         "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
         "name_workshop_ru": c.name_workshop_ru,
         "name_workshop_en": c.name_workshop_en,
+        "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
         "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
     } for c in cell_rows]
     return out
