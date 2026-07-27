@@ -439,6 +439,7 @@ class CellPayload(BaseModel):
     name_workshop_uz_cyrl: Optional[str] = None
     name_workshop_ru:      Optional[str] = None
     name_workshop_en:      Optional[str] = None
+    manager_id:            Optional[int] = None   # supervisor unit; 0 = clear; None = untouched
     leader_id:             Optional[int] = None   # 0 = unassign; None = untouched
 
 
