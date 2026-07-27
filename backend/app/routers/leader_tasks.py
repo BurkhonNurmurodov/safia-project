@@ -43,6 +43,13 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .order_by(Manager.name)
         .all()
     )
+    leaders = (
+        db.query(RoleProfile)
+        .filter(RoleProfile.role == "leader", RoleProfile.manager_id.isnot(None))
+        .order_by(RoleProfile.name)
+        .all()
+    )
+    overrides = leader_overrides(db, [p.id for p in leaders])
     return {
         "tasks": [
             {
@@ -57,6 +64,15 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "settings": {
             str(m.id): {str(t): s for t, s in effective_settings(db, m.id).items()}
             for m in managers
+        },
+        "leaders": [
+            {"id": p.id, "name": p.name, "manager_id": p.manager_id} for p in leaders
+        ],
+        # Sparse RAW per-leader overrides (null field = inherit from the
+        # supervisor's effective value) — the matrix resolves the chain itself.
+        "leader_settings": {
+            str(lid): {str(t): s for t, s in by_task.items()}
+            for lid, by_task in overrides.items()
         },
         "channel": {"chat_id": channel_chat_id(db) or ""},
     }
