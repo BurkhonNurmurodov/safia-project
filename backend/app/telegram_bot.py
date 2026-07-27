@@ -2489,22 +2489,26 @@ def setup_webhook():
             types.BotCommand("start", "Boshlash / dashboard"),
             types.BotCommand("register", "Ro'yxatdan o'tish / yangi rol qo'shish"),
             types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
+            types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
         ],
         "ru": [
             types.BotCommand("start", "Запуск / дашборд"),
             types.BotCommand("register", "Регистрация / добавить роль"),
             types.BotCommand("tasks", "Ежедневные задачи (лидеры)"),
+            types.BotCommand("ojidaniya", "Снимок страницы «Ожидания»"),
         ],
         "en": [
             types.BotCommand("start", "Start / dashboard"),
             types.BotCommand("register", "Register / add a role"),
             types.BotCommand("tasks", "Daily tasks (leaders)"),
+            types.BotCommand("ojidaniya", "Snapshot of the Ojidaniya page"),
         ],
     }
     admin_menu = [
         types.BotCommand("start", "Boshlash / dashboard"),
         types.BotCommand("pending", "Kutilayotgan ro'yxatdan o'tishlar"),
         types.BotCommand("tasks", "Kunlik vazifalar (liderlar)"),
+        types.BotCommand("ojidaniya", "Ojidaniya sahifasi rasmi"),
     ]
     admin_ids = sorted(_admin_ids())
 
