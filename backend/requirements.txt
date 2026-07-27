@@ -17,5 +17,7 @@ httpx==0.28.1
 python-dotenv==1.0.1
 pyTelegramBotAPI==4.25.0
 # Headless Chromium for the bot's server-side page screenshots (/ojidaniya).
-# Needs `playwright install chromium` + the system libs — see app/services/page_shot.py.
-playwright==1.49.1
+# Needs `playwright install --only-shell chromium` — see app/services/page_shot.py.
+# NOT pinned to 1.49.x: that release hard-pins greenlet==3.1.1 and silently
+# downgrades the greenlet SQLAlchemy is already using. 1.50+ takes a range.
+playwright>=1.50,<2
