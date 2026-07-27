@@ -193,12 +193,14 @@ def list_tasks(
     other role toggled onto the page gets a read-only view of everything — as
     does anyone holding a personal ``page.view.tasks`` grant at "all"."""
     role = payload.get("role")
+    # A "see all" page grant widens READING to every board. It deliberately does
+    # not touch the reported `role` / `can_create`: what this person may create
+    # or edit is still their role's business, decided per row further down.
+    sees_all = page_scope_is_all(db, payload, "tasks")
     q = db.query(LeaderTask)
-    if page_scope_is_all(db, payload, "tasks"):
-        role = None                       # every board, like an admin's view
-    if role == "supervisor":
+    if role == "supervisor" and not sees_all:
         q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
-    elif role == "leader":
+    elif role == "leader" and not sees_all:
         # The person's whole queue, from whichever account they logged in with.
         pid = identity.viewer_leader_profile_id(db, payload)
         own = [LeaderTask.leader_profile_id == pid] if pid else []
