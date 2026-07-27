@@ -84,6 +84,9 @@ class CellIn(BaseModel):
     enabled: bool
     min_media: int
     weight: int
+    # Per-supervisor rename: value = override, "" or missing lang = inherit
+    # the global name. None = leave the stored names untouched.
+    names: dict[str, str] | None = None
 
 
 def _clamp(cell) -> tuple[int, int]:
@@ -91,7 +94,7 @@ def _clamp(cell) -> tuple[int, int]:
 
 
 def _upsert(db: Session, manager_id: int, task_id: int,
-            enabled: bool, min_media: int, weight: int):
+            enabled: bool, min_media: int, weight: int) -> LeaderTaskSetting:
     row = db.query(LeaderTaskSetting).filter_by(
         manager_id=manager_id, task_id=task_id).first()
     if not row:
@@ -100,6 +103,7 @@ def _upsert(db: Session, manager_id: int, task_id: int,
     row.enabled = enabled
     row.min_media = min_media
     row.weight = weight
+    return row
 
 
 @router.put("/admin/leader-tasks/cell")
@@ -109,7 +113,60 @@ def put_cell(cell: CellIn, db: Session = Depends(get_db), _: dict = Depends(veri
     if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
     mm, w = _clamp(cell)
-    _upsert(db, cell.manager_id, cell.task_id, cell.enabled, mm, w)
+    row = _upsert(db, cell.manager_id, cell.task_id, cell.enabled, mm, w)
+    if cell.names is not None:
+        for l in _LANGS:
+            setattr(row, f"name_{l}", (cell.names.get(l) or "").strip() or None)
+    db.commit()
+    return {"ok": True}
+
+
+class LeaderCellIn(BaseModel):
+    """Per-leader override. Null field = inherit from the supervisor's
+    effective value; reset=True drops the whole override row."""
+    leader_id: int
+    task_id: int
+    enabled: bool | None = None
+    min_media: int | None = None
+    weight: int | None = None
+    names: dict[str, str] | None = None
+    reset: bool = False
+
+
+@router.put("/admin/leader-tasks/leader-cell")
+def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
+                    _: dict = Depends(verify_admin)):
+    prof = db.query(RoleProfile).filter_by(id=cell.leader_id, role="leader").first()
+    if not prof:
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+
+    row = db.query(LeaderTaskLeaderSetting).filter_by(
+        leader_id=cell.leader_id, task_id=cell.task_id).first()
+
+    names = {
+        l: (cell.names.get(l) or "").strip() or None for l in _LANGS
+    } if cell.names is not None else {l: None for l in _LANGS}
+    all_inherit = (
+        cell.enabled is None and cell.min_media is None and cell.weight is None
+        and not any(names.values())
+    )
+    if cell.reset or all_inherit:
+        # Nothing overridden anymore — the row would be a no-op, drop it.
+        if row:
+            db.delete(row)
+            db.commit()
+        return {"ok": True}
+
+    if not row:
+        row = LeaderTaskLeaderSetting(leader_id=cell.leader_id, task_id=cell.task_id)
+        db.add(row)
+    row.enabled = cell.enabled
+    row.min_media = None if cell.min_media is None else max(0, min(20, int(cell.min_media)))
+    row.weight = None if cell.weight is None else max(0, min(100, int(cell.weight)))
+    for l in _LANGS:
+        setattr(row, f"name_{l}", names[l])
     db.commit()
     return {"ok": True}
 
