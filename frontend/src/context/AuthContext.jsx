@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
+import { IS_RENDER, RENDER_INIT_DATA } from "../utils/renderMode";
 
 const AuthContext = createContext(null);
 
