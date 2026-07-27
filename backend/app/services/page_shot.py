@@ -43,6 +43,10 @@ VIEWPORT = (1440, 1400)
 # __RENDER_READY__ when that is done; these bound the wait if it never does.
 READY_TIMEOUT_MS = 45_000
 SETTLE_MS = 900
+# Ceiling on the captured height. A dashboard runs a few thousand pixels; past
+# this something has gone wrong and we'd rather crop than stall the renderer.
+MAX_HEIGHT = 8000
+SCREENSHOT_TIMEOUT_MS = 60_000
 
 
 class ShotError(RuntimeError):
