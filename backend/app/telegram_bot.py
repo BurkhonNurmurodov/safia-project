@@ -1962,7 +1962,9 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
     prof = db.query(RoleProfile).filter_by(id=pid).first()
     if not prof:
         return False
-    date = effective_date(_lt_shift(db, prof))
+    shift = _lt_shift(db, prof)
+    date = effective_date(shift)
+    promote_due(db, shift, date)  # apply staged config due at this boundary
     day = _lt_day(db, pid, date)
     if day and day.closed_at:
         return False
