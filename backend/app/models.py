@@ -1149,6 +1149,11 @@ class ProfileCapability(Base):
       own → the profile's normal row scoping (supervisor→their unit,
             shift-manager→their shift); the grant only adds the action.
       all → admin reach: every unit, shift and date.
+
+    The ``page.view.<page>`` family stores PAGE access in the same rows: one
+    person may be given a page their role was never ticked for on the Access
+    matrix, and — on the pages whose data narrows to the viewer — ``scope``
+    says whether they read only their own rows or the whole factory.
     """
     __tablename__ = "profile_capabilities"
 
