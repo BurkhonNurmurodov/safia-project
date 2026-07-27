@@ -16,3 +16,6 @@ google-auth==2.36.0
 httpx==0.28.1
 python-dotenv==1.0.1
 pyTelegramBotAPI==4.25.0
+# Headless Chromium for the bot's server-side page screenshots (/ojidaniya).
+# Needs `playwright install chromium` + the system libs — see app/services/page_shot.py.
+playwright==1.49.1
