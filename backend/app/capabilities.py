@@ -190,6 +190,26 @@ def scope_is_all(db: Session, payload: dict, capability: str) -> bool:
     return cap_scope(db, payload, capability) == "all"
 
 
+def page_view_scope(db: Session, payload: dict, page: str) -> Optional[str]:
+    """``"own"`` / ``"all"`` if the caller holds a page-view grant for ``page``,
+    else None (their role × page access, if any, is untouched)."""
+    return cap_scope(db, payload, page_cap(page))
+
+
+def page_scope_is_all(db: Session, payload: dict, page: str) -> bool:
+    """True when this person's sight of ``page`` reaches every unit and shift.
+
+    The one question a scoped read endpoint asks before it applies its usual
+    viewer filters: a supervisor granted ``page.view.leaders`` at "all" reads
+    the whole factory's checklist, at "own" only their own unit's — the rows
+    they could already see, just on a page their role wasn't given.
+
+    Real admins always pass (``caller_caps`` hands them the whole catalog at
+    "all"), so a call site can use this alone instead of ``role == "admin"
+    or …``."""
+    return page_view_scope(db, payload, page) == "all"
+
+
 def capability_pages(db: Session, payload: dict) -> list[str]:
     """Page keys unlocked purely by the caller's capabilities.
 
