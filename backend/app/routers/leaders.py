@@ -165,7 +165,7 @@ def get_leaders(
             (r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
         )
 
-    if role == "leader":
+    if role == "leader" and not sees_all:
         # Scope a leader to their OWN rows by profile identity — from any of
         # their logins, and immune to the sheet's spelling of their name.
         # No confident match ⇒ no rows, never another leader's data.
