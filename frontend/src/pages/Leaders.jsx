@@ -1032,11 +1032,15 @@ export default function Leaders({ botMode = false }) {
 
   // Supervisors are locked to their own unit: the backend returns only their
   // rows, so they get no supervisor filter and no supervisor standings toggle.
-  const isSupervisor = auth?.role === "supervisor";
+  // A personal «Sahifalar ▸ Liderlar» grant at "all" is what lifts that lock —
+  // the backend then returns every unit's rows, so the page must offer the
+  // full set of filters to match (same for a widened leader).
+  const seesAllLeaders = seesAllOn("leaders");
+  const isSupervisor = auth?.role === "supervisor" && !seesAllLeaders;
   // A leader is locked to their OWN checklist rows (scoped server-side by name),
   // so they get no shift / supervisor / leader pickers and no standings toggle —
   // the page shows only their own monitoring.
-  const isLeader = auth?.role === "leader";
+  const isLeader = auth?.role === "leader" && !seesAllLeaders;
   const isAdmin = auth?.role === "admin";
   // The refresh button is shown to every profile that can open this page — the
   // backend allows the "leaders" sheet re-sync for anyone with page access, and
