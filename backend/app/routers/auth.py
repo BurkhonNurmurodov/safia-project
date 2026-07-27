@@ -132,19 +132,28 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             return {"status": "approved", "role": "admin", "full_name": dev_name, "token": token, "telegram_id": first_admin.telegram_id}
         return {"status": "not_registered"}
 
-    parsed = _validate_init_data(body.init_data)
-    if not parsed:
-        raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+    # Server-side page screenshot: a headless Chromium presents a bot-minted
+    # render token instead of initData. It names one Telegram id and nothing
+    # else, so everything below — admin check, role resolution, active profile —
+    # runs exactly as it would for that user's own login. No tg_name: the
+    # headless session must not touch the "who holds this profile" chips.
+    render_tid = read_init_data_render_token(body.init_data)
+    if render_tid is not None:
+        telegram_id, tg_name = render_tid, None
+    else:
+        parsed = _validate_init_data(body.init_data)
+        if not parsed:
+            raise HTTPException(status_code=401, detail="Invalid Telegram initData")
 
-    tg_user = parsed.get("user", {})
-    telegram_id = tg_user.get("id")
-    if not telegram_id:
-        raise HTTPException(status_code=400, detail="No user ID in initData")
-    # Telegram account name from initData — refreshed on every login so the
-    # admin profiles list can show who actually holds each profile.
-    tg_name = " ".join(
-        p for p in (tg_user.get("first_name"), tg_user.get("last_name")) if p
-    ).strip() or None
+        tg_user = parsed.get("user", {})
+        telegram_id = tg_user.get("id")
+        if not telegram_id:
+            raise HTTPException(status_code=400, detail="No user ID in initData")
+        # Telegram account name from initData — refreshed on every login so the
+        # admin profiles list can show who actually holds each profile.
+        tg_name = " ".join(
+            p for p in (tg_user.get("first_name"), tg_user.get("last_name")) if p
+        ).strip() or None
 
     admin_row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
     is_admin = admin_row is not None
