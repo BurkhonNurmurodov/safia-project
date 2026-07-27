@@ -3394,9 +3394,7 @@ def approvals_calendar(
       open      → the day has worker data but is not closed yet
       (absent)  → no worker data that day
     """
-    role = caller.get("role")
-    if role == "supervisor":
-        manager_id = caller.get("role_id")
+    manager_id = _staff_target_manager(db, caller, manager_id)
     if not manager_id:
         raise HTTPException(status_code=400, detail="manager_id required")
     if not _can_touch_manager(db, caller, manager_id):
