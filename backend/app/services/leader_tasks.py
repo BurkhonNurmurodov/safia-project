@@ -8,11 +8,13 @@ Base.metadata.create_all in both boot paths.
 """
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AppSetting, LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting,
-    LeaderTaskSetting,
+    AppSetting, LeaderTaskConfigAudit, LeaderTaskDef, LeaderTaskEntry,
+    LeaderTaskLeaderSetting, LeaderTaskPendingChange, LeaderTaskSetting,
+    Manager, RoleProfile,
 )
 
 CHANNEL_SETTING_KEY = "leader_tasks_channel"
