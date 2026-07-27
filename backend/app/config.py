@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # host-provided browser instead of spending account disk quota on
     # Playwright's own download (page_shot._launch tries this first).
     chrome_path: str = ""
+    # Interpreter for the screenshot subprocess. Blank → derived from sys.prefix
+    # (the venv), because Passenger's sys.executable pointed at a python without
+    # our dependencies. Set only if that derivation is ever wrong too.
+    render_python: str = ""
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
