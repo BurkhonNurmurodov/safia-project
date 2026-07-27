@@ -140,9 +140,11 @@ def render(d: dict, with_image: bool) -> str:
         f'<td align="right">{f"<mark>{fmt_n(v)}</mark>" if c == top_cat else fmt_n(v)}</td>'
         f'<td align="right">{pct(v, total)}</td></tr>'
         for c, v in d["cats"].items())
+    top3 = lambda c: ", ".join(n for n, _ in sorted(
+        d["per"].items(), key=lambda kv: -kv[1]["by_cat"].get(c, 0))[:3] if _["by_cat"].get(c, 0) > 0)
     actions = "\n".join(
         f'<li><input type="checkbox"/>{CAT_SHORT[c]} (<code>{c.removeprefix("Cat ")}</code>) '
-        f"bo'yicha chora — {escape(', '.join(n for n, _ in sorted(d['per'].items(), key=lambda kv: -kv[1]['by_cat'].get(c, 0))[:3]))} yacheykalari</li>'
+        f"bo'yicha chora — {escape(top3(c))} yacheykalari</li>"
         for c in list(d["cats"])[:2])
     ns_row = (f'<tr><td>«To\'xtamaganda» jami</td><td align="right">{fmt_n(d["total_ns"])} daq</td></tr>'
               if d["total_ns"] > 0 else "")
