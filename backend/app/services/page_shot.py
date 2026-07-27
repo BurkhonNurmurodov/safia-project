@@ -1,0 +1,142 @@
+"""Server-side screenshots of real SPA pages, for the bot's page commands.
+
+``capture()`` mints a render token (``app/render_token.py``), then shells out to
+this very module's ``__main__`` to drive a headless Chromium over the live page
+and returns the PNG bytes.
+
+Why a subprocess and not an in-process Playwright call:
+
+  * The bot's handlers run **inline inside the webhook request** (see the
+    threaded=False note in ``telegram_bot.py``). Playwright's sync API refuses
+    to start when an asyncio loop is already running on the thread, and its
+    async API would need the whole bot to be async. A subprocess sidesteps both.
+  * Chromium peaks around 400 MB. In-process that memory stays attached to a
+    long-lived Passenger worker; as a subprocess the OS reclaims all of it the
+    moment the shot is done.
+  * A Chromium that hangs or segfaults takes the subprocess down, not the web
+    worker — the timeout below turns it into a normal error reply.
+
+The page is loaded in "render mode" (``?render=<token>``), which the frontend
+uses to log in without Telegram initData, hide the app chrome, freeze
+animations, and expose ``window.__RENDER_READY__`` once its data has landed.
+See ``frontend/src/utils/renderMode.js``.
+"""
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+
+from app.config import settings
+from app.render_token import make_render_token
+
+logger = logging.getLogger(__name__)
+
+# Desktop-width shot: the dashboards lay out their KPI cards in a row here, so
+# the image reads like the page does on a laptop rather than a phone. The height
+# only seeds the viewport — the capture is full-page.
+VIEWPORT = (1440, 1400)
+
+# Chromium needs the page settled, not just loaded: React has to mount, the data
+# queries have to resolve and ApexCharts has to draw. The frontend flips
+# __RENDER_READY__ when that is done; these bound the wait if it never does.
+READY_TIMEOUT_MS = 45_000
+SETTLE_MS = 900
+
+
+class ShotError(RuntimeError):
+    """Raised when the screenshot could not be produced. The message is safe to
+    log; callers show the user a generic failure instead."""
+
+
+def page_url(path: str, telegram_id: int) -> str:
+    origin = settings.render_origin
+    if not origin:
+        raise ShotError("No render origin configured (set WEBAPP_URL or RENDER_BASE_URL)")
+    return f"{origin}{path}?render={make_render_token(telegram_id)}"
+
+
+def capture(path: str, telegram_id: int) -> bytes:
+    """PNG of ``path`` (e.g. "/downtime") rendered as the given Telegram user.
+
+    Raises ShotError with a diagnosable message on any failure — a missing
+    Chromium, a timeout, a crash, or a page that never signalled ready.
+    """
+    url = page_url(path, telegram_id)
+    fd, out = tempfile.mkstemp(prefix="pageshot-", suffix=".png")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "app.services.page_shot", url, out],
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            capture_output=True,
+            text=True,
+            timeout=settings.render_timeout_sec,
+        )
+        if proc.returncode != 0:
+            # stderr carries Playwright's own message — "Executable doesn't
+            # exist" when chromium was never installed, the missing .so when the
+            # system libraries are absent. Keep it: it is the whole diagnosis.
+            raise ShotError(
+                f"Screenshot subprocess failed (exit {proc.returncode}): "
+                f"{(proc.stderr or proc.stdout or '').strip()[-1500:]}"
+            )
+        with open(out, "rb") as fh:
+            data = fh.read()
+        if not data:
+            raise ShotError("Screenshot subprocess produced an empty file")
+        return data
+    except subprocess.TimeoutExpired:
+        raise ShotError(f"Screenshot timed out after {settings.render_timeout_sec}s")
+    except FileNotFoundError as exc:
+        raise ShotError(f"Screenshot subprocess could not start: {exc}")
+    finally:
+        try:
+            os.unlink(out)
+        except OSError:
+            pass
+
+
+# ── Subprocess entry point ────────────────────────────────────────────────────
+# Runs in its own interpreter: `python -m app.services.page_shot <url> <out.png>`
+# Importing playwright lazily here keeps the web process free of it entirely.
+
+def _run(url: str, out_path: str) -> None:
+    from playwright.sync_api import Error as PlaywrightError, sync_playwright
+
+    width, height = VIEWPORT
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            # --no-sandbox: shared/cPanel kernels routinely disallow user
+            # namespaces, and Chromium refuses to start without it there. The
+            # page we load is our own app, not untrusted content.
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"],
+        )
+        try:
+            ctx = browser.new_context(
+                viewport={"width": width, "height": height},
+                device_scale_factor=2,  # retina-sharp text in the Telegram photo
+                locale="ru-RU",
+            )
+            page = ctx.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=READY_TIMEOUT_MS)
+            try:
+                page.wait_for_function("window.__RENDER_READY__ === true",
+                                       timeout=READY_TIMEOUT_MS)
+            except PlaywrightError:
+                # Never signalled ready — a page that renders no queries, or one
+                # stuck on a slow fetch. Shoot what is on screen rather than
+                # failing outright; a partial page beats no reply.
+                print("warning: __RENDER_READY__ never became true", file=sys.stderr)
+            page.wait_for_timeout(SETTLE_MS)
+            page.screenshot(path=out_path, full_page=True)
+        finally:
+            browser.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("usage: python -m app.services.page_shot <url> <out.png>", file=sys.stderr)
+        raise SystemExit(2)
+    _run(sys.argv[1], sys.argv[2])
