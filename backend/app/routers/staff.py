@@ -860,7 +860,11 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
     ONLY new way in — every other caller goes through the original two checks
     (staff/daily page access, then admin-or-shift-manager) unchanged."""
     cleanup_scope = cap_scope(db, caller, CAP_CLEANUP)
-    if cleanup_scope is None:
+    # A staff/daily page grant at "all" is the unit picker's whole point: the
+    # person may read every unit's day, so they must be able to list the units.
+    sees_all_units = (page_scope_is_all(db, caller, "staff")
+                      or page_scope_is_all(db, caller, "daily"))
+    if cleanup_scope is None and not sees_all_units:
         if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
                                capability_pages(db, caller)):
             raise HTTPException(status_code=403, detail="Access denied")
