@@ -32,7 +32,19 @@ THE RULES, in one place:
 4. **Scope per grant.** ``own`` adds the action but keeps the profile's normal
    row scoping (supervisor → their unit, shift-manager → their shift). ``all``
    gives admin reach across every unit, shift and date. Guards ask
-   :func:`scope_is_all` when deciding whether to lift row filters.
+   :func:`scope_is_all` when deciding whether to lift row filters — or
+   :func:`page_scope_is_all` for the page-view family below.
+
+4b. **Page-view grants** (``page.view.<page>``). One entry per page in
+   ``permissions.PAGE_KEYS``, generated rather than hand-listed so a new page
+   is grantable the day it ships. They are what the role × page matrix cannot
+   express: they open a page for ONE person instead of every peer of their
+   role, and they carry the same ``own``/``all`` scope as any other capability
+   — ``own`` opens the page with the viewer's normal row scoping intact (a
+   supervisor still sees only their unit), ``all`` lifts it so the page reads
+   factory-wide. Only :data:`SCOPED_PAGES` narrow by viewer at all; the rest
+   are already factory-wide for anyone who can open them and are stored at
+   ``all``.
 
 5. **No escalation.** Two things are deliberately absent from the catalog and
    can never be granted: this permission system itself (only a real admin opens
