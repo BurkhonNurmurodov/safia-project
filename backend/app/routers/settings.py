@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.capabilities import caller_caps, capability_pages, capability_tabs
+from app.capabilities import caller_caps, capability_pages, capability_tabs, page_scopes
 from app.database import get_db
 from app.models import AppSetting
 from app.permissions import get_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
