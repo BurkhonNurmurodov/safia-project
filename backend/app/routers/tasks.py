@@ -190,9 +190,12 @@ def list_tasks(
     payload: dict = Depends(require_page("tasks")),
 ):
     """Admins see all tasks; supervisors their unit's; leaders their own. Any
-    other role toggled onto the page gets a read-only view of everything."""
+    other role toggled onto the page gets a read-only view of everything — as
+    does anyone holding a personal ``page.view.tasks`` grant at "all"."""
     role = payload.get("role")
     q = db.query(LeaderTask)
+    if page_scope_is_all(db, payload, "tasks"):
+        role = None                       # every board, like an admin's view
     if role == "supervisor":
         q = q.filter(LeaderTask.supervisor_manager_id == payload.get("role_id"))
     elif role == "leader":
