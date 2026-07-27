@@ -314,19 +314,49 @@ export default function ProfilesManagement({ cellsOnly = false }) {
   const roleChanged = modal?.mode === "edit" && form.role && form.role !== type;
   const effType = roleChanged ? form.role : type;
 
-  // Owned cell codes to submit — the badge chips plus any code still sitting
-  // in the input (so a typed-but-not-added code isn't silently dropped).
-  const pendingCell = (form.cellInput || "").trim();
-  const cellList = pendingCell && !(form.cells || []).includes(pendingCell)
-    ? [...(form.cells || []), pendingCell]
-    : (form.cells || []);
+  // Owned cell codes to submit — the multi-select selection is authoritative.
+  const cellList = form.cells || [];
 
-  function addCell() {
-    const code = (form.cellInput || "").trim();
-    if (!code) return;
-    setForm((f) => (f.cells || []).includes(code)
-      ? { ...f, cellInput: "" }
-      : { ...f, cells: [...(f.cells || []), code], cellInput: "" });
+  // Options for the leader cell picker: every UNASSIGNED cell (assigning one
+  // re-points its supervisor to this leader's unit), plus the leader's own
+  // current cells so they show ticked on edit. Labelled "code · workshop".
+  const leaderCellOpts = useMemo(() => {
+    const meId = modal?.item?.id;
+    const sel = new Set(form.cells || []);
+    return (data?.cells ?? [])
+      .filter((c) => !c.leader_id || c.leader_id === meId || sel.has(c.verifix_code))
+      .sort((a, b) => String(a.verifix_code).localeCompare(String(b.verifix_code), undefined, { numeric: true }))
+      .map((c) => {
+        const w = wname(c);
+        const label = w ? `${c.verifix_code} · ${w}` : c.verifix_code;
+        return { value: c.verifix_code, label, title: label };
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, modal, form.cells, lang]);
+
+  // Seed the inline cell-create modal with the code typed into the picker.
+  function openCellCreate(code) {
+    setNewCell({
+      verifix_code: (code || "").trim(), sap_code: "",
+      name_workshop_uz: "", name_workshop_uz_cyrl: "",
+      name_workshop_ru: "", name_workshop_en: "",
+    });
+    setNewCellError("");
+  }
+
+  function submitNewCell() {
+    const code = (newCell?.verifix_code || "").trim();
+    if (!code) { setNewCellError(t("admin.profiles.verifixCodeRequired")); return; }
+    inlineCellCreateMut.mutate({
+      verifix_code: code,
+      sap_code: newCell.sap_code || "",
+      name_workshop_uz: newCell.name_workshop_uz || "",
+      name_workshop_uz_cyrl: newCell.name_workshop_uz_cyrl || "",
+      name_workshop_ru: newCell.name_workshop_ru || "",
+      name_workshop_en: newCell.name_workshop_en || "",
+      manager_id: form.manager_id ? Number(form.manager_id) : 0,  // synced to the leader on save
+      leader_id: 0,
+    });
   }
 
   function submit() {
