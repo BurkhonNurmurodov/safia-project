@@ -198,7 +198,7 @@ class TaskIn(BaseModel):
     only LeaderTaskDef, never a supervisor row (decoupled from the bulk push)."""
     task_id: int
     names: dict[str, str | None] | None = None
-    note: dict[str, str] | None = None
+    note: dict[str, str | None] | None = None
     default_weight: int | None = None
     when: str = "now"
 
