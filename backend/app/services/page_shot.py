@@ -184,7 +184,11 @@ def _run(url: str, out_path: str, debug: bool = False, blind: bool = False) -> N
         try:
             ctx = browser.new_context(
                 viewport={"width": width, "height": height},
-                device_scale_factor=2,  # retina-sharp text in the Telegram photo
+                # 1, not 2. At 2x a 1440-wide full-page shot is a ~2880px-wide
+                # bitmap whose height is the whole document — enough to stall
+                # the renderer on a memory-capped cPanel account. Text at 1x and
+                # 1440px is still comfortably readable in Telegram.
+                device_scale_factor=1,
                 locale="ru-RU",
                 # Chromium advertises "HeadlessChrome" by default, which the
                 # host's Imunify360 WebShield treats as a bot — it answers with
