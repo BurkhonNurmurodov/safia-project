@@ -62,6 +62,7 @@ try:
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
+        add_leader_task_setting_names,
     )
     from app.telegram_bot import setup_webhook
 
