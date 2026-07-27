@@ -210,7 +210,11 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
     longer listed (leader_id → NULL — cells are first-class rows now, their
     sap_code/workshop names survive reassignment), claim or create the rest.
     A code owned by ANOTHER leader is a 409 — cells are unique, reassign it
-    from its current owner first."""
+    from its current owner first. A claimed/created cell inherits the leader's
+    supervisor unit; released rows keep their supervisor (a cell belongs to a
+    supervisor with or without a leader)."""
+    leader = db.query(RoleProfile).filter_by(id=leader_id).first()
+    mgr_id = leader.manager_id if leader else None
     want: list[str] = []
     for c in codes or []:
         c = " ".join((c or "").split())
@@ -233,8 +237,10 @@ def _set_leader_cells(db: Session, leader_id: int, codes: list[str]) -> None:
                        f"{owner.name if owner else 'another leader'}")
         if row:
             row.leader_id = leader_id
+            if mgr_id:
+                row.manager_id = mgr_id
         else:
-            db.add(Cell(verifix_code=code, leader_id=leader_id))
+            db.add(Cell(verifix_code=code, leader_id=leader_id, manager_id=mgr_id))
 
 
 def _release_leader_cells(db: Session, leader_id: int) -> None:
