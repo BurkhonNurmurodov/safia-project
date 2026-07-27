@@ -279,9 +279,12 @@ class RoleProfile(Base):
 
 class Cell(Base):
     """A production cell, first-class entity: Verifix code (unique), optional
-    SAP code and per-language workshop names, owned by at most one leader
-    profile (a leader can own several; leader_id NULL = unassigned — releasing
-    a cell keeps the row so its metadata survives reassignment)."""
+    SAP code and per-language workshop names, owned by a supervisor unit and,
+    optionally, by one leader profile (a leader can own several; leader_id NULL
+    = no leader — releasing a cell keeps the row so its metadata survives
+    reassignment). manager_id is the primary owner link: a cell always belongs
+    to a supervisor, with or without a leader. When a leader owns the cell its
+    supervisor follows that leader's unit (kept in sync in profiles.py)."""
     __tablename__ = "cells"
 
     id           = Column(Integer, primary_key=True, autoincrement=True)
@@ -292,6 +295,8 @@ class Cell(Base):
     name_workshop_uz_cyrl = Column(String, nullable=True)
     name_workshop_ru      = Column(String, nullable=True)
     name_workshop_en      = Column(String, nullable=True)
+    # Owning supervisor unit — a cell may belong to a supervisor with no leader.
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
     leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
 
 
