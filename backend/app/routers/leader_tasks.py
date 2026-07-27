@@ -122,18 +122,16 @@ def _upsert(db: Session, manager_id: int, task_id: int,
 
 
 @router.put("/admin/leader-tasks/cell")
-def put_cell(cell: CellIn, db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+def put_cell(cell: CellIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
     if not db.query(Manager).filter_by(id=cell.manager_id).first():
         raise HTTPException(status_code=404, detail="Unknown supervisor")
     if not db.query(LeaderTaskDef).filter_by(id=cell.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
-    mm, w = _clamp(cell)
-    row = _upsert(db, cell.manager_id, cell.task_id, cell.enabled, mm, w)
-    if cell.names is not None:
-        for l in _LANGS:
-            setattr(row, f"name_{l}", (cell.names.get(l) or "").strip() or None)
-    db.commit()
-    return {"ok": True}
+    payload = {"manager_id": cell.manager_id, "cells": [{
+        "task_id": cell.task_id, "enabled": cell.enabled,
+        "min_media": cell.min_media, "weight": cell.weight, "names": cell.names,
+    }]}
+    return write_change(db, "supervisor", payload, cell.when, _actor(admin))
 
 
 class LeaderCellIn(BaseModel):
