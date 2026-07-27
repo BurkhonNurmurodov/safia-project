@@ -39,6 +39,17 @@ import { useLang } from "../../context/LangContext";
  *                  is selected, e.g. "All categories" (optional)
  *   countLabel   – (n) => string; trigger text in `multiple` mode when 2+ options
  *                  are ticked. Defaults to the shared "n selected" key.
+ *   hideSelectAll – boolean; suppress the tri-state "select all" row in `multiple`
+ *                  mode (use when selecting every option would be nonsensical, e.g.
+ *                  assigning a pool of cells to one owner) (optional)
+ *   creatable    – boolean; render a sticky "create" row under the search box that
+ *                  calls `onCreate(query)` — for combobox-style pickers that also
+ *                  mint new options. Pair with `searchable` so the query seeds the
+ *                  new value (optional)
+ *   onCreate     – (query: string) => void; invoked by the creatable row, then the
+ *                  dropdown closes so the parent can open its create flow (optional)
+ *   createLabel  – (query: string) => node; label for the creatable row, e.g.
+ *                  q => `Create "${q}"`. Defaults to the raw query (optional)
  */
 export default function StyledSelect({
   value,
