@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Seconds to wait for one screenshot subprocess before giving up. Chromium
     # cold start is ~2 s, the page's own data fetches add a few more.
     render_timeout_sec: int = 75
+    # Path to a Chromium/Chrome already installed on the box. Set it to borrow a
+    # host-provided browser instead of spending account disk quota on
+    # Playwright's own download (page_shot._launch tries this first).
+    chrome_path: str = ""
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
