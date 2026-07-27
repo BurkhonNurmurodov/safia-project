@@ -204,7 +204,10 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             ar = next(r for r in approved if r.id == active_ref)
             active_role, active_role_id, active_name = ar.role, ar.role_id, ar.full_name
 
-        user.last_seen = datetime.now(timezone.utc)
+        # A headless screenshot is the server acting, not the person opening the
+        # app — it must not show up as activity on the Users-Activity dashboard.
+        if render_tid is None:
+            user.last_seen = datetime.now(timezone.utc)
         user.active_role_ref = active_ref
         db.commit()
 
