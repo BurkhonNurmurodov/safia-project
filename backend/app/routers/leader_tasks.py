@@ -82,8 +82,15 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             for lid, by_task in overrides.items()
         },
         "channel": {"chat_id": channel_chat_id(db) or ""},
+        # Staging: what's queued for a future day + the dates "next day"
+        # resolves to per shift (so the UI can label "applies from …").
+        "pending": pending_list(db),
+        "next_dates": {"1": next_effective_date(1), "2": next_effective_date(2)},
     }
 
+
+# Each config write takes an optional `when`: "now" (default, live) or
+# "next_day" (staged to the target's next shift boundary).
 
 class CellIn(BaseModel):
     manager_id: int
@@ -94,6 +101,7 @@ class CellIn(BaseModel):
     # Per-supervisor rename: value = override, "" or missing lang = inherit
     # the global name. None = leave the stored names untouched.
     names: dict[str, str] | None = None
+    when: str = "now"
 
 
 def _clamp(cell) -> tuple[int, int]:
