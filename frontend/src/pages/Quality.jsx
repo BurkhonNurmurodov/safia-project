@@ -432,7 +432,9 @@ export default function Quality() {
   // own data — no view / shift / brigadir switching, only the date range stays.
   // Their JWT role_id is their Manager.id, so resolve it to the canonical
   // platform name every matched row carries in r.sup.
-  const lockOwn = auth?.role === "supervisor";
+  // A personal «Sahifalar ▸ Sifat» grant at "all" is exactly the exception the
+  // lock exists for: that supervisor was given the whole register, so drop it.
+  const lockOwn = auth?.role === "supervisor" && !seesAllOn("quality");
   const myName = useMemo(
     () => (lockOwn ? (data?.supervisors?.find((s) => s.id === auth.role_id)?.name || "") : ""),
     [lockOwn, data, auth?.role_id]
