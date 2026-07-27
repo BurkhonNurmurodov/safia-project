@@ -411,6 +411,19 @@ export default function Layout({ children, title }) {
     });
   }
 
+  // Render mode: the screenshot should be the page, not a picture of the app
+  // frame. No sidebar, no header, no fixed-height scroll box — the document
+  // grows to its natural height so Chromium's full-page capture gets all of it
+  // (the normal shell scrolls INSIDE <main>, which a full-page shot can't see).
+  if (IS_RENDER) {
+    return (
+      <div className="min-h-screen p-4 md:p-6"
+           style={{ background: "var(--bg-base)", color: "var(--text-1)" }}>
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
       <Sidebar
