@@ -706,10 +706,38 @@ export default function ProfilesManagement({ cellsOnly = false }) {
                       ))}
                     </div>
                   </div>
+                  <FormField label={t("admin.profiles.colSupervisor")}>
+                    <StyledSelect
+                      value={form.manager_id || ""}
+                      onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
+                      disabled={!!form.leader_id}
+                      options={[
+                        { value: "", label: t("admin.profiles.cellNoSupervisor") },
+                        ...units.map((u) => ({ value: String(u.id), label: tl(u.name) })),
+                      ]}
+                    />
+                    {form.leader_id && (
+                      <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
+                        {t("admin.profiles.cellSupervisorFromOwner")}
+                      </p>
+                    )}
+                  </FormField>
                   <FormField label={t("admin.profiles.colOwner")}>
                     <StyledSelect
                       value={form.leader_id || ""}
-                      onChange={(v) => setForm((f) => ({ ...f, leader_id: v }))}
+                      onChange={(v) => setForm((f) => {
+                        // Owner is authoritative for the supervisor: picking a
+                        // leader inherits their unit; clearing keeps the cell's
+                        // current supervisor (a cell can be leaderless yet owned).
+                        const L = (data?.leaders ?? []).find((x) => String(x.id) === String(v));
+                        return {
+                          ...f,
+                          leader_id: v,
+                          manager_id: v
+                            ? (L?.manager_id ? String(L.manager_id) : f.manager_id)
+                            : f.manager_id,
+                        };
+                      })}
                       options={[
                         { value: "", label: t("admin.profiles.cellUnassigned") },
                         ...(data?.leaders ?? []).map((l) => ({ value: String(l.id), label: tl(l.name) })),
