@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Admin, Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile, TelegramUserRole
+from app.capabilities import page_scope_is_all
 from app.permissions import require_page
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
