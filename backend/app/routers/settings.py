@@ -69,10 +69,14 @@ def my_capabilities(db: Session = Depends(get_db), caller: dict = Depends(requir
 
     `pages` are the page keys these grants unlock on their own, so navigation
     can show a page the role × page matrix alone would hide; `tabs` are the
-    admin-panel tabs a non-admin grantee may open.
+    admin-panel tabs a non-admin grantee may open; `page_scopes` says, per
+    page-view grant, whether the person sees only their own rows ("own") or the
+    whole factory ("all") — the flag a page reads before pinning a supervisor
+    to their unit.
     """
     return {
-        "caps":  caller_caps(db, caller),
-        "pages": capability_pages(db, caller),
-        "tabs":  capability_tabs(db, caller),
+        "caps":        caller_caps(db, caller),
+        "pages":       capability_pages(db, caller),
+        "tabs":        capability_tabs(db, caller),
+        "page_scopes": page_scopes(db, caller),
     }
