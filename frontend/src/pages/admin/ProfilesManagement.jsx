@@ -513,6 +513,11 @@ export default function ProfilesManagement({ cellsOnly = false }) {
               <td className="px-3 py-2 font-mono text-[var(--text-2)] whitespace-nowrap">{item.sap_code || "—"}</td>
               <td className="px-3 py-2 text-[var(--text-2)]">{wname(item) || "—"}</td>
               <td className="px-3 py-2 break-words">
+                {item.supervisor
+                  ? <span className="text-[var(--text-2)]">{tl(item.supervisor)}</span>
+                  : <span style={{ color: "var(--text-4)" }}>—</span>}
+              </td>
+              <td className="px-3 py-2 break-words">
                 {item.leader
                   ? <span className="text-[var(--text-2)]">{tl(item.leader)}</span>
                   : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
