@@ -101,18 +101,50 @@ def capture(path: str, telegram_id: int) -> bytes:
 # Runs in its own interpreter: `python -m app.services.page_shot <url> <out.png>`
 # Importing playwright lazily here keeps the web process free of it entirely.
 
+# --no-sandbox: shared/cPanel kernels routinely disallow the user namespaces
+# Chromium's sandbox needs, and it refuses to start without this there. The page
+# we load is our own app, not untrusted content.
+LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"]
+
+
+def _launch(p):
+    """First Chromium that actually starts, cheapest first.
+
+    Disk quota is the binding constraint on cPanel, so we prefer builds that
+    take the least of it:
+
+      1. ``CHROME_PATH`` — a browser already on the box (a host-provided
+         chromium, a shared Chrome). Costs zero quota.
+      2. ``chromium-headless-shell`` — Playwright's headless-only build,
+         roughly a third of the full download. We never render headful, so
+         this is all we need: `playwright install --only-shell chromium`.
+      3. Full chromium — what `playwright install chromium` fetches.
+
+    Every attempt's error is kept, so a total failure reports all three reasons
+    instead of just the last one.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    attempts, errors = [], []
+    if settings.chrome_path:
+        attempts.append(("CHROME_PATH", {"executable_path": settings.chrome_path}))
+    attempts.append(("headless-shell", {"channel": "chromium-headless-shell"}))
+    attempts.append(("chromium", {}))
+
+    for label, kwargs in attempts:
+        try:
+            return p.chromium.launch(headless=True, args=LAUNCH_ARGS, **kwargs)
+        except PlaywrightError as exc:
+            errors.append(f"[{label}] {str(exc).strip()[:400]}")
+    raise ShotError("No usable Chromium. Tried:\n" + "\n".join(errors))
+
+
 def _run(url: str, out_path: str) -> None:
     from playwright.sync_api import Error as PlaywrightError, sync_playwright
 
     width, height = VIEWPORT
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            # --no-sandbox: shared/cPanel kernels routinely disallow user
-            # namespaces, and Chromium refuses to start without it there. The
-            # page we load is our own app, not untrusted content.
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--font-render-hinting=none"],
-        )
+        browser = _launch(p)
         try:
             ctx = browser.new_context(
                 viewport={"width": width, "height": height},
