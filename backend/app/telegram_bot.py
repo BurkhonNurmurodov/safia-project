@@ -1960,7 +1960,7 @@ def _lt_save_entry(db, pid: int, task_id: int, done: bool,
     prof = db.query(RoleProfile).filter_by(id=pid).first()
     if not prof:
         return False
-    date = effective_date()
+    date = effective_date(_lt_shift(db, prof))
     day = _lt_day(db, pid, date)
     if day and day.closed_at:
         return False
