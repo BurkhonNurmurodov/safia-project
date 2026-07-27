@@ -775,8 +775,6 @@ export default function AdminUpload() {
 
       {adminTab === "broadcast" && <Broadcast />}
 
-      {adminTab === "media" && <MediaViewer />}
-
       {adminTab === "cleanup" && <AttendanceCleanup />}
 
       {adminTab === "ltasks" && <LeaderTasksAdmin />}
