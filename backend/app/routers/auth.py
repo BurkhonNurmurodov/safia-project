@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Admin, Language, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole
+from app.render_token import read_init_data_render_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
