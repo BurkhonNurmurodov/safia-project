@@ -170,7 +170,12 @@ def _launch(p):
     raise ShotError("No usable Chromium. Tried:\n" + "\n".join(errors))
 
 
-def _run(url: str, out_path: str, debug: bool = False) -> None:
+def _run(url: str, out_path: str, debug: bool = False, blind: bool = False) -> None:
+    """blind: skip every page.evaluate() and just wait a fixed time before
+    shooting. page.evaluate() needs the page's JS main thread, so a pegged
+    thread hangs the very call that checks our deadline. Blind mode uses only
+    driver-side waits, which nothing the page does can block — it tells us
+    whether the main thread is stuck, and doubles as a fallback capture mode."""
     from playwright.sync_api import Error as PlaywrightError, sync_playwright
 
     width, height = VIEWPORT
