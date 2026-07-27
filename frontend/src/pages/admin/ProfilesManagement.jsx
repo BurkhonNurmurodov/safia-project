@@ -323,6 +323,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
         name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
         name_workshop_ru: form.name_workshop_ru || "",
         name_workshop_en: form.name_workshop_en || "",
+        manager_id: form.manager_id ? Number(form.manager_id) : 0,
         leader_id: form.leader_id ? Number(form.leader_id) : 0,
       };
       if (modal.mode === "add") cellCreateMut.mutate(body);
