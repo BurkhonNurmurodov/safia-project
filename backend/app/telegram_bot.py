@@ -1992,6 +1992,8 @@ def _lt_cmd(message: types.Message):
         if not profs:
             bot.send_message(message.chat.id, _lt(lang, "not_leader"))
             return
+        for p in profs:  # finalize any bygone open days before showing the menu
+            _lt_autoclose(db, p, _lt_shift(db, p))
         if len(profs) == 1:
             _lt_menu(db, tid, profs[0].id, lang, message.chat.id, None)
         else:
