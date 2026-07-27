@@ -395,10 +395,15 @@ export default function Permissions() {
                                 className="min-w-0 flex-1 text-left"
                               >
                                 <span className="block text-sm" style={{ color: "var(--text-1)" }}>
-                                  {t(`caps.${c.key}.label`)}
+                                  {c.page
+                                    ? t(PAGE_LABEL_KEYS[c.page] ?? `nav.${c.page}`)
+                                    : t(`caps.${c.key}.label`)}
                                 </span>
                                 <span className="block text-[11px]" style={{ color: "var(--text-4)" }}>
-                                  {t(`caps.${c.key}.hint`)}
+                                  {c.page
+                                    ? t(c.scoped ? "admin.perms.pageHintScoped"
+                                                 : "admin.perms.pageHint")
+                                    : t(`caps.${c.key}.hint`)}
                                 </span>
                               </button>
                               {/* Identity capabilities have no unit dimension to
