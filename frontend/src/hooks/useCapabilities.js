@@ -67,3 +67,7 @@ export const CAP = {
   PROFILES_MANAGE:   "admin.profiles.manage",
   CELLS_MANAGE:      "admin.cells.manage",
 };
+
+// Page-view grants are generated per page rather than listed, exactly as on the
+// backend — `page.view.<pageKey>` for every key in config/pages.js PAGES.
+export const pageCap = (pageKey) => `page.view.${pageKey}`;
