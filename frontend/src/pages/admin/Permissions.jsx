@@ -31,6 +31,12 @@ import { SkeletonBlock } from "../../components/ui/Skeleton";
  * Multi-select is the point: granting five supervisors the same power is one
  * pass, and saving sends a DIFF so each keeps whatever else they already held.
  *
+ * The «Sahifalar» group is the same mechanism applied to PAGE ACCESS: one row
+ * per page, so a page can be opened for ONE person without ticking their whole
+ * role on the Access matrix — and, on the pages whose data narrows to the
+ * viewer, with the scope selector deciding whether they read only their own
+ * rows or the entire factory.
+ *
  * Two deliberate omissions, enforced server-side too: this tab is itself never
  * grantable (handing out powers stays a real admin's job), and admin profiles
  * never appear in the tree — they already hold everything.
@@ -42,6 +48,7 @@ const GROUP_ICONS = {
   requests:   ClipboardCheck,
   attendance: CalendarClock,
   identity:   UserCog,
+  pages:      LayoutGrid,
 };
 
 // One fixed hue per group, matching the no-emoji soft-tint-chip convention.
@@ -49,7 +56,13 @@ const GROUP_TINTS = {
   requests:   "#3b82f6",
   attendance: "#22c55e",
   identity:   "#a855f7",
+  pages:      "#f97316",
 };
+
+// pageKey → its nav label key. Page-view capabilities are labelled from the
+// menu itself rather than from caps.<key>.label strings, so shipping a new page
+// makes it grantable with no new translation keys in any of the 4 languages.
+const PAGE_LABEL_KEYS = Object.fromEntries(PAGES.map((p) => [p.key, p.labelKey]));
 
 function GroupChip({ group, label }) {
   const Icon = GROUP_ICONS[group] ?? Shield;
