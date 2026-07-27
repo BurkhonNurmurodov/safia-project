@@ -114,8 +114,10 @@ def get_leaders(
     checklist rows; admins / shift-managers / top-managers see everything — as
     does anyone holding a personal ``page.view.leaders`` grant at "all"."""
     role = payload.get("role")
-    if page_scope_is_all(db, payload, "leaders"):
-        role = None     # factory-wide sight: skip both scoping passes below
+    # A personal "see all" page grant lifts both scoping passes below. The
+    # reported `role` stays the caller's own — it drives the page's layout, not
+    # its data — so a granted supervisor keeps their own view, widened.
+    sees_all = page_scope_is_all(db, payload, "leaders")
 
     rows = (
         db.query(LeaderChecklist)
