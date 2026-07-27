@@ -147,9 +147,12 @@ def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
     row = db.query(LeaderTaskLeaderSetting).filter_by(
         leader_id=cell.leader_id, task_id=cell.task_id).first()
 
-    names = {
-        l: (cell.names.get(l) or "").strip() or None for l in _LANGS
-    } if cell.names is not None else {l: None for l in _LANGS}
+    if cell.names is not None:
+        names = {l: (cell.names.get(l) or "").strip() or None for l in _LANGS}
+    elif row:  # names omitted — keep what's stored (mirrors put_cell)
+        names = {l: getattr(row, f"name_{l}") for l in _LANGS}
+    else:
+        names = {l: None for l in _LANGS}
     all_inherit = (
         cell.enabled is None and cell.min_media is None and cell.weight is None
         and not any(names.values())
