@@ -1847,10 +1847,47 @@ def _lt_day(db, pid: int, date: str) -> LeaderTaskDay | None:
     return db.query(LeaderTaskDay).filter_by(leader_id=pid, date=date).first()
 
 
+def _lt_shift(db, prof) -> int:
+    """The leader's shift (1 or 2) — their supervisor unit's shift. Drives the
+    checklist day boundary; falls back to shift 1 (calendar day) when unset."""
+    mgr = db.query(Manager).filter_by(id=prof.manager_id).first()
+    return mgr.shift if (mgr and mgr.shift in (1, 2)) else 1
+
+
 def _lt_entries(db, day: LeaderTaskDay | None) -> dict[int, LeaderTaskEntry]:
     if not day:
         return {}
     return {e.task_id: e for e in db.query(LeaderTaskEntry).filter_by(day_id=day.id).all()}
+
+
+def _lt_autoclose(db, prof, shift: int) -> None:
+    """Finalize the leader's PAST open days so nothing is silently lost. Any
+    enabled task left unanswered on a bygone day is recorded as not-done with
+    reason "-", then the day is closed and scored. The current day (per the
+    shift boundary) is never touched — the leader still closes that one."""
+    today = effective_date(shift)
+    stale = (
+        db.query(LeaderTaskDay)
+        .filter(
+            LeaderTaskDay.leader_id == prof.id,
+            LeaderTaskDay.date < today,
+            LeaderTaskDay.closed_at.is_(None),
+        )
+        .all()
+    )
+    if not stale:
+        return
+    cfg = effective_leader_config(db, prof)
+    now = datetime.now(timezone.utc)
+    for day in stale:
+        entries = _lt_entries(db, day)
+        for tid_, s in cfg.items():
+            if s["enabled"] and tid_ not in entries:
+                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid_, done=False, reason="-"))
+        db.flush()
+        day.closed_at = now
+        day.completion = compute_completion(cfg, list(_lt_entries(db, day).values()))
+    db.commit()
 
 
 def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):
