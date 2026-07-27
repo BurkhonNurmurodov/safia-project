@@ -210,6 +210,15 @@ def page_scope_is_all(db: Session, payload: dict, page: str) -> bool:
     return page_view_scope(db, payload, page) == "all"
 
 
+def page_scopes(db: Session, payload: dict) -> dict[str, str]:
+    """``{page: "own" | "all"}`` for every page-view grant the caller holds —
+    what the UI reads to decide whether to keep a supervisor pinned to their
+    own unit or offer them the whole factory's picker."""
+    held = caller_caps(db, payload)
+    return {c["page"]: held[c["key"]]
+            for c in CAPABILITIES if c["page"] and c["key"] in held}
+
+
 def capability_pages(db: Session, payload: dict) -> list[str]:
     """Page keys unlocked purely by the caller's capabilities.
 
