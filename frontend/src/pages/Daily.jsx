@@ -161,7 +161,11 @@ function SupervisorDaily() {
     "daily_selected_manager_id",
     () => (drillId ? Number(drillId) : null),
   );
-  const managerId = isSupervisor ? auth?.role_id : selectedManagerId;
+  const managerId = ownUnitOnly ? auth?.role_id : selectedManagerId;
+  // "A supervisor looking at their OWN day" — the condition every close-day
+  // control hangs off, so a widened supervisor browsing another unit reads it
+  // like a manager does instead of being offered a close they can't perform.
+  const ownDay = isSupervisor && managerId === auth?.role_id;
   const [date, setDate] = usePersistentState("daily_selected_date", () => drillDate || isoDaysAgo(1));
 
   // A drill-down navigation (new URL params) overrides any persisted selection.
