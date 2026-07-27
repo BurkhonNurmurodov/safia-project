@@ -36,23 +36,6 @@ class Settings(BaseSettings):
     # Telegram chat that receives boot-failure reports (the "Report the problem"
     # button on the recovery screen). Blank → falls back to the admins table.
     support_chat_id: str = ""
-    # Origin the headless Chromium loads when the bot screenshots a page
-    # (/ojidaniya & friends — see app/services/page_shot.py). Blank → webapp_url.
-    # Set it only if the app can be reached on the box by a URL that skips the
-    # hosting's anti-bot layer; otherwise the public URL is correct, and
-    # Chromium solves the JS challenge the way any real browser does.
-    render_base_url: str = ""
-    # Seconds to wait for one screenshot subprocess before giving up. Chromium
-    # cold start is ~2 s, the page's own data fetches add a few more.
-    render_timeout_sec: int = 75
-    # Path to a Chromium/Chrome already installed on the box. Set it to borrow a
-    # host-provided browser instead of spending account disk quota on
-    # Playwright's own download (page_shot._launch tries this first).
-    chrome_path: str = ""
-    # Interpreter for the screenshot subprocess. Blank → derived from sys.prefix
-    # (the venv), because Passenger's sys.executable pointed at a python without
-    # our dependencies. Set only if that derivation is ever wrong too.
-    render_python: str = ""
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
@@ -67,11 +50,6 @@ class Settings(BaseSettings):
     @property
     def admin_telegram_ids(self) -> list[int]:
         return [int(x) for x in self.admin_telegram_id.replace(" ", "").split(",") if x]
-
-    @property
-    def render_origin(self) -> str:
-        """Base URL the screenshot browser navigates to."""
-        return (self.render_base_url or self.webapp_url or "").rstrip("/")
 
     @property
     def webhook_secret(self) -> str:

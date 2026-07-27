@@ -152,22 +152,6 @@ body.sidebar-open { overflow: hidden; }
   .sidebar-ind { transition: none !important; }
 }
 
-/* ── Render mode ──────────────────────────────────────
-   The server screenshotting a page in headless Chromium
-   (utils/renderMode.js). Every animation and transition
-   is frozen at its END state so the capture can never
-   catch an element mid-fade, and the scrollbar is hidden
-   so it doesn't draw a grey strip down the PNG. */
-html.render-mode *,
-html.render-mode *::before,
-html.render-mode *::after {
-  animation-duration: 0s !important;
-  animation-delay: 0s !important;
-  transition-duration: 0s !important;
-  transition-delay: 0s !important;
-}
-html.render-mode { scrollbar-width: none; }
-html.render-mode::-webkit-scrollbar { display: none; }
 
 /* ── Checkboxes — bigger, gold when selected ──────────
    Custom-drawn so they look identical on every device /

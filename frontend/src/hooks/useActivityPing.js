@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import api from "../utils/api";
-import { IS_RENDER } from "../utils/renderMode";
 
 // Client heartbeat that powers the Users-Activity dashboard. While the app is
 // open and the tab/webview is visible it POSTs /api/activity/ping every
@@ -16,7 +15,6 @@ const PING_INTERVAL = 60_000;
 let lastPing = 0;
 
 function sendPing() {
-  if (IS_RENDER) return;                              // a server screenshot isn't a visit
   if (!localStorage.getItem("tg_token")) return;      // only when signed in
   if (document.visibilityState === "hidden") return;   // don't count idle tabs
   const now = Date.now();

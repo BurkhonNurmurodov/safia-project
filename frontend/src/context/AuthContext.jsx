@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
-import { IS_RENDER, RENDER_INIT_DATA } from "../utils/renderMode";
 
 const AuthContext = createContext(null);
 
@@ -13,20 +12,6 @@ export function AuthProvider({ children }) {
   const [countdown, setCountdown]     = useState(null); // null = not logging out
 
   useEffect(() => {
-    // Render mode: headless Chromium, no Telegram at all. The render token
-    // stands in for initData — none of the WebView checks below apply, and the
-    // "no initData in production" error screen must not fire.
-    if (IS_RENDER) {
-      api.post("/api/auth/webapp", { init_data: RENDER_INIT_DATA })
-        .then((res) => {
-          if (res.data.token) localStorage.setItem("tg_token", res.data.token);
-          setAuth(res.data);
-        })
-        .catch(() => setAuth({ status: "error" }))
-        .finally(() => setLoading(false));
-      return;
-    }
-
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();

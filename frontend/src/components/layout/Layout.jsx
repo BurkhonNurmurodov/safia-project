@@ -11,8 +11,6 @@ import SegmentedToggle from "../ui/SegmentedToggle";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
-import { useIsFetching } from "@tanstack/react-query";
-import { IS_RENDER } from "../../utils/renderMode";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -369,49 +367,9 @@ function SettingsButton() {
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
 const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 
-/** Render mode: tell the screenshot browser the page is done.
- *
- * "Done" is every react-query fetch settled — but the very first tick also has
- * zero in flight, before any query has started, so we wait for the count to
- * rise once first. The grace period is the escape hatch for a page that fetches
- * nothing at all. See app/services/page_shot.py for the other side. */
-function useRenderReady() {
-  const fetching = useIsFetching();
-  const started = useRef(false);
-  const forced = useRef(false);
-
-  // Hard deadline from mount. Readiness below depends on every query settling,
-  // and one query that retries forever (or polls) would hold the page "not
-  // ready" until the screenshot times out — a blank PNG instead of a late one.
-  // After this, whatever is on screen is what gets shot.
-  useEffect(() => {
-    if (!IS_RENDER) return;
-    const t = setTimeout(() => {
-      forced.current = true;
-      window.__RENDER_READY__ = true;
-    }, 12000);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    if (!IS_RENDER || forced.current) return;
-    if (fetching > 0) {
-      started.current = true;
-      window.__RENDER_READY__ = false;
-      return;
-    }
-    // Charts mount a frame after their data lands — give ApexCharts time to
-    // draw before declaring the page shootable.
-    const t = setTimeout(() => { window.__RENDER_READY__ = true; },
-                         started.current ? 600 : 4000);
-    return () => clearTimeout(t);
-  }, [fetching]);
-}
-
 export default function Layout({ children, title }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
-  useRenderReady();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
@@ -423,19 +381,6 @@ export default function Layout({ children, title }) {
       localStorage.setItem("sidebar_pinned", String(next));
       return next;
     });
-  }
-
-  // Render mode: the screenshot should be the page, not a picture of the app
-  // frame. No sidebar, no header, no fixed-height scroll box — the document
-  // grows to its natural height so Chromium's full-page capture gets all of it
-  // (the normal shell scrolls INSIDE <main>, which a full-page shot can't see).
-  if (IS_RENDER) {
-    return (
-      <div className="min-h-screen p-4 md:p-6"
-           style={{ background: "var(--bg-base)", color: "var(--text-1)" }}>
-        {children}
-      </div>
-    );
   }
 
   return (

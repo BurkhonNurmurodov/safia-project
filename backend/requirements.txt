@@ -16,14 +16,5 @@ google-auth==2.36.0
 httpx==0.28.1
 python-dotenv==1.0.1
 pyTelegramBotAPI==4.25.0
-# Headless Chromium for the bot's server-side page screenshots (/ojidaniya).
-# Install the browser with `playwright install --only-shell chromium` (~100 MB;
-# the full build is ~450 MB and we never render headful) — see page_shot.py.
-#
-# Pinned exactly, and it must stay that way: Playwright requires the library and
-# the downloaded browser build to match, so bumping this version silently
-# invalidates the installed shell and forces another ~100 MB download against a
-# tight cPanel disk quota. Side effect to know about: 1.49.x hard-pins
-# greenlet==3.1.1, so installing it downgrades greenlet. Harmless here — the app
-# uses SQLAlchemy synchronously, where greenlet is unused.
-playwright==1.49.1
+# Image rendering for the bot's /ojidaniya dashboard card.
+Pillow==11.0.0

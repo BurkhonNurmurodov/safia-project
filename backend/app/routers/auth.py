@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Admin, Language, RegistrationNotice, RoleProfile, TelegramUser, TelegramUserRole
-from app.render_token import read_init_data_render_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -133,28 +132,19 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             return {"status": "approved", "role": "admin", "full_name": dev_name, "token": token, "telegram_id": first_admin.telegram_id}
         return {"status": "not_registered"}
 
-    # Server-side page screenshot: a headless Chromium presents a bot-minted
-    # render token instead of initData. It names one Telegram id and nothing
-    # else, so everything below — admin check, role resolution, active profile —
-    # runs exactly as it would for that user's own login. No tg_name: the
-    # headless session must not touch the "who holds this profile" chips.
-    render_tid = read_init_data_render_token(body.init_data)
-    if render_tid is not None:
-        telegram_id, tg_name = render_tid, None
-    else:
-        parsed = _validate_init_data(body.init_data)
-        if not parsed:
-            raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+    parsed = _validate_init_data(body.init_data)
+    if not parsed:
+        raise HTTPException(status_code=401, detail="Invalid Telegram initData")
 
-        tg_user = parsed.get("user", {})
-        telegram_id = tg_user.get("id")
-        if not telegram_id:
-            raise HTTPException(status_code=400, detail="No user ID in initData")
-        # Telegram account name from initData — refreshed on every login so the
-        # admin profiles list can show who actually holds each profile.
-        tg_name = " ".join(
-            p for p in (tg_user.get("first_name"), tg_user.get("last_name")) if p
-        ).strip() or None
+    tg_user = parsed.get("user", {})
+    telegram_id = tg_user.get("id")
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="No user ID in initData")
+    # Telegram account name from initData — refreshed on every login so the
+    # admin profiles list can show who actually holds each profile.
+    tg_name = " ".join(
+        p for p in (tg_user.get("first_name"), tg_user.get("last_name")) if p
+    ).strip() or None
 
     admin_row = db.query(Admin).filter_by(telegram_id=telegram_id).first()
     is_admin = admin_row is not None
@@ -204,10 +194,7 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
             ar = next(r for r in approved if r.id == active_ref)
             active_role, active_role_id, active_name = ar.role, ar.role_id, ar.full_name
 
-        # A headless screenshot is the server acting, not the person opening the
-        # app — it must not show up as activity on the Users-Activity dashboard.
-        if render_tid is None:
-            user.last_seen = datetime.now(timezone.utc)
+        user.last_seen = datetime.now(timezone.utc)
         user.active_role_ref = active_ref
         db.commit()
 
@@ -250,9 +237,7 @@ def webapp_login(body: WebAppLoginRequest, db: Session = Depends(get_db)):
     # Active role: the one last used, as long as it is still approved
     active = next((r for r in approved if r.id == user.active_role_ref), approved[0])
 
-    # See the admin branch above — a render session leaves no activity trace.
-    if render_tid is None:
-        user.last_seen = datetime.now(timezone.utc)
+    user.last_seen = datetime.now(timezone.utc)
     user.active_role_ref = active.id
     user.tg_name = tg_name or user.tg_name
     db.commit()
