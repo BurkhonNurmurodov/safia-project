@@ -1897,7 +1897,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
     if not prof:
         bot.send_message(chat_id, _lt(lang, "expired"))
         return
-    date = effective_date()
+    date = effective_date(_lt_shift(db, prof))
     day = _lt_day(db, pid, date)
     entries = _lt_entries(db, day)
     cfg = effective_leader_config(db, prof)
