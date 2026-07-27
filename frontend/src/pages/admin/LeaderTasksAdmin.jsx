@@ -651,7 +651,13 @@ export default function LeaderTasksAdmin() {
     qc.invalidateQueries({ queryKey: ["ltasks-audit"] });
   };
   const ping = () => { setToast(t("admin.ltasks.saved")); setTimeout(() => setToast(""), 3000); };
-  const onErr = (e) => alert(e?.response?.data?.detail || t("admin.ltasks.fail"));
+  const onErr = (e) => {
+    const d = e?.response?.data?.detail;
+    const msg = Array.isArray(d)
+      ? d.map((x) => x?.msg || String(x)).join("; ")
+      : (typeof d === "string" && d) || t("admin.ltasks.fail");
+    alert(msg);
+  };
 
   const taskMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/task", b), onSuccess: () => { invalidate(); setEditTask(null); ping(); }, onError: onErr });
   const supMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/supervisor-batch", b), onSuccess: () => { invalidate(); setEditMid(null); ping(); }, onError: onErr });
