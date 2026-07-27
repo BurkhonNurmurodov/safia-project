@@ -94,9 +94,23 @@ def task_name(td: LeaderTaskDef, lang: str) -> str:
     }.get(lang) or td.name_uz
 
 
+def _row_names(row) -> dict[str, str | None]:
+    """The per-language name_* columns of a settings row as a dict."""
+    return {l: getattr(row, f"name_{l}") for l in _LANGS}
+
+
+def config_name(entry: dict, lang: str) -> str:
+    """Display name out of an effective-config entry's resolved `names`."""
+    names = entry.get("names") or {}
+    return names.get(lang) or names.get("uz") or ""
+
+
 def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
-    """task_id → {enabled, min_media, weight} for one supervisor: explicit
-    rows over virtual defaults (enabled, 1 photo, the seeded weight)."""
+    """task_id → {enabled, min_media, weight, names} for one supervisor:
+    explicit rows over virtual defaults (enabled, 1 photo, the seeded weight).
+    `names` are the RAW per-supervisor rename overrides (None = the global
+    LeaderTaskDef name) — the admin matrix needs the raw layer to show
+    divergence, so resolution stays with the caller."""
     defs = ensure_task_defs(db)
     rows = {
         s.task_id: s
@@ -109,6 +123,69 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             "enabled": s.enabled if s else True,
             "min_media": s.min_media if s else 1,
             "weight": s.weight if s else td.default_weight,
+            "names": _row_names(s) if s else {l: None for l in _LANGS},
+        }
+    return out
+
+
+def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, dict]]:
+    """leader_id → task_id → RAW override {enabled, min_media, weight, names}
+    (every field nullable; absent task = full inherit). Sparse — only stored
+    rows are returned."""
+    out: dict[int, dict[int, dict]] = {}
+    if not leader_ids:
+        return out
+    rows = (
+        db.query(LeaderTaskLeaderSetting)
+        .filter(LeaderTaskLeaderSetting.leader_id.in_(leader_ids))
+        .all()
+    )
+    for r in rows:
+        out.setdefault(r.leader_id, {})[r.task_id] = {
+            "enabled": r.enabled,
+            "min_media": r.min_media,
+            "weight": r.weight,
+            "names": _row_names(r),
+        }
+    return out
+
+
+def effective_leader_config(db: Session, prof) -> dict[int, dict]:
+    """task_id → {enabled, min_media, weight, names} fully RESOLVED for one
+    leader (RoleProfile): global catalog → supervisor override → leader
+    override, field by field. `names` here are the final display names per
+    language. This is what the bot's /tasks flow and day scoring run on."""
+    defs = ensure_task_defs(db)
+    sup = {
+        s.task_id: s
+        for s in db.query(LeaderTaskSetting)
+        .filter_by(manager_id=prof.manager_id).all()
+    } if prof.manager_id else {}
+    own = {
+        r.task_id: r
+        for r in db.query(LeaderTaskLeaderSetting)
+        .filter_by(leader_id=prof.id).all()
+    }
+    out = {}
+    for td in defs:
+        s, r = sup.get(td.id), own.get(td.id)
+        enabled = s.enabled if s else True
+        min_media = s.min_media if s else 1
+        weight = s.weight if s else td.default_weight
+        if r:
+            enabled = r.enabled if r.enabled is not None else enabled
+            min_media = r.min_media if r.min_media is not None else min_media
+            weight = r.weight if r.weight is not None else weight
+        names = {}
+        for l in _LANGS:
+            names[l] = (
+                (getattr(r, f"name_{l}", None) if r else None)
+                or (getattr(s, f"name_{l}", None) if s else None)
+                or getattr(td, f"name_{l}")
+            )
+        out[td.id] = {
+            "enabled": enabled, "min_media": min_media,
+            "weight": weight, "names": names,
         }
     return out
 
