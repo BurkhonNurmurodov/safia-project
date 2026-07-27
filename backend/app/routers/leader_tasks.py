@@ -246,7 +246,7 @@ class ColumnIn(BaseModel):
     enabled: bool
     min_media: int
     weight: int
-    names: dict[str, str] | None = None  # optional per-language rename
+    names: dict[str, str | None] | None = None  # optional per-language rename
 
 
 @router.put("/admin/leader-tasks/column")
