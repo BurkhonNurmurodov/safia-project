@@ -1866,6 +1866,7 @@ def _lt_autoclose(db, prof, shift: int) -> None:
     reason "-", then the day is closed and scored. The current day (per the
     shift boundary) is never touched — the leader still closes that one."""
     today = effective_date(shift)
+    promote_due(db, shift, today)  # apply staged config due at this boundary
     stale = (
         db.query(LeaderTaskDay)
         .filter(
