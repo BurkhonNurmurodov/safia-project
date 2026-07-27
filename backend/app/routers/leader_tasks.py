@@ -164,6 +164,83 @@ def put_leader_cell(cell: LeaderCellIn, db: Session = Depends(get_db),
     return write_change(db, "leader", payload, cell.when, _actor(admin))
 
 
+class TaskCellIn(BaseModel):
+    task_id: int
+    enabled: bool
+    min_media: int
+    weight: int
+    names: dict[str, str] | None = None
+
+
+class SupervisorBatchIn(BaseModel):
+    """All of one supervisor's task cells saved together (the batch editor) —
+    one apply, one audited change."""
+    manager_id: int
+    cells: list[TaskCellIn]
+    when: str = "now"
+
+
+@router.put("/admin/leader-tasks/supervisor-batch")
+def put_supervisor_batch(body: SupervisorBatchIn, db: Session = Depends(get_db),
+                         admin: dict = Depends(verify_admin)):
+    if not db.query(Manager).filter_by(id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    payload = {"manager_id": body.manager_id, "cells": [
+        {"task_id": c.task_id, "enabled": c.enabled, "min_media": c.min_media,
+         "weight": c.weight, "names": c.names}
+        for c in body.cells
+    ]}
+    return write_change(db, "supervisor", payload, body.when, _actor(admin))
+
+
+class TaskIn(BaseModel):
+    """Global task definition edit — names / notes / default weight. Touches
+    only LeaderTaskDef, never a supervisor row (decoupled from the bulk push)."""
+    task_id: int
+    names: dict[str, str] | None = None
+    note: dict[str, str] | None = None
+    default_weight: int | None = None
+    when: str = "now"
+
+
+@router.put("/admin/leader-tasks/task")
+def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    payload = {"task_id": body.task_id, "names": body.names, "note": body.note,
+               "default_weight": body.default_weight}
+    return write_change(db, "global_task", payload, body.when, _actor(admin))
+
+
+class ApplyAllIn(BaseModel):
+    task_id: int
+    enabled: bool
+    min_media: int
+    weight: int
+    when: str = "now"
+
+
+@router.put("/admin/leader-tasks/apply-all")
+def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
+                  admin: dict = Depends(verify_admin)):
+    """Push one task's enabled/photos/weight to EVERY supervisor. Decomposed
+    into a per-supervisor change each (shift-tagged) so a staged push flips at
+    each unit's own boundary; leader overrides are untouched."""
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    actor = _actor(admin)
+    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    for m in managers:
+        payload = {"manager_id": m.id, "cells": [{
+            "task_id": body.task_id, "enabled": body.enabled,
+            "min_media": body.min_media, "weight": body.weight, "names": None,
+        }]}
+        write_change(db, "supervisor", payload, body.when, actor)
+    return {"ok": True, "count": len(managers), "applied": body.when}
+
+
+# Legacy column overwrite (old matrix UI). Retained so a stale client keeps
+# working; the current UI uses /task + /apply-all instead. Live-only, unaudited.
 class ColumnIn(BaseModel):
     task_id: int
     enabled: bool
