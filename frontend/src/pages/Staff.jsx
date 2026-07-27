@@ -3507,7 +3507,7 @@ export default function Staff() {
 
   // Admins and shift-managers pick a supervisor to view. The backend scopes the
   // list to the shift-manager's own shift (admins see everyone).
-  const isManagerView = role === "admin" || role === "shift-manager";
+  const isManagerView = role === "admin" || role === "shift-manager" || seesAllUnits;
 
   const { data: supervisors = [] } = useQuery({
     queryKey: ["staff-supervisors"],
