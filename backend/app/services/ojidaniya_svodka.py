@@ -170,7 +170,7 @@ L = {
         "sec_brigs": "By brigadir — top {n}",
         "top_share": "The top {n} brigadirs account for <b>{p}</b> of the week's waiting ({v} min).",
         "th_brig": "Brigadir", "th_shift": "Shift", "th_flag": "50+ days", "th_cause": "Main cause",
-        "rest_summary": "Remaining {n} brigadirs",
+        "rest_summary": "Remaining brigadirs ({n})",
         "insight": "The biggest loss driver is “{label}” (<code>{code}</code>): {v} minutes, {p} of all waiting. The heaviest day was {d}, {wd}: {dv} minutes.",
         "cite": "Ojidaniya page, {range}",
         "sec_actions": "For next week",
