@@ -244,7 +244,11 @@ def _run(url: str, out_path: str, debug: bool = False, blind: bool = False) -> N
                     pass  # mid-navigation; the context is briefly gone
                 page.wait_for_timeout(250)
 
-            if not ready:
+            if blind:
+                # Driver-side sleep: unaffected by anything running in the page.
+                print("blind mode: waiting 10s, no page evaluation", file=sys.stderr)
+                page.wait_for_timeout(10_000)
+            elif not ready:
                 # Shoot what is on screen rather than failing outright — a
                 # partial page beats no reply, and the state below says why.
                 print("warning: __RENDER_READY__ never became true", file=sys.stderr)
