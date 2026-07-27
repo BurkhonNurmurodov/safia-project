@@ -2408,12 +2408,38 @@ def _ojidaniya_cmd(message: types.Message):
                                    get_page_access(db), capability_pages(db, payload)):
                 bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
                 return
-            png = render_downtime_card(db, payload, day, lang,
-                                       shift=_caller_shift(db, payload))
+            shift = _caller_shift(db, payload)
+            png = render_downtime_card(db, payload, day, lang, shift=shift)
+            # The week's svodka around the same day, same scoping. Built inside
+            # the session but sent after it; kpi_only=False so its tables agree
+            # with the card, which also shows every category.
+            svodka = None
+            try:
+                from app.services.ojidaniya_svodka import build_svodka
+                svodka = build_svodka(db, payload, day, lang=lang, shift=shift)
+            except Exception as exc:
+                logger.warning("Ojidaniya svodka build failed for %s: %s", tid, exc)
     except CardError as exc:
         logger.error("Ojidaniya card failed for %s: %s", tid, exc)
         bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
         return
+
+    # Rich mode first: the weekly tables with the day card embedded as the
+    # figure. Any sendRichMessage failure falls through to the plain document
+    # send so the command never goes silent (mirrors Broadcast's rich mode).
+    if svodka:
+        try:
+            from app.routers.broadcast import _tg_api
+            rich = {"html": svodka, "is_rtl": False,
+                    "media": [{"id": "scr1",
+                               "media": {"type": "photo", "media": "attach://f0"}}]}
+            _tg_api("sendRichMessage",
+                    {"chat_id": message.chat.id, "rich_message": json.dumps(rich)},
+                    {"f0": (f"ojidaniya-{day:%Y%m%d}.png", png)})
+            return
+        except Exception as exc:
+            logger.warning("sendRichMessage failed for %s, falling back to the "
+                           "document card: %s", tid, exc)
 
     # send_document, not send_photo: Telegram re-compresses photos and caps them
     # at 1280px, which turns the numbers to mush. As a document the PNG arrives
