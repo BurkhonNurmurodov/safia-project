@@ -35,6 +35,7 @@ from app.database import get_db
 from app.models import (
     LeaderTask, LeaderTaskComment, Manager, RoleProfile, TelegramUserRole,
 )
+from app.capabilities import page_scope_is_all
 from app.permissions import require_page
 from app.routers.auth import ADMIN_ROLE_REF
 # Shared notification helpers: _notify writes a single bell row; notify_profile
