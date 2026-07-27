@@ -680,6 +680,7 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
 // ── main page ────────────────────────────────────────────────────────────────
 export default function Production() {
   const { auth } = useAuth();
+  const { seesAllOn } = useCapabilities();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
