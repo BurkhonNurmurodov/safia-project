@@ -17,12 +17,14 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry, LeaderTaskMedia,
-    LeaderTaskSetting, Manager, RoleProfile,
+    AppSetting, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
+    LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting, Manager,
+    RoleProfile,
 )
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, channel_chat_id, effective_settings, ensure_task_defs,
+    leader_overrides,
 )
 
 router = APIRouter(tags=["leader-tasks"])
