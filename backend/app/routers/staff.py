@@ -874,7 +874,7 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
     vis = _visible_manager_ids(db, caller)  # None = all (admin); shift-managers see their shift only
     # A cleanup grant at "all" is admin reach by definition — the tab exists to
     # undo an upload that landed on the wrong unit, which needs every unit.
-    if cleanup_scope == "all":
+    if cleanup_scope == "all" or sees_all_units:
         vis = None
     if vis is not None:
         q = q.filter(Manager.id.in_(vis))
