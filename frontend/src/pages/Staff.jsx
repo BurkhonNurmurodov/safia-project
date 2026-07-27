@@ -3643,7 +3643,7 @@ export default function Staff() {
               />
             )}
             <DatePicker value={selectedDate} onChange={setSelectedDate} />
-            {canCreate && (
+            {canCreateHere && (
               <CreateMenu
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
