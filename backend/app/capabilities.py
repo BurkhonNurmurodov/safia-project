@@ -116,15 +116,21 @@ SCOPED_PAGES = ("staff", "daily", "production", "concerns", "tasks", "leaders", 
 #         that does nothing. What DOES bound them is the escalation rule —
 #         admin identities stay untouchable for anyone but a real admin.
 CAPABILITIES = [
-    {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True},
-    {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True},
-    {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True},
-    {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True},
-    {"key": CAP_DAY_REOPEN,        "group": "attendance", "pages": ["staff", "daily"], "tab": None,        "scoped": True},
-    {"key": CAP_CLEANUP,           "group": "attendance", "pages": [],                 "tab": "cleanup",   "scoped": True},
-    {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False},
-    {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False},
-    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "cells",     "scoped": False},
+    {"key": CAP_DOCUMENTS_APPROVE, "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
+    {"key": CAP_REQUESTS_APPROVE,  "group": "requests",   "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
+    {"key": CAP_ATTENDANCE_EDIT,   "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
+    {"key": CAP_ATTENDANCE_DELETE, "group": "attendance", "pages": ["staff"],          "tab": None,        "scoped": True,  "page": None},
+    {"key": CAP_DAY_REOPEN,        "group": "attendance", "pages": ["staff", "daily"], "tab": None,        "scoped": True,  "page": None},
+    {"key": CAP_CLEANUP,           "group": "attendance", "pages": [],                 "tab": "cleanup",   "scoped": True,  "page": None},
+    {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False, "page": None},
+    {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False, "page": None},
+    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "cells",     "scoped": False, "page": None},
+] + [
+    # Generated, in PAGE_KEYS order — the same order the nav and the "first
+    # accessible page" fallback use, so the Permissions tab reads like the menu.
+    {"key": page_cap(p), "group": "pages", "pages": [p], "tab": None,
+     "scoped": p in SCOPED_PAGES, "page": p}
+    for p in PAGE_KEYS
 ]
 
 # Capabilities whose stored scope is meaningless — normalised to "all" on save
