@@ -2212,9 +2212,10 @@ def _lt_photo(message: types.Message):
         k, need = len(cap.media), cap.min_media
         pid, task_id = cap.leader_id, cap.task_id
         chat, old_counter = cap.chat_id, cap.message_id
-        defs = {td.id: td for td in ensure_task_defs(db)}
-        td = defs.get(task_id)
-        tname = task_name(td, lang) if td else f"T{task_id}"
+        prof = db.query(RoleProfile).filter_by(id=pid).first()
+        cfg = effective_leader_config(db, prof) if prof else {}
+        entry = cfg.get(task_id)
+        tname = config_name(entry, lang) if entry else f"T{task_id}"
         kb = types.InlineKeyboardMarkup(row_width=1)
         if k >= need:
             kb.add(_lt_btn(_lt(lang, "btn_save"), f"lt:save:{pid}:{task_id}"))
