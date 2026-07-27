@@ -22,6 +22,7 @@ import Button from "../components/ui/Button";
 import EmptyState from "../components/ui/EmptyState";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
