@@ -2262,9 +2262,10 @@ def _lt_reason(message: types.Message):
             return
         pid, task_id = cap.leader_id, cap.task_id
         old_chat, old_mid = cap.chat_id, cap.message_id
-        defs = {td.id: td for td in ensure_task_defs(db)}
-        td = defs.get(task_id)
-        tname = task_name(td, lang) if td else f"T{task_id}"
+        prof = db.query(RoleProfile).filter_by(id=pid).first()
+        cfg = effective_leader_config(db, prof) if prof else {}
+        entry = cfg.get(task_id)
+        tname = config_name(entry, lang) if entry else f"T{task_id}"
         # Per spec: the prompt is DELETED and a fresh save/reset message is sent
         # so it lands below the leader's answer.
         try:
