@@ -3486,8 +3486,13 @@ export default function Staff() {
   // Deleting rows outright rather than filing a delete request: admins always,
   // plus anyone granted staff.attendance.delete. The backend re-checks both the
   // grant and its scope, so this only decides which modal wording appears.
-  const { can } = useCapabilities();
+  const { can, seesAllOn } = useCapabilities();
   const canDeleteRowsDirectly = role === "admin" || can(CAP.ATTENDANCE_DELETE);
+  // A personal page grant at "all" on Xodimlar / Kunlik (both read the same
+  // endpoints, so either counts) turns a supervisor into a manager-style
+  // viewer: the supervisor picker appears and their unit stops being a pin.
+  // It widens READING only — creating documents stays their own unit's job.
+  const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
   const [tab, setTab] = useState(role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and

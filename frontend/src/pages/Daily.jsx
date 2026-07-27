@@ -177,7 +177,7 @@ function SupervisorDaily() {
   const { data: supervisors = [] } = useQuery({
     queryKey: ["staff-supervisors"],
     queryFn: () => api.get("/api/staff/supervisors").then(r => r.data),
-    enabled: !isSupervisor,
+    enabled: !ownUnitOnly,
     staleTime: 120_000,
   });
   const selectedSupName = supervisors.find(s => s.manager_id === managerId)?.full_name || "";
@@ -199,7 +199,7 @@ function SupervisorDaily() {
   const { data: approval } = useQuery({
     queryKey: ["daily-approval", managerId, date],
     queryFn: () => api.get("/api/staff/approvals/day", {
-      params: { attend_date: date, ...(isSupervisor ? {} : { manager_id: managerId }) },
+      params: { attend_date: date, ...(ownUnitOnly ? {} : { manager_id: managerId }) },
     }).then(r => r.data),
     enabled,
   });
@@ -231,7 +231,7 @@ function SupervisorDaily() {
   }
 
   const idleRow  = downtime?.rows?.[0];
-  const dayDocs  = allDocs.filter(d => d.date === date && (isSupervisor || d.manager_id === managerId));
+  const dayDocs  = allDocs.filter(d => d.date === date && (ownUnitOnly || d.manager_id === managerId));
 
   // Day-close state machine: open → closed (waiting for request confirmation) → confirmed
   const dayState    = approval?.state;
@@ -251,7 +251,7 @@ function SupervisorDaily() {
           >
             <ArrowLeft size={15} /> {t("shiftDaily.back")}
           </button>
-        ) : !isSupervisor ? (
+        ) : !ownUnitOnly ? (
           <SupervisorSelect
             value={selectedManagerId}
             onChange={setSelectedManagerId}
@@ -289,7 +289,7 @@ function SupervisorDaily() {
                 </button>
               )}
             </>
-          ) : isSupervisor ? (
+          ) : ownDay ? (
             <button
               onClick={() => setShowCloseModal(true)}
               disabled={closeMut.isPending}
@@ -320,7 +320,7 @@ function SupervisorDaily() {
       </div>
 
       {/* Admin / shift-manager: prompt until a supervisor is chosen */}
-      {!managerId && !isSupervisor && (
+      {!managerId && !ownUnitOnly && (
         <div className="py-24 text-center text-sm rounded-xl"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-4)" }}>
           {t("staff.apprSelectSup")}
@@ -351,13 +351,13 @@ function SupervisorDaily() {
           </div>
           <div className="text-center max-w-md px-4">
             <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-1)" }}>
-              {isSupervisor ? t("daily.closeWarnTitle") : t("daily.adminOpenBanner")}
+              {ownDay ? t("daily.closeWarnTitle") : t("daily.adminOpenBanner")}
             </div>
             <div className="text-xs leading-relaxed" style={{ color: "var(--text-3)" }}>
-              {isSupervisor ? t("daily.closeWarnText") : t("daily.adminOpenBannerSub")}
+              {ownDay ? t("daily.closeWarnText") : t("daily.adminOpenBannerSub")}
             </div>
           </div>
-          {(isSupervisor || isAdmin) && (
+          {(ownDay || isAdmin) && (
             <button
               onClick={() => setShowCloseModal(true)}
               disabled={closeMut.isPending}
@@ -394,7 +394,7 @@ function SupervisorDaily() {
       <>
       {/* Performance metrics — speedometers, workload bars, funnel, trend */}
       <div className="mb-4">
-        <Section icon={BarChart2} title={isSupervisor ? t("daily.performanceTitle") : (selectedSupName || t("daily.performanceTitle"))}>
+        <Section icon={BarChart2} title={ownUnitOnly ? t("daily.performanceTitle") : (selectedSupName || t("daily.performanceTitle"))}>
           <SupervisorPerformance managerId={managerId} date={date} unit={unit} />
         </Section>
       </div>
@@ -491,7 +491,7 @@ function SupervisorDaily() {
       {/* Full attendance table — same component as Staff page Workers tab */}
       <div className="rounded-xl mb-4"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflow: "visible" }}>
-        <AttendanceTable managerId={managerId} selectedDate={date} pickSupervisor={!isSupervisor} />
+        <AttendanceTable managerId={managerId} selectedDate={date} pickSupervisor={!ownUnitOnly} />
       </div>
       </>
       )}
@@ -503,7 +503,7 @@ function SupervisorDaily() {
       {showDeleteModal && (
         <DeleteWorkersModal
           managerId={managerId}
-          managerName={isSupervisor ? (auth?.name || "") : selectedSupName}
+          managerName={ownUnitOnly ? (auth?.name || "") : selectedSupName}
           date={date}
           isAdmin={canDeleteRows}
           onClose={() => setShowDeleteModal(false)}
