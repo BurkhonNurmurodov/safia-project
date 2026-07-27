@@ -266,6 +266,44 @@ def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(v
     return {"ok": True}
 
 
+# ── Admin: staged changes + config audit ─────────────────────────────────────
+
+@router.get("/admin/leader-tasks/pending")
+def get_pending(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    promote_all_shifts(db)
+    return {"pending": pending_list(db)}
+
+
+class CancelIn(BaseModel):
+    pending_id: int
+
+
+@router.post("/admin/leader-tasks/pending/cancel")
+def post_cancel(body: CancelIn, db: Session = Depends(get_db),
+                admin: dict = Depends(verify_admin)):
+    if not cancel_pending(db, body.pending_id, _actor(admin)):
+        raise HTTPException(status_code=404, detail="Unknown pending change")
+    return {"ok": True}
+
+
+@router.get("/admin/leader-tasks/audit")
+def get_audit(limit: int = 200, db: Session = Depends(get_db),
+              _: dict = Depends(verify_admin)):
+    return {"audit": audit_list(db, min(500, max(1, limit)))}
+
+
+class RevertIn(BaseModel):
+    audit_id: int
+
+
+@router.post("/admin/leader-tasks/revert")
+def post_revert(body: RevertIn, db: Session = Depends(get_db),
+                admin: dict = Depends(verify_admin)):
+    if not revert_audit(db, body.audit_id, _actor(admin)):
+        raise HTTPException(status_code=400, detail="Nothing to revert")
+    return {"ok": True}
+
+
 # ── Admin: archive channel ────────────────────────────────────────────────────
 
 class ChannelIn(BaseModel):
