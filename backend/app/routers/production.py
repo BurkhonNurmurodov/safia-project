@@ -165,7 +165,8 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
         mgr = db.query(Manager).filter(Manager.id == mid, Manager.archived.is_(False)).first()
         if not mgr:
             raise HTTPException(status_code=404, detail=f"Manager {mid} not found")
-        if role == "shift-manager" and mgr.shift != _shift_manager_shift(payload, db):
+        if (role == "shift-manager" and not sees_all
+                and mgr.shift != _shift_manager_shift(payload, db)):
             raise HTTPException(status_code=403, detail="This unit is not in your shift")
         return mid
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
