@@ -56,6 +56,10 @@ export default function StyledSelect({
   multiple = false,
   allLabel,
   countLabel,
+  hideSelectAll = false,
+  creatable = false,
+  onCreate,
+  createLabel,
 }) {
   const { t } = useLang();
   const [open, setOpen]           = useState(false);
