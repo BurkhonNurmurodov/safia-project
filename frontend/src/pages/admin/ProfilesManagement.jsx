@@ -239,12 +239,12 @@ export default function ProfilesManagement({ cellsOnly = false }) {
 
   // name + holders + actions, plus the per-type extras.
   const colSpan = isCells
-    ? 5
+    ? 6
     : 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
 
   function openAdd() {
     if (isCells) {
-      setForm({ verifix_code: "", sap_code: "", leader_id: "",
+      setForm({ verifix_code: "", sap_code: "", manager_id: "", leader_id: "",
                 name_workshop_uz: "", name_workshop_uz_cyrl: "",
                 name_workshop_ru: "", name_workshop_en: "" });
     } else {
