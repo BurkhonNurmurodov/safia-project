@@ -180,6 +180,15 @@ def _run(url: str, out_path: str) -> None:
                 viewport={"width": width, "height": height},
                 device_scale_factor=2,  # retina-sharp text in the Telegram photo
                 locale="ru-RU",
+                # Chromium advertises "HeadlessChrome" by default, which the
+                # host's Imunify360 WebShield treats as a bot — it answers with
+                # a challenge page instead of the app, and the load never
+                # settles. We are rendering our OWN app, so present the ordinary
+                # desktop Chrome UA the same build would send headful.
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                ),
             )
             page = ctx.new_page()
 
