@@ -61,6 +61,11 @@ class Settings(BaseSettings):
         return [int(x) for x in self.admin_telegram_id.replace(" ", "").split(",") if x]
 
     @property
+    def render_origin(self) -> str:
+        """Base URL the screenshot browser navigates to."""
+        return (self.render_base_url or self.webapp_url or "").rstrip("/")
+
+    @property
     def webhook_secret(self) -> str:
         """The secret token registered with Telegram's setWebhook and verified on
         every incoming update. Uses an explicit telegram_webhook_secret when set,
