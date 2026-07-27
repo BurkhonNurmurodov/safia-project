@@ -172,7 +172,7 @@ L = {
         "th_brig": "Brigadir", "th_shift": "Shift", "th_flag": "50+ days", "th_cause": "Main cause",
         "rest_summary": "Remaining brigadirs ({n})",
         "insight": "The biggest loss driver is “{label}” (<code>{code}</code>): {v} minutes, {p} of all waiting. The heaviest day was {d}, {wd}: {dv} minutes.",
-        "cite": "Ojidaniya page, {range}",
+        "cite": "Idle Time page, {range}",
         "sec_actions": "For next week",
         "act_cat": "Action on “{label}” (<code>{code}</code>) — {names}",
         "act_review": "Review causes with brigadirs having 2 or more 50+ days",
