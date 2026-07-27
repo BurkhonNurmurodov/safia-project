@@ -219,7 +219,7 @@ def render(data: dict, day: date, lang: str = "ru", scope: str = "") -> bytes:
         draw.text((tx + 18, y + 44),
                   _ellipsize(draw, value, f_val, tile_w - 36), font=f_val, fill=color)
 
-    y += 120 + 20
+    y = body_top
 
     if empty:
         draw.text((PAD, y + 20), t["none"], font=_font(18), fill=TEXT_2)
