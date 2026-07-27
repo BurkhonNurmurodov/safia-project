@@ -1022,6 +1022,7 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
 // pages, two data sources, no refresh button (the DB needs no sync).
 export default function Leaders({ botMode = false }) {
   const { auth } = useAuth();
+  const { seesAllOn } = useCapabilities();
   const { lang } = useLang();
   const { tl } = useTranslit();
   // Person names everywhere on the page: transliterate, then soften SHOUTED
