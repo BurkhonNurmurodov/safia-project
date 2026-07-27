@@ -179,8 +179,8 @@ export default function ProfilesManagement({ cellsOnly = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, lang]);
 
-  const [colSel, setColSel] = useState({ verifix_code: [], sap_code: [], workshop: [], owner: [] });
-  const [colQ, setColQ] = useState({ verifix_code: "", sap_code: "", workshop: "", owner: "" });
+  const [colSel, setColSel] = useState({ verifix_code: [], sap_code: [], workshop: [], supervisor: [], owner: [] });
+  const [colQ, setColQ] = useState({ verifix_code: "", sap_code: "", workshop: "", supervisor: "", owner: "" });
 
   // The funnel node handed to each cells <Th> — search box (for long lists) over
   // a checkbox list of distinct values, both from the shared filter templates.
