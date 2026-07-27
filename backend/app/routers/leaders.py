@@ -111,8 +111,11 @@ def get_leaders(
     client-side, mirroring the original Apps Script dashboard. A supervisor is
     scoped server-side to their own unit's rows so they can never read another
     brigadir's data via the raw API; a leader is likewise scoped to their own
-    checklist rows; admins / shift-managers / top-managers see everything."""
+    checklist rows; admins / shift-managers / top-managers see everything — as
+    does anyone holding a personal ``page.view.leaders`` grant at "all"."""
     role = payload.get("role")
+    if page_scope_is_all(db, payload, "leaders"):
+        role = None     # factory-wide sight: skip both scoping passes below
 
     rows = (
         db.query(LeaderChecklist)
