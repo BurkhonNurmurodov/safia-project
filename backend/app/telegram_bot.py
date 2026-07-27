@@ -2437,8 +2437,11 @@ def _ojidaniya_cmd(message: types.Message):
     tid = message.from_user.id
     lang = _get_lang(tid)
 
-    # Optional date argument: /ojidaniya 2026-07-25 (also accepts 25.07.2026).
-    day = datetime.now().date()
+    # Default to yesterday: today's Ojidaniya numbers are still mid-collection
+    # and always incomplete, so the caller wants the last complete day.
+    # Optional date argument: /ojidaniya 2026-07-25 (also accepts 25.07.2026)
+    # overrides this and shows exactly the requested day.
+    day = datetime.now().date() - timedelta(days=1)
     parts = (message.text or "").split()
     if len(parts) > 1:
         for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
