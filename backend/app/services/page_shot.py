@@ -86,11 +86,12 @@ def capture(path: str, telegram_id: int) -> bytes:
     Chromium, a timeout, a crash, or a page that never signalled ready.
     """
     url = page_url(path, telegram_id)
+    python = _interpreter()
     fd, out = tempfile.mkstemp(prefix="pageshot-", suffix=".png")
     os.close(fd)
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "app.services.page_shot", url, out],
+            [python, "-m", "app.services.page_shot", url, out],
             cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             capture_output=True,
             text=True,
