@@ -169,6 +169,14 @@ export default function Permissions() {
   const allKeys = useMemo(() => collectLeafKeys(tree), [tree]);
   const chosen = selected.map((k) => byKey[k]).filter(Boolean);
 
+  /** Human label for a capability id — page grants read as «Sahifalar · Ishlab
+   *  chiqarish» so the audit log never shows a bare page name next to actions. */
+  function capLabel(key) {
+    const meta = capabilities.find((c) => c.key === key);
+    if (!meta?.page) return t(`caps.${key}.label`);
+    return `${t("admin.perms.group.pages")} · ${t(PAGE_LABEL_KEYS[meta.page] ?? `nav.${meta.page}`)}`;
+  }
+
   /** Current state of a capability across the selection, with the draft on top. */
   function capState(key) {
     if (key in draft) return draft[key] == null ? "off" : "on";
