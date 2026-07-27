@@ -259,6 +259,7 @@ export default function ProfilesManagement({ cellsOnly = false }) {
       setForm({
         verifix_code: item.verifix_code || "",
         sap_code: item.sap_code || "",
+        manager_id: item.manager_id ? String(item.manager_id) : "",
         leader_id: item.leader_id ? String(item.leader_id) : "",
         name_workshop_uz: item.name_workshop_uz || "",
         name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
