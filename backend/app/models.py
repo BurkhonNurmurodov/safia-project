@@ -882,6 +882,54 @@ class LeaderTaskMedia(Base):
     pos        = Column(Integer, nullable=False, default=0)
 
 
+class LeaderTaskPendingChange(Base):
+    """A config edit STAGED to take effect from a future checklist day
+    ("apply from next day"). The live config tables (leader_task_settings /
+    _leader_settings / _defs) always mean "in effect right now" — the bot and
+    scoring never learn about staging — so a staged edit sits here until the
+    day boundary, when the first bot request that observes the new date
+    promotes it (services.leader_tasks.promote_due, lazy: there is no
+    scheduler). `shift` tags which day boundary applies — a supervisor/leader
+    change carries its unit's shift (1 = midnight, 2 = 17:00) so it flips
+    exactly at that shift's rollover; a global_task change (names / default
+    weight, cosmetic or rarely-governing) is shift-agnostic (NULL) and promotes
+    at the first crossing. One pending change per target — re-staging the same
+    target replaces it (handled in stage_change)."""
+    __tablename__ = "leader_task_pending_changes"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    kind           = Column(String, nullable=False)   # supervisor | leader | global_task
+    task_id        = Column(Integer, nullable=True)   # NULL for a supervisor batch
+    manager_id     = Column(Integer, nullable=True, index=True)
+    leader_id      = Column(Integer, nullable=True, index=True)
+    shift          = Column(Integer, nullable=True)   # 1 | 2, NULL = shift-agnostic
+    effective_date = Column(String(10), nullable=False, index=True)  # ISO, ≥ tomorrow
+    payload        = Column(JSONB, nullable=False)    # exact apply-function args
+    created_by     = Column(String, nullable=True)    # admin profile key / name
+    created_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LeaderTaskConfigAudit(Base):
+    """Append-only history of every leader-task CONFIG change (not submissions).
+    This config sets people's KPI scores, so edits need receipts: who changed
+    what, when, and the before→after so the History drawer can show it and
+    Revert can restore it. `action` covers the staged lifecycle too."""
+    __tablename__ = "leader_task_config_audit"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    ts         = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    actor      = Column(String, nullable=True)   # admin profile key / name
+    # scheduled | applied | cancelled | superseded | reverted | failed
+    action     = Column(String, nullable=False)
+    kind       = Column(String, nullable=False)  # supervisor | leader | global_task
+    task_id    = Column(Integer, nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)
+    leader_id  = Column(Integer, nullable=True, index=True)
+    effective_date = Column(String(10), nullable=True)   # set for scheduled/applied
+    before     = Column(JSONB, nullable=True)    # payload-shaped prior state
+    after      = Column(JSONB, nullable=True)    # payload-shaped new state
+
+
 class UserActivity(Base):
     """One row per (Telegram account, calendar day) — a rolling daily usage
     aggregate that powers the Users-Activity dashboard (active users, average
