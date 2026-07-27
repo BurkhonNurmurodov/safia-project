@@ -4974,6 +4974,8 @@ const t = {
     "admin.profiles.colWorkshop":    "Название цеха",
     "admin.profiles.colOwner":       "Лидер",
     "admin.profiles.cellUnassigned": "Не закреплена",
+    "admin.profiles.cellNoSupervisor": "Без бригадира",
+    "admin.profiles.cellSupervisorFromOwner": "Наследуется от лидера",
     "admin.profiles.verifixCodeRequired": "Введите Verifix код",
     "admin.profiles.verifixRequired":"Введите Verifix ID",
     "admin.profiles.verifixLabel":   "Verifix ID",
