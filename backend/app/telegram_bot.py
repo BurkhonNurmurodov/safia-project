@@ -1885,7 +1885,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
                 continue
             e = entries.get(td_id)
             mark = "✅ " if (e and e.done) else ("❌ " if e else "")
-            kb.add(_lt_btn(f"{mark}{task_name(defs[td_id], lang)}", f"lt:task:{pid}:{td_id}"))
+            kb.add(_lt_btn(f"{mark}{config_name(s, lang)}", f"lt:task:{pid}:{td_id}"))
         kb.add(_lt_btn(_lt(lang, "btn_back"), f"lt:back:{pid}"))
         kb.add(_lt_btn(_lt(lang, "btn_close_day"), f"lt:close:{pid}"))
 
