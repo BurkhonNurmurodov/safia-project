@@ -229,8 +229,8 @@ def _run(url: str, out_path: str, debug: bool = False) -> None:
             # be extended by anything the page does.
             ready_timeout = (READY_TIMEOUT_MS if not debug else 15_000) / 1000
             deadline = time.monotonic() + ready_timeout
-            ready = False
-            while time.monotonic() < deadline:
+            ready = blind  # --blind: never ask the page anything (see below)
+            while not ready and time.monotonic() < deadline:
                 try:
                     if page.evaluate("window.__RENDER_READY__ === true"):
                         ready = True
