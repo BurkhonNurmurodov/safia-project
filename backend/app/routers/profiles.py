@@ -452,12 +452,25 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
         val = getattr(payload, col)
         if val is not None:
             setattr(row, col, val.strip() or None)
+    # Supervisor unit: 0 clears, a positive id must be a real managers row.
+    # Applied before the leader so an owner (below) can override it.
+    if payload.manager_id is not None:
+        if payload.manager_id:
+            if not db.query(Manager).filter_by(id=payload.manager_id).first():
+                raise HTTPException(status_code=400, detail="Supervisor unit not found")
+            row.manager_id = payload.manager_id
+        else:
+            row.manager_id = None
     if payload.leader_id is not None:
         if payload.leader_id:
             p = db.query(RoleProfile).filter_by(id=payload.leader_id, role="leader").first()
             if not p:
                 raise HTTPException(status_code=400, detail="Leader profile not found")
             row.leader_id = payload.leader_id
+            # A cell inherits its owning leader's supervisor — the leader is
+            # authoritative, overriding any manager_id in the same payload.
+            if p.manager_id:
+                row.manager_id = p.manager_id
         else:
             row.leader_id = None
 
