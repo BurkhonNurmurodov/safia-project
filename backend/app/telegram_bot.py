@@ -112,8 +112,8 @@ _MESSAGES = {
         "admin_role_added":  "✅ Yangi rol qo'shildi va tasdiqlandi. Web ilovada profilni almashtirib turing.",
         "add_role_hint":     "➕ Yana bir rol qo'shmoqchimisiz? Quyidagi tugma orqali yangi rol uchun ro'yxatdan o'ting.",
         "unknown_command":   "Boshlash uchun /start ni bosing.",
-        "shot_working":      "🖼 Sahifa rasmi tayyorlanmoqda…",
-        "shot_failed":       "❌ Sahifa rasmini olishning iloji bo'lmadi. Birozdan so'ng qayta urinib ko'ring.",
+        "shot_failed":       "❌ Rasmni tayyorlab bo'lmadi. Birozdan so'ng qayta urinib ko'ring.",
+        "shot_bad_date":     "📅 Sanani YYYY-MM-DD ko'rinishida yuboring, masalan: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 Sizda bu sahifaga ruxsat yo'q.",
         "adminreg_choose":   "👤 Admin profilini tanlang:",
         "adminreg_none":     "Bo'sh admin profillari yo'q.",
@@ -186,8 +186,8 @@ _MESSAGES = {
         "admin_role_added":  "✅ Янги рол қўшилди ва тасдиқланди. Web иловада профилни алмаштириб туринг.",
         "add_role_hint":     "➕ Яна бир рол қўшмоқчимисиз? Қуйидаги тугма орқали янги рол учун рўйхатдан ўтинг.",
         "unknown_command":   "Бошлаш учун /start ни босинг.",
-        "shot_working":      "🖼 Саҳифа расми тайёрланмоқда…",
-        "shot_failed":       "❌ Саҳифа расмини олишнинг иложи бўлмади. Бироздан сўнг қайта уриниб кўринг.",
+        "shot_failed":       "❌ Расмни тайёрлаб бўлмади. Бироздан сўнг қайта уриниб кўринг.",
+        "shot_bad_date":     "📅 Санани YYYY-MM-DD кўринишида юборинг, масалан: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 Сизда бу саҳифага рухсат йўқ.",
         "adminreg_choose":   "👤 Админ профилини танланг:",
         "adminreg_none":     "Бўш админ профиллари йўқ.",
@@ -260,8 +260,8 @@ _MESSAGES = {
         "admin_role_added":  "✅ Новая роль добавлена и подтверждена. Переключайте профиль в веб-приложении.",
         "add_role_hint":     "➕ Хотите добавить ещё одну роль? Зарегистрируйтесь на новую роль с помощью кнопки ниже.",
         "unknown_command":   "Отправьте /start для начала.",
-        "shot_working":      "🖼 Готовлю снимок страницы…",
-        "shot_failed":       "❌ Не удалось сделать снимок страницы. Попробуйте чуть позже.",
+        "shot_failed":       "❌ Не удалось построить изображение. Попробуйте чуть позже.",
+        "shot_bad_date":     "📅 Укажите дату как YYYY-MM-DD, например: /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 У вас нет доступа к этой странице.",
         "adminreg_choose":   "👤 Выберите админ-профиль:",
         "adminreg_none":     "Нет свободных админ-профилей.",
@@ -334,8 +334,8 @@ _MESSAGES = {
         "admin_role_added":  "✅ New role added and approved. Switch between profiles in the web app.",
         "add_role_hint":     "➕ Want to add another role? Use the button below to register for a new role.",
         "unknown_command":   "Send /start to begin.",
-        "shot_working":      "🖼 Preparing a snapshot of the page…",
-        "shot_failed":       "❌ Couldn't capture the page. Please try again in a moment.",
+        "shot_failed":       "❌ Couldn't build the image. Please try again in a moment.",
+        "shot_bad_date":     "📅 Use a date like YYYY-MM-DD, e.g. /ojidaniya 2026-07-25",
         "shot_no_access":    "🚫 You don't have access to this page.",
         "adminreg_choose":   "👤 Select an admin profile:",
         "adminreg_none":     "No available admin profiles.",
@@ -2338,22 +2338,17 @@ def _file_id_echo(message: types.Message):
         logger.warning("Failed to echo file_id to %s", message.from_user.id, exc_info=True)
 
 
-# ── Page screenshots ──────────────────────────────────────────────────────────
-# `/ojidaniya` answers with a PNG of the real /downtime page, rendered server-
-# side in headless Chromium as the caller's own profile — today's date, their
-# own scope, exactly what they'd see if they opened the app.
-#
-# Adding another page is one entry here (plus its command in the menus below).
-PAGE_SHOTS = {
-    "ojidaniya": {"path": "/downtime", "page": "downtime", "title": "Ojidaniya"},
-}
+# ── Dashboard cards ───────────────────────────────────────────────────────────
+# `/ojidaniya` answers with a PNG of today's Ojidaniya numbers, drawn server-side
+# from the same /api/downtime payload the page reads (app/services/downtime_card).
+# Scoped to the caller's own profile — their role, their shift, their brigadirs.
 
 
-def _shot_active_role(db, tid: int) -> dict | None:
+def _card_active_role(db, tid: int) -> dict | None:
     """A JWT-shaped payload for the caller's ACTIVE profile — the same identity
-    /api/auth/webapp would hand the screenshot session, so the access check here
-    matches what the rendered page will actually allow. None if the user holds
-    no approved profile."""
+    /api/auth/webapp would issue, so the page-access check and the endpoint's own
+    scoping behave exactly as they do in the web app. None if the user holds no
+    approved profile."""
     if tid in _admin_ids():
         return {"sub": str(tid), "role": "admin", "role_id": None, "role_ref": None}
 
@@ -2370,52 +2365,62 @@ def _shot_active_role(db, tid: int) -> dict | None:
             "role_ref": active.id}
 
 
-@bot.message_handler(commands=list(PAGE_SHOTS))
-def _page_shot_cmd(message: types.Message):
+def _caller_shift(db, payload: dict) -> int | None:
+    """The caller's own shift, mirroring the web app's scoping. The JWT carries
+    no shift field, so derive it from the profile's manager row (see the
+    shift-scoping note on /api/summary & friends). Admins see every shift."""
+    if payload.get("role") == "admin" or not payload.get("role_id"):
+        return None
+    mgr = db.query(Manager).filter_by(id=payload["role_id"]).first()
+    return mgr.shift if mgr else None
+
+
+@bot.message_handler(commands=["ojidaniya"])
+def _ojidaniya_cmd(message: types.Message):
     from app.capabilities import capability_pages
     from app.permissions import get_page_access, role_can_access
-    from app.services.page_shot import ShotError, capture
+    from app.services.downtime_card import CardError, render_downtime_card
 
     tid = message.from_user.id
     lang = _get_lang(tid)
-    cmd = (message.text or "").lstrip("/").split("@")[0].split()[0].lower()
-    spec = PAGE_SHOTS.get(cmd)
-    if not spec:
-        return
 
-    with SessionLocal() as db:
-        payload = _shot_active_role(db, tid)
-        if not payload:
-            bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+    # Optional date argument: /ojidaniya 2026-07-25 (also accepts 25.07.2026).
+    day = datetime.now().date()
+    parts = (message.text or "").split()
+    if len(parts) > 1:
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+            try:
+                day = datetime.strptime(parts[1], fmt).date()
+                break
+            except ValueError:
+                continue
+        else:
+            bot.send_message(message.chat.id, _msg(lang, "shot_bad_date"))
             return
-        allowed = role_can_access(payload["role"], [spec["page"]],
-                                  get_page_access(db), capability_pages(db, payload))
-    if not allowed:
-        bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
-        return
 
-    # Chromium takes several seconds; the handler runs inline in the webhook
-    # request, so say something first or the command looks dead.
-    wait_msg = bot.send_message(message.chat.id, _msg(lang, "shot_working"))
     try:
-        png = capture(spec["path"], tid)
-    except ShotError as exc:
-        logger.error("Page screenshot failed for %s (%s): %s", tid, cmd, exc)
+        with SessionLocal() as db:
+            payload = _card_active_role(db, tid)
+            if not payload:
+                bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+                return
+            if not role_can_access(payload["role"], ["downtime"],
+                                   get_page_access(db), capability_pages(db, payload)):
+                bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+                return
+            png = render_downtime_card(db, payload, day, lang,
+                                       shift=_caller_shift(db, payload))
+    except CardError as exc:
+        logger.error("Ojidaniya card failed for %s: %s", tid, exc)
         bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
         return
-    finally:
-        try:
-            bot.delete_message(message.chat.id, wait_msg.message_id)
-        except Exception:
-            pass
 
-    caption = f"{spec['title']} · {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     # send_document, not send_photo: Telegram re-compresses photos and caps them
-    # at 1280px, which turns a dense dashboard's numbers to mush. As a document
-    # the PNG arrives pixel-for-pixel and still previews inline.
+    # at 1280px, which turns the numbers to mush. As a document the PNG arrives
+    # pixel-for-pixel and still previews inline.
     bot.send_document(message.chat.id,
-                      document=(f"{cmd}-{datetime.now():%Y%m%d-%H%M}.png", png),
-                      caption=caption)
+                      document=(f"ojidaniya-{day:%Y%m%d}.png", png),
+                      caption=f"Ojidaniya · {day:%d.%m.%Y}")
 
 
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),

@@ -184,11 +184,14 @@ def render(data: dict, day: date, lang: str = "ru", scope: str = "") -> bytes:
     n_brigs = min(len(data["brigs"]), 8) + (1 if len(data["brigs"]) > 8 else 0)
     empty = data["reported"] == 0
 
-    h = 150 + 120 + 40
+    # Must track the drawing below exactly: header 150 + KPI 100 + 20 gap, then
+    # per section a 30px title, 40px per bar (30 row + 10 gap) and a 30px gap.
+    # The last bar carries a trailing gap, hence the -10.
+    body_top = 150 + 120 + 20
     if empty:
-        h += 90
+        h = body_top + 70
     else:
-        h += (60 + n_cats * 40 + 30) + (60 + n_brigs * 40 + 30)
+        h = body_top + sum(30 + n * 40 + 30 for n in (n_cats, n_brigs)) - 10 + PAD
 
     img = Image.new("RGB", (W, h), BG)
     draw = ImageDraw.Draw(img)
