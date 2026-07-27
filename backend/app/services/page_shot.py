@@ -105,6 +105,12 @@ def capture(path: str, telegram_id: int) -> bytes:
                 f"Screenshot subprocess failed (exit {proc.returncode}, "
                 f"python={python}): {(proc.stderr or proc.stdout or '').strip()[-1500:]}"
             )
+        # A shot can succeed and still be wrong — e.g. the page never signalled
+        # ready and we captured skeletons. That only shows up on stderr, so
+        # surface it rather than letting a blank-looking PNG go unexplained.
+        if proc.stderr and proc.stderr.strip():
+            logger.warning("Screenshot of %s produced warnings: %s",
+                           path, proc.stderr.strip()[-500:])
         with open(out, "rb") as fh:
             data = fh.read()
         if not data:
