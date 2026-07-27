@@ -26,7 +26,8 @@ from app import identity
 from app.capabilities import (
     CAP_ATTENDANCE_DELETE, CAP_ATTENDANCE_EDIT, CAP_CLEANUP, CAP_DAY_REOPEN,
     CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
-    cap_scope, capability_pages, has_cap, profile_unit_ids, scope_is_all,
+    cap_scope, capability_pages, has_cap, page_scope_is_all, profile_unit_ids,
+    scope_is_all,
 )
 from app.config import settings
 from app.database import get_db
