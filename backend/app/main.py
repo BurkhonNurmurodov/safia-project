@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
+        add_leader_task_setting_names,
     )
     add_last_seen_column()
     add_tg_name_column()
