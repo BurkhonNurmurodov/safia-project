@@ -3344,10 +3344,13 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _visible_manager_ids(db: Session, caller) -> Optional[List[int]]:
-    """Manager ids a caller may see/approve. None = all (admin)."""
+    """Manager ids a caller may see/approve. None = all (admin).
+
+    A personal ``page.view.staff`` grant at "all" is admin reach by definition —
+    the whole point of that scope is that this person reads every unit's day."""
     role    = caller.get("role")
     role_id = caller.get("role_id")
-    if role == "admin":
+    if role == "admin" or page_scope_is_all(db, caller, "staff"):
         return None
     if role == "supervisor":
         return [role_id] if role_id else []
