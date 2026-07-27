@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # Telegram chat that receives boot-failure reports (the "Report the problem"
     # button on the recovery screen). Blank → falls back to the admins table.
     support_chat_id: str = ""
+    # Origin the headless Chromium loads when the bot screenshots a page
+    # (/ojidaniya & friends — see app/services/page_shot.py). Blank → webapp_url.
+    # Set it only if the app can be reached on the box by a URL that skips the
+    # hosting's anti-bot layer; otherwise the public URL is correct, and
+    # Chromium solves the JS challenge the way any real browser does.
+    render_base_url: str = ""
+    # Seconds to wait for one screenshot subprocess before giving up. Chromium
+    # cold start is ~2 s, the page's own data fetches add a few more.
+    render_timeout_sec: int = 75
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
