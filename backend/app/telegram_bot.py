@@ -1863,8 +1863,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
     date = effective_date()
     day = _lt_day(db, pid, date)
     entries = _lt_entries(db, day)
-    cfg = effective_settings(db, prof.manager_id)
-    defs = {td.id: td for td in ensure_task_defs(db)}
+    cfg = effective_leader_config(db, prof)
 
     kb = types.InlineKeyboardMarkup(row_width=1)
     if day and day.closed_at:
