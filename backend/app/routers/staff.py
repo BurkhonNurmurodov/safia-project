@@ -862,8 +862,7 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
     cleanup_scope = cap_scope(db, caller, CAP_CLEANUP)
     # A staff/daily page grant at "all" is the unit picker's whole point: the
     # person may read every unit's day, so they must be able to list the units.
-    sees_all_units = (page_scope_is_all(db, caller, "staff")
-                      or page_scope_is_all(db, caller, "daily"))
+    sees_all_units = _staff_sees_all(db, caller)
     if cleanup_scope is None and not sees_all_units:
         if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
                                capability_pages(db, caller)):
