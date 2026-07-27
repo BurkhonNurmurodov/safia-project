@@ -102,8 +102,8 @@ def capture(path: str, telegram_id: int) -> bytes:
             # exist" when chromium was never installed, the missing .so when the
             # system libraries are absent. Keep it: it is the whole diagnosis.
             raise ShotError(
-                f"Screenshot subprocess failed (exit {proc.returncode}): "
-                f"{(proc.stderr or proc.stdout or '').strip()[-1500:]}"
+                f"Screenshot subprocess failed (exit {proc.returncode}, "
+                f"python={python}): {(proc.stderr or proc.stdout or '').strip()[-1500:]}"
             )
         with open(out, "rb") as fh:
             data = fh.read()
