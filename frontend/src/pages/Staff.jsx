@@ -3534,6 +3534,11 @@ export default function Staff() {
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
   const canCreate           = role === "admin" || role === "supervisor";
+  // …but a widened supervisor browsing ANOTHER unit is only reading it: the
+  // backend files every supervisor document against their own unit, so the
+  // create menu would produce a document for the wrong brigade. Hide it there.
+  const canCreateHere       = canCreate
+    && (role !== "supervisor" || supervisorManagerId === auth?.role_id);
 
   // No new documents once the day is closed — supervisors check their own day,
   // admins the selected supervisor's (backend ignores manager_id for supervisors)
