@@ -190,12 +190,16 @@ def effective_leader_config(db: Session, prof) -> dict[int, dict]:
     return out
 
 
-def effective_date(now: datetime | None = None) -> str:
-    """ISO date of the checklist day. A day runs 09:01 → 09:00 next morning
-    Tashkent time: anything at or before 09:00 belongs to the previous date
-    (the 21:00 night shift closes on its starting date)."""
+def effective_date(shift: int | None = None, now: datetime | None = None) -> str:
+    """ISO date of the checklist day, per the leader's shift (Tashkent time):
+
+    * shift 1 (or unknown): the plain calendar day, 00:00 → 23:59.
+    * shift 2: the day runs 17:00 → 16:59 next morning, so anything before
+      17:00 belongs to the previous date (the night shift stays on its
+      starting date).
+    """
     now = (now or datetime.now(timezone.utc)).astimezone(_TASHKENT)
-    if (now.hour, now.minute) <= (9, 0):
+    if shift == 2 and now.hour < 17:
         now -= timedelta(days=1)
     return now.strftime("%Y-%m-%d")
 
