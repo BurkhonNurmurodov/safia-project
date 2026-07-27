@@ -2326,6 +2326,86 @@ def _file_id_echo(message: types.Message):
         logger.warning("Failed to echo file_id to %s", message.from_user.id, exc_info=True)
 
 
+# ── Page screenshots ──────────────────────────────────────────────────────────
+# `/ojidaniya` answers with a PNG of the real /downtime page, rendered server-
+# side in headless Chromium as the caller's own profile — today's date, their
+# own scope, exactly what they'd see if they opened the app.
+#
+# Adding another page is one entry here (plus its command in the menus below).
+PAGE_SHOTS = {
+    "ojidaniya": {"path": "/downtime", "page": "downtime", "title": "Ojidaniya"},
+}
+
+
+def _shot_active_role(db, tid: int) -> dict | None:
+    """A JWT-shaped payload for the caller's ACTIVE profile — the same identity
+    /api/auth/webapp would hand the screenshot session, so the access check here
+    matches what the rendered page will actually allow. None if the user holds
+    no approved profile."""
+    if tid in _admin_ids():
+        return {"sub": str(tid), "role": "admin", "role_id": None, "role_ref": None}
+
+    user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
+    if not user:
+        return None
+    approved = (db.query(TelegramUserRole)
+                  .filter_by(telegram_id=tid, status="approved")
+                  .order_by(TelegramUserRole.id).all())
+    if not approved:
+        return None
+    active = next((r for r in approved if r.id == user.active_role_ref), approved[0])
+    return {"sub": str(tid), "role": active.role, "role_id": active.role_id,
+            "role_ref": active.id}
+
+
+@bot.message_handler(commands=list(PAGE_SHOTS))
+def _page_shot_cmd(message: types.Message):
+    from app.capabilities import capability_pages
+    from app.permissions import get_page_access, role_can_access
+    from app.services.page_shot import ShotError, capture
+
+    tid = message.from_user.id
+    lang = _get_lang(tid)
+    cmd = (message.text or "").lstrip("/").split("@")[0].split()[0].lower()
+    spec = PAGE_SHOTS.get(cmd)
+    if not spec:
+        return
+
+    with SessionLocal() as db:
+        payload = _shot_active_role(db, tid)
+        if not payload:
+            bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+            return
+        allowed = role_can_access(payload["role"], [spec["page"]],
+                                  get_page_access(db), capability_pages(db, payload))
+    if not allowed:
+        bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
+        return
+
+    # Chromium takes several seconds; the handler runs inline in the webhook
+    # request, so say something first or the command looks dead.
+    wait_msg = bot.send_message(message.chat.id, _msg(lang, "shot_working"))
+    try:
+        png = capture(spec["path"], tid)
+    except ShotError as exc:
+        logger.error("Page screenshot failed for %s (%s): %s", tid, cmd, exc)
+        bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
+        return
+    finally:
+        try:
+            bot.delete_message(message.chat.id, wait_msg.message_id)
+        except Exception:
+            pass
+
+    caption = f"{spec['title']} · {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    # send_document, not send_photo: Telegram re-compresses photos and caps them
+    # at 1280px, which turns a dense dashboard's numbers to mush. As a document
+    # the PNG arrives pixel-for-pixel and still previews inline.
+    bot.send_document(message.chat.id,
+                      document=(f"{cmd}-{datetime.now():%Y%m%d-%H%M}.png", png),
+                      caption=caption)
+
+
 @bot.message_handler(func=lambda m: _awaiting_contact(m.from_user.id),
                      content_types=["text"])
 def _typed_instead_of_contact(message: types.Message):
