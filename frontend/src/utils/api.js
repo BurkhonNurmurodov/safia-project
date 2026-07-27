@@ -28,7 +28,12 @@ api.interceptors.request.use((config) => {
   // set by telegram-web-app.js before this bundle runs; read it fresh each call.
   // Outside Telegram we send "__dev__", which the backend accepts only when
   // DEV_AUTH is on (and rejects in production, same as the login endpoint).
-  const initData = window.Telegram?.WebApp?.initData || "__dev__";
+  // Render mode (the server screenshotting a page in headless Chromium) has no
+  // WebView and therefore no initData — it presents its bot-signed render token
+  // under the same header instead. See utils/renderMode.js.
+  const initData = IS_RENDER
+    ? RENDER_INIT_DATA
+    : window.Telegram?.WebApp?.initData || "__dev__";
   config.headers["X-Telegram-Init-Data"] = initData;
   // Ghost Mode (admin header toggle): suppress change-notifications server-side.
   // sessionStorage (not localStorage) so closing the app always clears it.
