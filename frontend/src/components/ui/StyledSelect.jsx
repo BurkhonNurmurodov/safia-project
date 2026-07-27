@@ -248,10 +248,35 @@ export default function StyledSelect({
             </div>
           )}
 
+          {/* Creatable row: seeds the parent's create flow with the current search
+              text, then closes so a create modal can take over. Pinned under the
+              search box (same offset the select-all uses). */}
+          {creatable && (
+            <button
+              type="button"
+              onClick={() => { onCreate?.(query.trim()); setOpen(false); }}
+              className="sticky w-full text-left px-3 py-2.5 text-sm font-semibold flex items-center gap-2 transition-colors"
+              style={{
+                top:          searchable ? 37 : 0,
+                background:   "var(--bg-card)",
+                borderBottom: "1px solid var(--border)",
+                color:        "var(--brand-text, #C8973F)",
+                zIndex:       2,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-inner)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--bg-card)"; }}
+            >
+              <Plus size={14} style={{ flexShrink: 0 }} />
+              <span className="min-w-0 flex-1 truncate">
+                {createLabel ? createLabel(query.trim()) : (query.trim() || "+")}
+              </span>
+            </button>
+          )}
+
           {/* Multi mode: one tri-state select-all row pinned under the search box.
               Same geometry as an option row so the tick-boxes line up; ticking it
               selects everything, unticking clears. */}
-          {multiple && opts.length > 1 && (
+          {multiple && !hideSelectAll && opts.length > 1 && (
             <button
               type="button"
               onClick={() =>
