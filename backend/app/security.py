@@ -33,6 +33,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt import PyJWTError as JWTError
 
 from app.config import settings
+from app.render_token import read_init_data_render_token
 from app.routers.auth import _validate_init_data
 
 # Endpoints that legitimately run without the initData header. Each either
