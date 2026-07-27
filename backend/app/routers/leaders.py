@@ -140,7 +140,7 @@ def get_leaders(
         managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
     )
 
-    if role == "supervisor":
+    if role == "supervisor" and not sees_all:
         # Scope by the matched unit id, not name equality: the sheet name never
         # string-equals the JWT/Manager short canonical name (alphabet + patronymic
         # + spelling drift), which used to drop every row for supervisors.
