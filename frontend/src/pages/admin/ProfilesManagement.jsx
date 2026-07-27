@@ -125,6 +125,19 @@ export default function ProfilesManagement({ cellsOnly = false }) {
     onSuccess: () => { done(); setModal(null); },
     onError: fail,
   });
+  const inlineCellCreateMut = useMutation({
+    // Create a cell from inside the leader modal WITHOUT closing it: the new
+    // (still-unassigned) code is added to the leader's selection and claimed on
+    // save. Refresh the list so it renders with its label.
+    mutationFn: (body) => api.post("/api/profiles/admin/cells", body),
+    onSuccess: (_r, body) => {
+      qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+      setForm((f) => ({ ...f, cells: [...new Set([...(f.cells || []), body.verifix_code])] }));
+      setNewCell(null);
+      setNewCellError("");
+    },
+    onError: (e) => setNewCellError(e?.response?.data?.detail || t("admin.profiles.error")),
+  });
   const unassignMut = useMutation({
     mutationFn: (body) => api.post("/api/profiles/admin/unassign", body),
     onSuccess: () => { done(); setConfirmUnassign(null); },
