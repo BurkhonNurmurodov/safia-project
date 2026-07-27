@@ -771,7 +771,9 @@ class LeaderTaskDef(Base):
 
 class LeaderTaskSetting(Base):
     """Per-supervisor override of one task's config. Absent row = the virtual
-    default (enabled, min_media 1, LeaderTaskDef.default_weight)."""
+    default (enabled, min_media 1, LeaderTaskDef.default_weight). The name_*
+    columns rename the task for this supervisor's whole team; NULL = the
+    global LeaderTaskDef name."""
     __tablename__ = "leader_task_settings"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
@@ -780,8 +782,33 @@ class LeaderTaskSetting(Base):
     enabled    = Column(Boolean, nullable=False, default=True)
     min_media  = Column(Integer, nullable=False, default=1)
     weight     = Column(Integer, nullable=False, default=0)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
+
+
+class LeaderTaskLeaderSetting(Base):
+    """Per-LEADER override of one task's config — the third level of the
+    global → supervisor → leader chain. Every field is nullable: NULL means
+    "inherit from the supervisor's effective value"; the whole row absent
+    means full inherit. Supervisor/column edits never touch these rows."""
+    __tablename__ = "leader_task_leader_settings"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
+    task_id   = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False)
+    enabled   = Column(Boolean, nullable=True)
+    min_media = Column(Integer, nullable=True)
+    weight    = Column(Integer, nullable=True)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+
+    __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
 
 class LeaderTaskDay(Base):
