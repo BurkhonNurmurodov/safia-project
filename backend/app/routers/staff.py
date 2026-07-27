@@ -3388,11 +3388,11 @@ def _staff_target_manager(db: Session, caller, manager_id: Optional[int]) -> Opt
     """The unit a staff/daily READ targets.
 
     A supervisor is pinned to their own unit, so their pages never need to send
-    manager_id — except when a ``page.view.staff`` grant at "all" widens them,
-    in which case an explicitly requested unit wins and their own stays the
+    manager_id — except when a staff/daily page grant at "all" widens them, in
+    which case an explicitly requested unit wins and their own stays the
     default. ``_can_touch_manager`` still has the last word on the result."""
     if caller.get("role") == "supervisor" and not (
-            manager_id and page_scope_is_all(db, caller, "staff")):
+            manager_id and _staff_sees_all(db, caller)):
         return caller.get("role_id")
     return manager_id
 
