@@ -10,9 +10,14 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, LeaderTaskDef, LeaderTaskEntry, LeaderTaskSetting
+from app.models import (
+    AppSetting, LeaderTaskDef, LeaderTaskEntry, LeaderTaskLeaderSetting,
+    LeaderTaskSetting,
+)
 
 CHANNEL_SETTING_KEY = "leader_tasks_channel"
+
+_LANGS = ("uz", "uz_cyrl", "ru", "en")
 
 # Tashkent has no DST; a fixed offset keeps the 09:00 boundary math trivial.
 _TASHKENT = timezone(timedelta(hours=5))
