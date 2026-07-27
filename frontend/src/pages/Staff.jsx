@@ -3526,7 +3526,11 @@ export default function Staff() {
   // must not trigger the badge (mirrors the "pending" status filter)
   const pendingCount        = documents.filter(d =>
     d._source === "deletion" ? d.status === "pending" : d.status === "draft").length;
-  const supervisorManagerId = role === "supervisor" ? auth?.role_id : selectedManagerId;
+  // A widened supervisor may browse any unit, but their own stays the default
+  // until they pick one — so the page opens exactly where it always did.
+  const supervisorManagerId = role === "supervisor"
+    ? (seesAllUnits ? (selectedManagerId ?? auth?.role_id) : auth?.role_id)
+    : selectedManagerId;
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
   const canCreate           = role === "admin" || role === "supervisor";
