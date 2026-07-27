@@ -2432,6 +2432,12 @@ def _ojidaniya_cmd(message: types.Message):
         logger.error("Ojidaniya card failed for %s: %s", tid, exc)
         bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
         return
+    except Exception:
+        # Anything else (DB down, font gone, permission-matrix read) must still
+        # answer the user, not vanish into the webhook's catch-all.
+        logger.exception("Ojidaniya command failed for %s", tid)
+        bot.send_message(message.chat.id, _msg(lang, "shot_failed"))
+        return
 
     # Rich mode first: the weekly tables with the day card embedded as the
     # figure. Any sendRichMessage failure falls through to the plain document
