@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import api from "../utils/api";
+import { IS_RENDER } from "../utils/renderMode";
 
 // Client heartbeat that powers the Users-Activity dashboard. While the app is
 // open and the tab/webview is visible it POSTs /api/activity/ping every
