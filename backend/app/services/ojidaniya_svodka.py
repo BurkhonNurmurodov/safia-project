@@ -155,7 +155,7 @@ L = {
         "footer": "Источник: Safia Dashboard — страница «Ожидания»",
     },
     "en": {
-        "title": "Ojidaniya — weekly summary", "period": "Period",
+        "title": "Idle time — weekly summary", "period": "Period",
         "d_days": "days", "d_brigs": "brigadirs", "d_reps": "reports",
         "nav_days": "Days", "nav_cats": "Categories", "nav_brigs": "Brigadirs", "nav_meth": "Method",
         "kpi_caption": "Key figures of the week",
