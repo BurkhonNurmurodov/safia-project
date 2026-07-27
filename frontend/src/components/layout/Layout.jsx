@@ -369,9 +369,35 @@ function SettingsButton() {
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
 const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 
+/** Render mode: tell the screenshot browser the page is done.
+ *
+ * "Done" is every react-query fetch settled — but the very first tick also has
+ * zero in flight, before any query has started, so we wait for the count to
+ * rise once first. The grace period is the escape hatch for a page that fetches
+ * nothing at all. See app/services/page_shot.py for the other side. */
+function useRenderReady() {
+  const fetching = useIsFetching();
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (!IS_RENDER) return;
+    if (fetching > 0) {
+      started.current = true;
+      window.__RENDER_READY__ = false;
+      return;
+    }
+    // Charts mount a frame after their data lands — give ApexCharts time to
+    // draw before declaring the page shootable.
+    const t = setTimeout(() => { window.__RENDER_READY__ = true; },
+                         started.current ? 600 : 4000);
+    return () => clearTimeout(t);
+  }, [fetching]);
+}
+
 export default function Layout({ children, title }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
+  useRenderReady();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
