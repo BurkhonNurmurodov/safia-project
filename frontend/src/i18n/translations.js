@@ -1148,7 +1148,7 @@ const t = {
     "admin.cleanup.successToast": "{n} ta brigadir uchun {rows} ta davomat qatori o'chirildi",
     "admin.cleanup.fail":         "O'chirishda xatolik",
     "admin.ltasks.title":        "Lider kunlik vazifalari",
-    "admin.ltasks.desc":         "Har bir brigadirning liderlari uchun vazifalarni sozlang: katakcha ustiga bosib yoqish/o'chirish, minimal rasm soni va vaznni belgilang. Ustun sarlavhasi butun ustunni qayta yozadi.",
+    "admin.ltasks.desc":         "Har bir brigadirning liderlari uchun vazifalarni sozlang: katakcha ustiga bosib yoqish/o'chirish, minimal rasm soni va vaznni belgilang. Ustun sarlavhasi butun ustunni qayta yozadi. Brigadir qatorini ochib, har bir lider uchun alohida sozlash mumkin.",
     "admin.ltasks.channel":      "Arxiv kanal ID",
     "admin.ltasks.channelHint":  "Isbot rasmlari shu kanalga yuboriladi — bot kanalda admin bo'lishi shart (masalan: -1001234567890).",
     "admin.ltasks.save":         "Saqlash",
