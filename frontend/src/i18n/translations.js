@@ -1389,6 +1389,8 @@ const t = {
     "admin.profiles.colWorkshop":    "Sex nomi",
     "admin.profiles.colOwner":       "Lider",
     "admin.profiles.cellUnassigned": "Biriktirilmagan",
+    "admin.profiles.cellNoSupervisor": "Brigadir yo'q",
+    "admin.profiles.cellSupervisorFromOwner": "Brigadir liderdan meros olinadi",
     "admin.profiles.verifixCodeRequired": "Verifix kod kiritilishi shart",
     "admin.profiles.verifixRequired":"Verifix ID kiritilishi shart",
     "admin.profiles.verifixLabel":   "Verifix ID",
