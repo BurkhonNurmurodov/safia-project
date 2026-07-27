@@ -142,7 +142,12 @@ function SupervisorDaily() {
   const isSupervisor = role === "supervisor";
   const isAdmin      = role === "admin";
   // Personal grants, additive to the role rules above.
-  const { can } = useCapabilities();
+  const { can, seesAllOn } = useCapabilities();
+  // A supervisor normally sees only their own unit's day and gets no picker.
+  // A personal page grant at "all" on Kunlik / Xodimlar (both pages read the
+  // same endpoints, so either counts) lifts exactly that pin: they may browse
+  // any unit, while every supervisor ACTION stays tied to their own day below.
+  const ownUnitOnly = isSupervisor && !(seesAllOn("daily") || seesAllOn("staff"));
   const canReopen = isAdmin || can(CAP.DAY_REOPEN);
   const canDeleteRows = isAdmin || can(CAP.ATTENDANCE_DELETE);
   // Shift-manager drill-down: a specific supervisor + date passed in the URL.
