@@ -93,7 +93,7 @@ L = {
         "footer": "Manba: Safia Dashboard — Ojidaniya sahifasi",
     },
     "uz_cyrl": {
-        "title": "Ожидания — ҳафталик свод", "period": "Давр",
+        "title": "Ожидания — ҳафталик сводка", "period": "Давр",
         "d_days": "кун", "d_brigs": "бригадир", "d_reps": "ҳисобот",
         "nav_days": "Кунлар", "nav_cats": "Категориялар", "nav_brigs": "Бригадирлар", "nav_meth": "Методика",
         "kpi_caption": "Ҳафтанинг асосий кўрсаткичлари",
