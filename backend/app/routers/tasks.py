@@ -109,6 +109,10 @@ def _get_visible_task(task_id: int, payload: dict, db: Session) -> LeaderTask:
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
     role = payload.get("role")
+    # Matches the list: a "see all" page grant makes every task readable. The
+    # _assert_can_* guards below still gate every mutation.
+    if page_scope_is_all(db, payload, "tasks"):
+        return t
     if role == "supervisor" and not _is_unit_supervisor(payload, t):
         raise HTTPException(status_code=403, detail="Not your unit's task")
     if role == "leader" and not _is_owning_leader(db, payload, t):
