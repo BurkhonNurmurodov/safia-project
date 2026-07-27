@@ -1114,7 +1114,6 @@ const t = {
     "caps.admin.cells.manage.hint": "Yacheyka kodlari, sex nomlari va brigadirga biriktirish",
     "admin.tabProfiles":     "Profillar",
     "admin.tabBroadcast":    "Xabarnoma",
-    "admin.tabMedia":        "Media",
     "admin.tabCleanup":      "Tozalash",
     "admin.tabLtasks":       "Liderlar monitoringi",
 
@@ -2908,7 +2907,6 @@ const t = {
     "caps.admin.cells.manage.hint": "Ячейка кодлари, сех номлари ва бригадирга бириктириш",
     "admin.tabProfiles":     "Профиллар",
     "admin.tabBroadcast":    "Хабарнома",
-    "admin.tabMedia":        "Медиа",
     "admin.tabCleanup":      "Тозалаш",
     "admin.tabLtasks":       "Лидерлар мониторинги",
 
@@ -3183,6 +3181,8 @@ const t = {
     "admin.profiles.colWorkshop":    "Сех номи",
     "admin.profiles.colOwner":       "Лидер",
     "admin.profiles.cellUnassigned": "Бириктирилмаган",
+    "admin.profiles.cellNoSupervisor": "Бригадир йўқ",
+    "admin.profiles.cellSupervisorFromOwner": "Бригадир лидердан мерос олинади",
     "admin.profiles.verifixCodeRequired": "Verifix код киритилиши шарт",
     "admin.profiles.verifixRequired":"Verifix ID киритилиши шарт",
     "admin.profiles.verifixLabel":   "Verifix ID",
@@ -4700,7 +4700,6 @@ const t = {
     "caps.admin.cells.manage.hint": "Коды ячеек, названия цехов и привязка к бригадиру",
     "admin.tabProfiles":     "Профили",
     "admin.tabBroadcast":    "Рассылка",
-    "admin.tabMedia":        "Медиа",
     "admin.tabCleanup":      "Очистка",
     "admin.tabLtasks":       "Мониторинг лидеров",
 
@@ -6492,7 +6491,6 @@ const t = {
     "caps.admin.cells.manage.hint": "Cell codes, workshop names and leader assignment",
     "admin.tabProfiles":     "Profiles",
     "admin.tabBroadcast":    "Broadcast",
-    "admin.tabMedia":        "Media",
     "admin.tabCleanup":      "Cleanup",
     "admin.tabLtasks":       "Leaders monitoring",
 
