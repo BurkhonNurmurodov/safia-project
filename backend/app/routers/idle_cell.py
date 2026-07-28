@@ -2,20 +2,25 @@
 загрузка per cell. Separate from and additive to the sheets-import
 ``downtime_data`` table; it does NOT replace it.
 
-Gated by the ``idle-cell`` page (admin-only by default, grantable to
-leaders/supervisors later). Reads/writes are scoped to the caller's cells —
-admins/top-managers see all, a ``page.view.idle-cell`` "all" grant sees all,
-supervisors/shift-managers their unit's cells, leaders their own — so opening
-the page to those roles later needs no code change here."""
+One row per (cell, date, category): To'xtaganda (stopped) + To'xtamaganda
+(not-stopped) minutes and a REQUIRED per-category note. Each category saves on
+its own. The shift is a property of the cell (its supervisor's shift), so the UI
+filters supervisors by shift and never stores it here.
+
+Gated by the ``idle-cell`` page (admin-only by default, grantable later).
+Reads/writes are scoped to the caller's cells — admins/top-managers see all, a
+``page.view.idle-cell`` "all" grant sees all, supervisors/shift-managers their
+unit's cells, leaders their own."""
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Cell, CellOjidaniya
+from app.models import Cell, CellOjidaniya, Manager
 from app.capabilities import page_scope_is_all, profile_unit_ids
 from app.permissions import require_page
 from app import identity
@@ -25,19 +30,17 @@ router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
 PAGE = "idle-cell"
 
 # Canonical Ojidaniya categories — mirrors backend/app/services/sheets_reader.py
-# SHIFT_CATEGORIES. Each has a stopped + a not-stopped half EXCEPT Cat H, whose
-# real 2nd source column is a people-count, so it carries no not-stopped value.
+# SHIFT_CATEGORIES. Cat H has no not-stopped half (its 2nd source column is a
+# people-count), so To'xtamaganda is forced to 0 for it.
 IDLE_CATEGORIES = ["Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
                    "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
-NS_CATEGORIES = [c for c in IDLE_CATEGORIES if c != "Cat H"]
-_STOPPED_SET = set(IDLE_CATEGORIES)
-_NS_SET = set(NS_CATEGORIES)
+_VALID = set(IDLE_CATEGORIES)
+_NO_NS = {"Cat H"}
 
 
 def _scoped_cells(db: Session, payload: dict) -> list[Cell]:
     """Every cell the caller may see/enter, admins = all. Built generically so a
-    future ``page.view.idle-cell`` grant to a supervisor/leader Just Works: the
-    same filter that admits an admin today admits a granted supervisor tomorrow."""
+    future ``page.view.idle-cell`` grant to a supervisor/leader Just Works."""
     role = payload.get("role")
     q = db.query(Cell)
     if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
@@ -61,35 +64,19 @@ def _valid_date(s: str) -> bool:
         return False
 
 
-def _clean_minutes(raw: dict, allowed: set) -> dict:
-    """Keep only known category keys with a positive numeric minute value."""
-    out = {}
-    for k, v in (raw or {}).items():
-        if k not in allowed:
-            continue
-        try:
-            n = float(v)
-        except (TypeError, ValueError):
-            continue
-        if n > 0:
-            out[k] = n
-    return out
-
-
 def _entry_json(e: CellOjidaniya) -> dict:
     return {
         "id": e.id,
-        "by_category": e.by_category or {},
-        "by_category_ns": e.by_category_ns or {},
-        "total_minutes": float(e.total_minutes or 0),
-        "total_minutes_ns": float(e.total_minutes_ns or 0),
+        "category": e.category,
+        "stopped": float(e.stopped or 0),
+        "not_stopped": float(e.not_stopped or 0),
         "note": e.note or "",
         "entered_by": e.entered_by_profile,
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
     }
 
 
-def _cell_json(c: Cell, entry: Optional[CellOjidaniya]) -> dict:
+def _cell_json(c: Cell, entries: list) -> dict:
     return {
         "cell_id": c.id,
         "verifix_code": c.verifix_code,
@@ -98,46 +85,57 @@ def _cell_json(c: Cell, entry: Optional[CellOjidaniya]) -> dict:
         "name_uz_cyrl": c.name_workshop_uz_cyrl,
         "name_ru": c.name_workshop_ru,
         "name_en": c.name_workshop_en,
-        "entry": _entry_json(entry) if entry else None,
+        "entries": entries,
     }
 
 
-@router.get("")
-def list_idle(
-    date: str = Query(...),
-    shift: int = Query(...),
+@router.get("/supervisors")
+def list_supervisors(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """Every in-scope cell plus its idle-time entry (or null) for date+shift."""
+    """Supervisors (units) that own cells in the caller's scope, with their shift
+    — the toolbar's supervisor picker (the All/1/2 shift tabs filter it)."""
+    cells = _scoped_cells(db, payload)
+    ids = {c.manager_id for c in cells if c.manager_id}
+    if not ids:
+        return []
+    mgrs = db.query(Manager).filter(Manager.id.in_(ids), Manager.archived == False).all()  # noqa: E712
+    mgrs.sort(key=lambda m: (m.shift or 0, (m.name or "").lower()))
+    return [{"id": m.id, "name": m.name, "shift": m.shift} for m in mgrs]
+
+
+@router.get("/cells")
+def list_cells(
+    supervisor_id: int = Query(...),
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Cells under one supervisor (must be in the caller's scope) plus each
+    cell's saved entries for the date — the accordions."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    if shift not in (1, 2):
-        raise HTTPException(status_code=400, detail="Invalid shift")
-    cells = _scoped_cells(db, payload)
-    by_cell: dict = {}
+    cells = [c for c in _scoped_cells(db, payload) if c.manager_id == supervisor_id]
+    if not cells:
+        return {"cells": []}
     ids = [c.id for c in cells]
-    if ids:
-        for e in db.query(CellOjidaniya).filter(
-            CellOjidaniya.cell_id.in_(ids),
-            CellOjidaniya.date == date,
-            CellOjidaniya.shift == shift,
-        ).all():
-            by_cell[e.cell_id] = e
+    by_cell: dict = defaultdict(list)
+    for e in db.query(CellOjidaniya).filter(
+        CellOjidaniya.cell_id.in_(ids),
+        CellOjidaniya.date == date,
+    ).all():
+        by_cell[e.cell_id].append(_entry_json(e))
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
-    return {
-        "categories": IDLE_CATEGORIES,
-        "ns_categories": NS_CATEGORIES,
-        "cells": [_cell_json(c, by_cell.get(c.id)) for c in cells],
-    }
+    return {"cells": [_cell_json(c, by_cell.get(c.id, [])) for c in cells]}
 
 
 class IdleIn(BaseModel):
     cell_id: int
     date: str
-    shift: int
-    by_category: dict = Field(default_factory=dict)
-    by_category_ns: dict = Field(default_factory=dict)
+    category: str
+    stopped: Optional[float] = 0
+    not_stopped: Optional[float] = 0
     note: str
 
 
@@ -147,36 +145,35 @@ def save_idle(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """Create or update (upsert by cell+date+shift) one idle-time entry. The note
-    is required; the target cell must be in the caller's scope."""
+    """Create or update (upsert by cell+date+category) one category's idle-time.
+    The note is required and the row must carry at least one minute value."""
     if not _valid_date(body.date):
         raise HTTPException(status_code=400, detail="Invalid date")
-    if body.shift not in (1, 2):
-        raise HTTPException(status_code=400, detail="Invalid shift")
+    if body.category not in _VALID:
+        raise HTTPException(status_code=400, detail="Invalid category")
     note = (body.note or "").strip()
     if not note:
         raise HTTPException(status_code=400, detail="A note is required")
-
     allowed = {c.id for c in _scoped_cells(db, payload)}
     if body.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
 
-    stopped = _clean_minutes(body.by_category, _STOPPED_SET)
-    not_stopped = _clean_minutes(body.by_category_ns, _NS_SET)
-    who = identity.viewer_profile_key(db, payload)
+    stopped = max(0.0, float(body.stopped or 0))
+    not_stopped = 0.0 if body.category in _NO_NS else max(0.0, float(body.not_stopped or 0))
+    if stopped <= 0 and not_stopped <= 0:
+        raise HTTPException(status_code=400, detail="Enter at least one minute value")
 
+    who = identity.viewer_profile_key(db, payload)
     e = db.query(CellOjidaniya).filter(
         CellOjidaniya.cell_id == body.cell_id,
         CellOjidaniya.date == body.date,
-        CellOjidaniya.shift == body.shift,
+        CellOjidaniya.category == body.category,
     ).first()
     if e is None:
-        e = CellOjidaniya(cell_id=body.cell_id, date=body.date, shift=body.shift)
+        e = CellOjidaniya(cell_id=body.cell_id, date=body.date, category=body.category)
         db.add(e)
-    e.by_category = stopped
-    e.by_category_ns = not_stopped
-    e.total_minutes = sum(stopped.values())
-    e.total_minutes_ns = sum(not_stopped.values())
+    e.stopped = stopped
+    e.not_stopped = not_stopped
     e.note = note
     e.entered_by_profile = who
     db.commit()
@@ -190,7 +187,7 @@ def delete_idle(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE)),
 ):
-    """Clear one idle-time entry (scope-checked)."""
+    """Clear one category's idle-time entry (scope-checked)."""
     e = db.query(CellOjidaniya).filter(CellOjidaniya.id == entry_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Entry not found")
