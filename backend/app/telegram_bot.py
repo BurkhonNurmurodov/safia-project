@@ -2365,6 +2365,53 @@ def _human_size(size: int | None) -> str:
     return ""
 
 
+def _custom_emoji_entities(message: types.Message) -> list:
+    """custom_emoji entities in a message's text or caption, in offset order."""
+    ents = list(message.entities or []) + list(message.caption_entities or [])
+    return sorted((e for e in ents if getattr(e, "type", None) == "custom_emoji"),
+                  key=lambda e: e.offset)
+
+
+def _entity_text(source: str, entity) -> str:
+    """The substring an entity covers. Telegram offsets/lengths are in UTF-16
+    code units, so slice in UTF-16 space to keep surrogate-pair emojis intact."""
+    u16 = (source or "").encode("utf-16-le")
+    return u16[entity.offset * 2: (entity.offset + entity.length) * 2].decode("utf-16-le", "ignore")
+
+
+@bot.message_handler(
+    func=lambda m: m.from_user.id in _admin_ids()
+    and not (m.text or "").startswith("/")
+    and bool(_custom_emoji_entities(m)),
+    content_types=["text"],
+)
+def _custom_emoji_echo(message: types.Message):
+    """Admin sends/forwards a message containing premium (custom) emojis → reply
+    with each custom_emoji_id + its fallback char, ready to paste into the
+    Broadcast composer's saved-emoji palette. Registered after the /broadcast
+    capture handler, so an emoji typed while composing a broadcast is claimed by
+    that flow, not echoed here."""
+    lang = _get_lang(message.from_user.id)
+    source = message.text or message.caption or ""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for e in _custom_emoji_entities(message):
+        eid = str(getattr(e, "custom_emoji_id", "") or "")
+        if not eid or eid in seen:
+            continue
+        seen.add(eid)
+        fallback = html.escape(_entity_text(source, e))
+        lines.append(f"{fallback} → <code>{html.escape(eid)}</code>")
+    if not lines:
+        return
+    txt = _msg(lang, "custom_emoji_reply").format(list="\n".join(lines))
+    try:
+        bot.send_message(message.chat.id, txt, parse_mode="HTML",
+                         reply_to_message_id=message.message_id)
+    except Exception:
+        logger.warning("Failed to echo custom_emoji to %s", message.from_user.id, exc_info=True)
+
+
 @bot.message_handler(func=lambda m: m.from_user.id in _admin_ids(),
                      content_types=_FILE_ID_CONTENT)
 def _file_id_echo(message: types.Message):
