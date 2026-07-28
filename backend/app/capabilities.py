@@ -254,13 +254,38 @@ def capability_tabs(db: Session, payload: dict) -> list[str]:
     return [c["tab"] for c in CAPABILITIES if c["tab"] and c["key"] in held]
 
 
-def profiles_with_cap(db: Session, capability: str) -> list[str]:
-    """Profile keys holding a capability — the extra recipients a notification
+def users_with_cap(db: Session, capability: str) -> list[int]:
+    """Telegram ids holding a capability — the extra recipients a notification
     fans out to alongside the admins who already get it."""
-    rows = db.query(ProfileCapability).filter(
-        ProfileCapability.capability == capability,
+    rows = db.query(UserCapability).filter(
+        UserCapability.capability == capability,
     ).all()
-    return sorted({r.profile_key for r in rows if r.profile_key})
+    return sorted({r.telegram_id for r in rows if r.telegram_id})
+
+
+def account_unit_ids(db: Session, telegram_id: int) -> Optional[list[int]]:
+    """Unit ids an account's OWN scope covers, unioned over every profile it
+    holds; None when ANY of them is already unrestricted (admin/top-manager/
+    leader), matching :func:`profile_unit_ids`' None convention.
+
+    Used only by notification fan-out: a per-account "own" grant reaches the
+    units of whatever the account can act as, so a co-held profile never hides a
+    unit the grantee should have been told about."""
+    keys: set[str] = set()
+    for r in db.query(TelegramUserRole).filter(
+        TelegramUserRole.telegram_id == telegram_id,
+        TelegramUserRole.status == "approved",
+    ).all():
+        key = r.profile_key or role_row_profile_key(db, r, heal=False)
+        if key:
+            keys.add(key)
+    units: set[int] = set()
+    for key in keys:
+        u = profile_unit_ids(db, key)
+        if u is None:
+            return None
+        units.update(u)
+    return sorted(units)
 
 
 def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
