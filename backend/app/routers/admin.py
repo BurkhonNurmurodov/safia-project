@@ -457,6 +457,8 @@ def update_user_role(
     if not role_row:
         raise HTTPException(status_code=404, detail="Role not found")
 
+    old = {"role": role_row.role, "role_id": role_row.role_id, "status": role_row.status}
+
     # Role / unit reassignment (no status change) is applied directly here.
     if payload.role is not None:
         role_row.role = payload.role
