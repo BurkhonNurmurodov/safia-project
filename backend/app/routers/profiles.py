@@ -431,6 +431,16 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
         db.flush()  # p.id must exist before cells can point at it
         _set_leader_cells(db, p.id, payload.cells)
     db.commit()
+    create_details = [("role", tv("role." + role) if role != "admin" else role),
+                      ("name", name)]
+    if role == "shift-manager":
+        create_details.append(("shift", payload.shift))
+    if role == "leader":
+        create_details.append(("unit", unit_name(db, payload.manager_id)))
+        if payload.cells:
+            create_details.append(("cells", ", ".join(payload.cells)))
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.created",
+                    details=create_details)
     return {"ok": True, "id": p.id}
 
 
