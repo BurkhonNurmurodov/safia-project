@@ -222,6 +222,12 @@ export function serializeRich(root) {
       pendingMedia.push(seenMedia(node));
       return "";
     }
+    if (tag === "tg-emoji") { // premium (custom) emoji — kept as an entity; fallback char is the plain text
+      const eid = node.getAttribute("emoji-id");
+      const ch = node.textContent || "";
+      textParts.push(ch);
+      return /^\d+$/.test(eid || "") ? `<tg-emoji emoji-id="${eid}">${escapeHtml(ch)}</tg-emoji>` : escapeHtml(ch);
+    }
     if (tag === "input") {
       return (node.getAttribute("type") || "").toLowerCase() === "checkbox"
         ? `<input type="checkbox"${node.checked ? " checked" : ""}>`

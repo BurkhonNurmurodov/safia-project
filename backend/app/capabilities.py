@@ -312,18 +312,18 @@ def profile_unit_ids(db: Session, key: Optional[str]) -> Optional[list[int]]:
 def cap_recipients(db: Session, capability: str, *manager_ids: Optional[int]) -> set[int]:
     """Telegram ids to notify about work a capability covers.
 
-    Every holder of every profile granted ``capability`` whose scope reaches at
-    least one of ``manager_ids`` — "all" always does, "own" only for its own
-    units. A profile fans out to EVERY account holding it (they are all that one
-    person), which is why this keys off profile_holders rather than a single id."""
+    Every account granted ``capability`` whose scope reaches at least one of
+    ``manager_ids`` — "all" always does, "own" only for the units of a profile
+    the account holds. Keyed per account now, so a grant handed to one login of
+    a shared profile notifies exactly that login."""
     units_wanted = [m for m in manager_ids if m]
     out: set[int] = set()
-    for key in profiles_with_cap(db, capability):
-        if caps_for_profile(db, key).get(capability) != "all":
-            units = profile_unit_ids(db, key)
+    for telegram_id in users_with_cap(db, capability):
+        if caps_for_user(db, telegram_id).get(capability) != "all":
+            units = account_unit_ids(db, telegram_id)
             if units is not None and not any(m in units for m in units_wanted):
                 continue
-        out.update(profile_holders(db, key))
+        out.add(telegram_id)
     return out
 
 
