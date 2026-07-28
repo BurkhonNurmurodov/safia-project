@@ -156,13 +156,13 @@ UNGRANTABLE_ROLES = ("admin",)
 
 # ── reading grants ────────────────────────────────────────────────────────────
 
-def caps_for_profile(db: Session, key: Optional[str]) -> dict[str, str]:
-    """``{capability: scope}`` granted to one profile key. Unknown capability
-    keys (catalog entries removed in code) are dropped rather than returned, so
-    a stale row can never authorize anything."""
-    if not key:
+def caps_for_user(db: Session, telegram_id: Optional[int]) -> dict[str, str]:
+    """``{capability: scope}`` granted to one Telegram account. Unknown
+    capability keys (catalog entries removed in code) are dropped rather than
+    returned, so a stale row can never authorize anything."""
+    if not telegram_id:
         return {}
-    rows = db.query(ProfileCapability).filter(ProfileCapability.profile_key == key).all()
+    rows = db.query(UserCapability).filter(UserCapability.telegram_id == telegram_id).all()
     return {
         r.capability: (r.scope if r.scope in SCOPES else DEFAULT_SCOPE)
         for r in rows if r.capability in CAPABILITY_KEYS
@@ -171,12 +171,19 @@ def caps_for_profile(db: Session, key: Optional[str]) -> dict[str, str]:
 
 def caller_caps(db: Session, payload: dict) -> dict[str, str]:
     """``{capability: scope}`` the JWT holder wields right now. Admins hold the
-    whole catalog at ``all`` — they are the baseline these grants imitate."""
+    whole catalog at ``all`` — they are the baseline these grants imitate.
+
+    Read off the ACCOUNT (``sub`` = telegram id), not the active profile: a
+    grant follows the login it was handed to, so switching profiles keeps it."""
     if not payload:
         return {}
     if payload.get("role") == "admin":
         return {k: "all" for k in CAPABILITY_KEYS}
-    return caps_for_profile(db, viewer_profile_key(db, payload))
+    try:
+        telegram_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return {}
+    return caps_for_user(db, telegram_id)
 
 
 def cap_scope(db: Session, payload: dict, capability: str) -> Optional[str]:
