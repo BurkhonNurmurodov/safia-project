@@ -590,12 +590,16 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
 
 @router.delete("/admin/cells/{cid}")
 def admin_delete_cell(cid: int, db: Session = Depends(get_db),
-                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
+    cell_details = [("cell", row.verifix_code),
+                    ("unit", unit_name(db, row.manager_id))]
     db.delete(row)
     db.commit()
+    alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.deleted",
+                    details=cell_details)
     return {"ok": True}
 
 
