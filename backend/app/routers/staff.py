@@ -9,6 +9,7 @@ Access:
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from html import escape as _html_escape
 from io import BytesIO
 from typing import Annotated, List, Optional
 from uuid import uuid4
