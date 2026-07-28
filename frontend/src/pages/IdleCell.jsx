@@ -83,6 +83,7 @@ function CellAccordion({ cell, date, t, lang }) {
         stopped: e && Number(e.stopped) ? String(e.stopped) : "",
         not_stopped: e && Number(e.not_stopped) ? String(e.not_stopped) : "",
         note: e?.note || "",
+        id: e?.id ?? null,
         saved: e ? { stopped: Number(e.stopped) || 0, not_stopped: Number(e.not_stopped) || 0, note: e.note || "" } : null,
       };
     }
