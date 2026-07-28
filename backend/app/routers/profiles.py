@@ -398,6 +398,10 @@ def admin_create_profile(payload: CreateProfilePayload, db: Session = Depends(ge
             raise HTTPException(status_code=409, detail="Verifix ID already in use")
         db.add(Manager(id=payload.verifix_id, name=name, shift=payload.shift, archived=False))
         db.commit()
+        alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.created",
+                        details=[("role", tv("role.supervisor")), ("name", name),
+                                 ("shift", payload.shift),
+                                 ("verifix_code", payload.verifix_id)])
         return {"ok": True, "id": payload.verifix_id}
 
     if role == "shift-manager":
