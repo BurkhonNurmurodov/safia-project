@@ -18,6 +18,7 @@ import ProductionUpload from "./ProductionUpload";
 import CellAttendanceUpload from "./CellAttendanceUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
+import ActionHistory from "./ActionHistory";
 import LeaderTasksAdmin from "./LeaderTasksAdmin";
 import { fillDescs } from "../../utils/segments";
 
