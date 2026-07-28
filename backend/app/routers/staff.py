@@ -1293,6 +1293,14 @@ def bulk_delete_attendance(
     print(f"[bulk-delete] role={role} manager_id={manager_id} date={body.attend_date} requested={len(body.worker_names)} affected={affected} — committing")
     db.commit()
     print(f"[bulk-delete] commit OK")
+    if direct and affected:
+        alert_grant_use(
+            db, caller, CAP_ATTENDANCE_DELETE, "attendance.bulk_delete",
+            details=[("unit", unit_name(db, manager_id)),
+                     ("date", body.attend_date),
+                     ("count", affected)],
+            changes=deleted_rows,
+        )
     # A replaced batch's old requests were just rejected — clear its admin message.
     if body.replace_batch_id:
         try:
