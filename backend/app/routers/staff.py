@@ -3388,18 +3388,29 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=404, detail="Document not found")
 
     is_creator = _is_doc_creator(doc, caller)
+    # Details snapshot BEFORE the delete below: expired attributes of a deleted
+    # row can't be read back after commit.
+    grant_alert = None   # (details, changes) when a grant authorized this
     # Approved docs may only be removed by an approver (reverts effects first).
     if doc.status == "approved":
         if not _can_approve_doc(doc, caller, db):
             raise HTTPException(status_code=403, detail="Approved documents can only be deleted by an approver")
+        if _doc_via_grant(doc, caller, db):
+            grant_alert = (_doc_alert_details(db, doc),
+                           [("status", tv("v.approved"), None)])
         _revert_doc_effects(db, doc)
     elif doc.status == "draft":
         # Deleting a pending draft IS its rejection — keep the record instead of
         # erasing it, same as the Telegram ❌ button. Clears the admins' buttons.
         if not _may_reject_doc(doc, caller, db):
             raise HTTPException(status_code=403, detail="Not allowed to reject this document")
+        via_grant = _doc_reject_via_grant(doc, caller, db)
         _reject_document(doc, caller, db)
         db.commit()
+        alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.rejected",
+                        details=_doc_alert_details(db, doc),
+                        changes=[("status", tv("v.draft"), tv("v.rejected"))],
+                        native=not via_grant)
         try:
             from app.approvals import edit_admin_notices
             edit_admin_notices("hr_document", str(doc_id), "rejected", caller.get("full_name", ""))
@@ -3411,6 +3422,10 @@ def delete_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
 
     db.delete(doc)
     db.commit()
+    if grant_alert:
+        alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.deleted",
+                        details=grant_alert[0], changes=grant_alert[1],
+                        native=False)
     return {"ok": True}
 
 
