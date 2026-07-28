@@ -38,6 +38,7 @@ export default function Button({
     primary:   { background: "var(--brand)",    color: "#fff", border: "1px solid transparent" },
     secondary: { background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border-md)" },
     danger:    { background: "#ef4444",         color: "#fff", border: "1px solid transparent" },
+    success:   { background: "#217346",         color: "#fff", border: "1px solid transparent" },
     ghost:     { background: "transparent",     color: "var(--text-3)", border: "1px solid transparent" },
   }[variant];
 
