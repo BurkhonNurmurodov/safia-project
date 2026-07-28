@@ -291,6 +291,12 @@ _T = {
     "l.leader": ("Lider", "Лидер", "Лидер", "Leader"),
     "l.cells": ("Yacheykalar", "Ячейкалар", "Ячейки", "Cells"),
     "l.note": ("Izoh", "Изоҳ", "Примечание", "Note"),
+    "l.category": ("Kategoriya", "Категория", "Категория", "Category"),
+    "l.stopped": ("To'xtaganda", "Тўхтаганда", "Остановлена (мин)", "Stopped (min)"),
+    "l.not_stopped": ("To'xtamaganda", "Тўхтамаганда",
+                      "Не остановлена (мин)", "Not stopped (min)"),
+    "l.text": ("Matn", "Матн", "Текст", "Text"),
+    "l.deadline": ("Muddat (kun)", "Муддат (кун)", "Срок (дней)", "Deadline (days)"),
 
     # misc values
     "doc.people_exchange": ("Xodim ko'chirish", "Ходим кўчириш",
