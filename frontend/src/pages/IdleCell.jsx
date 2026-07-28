@@ -192,8 +192,9 @@ function CellAccordion({ cell, date, t, lang }) {
               <div className="text-right">{t("idleCell.notStopped")}</div>
               <div>{t("idleCell.note")}</div>
             </div>
-            {rowStatus.map(({ cat, incomplete, hasNote, hasMin }) => {
+            {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
               const Icon = CAT_ICON[cat.code] || Layers;
+              const catColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
               const r = rows[cat.code];
               const showInfo = infoOpen === cat.code;
               const minErr = incomplete && !hasMin;
