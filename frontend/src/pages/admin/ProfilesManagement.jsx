@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   IdCard, Plus, RefreshCw, Trash2, Pencil, X,
   Star, UserCog, Users, Flag, Shield, Archive, ArchiveRestore, Languages,
-  UserRound, Clock, LayoutGrid, Hash, Link2, Settings2, Factory,
+  UserRound, Clock, LayoutGrid, Hash, Link2, Settings2,
 } from "lucide-react";
 import api from "../../utils/api";
 import Modal from "../../components/ui/Modal";
@@ -12,8 +12,6 @@ import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
-import SearchInput from "../../components/ui/SearchInput";
-import { ColFilter, TxtFilter, OptsFilter } from "../../components/ui/ColumnFilter";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
@@ -22,9 +20,8 @@ import { useTranslit, transliterate, convertFromUz } from "../../utils/translite
 
 // The profile sections. `listKey` = field in GET /api/profiles/admin/list.
 // Guests are self-created at registration — the section manages (rename /
-// delete / unassign) but never creates them. "cells" is not a profile type —
-// it's the first-class cell registry (verifix/sap codes + workshop names),
-// rendered with its own columns and modal.
+// delete / unassign) but never creates them. The cell registry is NOT a
+// section here — it lives on its own first-class /cells page (pages/Cells.jsx).
 const TYPES = [
   { key: "top-manager",   listKey: "top_managers",   tKey: "admin.profiles.topManagers",   icon: Star },
   { key: "shift-manager", listKey: "shift_managers", tKey: "admin.profiles.shiftManagers", icon: UserCog },
@@ -32,7 +29,6 @@ const TYPES = [
   { key: "leader",        listKey: "leaders",        tKey: "admin.profiles.leaders",       icon: Flag },
   { key: "admin",         listKey: "admins",         tKey: "admin.profiles.admins",        icon: Shield },
   { key: "guest",         listKey: "guests",         tKey: "admin.profiles.guests",        icon: UserRound },
-  { key: "cells",         listKey: "cells",          tKey: "admin.profiles.cellsTab",      icon: LayoutGrid },
 ];
 
 // name_* / name_workshop_* column suffixes beyond canonical uz Latin.
@@ -66,7 +62,7 @@ function HolderChip({ b, onUnassign, disabled }) {
   );
 }
 
-export default function ProfilesManagement({ cellsOnly = false, canEdit = true }) {
+export default function ProfilesManagement() {
   // A capability grantee may run this tab but never touch ADMIN identities
   // (the backend refuses every write; hiding the section keeps the UI honest
   // rather than showing buttons that 403).
@@ -76,8 +72,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
-  const [type, setType] = useState(cellsOnly ? "cells" : "top-manager");
-  const [cellSearch, setCellSearch] = useState("");   // cells view free-text filter
+  const [type, setType] = useState("top-manager");
   const [modal, setModal] = useState(null);        // {mode:"add"|"edit", item?} — form modal
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
@@ -88,18 +83,13 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const [newCellError, setNewCellError] = useState("");
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    // The Cells page reads a dedicated, lighter endpoint gated by PAGE access
-    // (require_page("cells")) so a view-only grantee can load it — never the
-    // full profile roster + Telegram bindings that /admin/list exposes.
-    queryKey: cellsOnly ? ["admin-cells"] : ["admin-profiles"],
-    queryFn: () =>
-      api.get(cellsOnly ? "/api/profiles/admin/cells" : "/api/profiles/admin/list")
-        .then((r) => r.data),
+    queryKey: ["admin-profiles"],
+    queryFn: () => api.get("/api/profiles/admin/list").then((r) => r.data),
   });
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ["admin-profiles"] });
-    qc.invalidateQueries({ queryKey: ["admin-cells"] });
+    qc.invalidateQueries({ queryKey: ["admin-cells"] });   // leader ↔ cell edits touch the /cells page too
     qc.invalidateQueries({ queryKey: ["admin-users"] });
     reloadTranslations();
   };
@@ -116,20 +106,9 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
     onError: fail,
   });
   const deleteMut = useMutation({
-    // "cells" rides the same admin prefix but its own registry endpoints.
     mutationFn: ({ ptype, pid }) => api.delete(`/api/profiles/admin/${ptype}/${pid}`),
     onSuccess: () => { done(); setConfirmDelete(null); },
     onError: (e) => { setConfirmDelete(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
-  });
-  const cellCreateMut = useMutation({
-    mutationFn: (body) => api.post("/api/profiles/admin/cells", body),
-    onSuccess: () => { done(); setModal(null); },
-    onError: fail,
-  });
-  const cellUpdateMut = useMutation({
-    mutationFn: ({ cid, body }) => api.put(`/api/profiles/admin/cells/${cid}`, body),
-    onSuccess: () => { done(); setModal(null); },
-    onError: fail,
   });
   const inlineCellCreateMut = useMutation({
     // Create a cell from inside the leader modal WITHOUT closing it: the new
@@ -138,6 +117,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
     mutationFn: (body) => api.post("/api/profiles/admin/cells", body),
     onSuccess: (_r, body) => {
       qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+      qc.invalidateQueries({ queryKey: ["admin-cells"] });
       setForm((f) => ({ ...f, cells: [...new Set([...(f.cells || []), body.verifix_code])] }));
       setNewCell(null);
       setNewCellError("");
@@ -160,13 +140,12 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
     },
   });
 
-  const busy = createMut.isPending || updateMut.isPending || switchMut.isPending ||
-    cellCreateMut.isPending || cellUpdateMut.isPending;
+  const busy = createMut.isPending || updateMut.isPending || switchMut.isPending;
   const activeType = TYPES.find((x) => x.key === type);
-  const isCells = type === "cells";
   const items = data?.[activeType.listKey] ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
-  // Workshop name in the viewer's language, first known language as fallback.
+  // Workshop name in the viewer's language, first known language as fallback
+  // (used by the leader cell-picker labels + the inline cell-create modal).
   const wname = (c) =>
     c[`name_workshop_${lang}`] || c.name_workshop_uz || c.name_workshop_uz_cyrl ||
     c.name_workshop_ru || c.name_workshop_en || "";
@@ -176,71 +155,8 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
-  // ── Google-Sheets-style per-column filters (cells registry) ─────────────────
-  // A funnel on each column opens a searchable checkbox list of that column's
-  // distinct values; empty selection = column unfiltered, several columns AND.
-  const FILT_COLS = ["verifix_code", "sap_code", "workshop", "supervisor", "owner"];
-  const colVal = {
-    verifix_code: (c) => c.verifix_code || "",
-    sap_code:     (c) => c.sap_code || "",
-    workshop:     (c) => wname(c) || "",
-    supervisor:   (c) => c.supervisor || "",
-    owner:        (c) => c.leader || "",
-  };
-  const colRender = {
-    supervisor: (o) => (o ? tl(o) : "—"),
-    owner:      (o) => (o ? tl(o) : t("admin.profiles.cellUnassigned")),
-  };
-  const colOpts = useMemo(() => {
-    const m = {};
-    for (const k of FILT_COLS)
-      m[k] = [...new Set(items.map(colVal[k]))]
-        .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, lang]);
-
-  const [colSel, setColSel] = useState({ verifix_code: [], sap_code: [], workshop: [], supervisor: [], owner: [] });
-  const [colQ, setColQ] = useState({ verifix_code: "", sap_code: "", workshop: "", supervisor: "", owner: "" });
-
-  // The funnel node handed to each cells <Th> — search box (for long lists) over
-  // a checkbox list of distinct values, both from the shared filter templates.
-  const colFilter = (k) => {
-    const opts = colOpts[k] || [];
-    const q = (colQ[k] || "").trim().toLowerCase();
-    const shown = q
-      ? opts.filter((o) => String(colRender[k] ? colRender[k](o) : (o || "—")).toLowerCase().includes(q))
-      : opts;
-    return (
-      <ColFilter active={colSel[k].length > 0}>
-        {opts.length > 8 && (
-          <div className="mb-1.5">
-            <TxtFilter value={colQ[k]} onChange={(v) => setColQ((s) => ({ ...s, [k]: v }))} />
-          </div>
-        )}
-        <OptsFilter opts={shown} sel={colSel[k]} render={colRender[k]}
-          onChange={(v) => setColSel((s) => ({ ...s, [k]: v }))} />
-      </ColFilter>
-    );
-  };
-
-  // Cells view: the global search box (all columns) AND the per-column funnels.
-  // Profiles views stay untouched (short lists, server-ordered).
-  const filtered = useMemo(() => {
-    if (!isCells) return items;
-    const q = cellSearch.trim().toLowerCase();
-    return items.filter((c) => {
-      if (q && !`${c.verifix_code || ""} ${c.sap_code || ""} ${wname(c)} ${tl(c.supervisor) || ""} ${tl(c.leader) || ""}`
-            .toLowerCase().includes(q)) return false;
-      for (const k of FILT_COLS)
-        if (colSel[k].length && !colSel[k].includes(colVal[k](c))) return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isCells, cellSearch, colSel, tl, lang]);
-
   const sorted = useMemo(() => {
-    if (!sort.key) return filtered;
+    if (!sort.key) return items;
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (it) => {
       switch (sort.key) {
@@ -248,53 +164,26 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
         case "supervisor": return tl(it.supervisor) || "";
         case "cell":       return (it.cells || []).join(", ");
         case "verifix":    return it.id;
-        case "verifix_code": return it.verifix_code || "";
-        case "sap_code":     return it.sap_code || "";
-        case "workshop":     return wname(it);
-        case "owner":        return tl(it.leader) || "";
         default:           return tl(it.name) || "";
       }
     };
-    return [...filtered].sort((a, b) => {
+    return [...items].sort((a, b) => {
       const va = val(a), vb = val(b);
       if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
     });
-  }, [filtered, sort, tl]);
+  }, [items, sort, tl]);
 
   // name + holders + actions, plus the per-type extras.
-  const colSpan = isCells
-    ? (canEdit ? 6 : 5)
-    : 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
+  const colSpan = 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
 
   function openAdd() {
-    if (isCells) {
-      setForm({ verifix_code: "", sap_code: "", manager_id: "", leader_id: "",
-                name_workshop_uz: "", name_workshop_uz_cyrl: "",
-                name_workshop_ru: "", name_workshop_en: "" });
-    } else {
-      setForm({ name: "", shift: 1, manager_id: "", cells: [], cellInput: "", verifix_id: "" });
-    }
+    setForm({ name: "", shift: 1, manager_id: "", cells: [], cellInput: "", verifix_id: "" });
     setFormError("");
     setModal({ mode: "add" });
   }
 
   function openEdit(item) {
-    if (isCells) {
-      setForm({
-        verifix_code: item.verifix_code || "",
-        sap_code: item.sap_code || "",
-        manager_id: item.manager_id ? String(item.manager_id) : "",
-        leader_id: item.leader_id ? String(item.leader_id) : "",
-        name_workshop_uz: item.name_workshop_uz || "",
-        name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
-        name_workshop_ru: item.name_workshop_ru || "",
-        name_workshop_en: item.name_workshop_en || "",
-      });
-      setFormError("");
-      setModal({ mode: "edit", item });
-      return;
-    }
     const ov = {};
     for (const l of languages) {
       if (l.code === "uz") continue; // canonical IS the Uzbek name — no override input
@@ -368,24 +257,6 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   function submit() {
     setFormError("");
 
-    if (isCells) {
-      const code = (form.verifix_code || "").trim();
-      if (!code) { setFormError(t("admin.profiles.verifixCodeRequired")); return; }
-      const body = {
-        verifix_code: code,
-        sap_code: form.sap_code || "",
-        name_workshop_uz: form.name_workshop_uz || "",
-        name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
-        name_workshop_ru: form.name_workshop_ru || "",
-        name_workshop_en: form.name_workshop_en || "",
-        manager_id: form.manager_id ? Number(form.manager_id) : 0,
-        leader_id: form.leader_id ? Number(form.leader_id) : 0,
-      };
-      if (modal.mode === "add") cellCreateMut.mutate(body);
-      else cellUpdateMut.mutate({ cid: modal.item.id, body });
-      return;
-    }
-
     if (roleChanged) {
       const body = { ptype: type, pid: modal.item.id, new_role: form.role };
       if (form.role === "shift-manager" || form.role === "supervisor") {
@@ -450,17 +321,13 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
 
   return (
-    // Standalone page (cellsOnly) fills the full content width like every other
-    // sidebar page — Layout's <main> already provides the padding. The
-    // admin-panel tab keeps its own centered max-width + inner padding.
-    <div className={cellsOnly ? "w-full" : "max-w-6xl mx-auto p-4 sm:p-8"}>
+    <div className="max-w-6xl mx-auto p-4 sm:p-8">
       {/* Canonical POSITIONS-style TableCard: count in the head, type pills +
           actions in the toolbar, per-column sort. */}
       <TableCard
-        icon={cellsOnly ? LayoutGrid : IdCard}
-        title={cellsOnly ? t("admin.profiles.cellsTab") : t("admin.profiles.title")}
+        icon={IdCard}
+        title={t("admin.profiles.title")}
         wrap
-        fixed={isCells}
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
             {sorted.length}
@@ -468,14 +335,12 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
         }
         toolbar={
           <>
-            {/* Type pills — the shared segmented-toggle template (scroll for phones).
-                Hidden on the dedicated Cells tab, where cells is the only view. */}
-            {!cellsOnly && (
+            {/* Type pills — the shared segmented-toggle template (scroll for phones). */}
             <div className="no-scrollbar max-w-full overflow-x-auto">
               <SegmentedToggle
                 value={type}
                 onChange={(v) => { setType(v); setSort({ key: null, dir: "asc" }); }}
-                options={sections.filter((x) => x.key !== "cells").map(({ key, tKey, icon: Icon, listKey }) => ({
+                options={sections.map(({ key, tKey, icon: Icon, listKey }) => ({
                   value: key,
                   label: (
                     <span className="inline-flex items-center gap-1.5">
@@ -489,18 +354,9 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                 }))}
               />
             </div>
-            )}
-            {isCells && (
-              <SearchInput
-                value={cellSearch}
-                onChange={setCellSearch}
-                placeholder={t("admin.profiles.cellSearchPh")}
-                className="w-full sm:w-72"
-              />
-            )}
-            {type !== "guest" && canEdit && (
+            {type !== "guest" && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
-                {isCells ? t("admin.profiles.cellCreate") : t("admin.profiles.add")}
+                {t("admin.profiles.add")}
               </Button>
             )}
             <Button
@@ -517,16 +373,6 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
         }
       >
         <thead>
-          {isCells ? (
-            <tr>
-              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} filter={colFilter("verifix_code")} cls="w-[13%]" />
-              <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} filter={colFilter("sap_code")} cls="w-[12%]" />
-              <Th icon={Factory} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} filter={colFilter("workshop")} cls="w-[29%]" />
-              <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} filter={colFilter("supervisor")} cls="w-[19%]" />
-              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} filter={colFilter("owner")} cls="w-[19%]" />
-              {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[8%]" />}
-            </tr>
-          ) : (
           <tr>
             <Th icon={UserRound} label={t("admin.profiles.colName")} k="name" sort={sort} onSort={onSort} />
             {(type === "shift-manager" || type === "supervisor") && (
@@ -544,7 +390,6 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
             <Th icon={Link2} label={t("admin.profiles.colHolders")} />
             <Th icon={Settings2} label={t("admin.profiles.colActions")} />
           </tr>
-          )}
         </thead>
         <tbody>
           {isLoading && Array.from({ length: 6 }).map((_, i) => (
@@ -561,55 +406,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
               </td>
             </tr>
           )}
-          {!isLoading && isCells && sorted.map((item) => (
-            <tr key={item.id}>
-              <td className="px-3 py-2 font-mono font-semibold text-[var(--text-1)] whitespace-nowrap">{item.verifix_code}</td>
-              <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{item.sap_code || "—"}</td>
-              <td className="px-3 py-2">
-                {wname(item)
-                  ? <span className="font-medium text-[var(--text-1)]">{wname(item)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>—</span>}
-              </td>
-              <td className="px-3 py-2 break-words">
-                {item.supervisor
-                  ? <span className="text-[var(--text-2)]">{tl(item.supervisor)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>—</span>}
-              </td>
-              <td className="px-3 py-2 break-words">
-                {item.leader
-                  ? <span className="text-[var(--text-2)]">{tl(item.leader)}</span>
-                  : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
-              </td>
-              {canEdit && (
-              <td className="px-3 py-2">
-                <div className="flex items-center justify-center gap-1.5">
-                  <button
-                    onClick={() => openEdit(item)}
-                    title={t("admin.profiles.edit")}
-                    aria-label={t("admin.profiles.edit")}
-                    className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                    style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(item)}
-                    disabled={deleteMut.isPending}
-                    title={t("admin.profiles.delete")}
-                    aria-label={t("admin.profiles.delete")}
-                    className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-                    style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "rgba(148,163,184,0.22)"; }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </td>
-              )}
-            </tr>
-          ))}
-          {!isLoading && !isCells && sorted.map((item) => (
+          {!isLoading && sorted.map((item) => (
             <tr key={item.id}>
               <td className="px-3 py-2 font-medium text-[var(--text-1)] whitespace-nowrap">
                 {tl(item.name)}
@@ -729,90 +526,8 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
             </>
           }
         >
-              {/* Cell registry form — verifix/sap codes, workshop names, owner */}
-              {isCells && (
-                <>
-                  <FormField label={t("admin.profiles.colVerifixCode")} required>
-                    <input
-                      type="text"
-                      value={form.verifix_code || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, verifix_code: e.target.value }))}
-                      className={inputCls}
-                      style={inputStyle}
-                    />
-                  </FormField>
-                  <FormField label={t("admin.profiles.colSapCode")}>
-                    <input
-                      type="text"
-                      value={form.sap_code || ""}
-                      onChange={(e) => setForm((f) => ({ ...f, sap_code: e.target.value }))}
-                      className={inputCls}
-                      style={inputStyle}
-                    />
-                  </FormField>
-                  <div className="pt-1">
-                    <div className={labelCls} style={{ color: "var(--text-3)" }}>
-                      {t("admin.profiles.colWorkshop")}
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {["uz", ...NAME_LANGS].map((l) => (
-                        <label key={l} className="flex items-center gap-2">
-                          <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
-                                style={{ color: "var(--text-4)" }}>{l}</span>
-                          <input
-                            type="text"
-                            value={form[`name_workshop_${l}`] || ""}
-                            onChange={(e) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: e.target.value }))}
-                            className={inputCls + " !mt-0"}
-                            style={inputStyle}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <FormField label={t("admin.profiles.colSupervisor")}>
-                    <StyledSelect
-                      value={form.manager_id || ""}
-                      onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
-                      disabled={!!form.leader_id}
-                      options={[
-                        { value: "", label: t("admin.profiles.cellNoSupervisor") },
-                        ...units.map((u) => ({ value: String(u.id), label: tl(u.name) })),
-                      ]}
-                    />
-                    {form.leader_id && (
-                      <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
-                        {t("admin.profiles.cellSupervisorFromOwner")}
-                      </p>
-                    )}
-                  </FormField>
-                  <FormField label={t("admin.profiles.colOwner")}>
-                    <StyledSelect
-                      value={form.leader_id || ""}
-                      onChange={(v) => setForm((f) => {
-                        // Owner is authoritative for the supervisor: picking a
-                        // leader inherits their unit; clearing keeps the cell's
-                        // current supervisor (a cell can be leaderless yet owned).
-                        const L = (data?.leaders ?? []).find((x) => String(x.id) === String(v));
-                        return {
-                          ...f,
-                          leader_id: v,
-                          manager_id: v
-                            ? (L?.manager_id ? String(L.manager_id) : f.manager_id)
-                            : f.manager_id,
-                        };
-                      })}
-                      options={[
-                        { value: "", label: t("admin.profiles.cellUnassigned") },
-                        ...(data?.leaders ?? []).map((l) => ({ value: String(l.id), label: tl(l.name) })),
-                      ]}
-                    />
-                  </FormField>
-                </>
-              )}
-
               {/* Role — switching moves only the name; other values are asked fresh */}
-              {!isCells && modal.mode === "edit" && (
+              {modal.mode === "edit" && (
                 <FormField label={t("admin.profiles.roleLabel")}>
                   <StyledSelect
                     value={form.role}
@@ -826,8 +541,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                         : { ...f, role: v, name: modal.item.name,
                             shift: "", manager_id: "", cells: [], cellInput: "", verifix_id: "" });
                     }}
-                    options={TYPES.filter((x) => x.key !== "cells")
-                      .map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
+                    options={TYPES.map(({ key, tKey }) => ({ value: key, label: t(tKey) }))}
                   />
                   {roleChanged && (
                     <p className="mt-1 text-[10px] leading-snug text-yellow-500">
@@ -838,7 +552,6 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
               )}
 
               {/* Canonical name — entered in Uzbek; other languages render automatically */}
-              {!isCells && (
               <FormField label={t("admin.profiles.nameLabel")}>
                 <input
                   type="text"
@@ -861,7 +574,6 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                   </p>
                 )}
               </FormField>
-              )}
 
               {(effType === "shift-manager" || effType === "supervisor") && (
                 <FormField label={t("admin.profiles.shiftLabel")}>
@@ -945,7 +657,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
               {/* Per-language display names — edit only; creation is Uzbek-only.
                   These inputs persist both as role_profiles name_* columns and
                   as translation overrides for tl(). */}
-              {!isCells && modal.mode === "edit" && !roleChanged && (
+              {modal.mode === "edit" && !roleChanged && (
                 <div className="pt-1">
                   <div className={labelCls} style={{ color: "var(--text-3)" }}>
                     {t("admin.profiles.langNames")}
@@ -1068,7 +780,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
         message={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archiveMsg")
           : t("admin.profiles.deleteMsg")
-        ).replace("{name}", confirmDelete.name || confirmDelete.verifix_code || "")}
+        ).replace("{name}", confirmDelete.name || "")}
         confirmLabel={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete"))}
         cancelLabel={t("admin.users.cancel")}
