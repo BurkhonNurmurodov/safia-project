@@ -264,7 +264,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
 
   // name + holders + actions, plus the per-type extras.
   const colSpan = isCells
-    ? 6
+    ? (canEdit ? 6 : 5)
     : 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
 
   function openAdd() {
