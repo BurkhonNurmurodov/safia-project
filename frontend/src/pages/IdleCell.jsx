@@ -124,11 +124,22 @@ function CellAccordion({ cell, date, t, lang }) {
             stopped: data.stopped ? String(data.stopped) : "",
             not_stopped: data.not_stopped ? String(data.not_stopped) : "",
             note: data.note || "",
+            id: data.id,
             saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
           };
         }
         return next;
       }),
+  });
+
+  // Reset one saved category back to 0 — deletes its persisted entry (the backend
+  // rejects a 0/0 save, so clearing = removing the row) and blanks the inputs.
+  const delMut = useMutation({
+    mutationFn: ({ id }) => api.delete(`/api/idle-cell/${id}`),
+    onSuccess: (_d, { code }) => {
+      setRows((r) => ({ ...r, [code]: { stopped: "", not_stopped: "", note: "", id: null, saved: null } }));
+      setConfirmCode(null);
+    },
   });
 
   // Per-category state: which rows are edited (dirty), fully filled (valid → saveable),
