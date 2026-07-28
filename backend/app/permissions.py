@@ -89,6 +89,10 @@ DEFAULT_PAGE_ACCESS = {
     # Setup-times register (среднее время переналадки по ячейкам). Admin-only
     # by default; open up roles from the Access tab.
     "setup": [],
+    # Manual per-cell idle-time (ojidaniya) TEST entry — admin-only by default;
+    # open to leaders/supervisors from the Access tab (or per-person via
+    # page.view.idle-cell on the Permissions tab). Does NOT replace the sheet import.
+    "idle-cell": [],
 }
 
 
