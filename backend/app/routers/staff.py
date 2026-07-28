@@ -1093,6 +1093,14 @@ def admin_update(body: DirectUpdateBody, caller=Depends(_require_staff), db: Ses
             int(caller["sub"]), caller.get("full_name", "Admin"),
         )
     db.commit()
+    if changes:
+        alert_grant_use(
+            db, caller, CAP_ATTENDANCE_EDIT, "attendance.edit",
+            details=[("unit", unit_name(db, body.manager_id)),
+                     ("worker", body.worker_name),
+                     ("date", body.attend_date)],
+            changes=[(f, original.get(f), v) for f, v in changes.items()],
+        )
     return {"ok": True}
 
 
