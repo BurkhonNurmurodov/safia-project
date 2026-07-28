@@ -124,6 +124,15 @@ class _TgSanitizer(HTMLParser):
                 self.html_out.append(f'<a href="{escape(href, quote=True)}">')
                 self.stack.append("a")
             return
+        elif tag == "tg-emoji":
+            # Premium (custom) emoji — kept in classic HTML mode too, not just
+            # rich. Telegram's HTML parse mode renders <tg-emoji emoji-id="…">
+            # for Premium users and the inner fallback char for everyone else.
+            eid = (attrs.get("emoji-id") or "").strip()
+            if eid.isdigit():
+                self.html_out.append(f'<tg-emoji emoji-id="{escape(eid, quote=True)}">')
+                self.stack.append("tg-emoji")
+            return
         elif tag == "pre":
             self._newline()
             out = "pre"
