@@ -1,24 +1,28 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Timer, Pencil, Check, AlertTriangle, Trash2, LayoutGrid } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Timer, Info, Check, Save, ChevronDown,
+  Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
+  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
+} from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import SearchInput from "../components/ui/SearchInput";
-import DayStepper from "../components/ui/DayStepper";
-import Modal from "../components/ui/Modal";
-import ConfirmDialog from "../components/ui/ConfirmDialog";
+import StyledSelect from "../components/ui/StyledSelect";
+import DateRangePicker from "../components/ui/DateRangePicker";
 import Button from "../components/ui/Button";
-import Field from "../components/ui/FormField";
-import TableCard, { Th } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 
-// Ojidaniya categories — MUST mirror backend IDLE_CATEGORIES
-// (services/sheets_reader.py SHIFT_CATEGORIES). `code` is the
-// "downtime.cat.<code>.label" i18n suffix (reused from the Ojidaniya page);
-// `name` is the JSONB key the backend stores. Cat H has no "not stopped" half —
-// its real 2nd source column is a people-count — so `noNs`.
+// Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
+const CAT_ICON = {
+  A: Snowflake, B: Wrench, C: Container, D: Warehouse, D2: PackagePlus,
+  D3: Building2, E: Truck, F: FlaskConical, G: ClipboardList, H: Sparkles, I: Hourglass,
+};
+
+// Ojidaniya categories, A→Z order. MUST mirror backend IDLE_CATEGORIES. `code` is
+// the "downtime.cat.<code>.label"/".note" i18n suffix; `name` is what the backend
+// stores. Cat H has no "not stopped" half (its 2nd source column is a headcount).
 const CATS = [
   { code: "A",  name: "Cat A" },
   { code: "B",  name: "Cat B" },
@@ -33,384 +37,313 @@ const CATS = [
   { code: "I",  name: "Cat I" },
 ];
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const GRID = "minmax(150px,1.5fr) 4.75rem 4.75rem minmax(150px,1.4fr) auto";
+const INPUT_NUM = "w-full rounded-lg px-2 py-1 text-xs text-right outline-none tabular-nums";
+const INPUT_TXT = "w-full rounded-lg px-2 py-1 text-xs outline-none";
+const INPUT_STYLE = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
+
 const pad2 = (n) => String(n).padStart(2, "0");
 const localTodayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const fmtDay = (iso) => {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  return `${parseInt(d, 10)} ${MONTHS[parseInt(m, 10) - 1]} ${y}`;
-};
 const fmtMin = (v) => {
   const n = Number(v) || 0;
   return n % 1 === 0 ? String(n) : n.toFixed(1);
 };
-
-// Cell workshop name in the active language, with graceful fallback.
+const num = (v) => {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
 function cellName(c, lang) {
   const byLang = { uz: c.name_uz, uz_cyrl: c.name_uz_cyrl, ru: c.name_ru, en: c.name_en }[lang];
   return byLang || c.name_ru || c.name_uz || c.name_en || c.name_uz_cyrl || "";
 }
-
-// Build the {name: minutes} map the backend expects from the {code: "string"}
-// form state — drop blanks / non-positive, map code → "Cat <code>", and skip
-// Cat H's not-stopped half.
-function cleanMap(state, isNs = false) {
-  const out = {};
-  for (const cat of CATS) {
-    if (isNs && cat.noNs) continue;
-    const raw = state[cat.code];
-    if (raw == null || raw === "") continue;
-    const n = Number(String(raw).replace(",", "."));
-    if (!Number.isFinite(n) || n <= 0) continue;
-    out[cat.name] = n;
-  }
-  return out;
+// Stable per-cell hue so each verifix badge is visually distinct (identity, not
+// status) — solid mid-tone with white text reads in both themes.
+function hueFromString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
 }
-const sumMap = (m) => Object.values(m || {}).reduce((a, b) => a + (Number(b) || 0), 0);
 
-export default function IdleCell() {
-  const { t, lang } = useLang();
-  const qc = useQueryClient();
-
-  const [date, setDate] = useState(localTodayIso());
-  const [shift, setShift] = useState(1);
-  const [search, setSearch] = useState("");
-
-  // Modal state — the cell being filled in, its per-category minute inputs and
-  // the required note.
-  const [editCell, setEditCell] = useState(null);
-  const [stopped, setStopped] = useState({});
-  const [notStopped, setNotStopped] = useState({});
-  const [note, setNote] = useState("");
-  const [formError, setFormError] = useState("");
-  const [confirmClear, setConfirmClear] = useState(null);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["idle-cell", date, shift],
-    queryFn: () => api.get(`/api/idle-cell?date=${date}&shift=${shift}`).then((r) => r.data),
+// One production cell = one collapsible accordion. Owns its per-category draft
+// inputs + last-saved snapshot; each category row saves independently.
+function CellAccordion({ cell, date, t, lang }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(() => {
+    const init = {};
+    for (const cat of CATS) {
+      const e = (cell.entries || []).find((x) => x.category === cat.name);
+      init[cat.code] = {
+        stopped: e && Number(e.stopped) ? String(e.stopped) : "",
+        not_stopped: e && Number(e.not_stopped) ? String(e.not_stopped) : "",
+        note: e?.note || "",
+        saved: e ? { stopped: Number(e.stopped) || 0, not_stopped: Number(e.not_stopped) || 0, note: e.note || "" } : null,
+      };
+    }
+    return init;
   });
-  const cells = data?.cells ?? [];
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return cells;
-    return cells.filter(
-      (c) =>
-        (c.verifix_code || "").toLowerCase().includes(q) ||
-        (c.sap_code || "").toLowerCase().includes(q) ||
-        cellName(c, lang).toLowerCase().includes(q),
-    );
-  }, [cells, search, lang]);
+  const setField = (code, field, val) =>
+    setRows((r) => ({ ...r, [code]: { ...r[code], [field]: val } }));
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["idle-cell"] });
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
+  const saveMut = useMutation({
+    mutationFn: ({ cat }) =>
       api
         .post("/api/idle-cell", {
-          cell_id: editCell.cell_id,
+          cell_id: cell.cell_id,
           date,
-          shift,
-          by_category: cleanMap(stopped),
-          by_category_ns: cleanMap(notStopped, true),
-          note: note.trim(),
+          category: cat.name,
+          stopped: num(rows[cat.code].stopped),
+          not_stopped: cat.noNs ? 0 : num(rows[cat.code].not_stopped),
+          note: rows[cat.code].note.trim(),
         })
         .then((r) => r.data),
-    onSuccess: () => {
-      invalidate();
-      closeModal();
-    },
-    onError: (e) => setFormError(e?.response?.data?.detail || t("idleCell.saveError")),
+    onSuccess: (data, { cat }) =>
+      setRows((r) => ({
+        ...r,
+        [cat.code]: {
+          stopped: data.stopped ? String(data.stopped) : "",
+          not_stopped: data.not_stopped ? String(data.not_stopped) : "",
+          note: data.note || "",
+          saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
+        },
+      })),
   });
 
-  const clearMutation = useMutation({
-    mutationFn: (id) => api.delete(`/api/idle-cell/${id}`),
-    onSuccess: () => {
-      invalidate();
-      setConfirmClear(null);
-      closeModal();
-    },
-  });
-
-  function openEdit(c) {
-    setEditCell(c);
-    const s = {};
-    const ns = {};
-    const e = c.entry;
-    if (e) {
-      for (const cat of CATS) {
-        const v = e.by_category?.[cat.name];
-        if (v != null) s[cat.code] = String(v);
-        const vn = e.by_category_ns?.[cat.name];
-        if (vn != null) ns[cat.code] = String(vn);
-      }
-    }
-    setStopped(s);
-    setNotStopped(ns);
-    setNote(e?.note || "");
-    setFormError("");
-  }
-  function closeModal() {
-    setEditCell(null);
-    setStopped({});
-    setNotStopped({});
-    setNote("");
-    setFormError("");
-  }
-  function submit() {
-    if (!note.trim()) return setFormError(t("idleCell.noteRequired"));
-    saveMutation.mutate();
-  }
-
-  const setStoppedVal = (code, v) => setStopped((s) => ({ ...s, [code]: v }));
-  const setNsVal = (code, v) => setNotStopped((s) => ({ ...s, [code]: v }));
-  const catLabel = (cat) => t(`downtime.cat.${cat.code}.label`);
-
-  const totalStopped = sumMap(cleanMap(stopped));
-  const totalNs = sumMap(cleanMap(notStopped, true));
-
-  const inputCls = "w-full rounded-lg px-2 py-1 text-xs text-right outline-none";
-  const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
+  const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
+  const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
+  const hue = hueFromString(cell.verifix_code || "");
+  const name = cellName(cell, lang);
 
   return (
-    <Layout title={t("idleCell.title")}>
-      <TableCard
-        icon={Timer}
-        title={t("idleCell.title")}
-        subtitle={t("idleCell.testNote")}
-        right={
-          <span className="text-xs" style={{ color: "var(--text-3)" }}>
-            {filtered.length} {t("idleCell.cellsWord")}
-          </span>
-        }
-        toolbar={
-          <>
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder={t("idleCell.searchPlaceholder")}
-              className="w-full sm:w-52"
-            />
-            <DayStepper value={date} onChange={setDate} />
-            <div className="ml-auto">
-              <SegmentedToggle
-                value={shift}
-                onChange={setShift}
-                options={[
-                  [1, t("idleCell.shift1")],
-                  [2, t("idleCell.shift2")],
-                ]}
-              />
-            </div>
-          </>
-        }
-      >
-        <thead>
-          <tr>
-            <Th icon={LayoutGrid} label={t("idleCell.colCell")} />
-            <Th label={t("idleCell.colStatus")} align="center" />
-            <Th label={t("idleCell.colStopped")} align="right" />
-            <Th label={t("idleCell.colNotStopped")} align="right" />
-            <Th label={t("idleCell.colNote")} />
-            <Th label="" align="center" />
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading &&
-            Array.from({ length: 6 }).map((_, i) => (
-              <tr key={`sk-${i}`}>
-                {Array.from({ length: 6 }).map((__, j) => (
-                  <td key={j} className="px-3 py-2.5">
-                    <SkeletonBlock className="h-4 w-full" />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          {!isLoading && filtered.length === 0 && (
-            <tr>
-              <td colSpan={6} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
-                {t("idleCell.empty")}
-              </td>
-            </tr>
-          )}
-          {!isLoading &&
-            filtered.map((c) => {
-              const e = c.entry;
-              return (
-                <tr
-                  key={c.cell_id}
-                  className="align-top cursor-pointer"
-                  onClick={() => openEdit(c)}
-                >
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <div className="font-semibold" style={{ color: "var(--text-1)" }}>{c.verifix_code}</div>
-                    {(cellName(c, lang) || c.sap_code) && (
-                      <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
-                        {cellName(c, lang)}
-                        {c.sap_code ? `${cellName(c, lang) ? " · " : ""}${c.sap_code}` : ""}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-center">
-                    {e ? (
-                      <span
-                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full"
-                        style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}
-                      >
-                        <Check size={12} /> {t("idleCell.entered")}
-                      </span>
-                    ) : (
-                      <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("idleCell.notEntered")}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "var(--text-1)" }}>
-                    {e ? fmtMin(e.total_minutes) : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
-                    {e ? fmtMin(e.total_minutes_ns) : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 max-w-xs" style={{ color: "var(--text-2)" }}>
-                    <div className="line-clamp-1" title={e?.note || ""}>{e?.note || ""}</div>
-                  </td>
-                  <td className="px-3 py-2.5 text-center" onClick={(ev) => ev.stopPropagation()}>
-                    <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={() => openEdit(c)}>
-                      {t("idleCell.edit")}
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-        </tbody>
-      </TableCard>
-
-      {/* Fill-in modal — the full category breakdown for one cell/date/shift + a
-          required note. */}
-      {editCell && (
-        <Modal
-          onClose={closeModal}
-          icon={<Timer size={16} style={{ color: "var(--brand-text)" }} />}
-          title={t("idleCell.modalTitle")}
-          subtitle={`${editCell.verifix_code}${cellName(editCell, lang) ? " · " + cellName(editCell, lang) : ""}`}
-          footer={
-            <>
-              {editCell.entry && (
-                <Button
-                  variant="danger"
-                  className="mr-auto"
-                  icon={<Trash2 size={14} />}
-                  onClick={() => setConfirmClear(editCell.entry)}
-                >
-                  {t("idleCell.clear")}
-                </Button>
-              )}
-              <Button variant="secondary" onClick={closeModal}>{t("idleCell.cancel")}</Button>
-              <Button loading={saveMutation.isPending} onClick={submit}>{t("idleCell.save")}</Button>
-            </>
-          }
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left">
+        <ChevronDown
+          size={16}
+          style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+        />
+        <span
+          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
+          style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
         >
-          <div className="flex items-center gap-2 mb-3 text-[11px]" style={{ color: "var(--text-3)" }}>
-            <span className="px-2 py-1 rounded-lg" style={{ background: "var(--bg-inner)" }}>{fmtDay(date)}</span>
-            <span className="px-2 py-1 rounded-lg" style={{ background: "var(--bg-inner)" }}>
-              {shift === 1 ? t("idleCell.shift1") : t("idleCell.shift2")}
-            </span>
-          </div>
+          {cell.verifix_code}
+        </span>
+        <span className="truncate text-sm" style={{ color: "var(--text-1)" }}>{name || "—"}</span>
+        <span className="ml-auto flex items-center gap-3 flex-shrink-0 text-xs tabular-nums">
+          <span>
+            <span className="mr-1" style={{ color: "var(--text-4)" }}>{t("idleCell.stopped")}</span>
+            <span style={{ color: sumStopped ? "#ef4444" : "var(--text-3)", fontWeight: 600 }}>{fmtMin(sumStopped)}</span>
+          </span>
+          <span>
+            <span className="mr-1" style={{ color: "var(--text-4)" }}>{t("idleCell.notStopped")}</span>
+            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtMin(sumNs)}</span>
+          </span>
+        </span>
+      </button>
 
-          <div className="rounded-xl overflow-hidden mb-3" style={{ border: "1px solid var(--border)" }}>
+      {open && (
+        <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
+          <div style={{ minWidth: 660 }}>
             <div
-              className="grid grid-cols-[1fr_5rem_5rem] gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide"
-              style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+              className="grid gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ gridTemplateColumns: GRID, background: "var(--bg-inner)", color: "var(--text-3)" }}
             >
               <div>{t("idleCell.category")}</div>
               <div className="text-right">{t("idleCell.stopped")}</div>
               <div className="text-right">{t("idleCell.notStopped")}</div>
+              <div>{t("idleCell.note")}</div>
+              <div />
             </div>
-            {CATS.map((cat) => (
-              <div
-                key={cat.code}
-                className="grid grid-cols-[1fr_5rem_5rem] gap-2 items-center px-3 py-1.5"
-                style={{ borderTop: "1px solid var(--border)" }}
-              >
-                <div className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: "var(--text-1)" }}>
-                  <span
-                    className="font-mono text-[10px] px-1 rounded flex-shrink-0"
-                    style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
-                  >
-                    {cat.code}
-                  </span>
-                  <span className="truncate" title={catLabel(cat)}>{catLabel(cat)}</span>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  value={stopped[cat.code] ?? ""}
-                  onChange={(ev) => setStoppedVal(cat.code, ev.target.value)}
-                  className={inputCls}
-                  style={inputStyle}
-                />
-                {cat.noNs ? (
-                  <div className="text-center text-xs" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>
-                    —
+            {CATS.map((cat) => {
+              const Icon = CAT_ICON[cat.code] || Layers;
+              const r = rows[cat.code];
+              const hasNote = r.note.trim().length > 0;
+              const hasMin = num(r.stopped) > 0 || (!cat.noNs && num(r.not_stopped) > 0);
+              const dirty =
+                !r.saved ||
+                num(r.stopped) !== r.saved.stopped ||
+                (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
+                r.note.trim() !== r.saved.note;
+              const canSave = hasNote && hasMin && dirty;
+              const saving = saveMut.isPending && saveMut.variables?.cat?.code === cat.code;
+              const savedClean = !!r.saved && !dirty;
+              return (
+                <div
+                  key={cat.code}
+                  className="grid gap-2 items-center px-3 py-1.5"
+                  style={{ gridTemplateColumns: GRID, borderTop: "1px solid var(--border)" }}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Icon size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+                    <span className="text-xs truncate" style={{ color: "var(--text-1)" }} title={t(`downtime.cat.${cat.code}.label`)}>
+                      {t(`downtime.cat.${cat.code}.label`)}
+                    </span>
+                    <span
+                      className="flex-shrink-0 inline-flex"
+                      style={{ cursor: "help", color: "var(--text-4)" }}
+                      title={t(`downtime.cat.${cat.code}.note`)}
+                    >
+                      <Info size={12} />
+                    </span>
                   </div>
-                ) : (
                   <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    value={notStopped[cat.code] ?? ""}
-                    onChange={(ev) => setNsVal(cat.code, ev.target.value)}
-                    className={inputCls}
-                    style={inputStyle}
+                    type="number" min="0" step="any" inputMode="decimal"
+                    value={r.stopped}
+                    onChange={(e) => setField(cat.code, "stopped", e.target.value)}
+                    className={INPUT_NUM} style={INPUT_STYLE}
                   />
-                )}
-              </div>
-            ))}
-            <div
-              className="grid grid-cols-[1fr_5rem_5rem] gap-2 px-3 py-2 text-xs font-semibold"
-              style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)", color: "var(--text-1)" }}
-            >
-              <div>{t("idleCell.total")}</div>
-              <div className="text-right tabular-nums">{fmtMin(totalStopped)}</div>
-              <div className="text-right tabular-nums">{fmtMin(totalNs)}</div>
-            </div>
+                  {cat.noNs ? (
+                    <div className="text-center text-xs" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
+                  ) : (
+                    <input
+                      type="number" min="0" step="any" inputMode="decimal"
+                      value={r.not_stopped}
+                      onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
+                      className={INPUT_NUM} style={INPUT_STYLE}
+                    />
+                  )}
+                  <input
+                    type="text"
+                    value={r.note}
+                    onChange={(e) => setField(cat.code, "note", e.target.value)}
+                    placeholder={t("idleCell.notePlaceholder")}
+                    className={INPUT_TXT} style={INPUT_STYLE}
+                  />
+                  <Button
+                    size="sm"
+                    variant={savedClean ? "secondary" : "primary"}
+                    disabled={!canSave}
+                    loading={saving}
+                    icon={savedClean ? <Check size={13} /> : <Save size={13} />}
+                    onClick={() => saveMut.mutate({ cat })}
+                  >
+                    {savedClean ? t("idleCell.saved") : t("idleCell.save")}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
-
-          <Field label={t("idleCell.note")} required>
-            <textarea
-              value={note}
-              onChange={(ev) => setNote(ev.target.value)}
-              rows={3}
-              placeholder={t("idleCell.notePlaceholder")}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-          </Field>
-
-          {formError && (
-            <div className="flex items-center gap-1.5 text-xs text-red-400 mt-2">
-              <AlertTriangle size={13} /> {formError}
-            </div>
-          )}
-        </Modal>
+        </div>
       )}
+    </div>
+  );
+}
 
-      <ConfirmDialog
-        open={!!confirmClear}
-        onCancel={() => setConfirmClear(null)}
-        onConfirm={() => clearMutation.mutate(confirmClear.id)}
-        title={t("idleCell.clearTitle")}
-        message={t("idleCell.clearConfirm")}
-        confirmLabel={t("idleCell.delete")}
-        cancelLabel={t("idleCell.cancel")}
-        tone="danger"
-        loading={clearMutation.isPending}
-      />
+export default function IdleCell() {
+  const { t, lang } = useLang();
+  const [date, setDate] = useState(localTodayIso());
+  const [shiftTab, setShiftTab] = useState("all"); // "all" | 1 | 2
+  const [supervisorId, setSupervisorId] = useState(null);
+  const [selectedCellIds, setSelectedCellIds] = useState([]); // [] = show all of the supervisor's cells
+
+  const { data: supData } = useQuery({
+    queryKey: ["idle-supervisors"],
+    queryFn: () => api.get("/api/idle-cell/supervisors").then((r) => r.data),
+  });
+  const supervisors = supData ?? [];
+  const shiftSupervisors = useMemo(
+    () => supervisors.filter((s) => shiftTab === "all" || s.shift === shiftTab),
+    [supervisors, shiftTab],
+  );
+
+  const { data: cellsData, isFetching } = useQuery({
+    queryKey: ["idle-cells", supervisorId, date],
+    queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
+    enabled: supervisorId != null,
+  });
+  const cells = cellsData?.cells ?? [];
+
+  const shownCells = useMemo(() => {
+    if (!selectedCellIds.length) return cells;
+    const set = new Set(selectedCellIds);
+    return cells.filter((c) => set.has(String(c.cell_id)));
+  }, [cells, selectedCellIds]);
+
+  // A new shift may exclude the picked supervisor — drop it if so.
+  function onShift(v) {
+    setShiftTab(v);
+    setSupervisorId((prev) =>
+      prev != null && supervisors.some((s) => s.id === prev && (v === "all" || s.shift === v)) ? prev : null,
+    );
+    setSelectedCellIds([]);
+  }
+
+  const cellOptions = cells.map((c) => ({
+    value: String(c.cell_id),
+    label: `${c.verifix_code}${cellName(c, lang) ? " · " + cellName(c, lang) : ""}`,
+    title: `${c.verifix_code} ${cellName(c, lang)}`,
+  }));
+
+  const emptyBox = (msg) => (
+    <div
+      className="rounded-2xl py-12 text-center text-sm"
+      style={{ background: "var(--bg-card)", border: "1px dashed var(--border-md)", color: "var(--text-3)" }}
+    >
+      {msg}
+    </div>
+  );
+
+  return (
+    <Layout title={t("idleCell.title")}>
+      <div
+        className="rounded-2xl px-4 py-3 mb-4 flex flex-wrap items-center gap-2"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+      >
+        <DateRangePicker
+          single weekday
+          dateFrom={date} dateTo={date}
+          setDateFrom={(iso) => iso && setDate(iso)}
+          setDateTo={() => {}}
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <SegmentedToggle
+          value={shiftTab}
+          onChange={onShift}
+          options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
+        />
+        <StyledSelect
+          value={supervisorId != null ? String(supervisorId) : ""}
+          onChange={(v) => { setSupervisorId(v ? Number(v) : null); setSelectedCellIds([]); }}
+          options={shiftSupervisors.map((s) => ({ value: String(s.id), label: s.name, title: s.name }))}
+          placeholder={t("idleCell.pickSupervisor")}
+          searchable
+          searchPlaceholder={t("idleCell.searchSupervisor")}
+          triggerClassName="px-3 py-2 text-sm"
+          className="min-w-[180px]"
+        />
+        {supervisorId != null && cells.length > 0 && (
+          <StyledSelect
+            multiple searchable
+            value={selectedCellIds}
+            onChange={setSelectedCellIds}
+            options={cellOptions}
+            allLabel={t("idleCell.allCells")}
+            countLabel={(n) => `${n} ${t("idleCell.cellsWord")}`}
+            searchPlaceholder={t("idleCell.searchCell")}
+            triggerClassName="px-3 py-2 text-sm"
+            className="min-w-[160px]"
+          />
+        )}
+        <span className="ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
+      </div>
+
+      {supervisorId == null ? (
+        emptyBox(t("idleCell.pickSupervisorHint"))
+      ) : isFetching ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-12 w-full rounded-xl" />)}
+        </div>
+      ) : shownCells.length === 0 ? (
+        emptyBox(t("idleCell.noCells"))
+      ) : (
+        <div className="space-y-2">
+          {shownCells.map((c) => (
+            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} />
+          ))}
+        </div>
+      )}
     </Layout>
   );
 }
