@@ -15,6 +15,7 @@ import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import PageAccess from "./PageAccess";
 import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
+import CellAttendanceUpload from "./CellAttendanceUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import LeaderTasksAdmin from "./LeaderTasksAdmin";
