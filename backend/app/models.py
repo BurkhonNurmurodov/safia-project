@@ -1254,7 +1254,7 @@ class ProfileCapability(Base):
     person may be given a page their role was never ticked for on the Access
     matrix, and — on the pages whose data narrows to the viewer — ``scope``
     says whether they read only their own rows or the whole factory.
-    """
+
     LEGACY as of the per-account rollout: capabilities are now granted to a
     Telegram ACCOUNT (see :class:`UserCapability`), so two accounts holding one
     profile can differ. These rows are read only once, by the one-time
