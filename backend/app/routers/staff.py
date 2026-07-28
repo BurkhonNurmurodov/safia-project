@@ -3347,8 +3347,13 @@ def reject_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=404, detail="Document not found")
     if not _may_reject_doc(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to reject this document")
+    via_grant = _doc_reject_via_grant(doc, caller, db)
     _reject_document(doc, caller, db)
     db.commit()
+    alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.rejected",
+                    details=_doc_alert_details(db, doc),
+                    changes=[("status", tv("v.draft"), tv("v.rejected"))],
+                    native=not via_grant)
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("hr_document", str(doc_id), "rejected", caller.get("full_name", ""))
