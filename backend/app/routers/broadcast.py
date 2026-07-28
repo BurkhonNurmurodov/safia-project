@@ -370,8 +370,11 @@ def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
     """Rich-mode delivery: sendRichMessage per recipient. The first successful
     send uploads the embedded media via attach://; its response is mined for
     file_ids so the rest of the fan-out reuses them."""
+    from app.telegram_bot import strip_custom_emoji
     db = SessionLocal()
     reusable: list[dict] | None = None
+    stripped_html = strip_custom_emoji(html)
+    cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
     try:
         row = db.query(Broadcast).filter_by(id=bid).first()
         for tid, name in recipients:
@@ -383,13 +386,25 @@ def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
                     files = {f"f{i}": (m["filename"], m["data"]) for i, m in enumerate(media_items)}
                 else:
                     specs = reusable or []
-                # is_rtl pinned False: with mixed-direction content (Arabic
-                # inside tables) Telegram otherwise mirrors table columns
-                rich: dict = {"html": html, "is_rtl": False}
-                if specs:
-                    rich["media"] = specs
-                result = _tg_api("sendRichMessage",
-                                 {"chat_id": tid, "rich_message": json.dumps(rich)}, files)
+
+                def _send(h):
+                    # is_rtl pinned False: with mixed-direction content (Arabic
+                    # inside tables) Telegram otherwise mirrors table columns
+                    rich: dict = {"html": h, "is_rtl": False}
+                    if specs:
+                        rich["media"] = specs
+                    return _tg_api("sendRichMessage",
+                                   {"chat_id": tid, "rich_message": json.dumps(rich)}, files)
+
+                try:
+                    result = _send(cur_html)
+                except Exception:
+                    # Premium emoji rejected (bot lacks a Fragment username) →
+                    # retry degraded to fallback chars and latch it for the rest.
+                    if cur_html == stripped_html:
+                        raise
+                    result = _send(stripped_html)
+                    cur_html = stripped_html
                 if media_items and reusable is None:
                     reusable = _harvest_file_ids(result, media_items)
                 row.sent_count += 1
