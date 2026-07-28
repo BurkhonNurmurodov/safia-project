@@ -141,15 +141,11 @@ function CellAccordion({ cell, date, t, lang }) {
           (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
           r.note.trim() !== r.saved.note;
         const valid = hasNote && hasMin;
-        return { cat, hasNote, hasMin, valid, incomplete: dirty && !valid && (hasNote || hasMin) };
+        return { cat, hasNote, hasMin, dirty, valid, incomplete: dirty && !valid && (hasNote || hasMin) };
       }),
     [rows],
   );
-  const pendingCats = rowStatus.filter((s) => s.valid && s.incomplete === false && (rows[s.cat.code].saved
-    ? num(rows[s.cat.code].stopped) !== rows[s.cat.code].saved.stopped ||
-      (!s.cat.noNs && num(rows[s.cat.code].not_stopped) !== rows[s.cat.code].saved.not_stopped) ||
-      rows[s.cat.code].note.trim() !== rows[s.cat.code].saved.note
-    : true)).map((s) => s.cat);
+  const pendingCats = rowStatus.filter((s) => s.dirty && s.valid).map((s) => s.cat);
   const incompleteCount = rowStatus.filter((s) => s.incomplete).length;
 
   const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
