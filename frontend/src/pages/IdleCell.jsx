@@ -12,6 +12,7 @@ import DateRangePicker from "../components/ui/DateRangePicker";
 import Button from "../components/ui/Button";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import api from "../utils/api";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { useLang } from "../context/LangContext";
 
 // Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
