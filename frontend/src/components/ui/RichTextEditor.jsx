@@ -1509,6 +1509,18 @@ export default function RichTextEditor({
     { key: "au", icon: Music, label: t("rte.audioFile"), disabled: states.cell, run: () => openMedia("audio/*") },
   ];
 
+  // Rendered only when the host supplies a palette (the Broadcast composer).
+  const emojiPalette = customEmojis ? (
+    <EmojiPalette
+      emojis={customEmojis}
+      t={t}
+      onOpen={saveSelection}
+      onInsert={insertCustomEmoji}
+      onAdd={onAddEmoji}
+      onDelete={onDeleteEmoji}
+    />
+  ) : null;
+
   return (
     <div
       className="rounded-xl overflow-hidden"
