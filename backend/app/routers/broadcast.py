@@ -149,7 +149,7 @@ class _TgSanitizer(HTMLParser):
 
     def handle_endtag(self, tag):
         out = _INLINE_MAP.get(tag) or (
-            tag if tag in ("a", "pre", "blockquote") else
+            tag if tag in ("a", "pre", "blockquote", "tg-emoji") else
             "tg-spoiler" if tag == "span" else None
         )
         if tag in ("div", "p"):
