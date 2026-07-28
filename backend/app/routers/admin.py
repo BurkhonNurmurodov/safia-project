@@ -518,7 +518,7 @@ def add_user_role(
     user_id: int,
     payload: AddRolePayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
+    caller: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     """Admin-create an extra role for an existing Telegram user, approved
     immediately. Mirrors the role_id/full_name derivation the bot uses on
