@@ -966,9 +966,13 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
             _release_leader_cells(db, p.id)
         db.delete(p)  # the identity now lives in the managers row
 
+    new_id = target_role_id if new_role == "supervisor" else target_profile.id
     db.commit()
-    return {"ok": True, "role": new_role,
-            "id": target_role_id if new_role == "supervisor" else target_profile.id}
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.role_switched",
+                    details=[("profile", name),
+                             ("count", len(approved_rows))],
+                    changes=[("role", tv("role." + ptype), tv("role." + new_role))])
+    return {"ok": True, "role": new_role, "id": new_id}
 
 
 # ── Admin: delete / unassign ──────────────────────────────────────────────────
