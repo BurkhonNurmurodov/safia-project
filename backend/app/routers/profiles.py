@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
