@@ -685,28 +685,34 @@ function TierChip({ value, T, cuts }) {
 
 /* ── trend column ─────────────────────────────────────────────────────────────
  * Two readings of "is this person moving" that a per-range ranking can still
- * give: the Reyting's change against the previous period of the SAME length
- * (the chip), and the day-by-day score across the picked period (the spark).
- * Both come out of the same scoring core as the row itself — missing day = 0 —
- * so the chip can never disagree with the Reyting printed beside it. `prev` is
- * null when the sheet holds nothing at all before the window: without a
- * baseline every chip would print a fake "+62". ±1 point is rounding noise,
- * not movement — it stays grey, as does the spark's end dot. */
+ * give, both about the PLACE: how many places were won or lost against the
+ * previous period of the SAME length (the chip), and the place day by day
+ * across the picked period (the spark). A place is better the SMALLER it is,
+ * so 57th → 47th is +10 and green — the chip reads as movement up the board,
+ * not as arithmetic on the number itself.
+ *   `prev` is null when the sheet holds nothing at all before the window:
+ * without a baseline every chip would print a fake "+40". Somebody the previous
+ * period never saw, on a board that HAS a baseline, is «Yangi» — pretending
+ * they climbed from last place would hand a newcomer the biggest jump on the
+ * page. Standing still is 0 and grey, as is the spark's end dot. */
 const trendParts = (trend, e) => {
-  const prevR = trend.prev ? trend.prev.get(e.name) ?? 0 : null;
-  const delta = prevR == null ? null : e.rating - prevR;
-  const flat = delta == null || Math.abs(delta) <= 1;
-  return { prevR, delta, tone: flat ? C_FLAT : delta > 0 ? C_GOOD : C_BAD,
-    Icon: flat ? Minus : delta > 0 ? TrendingUp : TrendingDown };
+  const isNew = !!trend.prev && !trend.prevSeen?.has(e.name);
+  const prevP = trend.prev && !isNew ? trend.prev.get(e.name) ?? null : null;
+  const delta = prevP == null ? null : prevP - e.place;
+  const flat = !delta;            // no baseline, «Yangi», or genuinely level
+  return { prevP, delta, isNew, tone: flat ? C_FLAT : delta > 0 ? C_GOOD : C_BAD,
+    Icon: isNew ? Sparkles : flat ? Minus : delta > 0 ? TrendingUp : TrendingDown };
 };
 
 function DeltaChip({ trend, e, T }) {
-  const { prevR, delta, tone, Icon } = trendParts(trend, e);
+  const { prevP, delta, isNew, tone, Icon } = trendParts(trend, e);
   return (
     <span className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-semibold tabular-nums whitespace-nowrap"
-      title={delta == null ? T.trendNoPrev : `${T.trendVsPrev}: ${prevR}% → ${e.rating}%`}
+      title={isNew ? T.trendNewHint : delta == null ? T.trendNoPrev
+        : `${T.trendVsPrev}: ${prevP} → ${e.place}`}
       style={{ background: hexA(tone, 0.14), color: tone }}>
-      <Icon size={12} />{delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}
+      <Icon size={12} />
+      {isNew ? T.trendNew : delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}
     </span>
   );
 }
