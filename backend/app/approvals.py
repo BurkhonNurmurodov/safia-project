@@ -472,26 +472,29 @@ def _caller_from_call(call) -> dict:
 
 
 def _grantee_caller(call, capability: str) -> dict | None:
-    """The tapper's own profile that holds ``capability``, as a staff caller.
+    """The tapping account as a staff caller, when it holds ``capability``.
 
     A non-admin only ever reaches an er/eb button by holding an ApprovalNotice
     addressed to them, which we only create for a grant whose scope covered the
     unit. Even so, build their REAL caller rather than borrowing the admin one:
     the staff core then re-checks the grant server-side (defence in depth, in
     case a grant was revoked between the send and the tap) and the audit trail
-    records the role they actually acted as."""
-    from app import identity
-    from app.capabilities import caps_for_profile
+    records the role they actually acted as.
+
+    Capabilities are per-account, so the grant is a property of ``u.id`` itself;
+    we still attach one of the account's approved profiles so the staff core has
+    a role to scope "own" against."""
+    from app.capabilities import caps_for_user
     u = call.from_user
     with SessionLocal() as db:
-        rows = db.query(TelegramUserRole).filter_by(
-            telegram_id=u.id, status="approved").order_by(TelegramUserRole.id).all()
-        for r in rows:
-            key = identity.role_row_profile_key(db, r, heal=False)
-            if key and capability in caps_for_profile(db, key):
-                return {"sub": str(u.id), "role": r.role, "role_id": r.role_id,
-                        "full_name": r.full_name or _display_name(u)}
-    return None
+        if capability not in caps_for_user(db, u.id):
+            return None
+        r = db.query(TelegramUserRole).filter_by(
+            telegram_id=u.id, status="approved").order_by(TelegramUserRole.id).first()
+        if r is None:
+            return None
+        return {"sub": str(u.id), "role": r.role, "role_id": r.role_id,
+                "full_name": r.full_name or _display_name(u)}
 
 
 def _caller_for_request(call) -> dict | None:
