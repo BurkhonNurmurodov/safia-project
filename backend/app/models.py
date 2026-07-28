@@ -1191,6 +1191,24 @@ class BroadcastDraft(Base):
     updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class CustomEmoji(Base):
+    """A saved premium (custom) Telegram emoji for the Broadcast composer's
+    palette. Telegram identifies a premium emoji by a numeric custom_emoji_id,
+    not an image; the composer inserts it as
+    ``<tg-emoji emoji-id="…">fallback</tg-emoji>`` — rendered animated for
+    Premium recipients, the plain fallback char for everyone else. Admins add
+    each one once; the id is obtained by forwarding the emoji to the bot, which
+    echoes it back (see telegram_bot._custom_emoji_echo)."""
+    __tablename__ = "custom_emojis"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    emoji_id   = Column(String, nullable=False, unique=True)   # Telegram custom_emoji_id (numeric string)
+    fallback   = Column(String, nullable=False)                # plain emoji shown to non-Premium users
+    label      = Column(String, nullable=True)                 # admin's note, e.g. "sun"
+    created_by = Column(BigInteger, nullable=True)             # admin telegram id who added it
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class SetupTime(Base):
     """Average changeover («переналадка») time of one production cell, as
     reported by its supervisor. Seeded once from the «периналадка» workbook
