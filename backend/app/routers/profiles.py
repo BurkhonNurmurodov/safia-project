@@ -1029,8 +1029,11 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
 
     if ptype == "leader":
         _release_leader_cells(db, pid)
+    p_name = p.name
     db.delete(p)
     db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
+                    details=[("role", tv("role." + ptype)), ("profile", p_name)])
     return {"ok": True}
 
 
