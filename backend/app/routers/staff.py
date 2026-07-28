@@ -1138,6 +1138,13 @@ def admin_delete(body: AdminDeleteBody, caller=Depends(_require_staff), db: Sess
     )
     db.delete(row)
     db.commit()
+    alert_grant_use(
+        db, caller, CAP_ATTENDANCE_DELETE, "attendance.delete",
+        details=[("unit", unit_name(db, body.manager_id)),
+                 ("worker", body.worker_name),
+                 ("date", body.attend_date)],
+        changes=[(f, v, None) for f, v in original.items()],
+    )
     return {"ok": True}
 
 
