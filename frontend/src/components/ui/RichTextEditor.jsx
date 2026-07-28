@@ -8,7 +8,7 @@ import {
   SeparatorHorizontal, Table as TableIcon, ChevronsDownUp, Sigma,
   Paperclip, Image as ImageIcon, Music, Quote, Highlighter,
   Subscript, Superscript, Clipboard, CheckSquare, Eraser, Trash2,
-  AlignLeft, AlignCenter, AlignRight,
+  AlignLeft, AlignCenter, AlignRight, Smile, X,
 } from "lucide-react";
 import Modal from "./Modal";
 import Button from "./Button";
