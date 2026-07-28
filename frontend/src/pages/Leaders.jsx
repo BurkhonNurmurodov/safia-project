@@ -367,6 +367,23 @@ const scoreSlots = (map, winDays) =>
     };
   });
 
+// Dense ranking on the (primary, sub-rating) PAIR — a place is shared only when
+// BOTH figures match, and the next distinct result is always place+1 (1, 2, 2,
+// 3…): a six-way tie on 41 must be followed by 42, not 47. Lifted out of the
+// leaderboard because the Trend column re-ranks the previous period and every
+// spark day, and a place delta only means something if all three rank by
+// EXACTLY the same rule. Sorts and writes `place` onto the entries in place.
+const rankPlaces = (list, metric) => {
+  const val = (e) => (metric === "consist" ? e.consist : e.rating);
+  const alt = (e) => (metric === "consist" ? e.rating : e.consist);
+  const same = (a, b) => val(a) === val(b) && alt(a) === alt(b);
+  list.sort((a, b) => val(b) - val(a) || alt(b) - alt(a) || a.name.localeCompare(b.name));
+  list.forEach((e, i) => {
+    e.place = i === 0 ? 1 : same(list[i - 1], e) ? list[i - 1].place : list[i - 1].place + 1;
+  });
+  return list;
+};
+
 // ── localized long-date formatter ("19th June, 2026" and its translations) ──────
 const MONTHS = {
   en:      ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
