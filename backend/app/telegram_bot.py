@@ -948,6 +948,14 @@ def _webapp_data(message: types.Message):
             db.add(user)
         db.flush()
         pending_role_ref = role_row.id
+        if not is_admin and user.phone:
+            # New registration → require a fresh contact. Clearing the stale
+            # phone (kept from a prior registration) makes _awaiting_contact()
+            # authoritative from the DB alone, so a user who TYPES their number
+            # instead of tapping the button still gets the warning even when the
+            # typed update lands on a different Passenger worker or after a
+            # restart wiped the in-memory _state.
+            user.phone = None
         db.commit()
 
     if is_admin:
