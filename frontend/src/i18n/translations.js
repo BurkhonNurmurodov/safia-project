@@ -1336,6 +1336,14 @@ const t = {
     "rte.deleteCol":     "Ustunni o'chirish",
     "rte.quoteAuthor":   "Iqtibos muallifi",
     "rte.captionTitle": "Media izohi",
+    "rte.emoji":             "Premium emoji",
+    "rte.emojiTitle":        "Premium emoji",
+    "rte.emojiAdd":          "Emoji qo'shish",
+    "rte.emojiDelete":       "O'chirish",
+    "rte.emojiEmpty":        "Hali saqlangan emoji yo'q. Qo'shish uchun + ni bosing.",
+    "rte.emojiIdPlaceholder": "custom_emoji_id (raqamlar)",
+    "rte.emojiLabelPlaceholder": "Nomi (ixtiyoriy)",
+    "rte.emojiSave":         "Saqlash",
     "admin.tabProduction":   "Ishlab chiqarish",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
