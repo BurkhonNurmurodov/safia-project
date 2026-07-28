@@ -20,10 +20,14 @@ THE RULES, in one place:
    who may act, so nothing breaks on deploy and a grant is a deliberate
    exception rather than a migration.
 
-2. **Keyed by profile, not by registration.** ``profile_key`` ("supervisor:42",
-   see ``app/identity.py``) is the person; ``telegram_user_roles.id`` is just a
-   login. Every holder of a granted profile wields the grant, it survives an
-   unassign→re-claim, and switching to a *different* profile drops it.
+2. **Keyed by the Telegram ACCOUNT.** A grant belongs to one ``telegram_id``
+   (the JWT ``sub``), so two accounts holding the same profile can differ — one
+   supervisor login can be made the transfer handler without the other getting
+   it. This is the deliberate exception to "a profile is the person"
+   (``app/identity.py``): identity, data ownership and notifications still key
+   off the profile, but the power to ACT is handed out per login. ``scope``
+   "own" is still resolved from the profile the account is acting as, so the
+   rows a grant reaches never drift from what the account could already see.
 
 3. **Read live.** Guards look grants up per request, so a grant — and, more
    importantly, a REVOKE — takes effect on the person's next page load with no
