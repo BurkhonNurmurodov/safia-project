@@ -89,29 +89,68 @@ function CellAccordion({ cell, date, t, lang }) {
   const setField = (code, field, val) =>
     setRows((r) => ({ ...r, [code]: { ...r[code], [field]: val } }));
 
+  // One button per cell: POST every dirty, filled-in category in parallel and
+  // fold each success back into its row's saved snapshot (allSettled so a single
+  // failing row doesn't discard the others' saves).
   const saveMut = useMutation({
-    mutationFn: ({ cat }) =>
-      api
-        .post("/api/idle-cell", {
-          cell_id: cell.cell_id,
-          date,
-          category: cat.name,
-          stopped: num(rows[cat.code].stopped),
-          not_stopped: cat.noNs ? 0 : num(rows[cat.code].not_stopped),
-          note: rows[cat.code].note.trim(),
-        })
-        .then((r) => r.data),
-    onSuccess: (data, { cat }) =>
-      setRows((r) => ({
-        ...r,
-        [cat.code]: {
-          stopped: data.stopped ? String(data.stopped) : "",
-          not_stopped: data.not_stopped ? String(data.not_stopped) : "",
-          note: data.note || "",
-          saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
-        },
-      })),
+    mutationFn: async (cats) => {
+      const settled = await Promise.allSettled(
+        cats.map((cat) =>
+          api
+            .post("/api/idle-cell", {
+              cell_id: cell.cell_id,
+              date,
+              category: cat.name,
+              stopped: num(rows[cat.code].stopped),
+              not_stopped: cat.noNs ? 0 : num(rows[cat.code].not_stopped),
+              note: rows[cat.code].note.trim(),
+            })
+            .then((r) => ({ code: cat.code, data: r.data })),
+        ),
+      );
+      const ok = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
+      if (!ok.length) throw new Error("save failed");
+      return ok;
+    },
+    onSuccess: (ok) =>
+      setRows((r) => {
+        const next = { ...r };
+        for (const { code, data } of ok) {
+          next[code] = {
+            stopped: data.stopped ? String(data.stopped) : "",
+            not_stopped: data.not_stopped ? String(data.not_stopped) : "",
+            note: data.note || "",
+            saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
+          };
+        }
+        return next;
+      }),
   });
+
+  // Per-category state: which rows are edited (dirty), fully filled (valid → saveable),
+  // or half-filled (incomplete → blocked, needs both minutes and a reason).
+  const rowStatus = useMemo(
+    () =>
+      CATS.map((cat) => {
+        const r = rows[cat.code];
+        const hasNote = r.note.trim().length > 0;
+        const hasMin = num(r.stopped) > 0 || (!cat.noNs && num(r.not_stopped) > 0);
+        const dirty =
+          !r.saved ||
+          num(r.stopped) !== r.saved.stopped ||
+          (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
+          r.note.trim() !== r.saved.note;
+        const valid = hasNote && hasMin;
+        return { cat, hasNote, hasMin, valid, incomplete: dirty && !valid && (hasNote || hasMin) };
+      }),
+    [rows],
+  );
+  const pendingCats = rowStatus.filter((s) => s.valid && s.incomplete === false && (rows[s.cat.code].saved
+    ? num(rows[s.cat.code].stopped) !== rows[s.cat.code].saved.stopped ||
+      (!s.cat.noNs && num(rows[s.cat.code].not_stopped) !== rows[s.cat.code].saved.not_stopped) ||
+      rows[s.cat.code].note.trim() !== rows[s.cat.code].saved.note
+    : true)).map((s) => s.cat);
+  const incompleteCount = rowStatus.filter((s) => s.incomplete).length;
 
   const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
   const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
