@@ -99,6 +99,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+    qc.invalidateQueries({ queryKey: ["admin-cells"] });
     qc.invalidateQueries({ queryKey: ["admin-users"] });
     reloadTranslations();
   };
