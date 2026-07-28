@@ -3321,10 +3321,15 @@ def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = 
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to post this document")
+    via_grant = _doc_via_grant(doc, caller, db)
     _approve_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
         _notify_exchange(db, doc, "approved", int(caller["sub"]))
     db.commit()
+    alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.approved",
+                    details=_doc_alert_details(db, doc),
+                    changes=[("status", tv("v.draft"), tv("v.approved"))],
+                    native=not via_grant)
     try:
         from app.approvals import edit_admin_notices
         edit_admin_notices("hr_document", str(doc_id), "approved", caller.get("full_name", ""))
