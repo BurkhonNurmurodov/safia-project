@@ -476,6 +476,48 @@ def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
             row.leader_id = None
 
 
+@router.get("/admin/cells")
+def admin_list_cells(db: Session = Depends(get_db),
+                     _: dict = Depends(require_page("cells"))):
+    """The /cells page's read half. Gated by PAGE access, not by the
+    cells-manage capability: anyone who may SEE the page (``page.view.cells``,
+    the ``admin.cells.manage`` edit grant which implies it, a role ticked for
+    "cells" on the Access matrix, or a real admin) must be able to load the
+    register they are allowed to look at. Every write stays on the
+    POST/PUT/DELETE endpoints below, each guarded by CAP_CELLS_MANAGE.
+
+    Deliberately lighter than /admin/list: only the cells plus the supervisor
+    and leader option lists the table and edit modal need — never the full
+    profile roster or the Telegram bindings that endpoint exposes. Registered
+    before the /admin/{ptype}/{pid} routes so the static "cells" segment wins
+    (Starlette matches in registration order)."""
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    leader_profiles = (db.query(RoleProfile)
+                       .filter(RoleProfile.role == "leader")
+                       .order_by(RoleProfile.id).all())
+    prof_names = {p.id: p.name for p in leader_profiles}
+    cell_rows = db.query(Cell).order_by(Cell.verifix_code).all()
+    return {
+        "supervisors": [
+            {"id": m.id, "name": m.name, "shift": m.shift, "archived": bool(m.archived)}
+            for m in db.query(Manager).order_by(Manager.id).all()
+        ],
+        "leaders": [
+            {"id": p.id, "name": p.name, "manager_id": p.manager_id}
+            for p in leader_profiles
+        ],
+        "cells": [{
+            "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "name_workshop_uz": c.name_workshop_uz,
+            "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
+            "name_workshop_ru": c.name_workshop_ru,
+            "name_workshop_en": c.name_workshop_en,
+            "manager_id": c.manager_id, "supervisor": mgr_names.get(c.manager_id),
+            "leader_id": c.leader_id, "leader": prof_names.get(c.leader_id),
+        } for c in cell_rows],
+    }
+
+
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
                       _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
