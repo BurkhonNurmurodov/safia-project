@@ -53,6 +53,7 @@ const Daily = lazyWithReload(() => import("./pages/Daily"));
 const Production = lazyWithReload(() => import("./pages/Production"));
 const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
+const Cells = lazyWithReload(() => import("./pages/Cells"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
