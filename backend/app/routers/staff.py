@@ -488,6 +488,10 @@ def _mk_notif_tg(nkey: str, params: dict, lang: str) -> str | None:
         localized["date"] = _fmt_date(params["date"], lang)
     localized.setdefault("eff", "—")   # see _mk_notif — old call_forecast rows lack it
     localized.setdefault("name", "—")  # same: pre-name notices
+    # HTML-escape interpolated free-text (names) so a stray & or < in a DB value
+    # can't break the surrounding markup. Ints (counts) pass through untouched.
+    localized = {k: (_html_escape(v) if isinstance(v, str) else v)
+                 for k, v in localized.items()}
     return tmpl.format(**localized)
 
 
