@@ -33,6 +33,7 @@ const ALL_LINKS = [
   // Admin-only copy of leaders monitoring, fed by the in-bot checklist —
   // independent of the sheet-driven page above (no page-access key).
   { to: "/leaders-bot", adminOnly: true, key: "nav.leadersBot", icon: Bot },
+  { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
