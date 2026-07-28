@@ -699,7 +699,9 @@ def delete_user(
     # VALID_ROLES has no "admin", so no user-role endpoint can mint one.
     if caller.get("role") != "admin" and db.query(Admin).filter_by(telegram_id=telegram_id).first():
         raise HTTPException(status_code=403, detail="Only an admin can remove an admin account")
-    db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
+    alert_details = [("user", user.full_name or user.tg_name or f"#{telegram_id}"),
+                     ("account", telegram_id)]
+    roles_removed = db.query(TelegramUserRole).filter_by(telegram_id=telegram_id).delete()
     db.delete(user)
     db.commit()
     try:
@@ -707,6 +709,9 @@ def delete_user(
         forget_registration_notices(telegram_id)
     except Exception:
         pass
+    alert_grant_use(db, caller, CAP_USERS_MANAGE, "user.deleted",
+                    details=alert_details,
+                    changes=[("count", roles_removed, None)])
     return {"ok": True}
 
 
