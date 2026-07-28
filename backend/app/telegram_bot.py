@@ -294,6 +294,7 @@ _MESSAGES = {
             "Вы можете отправить обычный текст, медиа или альбом."
         ),
         "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nНажмите, чтобы скопировать.",
+        "custom_emoji_reply": "🎨 <b>Премиум эмодзи</b>\n{list}\n\nНажмите на ID, чтобы скопировать.",
     },
     "en": {
         "choose_language":   "🌐 Choose your language:",
