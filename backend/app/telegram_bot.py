@@ -219,6 +219,7 @@ _MESSAGES = {
             "Оддий матн, медиа ёки альбом юборишингиз мумкин."
         ),
         "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nНусхалаш учун босинг.",
+        "custom_emoji_reply": "🎨 <b>Premium emoji</b>\n{list}\n\nID ни нусхалаш учун устига босинг.",
     },
     "ru": {
         "choose_language":   "🌐 Выберите язык:",
