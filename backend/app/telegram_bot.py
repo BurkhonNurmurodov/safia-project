@@ -1112,6 +1112,29 @@ def _contact(message: types.Message):
     _state.pop(tid, None)
 
 
+_TG_EMOJI_RE = re.compile(r"<tg-emoji\b[^>]*>(.*?)</tg-emoji>", re.IGNORECASE | re.DOTALL)
+
+
+def strip_custom_emoji(html_text: str) -> str:
+    """Replace every ``<tg-emoji …>fallback</tg-emoji>`` with just its fallback
+    char. Telegram only lets bots that bought a username on Fragment send premium
+    (custom) emoji; on other bots the API rejects the WHOLE message. Callers retry
+    the send with this so the message still lands, degraded to plain emoji."""
+    return _TG_EMOJI_RE.sub(r"\1", html_text or "")
+
+
+def _send_html_message(chat_id: int, html_text: str) -> None:
+    """send_message in HTML mode, retrying once with premium emoji stripped to
+    their fallback chars if Telegram rejects them (see strip_custom_emoji)."""
+    try:
+        bot.send_message(chat_id, html_text, parse_mode="HTML")
+    except Exception:
+        stripped = strip_custom_emoji(html_text)
+        if stripped == html_text:
+            raise
+        bot.send_message(chat_id, stripped, parse_mode="HTML")
+
+
 def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
