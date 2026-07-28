@@ -645,10 +645,11 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         new_id = pid
         if payload.new_verifix_id and payload.new_verifix_id != pid:
             new_id = _rekey_manager_id(db, mgr, payload.new_verifix_id)
+        # Read BEFORE commit: the rekey path deleted mgr's row, so a post-commit
+        # attribute refresh would explode on the vanished id.
+        new_vals = (("name", mgr.name), ("shift", mgr.shift), ("archived", bool(mgr.archived)))
         db.commit()
-        diff = [(k, old[k], v) for k, v in
-                (("name", mgr.name), ("shift", mgr.shift), ("archived", bool(mgr.archived)))
-                if old[k] != v]
+        diff = [(k, old[k], v) for k, v in new_vals if old[k] != v]
         if new_id != pid:
             diff.append(("verifix_code", pid, new_id))
         if diff:
