@@ -170,6 +170,11 @@ def save_idle(
         CellOjidaniya.date == body.date,
         CellOjidaniya.category == body.category,
     ).first()
+    old = None if e is None else {
+        "stopped": float(e.stopped or 0),
+        "not_stopped": float(e.not_stopped or 0),
+        "note": e.note or "",
+    }
     if e is None:
         e = CellOjidaniya(cell_id=body.cell_id, date=body.date, category=body.category)
         db.add(e)
@@ -179,6 +184,21 @@ def save_idle(
     e.entered_by_profile = who
     db.commit()
     db.refresh(e)
+    # This page opens for non-admins only through role×page ticks or a personal
+    # page grant — the latter is a delegated power, so its use warns the admins.
+    if page_grant_used(db, payload, PAGE):
+        diff = [(k, old[k] if old else None, v) for k, v in
+                (("stopped", stopped), ("not_stopped", not_stopped), ("note", note))
+                if old is None or old[k] != v]
+        if diff:
+            cell = db.query(Cell).filter_by(id=body.cell_id).first()
+            alert_grant_use(
+                db, payload, page_cap(PAGE), "idle_cell.saved",
+                details=[("cell", cell.verifix_code if cell else f"#{body.cell_id}"),
+                         ("date", body.date),
+                         ("category", body.category)],
+                changes=diff, native=False,
+            )
     return _entry_json(e)
 
 
