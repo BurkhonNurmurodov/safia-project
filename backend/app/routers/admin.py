@@ -610,64 +610,60 @@ def admin_update_page_access(
 
 @router.get("/capabilities")
 def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """The catalog plus every grant, keyed by profile.
+    """The catalog plus every grant, keyed by Telegram account, as a
+    role ▸ profile ▸ user tree.
 
-    Also returns the grantable profiles — every profile EXCEPT admins, who
-    already hold everything — so the Permissions tab can render a picker
-    without a second round-trip. Names come from the profile rows themselves,
-    so a profile with no holder yet can still be granted (the power activates
-    when someone claims it)."""
-    grants: dict[str, dict[str, str]] = {}
-    for row in db.query(ProfileCapability).all():
+    Capabilities are granted per ACCOUNT now, so the picker descends past the
+    profile to the individual logins that hold it — the same tree the Broadcast
+    recipient picker builds. Admin profiles are omitted (those accounts already
+    hold the whole catalog), and a profile nobody has claimed simply shows no
+    users to grant, since a grant needs a login to attach to."""
+    from app.routers.broadcast import _profile_holders, _stored_names
+
+    grants: dict[int, dict[str, str]] = {}
+    for row in db.query(UserCapability).all():
         if row.capability in CAPABILITY_KEYS:
-            grants.setdefault(row.profile_key, {})[row.capability] = (
+            grants.setdefault(row.telegram_id, {})[row.capability] = (
                 row.scope if row.scope in SCOPES else "own")
 
-    holders: dict[str, list[str]] = {}
+    # Reuse the Broadcast recipient structure (role → profile → holder ids) and
+    # the best-stored-name resolver, so the two pickers read identically.
+    blocks = _profile_holders(db)
+    names = _stored_names(db, blocks)
     users = {u.telegram_id: u for u in db.query(TelegramUser).all()}
-    for r in db.query(TelegramUserRole).filter(TelegramUserRole.status == "approved").all():
-        key = identity.role_row_profile_key(db, r, heal=False)
-        if not key:
-            continue
-        u = users.get(r.telegram_id)
-        name = (u.full_name if u and u.full_name else None) or f"#{r.telegram_id}"
-        if name not in holders.setdefault(key, []):
-            holders[key].append(name)
+
+    def user_node(tid: int) -> dict:
+        u = users.get(tid)
+        return {
+            "telegram_id": tid,
+            "name":        names.get(tid) or f"#{tid}",
+            "username":    u.username if u else None,
+            "caps":        grants.get(tid, {}),
+        }
 
     # `shift` / `unit` stay structured rather than a pre-joined caption, so the
     # frontend renders them through t()/tl() in the viewer's language.
-    people = []
-    for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.name).all():
-        people.append({"key": f"supervisor:{m.id}", "role": "supervisor",
-                       "name": m.name, "shift": m.shift, "unit": None,
-                       "unit_id": None})
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
-    for p in db.query(RoleProfile).order_by(RoleProfile.role, RoleProfile.name).all():
-        if p.role in UNGRANTABLE_ROLES:
+    tree = []
+    for b in blocks:
+        if b["role"] in UNGRANTABLE_ROLES:   # admins already hold everything
             continue
-        people.append({
-            "key": f"{p.role}:{p.id}", "role": p.role, "name": p.name,
-            "shift": p.shift if p.role == "shift-manager" else None,
-            # `unit_id` keys the leaders-by-supervisor grouping in the picker;
-            # `unit` is the name it labels the group with.
-            "unit":    mgr_names.get(p.manager_id) if p.role == "leader" else None,
-            "unit_id": p.manager_id if p.role == "leader" else None,
-        })
-
-    for person in people:
-        person["holders"] = holders.get(person["key"], [])
-        person["caps"] = grants.get(person["key"], {})
+        profiles = []
+        for p in b["profiles"]:
+            node = {k: p[k] for k in ("key", "name", "shift", "unit", "unit_id") if k in p}
+            node["users"] = [user_node(t) for t in p["user_ids"]]
+            profiles.append(node)
+        tree.append({"role": b["role"], "profiles": profiles})
 
     return {
         "capabilities": CAPABILITIES,
         "groups":       CAPABILITY_GROUPS,
         "scopes":       list(SCOPES),
-        "people":       people,
+        "tree":         tree,
     }
 
 
 class CapabilitiesPayload(BaseModel):
-    keys:    list[str]            # profile keys to apply the change to
+    keys:    list[int]            # telegram ids to apply the change to
     grants:  dict[str, str] = {}  # {capability: "own" | "all"} to add / rescope
     revokes: list[str] = []       # capabilities to remove
 
@@ -678,21 +674,18 @@ def admin_set_capabilities(
     db: Session = Depends(get_db),
     admin_payload: dict = Depends(verify_admin),
 ):
-    """Apply one capability DIFF to one or many profiles.
+    """Apply one capability DIFF to one or many Telegram accounts.
 
     A diff rather than a whole-set replace because the Permissions tab selects
-    several profiles at once and they rarely hold the same grants — replacing
-    would wipe whatever the admin wasn't looking at. Admin profiles are rejected
-    outright: they already hold the entire catalog."""
+    several accounts at once and they rarely hold the same grants — replacing
+    would wipe whatever the admin wasn't looking at. Granting an admin account
+    is a harmless no-op (they already hold everything via the role check), so no
+    special rejection is needed here."""
     if not payload.keys:
-        raise HTTPException(status_code=400, detail="No profiles selected")
+        raise HTTPException(status_code=400, detail="No users selected")
 
-    for key in payload.keys:
-        role, ref = identity.parse_profile_key(key)
-        if not role or not ref:
-            raise HTTPException(status_code=400, detail=f"Invalid profile key: {key}")
-        if role in UNGRANTABLE_ROLES:
-            raise HTTPException(status_code=400, detail="Admins already hold every capability")
+    if any(tid <= 0 for tid in payload.keys):
+        raise HTTPException(status_code=400, detail="Invalid telegram id")
 
     unknown = [k for k in list(payload.grants) + payload.revokes if k not in CAPABILITY_KEYS]
     if unknown:
@@ -713,13 +706,30 @@ def admin_capability_audit(
     _: dict = Depends(verify_admin),
 ):
     """Newest-first grant/revoke history. Survives the grant itself: a revoked
-    capability deletes its ProfileCapability row but never its audit trail."""
+    capability deletes its UserCapability row but never its audit trail.
+
+    Each row's target account is resolved to a display name; pre-rollout rows
+    carry a ``profile_key`` instead of a ``telegram_id`` and fall back to it."""
     rows = (db.query(CapabilityAudit)
               .order_by(CapabilityAudit.id.desc())
               .limit(max(1, min(limit, 1000))).all())
+
+    tids = {r.telegram_id for r in rows if r.telegram_id}
+    names: dict[int, str] = {}
+    if tids:
+        for u in db.query(TelegramUser).filter(TelegramUser.telegram_id.in_(tids)).all():
+            names[u.telegram_id] = (
+                u.tg_name or u.full_name or (f"@{u.username}" if u.username else "") or f"#{u.telegram_id}")
+
+    def target_name(r) -> str:
+        if r.telegram_id:
+            return names.get(r.telegram_id) or f"#{r.telegram_id}"
+        return r.profile_key or "—"
+
     return [{
         "id":          r.id,
-        "profile_key": r.profile_key,
+        "telegram_id": r.telegram_id,
+        "target_name": target_name(r),
         "capability":  r.capability,
         "action":      r.action,
         "scope":       r.scope,
