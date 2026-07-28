@@ -13,6 +13,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app import identity
+from app.capability_alerts import alert_grant_use, tv
 from app.capabilities import (
     CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
     CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, SCOPES, UNGRANTABLE_ROLES,
