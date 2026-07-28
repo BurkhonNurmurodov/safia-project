@@ -144,6 +144,7 @@ _MESSAGES = {
             "Oddiy matn, media yoki albom yuborishingiz mumkin."
         ),
         "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nNusxalash uchun bosing.",
+        "custom_emoji_reply": "🎨 <b>Premium emoji</b>\n{list}\n\nID ni nusxalash uchun ustiga bosing.",
     },
     "uz_cyrl": {
         "choose_language":   "🌐 Тилни танланг:",
