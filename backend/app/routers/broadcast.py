@@ -842,3 +842,63 @@ def send_draft(
             logger.warning("Broadcast result edit failed for admin %s", admin_tid, exc_info=True)
 
     return {"sent": sent, "failed": failed, "total": total, "failed_names": failed_names}
+
+
+# ── Custom (premium) emoji palette ────────────────────────────────────────────
+# A small reusable library for the composer. Each entry is a numeric
+# custom_emoji_id + a plain fallback char; the editor inserts them as
+# <tg-emoji emoji-id="…">fallback</tg-emoji>. Admin-managed — add each one once
+# (grab the id by forwarding the emoji to the bot, which echoes it back).
+
+class _EmojiIn(BaseModel):
+    emoji_id: str
+    fallback: str
+    label: str | None = None
+
+
+def _emoji_dict(e: CustomEmoji) -> dict:
+    return {"id": e.id, "emoji_id": e.emoji_id, "fallback": e.fallback, "label": e.label or ""}
+
+
+@router.get("/emojis")
+def list_custom_emojis(db: Session = Depends(get_db),
+                       _: dict = Depends(verify_broadcast_admin)):
+    rows = db.query(CustomEmoji).order_by(CustomEmoji.id).all()
+    return [_emoji_dict(e) for e in rows]
+
+
+@router.post("/emojis")
+def add_custom_emoji(body: _EmojiIn, db: Session = Depends(get_db),
+                     payload: dict = Depends(verify_broadcast_admin)):
+    """Add (or update) a saved premium emoji. Keyed by emoji_id, so re-adding
+    the same id just refreshes its fallback/label."""
+    eid = (body.emoji_id or "").strip()
+    fallback = (body.fallback or "").strip()
+    if not eid.isdigit():
+        raise HTTPException(status_code=422, detail="emoji_id must be a numeric custom_emoji_id")
+    if not fallback or len(fallback) > 16:
+        raise HTTPException(status_code=422, detail="A single fallback emoji is required")
+    label = ((body.label or "").strip() or None)
+    if label and len(label) > 40:
+        label = label[:40]
+    row = db.query(CustomEmoji).filter_by(emoji_id=eid).first()
+    if row:
+        row.fallback = fallback
+        row.label = label
+    else:
+        row = CustomEmoji(emoji_id=eid, fallback=fallback, label=label,
+                          created_by=int(payload.get("sub", 0) or 0))
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _emoji_dict(row)
+
+
+@router.delete("/emojis/{emoji_row_id}")
+def delete_custom_emoji(emoji_row_id: int, db: Session = Depends(get_db),
+                        _: dict = Depends(verify_broadcast_admin)):
+    row = db.query(CustomEmoji).filter_by(id=emoji_row_id).first()
+    if row:
+        db.delete(row)
+        db.commit()
+    return {"ok": True}
