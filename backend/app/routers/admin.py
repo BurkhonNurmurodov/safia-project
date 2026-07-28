@@ -618,6 +618,14 @@ def add_user_role(
     except Exception:
         pass
 
+    alert_grant_use(
+        db, caller, CAP_USERS_MANAGE, "user.role_added",
+        details=[("user", user.full_name or user.tg_name or f"#{telegram_id}"),
+                 ("account", telegram_id),
+                 ("role", tv("role." + payload.role)),
+                 ("profile", full_name)],
+        changes=[("status", None, tv("v.approved"))],
+    )
     return {"ok": True}
 
 
