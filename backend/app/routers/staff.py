@@ -3443,12 +3443,23 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
 
     done = 0
     resolved: list[tuple[int, str]] = []   # (doc_id, outcome) for admin-message cross-edit
+    # (label, old, new) per grant-authorized doc — ONE aggregated warning DM
+    # after the commit instead of one per document. Built before mutation, so
+    # deleted rows are still readable.
+    grant_rows: list[tuple] = []
+
+    def _grant_row(doc, old_key, new_key):
+        if _doc_via_grant(doc, caller, db):
+            grant_rows.append((f"#{doc.id} · {unit_name(db, doc.manager_id)} · {doc.date}",
+                               tv(old_key), tv(new_key) if new_key else None))
+
     for doc in docs:
         # Approval authority is per-document (e.g. a receiving supervisor may
         # post their own incoming exchange but not someone else's role change).
         if body.action == "approve":
             if doc.status == "rejected" or not _can_approve_doc(doc, caller, db):
                 continue
+            _grant_row(doc, "v.draft", "v.approved")
             _approve_doc(doc, caller, db)
             if doc.doc_type == "people_exchange":
                 _notify_exchange(db, doc, "approved", int(caller["sub"]))
@@ -3456,6 +3467,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         elif body.action == "cancel":
             if not _can_approve_doc(doc, caller, db):
                 continue
+            _grant_row(doc, "v.approved", "v.draft")
             _cancel_doc(doc, caller, db)
             if doc.doc_type == "people_exchange":
                 _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
@@ -3464,6 +3476,7 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
             if doc.status == "approved":
                 if not _can_approve_doc(doc, caller, db):
                     continue
+                _grant_row(doc, "v.approved", None)
                 _revert_doc_effects(db, doc)
                 db.delete(doc)
             elif doc.status == "draft":
@@ -3471,6 +3484,9 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
                 # instead of erasing it, same as the Telegram ❌ button.
                 if not _may_reject_doc(doc, caller, db):
                     continue
+                if _doc_reject_via_grant(doc, caller, db):
+                    grant_rows.append((f"#{doc.id} · {unit_name(db, doc.manager_id)} · {doc.date}",
+                                       tv("v.draft"), tv("v.rejected")))
                 _reject_document(doc, caller, db)
                 resolved.append((doc.id, "rejected"))
             else:  # rejected — permanent cleanup of the record
@@ -3482,6 +3498,10 @@ def bulk_documents(body: DocBulkBody, caller=Depends(_require_staff), db: Sessio
         done += 1
 
     db.commit()
+    if grant_rows:
+        alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.bulk",
+                        details=[("count", len(grant_rows))],
+                        changes=grant_rows, native=False)
     if resolved:
         try:
             from app.approvals import edit_admin_notices
