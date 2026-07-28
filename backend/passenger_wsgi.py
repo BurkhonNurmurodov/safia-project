@@ -104,6 +104,7 @@ try:
     backfill_role_profile_keys()
     backfill_task_profiles()
     backfill_comment_profiles()
+    migrate_user_capabilities()
     seed_exchange_tasks()
     seed_production_pilot()
     seed_setup_times()
