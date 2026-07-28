@@ -1392,23 +1392,40 @@ export default function Leaders({ botMode = false }) {
     return { list, winFrom, winTo, winDays };
   }, [leaderScores, supScores, scoreWin, effStandMode, standMetric]);
 
-  // What the Trend column reads. Scoped by the SAME non-date filters as the
-  // ranking but over wider dates than `filtered` holds: the equal-length window
-  // just before the picked one (for the delta), and the picked period widened
-  // to at least 7 days ending on its last day (for the spark — the chart-window
-  // convention; the delta stays strictly on the picked range). Sparks stop at
-  // `dataMax` like the trend line: the un-synced tail is left off, not drawn as
-  // a dive to 0, while a missing day inside the data is a real 0.
+  // What the Trend column reads — the movement of the PLACE, not of a percent:
+  // 57th last period, 47th this one, chip says +10. Scoped by the SAME non-date
+  // filters as the ranking but over wider dates than `filtered` holds: the
+  // equal-length window just before the picked one (the chip's baseline) and
+  // the picked period widened to at least 7 days ending on its last day (the
+  // spark — the chart-window convention). Sparks stop at `dataMax` like the
+  // trend line: the un-synced tail is left off, not drawn as a dive to last
+  // place, while a missing day inside the data is a real 0.
+  //
+  //   chip  — place(previous equal-length window) − place(picked period)
+  //   spark — the place the board WOULD print if the period ended on that day,
+  //           i.e. the same ranking over a window of `winDays` trailing it. So
+  //           the series ends on exactly the place printed in the row, and its
+  //           value one day before `winFrom` is exactly the chip's baseline —
+  //           line and chip are two readings of one number, never two stories.
+  //
+  // Every window is ranked over the SAME roster (the people the picked range
+  // shows), so the places stay commensurable: a window a person is missing from
+  // scores them a real 0 there, exactly as a missing day does inside one. The
+  // exception is the chip's baseline — somebody the previous period never saw
+  // at all is «Yangi», not "climbed from last place".
   const standTrend = useMemo(() => {
+    const EMPTY = { prev: null, prevSeen: null, sparks: new Map() };
     const { from: winFrom, to: winTo, days: winDays } = scoreWin;
-    if (!winFrom || !winTo || !winDays) return { prev: null, sparks: new Map() };
+    if (!winFrom || !winTo || !winDays || !standings.list.length) return EMPTY;
     const keyFn = effStandMode === "leader" ? (r) => r.leader : (r) => r.supervisor;
     const prevFrom = isoShift(winFrom, -winDays), prevTo = isoShift(winFrom, -1);
     const weekAgo = isoShift(winTo, -6);
     const sparkFrom = winFrom < weekAgo ? winFrom : weekAgo;
     const sparkTo = dataMax && winTo > dataMax ? dataMax : winTo;
-    const lo = prevFrom < sparkFrom ? prevFrom : sparkFrom;
-    const prevRows = [], sparkRows = [];
+    // The spark's first point needs a whole trailing window BEHIND it.
+    const rollFrom = isoShift(sparkFrom, -(winDays - 1));
+    const lo = prevFrom < rollFrom ? prevFrom : rollFrom;
+    const prevRows = [], rollRows = [];
     for (const r of rows) {
       if ((fShift != null && r.shift !== fShift)
         || (fSup !== "All" && r.supervisor !== fSup)
@@ -1416,22 +1433,66 @@ export default function Leaders({ botMode = false }) {
       const d = rowDate(r);
       if (d < lo || d > winTo) continue;
       if (d >= prevFrom && d <= prevTo) prevRows.push(r);
-      if (d >= sparkFrom && d <= sparkTo) sparkRows.push(r);
+      if (d >= rollFrom && d <= sparkTo) rollRows.push(r);
     }
-    // Scored over the same day count as the ranking, so the two Reytings are
-    // commensurable; a person the previous window never saw is a real 0 there.
-    const prev = prevRows.length
-      ? new Map(scoreSlots(slotsBy(prevRows, keyFn), winDays).map((s) => [s.name, s.rating]))
-      : null;
+    const roster = standings.list.map((e) => e.name);
+    // A window's scores padded back up to the roster, so the board is the same
+    // size every time it is ranked.
+    const onRoster = (scored) => {
+      const seen = new Set(scored.map((s) => s.name));
+      for (const name of roster) if (!seen.has(name)) scored.push({ name, rating: 0, consist: 0 });
+      return seen;
+    };
+
+    let prev = null, prevSeen = null;
+    if (prevRows.length) {
+      const scored = scoreSlots(slotsBy(prevRows, keyFn), winDays);
+      prevSeen = onRoster(scored);
+      prev = new Map(rankPlaces(scored, standMetric).map((e) => [e.name, e.place]));
+    }
+
     const sparks = new Map();
-    if (sparkTo >= sparkFrom) {
-      const days = Array.from({ length: spanDays(sparkFrom, sparkTo) }, (_, i) => isoShift(sparkFrom, i));
-      if (days.length >= 2)
-        for (const [name, byDay] of slotsBy(sparkRows, keyFn))
-          sparks.set(name, days.map((d) => { const v = byDay.get(d); return v ? v.sum / v.n : 0; }));
+    const sparkDays = sparkTo >= sparkFrom
+      ? Array.from({ length: spanDays(sparkFrom, sparkTo) }, (_, i) => isoShift(sparkFrom, i)) : [];
+    if (sparkDays.length >= 2) {
+      const byPerson = slotsBy(rollRows, keyFn);
+      const names = new Set(roster);
+      for (const n of byPerson.keys()) names.add(n);
+      const allNames = [...names];
+      const series = new Map(allNames.map((n) => [n, []]));
+      // `Spark` draws 0…100 bottom-to-top and a SMALLER place is better, so the
+      // place is flipped into a height against a FIXED denominator — the board
+      // size, not the day's worst place, or the line would breathe with the
+      // tie structure instead of tracking the person.
+      const top = Math.max(1, allNames.length - 1);
+      const rollDays = Array.from({ length: spanDays(rollFrom, sparkTo) }, (_, i) => isoShift(rollFrom, i));
+      const head = rollDays.length - sparkDays.length;
+      // One pass, sliding: each day adds itself and drops the day that fell out
+      // of the trailing window, so re-ranking N days costs N sorts, not N².
+      const acc = new Map(allNames.map((n) => [n, { sum: 0, n: 0 }]));
+      rollDays.forEach((d, i) => {
+        const gone = i >= winDays ? rollDays[i - winDays] : null;
+        for (const name of allNames) {
+          const days = byPerson.get(name);
+          if (!days) continue;
+          const a = acc.get(name);
+          const came = days.get(d);
+          if (came) { a.sum += came.sum / came.n; a.n++; }
+          const left = gone && days.get(gone);
+          if (left) { a.sum -= left.sum / left.n; a.n--; }
+        }
+        if (i < head) return;
+        const scored = allNames.map((name) => {
+          const a = acc.get(name);
+          return { name, rating: Math.round(a.sum / winDays), consist: Math.round((a.n / winDays) * 100) };
+        });
+        for (const e of rankPlaces(scored, standMetric))
+          series.get(e.name).push(100 - ((e.place - 1) / top) * 100);
+      });
+      for (const [name, vals] of series) sparks.set(name, vals);
     }
-    return { prev, sparks };
-  }, [rows, scoreWin, dataMax, effStandMode, fShift, fSup, fLeader]);
+    return { prev, prevSeen, sparks };
+  }, [rows, scoreWin, dataMax, effStandMode, standMetric, standings, fShift, fSup, fLeader]);
 
   // Descending is the natural reading order; flipping reverses the whole list,
   // which drops the three who need help into the card row (see StandCard).
