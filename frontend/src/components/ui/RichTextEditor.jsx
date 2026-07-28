@@ -1537,17 +1537,26 @@ export default function RichTextEditor({
             {flatBtn({ key: "quote", icon: TextQuote, title: t("rte.quote"), block: true, run: () => toggleBlock("blockquote") })}
             {flatBtn({ key: "table", icon: TableIcon, title: t("rte.table"), block: true, run: insertTableDefault })}
             <ToolbarMenu icon={Paperclip} title={t("rte.media")} items={attachMenuItems} disabled={states.cell} />
+            {emojiPalette}
             {divider(1)}
             {flatBtn({ key: "link", icon: Link2, title: t("rte.link"), run: openLink })}
             {flatBtn({ key: "clear", icon: RemoveFormatting, title: t("rte.clear"), run: clearFormatting })}
           </>
         ) : (
-          classicToolbar.map((g, gi) => (
-            <div key={gi} className="flex items-center gap-0.5">
-              {gi > 0 && divider(gi)}
-              {g.map(flatBtn)}
-            </div>
-          ))
+          <>
+            {classicToolbar.map((g, gi) => (
+              <div key={gi} className="flex items-center gap-0.5">
+                {gi > 0 && divider(gi)}
+                {g.map(flatBtn)}
+              </div>
+            ))}
+            {emojiPalette && (
+              <div className="flex items-center gap-0.5">
+                {divider("emoji")}
+                {emojiPalette}
+              </div>
+            )}
+          </>
         )}
       </div>
 
