@@ -709,9 +709,9 @@ def delete_user(
         forget_registration_notices(telegram_id)
     except Exception:
         pass
+    alert_details.append(("count", roles_removed))
     alert_grant_use(db, caller, CAP_USERS_MANAGE, "user.deleted",
-                    details=alert_details,
-                    changes=[("count", roles_removed, None)])
+                    details=alert_details)
     return {"ok": True}
 
 
