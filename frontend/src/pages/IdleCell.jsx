@@ -263,8 +263,8 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
                 const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
                 return (
                   <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
-                    <div className={`grid grid-cols-2 gap-2 items-center px-3 py-2 md:py-1.5 ${GRID_COLS}`}>
-                      <div className="col-span-2 md:col-span-1 flex items-center gap-1.5 min-w-0">
+                    <div className={`grid grid-cols-2 ${COL_SEP} ${GRID_COLS}`}>
+                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
                         <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
                         <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
                           {t("idleCell.category")} {cat.code}
