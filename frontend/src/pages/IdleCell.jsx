@@ -1,14 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Timer, Info, Save, ChevronDown, RotateCcw,
+  Info, Save, ChevronDown, RotateCcw,
   Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
   FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
-import DateRangePicker from "../components/ui/DateRangePicker";
+import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { SkeletonBlock } from "../components/ui/Skeleton";
@@ -39,10 +39,15 @@ const CATS = [
   { code: "I",  name: "Cat I" },
 ];
 
-const GRID = "minmax(140px,1.5fr) 5rem 5rem minmax(160px,1.7fr)";
-const INPUT_NUM = "w-full rounded-lg px-2 py-1 text-xs text-right outline-none tabular-nums";
-const INPUT_TXT = "w-full rounded-lg px-2 py-1 text-xs outline-none";
+// md+ keeps the 4-column grid; below md each category stacks (name row / labeled
+// number pair / full-width note) so the required note and Save stay on-screen.
+const GRID_COLS = "md:grid-cols-[minmax(140px,1.5fr)_5rem_5rem_minmax(160px,1.7fr)]";
+// Inputs are 16px below md — iOS WebViews zoom the whole page when focusing
+// anything smaller.
+const INPUT_NUM = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs text-right outline-none tabular-nums";
+const INPUT_TXT = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs outline-none";
 const INPUT_STYLE = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
+const MOBILE_LABEL = "md:hidden block text-[10px] font-semibold uppercase tracking-wide mb-0.5";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const localTodayIso = () => {
@@ -56,6 +61,13 @@ const fmtMin = (v) => {
 const num = (v) => {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
+};
+// Telegram's on-screen keyboard shrinks the viewport after focus; recentre the
+// field once that resize settles (phones only — desktop clicks shouldn't jump).
+const focusIntoView = (e) => {
+  if (window.innerWidth >= 768) return;
+  const el = e.currentTarget;
+  setTimeout(() => el.scrollIntoView({ block: "center" }), 250);
 };
 function cellName(c, lang) {
   const byLang = { uz: c.name_uz, uz_cyrl: c.name_uz_cyrl, ru: c.name_ru, en: c.name_en }[lang];
@@ -71,8 +83,8 @@ function hueFromString(s) {
 
 // One production cell = one collapsible accordion. Owns its per-category draft
 // inputs + last-saved snapshot; each category row saves independently.
-function CellAccordion({ cell, date, t, lang }) {
-  const [open, setOpen] = useState(false);
+function CellAccordion({ cell, date, t, lang, autoOpen }) {
+  const [open, setOpen] = useState(autoOpen);
   const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
   const [confirmCode, setConfirmCode] = useState(null); // code of the category pending a reset-to-0 confirm
   const [rows, setRows] = useState(() => {
@@ -89,6 +101,12 @@ function CellAccordion({ cell, date, t, lang }) {
     }
     return init;
   });
+
+  // Only ever opens (never forces closed, so a manual collapse sticks); also
+  // catches already-mounted cells when the cell filter narrows the list.
+  useEffect(() => {
+    if (autoOpen) setOpen(true);
+  }, [autoOpen]);
 
   const setField = (code, field, val) =>
     setRows((r) => ({ ...r, [code]: { ...r[code], [field]: val } }));
@@ -162,6 +180,7 @@ function CellAccordion({ cell, date, t, lang }) {
   );
   const pendingCats = rowStatus.filter((s) => s.dirty && s.valid).map((s) => s.cat);
   const incompleteCount = rowStatus.filter((s) => s.incomplete).length;
+  const hasDraft = pendingCats.length > 0 || incompleteCount > 0;
 
   const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
   const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
@@ -169,8 +188,10 @@ function CellAccordion({ cell, date, t, lang }) {
   const name = cellName(cell, lang);
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left">
+    // overflow-clip (not hidden) — clip doesn't create a scroll container, so the
+    // sticky save footer below can track the page scrollport.
+    <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2.5 min-h-[44px] text-left">
         <ChevronDown
           size={16}
           style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
@@ -182,126 +203,168 @@ function CellAccordion({ cell, date, t, lang }) {
           {cell.verifix_code}
         </span>
         <span className="truncate text-sm" style={{ color: "var(--text-1)" }}>{name || "—"}</span>
-        <span className="ml-auto flex items-center gap-3 flex-shrink-0 text-xs tabular-nums">
-          <span>
-            <span className="mr-1" style={{ color: "var(--text-4)" }}>{t("idleCell.stopped")}</span>
-            <span style={{ color: sumStopped ? "#ef4444" : "var(--text-3)", fontWeight: 600 }}>{fmtMin(sumStopped)}</span>
-          </span>
-          <span>
-            <span className="mr-1" style={{ color: "var(--text-4)" }}>{t("idleCell.notStopped")}</span>
-            <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtMin(sumNs)}</span>
-          </span>
+        {hasDraft && (
+          <span
+            className="w-2 h-2 rounded-full flex-shrink-0"
+            style={{ background: "#eab308" }}
+            title={t("idleCell.incompleteHint")}
+          />
+        )}
+        <span className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0 text-xs tabular-nums">
+          {sumStopped + sumNs === 0 ? (
+            // Backend rejects 0/0 saves, so zero sums reliably mean "no entries
+            // yet" — a muted dash makes cells with real data pop out of the list.
+            <span style={{ color: "var(--text-4)" }}>—</span>
+          ) : (
+            <>
+              <span className="flex items-center gap-1" title={t("idleCell.stopped")}>
+                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#ef4444" }} />
+                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.stopped")}</span>
+                <span style={{ color: sumStopped ? "#ef4444" : "var(--text-3)", fontWeight: 600 }}>{fmtMin(sumStopped)}</span>
+              </span>
+              <span className="flex items-center gap-1" title={t("idleCell.notStopped")}>
+                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#94a3b8" }} />
+                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.notStopped")}</span>
+                <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtMin(sumNs)}</span>
+              </span>
+            </>
+          )}
         </span>
       </button>
 
       {open && (
-        <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 600 }}>
-            <div
-              className="grid gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide"
-              style={{ gridTemplateColumns: GRID, background: "var(--bg-inner)", color: "var(--text-3)" }}
-            >
-              <div>{t("idleCell.category")}</div>
-              <div className="text-right">{t("idleCell.stopped")}</div>
-              <div className="text-right">{t("idleCell.notStopped")}</div>
-              <div>{t("idleCell.note")}</div>
-            </div>
-            {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
-              const Icon = CAT_ICON[cat.code] || Layers;
-              const catColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
-              const r = rows[cat.code];
-              const showInfo = infoOpen === cat.code;
-              const minErr = incomplete && !hasMin;
-              const noteErr = incomplete && !hasNote;
-              const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
-              return (
-                <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
-                  <div className="grid gap-2 items-center px-3 py-1.5" style={{ gridTemplateColumns: GRID }}>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
-                      <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
-                        {t("idleCell.category")} {cat.code}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
-                        className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-0.5 -m-0.5"
-                        style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
-                        aria-label={t(`downtime.cat.${cat.code}.label`)}
-                        aria-expanded={showInfo}
-                      >
-                        <Info size={17} />
-                      </button>
-                    </div>
-                    <input
-                      type="number" min="0" step="any" inputMode="decimal"
-                      value={r.stopped}
-                      onChange={(e) => setField(cat.code, "stopped", e.target.value)}
-                      className={INPUT_NUM} style={minStyle}
-                    />
-                    {cat.noNs ? (
-                      <div className="text-center text-xs" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
-                    ) : (
-                      <input
-                        type="number" min="0" step="any" inputMode="decimal"
-                        value={r.not_stopped}
-                        onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
-                        className={INPUT_NUM} style={minStyle}
-                      />
-                    )}
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={r.note}
-                        onChange={(e) => setField(cat.code, "note", e.target.value)}
-                        placeholder={t("idleCell.notePlaceholder")}
-                        className={`${INPUT_TXT} flex-1 min-w-0`}
-                        style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
-                      />
-                      {r.saved && (
+        <>
+          <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
+            <div className="md:min-w-[600px]">
+              <div
+                className={`hidden md:grid gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide ${GRID_COLS}`}
+                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+              >
+                <div>{t("idleCell.category")}</div>
+                <div className="text-right">{t("idleCell.stopped")}</div>
+                <div className="text-right">{t("idleCell.notStopped")}</div>
+                <div>{t("idleCell.note")}</div>
+              </div>
+              {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
+                const Icon = CAT_ICON[cat.code] || Layers;
+                const catColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+                const r = rows[cat.code];
+                const showInfo = infoOpen === cat.code;
+                const minErr = incomplete && !hasMin;
+                const noteErr = incomplete && !hasNote;
+                const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
+                return (
+                  <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
+                    <div className={`grid grid-cols-2 gap-2 items-center px-3 py-2 md:py-1.5 ${GRID_COLS}`}>
+                      <div className="col-span-2 md:col-span-1 flex items-center gap-1.5 min-w-0">
+                        <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
+                        <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
+                          {t("idleCell.category")} {cat.code}
+                        </span>
                         <button
                           type="button"
-                          onClick={() => setConfirmCode(cat.code)}
-                          className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-1 transition-colors hover:bg-white/10"
-                          style={{ color: "var(--text-3)", cursor: "pointer" }}
-                          title={t("idleCell.clear")}
-                          aria-label={t("idleCell.clear")}
+                          onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
+                          className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1.5"
+                          style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
+                          aria-label={t(`downtime.cat.${cat.code}.label`)}
+                          aria-expanded={showInfo}
                         >
-                          <RotateCcw size={15} />
+                          <Info size={17} />
                         </button>
+                      </div>
+                      {/* type=text + inputMode=decimal: the uz/ru iOS keypad types a
+                          comma, which type=number silently rejects; num() normalizes
+                          it. Also stops wheel/gesture scrolls from mutating values.
+                          md:contents dissolves the label so the input is the grid
+                          cell on desktop; below md the caption labels the input. */}
+                      <label className="min-w-0 md:contents">
+                        <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.stopped")}</span>
+                        <input
+                          type="text" inputMode="decimal"
+                          value={r.stopped}
+                          onChange={(e) => setField(cat.code, "stopped", e.target.value)}
+                          onFocus={focusIntoView}
+                          className={INPUT_NUM} style={minStyle}
+                        />
+                      </label>
+                      {cat.noNs ? (
+                        <div className="min-w-0 md:contents">
+                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
+                          <div className="text-center text-xs py-2 md:py-0" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
+                        </div>
+                      ) : (
+                        <label className="min-w-0 md:contents">
+                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
+                          <input
+                            type="text" inputMode="decimal"
+                            value={r.not_stopped}
+                            onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
+                            onFocus={focusIntoView}
+                            className={INPUT_NUM} style={minStyle}
+                          />
+                        </label>
                       )}
+                      <div className="col-span-2 md:col-span-1 flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={r.note}
+                          onChange={(e) => setField(cat.code, "note", e.target.value)}
+                          onFocus={focusIntoView}
+                          placeholder={t("idleCell.notePlaceholder")}
+                          className={`${INPUT_TXT} flex-1 min-w-0`}
+                          style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
+                        />
+                        {r.saved && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmCode(cat.code)}
+                            className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1 transition-colors hover:bg-white/10"
+                            style={{ color: "var(--text-3)", cursor: "pointer" }}
+                            title={t("idleCell.clear")}
+                            aria-label={t("idleCell.clear")}
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {showInfo && (
+                      <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
+                        <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
+                          {t(`downtime.cat.${cat.code}.label`)}
+                        </div>
+                        <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
+                          {t(`downtime.cat.${cat.code}.note`)}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {showInfo && (
-                    <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
-                      <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
-                        {t(`downtime.cat.${cat.code}.label`)}
-                      </div>
-                      <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
-                        {t(`downtime.cat.${cat.code}.note`)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="flex items-center justify-end gap-3 px-3 py-2" style={{ borderTop: "1px solid var(--border)" }}>
-              {incompleteCount > 0 && (
-                <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
-              )}
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={!pendingCats.length}
-                loading={saveMut.isPending}
-                icon={<Save size={14} />}
-                onClick={() => saveMut.mutate(pendingCats)}
-              >
-                {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
-              </Button>
+                );
+              })}
             </div>
           </div>
-        </div>
+          {/* Outside the h-scroller so it can't scroll away sideways; sticky so
+              Save + the incomplete hint stay visible while editing any of the
+              11 rows. Opaque bg — rows scroll underneath. */}
+          <div
+            className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-2"
+            style={{ borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}
+          >
+            {incompleteCount > 0 && (
+              <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!pendingCats.length}
+              loading={saveMut.isPending}
+              icon={<Save size={14} />}
+              onClick={() => saveMut.mutate(pendingCats)}
+            >
+              {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
+            </Button>
+          </div>
+        </>
       )}
 
       <ConfirmDialog
@@ -368,6 +431,10 @@ export default function IdleCell() {
     title: `${c.verifix_code} ${cellName(c, lang)}`,
   }));
 
+  // Auto-open when there is exactly one visible cell, or the user explicitly
+  // narrowed to a few — a large selection stays collapsed to keep the list scannable.
+  const autoOpen = shownCells.length === 1 || (selectedCellIds.length > 0 && shownCells.length <= 3);
+
   const emptyBox = (msg) => (
     <div
       className="rounded-2xl py-12 text-center text-sm"
@@ -380,21 +447,19 @@ export default function IdleCell() {
   return (
     <Layout title={t("idleCell.title")}>
       <div
-        className="rounded-2xl px-4 py-3 mb-4 flex flex-wrap items-center gap-2"
+        className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
       >
-        <DateRangePicker
-          single weekday
-          dateFrom={date} dateTo={date}
-          setDateFrom={(iso) => iso && setDate(iso)}
-          setDateTo={() => {}}
-          triggerClassName="px-3 py-2 text-sm"
-        />
-        <SegmentedToggle
-          value={shiftTab}
-          onChange={onShift}
-          options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
-        />
+        {/* Date + shift share a row on phones (flex-wrap splits them in langs with
+            long shift labels); the selects go full-width below md. */}
+        <div className="w-full md:w-auto flex flex-wrap items-center gap-2">
+          <DayStepper value={date} onChange={setDate} />
+          <SegmentedToggle
+            value={shiftTab}
+            onChange={onShift}
+            options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
+          />
+        </div>
         <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
           onChange={(v) => { setSupervisorId(v ? Number(v) : null); setSelectedCellIds([]); }}
@@ -403,7 +468,7 @@ export default function IdleCell() {
           searchable
           searchPlaceholder={t("idleCell.searchSupervisor")}
           triggerClassName="px-3 py-2 text-sm"
-          className="min-w-[180px]"
+          className="w-full md:w-auto md:min-w-[180px]"
         />
         {supervisorId != null && cells.length > 0 && (
           <StyledSelect
@@ -415,10 +480,10 @@ export default function IdleCell() {
             countLabel={(n) => `${n} ${t("idleCell.cellsWord")}`}
             searchPlaceholder={t("idleCell.searchCell")}
             triggerClassName="px-3 py-2 text-sm"
-            className="min-w-[160px]"
+            className="w-full md:w-auto md:min-w-[160px]"
           />
         )}
-        <span className="ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
+        <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
       </div>
 
       {supervisorId == null ? (
@@ -432,7 +497,7 @@ export default function IdleCell() {
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (
-            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} />
+            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} autoOpen={autoOpen} />
           ))}
         </div>
       )}
