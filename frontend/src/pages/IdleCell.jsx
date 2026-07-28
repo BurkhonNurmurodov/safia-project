@@ -292,7 +292,7 @@ export default function IdleCell() {
       {editCell && (
         <Modal
           onClose={closeModal}
-          icon={Timer}
+          icon={<Timer size={16} style={{ color: "var(--brand-text)" }} />}
           title={t("idleCell.modalTitle")}
           subtitle={`${editCell.verifix_code}${cellName(editCell, lang) ? " · " + cellName(editCell, lang) : ""}`}
           footer={
