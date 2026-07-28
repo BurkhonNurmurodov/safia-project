@@ -66,7 +66,7 @@ function HolderChip({ b, onUnassign, disabled }) {
   );
 }
 
-export default function ProfilesManagement({ cellsOnly = false }) {
+export default function ProfilesManagement({ cellsOnly = false, canEdit = true }) {
   // A capability grantee may run this tab but never touch ADMIN identities
   // (the backend refuses every write; hiding the section keeps the UI honest
   // rather than showing buttons that 403).

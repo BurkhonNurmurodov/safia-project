@@ -167,6 +167,9 @@ export default function Broadcast() {
               rich={rich}
               placeholder={t("admin.broadcast.placeholder")}
               onChange={setMsg}
+              customEmojis={emojis || []}
+              onAddEmoji={(body) => addEmojiMut.mutate(body)}
+              onDeleteEmoji={(em) => delEmojiMut.mutate(em.id)}
             />
 
             <div className="flex items-center gap-2 flex-wrap">
