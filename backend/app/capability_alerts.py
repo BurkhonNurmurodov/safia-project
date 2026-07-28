@@ -367,7 +367,11 @@ def _who_line(ctx: dict, lang: str) -> str:
 
 
 def _grant_lines(ctx: dict, lang: str) -> list[str]:
-    cap_label = _t(lang, "cap." + ctx["capability"])
+    cap = ctx["capability"]
+    if cap.startswith(CAP_PAGE_PREFIX):
+        cap_label = _t(lang, "cap.page.view").format(page=cap[len(CAP_PAGE_PREFIX):])
+    else:
+        cap_label = _t(lang, "cap." + cap)
     first = f"<b>{_esc(cap_label)}</b>"
     if ctx.get("scope"):
         first += f" · {_esc(_t(lang, 'scope.' + ctx['scope']))}"
