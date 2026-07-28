@@ -6754,6 +6754,14 @@ const t = {
     "rte.deleteCol":     "Delete column",
     "rte.quoteAuthor":   "Quote author",
     "rte.captionTitle":  "Media caption",
+    "rte.emoji":             "Premium emoji",
+    "rte.emojiTitle":        "Premium emoji",
+    "rte.emojiAdd":          "Add emoji",
+    "rte.emojiDelete":       "Remove",
+    "rte.emojiEmpty":        "No saved emojis yet. Tap + to add one.",
+    "rte.emojiIdPlaceholder": "custom_emoji_id (numbers)",
+    "rte.emojiLabelPlaceholder": "Label (optional)",
+    "rte.emojiSave":         "Save",
     "admin.tabProduction":   "Production",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
