@@ -561,25 +561,38 @@ def _run_broadcast(bid: int, recipients: list[tuple[int, str]], html: str,
     """Deliver sequentially, updating the history row as it goes. After the
     first successful media upload the returned file_id is reused so the file
     is uploaded to Telegram exactly once."""
-    from app.telegram_bot import bot
+    from app.telegram_bot import bot, strip_custom_emoji
     db = SessionLocal()
     file_id: str | None = None
+    stripped_html = strip_custom_emoji(html)
+    cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
     try:
         row = db.query(Broadcast).filter_by(id=bid).first()
         for tid, name in recipients:
-            try:
+            def _send(h):
+                nonlocal file_id
                 if kind == "photo":
-                    msg = bot.send_photo(tid, file_id or data, caption=html, parse_mode="HTML")
+                    msg = bot.send_photo(tid, file_id or data, caption=h, parse_mode="HTML")
                     file_id = file_id or msg.photo[-1].file_id
                 elif kind == "video":
-                    msg = bot.send_video(tid, file_id or data, caption=html, parse_mode="HTML")
+                    msg = bot.send_video(tid, file_id or data, caption=h, parse_mode="HTML")
                     file_id = file_id or msg.video.file_id
                 elif kind == "document":
                     msg = bot.send_document(tid, document=file_id or (filename, data),
-                                            caption=html, parse_mode="HTML")
+                                            caption=h, parse_mode="HTML")
                     file_id = file_id or msg.document.file_id
                 else:
-                    bot.send_message(tid, html, parse_mode="HTML")
+                    bot.send_message(tid, h, parse_mode="HTML")
+            try:
+                try:
+                    _send(cur_html)
+                except Exception:
+                    # Premium emoji rejected (bot lacks a Fragment username) →
+                    # retry degraded to fallback chars and latch it for the rest.
+                    if cur_html == stripped_html:
+                        raise
+                    _send(stripped_html)
+                    cur_html = stripped_html
                 row.sent_count += 1
             except Exception as e:
                 row.failed_count += 1
