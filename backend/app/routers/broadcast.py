@@ -31,9 +31,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal, get_db
 from app.models import (
-    Admin, Broadcast, BroadcastDraft, Manager, RoleProfile, TelegramUser,
-    TelegramUserRole,
+    Admin, Broadcast, BroadcastDraft, CustomEmoji, Manager, RoleProfile,
+    TelegramUser, TelegramUserRole,
 )
+from pydantic import BaseModel
 from app.routers.admin import oauth2_scheme, verify_admin
 from app.upload_guard import validate_broadcast_media
 
