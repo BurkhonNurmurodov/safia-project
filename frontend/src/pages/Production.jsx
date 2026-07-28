@@ -1360,9 +1360,9 @@ export default function Production() {
               {loading ? "" : viewRows.length === rows.length ? `${rows.length} SKU` : `${viewRows.length} / ${rows.length}`}
             </span>
             <Button
-              size="sm"
-              variant="secondary"
-              icon={<Download size={14} />}
+              size="lg"
+              variant="success"
+              icon={<Download size={16} />}
               loading={exporting}
               disabled={loading || viewRows.length === 0}
               onClick={exportExcel}
