@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
         relax_pp_upload_manager, rescale_pp_efficiency_base,
         backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
+        migrate_cell_ojidaniya_percat,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_shift_manager, add_concern_category,
