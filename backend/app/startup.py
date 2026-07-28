@@ -1660,3 +1660,63 @@ def add_leader_task_setting_names() -> None:
         print(f"[startup] leader_task_settings name columns migration skipped: {exc}")
     finally:
         db.close()
+
+
+CAPS_PER_USER_FLAG = "caps_migrated_to_user_v1"
+
+
+def migrate_user_capabilities() -> None:
+    """Per-ACCOUNT capabilities rollout — the one deliberate break from
+    "a profile is the person" (see app/capabilities.py). Grants move off the
+    profile onto the Telegram account, so two logins of one profile can differ.
+
+    Columns (idempotent): capability_audit gains a ``telegram_id`` target and its
+    legacy ``profile_key`` becomes nullable, so new per-account audit rows don't
+    need a profile. The ``user_capabilities`` table itself comes from
+    Base.metadata.create_all.
+
+    Data (flag-guarded, once): fan every existing profile-keyed grant out to the
+    accounts currently holding that profile. A grant on a profile nobody has
+    claimed is dropped — a per-account grant has no login to land on — which is
+    the accepted trade-off of leaving profile keys. The source
+    profile_capabilities rows are left untouched so this stays re-derivable."""
+    from app import identity
+    from app.models import ProfileCapability, UserCapability
+
+    db = SessionLocal()
+    try:
+        try:
+            db.execute(text(
+                "ALTER TABLE capability_audit ADD COLUMN IF NOT EXISTS telegram_id BIGINT"))
+            db.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_capability_audit_telegram_id "
+                "ON capability_audit (telegram_id)"))
+            db.execute(text(
+                "ALTER TABLE capability_audit ALTER COLUMN profile_key DROP NOT NULL"))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"[startup] capability_audit columns migration skipped: {exc}")
+
+        if db.query(AppSetting).filter_by(key=CAPS_PER_USER_FLAG).first():
+            return
+        existing = {(r.telegram_id, r.capability) for r in db.query(UserCapability).all()}
+        moved = 0
+        for pc in db.query(ProfileCapability).all():
+            for tid in identity.profile_holders(db, pc.profile_key):
+                if (tid, pc.capability) in existing:
+                    continue
+                db.add(UserCapability(
+                    telegram_id=tid, capability=pc.capability,
+                    scope=pc.scope, granted_by=pc.granted_by,
+                ))
+                existing.add((tid, pc.capability))
+                moved += 1
+        db.add(AppSetting(key=CAPS_PER_USER_FLAG, value="1"))
+        db.commit()
+        print(f"[startup] fanned {moved} profile grant(s) out to Telegram accounts")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] user-capabilities backfill skipped: {exc}")
+    finally:
+        db.close()
