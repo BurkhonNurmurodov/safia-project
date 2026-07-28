@@ -424,6 +424,27 @@ def migrate_cells_leaders_columns() -> None:
         db.close()
 
 
+def migrate_cell_ojidaniya_percat() -> None:
+    """TEST-table redesign (2026-07-28): cell_ojidaniya moved from one JSONB row
+    per (cell,date,shift) to one row per (cell,date,category) with a per-category
+    required note. The table only ever held manual TEST entries (never the sheets
+    pipeline), so a legacy-schema table is dropped and rebuilt. Idempotent."""
+    from sqlalchemy import inspect as sa_inspect
+    from app.database import engine
+    from app.models import CellOjidaniya
+    insp = sa_inspect(engine)
+    if "cell_ojidaniya" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("cell_ojidaniya")}
+        if "category" not in cols:  # legacy JSONB schema → rebuild
+            db = SessionLocal()
+            try:
+                db.execute(text("DROP TABLE cell_ojidaniya"))
+                db.commit()
+            finally:
+                db.close()
+    CellOjidaniya.__table__.create(bind=engine, checkfirst=True)
+
+
 def migrate_cell_supervisor_column() -> None:
     """2026-07-27: cells gain a direct supervisor link (manager_id → managers.id,
     nullable). A cell now belongs to a supervisor independently of its leader —
