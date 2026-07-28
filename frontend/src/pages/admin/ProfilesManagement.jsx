@@ -499,7 +499,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
             )}
             {type !== "guest" && canEdit && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
-                {t("admin.profiles.add")}
+                {isCells ? t("admin.profiles.cellCreate") : t("admin.profiles.add")}
               </Button>
             )}
             <Button
