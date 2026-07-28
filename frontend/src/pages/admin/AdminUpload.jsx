@@ -648,7 +648,9 @@ function ComparisonThresholdEditor() {
 
 // ─── Upload panel ─────────────────────────────────────────────────────────────
 
-const ADMIN_TABS = ["data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions"];
+// "actions" (the grant-use Action history) rides with "permissions": both are
+// oversight of delegated powers, absent from every grant path — admin-only.
+const ADMIN_TABS = ["data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions", "actions"];
 
 export default function AdminUpload() {
   const navigate = useNavigate();
