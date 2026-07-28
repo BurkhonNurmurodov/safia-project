@@ -60,6 +60,7 @@ const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
+const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 import PageLoader from "./components/ui/PageLoader";
