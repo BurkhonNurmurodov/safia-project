@@ -675,6 +675,11 @@ def delete_user_role(
             forget_registration_notices(telegram_id)
     except Exception:
         pass
+    if user_deleted:
+        alert_details.append(("status", tv("v.account_deleted")))
+    alert_grant_use(db, caller, CAP_USERS_MANAGE, "user.role_removed",
+                    details=alert_details,
+                    changes=[("status", tv("v.approved"), None)])
     return {"ok": True, "user_deleted": user_deleted}
 
 
