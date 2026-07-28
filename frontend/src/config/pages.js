@@ -38,6 +38,7 @@ export const PAGES = [
   { key: "production", route: "/production", labelKey: "nav.production" },
   { key: "trudoyomkost", route: "/trudoyomkost", labelKey: "nav.trudoyomkost" },
   { key: "leaders", route: "/leaders", labelKey: "nav.leaders" },
+  { key: "cells", route: "/cells", labelKey: "nav.cells" },
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
