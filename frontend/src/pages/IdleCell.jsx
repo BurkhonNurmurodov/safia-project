@@ -37,7 +37,7 @@ const CATS = [
   { code: "I",  name: "Cat I" },
 ];
 
-const GRID = "minmax(150px,1.5fr) 4.75rem 4.75rem minmax(150px,1.4fr) auto";
+const GRID = "minmax(140px,1.5fr) 5rem 5rem minmax(160px,1.7fr)";
 const INPUT_NUM = "w-full rounded-lg px-2 py-1 text-xs text-right outline-none tabular-nums";
 const INPUT_TXT = "w-full rounded-lg px-2 py-1 text-xs outline-none";
 const INPUT_STYLE = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
