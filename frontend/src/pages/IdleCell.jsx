@@ -71,6 +71,7 @@ function hueFromString(s) {
 // inputs + last-saved snapshot; each category row saves independently.
 function CellAccordion({ cell, date, t, lang }) {
   const [open, setOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
   const [rows, setRows] = useState(() => {
     const init = {};
     for (const cat of CATS) {
