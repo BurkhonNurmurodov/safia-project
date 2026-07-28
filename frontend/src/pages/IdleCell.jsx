@@ -303,6 +303,22 @@ function CellAccordion({ cell, date, t, lang }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmCode != null}
+        tone="danger"
+        title={t("idleCell.clearTitle")}
+        message={t("idleCell.clearConfirm")}
+        confirmLabel={t("idleCell.delete")}
+        cancelLabel={t("idleCell.cancel")}
+        loading={delMut.isPending}
+        onCancel={() => setConfirmCode(null)}
+        onConfirm={() => {
+          const id = rows[confirmCode]?.id;
+          if (id) delMut.mutate({ code: confirmCode, id });
+          else setConfirmCode(null);
+        }}
+      />
     </div>
   );
 }
