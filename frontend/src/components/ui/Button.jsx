@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
  *   variant   – "primary" (brand gold, white text — the main action)
  *               "secondary" (neutral card bg — cancel / less important)
  *               "danger" (red — destructive confirm)
+ *               "success" (Excel green — spreadsheet / export actions)
  *               "ghost" (borderless, subdued — inline/toolbar actions)
  *   size      – "md" (default, compact px-3.5 py-1.5 text-xs ≈ 30px)
  *               | "sm" (px-3 py-1 text-xs ≈ 26px)
