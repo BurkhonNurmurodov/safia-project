@@ -806,7 +806,13 @@ def notify_supervisor_verifix_upload(db: Session, manager_id: int, d: date):
             "verifix upload for manager %s on %s: no approved supervisor to notify",
             manager_id, d,
         )
-    notify_profile(db, prof, nkey="verifix_uploaded", params={"date": d})
+    # The DM greets the brigadir by name (see the verifix_uploaded HTML variant);
+    # the plain bell text ignores the extra param.
+    mgr = db.query(Manager).filter_by(id=manager_id).first()
+    params = {"date": d}
+    if mgr and mgr.name:
+        params["name"] = mgr.name
+    notify_profile(db, prof, nkey="verifix_uploaded", params=params)
 
 
 def _log_admin_action(
