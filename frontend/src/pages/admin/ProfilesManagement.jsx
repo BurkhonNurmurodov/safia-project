@@ -450,9 +450,10 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
 
   return (
-    // Standalone page (cellsOnly) drops the inner padding — Layout's <main>
-    // already provides it; the admin-panel tab keeps its own.
-    <div className={cellsOnly ? "max-w-6xl mx-auto" : "max-w-6xl mx-auto p-4 sm:p-8"}>
+    // Standalone page (cellsOnly) fills the full content width like every other
+    // sidebar page — Layout's <main> already provides the padding. The
+    // admin-panel tab keeps its own centered max-width + inner padding.
+    <div className={cellsOnly ? "w-full" : "max-w-6xl mx-auto p-4 sm:p-8"}>
       {/* Canonical POSITIONS-style TableCard: count in the head, type pills +
           actions in the toolbar, per-column sort. */}
       <TableCard
