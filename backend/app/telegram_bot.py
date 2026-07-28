@@ -368,6 +368,7 @@ _MESSAGES = {
             "You can send plain text, media, or an album."
         ),
         "file_id_reply":     "📎 <b>{kind}</b>{size}\n<code>{fid}</code>\n\nTap to copy.",
+        "custom_emoji_reply": "🎨 <b>Premium emoji</b>\n{list}\n\nTap an ID to copy.",
     },
 }
 
