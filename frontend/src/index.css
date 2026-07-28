@@ -407,6 +407,17 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
   white-space: nowrap;
   user-select: none;
 }
+/* Premium (custom) emoji token in the editor — the fallback char on a subtle
+   tint so it reads as a special inline entity. In the read-only history preview
+   (.tg-msg) a <tg-emoji> just renders its fallback char inline, no styling. */
+.tg-editor tg-emoji.tg-cemoji {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--brand-bg);
+  box-shadow: inset 0 0 0 1px var(--brand-border);
+  user-select: none;
+}
 /* History preview receives tg://…?id= sources that browsers can't load —
    hide them; the modal lists the file names as chips instead. */
 .tg-msg img[src^="tg://"], .tg-msg video[src^="tg://"], .tg-msg audio[src^="tg://"] { display: none; }
