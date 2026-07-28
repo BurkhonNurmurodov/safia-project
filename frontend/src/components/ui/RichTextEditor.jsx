@@ -510,6 +510,167 @@ function ToolbarMenu({ icon: Icon, title, items, disabled }) {
   );
 }
 
+// ── Premium (custom) emoji palette ──────────────────────────────────────────
+// A saved library of Telegram premium emojis (custom_emoji_id + fallback char).
+// Clicking one inserts it into the editor; the + form adds a new one. Only
+// mounted when the host passes `customEmojis` (the Broadcast composer).
+function EmojiPalette({ emojis, t, onOpen, onInsert, onAdd, onDelete }) {
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ emoji_id: "", fallback: "", label: "" });
+  const open = !!pos;
+
+  const toggle = () => {
+    if (pos) { setPos(null); return; }
+    onOpen?.(); // snapshot the editor selection before the popover takes focus
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({ x: r.left, y: r.bottom + 4 });
+  };
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e) => { if (e.key === "Escape") setPos(null); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [open]);
+
+  const valid = /^\d+$/.test(form.emoji_id.trim()) && !!form.fallback.trim();
+  const submitAdd = () => {
+    if (!valid) return;
+    onAdd?.({ emoji_id: form.emoji_id.trim(), fallback: form.fallback.trim(), label: form.label.trim() });
+    setForm({ emoji_id: "", fallback: "", label: "" });
+    setShowAdd(false);
+  };
+  const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title={t("rte.emoji")}
+        aria-label={t("rte.emoji")}
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={toggle}
+        className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+        style={open
+          ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
+          : { background: "transparent", color: "var(--text-3)" }}
+      >
+        <Smile size={14} />
+      </button>
+      {open && createPortal(
+        <div className="fixed inset-0" style={{ zIndex: 120 }} onMouseDown={() => setPos(null)}>
+          <div
+            className="absolute rounded-xl py-2 px-2.5"
+            style={{
+              left: Math.min(pos.x, window.innerWidth - 296),
+              top: Math.min(pos.y, window.innerHeight - 360),
+              width: 280,
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-md)",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+            }}
+            onMouseDown={(e) => e.stopPropagation() /* keep clicks (incl. input focus) inside */}
+          >
+            <div className="flex items-center justify-between mb-2 px-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+                {t("rte.emojiTitle")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAdd((s) => !s)}
+                className="w-6 h-6 rounded-md flex items-center justify-center transition-colors"
+                style={showAdd
+                  ? { background: "var(--brand-bg)", color: "var(--brand-text)" }
+                  : { background: "var(--bg-inner)", color: "var(--text-3)" }}
+                title={t("rte.emojiAdd")}
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+
+            {emojis.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {emojis.map((em) => (
+                  <div key={em.id} className="relative group">
+                    <button
+                      type="button"
+                      onClick={() => { onInsert?.(em); setPos(null); }}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-xl transition-colors"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+                      title={em.label || em.emoji_id}
+                    >
+                      {em.fallback}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onDelete?.(em); }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full items-center justify-center hidden group-hover:flex"
+                      style={{ background: "#ef4444", color: "#fff" }}
+                      title={t("rte.emojiDelete")}
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {emojis.length === 0 && !showAdd && (
+              <div className="text-xs py-3 text-center" style={{ color: "var(--text-4)" }}>
+                {t("rte.emojiEmpty")}
+              </div>
+            )}
+
+            {showAdd && (
+              <div className="mt-2 pt-2 space-y-1.5" style={{ borderTop: "1px solid var(--border)" }}>
+                <input
+                  value={form.emoji_id}
+                  onChange={(e) => setForm((f) => ({ ...f, emoji_id: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
+                  inputMode="numeric"
+                  placeholder={t("rte.emojiIdPlaceholder")}
+                  className="w-full rounded-lg px-2.5 py-1.5 text-xs outline-none font-mono"
+                  style={inputStyle}
+                />
+                <div className="flex gap-1.5">
+                  <input
+                    value={form.fallback}
+                    onChange={(e) => setForm((f) => ({ ...f, fallback: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
+                    placeholder="🌤"
+                    className="w-12 rounded-lg px-2 py-1.5 text-sm outline-none text-center"
+                    style={inputStyle}
+                  />
+                  <input
+                    value={form.label}
+                    onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") submitAdd(); }}
+                    placeholder={t("rte.emojiLabelPlaceholder")}
+                    className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={inputStyle}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={submitAdd}
+                  disabled={!valid}
+                  className="w-full rounded-lg py-1.5 text-xs font-medium transition-colors disabled:opacity-40"
+                  style={{ background: "var(--brand)", color: "#fff" }}
+                >
+                  {t("rte.emojiSave")}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function RichTextEditor({
