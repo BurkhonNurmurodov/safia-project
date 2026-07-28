@@ -160,6 +160,11 @@ _T = {
                                 "Ячейкаларни бошқариш",
                                 "Управление ячейками",
                                 "Manage cells"),
+    # page.view.<page> family — one template, the page key filled in
+    "cap.page.view": ("Sahifa ruxsati: {page}",
+                      "Саҳифа рухсати: {page}",
+                      "Доступ к странице: {page}",
+                      "Page access: {page}"),
 
     # actions
     "act.attendance.edit": ("Davomat to'g'ridan-to'g'ri o'zgartirildi",
