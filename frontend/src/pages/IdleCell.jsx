@@ -41,7 +41,15 @@ const CATS = [
 
 // md+ keeps the 4-column grid; below md each category stacks (name row / labeled
 // number pair / full-width note) so the required note and Save stay on-screen.
-const GRID_COLS = "md:grid-cols-[minmax(140px,1.5fr)_5rem_5rem_minmax(160px,1.7fr)]";
+// The number columns are sized to fit the longest header word ("To'xtamaganda"),
+// which overflowed into the note column at 5rem.
+const GRID_COLS = "md:grid-cols-[minmax(150px,1.5fr)_7rem_7rem_minmax(180px,1.7fr)]";
+// Table chrome, mirroring DataTable.jsx: padded cells with a vertical rule between
+// columns. md+ only — below md the four cells stack into rows, where a left border
+// would cut across the stack.
+const COL_SEP = "md:[&>*:not(:first-child)]:border-l md:[&>*]:border-[var(--border)]";
+const HEAD_CELL = "px-3 py-2";
+const CELL = "px-3 py-1.5 min-w-0";
 // Inputs are 16px below md — iOS WebViews zoom the whole page when focusing
 // anything smaller.
 const INPUT_NUM = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs text-right outline-none tabular-nums";
