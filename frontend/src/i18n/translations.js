@@ -3797,6 +3797,7 @@ const t = {
     "idleCell.searchCell":        "Поиск ячейки…",
     "idleCell.noCells":           "У этого бригадира нет ячеек.",
     "idleCell.saved":             "Сохранено",
+    "idleCell.incompleteHint":    "Заполните минуты и причину",
     "nav.concerns":        "Обеспокоенности",
     "nav.tasks":           "Задачи",
 
