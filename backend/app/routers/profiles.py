@@ -988,11 +988,15 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
         mgr = db.query(Manager).filter_by(id=pid).first()
         if not mgr:
             raise HTTPException(status_code=404, detail="Unit not found")
+        mgr_name = mgr.name
         for r in _bound_role_rows(db, "supervisor", pid):
             _remove_role_row(db, r)
         if _manager_has_data(db, pid):
             mgr.archived = True   # history stays queryable; unit leaves pickers/dashboards
             db.commit()
+            alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
+                            details=[("role", tv("role.supervisor")), ("profile", mgr_name)],
+                            changes=[("status", None, tv("v.archived"))])
             return {"ok": True, "archived": True}
         # No history: take the unit's leader profiles (and their bindings) along.
         for lp in db.query(RoleProfile).filter_by(role="leader", manager_id=pid).all():
@@ -1002,6 +1006,8 @@ def admin_delete_profile(ptype: str, pid: int, db: Session = Depends(get_db),
             db.delete(lp)
         db.delete(mgr)
         db.commit()
+        alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.deleted",
+                        details=[("role", tv("role.supervisor")), ("profile", mgr_name)])
         return {"ok": True, "archived": False}
 
     p = db.query(RoleProfile).filter_by(id=pid).first()
