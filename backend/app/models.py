@@ -301,32 +301,28 @@ class Cell(Base):
 
 
 class CellOjidaniya(Base):
-    """Manual per-cell idle-time (ojidaniya) entry — a TEST input toward
-    computing загрузка per cell, kept SEPARATE from and additive to the
-    sheets-import ``downtime_data`` table (which is keyed by brigadir, has no
-    shift and no cell link). One row per (cell, date, shift): the full Ojidaniya
-    category breakdown (stopped → ``by_category`` / ``total_minutes``;
-    not-stopped → the ``_ns`` pair) plus a REQUIRED free-text ``note`` explaining
-    the entry. Cat H carries no not-stopped half — its real 2nd source column is
-    a people-count — so it never appears in ``by_category_ns``.
-    ``entered_by_profile`` is the "role:id" key of whoever last saved the row
-    (light audit; see app/identity.py)."""
+    """Manual per-cell idle-time (ojidaniya) TEST entry — one row per
+    (cell, date, category): To'xtaganda (cell stopped) + To'xtamaganda (cell
+    kept running) minutes with a REQUIRED per-category note. Kept SEPARATE from
+    and additive to the sheets-import ``downtime_data`` table; a TEST input
+    toward per-cell загрузка, never in the production pipeline. The shift is a
+    property of the cell (its supervisor's shift), so it is derived on read, not
+    stored. Cat H has no To'xtamaganda value (its real 2nd source column is a
+    people-count). ``entered_by_profile`` = "role:id" of the last writer."""
     __tablename__ = "cell_ojidaniya"
 
     id                 = Column(Integer, primary_key=True, autoincrement=True)
     cell_id            = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
     date               = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
-    shift              = Column(Integer, nullable=False)                  # 1 | 2
-    total_minutes      = Column(Numeric(10, 4), default=0.0)             # Σ stopped
-    by_category        = Column(JSONB, default=dict)                     # {"Cat A": minutes, …} stopped
-    total_minutes_ns   = Column(Numeric(10, 4), default=0.0)            # Σ not-stopped
-    by_category_ns     = Column(JSONB, default=dict)                     # {"Cat A": minutes, …} not-stopped
-    note               = Column(Text, nullable=False)                    # REQUIRED — reason for the entry
+    category           = Column(String, nullable=False)                  # "Cat A" … "Cat I"
+    stopped            = Column(Numeric(10, 4), default=0.0)             # To'xtaganda minutes
+    not_stopped        = Column(Numeric(10, 4), default=0.0)             # To'xtamaganda minutes (0 for Cat H)
+    note               = Column(Text, nullable=False)                    # REQUIRED per-category reason
     entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    __table_args__ = (UniqueConstraint("cell_id", "date", "shift", name="uq_cellojid_cell_date_shift"),)
+    __table_args__ = (UniqueConstraint("cell_id", "date", "category", name="uq_cellojid_cell_date_cat"),)
 
 
 class CellAttendance(Base):
