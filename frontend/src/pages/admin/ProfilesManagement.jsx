@@ -581,23 +581,27 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
               </td>
               {canEdit && (
               <td className="px-3 py-2">
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="flex items-center justify-center gap-1.5">
                   <button
                     onClick={() => openEdit(item)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                    title={t("admin.profiles.edit")}
+                    aria-label={t("admin.profiles.edit")}
+                    className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
                     style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand-text)", border: "1px solid rgba(200,151,63,0.25)" }}
                   >
-                    <Pencil size={10} /> {t("admin.profiles.edit")}
+                    <Pencil size={14} />
                   </button>
                   <button
                     onClick={() => setConfirmDelete(item)}
                     disabled={deleteMut.isPending}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors whitespace-nowrap"
+                    title={t("admin.profiles.delete")}
+                    aria-label={t("admin.profiles.delete")}
+                    className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
                     style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; e.currentTarget.style.color = "#ef4444"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "rgba(148,163,184,0.22)"; }}
                   >
-                    <Trash2 size={10} /> {t("admin.profiles.delete")}
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </td>
