@@ -128,7 +128,7 @@ CAPABILITIES = [
     {"key": CAP_CLEANUP,           "group": "attendance", "pages": [],                 "tab": "cleanup",   "scoped": True,  "page": None},
     {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False, "page": None},
     {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False, "page": None},
-    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "cells",     "scoped": False, "page": None},
+    {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": ["cells"],          "tab": None,        "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first
     # accessible page" fallback use, so the Permissions tab reads like the menu.
