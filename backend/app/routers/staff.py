@@ -1596,6 +1596,26 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
     )
 
     db.commit()
+    # Grant-use warning (covers the web app AND the Telegram inline tap — both
+    # funnel through this core). Native admins/shift-managers are filtered out
+    # inside; a diff only accompanies an APPLIED change.
+    req_changes = req.changes or {}
+    if action == "approved":
+        if req_changes.get("_action") == "delete":
+            alert_changes = [(f, v, None) for f, v in (req.original or {}).items()]
+        else:
+            alert_changes = [(f, (req.original or {}).get(f), v)
+                             for f, v in req_changes.items() if not f.startswith("_")]
+    else:
+        alert_changes = None
+    alert_details = [("unit", unit_name(db, req.manager_id)),
+                     ("supervisor", req.supervisor_name),
+                     ("worker", req.worker_name),
+                     ("date", str(req.date))]
+    if req_changes.get("_action") == "delete":
+        alert_details.insert(0, ("request", tv("v.request_delete")))
+    alert_grant_use(db, caller, CAP_REQUESTS_APPROVE, f"request.{action}",
+                    details=alert_details, changes=alert_changes)
     # Edit every admin's Telegram approve/reject message with the outcome,
     # whoever decided (this runs for both the web app and the Telegram tap).
     try:
