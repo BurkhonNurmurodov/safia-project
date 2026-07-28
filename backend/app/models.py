@@ -1255,6 +1255,13 @@ class ProfileCapability(Base):
     matrix, and — on the pages whose data narrows to the viewer — ``scope``
     says whether they read only their own rows or the whole factory.
     """
+    LEGACY as of the per-account rollout: capabilities are now granted to a
+    Telegram ACCOUNT (see :class:`UserCapability`), so two accounts holding one
+    profile can differ. These rows are read only once, by the one-time
+    ``migrate_user_capabilities`` startup fan-out that seeds UserCapability from
+    them; nothing writes here anymore. Kept so that migration is re-runnable and
+    the history is not destroyed.
+    """
     __tablename__ = "profile_capabilities"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
@@ -1266,6 +1273,45 @@ class ProfileCapability(Base):
 
     __table_args__ = (
         UniqueConstraint("profile_key", "capability", name="uq_profile_capability"),
+    )
+
+
+class UserCapability(Base):
+    """One admin capability granted to ONE Telegram account.
+
+    The per-person half of the permission system, keyed by the ACCOUNT
+    (``telegram_id``) rather than the profile. This is the deliberate exception
+    to the "a profile is the person" rule (app/identity.py): everywhere else one
+    person's several logins are one identity, but permissions are handed out per
+    login — so a supervisor profile held by two accounts can grant the transfer
+    power to just one of them. Every guard resolves the JWT's ``sub`` (the
+    telegram id) straight to these rows via ``capabilities.caller_caps``.
+
+    Still ADDITIVE and read LIVE: a grant only ever widens who may act, and a
+    revoke takes effect on the holder's next request with no re-login.
+
+    ``scope`` decides how much data the action reaches:
+      own → the account's normal row scoping (derived at request time from the
+            profile it is acting as: supervisor→their unit, shift-manager→their
+            shift); the grant only adds the action.
+      all → admin reach: every unit, shift and date.
+
+    The ``page.view.<page>`` family stores PAGE access in the same rows: one
+    account may be given a page its role was never ticked for on the Access
+    matrix, and — on the pages whose data narrows to the viewer — ``scope`` says
+    whether it reads only its own rows or the whole factory.
+    """
+    __tablename__ = "user_capabilities"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=False, default="own")   # own | all
+    granted_by  = Column(String, nullable=True)                   # admin's display name
+    granted_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("telegram_id", "capability", name="uq_user_capability"),
     )
 
 
