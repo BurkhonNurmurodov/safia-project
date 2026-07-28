@@ -434,6 +434,81 @@ def _plain_html(ctx: dict, lang: str, max_rows: int = _MAX_ROWS) -> str:
     return text[:4000]
 
 
+# ── persistence (the admin «Action history» tab) ─────────────────────────────
+
+def _plain(v):
+    """JSONB-safe value: tv markers become 2-elem lists, dates/decimals become
+    strings, primitives pass through."""
+    if isinstance(v, tuple):
+        return list(v)
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    return str(v)
+
+
+def _record_use(db: Session, ctx: dict) -> None:
+    """One capability_uses row per warned action — the audit trail behind the
+    DMs. Its own try/rollback: a failed insert must neither break the request
+    nor stop the DM fan-out."""
+    try:
+        db.add(CapabilityUse(
+            telegram_id=ctx["telegram_id"],
+            actor_name=ctx["actor_name"],
+            actor_role=ctx["role"],
+            capability=ctx["capability"],
+            scope=ctx["scope"],
+            granted_by=ctx["granted_by"],
+            action=ctx["action"],
+            details=[[_plain(x) for x in row] for row in ctx["details"]],
+            changes=[[_plain(x) for x in row] for row in ctx["changes"]],
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("capability use row failed (cap=%s act=%s)",
+                       ctx["capability"], ctx["action"], exc_info=True)
+
+
+def _unmark(v):
+    """JSONB value back to renderer form: ["__t__", key] lists become tv
+    marker tuples again."""
+    if isinstance(v, list) and len(v) == 2 and v[0] == "__t__":
+        return (v[0], v[1])
+    return v
+
+
+def render_use(row, lang: str) -> dict:
+    """One capability_uses row rendered for the viewer's language — the
+    /admin/capability-uses payload, translated through the same table the
+    DMs use so tab and DM always read identically."""
+    cap = row.capability
+    if cap.startswith(CAP_PAGE_PREFIX):
+        cap_label = _t(lang, "cap.page.view").format(page=cap[len(CAP_PAGE_PREFIX):])
+    else:
+        cap_label = _t(lang, "cap." + cap)
+    role = row.actor_role or "?"
+    return {
+        "id": row.id,
+        "at": (row.created_at.astimezone(_TASHKENT).strftime("%d.%m.%Y %H:%M")
+               if row.created_at else None),
+        "actor": row.actor_name,
+        "role": _t(lang, "role." + role) if ("role." + role) in _T else role,
+        "telegram_id": row.telegram_id,
+        "capability": cap_label,
+        "scope": _t(lang, "scope." + row.scope) if row.scope in SCOPES_RENDERED else None,
+        "granted_by": row.granted_by,
+        "action": _t(lang, "act." + row.action),
+        "details": [{"label": _label(lang, k), "value": _val(lang, _unmark(v))}
+                    for k, v in (row.details or [])],
+        "changes": [{"field": _label(lang, k), "old": _val(lang, _unmark(o)),
+                     "new": _val(lang, _unmark(n))}
+                    for k, o, n in (row.changes or [])],
+    }
+
+
+SCOPES_RENDERED = ("own", "all")
+
+
 # ── sending ───────────────────────────────────────────────────────────────────
 
 def _fan_out(ctx: dict) -> None:
