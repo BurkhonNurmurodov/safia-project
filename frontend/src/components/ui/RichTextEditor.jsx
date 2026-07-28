@@ -512,7 +512,10 @@ function ToolbarMenu({ icon: Icon, title, items, disabled }) {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function RichTextEditor({ onChange, placeholder = "", minHeight = 180, rich = false }) {
+export default function RichTextEditor({
+  onChange, placeholder = "", minHeight = 180, rich = false,
+  customEmojis = null, onAddEmoji, onDeleteEmoji,
+}) {
   const { t } = useLang();
   const ref = useRef(null);
   const savedRange = useRef(null);
