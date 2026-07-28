@@ -64,6 +64,11 @@ DEFAULT_PAGE_ACCESS = {
     # Leader checklist monitoring (parsed from the leaders Google Sheet). Pilot:
     # admin-only by default; open up roles from the Access tab.
     "leaders": [],
+    # Cell registry (verifix/SAP codes, workshop names, supervisor & leader
+    # assignment). Admin-only by default; hand out per-person view/edit on the
+    # Permissions tab (page.view.cells / admin.cells.manage) or open a role
+    # here on the Access tab.
+    "cells": [],
     # Kaizen-session project analytics (synced from Notion). Admin-only by
     # default; open up roles from the Access tab.
     "kaizen": [],
