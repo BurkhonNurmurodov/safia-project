@@ -251,6 +251,16 @@ _T = {
                          "Ячейка изменена", "Cell updated"),
     "act.cell.deleted": ("Yacheyka o'chirildi", "Ячейка ўчирилди",
                          "Ячейка удалена", "Cell deleted"),
+    "act.idle_cell.saved": ("Yacheyka bo'yicha kutish kiritildi",
+                            "Ячейка бўйича кутиш киритилди",
+                            "Внесены данные ожидания по ячейке",
+                            "Per-cell idle time entered"),
+    "act.idle_cell.deleted": ("Yacheyka bo'yicha kutish yozuvi o'chirildi",
+                              "Ячейка бўйича кутиш ёзуви ўчирилди",
+                              "Удалена запись ожидания по ячейке",
+                              "Per-cell idle entry deleted"),
+    "act.concern.created": ("Xavotir yaratildi", "Хавотир яратилди",
+                            "Создано замечание (Xavotir)", "Concern created"),
 
     # detail / field labels
     "l.unit": ("Brigada", "Бригада", "Бригада", "Unit"),
