@@ -88,8 +88,13 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
   const [newCellError, setNewCellError] = useState("");
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["admin-profiles"],
-    queryFn: () => api.get("/api/profiles/admin/list").then((r) => r.data),
+    // The Cells page reads a dedicated, lighter endpoint gated by PAGE access
+    // (require_page("cells")) so a view-only grantee can load it — never the
+    // full profile roster + Telegram bindings that /admin/list exposes.
+    queryKey: cellsOnly ? ["admin-cells"] : ["admin-profiles"],
+    queryFn: () =>
+      api.get(cellsOnly ? "/api/profiles/admin/cells" : "/api/profiles/admin/list")
+        .then((r) => r.data),
   });
 
   const done = () => {
