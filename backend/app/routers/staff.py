@@ -1219,6 +1219,7 @@ def bulk_delete_attendance(
                 int(caller["sub"]), caller.get("full_name", "Admin"),
                 batch_id=admin_batch_id,
             )
+            deleted_rows.append((worker_name, original["job_title"], None))
             db.delete(row)
             affected += 1
     else:
