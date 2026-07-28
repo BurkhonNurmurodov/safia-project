@@ -354,20 +354,26 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
           </div>
           {/* Outside the h-scroller so it can't scroll away sideways; sticky so
               Save + the incomplete hint stay visible while editing any of the
-              11 rows. Opaque bg — rows scroll underneath. */}
+              11 rows. Opaque bg — rows scroll underneath.
+              Negative bottom = Layout's <main> padding (p-4 / md:p-6): sticky
+              pins to the scrollport's CONTENT box, so bottom-0 left that padding
+              strip open under the bar (rows showing through it). Pulling the bar
+              down by exactly that much parks it flush with the screen edge. */}
           <div
-            className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-2"
+            className="sticky -bottom-4 md:-bottom-6 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-3 pt-2 pb-3 md:pb-2"
             style={{ borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}
           >
             {incompleteCount > 0 && (
               <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
             )}
+            {/* Full-width 44px thumb target on phones; compact toolbar button on md+. */}
             <Button
-              size="sm"
+              size="lg"
               variant="primary"
+              className="w-full md:w-auto min-h-[44px] md:min-h-0 text-base md:text-sm"
               disabled={!pendingCats.length}
               loading={saveMut.isPending}
-              icon={<Save size={14} />}
+              icon={<Save size={18} className="md:hidden" />}
               onClick={() => saveMut.mutate(pendingCats)}
             >
               {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
