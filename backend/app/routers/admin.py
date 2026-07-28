@@ -634,7 +634,7 @@ def delete_user_role(
     user_id: int,
     role_ref: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_cap(CAP_USERS_MANAGE)),
+    caller: dict = Depends(require_cap(CAP_USERS_MANAGE)),
 ):
     """Remove a single role from a user. Removing the last role deletes the
     whole account, exactly like deleting the user."""
@@ -646,6 +646,12 @@ def delete_user_role(
     ).first()
     if not role_row:
         raise HTTPException(status_code=404, detail="Role not found")
+
+    # Snapshots for the grant-use warning — both rows may be gone after commit.
+    alert_details = [("user", user.full_name or user.tg_name or f"#{user.telegram_id}"),
+                     ("account", user.telegram_id),
+                     ("role", tv("role." + role_row.role)),
+                     ("profile", role_row.full_name)]
 
     telegram_id = user.telegram_id
     db.delete(role_row)
