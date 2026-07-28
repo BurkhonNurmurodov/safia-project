@@ -243,15 +243,15 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
       {open && (
         <>
           <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="md:min-w-[600px]">
+            <div className="md:min-w-[640px]">
               <div
-                className={`hidden md:grid gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide ${GRID_COLS}`}
+                className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${GRID_COLS}`}
                 style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
               >
-                <div>{t("idleCell.category")}</div>
-                <div className="text-right">{t("idleCell.stopped")}</div>
-                <div className="text-right">{t("idleCell.notStopped")}</div>
-                <div>{t("idleCell.note")}</div>
+                <div className={HEAD_CELL}>{t("idleCell.category")}</div>
+                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.stopped")}</div>
+                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.notStopped")}</div>
+                <div className={HEAD_CELL}>{t("idleCell.note")}</div>
               </div>
               {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
                 const Icon = CAT_ICON[cat.code] || Layers;
