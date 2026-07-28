@@ -130,6 +130,93 @@ async def upload_verifix(
     return {"results": results}
 
 
+@router.post("/cell-attendance/upload")
+async def upload_cell_attendance(
+    files: list[UploadFile] = File(...),
+    admin_payload: dict = Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    """TEST-MODE per-cell attendance ingest → the isolated `cell_attendance`
+    table (a step toward per-cell zagruzka). Deliberately does NOT touch the
+    per-manager `attendance` flow: no supervisor notification, no day-close, no
+    task-exchange reapply. Re-uploading a day performs a whole-date replace —
+    every existing row for the date(s) the file covers is wiped first."""
+    # Resolve «Код подразделения» → cell id once (rows are kept even when a code
+    # has no matching cell — the raw code is always stored).
+    code_to_cell = {
+        row.verifix_code: row.id
+        for row in db.query(Cell.id, Cell.verifix_code).all()
+        if row.verifix_code
+    }
+
+    results = []
+    for f in files:
+        content = await f.read()
+        try:
+            validate_spreadsheet(f, content)
+        except HTTPException as e:
+            results.append({"file": f.filename, "status": "error", "detail": e.detail})
+            continue
+
+        try:
+            period_from, period_to, export_ts, dates, records = parse_cell_attendance_file(content, f.filename)
+        except Exception as e:  # noqa: BLE001 — surface any parse failure per-file
+            results.append({"file": f.filename, "status": "error", "detail": f"Parse error: {e}"})
+            continue
+
+        if period_from is None:
+            results.append({"file": f.filename, "status": "error", "detail": "Could not read «Период» date from the sheet"})
+            continue
+        if not records:
+            results.append({"file": f.filename, "status": "error", "detail": "No attendance rows found (unexpected layout?)"})
+            continue
+
+        # Whole-date replace: wipe every existing row for the covered day(s).
+        if dates:
+            db.query(CellAttendance).filter(
+                CellAttendance.date.in_(dates)
+            ).delete(synchronize_session=False)
+
+        unmatched = set()
+        for r in records:
+            cid = code_to_cell.get(r["verifix_code"])
+            if r["verifix_code"] and cid is None:
+                unmatched.add(r["verifix_code"])
+            db.add(CellAttendance(
+                cell_id=cid,
+                source_filename=f.filename,
+                export_ts=export_ts,
+                **r,
+            ))
+        db.commit()
+
+        sample = [
+            {
+                "date":         r["date"].isoformat(),
+                "verifix_code": r["verifix_code"],
+                "worker_name":  r["worker_name"],
+                "job_title":    r["job_title"],
+                "day_raw":      r["day_raw"],
+                "hours_worked": r["hours_worked"],
+                "status":       r["status"],
+            }
+            for r in records[:15]
+        ]
+        results.append({
+            "file":            f.filename,
+            "status":          "ok",
+            "rows_inserted":   len(records),
+            "period_from":     period_from.isoformat(),
+            "period_to":       period_to.isoformat() if period_to else period_from.isoformat(),
+            "days":            len(dates),
+            "cells":           sorted({r["verifix_code"] for r in records if r["verifix_code"]}),
+            "unmatched_codes": sorted(unmatched),
+            "sample":          sample,
+        })
+
+    return {"results": results}
+
+
 class DeleteAttendanceBody(BaseModel):
     date: str
     manager_ids: list[int]
