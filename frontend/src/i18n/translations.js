@@ -61,6 +61,7 @@ const t = {
     "idleCell.searchCell":        "Yacheyka qidirish…",
     "idleCell.noCells":           "Bu brigadirda yacheyka yo'q.",
     "idleCell.saved":             "Saqlandi",
+    "idleCell.incompleteHint":    "Daqiqa va sababni to'ldiring",
     "nav.concerns":        "Xavotirlar",
     "nav.tasks":           "Vazifalar",
 
