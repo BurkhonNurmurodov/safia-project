@@ -1013,6 +1013,17 @@ export default function RichTextEditor({
     );
   };
 
+  // ── Premium (custom) emoji ──
+  // Inserts a <tg-emoji> entity; contenteditable=false makes it an atomic inline
+  // token (the serializers strip the editor-only class/attr and keep emoji-id +
+  // the fallback char).
+  const insertCustomEmoji = (em) => {
+    if (!em?.emoji_id) return;
+    insertHtmlAtCursor(
+      `<tg-emoji emoji-id="${escAttr(String(em.emoji_id))}" class="tg-cemoji" contenteditable="false">${escapeHtml(em.fallback || "")}</tg-emoji>`
+    );
+  };
+
   // ── Quote author (<cite>, the blue author line in Telegram quotes) ──
   // Quote lines are <br>-separated, so the author is the quote's LAST line:
   // wrap it in <cite> (or create an empty author line to type into). If an

@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
+from app.permissions import require_page
 from app.models import (
     Admin, Cell, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
     TelegramUserRole, Translation,
