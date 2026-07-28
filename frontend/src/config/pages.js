@@ -45,6 +45,7 @@ export const PAGES = [
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
+  { key: "idle-cell", route: "/idle-cell", labelKey: "nav.idleCell" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -73,6 +74,7 @@ export const DEFAULT_PAGE_ACCESS = {
   tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
+  "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants
