@@ -885,6 +885,17 @@ def create_concern(
     db.commit()
     db.refresh(c)
 
+    # Concern creation is gated by the page alone, so a personal page grant is
+    # the only non-native way in — its use warns the admins.
+    if page_grant_used(db, payload, "concerns"):
+        text = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+        alert_details = [("cell", c.cell_code), ("category", c.category),
+                         ("date", str(entry)), ("text", text)]
+        if c.deadline_days is not None:
+            alert_details.append(("deadline", c.deadline_days))
+        alert_grant_use(db, payload, page_cap("concerns"), "concern.created",
+                        details=alert_details, native=False)
+
     # Tell whoever now holds the concern (the responsible person at its level),
     # skipping the author and never DM'ing one account twice. Unclaimed profiles
     # queue a bell row (tg None → no DM) inherited on registration.
