@@ -39,7 +39,7 @@ from app.capabilities import (
     CAP_REQUESTS_APPROVE,
     CAP_USERS_MANAGE,
 )
-from app.models import Manager, TelegramUser, UserCapability
+from app.models import CapabilityUse, Manager, TelegramUser, UserCapability
 
 logger = logging.getLogger(__name__)
 
