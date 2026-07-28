@@ -104,8 +104,11 @@ export function groupProfileNodes(role, nodes, t, tl) {
  *
  *   tl           – transliterate helper (profile names are DB text)
  *   noUsersLabel – hint text for an empty profile
+ *   leafHint     – optional (user) => string|undefined; when given, its return
+ *                  rides each USER leaf as a right-aligned chip (the Permissions
+ *                  picker shows the count of grants that account holds)
  */
-export function buildRecipientGroups(tree, t, tl, noUsersLabel) {
+export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint) {
   return (tree || []).map((block) => {
     const meta = ROLE_SECTIONS[block.role] || {};
     const profiles = (block.profiles || []).map((p) => {
@@ -119,6 +122,7 @@ export function buildRecipientGroups(tree, t, tl, noUsersLabel) {
               key: String(u.telegram_id),
               label: u.name, // live getChat full name — kept verbatim
               sub: u.username ? `@${u.username}` : undefined,
+              hint: leafHint ? leafHint(u) : undefined,
             })),
           }
         : { ...pos, key: p.key, label: tl(p.name), disabled: true, hint: noUsersLabel };

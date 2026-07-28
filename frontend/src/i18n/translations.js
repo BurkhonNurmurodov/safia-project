@@ -3142,6 +3142,14 @@ const t = {
     "rte.deleteCol":     "Устунни ўчириш",
     "rte.quoteAuthor":   "Иқтибос муаллифи",
     "rte.captionTitle":  "Медиа изоҳи",
+    "rte.emoji":             "Premium emoji",
+    "rte.emojiTitle":        "Premium emoji",
+    "rte.emojiAdd":          "Emoji қўшиш",
+    "rte.emojiDelete":       "Ўчириш",
+    "rte.emojiEmpty":        "Ҳали сақланган emoji йўқ. Қўшиш учун + ни босинг.",
+    "rte.emojiIdPlaceholder": "custom_emoji_id (рақамлар)",
+    "rte.emojiLabelPlaceholder": "Номи (ихтиёрий)",
+    "rte.emojiSave":         "Сақлаш",
     "admin.tabProduction":   "Ишлаб чиқариш",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
