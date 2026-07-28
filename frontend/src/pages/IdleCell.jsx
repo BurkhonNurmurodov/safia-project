@@ -181,7 +181,7 @@ function CellAccordion({ cell, date, t, lang }) {
 
       {open && (
         <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 660 }}>
+          <div style={{ minWidth: 600 }}>
             <div
               className="grid gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide"
               style={{ gridTemplateColumns: GRID, background: "var(--bg-inner)", color: "var(--text-3)" }}
@@ -190,76 +190,86 @@ function CellAccordion({ cell, date, t, lang }) {
               <div className="text-right">{t("idleCell.stopped")}</div>
               <div className="text-right">{t("idleCell.notStopped")}</div>
               <div>{t("idleCell.note")}</div>
-              <div />
             </div>
-            {CATS.map((cat) => {
+            {rowStatus.map(({ cat, incomplete, hasNote, hasMin }) => {
               const Icon = CAT_ICON[cat.code] || Layers;
               const r = rows[cat.code];
-              const hasNote = r.note.trim().length > 0;
-              const hasMin = num(r.stopped) > 0 || (!cat.noNs && num(r.not_stopped) > 0);
-              const dirty =
-                !r.saved ||
-                num(r.stopped) !== r.saved.stopped ||
-                (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
-                r.note.trim() !== r.saved.note;
-              const canSave = hasNote && hasMin && dirty;
-              const saving = saveMut.isPending && saveMut.variables?.cat?.code === cat.code;
-              const savedClean = !!r.saved && !dirty;
+              const showInfo = infoOpen === cat.code;
+              const minErr = incomplete && !hasMin;
+              const noteErr = incomplete && !hasNote;
+              const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
               return (
-                <div
-                  key={cat.code}
-                  className="grid gap-2 items-center px-3 py-1.5"
-                  style={{ gridTemplateColumns: GRID, borderTop: "1px solid var(--border)" }}
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Icon size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
-                    <span className="text-xs truncate" style={{ color: "var(--text-1)" }} title={t(`downtime.cat.${cat.code}.label`)}>
-                      {t(`downtime.cat.${cat.code}.label`)}
-                    </span>
-                    <span
-                      className="flex-shrink-0 inline-flex"
-                      style={{ cursor: "help", color: "var(--text-4)" }}
-                      title={t(`downtime.cat.${cat.code}.note`)}
-                    >
-                      <Info size={12} />
-                    </span>
-                  </div>
-                  <input
-                    type="number" min="0" step="any" inputMode="decimal"
-                    value={r.stopped}
-                    onChange={(e) => setField(cat.code, "stopped", e.target.value)}
-                    className={INPUT_NUM} style={INPUT_STYLE}
-                  />
-                  {cat.noNs ? (
-                    <div className="text-center text-xs" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
-                  ) : (
+                <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
+                  <div className="grid gap-2 items-center px-3 py-1.5" style={{ gridTemplateColumns: GRID }}>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Icon size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+                      <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
+                        {t("idleCell.category")} {cat.code}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
+                        className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-0.5 -m-0.5"
+                        style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
+                        aria-label={t(`downtime.cat.${cat.code}.label`)}
+                        aria-expanded={showInfo}
+                      >
+                        <Info size={17} />
+                      </button>
+                    </div>
                     <input
                       type="number" min="0" step="any" inputMode="decimal"
-                      value={r.not_stopped}
-                      onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
-                      className={INPUT_NUM} style={INPUT_STYLE}
+                      value={r.stopped}
+                      onChange={(e) => setField(cat.code, "stopped", e.target.value)}
+                      className={INPUT_NUM} style={minStyle}
                     />
+                    {cat.noNs ? (
+                      <div className="text-center text-xs" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
+                    ) : (
+                      <input
+                        type="number" min="0" step="any" inputMode="decimal"
+                        value={r.not_stopped}
+                        onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
+                        className={INPUT_NUM} style={minStyle}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      value={r.note}
+                      onChange={(e) => setField(cat.code, "note", e.target.value)}
+                      placeholder={t("idleCell.notePlaceholder")}
+                      className={INPUT_TXT}
+                      style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
+                    />
+                  </div>
+                  {showInfo && (
+                    <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
+                      <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
+                        {t(`downtime.cat.${cat.code}.label`)}
+                      </div>
+                      <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
+                        {t(`downtime.cat.${cat.code}.note`)}
+                      </div>
+                    </div>
                   )}
-                  <input
-                    type="text"
-                    value={r.note}
-                    onChange={(e) => setField(cat.code, "note", e.target.value)}
-                    placeholder={t("idleCell.notePlaceholder")}
-                    className={INPUT_TXT} style={INPUT_STYLE}
-                  />
-                  <Button
-                    size="sm"
-                    variant={savedClean ? "secondary" : "primary"}
-                    disabled={!canSave}
-                    loading={saving}
-                    icon={savedClean ? <Check size={13} /> : <Save size={13} />}
-                    onClick={() => saveMut.mutate({ cat })}
-                  >
-                    {savedClean ? t("idleCell.saved") : t("idleCell.save")}
-                  </Button>
                 </div>
               );
             })}
+            <div className="flex items-center justify-end gap-3 px-3 py-2" style={{ borderTop: "1px solid var(--border)" }}>
+              {incompleteCount > 0 && (
+                <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!pendingCats.length}
+                loading={saveMut.isPending}
+                icon={<Save size={14} />}
+                onClick={() => saveMut.mutate(pendingCats)}
+              >
+                {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
+              </Button>
+            </div>
           </div>
         </div>
       )}
