@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app import identity
+from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import (
     CAP_ATTENDANCE_DELETE, CAP_ATTENDANCE_EDIT, CAP_CLEANUP, CAP_DAY_REOPEN,
     CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
