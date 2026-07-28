@@ -1929,6 +1929,7 @@ const t = {
     "idleCell.searchCell":        "Ячейка қидириш…",
     "idleCell.noCells":           "Бу бригадирда ячейка йўқ.",
     "idleCell.saved":             "Сақланди",
+    "idleCell.incompleteHint":    "Дақиқа ва сабабни тўлдиринг",
     "nav.concerns":        "Хавотирлар",
     "nav.tasks":           "Вазифалар",
 
