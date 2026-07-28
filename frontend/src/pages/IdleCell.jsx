@@ -373,7 +373,7 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
               className="w-full md:w-auto min-h-[44px] md:min-h-0 text-base md:text-sm"
               disabled={!pendingCats.length}
               loading={saveMut.isPending}
-              icon={<Save size={18} className="md:hidden" />}
+              icon={<Save size={16} />}
               onClick={() => saveMut.mutate(pendingCats)}
             >
               {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
