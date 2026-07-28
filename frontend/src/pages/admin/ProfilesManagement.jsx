@@ -497,7 +497,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                 className="w-full sm:w-72"
               />
             )}
-            {type !== "guest" && (
+            {type !== "guest" && canEdit && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
                 {t("admin.profiles.add")}
               </Button>
