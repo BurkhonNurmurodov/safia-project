@@ -876,6 +876,33 @@ def admin_capability_audit(
     } for r in rows]
 
 
+@router.get("/capability-uses")
+def admin_capability_uses(
+    limit: int = 50,
+    offset: int = 0,
+    lang: str = "uz",
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """Admin «Action history» tab: the persistent log of granted-capability
+    USES — capability_alerts writes one row per warned action, so this list and
+    the warning DMs always agree. verify_admin like the Permissions tab:
+    oversight of delegated powers stays a real admin's job. Rows arrive
+    pre-rendered for ``lang`` through the same 4-lang table as the DMs."""
+    from app.capability_alerts import render_use
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    q = db.query(CapabilityUse).order_by(CapabilityUse.id.desc())
+    total = q.count()
+    out = []
+    for r in q.offset(offset).limit(limit).all():
+        try:
+            out.append(render_use(r, lang))
+        except Exception:
+            continue   # one malformed legacy row must not blank the tab
+    return {"total": total, "rows": out}
+
+
 # ── Telegram file_id viewer ───────────────────────────────────────────────────
 # The bot answers any media an admin sends with its file_id; the admin panel's
 # «Media» tab pastes that id back here to look at the file. Telegram's file URL
