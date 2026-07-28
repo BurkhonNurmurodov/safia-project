@@ -1398,3 +1398,30 @@ class CapabilityAudit(Base):
     actor_name  = Column(String, nullable=True)
     actor_telegram_id = Column(BigInteger, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CapabilityUse(Base):
+    """Append-only log of every EXERCISE of a granted capability.
+
+    The persistent half of the grant-use warning DMs (app/capability_alerts):
+    the DM pings the admins in the moment, this row keeps who/what/old→new
+    answerable later on the admin «Action history» tab. Rows exist only for
+    grant-authorized actions — native admin/role authority never logs here.
+
+    ``details`` ([label_key, value] pairs) and ``changes`` ([field, old, new]
+    triples) hold the language-NEUTRAL alert payload; values may be
+    ["__t__", key] markers. Rendering translates per viewer language through
+    the same 4-lang table the DMs use (capability_alerts.render_use)."""
+    __tablename__ = "capability_uses"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    actor_name  = Column(String, nullable=True)
+    actor_role  = Column(String, nullable=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=True)    # grant scope at use time
+    granted_by  = Column(String, nullable=True)    # who handed out the grant
+    action      = Column(String, nullable=False)   # capability_alerts action key
+    details     = Column(JSONB, nullable=True)
+    changes     = Column(JSONB, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
