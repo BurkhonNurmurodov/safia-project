@@ -5665,6 +5665,7 @@ const t = {
     "idleCell.searchCell":        "Search cell…",
     "idleCell.noCells":           "No cells for this supervisor.",
     "idleCell.saved":             "Saved",
+    "idleCell.incompleteHint":    "Fill in minutes and a reason",
     "nav.concerns":        "Concerns",
     "nav.tasks":           "Tasks",
 
