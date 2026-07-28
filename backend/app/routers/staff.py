@@ -423,6 +423,33 @@ def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
 # every other notification keeps the plain Markdown DM. Params are ints + a
 # pre-formatted date (no user free-text), so no HTML escaping is needed.
 _NOTIF_TG_HTML = {
+    # Verifix upload reminder → a warm, personal DM: greeting by the brigadir's
+    # name, the day-close ask, and a premium (custom) emoji sign-off. The
+    # <tg-emoji> renders animated for Telegram Premium recipients and degrades
+    # to the plain 🌤 for everyone else. The in-app bell keeps the terse
+    # ``verifix_uploaded`` text in _NOTIF_STRINGS — only the DM is enriched.
+    "verifix_uploaded": {
+        "uz": ("🔔 <b>Verifix ma'lumotlari yuklandi</b> — 📅 <b>{date}</b>\n\n"
+               "Assalomu alaykum, hurmatli <b>{name}</b>!\n\n"
+               "Iltimos, bugungi o'zgarishlarni (xodim almashinuvi, lavozim o'zgarishi, o'chirish) "
+               "kiritib, kunni yopishingizni so'raymiz ✅\n\n"
+               "Samarali ish kuni tilaymiz! <tg-emoji emoji-id=\"5402477260982731644\">🌤</tg-emoji>"),
+        "uz_cyrl": ("🔔 <b>Verifix маълумотлари юкланди</b> — 📅 <b>{date}</b>\n\n"
+                    "Ассалому алайкум, ҳурматли <b>{name}</b>!\n\n"
+                    "Илтимос, бугунги ўзгаришларни (ходим алмашинуви, лавозим ўзгариши, ўчириш) "
+                    "киритиб, кунни ёпишингизни сўраймиз ✅\n\n"
+                    "Самарали иш куни тилаймиз! <tg-emoji emoji-id=\"5402477260982731644\">🌤</tg-emoji>"),
+        "ru": ("🔔 <b>Данные Verifix загружены</b> — 📅 <b>{date}</b>\n\n"
+               "Здравствуйте, уважаемый <b>{name}</b>!\n\n"
+               "Пожалуйста, внесите сегодняшние изменения (обмен сотрудниками, смена должности, удаление) "
+               "и закройте день ✅\n\n"
+               "Продуктивного рабочего дня! <tg-emoji emoji-id=\"5402477260982731644\">🌤</tg-emoji>"),
+        "en": ("🔔 <b>Verifix data uploaded</b> — 📅 <b>{date}</b>\n\n"
+               "Hello, dear <b>{name}</b>!\n\n"
+               "Please make today's changes (people exchange, role change, deletion) "
+               "and close the day ✅\n\n"
+               "Have a productive day! <tg-emoji emoji-id=\"5402477260982731644\">🌤</tg-emoji>"),
+    },
     "call_forecast": {
         "uz": ("<b>Xodim chaqirish uchun prognozlar:</b>\n\n"
                "👤 <b>Brigadir:</b> {name}\n📅 <b>Sana:</b> {date}\n📊 <b>Zagruzka foizi:</b> {eff}%\n🧑‍🍳 <b>Chaqirish tavsiya qilinadi:</b> {count} nafar\n⚠️ <b>Maksimum:</b> {max} nafar\n\n"
