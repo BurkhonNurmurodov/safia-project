@@ -552,10 +552,13 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
 
 @router.put("/admin/cells/{cid}")
 def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_db),
-                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     row = db.query(Cell).filter_by(id=cid).first()
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
+    old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
+           "name": row.name_workshop_uz, "manager_id": row.manager_id,
+           "leader_id": row.leader_id}
     if payload.verifix_code is not None:
         code = " ".join(payload.verifix_code.split())
         if not code:
@@ -565,7 +568,23 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
             raise HTTPException(status_code=409, detail=f"Cell {code} already exists")
         row.verifix_code = code
     _apply_cell_fields(db, row, payload)
+    new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
+           "name": row.name_workshop_uz, "manager_id": row.manager_id,
+           "leader_id": row.leader_id}
     db.commit()
+    diff = [(k, old[k], new[k]) for k in ("verifix_code", "sap_code", "name")
+            if old[k] != new[k]]
+    if old["manager_id"] != new["manager_id"]:
+        diff.append(("unit", unit_name(db, old["manager_id"]),
+                     unit_name(db, new["manager_id"])))
+    if old["leader_id"] != new["leader_id"]:
+        lnames = {p.id: p.name for p in db.query(RoleProfile).filter(
+            RoleProfile.id.in_([i for i in (old["leader_id"], new["leader_id"]) if i]))}
+        diff.append(("leader", lnames.get(old["leader_id"]), lnames.get(new["leader_id"])))
+    if diff:
+        alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.updated",
+                        details=[("cell", old["verifix_code"])],
+                        changes=diff)
     return {"ok": True, "id": cid}
 
 
