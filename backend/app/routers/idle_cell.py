@@ -215,5 +215,18 @@ def delete_idle(
     allowed = {c.id for c in _scoped_cells(db, payload)}
     if e.cell_id not in allowed:
         raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    # Snapshot before the delete — the row is unreadable after commit.
+    via_grant = page_grant_used(db, payload, PAGE)
+    if via_grant:
+        cell = db.query(Cell).filter_by(id=e.cell_id).first()
+        del_details = [("cell", cell.verifix_code if cell else f"#{e.cell_id}"),
+                       ("date", str(e.date)),
+                       ("category", e.category)]
+        del_changes = [("stopped", float(e.stopped or 0), None),
+                       ("not_stopped", float(e.not_stopped or 0), None),
+                       ("note", e.note or "", None)]
     db.delete(e)
     db.commit()
+    if via_grant:
+        alert_grant_use(db, payload, page_cap(PAGE), "idle_cell.deleted",
+                        details=del_details, changes=del_changes, native=False)
