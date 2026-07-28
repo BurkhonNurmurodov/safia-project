@@ -1320,11 +1320,16 @@ class CapabilityAudit(Base):
 
     Grants hand out admin-level powers, so who widened whose access — and when
     — must stay answerable long after the grant itself was revoked and its
-    ProfileCapability row deleted."""
+    UserCapability row deleted.
+
+    Per-account rollout: new rows record the ``telegram_id`` the change targeted.
+    ``profile_key`` is the legacy target column — nullable now, still populated on
+    the pre-rollout history rows so nothing in the trail is lost."""
     __tablename__ = "capability_audit"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
-    profile_key = Column(String, nullable=False, index=True)
+    profile_key = Column(String, nullable=True, index=True)         # legacy target
+    telegram_id = Column(BigInteger, nullable=True, index=True)     # per-account target
     capability  = Column(String, nullable=False)
     action      = Column(String, nullable=False)   # granted | revoked | rescoped
     scope       = Column(String, nullable=True)    # the scope after the change
