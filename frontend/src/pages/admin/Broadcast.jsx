@@ -73,6 +73,21 @@ export default function Broadcast() {
       query.state.data?.some((r) => r.status === "sending") ? 2000 : false,
   });
 
+  // Saved premium (custom) emoji palette for the composer.
+  const { data: emojis } = useQuery({
+    queryKey: ["broadcast-emojis"],
+    queryFn: () => api.get("/api/broadcast/emojis").then((r) => r.data),
+  });
+  const addEmojiMut = useMutation({
+    mutationFn: (body) => api.post("/api/broadcast/emojis", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["broadcast-emojis"] }),
+    onError: (e) => alert(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
+  });
+  const delEmojiMut = useMutation({
+    mutationFn: (id) => api.delete(`/api/broadcast/emojis/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["broadcast-emojis"] }),
+  });
+
   const groups = useMemo(
     () => buildRecipientGroups(recip?.tree, t, tl, t("admin.broadcast.notRegistered")),
     [recip, t, tl],
