@@ -24,8 +24,10 @@ from app.models import (
     Admin, Manager, Attendance, CapabilityAudit, UserCapability, RoleProfile,
     SheetSource, AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
+    Cell, CellAttendance,
 )
 from app.services.verifix_parser import parse_verifix_file
+from app.services.cell_attendance_parser import parse_cell_attendance_file
 from app.services.sheets_sync import (
     sync_source_sheet, sync_shift_report_sheet, sync_leaders_sheet, sync_quality_sheet,
 )
