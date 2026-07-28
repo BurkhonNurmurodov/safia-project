@@ -764,6 +764,8 @@ export default function AdminUpload() {
 
       {adminTab === "production" && <ProductionUpload />}
 
+      {adminTab === "cellatt" && <CellAttendanceUpload />}
+
       {adminTab === "users" && <UsersManagement />}
 
       {adminTab === "profiles" && <ProfilesManagement />}
