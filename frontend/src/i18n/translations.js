@@ -1812,6 +1812,7 @@ const t = {
     "nav.production":      "Ишлаб чиқариш",
     "nav.trudoyomkost":    "План Прогноз",
     "nav.leaders":         "Лидер назорати",
+    "nav.cells":           "Ячейкалар",
     "nav.leadersBot":      "Лидер назорати · Бот",
     "nav.kaizen":          "Kaizen лойиҳалари",
     "nav.quality":         "Сифат ва шикоятлар",
