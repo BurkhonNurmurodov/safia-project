@@ -518,12 +518,12 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
         <thead>
           {isCells ? (
             <tr>
-              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} filter={colFilter("verifix_code")} cls="w-[12%]" />
+              <Th icon={LayoutGrid} label={t("admin.profiles.colVerifixCode")} k="verifix_code" sort={sort} onSort={onSort} filter={colFilter("verifix_code")} cls="w-[13%]" />
               <Th icon={Hash} label={t("admin.profiles.colSapCode")} k="sap_code" sort={sort} onSort={onSort} filter={colFilter("sap_code")} cls="w-[12%]" />
-              <Th icon={Users} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} filter={colFilter("workshop")} cls="w-[26%]" />
-              <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} filter={colFilter("supervisor")} cls="w-[17%]" />
-              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} filter={colFilter("owner")} cls="w-[17%]" />
-              {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} cls="w-[16%]" />}
+              <Th icon={Factory} label={t("admin.profiles.colWorkshop")} k="workshop" sort={sort} onSort={onSort} filter={colFilter("workshop")} cls="w-[29%]" />
+              <Th icon={Users} label={t("admin.profiles.colSupervisor")} k="supervisor" sort={sort} onSort={onSort} filter={colFilter("supervisor")} cls="w-[19%]" />
+              <Th icon={Flag} label={t("admin.profiles.colOwner")} k="owner" sort={sort} onSort={onSort} filter={colFilter("owner")} cls="w-[19%]" />
+              {canEdit && <Th icon={Settings2} label={t("admin.profiles.colActions")} align="center" cls="w-[8%]" />}
             </tr>
           ) : (
           <tr>
