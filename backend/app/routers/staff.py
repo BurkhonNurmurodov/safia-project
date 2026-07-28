@@ -3369,10 +3369,15 @@ def cancel_document(doc_id: int, caller=Depends(_require_staff), db: Session = D
         raise HTTPException(status_code=404, detail="Document not found")
     if not _can_approve_doc(doc, caller, db):
         raise HTTPException(status_code=403, detail="Not authorised to un-post this document")
+    via_grant = _doc_via_grant(doc, caller, db)
     _cancel_doc(doc, caller, db)
     if doc.doc_type == "people_exchange":
         _notify_exchange(db, doc, "cancelled", int(caller["sub"]))
     db.commit()
+    alert_grant_use(db, caller, CAP_DOCUMENTS_APPROVE, "document.cancelled",
+                    details=_doc_alert_details(db, doc),
+                    changes=[("status", tv("v.approved"), tv("v.draft"))],
+                    native=not via_grant)
     return {"ok": True, "status": doc.status}
 
 
