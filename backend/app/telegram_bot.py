@@ -1148,7 +1148,7 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
     _set_menu_button(telegram_id, _get_lang(telegram_id))
     try:
         if html is not None:
-            bot.send_message(telegram_id, html, parse_mode="HTML")
+            _send_html_message(telegram_id, html)
         else:
             bot.send_message(telegram_id, f"🔔 *{title}*\n{body}", parse_mode="Markdown")
         return True
