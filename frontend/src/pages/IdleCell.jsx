@@ -204,7 +204,7 @@ function CellAccordion({ cell, date, t, lang }) {
                 <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
                   <div className="grid gap-2 items-center px-3 py-1.5" style={{ gridTemplateColumns: GRID }}>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <Icon size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+                      <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
                       <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
                         {t("idleCell.category")} {cat.code}
                       </span>
