@@ -663,6 +663,7 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
     if not p or p.role != ptype:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    old = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id}
     if payload.name is not None:
         _rename_profile(db, ptype, pid, payload.name)
     _apply_name_columns(p, payload)
@@ -680,7 +681,19 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         _set_leader_cells(db, pid, payload.cells)
     if payload.overrides:
         _apply_overrides(db, p.name, payload.overrides)
+    new_vals = {"name": p.name, "shift": p.shift, "manager_id": p.manager_id}
     db.commit()
+    diff = [(k, old[k], new_vals[k]) for k in ("name", "shift") if old[k] != new_vals[k]]
+    if old["manager_id"] != new_vals["manager_id"]:
+        diff.append(("unit", unit_name(db, old["manager_id"]),
+                     unit_name(db, new_vals["manager_id"])))
+    if ptype == "leader" and payload.cells is not None:
+        diff.append(("cells", None, ", ".join(payload.cells) or None))
+    if diff:
+        alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.updated",
+                        details=[("role", tv("role." + ptype)),
+                                 ("profile", old["name"])],
+                        changes=diff)
     return {"ok": True, "id": pid}
 
 
