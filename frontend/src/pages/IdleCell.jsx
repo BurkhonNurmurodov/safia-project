@@ -74,6 +74,7 @@ function hueFromString(s) {
 function CellAccordion({ cell, date, t, lang }) {
   const [open, setOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
+  const [confirmCode, setConfirmCode] = useState(null); // code of the category pending a reset-to-0 confirm
   const [rows, setRows] = useState(() => {
     const init = {};
     for (const cat of CATS) {
