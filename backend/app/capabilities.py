@@ -63,8 +63,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.identity import parse_profile_key, profile_holders, viewer_profile_key
-from app.models import CapabilityAudit, Manager, ProfileCapability, RoleProfile
+from app.identity import parse_profile_key, role_row_profile_key
+from app.models import CapabilityAudit, Manager, RoleProfile, TelegramUserRole, UserCapability
 from app.permissions import PAGE_KEYS
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
