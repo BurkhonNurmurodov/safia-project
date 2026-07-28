@@ -50,7 +50,7 @@ export default function ActionHistory() {
         }
         wrap
       >
-        <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
+        <thead>
           <tr>
             <Th label={t("caphist.when")} />
             <Th label={t("caphist.who")} />
