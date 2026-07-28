@@ -329,20 +329,20 @@ def cap_recipients(db: Session, capability: str, *manager_ids: Optional[int]) ->
 
 # ── writing grants ────────────────────────────────────────────────────────────
 
-def apply_caps(db: Session, profile_keys: list[str],
+def apply_caps(db: Session, telegram_ids: list[int],
                grants: dict[str, str] | None = None,
                revokes: list[str] | None = None,
                actor_name: str | None = None,
-               actor_telegram_id: int | None = None) -> dict[str, dict[str, str]]:
+               actor_telegram_id: int | None = None) -> dict[int, dict[str, str]]:
     """Apply a DIFF — grant/rescope ``grants``, revoke ``revokes`` — to every
-    listed profile, leaving their other capabilities untouched.
+    listed Telegram account, leaving their other capabilities untouched.
 
     Deliberately a diff and not a whole-set replace: the Permissions tab can
-    select several profiles at once, and those profiles rarely hold the same
+    select several accounts at once, and those accounts rarely hold the same
     grants. Replacing would silently wipe whatever the admin wasn't looking at.
     With a diff, ticking one box for five people means exactly that.
 
-    Returns the resulting {profile_key: {capability: scope}}. The audit log
+    Returns the resulting {telegram_id: {capability: scope}}. The audit log
     records each capability separately, so history reads as individual grants
     rather than "someone saved the form"."""
     clean = {
@@ -350,40 +350,40 @@ def apply_caps(db: Session, profile_keys: list[str],
         for k, v in (grants or {}).items() if k in CAPABILITY_KEYS
     }
     # A capability can't be granted and revoked in one call; the grant wins so
-    # a malformed payload can never leave the profile half-changed.
+    # a malformed payload can never leave the account half-changed.
     drop = [k for k in (revokes or []) if k in CAPABILITY_KEYS and k not in clean]
 
-    def _audit(key: str, capability: str, action: str, scope: str | None) -> None:
+    def _audit(tid: int, capability: str, action: str, scope: str | None) -> None:
         db.add(CapabilityAudit(
-            profile_key=key, capability=capability, action=action, scope=scope,
+            telegram_id=tid, capability=capability, action=action, scope=scope,
             actor_name=actor_name, actor_telegram_id=actor_telegram_id,
         ))
 
-    for key in profile_keys:
-        existing = {r.capability: r for r in db.query(ProfileCapability).filter(
-            ProfileCapability.profile_key == key).all()}
+    for tid in telegram_ids:
+        existing = {r.capability: r for r in db.query(UserCapability).filter(
+            UserCapability.telegram_id == tid).all()}
 
         for capability, scope in clean.items():
             row = existing.get(capability)
             if row is None:
-                db.add(ProfileCapability(
-                    profile_key=key, capability=capability, scope=scope,
+                db.add(UserCapability(
+                    telegram_id=tid, capability=capability, scope=scope,
                     granted_by=actor_name,
                 ))
-                _audit(key, capability, "granted", scope)
+                _audit(tid, capability, "granted", scope)
             elif row.scope != scope:
                 row.scope = scope
                 row.granted_by = actor_name
-                _audit(key, capability, "rescoped", scope)
+                _audit(tid, capability, "rescoped", scope)
 
         for capability in drop:
             row = existing.get(capability)
             if row is not None:
                 db.delete(row)
-                _audit(key, capability, "revoked", None)
+                _audit(tid, capability, "revoked", None)
 
     db.commit()
-    return {key: caps_for_profile(db, key) for key in profile_keys}
+    return {tid: caps_for_user(db, tid) for tid in telegram_ids}
 
 
 # ── FastAPI guards ────────────────────────────────────────────────────────────
