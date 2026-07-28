@@ -287,6 +287,12 @@ def delete_attendance(
         })
 
     db.commit()
+    alert_grant_use(
+        db, caller, CAP_CLEANUP, "cleanup.wipe",
+        details=[("date", body.date), ("deleted_rows", total_rows)],
+        changes=[(r["manager_name"], r["rows_deleted"], None)
+                 for r in results if r["status"] == "ok"],
+    )
     return {"date": body.date, "rows_deleted": total_rows, "results": results}
 
 
