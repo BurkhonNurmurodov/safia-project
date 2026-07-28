@@ -3760,6 +3760,9 @@ def reopen_day(body: ApprovalBody, caller=Depends(_require_staff), db: Session =
             include_supervisor=True,
         )
         db.commit()
+        alert_grant_use(db, caller, CAP_DAY_REOPEN, "day.reopened",
+                        details=[("unit", unit_name(db, body.manager_id)),
+                                 ("date", body.date)])
     return {"ok": True, "state": "open", "manager_id": body.manager_id, "date": body.date}
 
 
