@@ -534,7 +534,7 @@ def admin_list_cells(db: Session = Depends(get_db),
 
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
-                      _: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
+                      caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
     code = " ".join((payload.verifix_code or "").split())
     if not code:
         raise HTTPException(status_code=400, detail="Verifix code is required")
@@ -543,7 +543,10 @@ def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
     row = Cell(verifix_code=code)
     _apply_cell_fields(db, row, payload)
     db.add(row)
+    cell_details = [("cell", code), ("unit", unit_name(db, row.manager_id))]
     db.commit()
+    alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.created",
+                    details=cell_details)
     return {"ok": True, "id": row.id}
 
 
