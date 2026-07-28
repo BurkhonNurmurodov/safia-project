@@ -8,7 +8,7 @@ import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { PAGES } from "../../config/pages";
-import { ROLE_SECTIONS, groupProfileNodes } from "../../utils/broadcastTree";
+import { buildRecipientGroups } from "../../utils/broadcastTree";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import StyledSelect from "../../components/ui/StyledSelect";
@@ -19,16 +19,17 @@ import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 
 /**
- * Per-profile capabilities — the person-level half of the permission system.
+ * Per-ACCOUNT capabilities — the person-level half of the permission system.
  *
  * The Access tab answers "which PAGES may this ROLE open"; this answers "which
- * admin-only ACTIONS may this ONE person perform", so a supervisor can be made
- * the factory's transfer handler without becoming an admin.
+ * admin-only ACTIONS may this ONE Telegram account perform", so one supervisor
+ * login can be made the factory's transfer handler without becoming an admin —
+ * and without a co-holder of the same profile getting the power too.
  *
- * The picker is the shared CheckboxTree, same as the Broadcast recipient tree —
- * but two levels (role ▸ profile) instead of three: a capability belongs to a
- * PROFILE, so the tree stops there and never descends to Telegram accounts.
- * Multi-select is the point: granting five supervisors the same power is one
+ * The picker is the shared CheckboxTree, same tree the Broadcast recipient
+ * picker builds: role ▸ [shift | supervisor] ▸ profile ▸ Telegram user. A grant
+ * belongs to the USER leaf, so the tree descends all the way to the individual
+ * logins. Multi-select is the point: granting five people the same power is one
  * pass, and saving sends a DIFF so each keeps whatever else they already held.
  *
  * The «Sahifalar» group is the same mechanism applied to PAGE ACCESS: one row
@@ -104,7 +105,7 @@ export default function Permissions() {
   const qc = useQueryClient();
 
   const [search, setSearch]     = useState("");
-  const [selected, setSelected] = useState([]);   // profile keys (leaf keys)
+  const [selected, setSelected] = useState([]);   // telegram ids (leaf keys, as strings)
   // Explicit admin edits only: { capability: "own" | "all" | null }, null =
   // revoke. Anything untouched stays absent and is left alone on save — that's
   // what makes multi-select safe.
@@ -124,50 +125,37 @@ export default function Permissions() {
     enabled: view === "audit",
   });
 
-  const people = data?.people ?? [];
   const capabilities = data?.capabilities ?? [];
   const groups = data?.groups ?? [];
-  const byKey = useMemo(() => Object.fromEntries(people.map((p) => [p.key, p])), [people]);
 
-  // role ▸ [shift | supervisor] ▸ profile, in the Broadcast tree's section
-  // order — the org-chart level comes from the shared grouper, so this picker
-  // and the Broadcast recipient tree read identically. A profile's shift/unit
-  // is therefore its group label and no longer needs a sub-line.
-  const tree = useMemo(() => {
-    const order = Object.keys(ROLE_SECTIONS);
-    const byRole = new Map();
-    for (const p of people) {
-      if (!byRole.has(p.role)) byRole.set(p.role, []);
-      byRole.get(p.role).push(p);
+  // role ▸ [shift | supervisor] ▸ profile ▸ user, straight off the shared
+  // Broadcast-picker builder so this reads identically. Each USER leaf carries
+  // a chip with the count of grants that account already holds. `byId` is the
+  // flat telegram-id → { name, caps, posts } lookup the capability matrix reads.
+  const { tree, byId } = useMemo(() => {
+    const blocks = data?.tree ?? [];
+    const byId = {};
+    for (const block of blocks) {
+      for (const p of block.profiles || []) {
+        for (const u of p.users || []) {
+          const k = String(u.telegram_id);
+          if (!byId[k]) byId[k] = { ...u, key: k, posts: [] };
+          byId[k].posts.push(tl(p.name));
+        }
+      }
     }
-    return order
-      .filter((role) => byRole.has(role))
-      .map((role) => {
-        const meta = ROLE_SECTIONS[role] || {};
-        const profiles = byRole.get(role).map((p) => {
-          const n = Object.keys(p.caps || {}).length;
-          return {
-            key: p.key,
-            label: tl(p.name),
-            shift: p.shift,
-            unit: p.unit,
-            unitId: p.unit_id,
-            // Held capabilities are the one thing worth seeing without
-            // opening a profile, so they ride the row as a chip.
-            hint: n > 0 ? String(n) : undefined,
-          };
-        });
-        return {
-          key: role,
-          label: meta.tKey ? t(meta.tKey) : role,
-          icon: meta.icon,
-          children: groupProfileNodes(role, profiles, t, tl),
-        };
-      });
-  }, [people, t, tl]);
+    const tree = buildRecipientGroups(
+      blocks, t, tl, t("admin.broadcast.notRegistered"),
+      (u) => {
+        const n = Object.keys(u.caps || {}).length;
+        return n > 0 ? String(n) : undefined;
+      },
+    );
+    return { tree, byId };
+  }, [data, t, tl]);
 
   const allKeys = useMemo(() => collectLeafKeys(tree), [tree]);
-  const chosen = selected.map((k) => byKey[k]).filter(Boolean);
+  const chosen = selected.map((k) => byId[k]).filter(Boolean);
 
   /** Human label for a capability id — page grants read as «Sahifalar · Ishlab
    *  chiqarish» so the audit log never shows a bare page name next to actions. */
@@ -212,7 +200,7 @@ export default function Permissions() {
       const grants = Object.fromEntries(
         Object.entries(draft).filter(([, v]) => v != null));
       const revokes = Object.entries(draft).filter(([, v]) => v == null).map(([k]) => k);
-      await api.put("/admin/capabilities", { keys: selected, grants, revokes });
+      await api.put("/admin/capabilities", { keys: selected.map(Number), grants, revokes });
       qc.invalidateQueries({ queryKey: ["admin-capabilities"] });
       qc.invalidateQueries({ queryKey: ["admin-capabilities-audit"] });
       // Grants are read live by their holders; refresh our own copy too.
@@ -229,12 +217,12 @@ export default function Permissions() {
   }
 
   const headTitle = chosen.length === 1
-    ? tl(chosen[0].name)
+    ? chosen[0].name
     : t("admin.perms.nSelected").replace("{n}", chosen.length);
   const headSub = chosen.length === 1
-    ? ((chosen[0].holders || []).length
-        ? t("admin.perms.heldBy").replace("{names}", chosen[0].holders.map(tl).join(", "))
-        : t("admin.perms.noHolders"))
+    ? (chosen[0].posts && chosen[0].posts.length
+        ? t("admin.perms.holds").replace("{names}", [...new Set(chosen[0].posts)].join(", "))
+        : (chosen[0].username ? `@${chosen[0].username}` : ""))
     : t("admin.perms.bulkHint");
 
   return (
@@ -280,7 +268,6 @@ export default function Permissions() {
               <table className="w-full text-xs min-w-[560px]">
                 <tbody>
                   {audit.map((r) => {
-                    const person = byKey[r.profile_key];
                     const tone = r.action === "revoked" ? "#ef4444"
                       : r.action === "granted" ? "#22c55e" : "#eab308";
                     return (
@@ -289,7 +276,7 @@ export default function Permissions() {
                           {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
                         </td>
                         <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
-                          {person ? tl(person.name) : r.profile_key}
+                          {r.target_name || (r.telegram_id ? `#${r.telegram_id}` : "—")}
                         </td>
                         <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
                           {capLabel(r.capability)}
@@ -318,7 +305,7 @@ export default function Permissions() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start">
-          {/* Profile tree — role ▸ profile, same template as the Broadcast picker */}
+          {/* User tree — role ▸ profile ▸ user, same template as the Broadcast picker */}
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead
               icon={KeyRound}
@@ -419,7 +406,7 @@ export default function Permissions() {
                                   selector that changes nothing. */}
                               {c.scoped ? (
                                 <StyledSelect
-                                  /* scope === null means the selected profiles
+                                  /* scope === null means the selected users
                                      disagree — show "Mixed" rather than picking
                                      one of them and quietly implying it. */
                                   value={scope ?? ""}
