@@ -575,6 +575,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                   ? <span className="text-[var(--text-2)]">{tl(item.leader)}</span>
                   : <span style={{ color: "var(--text-4)" }}>{t("admin.profiles.cellUnassigned")}</span>}
               </td>
+              {canEdit && (
               <td className="px-3 py-2">
                 <div className="flex flex-wrap items-center gap-1">
                   <button
@@ -596,6 +597,7 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
                   </button>
                 </div>
               </td>
+              )}
             </tr>
           ))}
           {!isLoading && !isCells && sorted.map((item) => (
