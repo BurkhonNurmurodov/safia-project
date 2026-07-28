@@ -1062,8 +1062,13 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
     row = db.query(TelegramUserRole).filter_by(id=payload.role_ref).first()
     if not row:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    alert_details = [("role", tv("role." + row.role)),
+                     ("profile", row.full_name),
+                     ("account", row.telegram_id)]
     _remove_role_row(db, row)
     db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.unassigned",
+                    details=alert_details)
     return {"ok": True}
 
 
