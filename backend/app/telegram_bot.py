@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 import logging
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
