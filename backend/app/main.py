@@ -225,6 +225,10 @@ app.include_router(ui_prefs.router)
 app.include_router(broadcast.router)
 app.include_router(setup_times.router)
 app.include_router(leader_tasks.router, dependencies=_admin_guard)
+# Manual per-cell idle-time (ojidaniya) TEST entry — self-gates via
+# require_page("idle-cell"), so no admin guard here (grantable to
+# leaders/supervisors later).
+app.include_router(idle_cell.router)
 
 
 @app.get("/health")
