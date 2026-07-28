@@ -3304,6 +3304,16 @@ def _may_reject_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
             or _is_doc_creator(doc, caller))
 
 
+def _doc_reject_via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """_doc_via_grant for the wider reject/withdraw authority: rejecting your
+    own draft or acting as admin/shift-manager is native, so only a pure
+    grantee trips the warning."""
+    return (_granted_over_doc(doc, caller, db)
+            and not _native_can_approve_doc(doc, caller, db)
+            and caller.get("role") not in ("admin", "shift-manager")
+            and not _is_doc_creator(doc, caller))
+
+
 @router.post("/documents/{doc_id}/approve")
 def approve_document(doc_id: int, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     doc = _scope_documents(db.query(HrDocument), caller, db).filter(HrDocument.id == doc_id).first()
