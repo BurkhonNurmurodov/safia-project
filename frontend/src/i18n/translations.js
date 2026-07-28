@@ -4948,6 +4948,14 @@ const t = {
     "rte.deleteCol":     "Удалить столбец",
     "rte.quoteAuthor":   "Автор цитаты",
     "rte.captionTitle":  "Подпись к медиа",
+    "rte.emoji":             "Премиум эмодзи",
+    "rte.emojiTitle":        "Премиум эмодзи",
+    "rte.emojiAdd":          "Добавить эмодзи",
+    "rte.emojiDelete":       "Удалить",
+    "rte.emojiEmpty":        "Пока нет сохранённых эмодзи. Нажмите +, чтобы добавить.",
+    "rte.emojiIdPlaceholder": "custom_emoji_id (цифры)",
+    "rte.emojiLabelPlaceholder": "Название (необязательно)",
+    "rte.emojiSave":         "Сохранить",
     "admin.tabProduction":   "Производство",
 
     // ── Profiles tab ─────────────────────────────────────────────────────────
