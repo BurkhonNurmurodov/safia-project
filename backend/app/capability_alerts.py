@@ -74,6 +74,19 @@ def tv(key: str):
     return ("__t__", key)
 
 
+def page_grant_used(db: Session, caller: dict, page: str) -> bool:
+    """True when the caller's access to ``page`` exists ONLY through a
+    ``page.view.<page>`` grant — their role × page matrix alone would not open
+    it. The provenance test for mutations whose sole guard is require_page
+    (idle-cell entry, concern creation): those callers already passed the
+    guard, so "not natively allowed" means "the grant did it"."""
+    from app.permissions import get_page_access, role_can_access
+    role = (caller or {}).get("role")
+    if role == "admin":
+        return False
+    return not role_can_access(role, [page], get_page_access(db))
+
+
 # ── i18n ──────────────────────────────────────────────────────────────────────
 # (uz, uz_cyrl, ru, en) — same order everywhere. Capability labels mirror the
 # frontend caps.<key>.label strings so the DM names the grant exactly like the
