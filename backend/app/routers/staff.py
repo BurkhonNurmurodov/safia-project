@@ -2100,23 +2100,16 @@ def _granted_over_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
             and payload.get("target_manager_id") in units)
 
 
-def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
-    """Approval authority, per document type. One approval is always enough.
+def _native_can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """Approval authority the caller's ROLE carries on its own — no grants.
 
     role_change     → admin or shift-manager (the existing rule).
     people_exchange → • to a supervisor: admin OR the RECEIVING supervisor.
                       • to a task:        admin OR a shift-manager of the
                         sending unit's shift.
-
-    Plus, additively, anyone granted ``staff.documents.approve``: at "all"
-    scope over every document, at "own" scope only over documents inside their
-    normal reach. This never removes an authority above — it is the mechanism
-    for "this person handles transfers", without making them an admin.
     """
     role = caller.get("role")
     if role == "admin":
-        return True
-    if _granted_over_doc(doc, caller, db):
         return True
     if doc.doc_type != "people_exchange":
         return _can_approve(caller)
@@ -2128,6 +2121,41 @@ def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
         shift = _get_shift_for_manager(db, doc.manager_id)
         return _sm_shift(db, caller.get("role_id")) == shift
     return False
+
+
+def _can_approve_doc(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """Approval authority, per document type. One approval is always enough.
+
+    The role's own authority (_native_can_approve_doc), plus, additively,
+    anyone granted ``staff.documents.approve``: at "all" scope over every
+    document, at "own" scope only over documents inside their normal reach.
+    The grant never removes an authority — it is the mechanism for "this
+    person handles transfers", without making them an admin.
+    """
+    return (_native_can_approve_doc(doc, caller, db)
+            or _granted_over_doc(doc, caller, db))
+
+
+def _doc_via_grant(doc: HrDocument, caller: dict, db: Session) -> bool:
+    """True when the caller's authority over THIS document exists only through
+    the ``staff.documents.approve`` grant — the trigger for the admin warning
+    DM (capability_alerts). Evaluate BEFORE mutating: the answer is what
+    authorized the action, not what would authorize it afterwards."""
+    return (not _native_can_approve_doc(doc, caller, db)
+            and _granted_over_doc(doc, caller, db))
+
+
+def _doc_alert_details(db: Session, doc: HrDocument) -> list:
+    kind = (tv("doc." + doc.doc_type)
+            if doc.doc_type in ("people_exchange", "role_change") else doc.doc_type)
+    details = [("document", kind),
+               ("unit", unit_name(db, doc.manager_id)),
+               ("date", str(doc.date))]
+    emps = [e.get("worker_name") or "?" for e in (doc.payload or {}).get("employees") or []]
+    if emps:
+        names = ", ".join(emps[:10]) + (f" +{len(emps) - 10}" if len(emps) > 10 else "")
+        details.append(("workers", f"{len(emps)}: {names}"))
+    return details
 
 
 def _record_history(db: Session, doc: HrDocument, action: str, caller: dict, detail: dict | None = None):
