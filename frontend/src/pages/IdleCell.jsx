@@ -283,9 +283,10 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
                       {/* type=text + inputMode=decimal: the uz/ru iOS keypad types a
                           comma, which type=number silently rejects; num() normalizes
                           it. Also stops wheel/gesture scrolls from mutating values.
-                          md:contents dissolves the label so the input is the grid
-                          cell on desktop; below md the caption labels the input. */}
-                      <label className="min-w-0 md:contents">
+                          The label IS the table cell (never md:contents — a
+                          display:contents box can't draw the column separator);
+                          below md the caption labels the input. */}
+                      <label className={`${CELL} flex flex-col justify-center`}>
                         <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.stopped")}</span>
                         <input
                           type="text" inputMode="decimal"
@@ -296,12 +297,12 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
                         />
                       </label>
                       {cat.noNs ? (
-                        <div className="min-w-0 md:contents">
+                        <div className={`${CELL} flex flex-col justify-center`}>
                           <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
-                          <div className="text-center text-xs py-2 md:py-0" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
+                          <div className="text-center text-xs py-1" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
                         </div>
                       ) : (
-                        <label className="min-w-0 md:contents">
+                        <label className={`${CELL} flex flex-col justify-center`}>
                           <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
                           <input
                             type="text" inputMode="decimal"
@@ -312,7 +313,7 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
                           />
                         </label>
                       )}
-                      <div className="col-span-2 md:col-span-1 flex items-center gap-1.5">
+                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
                         <input
                           type="text"
                           value={r.note}
