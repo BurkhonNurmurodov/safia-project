@@ -1047,6 +1047,8 @@ def _adminreg_pick(call: types.CallbackQuery):
                 language=lang,
                 status="pending",
             ))
+        if user and user.phone:
+            user.phone = None   # same fresh-contact reset as the web flow above
         db.flush()
         pending_ref = role_row.id
         db.commit()
