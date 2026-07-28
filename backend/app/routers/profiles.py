@@ -633,6 +633,7 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         mgr = db.query(Manager).filter_by(id=pid).first()
         if not mgr:
             raise HTTPException(status_code=404, detail="Unit not found")
+        old = {"name": mgr.name, "shift": mgr.shift, "archived": bool(mgr.archived)}
         if payload.name is not None:
             _rename_profile(db, "supervisor", pid, payload.name)
         if payload.shift in (1, 2):
@@ -645,6 +646,16 @@ def admin_update_profile(ptype: str, pid: int, payload: UpdateProfilePayload,
         if payload.new_verifix_id and payload.new_verifix_id != pid:
             new_id = _rekey_manager_id(db, mgr, payload.new_verifix_id)
         db.commit()
+        diff = [(k, old[k], v) for k, v in
+                (("name", mgr.name), ("shift", mgr.shift), ("archived", bool(mgr.archived)))
+                if old[k] != v]
+        if new_id != pid:
+            diff.append(("verifix_code", pid, new_id))
+        if diff:
+            alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.updated",
+                            details=[("role", tv("role.supervisor")),
+                                     ("profile", old["name"])],
+                            changes=diff)
         return {"ok": True, "id": new_id}
 
     p = db.query(RoleProfile).filter_by(id=pid).first()
