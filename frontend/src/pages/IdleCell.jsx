@@ -249,14 +249,28 @@ function CellAccordion({ cell, date, t, lang }) {
                         className={INPUT_NUM} style={minStyle}
                       />
                     )}
-                    <input
-                      type="text"
-                      value={r.note}
-                      onChange={(e) => setField(cat.code, "note", e.target.value)}
-                      placeholder={t("idleCell.notePlaceholder")}
-                      className={INPUT_TXT}
-                      style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={r.note}
+                        onChange={(e) => setField(cat.code, "note", e.target.value)}
+                        placeholder={t("idleCell.notePlaceholder")}
+                        className={`${INPUT_TXT} flex-1 min-w-0`}
+                        style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
+                      />
+                      {r.saved && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmCode(cat.code)}
+                          className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-1 transition-colors hover:bg-white/10"
+                          style={{ color: "var(--text-3)", cursor: "pointer" }}
+                          title={t("idleCell.clear")}
+                          aria-label={t("idleCell.clear")}
+                        >
+                          <RotateCcw size={15} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {showInfo && (
                     <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
