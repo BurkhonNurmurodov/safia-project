@@ -300,6 +300,43 @@ class Cell(Base):
     leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
 
 
+class CellAttendance(Base):
+    """Per-CELL attendance ingested from the «Отчёт по посещениям сотрудников»
+    export — one row per (worker, cell, day). This is a TEST-MODE, fully isolated
+    table: it feeds the future per-cell zagruzka (load) calculation and does NOT
+    touch the existing per-manager `attendance` flow.
+
+    The source sheet tags every worker with «Код подразделения» = the cell's
+    `verifix_code`, and can span multiple days (each day is its own column whose
+    cell holds either a clock string "07:55 - 17:02 (8.4)" or a status marker
+    like "X" / "О"). We fan those out to one row per day. `cell_id` resolves the
+    code to a `cells` row when known, but a row is kept even if the code has no
+    matching cell (raw `verifix_code` is always stored)."""
+    __tablename__ = "cell_attendance"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    date         = Column(Date, nullable=False, index=True)     # the specific day
+    verifix_code = Column(String, nullable=True, index=True)    # raw «Код подразделения»
+    cell_id      = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+    worker_name  = Column(String)
+    job_title    = Column(String)                               # Должность
+    schedule     = Column(String)                               # График работы
+    day_raw      = Column(String)                               # raw day-cell text
+    clock_in     = Column(String, nullable=True)
+    clock_out    = Column(String, nullable=True)
+    hours_worked = Column(Numeric(10, 4), nullable=True)        # parsed from "(h.hh)"
+    early_arrival_min = Column(Numeric(10, 2), nullable=True)
+    effective_hours   = Column(Numeric(10, 4), nullable=True)
+    status       = Column(String, nullable=True)                # 'worked' | marker (X/О/…)
+    # Provenance — the period date is authoritative; the filename only carries the
+    # export timestamp, kept for audit.
+    source_filename = Column(String, nullable=True)
+    export_ts       = Column(DateTime(timezone=True), nullable=True)
+    uploaded_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+    cell = relationship("Cell")
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
