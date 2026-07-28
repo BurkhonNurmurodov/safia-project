@@ -1199,6 +1199,7 @@ def bulk_delete_attendance(
         # One batch_id per bulk action so the logged requests appear as a
         # single grouped row in the Requests tab.
         admin_batch_id = str(uuid4())
+        deleted_rows: list[tuple] = []   # (worker, job_title, None) for the grant alert
         for worker_name in body.worker_names:
             row = db.query(Attendance).filter(
                 Attendance.manager_id  == manager_id,
