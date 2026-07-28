@@ -562,9 +562,13 @@ export default function ProfilesManagement({ cellsOnly = false, canEdit = true }
           )}
           {!isLoading && isCells && sorted.map((item) => (
             <tr key={item.id}>
-              <td className="px-3 py-2 font-mono text-[var(--text-1)] whitespace-nowrap">{item.verifix_code}</td>
-              <td className="px-3 py-2 font-mono text-[var(--text-2)] whitespace-nowrap">{item.sap_code || "—"}</td>
-              <td className="px-3 py-2 text-[var(--text-2)]">{wname(item) || "—"}</td>
+              <td className="px-3 py-2 font-mono font-semibold text-[var(--text-1)] whitespace-nowrap">{item.verifix_code}</td>
+              <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{item.sap_code || "—"}</td>
+              <td className="px-3 py-2">
+                {wname(item)
+                  ? <span className="font-medium text-[var(--text-1)]">{wname(item)}</span>
+                  : <span style={{ color: "var(--text-4)" }}>—</span>}
+              </td>
               <td className="px-3 py-2 break-words">
                 {item.supervisor
                   ? <span className="text-[var(--text-2)]">{tl(item.supervisor)}</span>
