@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Timer, Info, Check, Save, ChevronDown,
+  Timer, Info, Save, ChevronDown,
   Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
   FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
 } from "lucide-react";
