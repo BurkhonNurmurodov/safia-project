@@ -486,6 +486,22 @@ def update_user_role(
         except Exception:
             pass
 
+    alert_changes = []
+    if payload.role is not None and payload.role != old["role"]:
+        alert_changes.append(("role", tv("role." + old["role"]), tv("role." + payload.role)))
+    if payload.role_id is not None and payload.role_id != old["role_id"]:
+        alert_changes.append(("profile", old["role_id"], payload.role_id))
+    if payload.status is not None and payload.status != old["status"]:
+        alert_changes.append(("status", old["status"], payload.status))
+    if alert_changes:
+        alert_grant_use(
+            db, admin_payload, CAP_USERS_MANAGE, "user.role_updated",
+            details=[("user", user.full_name or user.tg_name or f"#{user.telegram_id}"),
+                     ("account", user.telegram_id),
+                     ("profile", role_row.full_name)],
+            changes=alert_changes,
+        )
+
     return {"ok": True}
 
 
