@@ -383,17 +383,9 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st, t }) {
         .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
         @keyframes futSheen { 0% { transform:translateX(-140%) skewX(-14deg); } 55%,100% { transform:translateX(300%) skewX(-14deg); } }
         .fut-sheen { transform:translateX(-140%) skewX(-14deg); animation: futSheen 5s ease-in-out infinite; }
-        /* compositor-only rotation (transform on a will-change layer), so the
-           three sunbursts cost nothing to keep turning */
-        @keyframes futRays { from { transform:translate(-50%,-50%) rotate(0deg); } to { transform:translate(-50%,-50%) rotate(360deg); } }
-        .fut-rays { opacity:.45; will-change:transform; animation: futRays 44s linear infinite; }
-        .fut-champ .fut-rays { opacity:.85; animation-duration:30s; }
-        @keyframes crestPulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.06); } }
-        .fut-champ .fut-crest { animation: crestPulse 3.2s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
           .podium-halo { animation:none; opacity:.7; }
           .fut-sheen { animation:none; opacity:0; }
-          .fut-rays, .fut-champ .fut-crest { animation:none; }
         }
       `}</style>
       {byRank.slice(0, 3).map((s, i) => (
