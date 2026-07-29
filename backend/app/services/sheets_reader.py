@@ -530,11 +530,19 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     def cell(row, i) -> str:
         return row[i].strip() if i < len(row) else ""
 
+    # Rows whose «Бригадир ФИО» matches no known supervisor are skipped — but
+    # silently dropping them is how a brigadir added to the form goes missing
+    # from Ojidaniya for weeks, so count them and say so once at the end.
+    unmatched: dict[str, int] = {}
+
     for row in rows[1:]:
         if not row:
             continue
         name = cell(row, lay.brigadir)
-        if not name or name not in manager_names:
+        if not name:
+            continue
+        if name not in manager_names:
+            unmatched[name] = unmatched.get(name, 0) + 1
             continue
         # The date is read through the leaders parser: it accepts the sheet's
         # current yyyy-mm-dd alongside the other display formats and raw serials,
