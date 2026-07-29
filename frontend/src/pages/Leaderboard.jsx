@@ -277,83 +277,125 @@ function DistributionStrips({ sups, selectedId, onSelect, catMeta, st, onTip }) 
   );
 }
 
-/* ═══════════════════════ podium ══════════════════════════════════════ */
-function Podium({ byRank, selectedId, onSelect, catMeta, st }) {
-  const cell = (s, place) => {
-    const first = place === 1;
-    const medal = MEDAL[place];
-    const sel = s.id === selectedId;
-    /* Colored elevation = the "aura". #1 sits highest and glows hardest. */
-    const lift = first ? 16 : place === 2 ? 4 : 0;
-    const glow = first
-      ? `0 26px 60px -16px ${hexA(medal, 0.62)}, 0 6px 18px -8px ${hexA(medal, 0.45)}`
-      : place === 2
-      ? `0 18px 44px -18px ${hexA(medal, 0.52)}`
-      : `0 16px 40px -20px ${hexA(medal, 0.46)}`;
-    return (
-      <button
-        key={s.id}
-        onClick={() => onSelect(s.id)}
-        className={`podium-card${first ? " podium-champ" : ""} relative flex flex-col rounded-2xl text-center overflow-hidden`}
-        style={{
-          background: "var(--bg-card)",
-          border: `1px solid ${hexA(medal, first ? 0.6 : 0.48)}`,
-          boxShadow: sel ? `${glow}, 0 0 0 3px var(--brand-ring)` : glow,
-          transform: `translateY(-${lift}px)`,
-        }}
-      >
-        {/* metallic wash pouring from the top edge */}
-        <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(135% 95% at 50% -22%, ${hexA(medal, first ? 0.5 : 0.4)} 0%, ${hexA(medal, 0.14)} 40%, transparent 72%)` }} />
-        {/* bright shine line across the top */}
-        <span aria-hidden className="absolute top-0 h-px pointer-events-none" style={{ left: 24, right: 24, background: `linear-gradient(90deg, transparent, ${hexA(medal, 0.95)}, transparent)` }} />
-        {/* giant ghost rank numeral for sheer weight */}
-        <span aria-hidden className="absolute pointer-events-none select-none tabular-nums font-black leading-none" style={{ right: 6, bottom: -22, fontSize: first ? 150 : 118, color: hexA(medal, 0.11) }}>{s.rank}</span>
-        {/* champion halo — a slow breathing glow behind the crest */}
-        {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "-24% 14% auto 14%", height: "70%", background: `radial-gradient(circle at 50% 40%, ${hexA(medal, 0.55)} 0%, transparent 62%)` }} />}
+/* ═══════════════════════ podium — player cards ═══════════════════════
+ * The top three ride footballer cards: a metal plate, the brigadir standing
+ * on it as a cut-out render, the composite rating in the top-left corner,
+ * the name band, and the five ranked statistics as the stat grid.
+ *
+ * A card is its own surface, so its palette is fixed in both themes (like the
+ * chart identity colours): three stops of the medal metal plus the dark ink
+ * every label on the plate is written in. */
+const PLATE = {
+  1: { hi: "#F9E7A8", mid: "#DBAB2C", lo: "#8A6410", ink: "#3B2A06", edge: "#FFF6CE" },
+  2: { hi: "#F1F5FA", mid: "#A9B3BF", lo: "#5C6673", ink: "#1E2530", edge: "#FFFFFF" },
+  3: { hi: "#F2CBA0", mid: "#C68249", lo: "#7A4A20", ink: "#33190A", edge: "#FFE6CC" },
+};
 
-        <div className="relative flex flex-col items-center gap-2" style={{ padding: first ? "30px 16px 22px" : "22px 16px 16px" }}>
-          <span className="absolute flex items-center justify-center rounded-full tabular-nums" style={{ top: 0, left: 0, width: 26, height: 26, fontSize: 12, fontWeight: 800, background: medal, color: "#fff", boxShadow: `0 3px 10px -2px ${hexA(medal, 0.7)}` }}>{s.rank}</span>
-          <span className="absolute flex items-center justify-center rounded-lg" style={{ top: 0, right: 0, width: 28, height: 28, color: "#fff", background: medal, boxShadow: `0 3px 12px -2px ${hexA(medal, 0.75)}` }}>{first ? <Crown size={15} /> : <Medal size={15} />}</span>
-          <Avatar sup={s} size={first ? 56 : 44} />
-          <div style={{ fontWeight: 700, fontSize: first ? 16 : 15 }}>{s.name}</div>
-          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{s.unit}</div>
-          <ScoreRing score={s.comp} color={bandFill(st, s.comp)} label="ball" />
-          <DeltaChip v={s.scoreDelta} unit="ball" st={st} />
-          <div className="flex gap-1.5 mt-1.5">
-            {CATS.map((c) => {
-              const v = s.s[c.key];
-              return (
-                <span key={c.key} className="flex flex-col items-center gap-1" style={{ width: 30 }}>
-                  <span className="relative w-full overflow-hidden rounded" style={{ height: 26, background: "var(--bg-inner)" }}>
-                    <span className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${v ?? 0}%`, background: catMeta[c.key].hue }} />
-                  </span>
-                  <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.03em", color: "var(--text-4)", textTransform: "uppercase" }}>{catMeta[c.key].short.slice(0, 3)}</span>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      </button>
-    );
-  };
-  const [p1, p2, p3] = byRank;
+function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
+  const first = place === 1;
+  const p = PLATE[place];
+  const medal = MEDAL[place];
+  const up = s.scoreDelta >= 0;
+  return (
+    <button
+      onClick={onSelect}
+      className={`fut-card place-${place}${first ? " fut-champ" : ""} relative flex flex-col overflow-hidden rounded-2xl`}
+      style={{
+        aspectRatio: "0.73",
+        color: p.ink,
+        background: `linear-gradient(158deg, ${p.hi} 0%, ${p.mid} 46%, ${p.lo} 100%)`,
+        border: `1px solid ${hexA(medal, 0.8)}`,
+        boxShadow: selected
+          ? `0 24px 50px -20px ${hexA(medal, 0.7)}, 0 0 0 3px var(--brand-ring)`
+          : `0 24px 50px -22px ${hexA(medal, 0.6)}`,
+      }}
+    >
+      {/* plate finish — a raking highlight and a glow off the top edge */}
+      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `linear-gradient(104deg, transparent 6%, ${hexA(p.edge, 0.5)} 20%, transparent 33%), radial-gradient(120% 55% at 50% -4%, ${hexA(p.edge, 0.55)} 0%, transparent 64%)` }} />
+      {/* champion halo — a slow breathing glow behind the render */}
+      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
+
+      {/* the render — contain + bottom-anchored, so any portrait ratio stands
+          on the name band instead of being cropped through the face */}
+      {s.render
+        ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "70%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 16px rgba(0,0,0,0.3))" }} />
+        : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.3 }}>{initials(s.name)}</span>}
+
+      {/* foot scrim so the band reads over the render */}
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "44%", background: `linear-gradient(to top, ${hexA(p.lo, 0.6)} 32%, transparent)` }} />
+      {first && <span aria-hidden className="fut-sheen absolute pointer-events-none" style={{ top: "-25%", bottom: "-25%", width: "36%", background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.42)}, transparent)` }} />}
+
+      {/* rating column — the card's headline number, underlined by its band */}
+      <span className="absolute flex flex-col items-center" style={{ top: first ? 11 : 8, left: first ? 13 : 9, lineHeight: 1 }}>
+        <b className="tabular-nums" style={{ fontSize: first ? 40 : 31, fontWeight: 900, letterSpacing: "-0.03em" }}>{fmt(s.comp)}</b>
+        <i className="block rounded-full" style={{ width: first ? 26 : 20, height: 3, marginTop: 4, background: bandFill(st, s.comp) }} />
+        <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.1em", marginTop: 4, textTransform: "uppercase", opacity: 0.72 }}>{t("leaderboard.overallShort")}</span>
+        <span className="rounded" style={{ fontSize: first ? 9 : 8, fontWeight: 800, letterSpacing: "0.05em", marginTop: 5, padding: "1px 5px", background: hexA(p.ink, 0.16) }}>S{s.shift}</span>
+      </span>
+
+      {/* place badge + the period's score movement */}
+      <span className="absolute flex items-center gap-1 rounded-full" style={{ top: first ? 11 : 8, right: first ? 11 : 8, padding: "3px 7px 3px 5px", background: hexA(p.ink, 0.84), color: p.hi }}>
+        {first ? <Crown size={12} /> : <Medal size={12} />}
+        <b className="tabular-nums" style={{ fontSize: 11, fontWeight: 800 }}>{s.rank}</b>
+      </span>
+      <span className="absolute inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ top: first ? 37 : 32, right: first ? 11 : 8, fontSize: 10, fontWeight: 800, padding: "1px 5px", background: hexA("#FFFFFF", 0.66), color: up ? "#15803D" : "#B91C1C" }}>
+        {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
+      </span>
+
+      {/* name band + stat grid */}
+      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px" }}>
+        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.ink, 0.5)}, transparent)` }} />
+        <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", padding: "5px 2px 0" }}>{s.name}</span>
+        <span className="block text-center" style={{ fontSize: first ? 10 : 9, fontWeight: 600, opacity: 0.72, padding: "1px 0 5px" }}>{s.unit}</span>
+        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.ink, 0.5)}, transparent)` }} />
+        <span className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)", paddingTop: 6 }}>
+          {CATS.map((c, i) => (
+            <span key={c.key} className="flex flex-col items-center" style={{ borderLeft: i ? `1px solid ${hexA(p.ink, 0.16)}` : undefined }}>
+              <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
+              <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.7, marginTop: 3 }}>{catMeta[c.key].short.slice(0, 3)}</span>
+            </span>
+          ))}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function Podium({ byRank, selectedId, onSelect, catMeta, st, t }) {
   // A filtered pool can hold fewer than 3 brigadirs — render only real places,
   // centered, instead of assuming a full podium.
+  const full = byRank.length >= 3;
   return (
     <div
-      className="grid gap-3 items-end pt-4"
-      style={p3
-        ? { gridTemplateColumns: "1fr 1.16fr 1fr" }
-        : { gridTemplateColumns: `repeat(${byRank.length}, minmax(220px, 340px))`, justifyContent: "center" }}
+      className={`podium-grid${full ? "" : " podium-short"}`}
+      style={full ? undefined : { gridTemplateColumns: `repeat(${byRank.length}, minmax(0, 300px))`, justifyContent: "center" }}
     >
       <style>{`
-        @keyframes podiumHalo { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:.95; transform:scale(1.09); } }
+        /* Phone: the champion takes the full width on its own row, the two
+           runners-up share the row underneath. Desktop unfolds the classic
+           2 · 1 · 3 podium with the champion taller and lifted. */
+        .podium-grid { display:grid; gap:10px; align-items:end; padding-top:14px; grid-template-columns:1fr 1fr; }
+        .podium-grid > .place-1 { grid-column:1 / -1; justify-self:center; width:100%; max-width:264px; }
+        .podium-short > .place-1 { grid-column:auto; width:auto; max-width:none; }
+        @media (min-width: 700px) {
+          .podium-grid:not(.podium-short) { gap:14px; grid-template-columns:1fr 1.14fr 1fr; }
+          .podium-grid:not(.podium-short) > .place-1 { grid-column:auto; max-width:none; order:2; transform:translateY(-14px); }
+          .podium-grid:not(.podium-short) > .place-2 { order:1; }
+          .podium-grid:not(.podium-short) > .place-3 { order:3; }
+        }
+        @keyframes podiumHalo { 0%,100% { opacity:.45; transform:scale(1); } 50% { opacity:.9; transform:scale(1.08); } }
         .podium-halo { animation: podiumHalo 3.6s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) { .podium-halo { animation: none; opacity:.7; } }
+        @keyframes futSheen { 0% { transform:translateX(-140%) skewX(-14deg); } 55%,100% { transform:translateX(300%) skewX(-14deg); } }
+        .fut-sheen { transform:translateX(-140%) skewX(-14deg); animation: futSheen 5s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .podium-halo { animation:none; opacity:.7; }
+          .fut-sheen { animation:none; opacity:0; }
+        }
       `}</style>
-      {p3
-        ? <>{cell(p2, 2)}{cell(p1, 1)}{cell(p3, 3)}</>
-        : <>{p1 && cell(p1, 1)}{p2 && cell(p2, 2)}</>}
+      {byRank.slice(0, 3).map((s, i) => (
+        <PlayerCard key={s.id} s={s} place={i + 1} selected={s.id === selectedId}
+          onSelect={() => onSelect(s.id)} catMeta={catMeta} st={st} t={t} />
+      ))}
     </div>
   );
 }
