@@ -35,9 +35,15 @@ MANAGERS = [
     (19, "Уразов Аскар", 2),
 ]
 
+# Shift report («Смена отчёт, Сафия»). Replaced 2026-07-29: the previous
+# workbook ("Copy of Смена отчёт, Сафия(5/9)") stopped taking submissions on
+# 2026-05-26, and the new one both carries the full history from 2026-03-28 and
+# reshuffles the columns — see _shift_layout in services/sheets_reader.py.
+SHIFT_REPORT_SHEET_ID = "1swk6vyvlZtY2L2HPRYd9H2Lwi-A3K53B2SvLcu5rXOs"
+
 SHEET_SOURCES = [
     ("source", "1q-4PTcnGNNsGzXmXAIa5HE2Ze0f6hQ-7dKagvHSH2eI"),
-    ("shift_report", "1qCntFNUhy5GdSHhByK5gtVd9T8hqp6Dn4oPbrCujZQ8"),
+    ("shift_report", SHIFT_REPORT_SHEET_ID),
     # Quality register (complaints & non-conformances) — tab «для свода».
     ("quality", "1DtQxGyc8IByew_Hakj0HX3ZL0MigphWON8CNkjZFE3k"),
 ]
