@@ -297,20 +297,15 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         color: p.ink,
         background: `linear-gradient(158deg, ${p.hi} 0%, ${p.mid} 46%, ${p.lo} 100%)`,
         border: `1px solid ${hexA(medal, 0.8)}`,
-        boxShadow: selected ? `${bloom}, 0 0 0 3px var(--brand-ring)` : bloom,
+        boxShadow: selected
+          ? `0 24px 50px -20px ${hexA(medal, 0.7)}, 0 0 0 3px var(--brand-ring)`
+          : `0 24px 50px -22px ${hexA(medal, 0.6)}`,
       }}
     >
       {/* plate finish — a raking highlight and a glow off the top edge */}
       <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `linear-gradient(104deg, transparent 6%, ${hexA(p.edge, 0.5)} 20%, transparent 33%), radial-gradient(120% 55% at 50% -4%, ${hexA(p.edge, 0.55)} 0%, transparent 64%)` }} />
-      {/* sunburst behind the render — the light the winner is standing in */}
-      <span aria-hidden className="fut-rays absolute pointer-events-none" style={{
-        left: "50%", top: "36%", width: "170%", aspectRatio: "1", transform: "translate(-50%, -50%)",
-        background: `repeating-conic-gradient(from 0deg, ${hexA("#FFFFFF", first ? 0.5 : 0.3)} 0deg 5deg, transparent 5deg 17deg)`,
-        maskImage: "radial-gradient(circle, #000 6%, rgba(0,0,0,0.55) 34%, transparent 62%)",
-        WebkitMaskImage: "radial-gradient(circle, #000 6%, rgba(0,0,0,0.55) 34%, transparent 62%)",
-      }} />
-      {/* halo — a slow breathing glow behind the head, brightest on the cup */}
-      <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, first ? 0.85 : 0.55)} 0%, transparent 62%)` }} />
+      {/* champion halo — a slow breathing glow behind the render */}
+      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
 
       {/* the render — contain + bottom-anchored, so any portrait ratio stands
           on the name band instead of being cropped through the face */}
