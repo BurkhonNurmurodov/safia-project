@@ -288,12 +288,6 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
   const p = PLATE[place];
   const medal = MEDAL[place];
   const up = s.scoreDelta >= 0;
-  const Emblem = first ? Trophy : Medal;      // the cup for the champion, medals behind it
-  const em = first ? 58 : 44;                 // crest diameter
-  /* The aura: the card itself blooms in its own metal, hardest on the cup. */
-  const bloom = first
-    ? `0 0 52px -4px ${hexA(medal, 0.8)}, 0 28px 56px -18px ${hexA(medal, 0.72)}`
-    : `0 0 28px -6px ${hexA(medal, 0.5)}, 0 22px 46px -22px ${hexA(medal, 0.55)}`;
   return (
     <button
       onClick={onSelect}
