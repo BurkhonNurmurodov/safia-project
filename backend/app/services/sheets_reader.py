@@ -571,6 +571,13 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
                 totals[name][date_label] += val
                 by_cat[name][date_label][cat_name] += val
 
+    if unmatched:
+        worst = sorted(unmatched.items(), key=lambda kv: -kv[1])
+        print("[sheets] shift report: no supervisor matches "
+              + ", ".join(f"{n!r} ({c} rows)" for n, c in worst)
+              + " — their waiting time is NOT imported; add the spelling to the "
+                "supervisor's aliases or create the unit")
+
     return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
 
 
