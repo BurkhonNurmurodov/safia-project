@@ -379,7 +379,10 @@ function Podium({ byRank, selectedId, onSelect, catMeta, st, t }) {
         .podium-short > .place-1 { grid-column:auto; width:auto; max-width:none; }
         @media (min-width: 700px) {
           .podium-grid:not(.podium-short) { gap:14px; grid-template-columns:1fr 1.14fr 1fr; }
-          .podium-grid:not(.podium-short) > .place-1 { grid-column:auto; max-width:none; order:2; transform:translateY(-14px); }
+          /* a card is a card — it keeps its size on a wide screen instead of
+             stretching into a poster */
+          .podium-grid > .fut-card { justify-self:center; width:100%; max-width:300px; }
+          .podium-grid:not(.podium-short) > .place-1 { grid-column:auto; max-width:344px; order:2; transform:translateY(-14px); }
           .podium-grid:not(.podium-short) > .place-2 { order:1; }
           .podium-grid:not(.podium-short) > .place-3 { order:3; }
         }
