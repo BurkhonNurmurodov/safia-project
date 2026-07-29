@@ -7,35 +7,54 @@ from app.config import settings
 
 _gc: Optional[gspread.Client] = None
 
-# Shift-report waiting-time columns, 0-based (PI, PK, PM, PO, PQ, PS, PU, PW,
-# PY, QA, QC).
+# Shift-report («Смена отчёт») waiting-time categories, in the fixed order the
+# Ojidaniya page paints them in.
 #
 # The form stores every category as a PAIR of adjacent columns — «Ячейка
 # тўхтаганда» (the wait stopped the cell) and «Ячейка тўхтамаганда» (it did
-# not). These are the «тўхтаганда» columns, which is why they step by 2: they
-# measure waiting that actually halted the cell, not every wait the brigadir
-# logged. Confirmed intentional 2026-07-22 — do NOT merge the odd indices in
-# here; they are a separate series, read via SHIFT_CATEGORIES_NS below.
+# not). Both halves are read and kept strictly separate: the first feeds the
+# Ojidaniya «To'xtaganda» tab and the загрузка KPIs, the second feeds the
+# «To'xtamaganda» tab. Confirmed intentional 2026-07-22 — never merge them.
 #
 # Cat H is the sheet's «Категория H (Тозалаш)» — cleaning. Cat I is «Категория
 # I» (Oldingi smena ishi tugashini kutish — waiting for the previous shift to
 # finish). Cat I briefly shipped as "Cat D4" on 2026-07-24; renamed to the
 # sheet's own letter 2026-07-25 (user asked for «Category I» by name).
-SHIFT_CATEGORIES = [
-    ("Cat A", 424), ("Cat B", 426), ("Cat C", 428),
-    ("Cat D", 430), ("Cat D2", 432), ("Cat D3", 434),
-    ("Cat E", 436), ("Cat F", 438), ("Cat G", 440),
-    ("Cat H", 442), ("Cat I", 444),
+#
+# Cat H has no «тўхтамаганда» half: its second column is «Нечта одам
+# тозалади?», a people-count rather than minutes, so it must never be summed
+# into the not-stopped series. That falls out of matching on the header — the
+# column simply carries neither marker — instead of being special-cased.
+SHIFT_CATEGORY_ORDER = [
+    "Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
+    "Cat E", "Cat F", "Cat G", "Cat H", "Cat I",
 ]
 
-# The second column of each pair — «Ячейка тўхтамаганда». Read since 2026-07-22
-# to feed the Ojidaniya page's second tab, kept strictly separate from the
-# «тўхтаганда» totals above so tab 1's numbers are unchanged.
-#
-# Cat H is EXCLUDED: its second column (QB) is «Нечта одам тозалади?» — a
-# people-count, not minutes — so it must never be summed into the NS series.
-# Cat H simply stays 0 on the «тўхтамаганда» tab.
-SHIFT_CATEGORIES_NS = [(name, idx + 1) for name, idx in SHIFT_CATEGORIES if name != "Cat H"]
+# Columns are resolved from the HEADER, never from fixed offsets. The sheet
+# swapped on 2026-07-29 moved the whole category block from PI–QD (424–445) to
+# E–Z (4–25): the per-cell «Ячейка NNNN ?(Плановый/Фактический/Переналадка)»
+# questions that used to sit in front of it now sit behind it, and grew from
+# 140 to 150 cells. Fixed offsets went on reading the middle of that block and
+# would have imported a silent zero for every brigadir — the same failure mode
+# _leader_layout was written to end.
+_SHIFT_HDR_DATE = "дата"
+_SHIFT_HDR_BRIGADIR = "бригадир фио"
+
+# «Категория D2 (Ячейка тўхтаганда)(Складдан …)» → letter token "d2".
+_SHIFT_CAT_RE = re.compile(r"^категория\s+([a-zа-яё0-9]+)\s*\(")
+
+# Uzbek-Cyrillic letters that get typed inconsistently, folded onto their bare
+# forms so «тўхтаганда» and «тухтаганда» hit the same marker.
+_SHIFT_FOLD = str.maketrans({"ў": "у", "ғ": "г", "қ": "к", "ҳ": "х", "ё": "е", "ъ": "", "’": "'", "‘": "'"})
+
+# Cyrillic letters that look identical to Latin ones. «Категория А» typed with a
+# Cyrillic А must still key "Cat A", not a lookalike twin nothing else matches.
+_CAT_LOOKALIKE = str.maketrans({"а": "a", "в": "b", "с": "c", "е": "e", "н": "h",
+                                "к": "k", "м": "m", "о": "o", "р": "p", "т": "t",
+                                "х": "x", "у": "y", "і": "i", "ј": "j"})
+
+_MARK_NOT_STOPPED = ("тухтамаганда", "to'xtamaganda", "toxtamaganda")
+_MARK_STOPPED = ("тухтаганда", "to'xtaganda", "toxtaganda")
 
 # Categories shown ONLY on the Ojidaniya page (/api/downtime). They must never
 # count against the загрузка KPIs — equip_downtime, after_idle/net util, the
