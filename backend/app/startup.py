@@ -1280,6 +1280,38 @@ def seed_managers_and_sources() -> None:
         db.close()
 
 
+SHIFT_SHEET_REPOINT_FLAG = "shift_report_sheet_2026_07_29"
+
+
+def repoint_shift_report_sheet() -> None:
+    """Point the stored `shift_report` source at the new «Смена отчёт, Сафия»
+    workbook (2026-07-29).
+
+    seed_managers_and_sources only ever INSERTS a missing source row, so
+    changing SHEET_SOURCES alone would leave every existing deployment reading
+    the retired workbook — which stopped taking submissions on 2026-05-26.
+    Flag-guarded so it runs exactly once: an admin who later repoints the source
+    by hand keeps their choice.
+    """
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=SHIFT_SHEET_REPOINT_FLAG).first():
+            return
+
+        src = db.query(SheetSource).filter(SheetSource.name == "shift_report").first()
+        if src and src.sheet_id != SHIFT_REPORT_SHEET_ID:
+            print(f"[startup] shift_report sheet {src.sheet_id} → {SHIFT_REPORT_SHEET_ID}")
+            src.sheet_id = SHIFT_REPORT_SHEET_ID
+
+        db.add(AppSetting(key=SHIFT_SHEET_REPOINT_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] shift_report repoint skipped: {exc}")
+    finally:
+        db.close()
+
+
 ROLE_PROFILES_FLAG = "role_profiles_backfilled_v1"
 
 
