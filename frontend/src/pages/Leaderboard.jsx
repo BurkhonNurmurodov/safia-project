@@ -321,8 +321,9 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "78%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 16px rgba(0,0,0,0.3))" }} />
         : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.3 }}>{initials(s.name)}</span>}
 
-      {/* foot scrim so the band reads over the render */}
-      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "44%", background: `linear-gradient(to top, ${hexA(p.lo, 0.6)} 32%, transparent)` }} />
+      {/* foot scrim — sinks the base of the plate so the white band and stats
+          read over both the metal and the render standing on them */}
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "46%", background: `linear-gradient(to top, ${hexA(p.deep, 0.92)} 24%, ${hexA(p.deep, 0.6)} 52%, transparent)` }} />
       {first && <span aria-hidden className="fut-sheen absolute pointer-events-none" style={{ top: "-25%", bottom: "-25%", width: "36%", background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.42)}, transparent)` }} />}
 
       {/* rating column — the card's headline number, underlined by its band */}
