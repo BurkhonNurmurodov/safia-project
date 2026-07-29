@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
     seed_admins()
     seed_languages()
     seed_managers_and_sources()
+    repoint_shift_report_sheet()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()
