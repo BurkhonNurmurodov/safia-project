@@ -335,24 +335,15 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         <i className="block rounded-full" style={{ width: first ? 26 : 20, height: 3, marginTop: 4, background: bandFill(st, s.comp) }} />
         <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.1em", marginTop: 4, textTransform: "uppercase", opacity: 0.72 }}>{t("leaderboard.overallShort")}</span>
         <span className="rounded" style={{ fontSize: first ? 9 : 8, fontWeight: 800, letterSpacing: "0.05em", marginTop: 5, padding: "1px 5px", background: hexA(p.ink, 0.16) }}>S{s.shift}</span>
-        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ marginTop: 5, fontSize: 10, fontWeight: 800, padding: "1px 5px", background: hexA("#FFFFFF", 0.66), color: up ? "#15803D" : "#B91C1C" }}>
-          {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
-        </span>
       </span>
 
-      {/* the crest — a struck medal, the cup for the champion. Sized to be the
-          second thing you see after the face, with the place struck into the
-          ribbon hanging off it. */}
-      <span className="fut-crest absolute flex flex-col items-center" style={{ top: first ? 10 : 8, right: first ? 10 : 8 }}>
-        <span className="relative flex items-center justify-center rounded-full" style={{
-          width: em, height: em, color: p.deep,
-          background: `radial-gradient(circle at 34% 26%, ${p.edge} 0%, ${p.hi} 26%, ${p.mid} 62%, ${p.lo} 100%)`,
-          border: `2px solid ${hexA(p.edge, 0.9)}`,
-          boxShadow: `0 0 0 4px ${hexA(p.edge, 0.22)}, 0 0 22px -2px ${hexA(medal, first ? 0.95 : 0.6)}, 0 8px 18px -6px rgba(0,0,0,0.55), inset 0 2px 7px ${hexA(p.edge, 0.7)}`,
-        }}>
-          <Emblem size={Math.round(em * 0.46)} strokeWidth={2.2} />
-        </span>
-        <span className="rounded-full tabular-nums" style={{ marginTop: -7, padding: first ? "1px 9px" : "0 7px", fontSize: first ? 12 : 10.5, fontWeight: 900, color: p.hi, background: p.deep, border: `1.5px solid ${hexA(p.edge, 0.65)}`, boxShadow: `0 3px 8px -2px rgba(0,0,0,0.5)` }}>{s.rank}</span>
+      {/* place badge + the period's score movement */}
+      <span className="absolute flex items-center gap-1 rounded-full" style={{ top: first ? 11 : 8, right: first ? 11 : 8, padding: "3px 7px 3px 5px", background: hexA(p.ink, 0.84), color: p.hi }}>
+        {first ? <Crown size={12} /> : <Medal size={12} />}
+        <b className="tabular-nums" style={{ fontSize: 11, fontWeight: 800 }}>{s.rank}</b>
+      </span>
+      <span className="absolute inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ top: first ? 37 : 32, right: first ? 11 : 8, fontSize: 10, fontWeight: 800, padding: "1px 5px", background: hexA("#FFFFFF", 0.66), color: up ? "#15803D" : "#B91C1C" }}>
+        {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
       </span>
 
       {/* name band + stat grid — written in light ink on the sunken foot */}
