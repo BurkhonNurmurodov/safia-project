@@ -163,7 +163,9 @@ function Avatar({ sup, size }) {
       className="inline-flex items-center justify-center rounded-full font-bold flex-shrink-0 overflow-hidden"
       style={{ width: size, height: size, fontSize: Math.round(size * 0.36), background: hexA(sup.color, 0.16), color: sup.color, border: `1.5px solid ${hexA(sup.color, 0.35)}` }}
     >
-      {sup.image ? <img src={sup.image} alt={sup.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials(sup.name)}
+      {/* anchored high in the frame: a portrait cropped to a circle must land
+          on the face, not the chest. */}
+      {sup.image ? <img src={sup.image} alt={sup.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 14%" }} /> : initials(sup.name)}
     </span>
   );
 }
