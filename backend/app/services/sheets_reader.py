@@ -421,6 +421,89 @@ def read_leader_data(sheet_id: str, tab: str = "Data") -> list[dict]:
     return out
 
 
+def _shift_norm(val) -> str:
+    """Lowercase a header cell, collapse its whitespace and fold the Cyrillic
+    letters the form spells inconsistently."""
+    return re.sub(r"\s+", " ", str(val or "")).strip().lower().translate(_SHIFT_FOLD)
+
+
+def _shift_num(raw: str) -> Optional[float]:
+    """Parse a waiting-minutes cell. Returns None for anything non-numeric so
+    the caller can skip it rather than fold a typo into the total as a zero."""
+    s = raw.replace("\xa0", "").replace(" ", "").strip()
+    if not s:
+        return None
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")   # comma decimal, should the sheet ever localise
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+class ShiftLayout(NamedTuple):
+    date: int
+    brigadir: int
+    stopped: dict          # "Cat A" → column index of «Ячейка тўхтаганда»
+    not_stopped: dict      # "Cat A" → column index of «Ячейка тўхтамаганда»
+
+
+def _shift_layout(header: list) -> ShiftLayout:
+    """Locate every shift-report column by its HEADER rather than a fixed offset.
+
+    The form is a moving target: the 2026-07-29 rebuild moved the category block
+    from PI–QD to E–Z and grew the per-cell block behind it. Reading the header
+    absorbs that, and a missing mandatory column now fails the sync loudly
+    instead of importing zeros for everyone.
+    """
+    date = brigadir = None
+    stopped: dict[str, int] = {}
+    not_stopped: dict[str, int] = {}
+    unknown: set[str] = set()
+
+    for i, raw in enumerate(header):
+        h = _shift_norm(raw)
+        if not h:
+            continue
+        if h == _SHIFT_HDR_DATE:
+            date = i
+            continue
+        if h == _SHIFT_HDR_BRIGADIR:
+            brigadir = i
+            continue
+        m = _SHIFT_CAT_RE.match(h)
+        if not m:
+            continue
+        if any(k in h for k in _MARK_NOT_STOPPED):
+            target = not_stopped
+        elif any(k in h for k in _MARK_STOPPED):
+            target = stopped
+        else:
+            continue   # Cat H's «Нечта одам тозалади?» — a people count, not minutes
+        cat = "Cat " + m.group(1).translate(_CAT_LOOKALIKE).upper()
+        if cat not in SHIFT_CATEGORY_ORDER:
+            unknown.add(cat)
+            continue
+        target.setdefault(cat, i)   # first column wins if the form duplicates one
+
+    missing = [n for n, v in (("Дата", date), ("Бригадир ФИО", brigadir)) if v is None]
+    if missing:
+        raise ValueError("Shift report: column(s) not found in the header: "
+                         + ", ".join(missing))
+    if not stopped:
+        raise ValueError("Shift report: no «Категория X (Ячейка тўхтаганда)» "
+                         "columns in the header")
+
+    if unknown:
+        print(f"[sheets] shift report: ignoring unknown categor(ies) {sorted(unknown)} "
+              f"— add them to SHIFT_CATEGORY_ORDER (plus labels and a colour) to import them")
+    absent = [c for c in SHIFT_CATEGORY_ORDER if c not in stopped]
+    if absent:
+        print(f"[sheets] shift report: categor(ies) {absent} absent from the sheet — read as 0")
+
+    return ShiftLayout(date, brigadir, stopped, not_stopped)
+
+
 def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optional[datetime] = None):
     """Read equipment downtime from shift report Sheet1.
 
@@ -430,46 +513,55 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     """
     rows = _fetch_sheet_rows(sheet_id, "Sheet1", unformatted=False)
 
-    cat_names = [c for c, _ in SHIFT_CATEGORIES]
+    # cat_names stays the full canonical list in a FIXED order whatever the sheet
+    # happens to carry: the Ojidaniya page indexes its palette and its category
+    # filter by position, so a category the form drops has to read 0 rather than
+    # shift every colour one slot to the left.
+    cat_names = list(SHIFT_CATEGORY_ORDER)
     downtime_total: dict[str, dict[str, float]] = {}
     downtime_by_cat: dict[str, dict[str, dict[str, float]]] = {}
     downtime_total_ns: dict[str, dict[str, float]] = {}
     downtime_by_cat_ns: dict[str, dict[str, dict[str, float]]] = {}
 
+    if not rows:
+        return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
+    lay = _shift_layout(rows[0])
+
+    def cell(row, i) -> str:
+        return row[i].strip() if i < len(row) else ""
+
     for row in rows[1:]:
-        if not row or not row[3].strip():
+        if not row:
             continue
-        name = row[3].strip()
-        if name not in manager_names:
+        name = cell(row, lay.brigadir)
+        if not name or name not in manager_names:
             continue
-        date_raw = row[2].strip()
-        if not date_raw:
+        # The date is read through the leaders parser: it accepts the sheet's
+        # current yyyy-mm-dd alongside the other display formats and raw serials,
+        # so a locale flip on the source can't silently drop every row.
+        iso = _leader_parse_date(cell(row, lay.date))
+        if not iso:
             continue
-        try:
-            d = datetime.strptime(date_raw, "%Y-%m-%d")
-            if min_date and d < min_date:
-                continue
-            date_label = d.strftime("%d.%m.%Y")
-        except Exception:
+        d = datetime.strptime(iso, "%Y-%m-%d")
+        if min_date and d < min_date:
             continue
+        date_label = d.strftime("%d.%m.%Y")
 
         for cats, totals, by_cat in (
-            (SHIFT_CATEGORIES, downtime_total, downtime_by_cat),
-            (SHIFT_CATEGORIES_NS, downtime_total_ns, downtime_by_cat_ns),
+            (lay.stopped, downtime_total, downtime_by_cat),
+            (lay.not_stopped, downtime_total_ns, downtime_by_cat_ns),
         ):
             totals.setdefault(name, {})
             totals[name].setdefault(date_label, 0.0)
             by_cat.setdefault(name, {})
             by_cat[name].setdefault(date_label, {c: 0.0 for c in cat_names})
 
-            for cat_name, col_idx in cats:
-                if col_idx < len(row) and row[col_idx].strip():
-                    try:
-                        val = float(row[col_idx])
-                        totals[name][date_label] += val
-                        by_cat[name][date_label][cat_name] += val
-                    except ValueError:
-                        pass
+            for cat_name, col_idx in cats.items():
+                val = _shift_num(cell(row, col_idx))
+                if val is None:
+                    continue
+                totals[name][date_label] += val
+                by_cat[name][date_label][cat_name] += val
 
     return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
 
