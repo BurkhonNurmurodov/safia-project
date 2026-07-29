@@ -187,34 +187,6 @@ function Spark({ arr, w, h, color, cardVar = "var(--bg-card)" }) {
   );
 }
 
-/* Circular score ring. */
-function ScoreRing({ score, color, label }) {
-  const r = 38, c = 2 * Math.PI * r;
-  return (
-    <div className="relative" style={{ width: 92, height: 92 }}>
-      <svg width="92" height="92" viewBox="0 0 92 92">
-        <circle cx="46" cy="46" r={r} fill="none" stroke="var(--bg-inner)" strokeWidth="7" />
-        <circle cx="46" cy="46" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - score / 100)} transform="rotate(-90 46 46)" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <b className="tabular-nums" style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt1(score)}</b>
-        <span style={{ fontSize: 9.5, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-      </div>
-    </div>
-  );
-}
-
-function DeltaChip({ v, unit, st }) {
-  const up = v >= 0;
-  const Icon = up ? ArrowUp : ArrowDown;
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full tabular-nums" style={{ fontSize: 11.5, fontWeight: 700, padding: "2px 8px", color: up ? st.okInk : st.badInk, background: up ? hexA(st.ok, 0.12) : hexA(st.bad, 0.12) }}>
-      <Icon size={11} />{up ? "+" : "−"}{fmt1(Math.abs(v))} {unit}
-    </span>
-  );
-}
-
 /* ═══════════════════════ rank-trajectory bump chart ═══════════════════ */
 function BumpChart({ sups, byRank, selectedId, onSelect, hues, onTip }) {
   const [hoverId, setHoverId] = useState(null);
