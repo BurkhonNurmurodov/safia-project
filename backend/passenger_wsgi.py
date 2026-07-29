@@ -65,6 +65,7 @@ try:
         seed_setup_times,
         add_leader_task_setting_names,
         migrate_user_capabilities,
+        repoint_shift_report_sheet,
     )
     from app.telegram_bot import setup_webhook
 
