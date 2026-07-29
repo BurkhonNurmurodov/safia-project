@@ -31,8 +31,8 @@ router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
 PAGE = "idle-cell"
 
 # Canonical Ojidaniya categories — mirrors backend/app/services/sheets_reader.py
-# SHIFT_CATEGORIES. Cat H has no not-stopped half (its 2nd source column is a
-# people-count), so To'xtamaganda is forced to 0 for it.
+# SHIFT_CATEGORY_ORDER. Cat H has no not-stopped half (its 2nd source column is
+# a people-count), so To'xtamaganda is forced to 0 for it.
 IDLE_CATEGORIES = ["Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
                    "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
 _VALID = set(IDLE_CATEGORIES)
