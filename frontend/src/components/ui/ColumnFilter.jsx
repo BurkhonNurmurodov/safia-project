@@ -99,8 +99,17 @@ export function TxtFilter({ value, onChange, placeholder }) {
   );
 }
 
-export function OptsFilter({ opts, sel, onChange, render }) {
+// `searchable` adds a filter box above the checkboxes — needed once a column's
+// distinct values run into the hundreds (worker names, clock strings), where
+// scrolling a raw list is useless. Typing narrows the visible checkboxes only;
+// "select all" still means every option, not just the matching ones.
+export function OptsFilter({ opts, sel, onChange, render, searchable = false }) {
   const { t } = useLang();
+  const [q, setQ] = useState("");
+  const label = (o) => String(render ? render(o) : (o ?? ""));
+  const shown = searchable && q.trim()
+    ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
+    : opts;
   // `onChange` replaces the whole array and can't compose functional updates, so
   // keep a working Set snapshotted for the duration of a drag.
   const selRef = useRef(sel);
