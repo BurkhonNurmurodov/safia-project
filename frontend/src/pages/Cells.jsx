@@ -40,8 +40,6 @@ import api from "../utils/api";
  * POST/PUT/DELETE /api/profiles/admin/cells[/id] endpoints.
  */
 
-const NAME_LANGS = ["uz_cyrl", "ru", "en"];
-
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
 const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
 const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
