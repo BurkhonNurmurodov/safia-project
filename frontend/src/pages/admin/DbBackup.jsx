@@ -8,6 +8,12 @@ import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 
+// An oversized dump is DM'd as .part001, .part002, … and those parts are what
+// the user re-uploads. `accept` can't express ".partNNN" as a wildcard, so the
+// range is enumerated — nine parts is ~400 MB compressed, far past anything
+// this database will reach. The server-side guard is the real check either way.
+const DUMP_ACCEPT = [".sql", ".gz", ...Array.from({ length: 9 }, (_, i) => `.part00${i + 1}`)].join(",");
+
 function fmtBytes(n) {
   if (n < 1024) return `${n} B`;
   const units = ["KB", "MB", "GB"];
