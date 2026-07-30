@@ -332,7 +332,7 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         </span>
         <span className="flex items-center gap-1" style={{ marginTop: 5, marginLeft: 3 }}>
           <i className="rounded-full" style={{ width: 6, height: 6, background: bandFill(st, s.comp) }} />
-          <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.72 }}>{t("leaderboard.overallShort")}</span>
+          <span style={{ fontSize: first ? 10 : 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.88 }}>{t("leaderboard.overallShort")}</span>
         </span>
       </span>
 
