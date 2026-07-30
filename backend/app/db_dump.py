@@ -186,6 +186,47 @@ def _indexes(cur) -> list[str]:
     """, (SCHEMA,))]
 
 
+def _unsupported(cur) -> list[str]:
+    """Object classes this dumper does not reproduce.
+
+    ``create_all`` plus the startup ALTERs only ever make tables, sequences,
+    indexes and constraints, so in practice these come back empty — but if
+    someone hand-creates a trigger or a domain on the server, silently dropping
+    it from a migration dump would be the worst possible failure. Report it
+    instead: the caller surfaces the list, so "everything" stays honest.
+    """
+    found: list[str] = []
+    for label, sql in (
+        ("function/procedure", """
+            SELECT p.proname FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = %s
+              AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                              WHERE d.objid = p.oid AND d.deptype = 'e')
+            ORDER BY p.proname"""),
+        ("trigger", """
+            SELECT t.tgname FROM pg_trigger t
+            JOIN pg_class c     ON c.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = %s AND NOT t.tgisinternal
+            ORDER BY t.tgname"""),
+        ("domain", """
+            SELECT t.typname FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = %s AND t.typtype = 'd'
+            ORDER BY t.typname"""),
+        ("composite type", """
+            SELECT t.typname FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = %s AND t.typtype = 'c'
+              AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+            ORDER BY t.typname"""),
+    ):
+        for (name,) in _fetch(cur, sql, (SCHEMA,)):
+            found.append(f"{label}: {name}")
+    return found
+
+
 def _views(cur) -> list[tuple[str, str, str]]:
     return _fetch(cur, """
         SELECT c.relname, c.relkind, pg_get_viewdef(c.oid, true)
