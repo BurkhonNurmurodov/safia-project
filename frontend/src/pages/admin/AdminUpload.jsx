@@ -651,7 +651,10 @@ function ComparisonThresholdEditor() {
 
 // "actions" (the grant-use Action history) rides with "permissions": both are
 // oversight of delegated powers, absent from every grant path — admin-only.
-const ADMIN_TABS = ["data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions", "actions"];
+// "dbdump" is admin-only for a different reason: one press produces a file
+// holding every phone number and stored secret on the platform, so it has no
+// capability key at all and can never appear in capTabs.
+const ADMIN_TABS = ["data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions", "actions", "dbdump"];
 
 export default function AdminUpload() {
   const navigate = useNavigate();
