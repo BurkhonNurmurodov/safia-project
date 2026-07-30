@@ -233,6 +233,9 @@ app.include_router(leader_tasks.router, dependencies=_admin_guard)
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).
 app.include_router(idle_cell.router)
+# Per-cell attendance viewer (read-only sibling of the Staff verifix page) —
+# self-gates via require_page("cell-attendance").
+app.include_router(cell_attendance.router)
 
 
 @app.get("/health")
