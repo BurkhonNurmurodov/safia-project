@@ -162,7 +162,9 @@ export default function CellAttendance() {
       if (statusTab === "absent" && r.status === "worked") return false;
       if (jobFilter.length && !jobFilter.includes(r.job_title || "")) return false;
       if (q) {
-        const hay = `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.verifix_code || ""} ${r.job_title || ""}`;
+        const hay = `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.verifix_code || ""} `
+          + `${r.job_title || ""} ${r.cell_name || ""} `
+          + `${tl(r.leader_name) || ""} ${tl(r.manager_name) || ""}`;
         if (!hay.toLowerCase().includes(q)) return false;
       }
       return true;
