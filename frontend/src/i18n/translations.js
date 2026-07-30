@@ -5370,6 +5370,7 @@ const t = {
     "admin.profiles.cellsEmpty": "Ячейки не найдены",
     "admin.profiles.cellsEmptyHint": "Измените поиск или фильтры.",
     "admin.profiles.cellSupervisorFromOwner": "Наследуется от лидера",
+    "ui.langInput.ruFallback": "Если оставить пустым, покажем русское название",
     "admin.profiles.cellCreate":       "Создать ячейку",
     "admin.profiles.cellPickPlaceholder": "Выберите ячейки…",
     "admin.profiles.cellSearchOrCreate": "Поиск по коду или введите новый…",
