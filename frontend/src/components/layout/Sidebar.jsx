@@ -41,6 +41,7 @@ const ALL_LINKS = [
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer },
+  { to: "/cell-attendance", page: "cell-attendance", key: "nav.cellAttendance", icon: UserCheck },
 ];
 
 // Layout (and this sidebar) remounts on every route change, which would reset
