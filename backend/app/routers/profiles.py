@@ -557,7 +557,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
-           "name": row.name_workshop_uz, "manager_id": row.manager_id,
+           "name": row_workshop_name(row), "manager_id": row.manager_id,
            "leader_id": row.leader_id}
     if payload.verifix_code is not None:
         code = " ".join(payload.verifix_code.split())
@@ -569,7 +569,7 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
         row.verifix_code = code
     _apply_cell_fields(db, row, payload)
     new = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
-           "name": row.name_workshop_uz, "manager_id": row.manager_id,
+           "name": row_workshop_name(row), "manager_id": row.manager_id,
            "leader_id": row.leader_id}
     db.commit()
     diff = [(k, old[k], new[k]) for k in ("verifix_code", "sap_code", "name")
