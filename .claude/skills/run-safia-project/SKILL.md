@@ -133,6 +133,13 @@ window the local DB has data for: **2026-05-08 → 2026-05-20**.
   because localStorage needs an origin before it can be written).
 - The `__dev__` login returns **the first `admins` row**. Empty table ⇒
   `status: "not_registered"` and the picker screen instead of the dashboard.
+- **The document never scrolls** — the shell pins
+  `<main class="h-full overflow-y-auto">` and scrolls *that*. So
+  `Page.getLayoutMetrics` reports the viewport and `captureBeyondViewport`
+  alone captures nothing extra. `--full` works around it by measuring the
+  tallest inner scroller and growing the viewport to it (it prints
+  `viewport grown 900 → 2304px`). Any other full-page tooling you point at this
+  app will silently return a viewport-sized crop.
 - `chrome-headless-shell` keeps writing `Default/Cache` for a moment after
   SIGKILL; deleting its profile immediately throws `ENOTEMPTY`. The driver
   retries — don't "simplify" that away.
