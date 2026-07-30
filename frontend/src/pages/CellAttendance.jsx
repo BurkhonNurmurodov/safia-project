@@ -441,6 +441,11 @@ export default function CellAttendance() {
                       ["absent", t("cellAtt.tabAbsent")],
                     ]}
                   />
+                  {anyFilter && (
+                    <Button variant="secondary" size="lg" onClick={clearFilters}>
+                      {t("staff.clearFilters")}
+                    </Button>
+                  )}
                 </>
               }
             >
