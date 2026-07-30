@@ -8,7 +8,7 @@
  */
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { UserCheck, FlaskConical, LayoutGrid, AlertTriangle } from "lucide-react";
+import { FlaskConical, LayoutGrid, AlertTriangle } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import TableCard, { Th } from "../components/ui/DataTable";
