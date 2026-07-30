@@ -140,10 +140,9 @@ export default function Cells() {
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
   const leaders = data?.leaders ?? [];
 
-  // Workshop name in the viewer's language, first known language as fallback.
-  const wname = (c) =>
-    c[`name_workshop_${lang}`] || c.name_workshop_uz || c.name_workshop_uz_cyrl ||
-    c.name_workshop_ru || c.name_workshop_en || "";
+  // Workshop name in the viewer's language, Russian as the fallback (shared
+  // resolver — every language column is nullable, see utils/cellName).
+  const wname = (c) => cellName(c, lang);
 
   const [search, setSearch] = useState("");
   const [fBrigadir, setFBrigadir] = useState("");  // "" all · "none" unassigned · manager_id
