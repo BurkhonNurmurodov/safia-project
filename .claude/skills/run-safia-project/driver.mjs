@@ -218,7 +218,14 @@ async function launchChrome() {
     proc.on("exit", (c) => { clearTimeout(t); rej(new Error(`chrome exited early (${c}): ${buf.slice(-400)}`)); });
   });
 
-  return { wsUrl, kill() { try { proc.kill("SIGKILL"); } catch {} rmSync(profile, { recursive: true, force: true }); } };
+  return {
+    wsUrl,
+    async kill() {
+      try { proc.kill("SIGKILL"); } catch {}
+      await sleep(150);   // chrome keeps writing Default/Cache for a beat → ENOTEMPTY
+      try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+    },
+  };
 }
 
 const CLICK_JS = (sel) => sel.startsWith("text=")
