@@ -80,7 +80,8 @@ and any console errors.
 
 Flags: `--click <sel>` (CSS, or `text=Запросы`; repeatable) · `--js '<expr>'` ·
 `--theme dark|light` · `--lang uz|uz_cyrl|ru|en` · `--wait <ms>` (default 4500;
-chart pages want ~6000) · `--size WxH` · `--full` · `--out <file>` · `--console`
+chart pages want ~6000) · `--size WxH` · `--full` (grows the viewport to the
+app's inner scroller — see Gotchas) · `--out <file>` · `--console`
 
 Verified flows from this session:
 
