@@ -461,6 +461,18 @@ class CellPayload(BaseModel):
 _CELL_TEXT_COLS = ("sap_code", "name_workshop_uz", "name_workshop_uz_cyrl",
                    "name_workshop_ru", "name_workshop_en")
 
+# Workshop-name columns as they appear in a capability-alert diff. Every one is
+# nullable and each is edited on its own tab, so each is audited separately —
+# Russian is the register's authoritative name (the language every other one
+# falls back to on display), so it carries the plain "name" label while the
+# optional translations get an explicit language tag.
+_CELL_NAME_DIFF = {
+    "name":      "name_workshop_ru",
+    "name · UZ": "name_workshop_uz",
+    "name · ЎЗ": "name_workshop_uz_cyrl",
+    "name · EN": "name_workshop_en",
+}
+
 
 def _apply_cell_fields(db: Session, row: Cell, payload: CellPayload) -> None:
     for col in _CELL_TEXT_COLS:
