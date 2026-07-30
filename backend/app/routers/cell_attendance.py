@@ -102,12 +102,21 @@ def day_attendance(
         q = q.filter(CellAttendance.cell_id.in_(ids))
     rows = q.all()
 
+    # Owner names — canonical spellings; the page transliterates them per the
+    # viewer's language, exactly like the cell registry does.
     mgr_names = {}
     mgr_ids = {c.manager_id for c in cells if c.manager_id}
     if mgr_ids:
         mgr_names = {
             m.id: m.name
             for m in db.query(Manager).filter(Manager.id.in_(mgr_ids)).all()
+        }
+    leader_names = {}
+    leader_ids = {c.leader_id for c in cells if c.leader_id}
+    if leader_ids:
+        leader_names = {
+            p.id: p.name
+            for p in db.query(RoleProfile).filter(RoleProfile.id.in_(leader_ids)).all()
         }
 
     # Only the cells that carry rows today — an empty cell would just be noise
