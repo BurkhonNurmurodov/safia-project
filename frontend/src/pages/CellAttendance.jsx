@@ -48,6 +48,22 @@ const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
 // what the viewer actually reads.
 const TRANSLIT_COLS = new Set(["worker_name", "job_title", "schedule", "leader_name", "manager_name"]);
 
+// Per-column filters that aren't already driven by a toolbar control. The three
+// numeric columns take a min/max range — a checkbox list of hundreds of distinct
+// floats would be unusable; every other column is a checkbox list.
+const INIT_COL = {
+  worker: [], schedule: [], day: [], status: [],
+  hours: { min: "", max: "" },
+  early: { min: "", max: "" },
+  eff:   { min: "", max: "" },
+};
+const rngActive = (r) => r.min !== "" || r.max !== "";
+const inRange = (v, r) => {
+  if (r.min !== "" && (v == null || v < parseFloat(r.min))) return false;
+  if (r.max !== "" && (v == null || v > parseFloat(r.max))) return false;
+  return true;
+};
+
 // Worked = green, day-off / excused markers = neutral slate (traffic-light
 // convention — brand gold is never a status). Mirrors the upload-tab preview.
 function StatusChip({ status }) {
