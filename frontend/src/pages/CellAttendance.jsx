@@ -59,6 +59,8 @@ export default function CellAttendance() {
   // remembers its own selection).
   const [date, setDate] = usePersistentState("cellatt_date", todayIso());
   const [cellIds, setCellIds] = useState([]);       // [] = every cell in scope
+  const [leaderIds, setLeaderIds] = useState([]);   // [] = every leader
+  const [supIds, setSupIds] = useState([]);         // [] = every supervisor
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState("all"); // all | worked | absent
   const [jobFilter, setJobFilter] = useState([]);    // came-by-role chips
