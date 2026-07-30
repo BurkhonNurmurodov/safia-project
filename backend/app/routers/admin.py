@@ -1138,3 +1138,86 @@ def admin_db_dump(
     tg_id = int(caller["sub"])
     background.add_task(_send_db_dump, tg_id, body.include_drops)
     return {"ok": True}
+
+
+# ── Restore a dump into THIS database ─────────────────────────────────────────
+#
+# The other half of the server move: hostmaster gets the dump back in without a
+# shell either. Only accepts a file carrying this platform's own dump marker
+# (app.db_dump.DUMP_MARKER), so an upload can't turn this into a SQL console.
+
+def _run_db_restore(tg_id: int, path: str, gzipped: bool) -> None:
+    from app import db_dump
+    from app.telegram_bot import bot
+
+    try:
+        stats = db_dump.restore_from_file(path, gzipped=gzipped)
+        log.warning("db-restore: %s statements in %ss by tg=%s",
+                    stats["statements"], stats["elapsed"], tg_id)
+        bot.send_message(
+            tg_id,
+            "✅ <b>Database restored</b>\n\n"
+            f"{stats['statements']:,} statements in {stats['elapsed']}s.\n\n"
+            "Restart Passenger now so the app picks up a clean connection pool.",
+            parse_mode="HTML")
+    except Exception as e:                                    # noqa: BLE001
+        log.exception("db-restore failed for tg=%s", tg_id)
+        try:
+            bot.send_message(
+                tg_id,
+                "❌ <b>Restore failed — nothing was changed</b>\n\n"
+                f"<pre>{html.escape(str(e)[:900])}</pre>",
+                parse_mode="HTML")
+        except Exception:
+            pass
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+@router.post("/db-restore")
+async def admin_db_restore(
+    background: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    caller: dict = Depends(verify_admin),
+):
+    """Restore an uploaded dump into this database, replacing its contents.
+
+    Split dumps are uploaded as their .partNNN files and joined here, in
+    filename order — rejoining them otherwise would need the shell this button
+    exists to avoid.
+    """
+    tg_id = int(caller["sub"])
+    if not files:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    ordered = sorted(files, key=lambda f: (f.filename or "").lower())
+    for f in ordered:
+        check_dump_name(f.filename)
+
+    fd, tmp_path = tempfile.mkstemp(prefix="safia_restore_", suffix=".bin")
+    try:
+        head = b""
+        with os.fdopen(fd, "wb") as out:
+            for f in ordered:
+                while True:
+                    chunk = await f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if not head:
+                        head = chunk[:4]
+                    out.write(chunk)
+        if not head:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        gzipped = validate_db_dump(ordered[0].filename, head)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    background.add_task(_run_db_restore, tg_id, tmp_path, gzipped)
+    return {"ok": True, "parts": len(ordered)}
