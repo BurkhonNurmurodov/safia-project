@@ -76,6 +76,7 @@ export const DEFAULT_PAGE_ACCESS = {
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
   "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled
+  "cell-attendance": [], // Per-cell attendance viewer (verifix import) — admin-only until enabled
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants
