@@ -29,8 +29,12 @@ export default function DbBackup() {
 
   const [drops, setDrops]   = useState(true);
   const [confirm, setConfirm] = useState(false);
-  const [toast, setToast]   = useState(false);
+  const [toast, setToast]   = useState(null);   // "export" | "import" | null
   const [sort, setSort]     = useState({ key: "bytes", dir: "desc" });
+
+  const fileRef = useRef(null);
+  const [picked, setPicked]   = useState([]);   // File[]
+  const [impConfirm, setImpConfirm] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["db-dump-inventory"],
