@@ -432,7 +432,9 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
             w("\n-- Sequence positions (so new inserts don't collide) --------------\n")
             for name, last in _sequence_values(cur):
                 if last is not None:
-                    w(f"SELECT pg_catalog.setval('{SCHEMA}.{name}', {last}, true);\n")
+                    # Quoted inside the literal so an unusual sequence name
+                    # still resolves as regclass.
+                    w(f"SELECT pg_catalog.setval('{SCHEMA}.{qi(name)}', {last}, true);\n")
 
             w("\nCOMMIT;\n")
             w(f"\n-- End of dump — {len(tables)} tables, {total_rows} rows.\n")
