@@ -287,9 +287,21 @@ async function shot(route, opts) {
 
     const cap = { format: "png" };
     if (opts.full) {
-      const { cssContentSize } = await cdp.send("Page.getLayoutMetrics");
+      // The document never scrolls here — the shell pins <main class="h-full
+      // overflow-y-auto"> and scrolls THAT. Page.getLayoutMetrics therefore
+      // reports the viewport and captureBeyondViewport alone changes nothing.
+      // Measure the tallest inner scroller and grow the viewport to it instead.
+      const tall = await cdp.evaluate(
+        `Math.min(20000, Math.max(document.scrollingElement.scrollHeight,
+           ...[...document.querySelectorAll('*')]
+             .filter(e => e.scrollHeight > e.clientHeight + 20 && e.clientHeight > 300)
+             .map(e => e.scrollHeight)))`);
+      if (tall > h) {
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: w, height: tall, deviceScaleFactor: 2, mobile: false });
+        await sleep(900);   // charts/virtualised rows reflow into the taller viewport
+        say(`  full-page: viewport grown ${h} → ${tall}px`);
+      }
       cap.captureBeyondViewport = true;
-      cap.clip = { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 };
     }
     const { data } = await cdp.send("Page.captureScreenshot", cap);
 
