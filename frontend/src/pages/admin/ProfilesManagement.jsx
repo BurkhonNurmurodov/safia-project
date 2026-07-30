@@ -743,26 +743,20 @@ export default function ProfilesManagement() {
               style={inputStyle}
             />
           </FormField>
-          <div className="pt-1">
-            <div className={labelCls} style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.colWorkshop")}
-            </div>
-            <div className="mt-2 space-y-2">
-              {["uz", ...NAME_LANGS].map((l) => (
-                <label key={l} className="flex items-center gap-2">
-                  <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
-                        style={{ color: "var(--text-4)" }}>{l}</span>
-                  <input
-                    type="text"
-                    value={newCell[`name_workshop_${l}`] || ""}
-                    onChange={(e) => setNewCell((c) => ({ ...c, [`name_workshop_${l}`]: e.target.value }))}
-                    className={inputCls + " !mt-0"}
-                    style={inputStyle}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
+          <FormField label={t("admin.profiles.colWorkshop")}>
+            {/* Tabbed, not four stacked inputs — same field as the /cells page:
+                every language is optional and blanks fall back to Russian. */}
+            <LangTextInput
+              className="mt-1"
+              value={{
+                uz: newCell.name_workshop_uz,
+                uz_cyrl: newCell.name_workshop_uz_cyrl,
+                ru: newCell.name_workshop_ru,
+                en: newCell.name_workshop_en,
+              }}
+              onChange={(l, v) => setNewCell((c) => ({ ...c, [`name_workshop_${l}`]: v }))}
+            />
+          </FormField>
           <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
             {t("admin.profiles.colSupervisor")}:{" "}
             {tl(units.find((u) => String(u.id) === String(form.manager_id))?.name) || "—"}
