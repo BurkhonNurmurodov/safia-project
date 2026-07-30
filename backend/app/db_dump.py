@@ -321,6 +321,11 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
         except Exception:
             pg.rollback()
             cur = pg.cursor()
+        # extra_float_digits: guarantees float8 renders round-trip-exact even on
+        # a pre-12 server. UTC keeps repeat dumps byte-comparable (timestamptz
+        # literals carry their offset either way, so values are safe regardless).
+        cur.execute("SET extra_float_digits = 3")
+        cur.execute("SET TIME ZONE 'UTC'")
 
         extensions = _extensions(cur)
         enums      = _enum_types(cur)
