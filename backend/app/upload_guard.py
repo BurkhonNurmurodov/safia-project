@@ -35,6 +35,14 @@ BROADCAST_EXTS = frozenset({
 })
 
 
+# Database-restore uploads. Only ever a dump this platform produced itself —
+# see validate_db_dump for why the extension check is the weaker of the two
+# guards here.
+DUMP_EXTS = frozenset({".gz", ".sql"})
+
+_GZIP_MAGIC = (b"\x1f\x8b",)
+
+
 def _ext(filename: str | None) -> str:
     return os.path.splitext(filename or "")[1].lower()
 
