@@ -53,11 +53,6 @@ const STATUS = {
  * (same spectrum as Workers.jsx SUP_COLORS). */
 const SUP_COLORS = CATEGORY_COLORS;
 
-/* Podium medal palette — gold / silver / bronze, keyed by finishing place.
- * A decoration set (like SUP_COLORS), not chrome: translucent overlays of the
- * warm-metal hue read the same over the light cream card and the dark card. */
-const MEDAL = { 1: "#D4A017", 2: "#9AA4B0", 3: "#C17E45" };
-
 const WEEKS = ["04.05", "11.05", "18.05", "25.05", "01.06", "08.06", "15.06", "22.06"];
 
 /* ────────────────────────── dummy data ──────────────────────────────── */
