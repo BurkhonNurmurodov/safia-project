@@ -144,7 +144,7 @@ export default function CellAttendance() {
   // filter everything out.
   useEffect(() => {
     setCellIds([]); setLeaderIds([]); setSupIds([]);
-    setJobFilter([]); setSearch(""); setStatusTab("all"); setPage(1);
+    setJobFilter([]); setColF(INIT_COL); setSearch(""); setStatusTab("all"); setPage(1);
   }, [date]);
 
   // ── KPIs over the picked cells (before search / status / role filters, so the
