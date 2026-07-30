@@ -229,7 +229,7 @@ export default function CellAttendance() {
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const pageRows  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [search, statusTab, jobFilter, cellIds, leaderIds, supIds, sort]);
+  useEffect(() => { setPage(1); }, [search, statusTab, jobFilter, colF, cellIds, leaderIds, supIds, sort]);
 
   function onSort(k) {
     setSort(s => s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" });
