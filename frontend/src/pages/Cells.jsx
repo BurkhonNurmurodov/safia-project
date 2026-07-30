@@ -12,9 +12,11 @@ import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import EmptyState from "../components/ui/EmptyState";
 import TableCard, { Th } from "../components/ui/DataTable";
+import LangTextInput from "../components/ui/LangTextInput";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import { cellName } from "../utils/cellName";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import api from "../utils/api";
 
