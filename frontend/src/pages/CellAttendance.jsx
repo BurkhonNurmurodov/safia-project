@@ -466,61 +466,61 @@ export default function CellAttendance() {
                       <ColFilter active={cellIds.length > 0}>
                         <OptsFilter searchable opts={cellKeys} sel={cellIds} onChange={setCellIds} render={labelOf(cellOptions)} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colLeader")} k="leader_name" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colLeader")} k="leader_name" sort={sort} onSort={onSort} cls="w-[11%]"
                     filter={
                       <ColFilter active={leaderIds.length > 0}>
                         <OptsFilter searchable opts={leaderKeys} sel={leaderIds} onChange={setLeaderIds} render={labelOf(leaderOptions)} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colSup")} k="manager_name" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colSup")} k="manager_name" sort={sort} onSort={onSort} cls="w-[10%]"
                     filter={
                       <ColFilter active={supIds.length > 0}>
                         <OptsFilter searchable opts={supKeys} sel={supIds} onChange={setSupIds} render={labelOf(supOptions)} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colWorker")} k="worker_name" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colWorker")} k="worker_name" sort={sort} onSort={onSort} cls="w-[12%]"
                     filter={
                       <ColFilter active={colF.worker.length > 0}>
                         <OptsFilter searchable opts={distinct.worker} sel={colF.worker}
                           onChange={v => setCol("worker", v)} render={o => tl(o) || o} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colRole")} k="job_title" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colRole")} k="job_title" sort={sort} onSort={onSort} cls="w-[11%]"
                     filter={
                       <ColFilter active={jobFilter.length > 0}>
                         <OptsFilter searchable opts={distinct.job} sel={jobFilter}
                           onChange={setJobFilter} render={o => tl(o) || o} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colSchedule")} k="schedule" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colSchedule")} k="schedule" sort={sort} onSort={onSort} cls="w-[8%]"
                     filter={
                       <ColFilter active={colF.schedule.length > 0}>
                         <OptsFilter opts={distinct.schedule} sel={colF.schedule}
                           onChange={v => setCol("schedule", v)} render={o => tl(o) || o} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colDay")} k="day_raw" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colDay")} k="day_raw" sort={sort} onSort={onSort} cls="w-[9%]"
                     filter={
                       <ColFilter active={colF.day.length > 0}>
                         <OptsFilter searchable opts={distinct.day} sel={colF.day} onChange={v => setCol("day", v)} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colHours")} k="hours_worked" sort={sort} onSort={onSort} align="right"
+                  <Th label={t("cellAtt.colHours")} k="hours_worked" sort={sort} onSort={onSort} align="right" cls="w-[5%]"
                     filter={
                       <ColFilter active={rngActive(colF.hours)}>
                         <RngFilter minV={colF.hours.min} maxV={colF.hours.max}
                           onMin={v => setCol("hours", { ...colF.hours, min: v })}
                           onMax={v => setCol("hours", { ...colF.hours, max: v })} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colEarly")} k="early_arrival_min" sort={sort} onSort={onSort} align="right"
+                  <Th label={t("cellAtt.colEarly")} k="early_arrival_min" sort={sort} onSort={onSort} align="right" cls="w-[8%]"
                     filter={
                       <ColFilter active={rngActive(colF.early)}>
                         <RngFilter minV={colF.early.min} maxV={colF.early.max}
                           onMin={v => setCol("early", { ...colF.early, min: v })}
                           onMax={v => setCol("early", { ...colF.early, max: v })} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colEffHours")} k="effective_hours" sort={sort} onSort={onSort} align="right"
+                  <Th label={t("cellAtt.colEffHours")} k="effective_hours" sort={sort} onSort={onSort} align="right" cls="w-[7%]"
                     filter={
                       <ColFilter active={rngActive(colF.eff)}>
                         <RngFilter minV={colF.eff.min} maxV={colF.eff.max}
                           onMin={v => setCol("eff", { ...colF.eff, min: v })}
                           onMax={v => setCol("eff", { ...colF.eff, max: v })} />
                       </ColFilter>} />
-                  <Th label={t("cellAtt.colStatus")} k="status" sort={sort} onSort={onSort} align="center"
+                  <Th label={t("cellAtt.colStatus")} k="status" sort={sort} onSort={onSort} align="center" cls="w-[6%]"
                     filter={
                       <ColFilter active={colF.status.length > 0}>
                         <OptsFilter opts={distinct.status} sel={colF.status} onChange={v => setCol("status", v)} />
@@ -536,18 +536,20 @@ export default function CellAttendance() {
                   </tr>
                 ) : pageRows.map(r => (
                     <tr key={r.id}>
-                      <td className="px-3 py-2">
+                      {/* Fixed layout means text can't widen its column, so the
+                          long ones truncate and carry the full value in a title. */}
+                      <td className="px-3 py-2 truncate" title={`${r.verifix_code || ""} ${r.cell_name || ""}`.trim()}>
                         <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
                         {r.cell_name && (
                           <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{r.cell_name}</span>
                         )}
                       </td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.leader_name) || "—"}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.manager_name) || "—"}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
-                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
-                      <td className="px-3 py-2 font-mono text-[11px]" style={{ color: "var(--text-3)" }}>{r.day_raw || "—"}</td>
+                      <td className="px-3 py-2 truncate" title={tl(r.leader_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.leader_name) || "—"}</td>
+                      <td className="px-3 py-2 truncate" title={tl(r.manager_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.manager_name) || "—"}</td>
+                      <td className="px-3 py-2 truncate" title={tl(r.worker_name) || ""} style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
+                      <td className="px-3 py-2 truncate" title={tl(r.job_title) || ""} style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
+                      <td className="px-3 py-2 truncate" title={tl(r.schedule) || ""} style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
+                      <td className="px-3 py-2 truncate font-mono text-[11px]" title={r.day_raw || ""} style={{ color: "var(--text-3)" }}>{r.day_raw || "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
                         {r.hours_worked != null ? fmtNum(r.hours_worked, 2) : "—"}
                       </td>
