@@ -1101,8 +1101,10 @@ def _send_db_dump(tg_id: int, include_drops: bool) -> None:
     except Exception as e:                                    # noqa: BLE001
         log.exception("db-dump failed for tg=%s", tg_id)
         try:
-            bot.send_message(tg_id, f"❌ Database dump failed:\n<pre>{str(e)[:900]}</pre>",
-                             parse_mode="HTML")
+            bot.send_message(
+                tg_id,
+                f"❌ Database dump failed:\n<pre>{html.escape(str(e)[:900])}</pre>",
+                parse_mode="HTML")
         except Exception:
             pass
     finally:
