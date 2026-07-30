@@ -555,9 +555,13 @@ def iter_statements(fh):
 
 
 def _open_dump(path: str, gzipped: bool):
+    # STRICT decoding on purpose. errors="replace" would let a corrupt or
+    # partially-uploaded dump quietly load with U+FFFD in place of real
+    # characters; a loud UnicodeDecodeError that aborts the transaction is by
+    # far the better outcome when the payload is a database restore.
     if gzipped:
-        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
-    return open(path, "r", encoding="utf-8", errors="replace")
+        return gzip.open(path, "rt", encoding="utf-8")
+    return open(path, "r", encoding="utf-8")
 
 
 def restore_from_file(path: str, *, gzipped: bool) -> dict:
