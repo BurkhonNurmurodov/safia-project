@@ -322,7 +322,11 @@ export default function DbBackup() {
           }}
         >
           <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t("admin.dbdump.successToast")}</span>
+          <span>
+            {toast === "import"
+              ? t("admin.dbdump.importToast")
+              : t("admin.dbdump.successToast")}
+          </span>
         </div>
       )}
     </div>
