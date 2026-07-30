@@ -406,20 +406,20 @@ export default function CellAttendance() {
               <tbody>
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                    <td colSpan={11} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                       {anyFilter ? t("cellAtt.noMatch") : t("cellAtt.noRows")}
                     </td>
                   </tr>
-                ) : pageRows.map(r => {
-                  const c = cellById.get(r.cell_id ?? `x:${r.verifix_code}`);
-                  return (
+                ) : pageRows.map(r => (
                     <tr key={r.id}>
                       <td className="px-3 py-2">
                         <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
-                        {c && cellName(c, lang) && (
-                          <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{cellName(c, lang)}</span>
+                        {r.cell_name && (
+                          <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{r.cell_name}</span>
                         )}
                       </td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.leader_name) || "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.manager_name) || "—"}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
@@ -435,8 +435,7 @@ export default function CellAttendance() {
                       </td>
                       <td className="px-3 py-2 text-center"><StatusChip status={r.status} /></td>
                     </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </TableCard>
             <Pagination
