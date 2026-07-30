@@ -8,6 +8,7 @@ format has a reliable signature, a magic-byte check so a renamed file
 (``virus.exe`` → ``report.xlsx``) is still rejected.
 """
 import os
+import re
 
 from fastapi import HTTPException, UploadFile
 
