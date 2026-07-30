@@ -569,8 +569,8 @@ def admin_update_cell(cid: int, payload: CellPayload, db: Session = Depends(get_
     if not row:
         raise HTTPException(status_code=404, detail="Cell not found")
     old = {"verifix_code": row.verifix_code, "sap_code": row.sap_code,
-           "name": row_workshop_name(row), "manager_id": row.manager_id,
-           "leader_id": row.leader_id}
+           "manager_id": row.manager_id, "leader_id": row.leader_id,
+           **{k: getattr(row, c) for k, c in _CELL_NAME_DIFF.items()}}
     if payload.verifix_code is not None:
         code = " ".join(payload.verifix_code.split())
         if not code:
