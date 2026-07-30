@@ -40,6 +40,12 @@ BROADCAST_EXTS = frozenset({
 # guards here.
 DUMP_EXTS = frozenset({".gz", ".sql"})
 
+# An oversized dump is DM'd as safia_db_….sql.gz.part001, .part002, … because
+# Telegram caps a document at 50 MB. Rejoining them needs a shell, which is the
+# whole thing the restore button exists to avoid — so the parts are accepted as
+# uploads and concatenated server-side instead.
+_PART_RE = re.compile(r"\.part\d+$", re.IGNORECASE)
+
 _GZIP_MAGIC = (b"\x1f\x8b",)
 
 
