@@ -89,18 +89,35 @@ export default function CellAttendance() {
     enabled: !!date,
   });
 
-  const allRows = data?.rows ?? [];
+  const rawRows = data?.rows ?? [];
   const cells   = data?.cells ?? [];
   const cellById = useMemo(() => {
     const m = new Map();
-    for (const c of cells) m.set(c.cell_id ?? `x:${c.verifix_code}`, c);
+    for (const c of cells) m.set(cellKey(c), c);
     return m;
   }, [cells]);
+
+  // Leader and supervisor are properties of the CELL, not of the attendance
+  // row. Fold them onto each row once so filtering, searching and sorting all
+  // read one flat shape (and the two new columns cost no lookup per cell).
+  const allRows = useMemo(() => rawRows.map(r => {
+    const c = cellById.get(cellKey(r));
+    return {
+      ...r,
+      _key:          cellKey(r),
+      cell_name:     cellName(c, lang),
+      leader_id:     c?.leader_id ?? null,
+      leader_name:   c?.leader_name ?? null,
+      manager_id:    c?.manager_id ?? null,
+      manager_name:  c?.manager_name ?? null,
+    };
+  }), [rawRows, cellById, lang]);
 
   // A new day brings a different cell catalog — stale picks would silently
   // filter everything out.
   useEffect(() => {
-    setCellIds([]); setJobFilter([]); setSearch(""); setStatusTab("all"); setPage(1);
+    setCellIds([]); setLeaderIds([]); setSupIds([]);
+    setJobFilter([]); setSearch(""); setStatusTab("all"); setPage(1);
   }, [date]);
 
   // ── KPIs over the picked cells (before search / status / role filters, so the
