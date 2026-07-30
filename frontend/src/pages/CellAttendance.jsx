@@ -65,6 +65,22 @@ export default function CellAttendance() {
   const [sort, setSort] = useState({ key: "worker_name", dir: "asc" });
   const [page, setPage] = useState(1);
 
+  // Days that actually carry rows. The report is uploaded for the day it
+  // covers (usually yesterday), so landing on an empty "today" would look like
+  // the upload failed — jump to the newest day with data instead, once, so
+  // stepping to a deliberately empty day afterwards still works.
+  const { data: dates } = useQuery({
+    queryKey: ["cell-attendance-dates"],
+    queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
+    staleTime: 120_000,
+  });
+  const [jumped, setJumped] = useState(false);
+  useEffect(() => {
+    if (jumped || !dates?.length) return;
+    setJumped(true);
+    if (!dates.some(d => d.date === date)) setDate(dates[0].date);
+  }, [dates, date, jumped, setDate]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["cell-attendance", date],
     queryFn: () => api.get("/api/cell-attendance", { params: { date } }).then(r => r.data),
