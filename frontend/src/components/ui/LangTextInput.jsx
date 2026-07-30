@@ -62,7 +62,7 @@ export default function LangTextInput({
   const showFallback = active !== fallbackLang && !!fallback;
 
   return (
-    <div>
+    <div className={className}>
       <SegmentedToggle
         size="sm"
         fill
