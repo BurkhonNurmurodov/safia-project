@@ -345,14 +345,14 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         </span>
       </span>
 
-      {/* name band + stat grid — riding the frosted foot */}
-      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", textShadow: "0 1px 2px rgba(0,0,0,0.45)" }}>
+      {/* name band + stat grid — riding the frosted foot in light ink */}
+      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", color: "#FFFFFF", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
         <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", padding: "5px 2px 0" }}>{s.name}</span>
-        <span className="flex items-center justify-center gap-1.5" style={{ fontSize: first ? 10 : 9, fontWeight: 600, color: "rgba(255,255,255,0.78)", padding: "2px 0 6px" }}>
+        <span className="flex items-center justify-center gap-1.5" style={{ fontSize: first ? 10 : 9, fontWeight: 600, color: "rgba(255,255,255,0.82)", padding: "2px 0 6px" }}>
           {s.unit}
           <span className="rounded tabular-nums" style={{ fontSize: first ? 8.5 : 8, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>
         </span>
-        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.metal, 0.75)}, transparent)` }} />
+        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.6)}, transparent)` }} />
         <span className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)", paddingTop: 6 }}>
           {CATS.map((c, i) => (
             <span key={c.key} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
