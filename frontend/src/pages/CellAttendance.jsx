@@ -421,6 +421,11 @@ export default function CellAttendance() {
             <TableCard
               icon={LayoutGrid}
               title={t("cellAtt.tableTitle")}
+              // Widths come from the header, not from whichever 50 rows happen
+              // to be on screen — otherwise every sort/page/filter reflows the
+              // columns. minWidth keeps them readable on narrow screens.
+              fixed
+              minWidth={1500}
               right={
                 <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
                   {sorted.length.toLocaleString("ru-RU")} / {scopeRows.length.toLocaleString("ru-RU")}
