@@ -1,0 +1,360 @@
+/**
+ * Per-cell attendance — the read-only sibling of the Staff (verifix) page.
+ *
+ * Same shape as Staff's Workers tab (KPI header → came-by-role chips → filtered
+ * table), but keyed by CELL instead of supervisor, and without the HR document
+ * and request workflow: this page only shows what the admin «Attendance by cell»
+ * upload put into the isolated `cell_attendance` test table.
+ */
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { UserCheck, FlaskConical, LayoutGrid, AlertTriangle } from "lucide-react";
+import Layout from "../components/layout/Layout";
+import KPICard from "../components/ui/KPICard";
+import TableCard, { Th } from "../components/ui/DataTable";
+import StyledSelect from "../components/ui/StyledSelect";
+import SearchInput from "../components/ui/SearchInput";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import DayStepper from "../components/ui/DayStepper";
+import Pagination from "../components/ui/Pagination";
+import EmptyState from "../components/ui/EmptyState";
+import { SkeletonTable } from "../components/ui/Skeleton";
+import api from "../utils/api";
+import { fmtPct, fmtNum } from "../utils/formatters";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { usePersistentState } from "../hooks/usePersistentState";
+
+const PAGE_SIZE = 50;
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+function cellName(c, lang) {
+  if (!c) return "";
+  const byLang = { uz: c.name_uz, uz_cyrl: c.name_uz_cyrl, ru: c.name_ru, en: c.name_en }[lang];
+  return byLang || c.name_ru || c.name_uz || c.name_en || c.name_uz_cyrl || "";
+}
+
+// Worked = green, day-off / excused markers = neutral slate (traffic-light
+// convention — brand gold is never a status). Mirrors the upload-tab preview.
+function StatusChip({ status }) {
+  const color = status === "worked" ? "#22c55e" : "#94a3b8";
+  return (
+    <span className="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+      style={{ color, background: `${color}1f` }}>
+      {status || "—"}
+    </span>
+  );
+}
+
+export default function CellAttendance() {
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
+
+  // The date survives navigating away and back (its own key — every page
+  // remembers its own selection).
+  const [date, setDate] = usePersistentState("cellatt_date", todayIso());
+  const [cellIds, setCellIds] = useState([]);       // [] = every cell in scope
+  const [search, setSearch] = useState("");
+  const [statusTab, setStatusTab] = useState("all"); // all | worked | absent
+  const [jobFilter, setJobFilter] = useState([]);    // came-by-role chips
+  const [sort, setSort] = useState({ key: "worker_name", dir: "asc" });
+  const [page, setPage] = useState(1);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["cell-attendance", date],
+    queryFn: () => api.get("/api/cell-attendance", { params: { date } }).then(r => r.data),
+    enabled: !!date,
+  });
+
+  const allRows = data?.rows ?? [];
+  const cells   = data?.cells ?? [];
+  const cellById = useMemo(() => {
+    const m = new Map();
+    for (const c of cells) m.set(c.cell_id ?? `x:${c.verifix_code}`, c);
+    return m;
+  }, [cells]);
+
+  // A new day brings a different cell catalog — stale picks would silently
+  // filter everything out.
+  useEffect(() => {
+    setCellIds([]); setJobFilter([]); setSearch(""); setStatusTab("all"); setPage(1);
+  }, [date]);
+
+  // ── KPIs over the picked cells (before search / status / role filters, so the
+  // header stays a stable denominator while you drill into the table) ────────
+  const scopeRows = useMemo(() => {
+    if (!cellIds.length) return allRows;
+    const sel = new Set(cellIds);
+    return allRows.filter(r => sel.has(String(r.cell_id ?? `x:${r.verifix_code}`)));
+  }, [allRows, cellIds]);
+
+  const workedRows  = useMemo(() => scopeRows.filter(r => r.status === "worked"), [scopeRows]);
+  const totalHours  = useMemo(() => workedRows.reduce((s, r) => s + (r.hours_worked || 0), 0), [workedRows]);
+  const avgHours    = workedRows.length ? totalHours / workedRows.length : null;
+  const cameRatio   = scopeRows.length ? workedRows.length / scopeRows.length : null;
+  const cellsShown  = useMemo(
+    () => new Set(scopeRows.map(r => r.cell_id ?? `x:${r.verifix_code}`)).size,
+    [scopeRows],
+  );
+
+  // Came-to-work broken down by exact job title, count desc — the clickable
+  // chips toggle the job filter (same interaction as the Staff page).
+  const roleCounts = useMemo(() => {
+    const m = new Map();
+    for (const r of workedRows) {
+      const title = r.job_title || "";
+      if (!title) continue;
+      m.set(title, (m.get(title) || 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [workedRows]);
+
+  // ── Table rows ─────────────────────────────────────────────────────────────
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return scopeRows.filter(r => {
+      if (statusTab === "worked" && r.status !== "worked") return false;
+      if (statusTab === "absent" && r.status === "worked") return false;
+      if (jobFilter.length && !jobFilter.includes(r.job_title || "")) return false;
+      if (q) {
+        const hay = `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.verifix_code || ""} ${r.job_title || ""}`;
+        if (!hay.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [scopeRows, search, statusTab, jobFilter, tl]);
+
+  const sorted = useMemo(() => {
+    const { key, dir } = sort;
+    const mul = dir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      let av = a[key], bv = b[key];
+      if (key === "worker_name" || key === "job_title") { av = tl(av) || ""; bv = tl(bv) || ""; }
+      if (av == null) return 1;          // blanks last, both directions
+      if (bv == null) return -1;
+      return typeof av === "number" && typeof bv === "number"
+        ? (av - bv) * mul
+        : String(av).localeCompare(String(bv)) * mul;
+    });
+  }, [rows, sort, tl]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [search, statusTab, jobFilter, cellIds, sort]);
+
+  function onSort(k) {
+    setSort(s => s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" });
+  }
+  function toggleRole(title) {
+    setJobFilter(f => f.includes(title) ? f.filter(x => x !== title) : [...f, title]);
+  }
+
+  const cellOptions = cells.map(c => {
+    const key = String(c.cell_id ?? `x:${c.verifix_code}`);
+    const name = cellName(c, lang);
+    return {
+      value: key,
+      label: `${c.verifix_code || "—"}${name ? " · " + name : ""}${c.unmatched ? " ⚠" : ""}`,
+      title: `${c.verifix_code || ""} ${name}${c.manager_name ? " — " + tl(c.manager_name) : ""}`,
+    };
+  });
+  const unmatchedCount = cells.filter(c => c.unmatched).length;
+  const anyFilter = !!search || statusTab !== "all" || jobFilter.length > 0;
+
+  return (
+    <Layout title={t("cellAtt.title")}>
+      {/* Toolbar — one aligned row: day stepper, cell picker, then the test note */}
+      <div className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <DayStepper value={date} onChange={setDate} />
+        {cells.length > 0 && (
+          <StyledSelect
+            multiple searchable
+            value={cellIds}
+            onChange={setCellIds}
+            options={cellOptions}
+            allLabel={t("cellAtt.allCells")}
+            countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
+            searchPlaceholder={t("cellAtt.searchCell")}
+            triggerClassName="px-3 py-2 text-sm"
+            className="w-full md:w-auto md:min-w-[200px]"
+          />
+        )}
+        <span className="w-full md:w-auto md:ml-auto flex items-center gap-1.5 text-xs"
+          style={{ color: "var(--text-4)" }}>
+          <FlaskConical size={12} /> {t("cellAtt.testNote")}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SkeletonTable rows={8} cols={7} />
+        </div>
+      ) : allRows.length === 0 ? (
+        <EmptyState icon={UserCheck} title={t("cellAtt.noDataTitle")} hint={t("cellAtt.noDataHint")} />
+      ) : (
+        <div className="space-y-4">
+          {/* KPI header */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <KPICard
+              label={t("cellAtt.kpiCame")}
+              value={workedRows.length}
+              sub={`${t("cellAtt.of")} ${scopeRows.length} · ${fmtPct(cameRatio)}`}
+            />
+            <KPICard
+              label={t("cellAtt.kpiCells")}
+              value={cellsShown}
+              sub={t("cellAtt.kpiCellsSub")}
+            />
+            <KPICard
+              label={t("cellAtt.kpiTotalHours")}
+              value={workedRows.length ? `${fmtNum(totalHours, 1)} ${t("daily.hrs")}` : "—"}
+              sub={t("cellAtt.kpiWorkedOnly")}
+            />
+            <KPICard
+              label={t("cellAtt.kpiAvgHours")}
+              value={avgHours !== null ? `${fmtNum(avgHours, 2)} ${t("daily.hrs")}` : "—"}
+              sub={t("cellAtt.kpiWorkedOnly")}
+            />
+          </div>
+
+          {/* Unmatched «Код подразделения» — those rows belong to no cell yet */}
+          {unmatchedCount > 0 && (
+            <div className="flex items-start gap-1.5 text-[11px] px-1" style={{ color: "#eab308" }}>
+              <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+              <span>{t("cellAtt.unmatchedNote").replace("{n}", unmatchedCount)}</span>
+            </div>
+          )}
+
+          {/* Came-to-work by role — chips toggle the job filter */}
+          {roleCounts.length > 0 && (
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                {t("cellAtt.byRole")}
+              </span>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {roleCounts.map(([title, count]) => {
+                  const active = jobFilter.includes(title);
+                  return (
+                    <button
+                      key={title}
+                      onClick={() => toggleRole(title)}
+                      title={tl(title) || title}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
+                      style={{
+                        background: active ? "var(--brand-bg)" : "var(--bg-inner)",
+                        border: `1px solid ${active ? "var(--brand-bg)" : "var(--border-md)"}`,
+                        color: active ? "var(--brand-text)" : "var(--text-2)",
+                      }}
+                    >
+                      <span className="truncate max-w-[160px]">{tl(title) || title}</span>
+                      <span className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
+                        style={{
+                          background: active ? "var(--brand-text)" : "var(--border-md)",
+                          color: active ? "var(--bg-card)" : "var(--text-1)",
+                        }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <TableCard
+              icon={LayoutGrid}
+              title={t("cellAtt.tableTitle")}
+              right={
+                <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                  {sorted.length.toLocaleString("ru-RU")} / {scopeRows.length.toLocaleString("ru-RU")}
+                </span>
+              }
+              toolbar={
+                <>
+                  <SearchInput
+                    value={search}
+                    onChange={setSearch}
+                    placeholder={t("cellAtt.searchWorker")}
+                    className="flex-1 min-w-[180px]"
+                  />
+                  <SegmentedToggle
+                    value={statusTab}
+                    onChange={setStatusTab}
+                    options={[
+                      ["all", t("cellAtt.tabAll")],
+                      ["worked", t("cellAtt.tabWorked")],
+                      ["absent", t("cellAtt.tabAbsent")],
+                    ]}
+                  />
+                </>
+              }
+            >
+              <thead>
+                <tr>
+                  <Th label={t("cellAtt.colCell")}     k="verifix_code"      sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colWorker")}   k="worker_name"       sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colRole")}     k="job_title"         sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colSchedule")} k="schedule"          sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colDay")}      k="day_raw"           sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colHours")}    k="hours_worked"      sort={sort} onSort={onSort} align="right" />
+                  <Th label={t("cellAtt.colEarly")}    k="early_arrival_min" sort={sort} onSort={onSort} align="right" />
+                  <Th label={t("cellAtt.colEffHours")} k="effective_hours"   sort={sort} onSort={onSort} align="right" />
+                  <Th label={t("cellAtt.colStatus")}   k="status"            sort={sort} onSort={onSort} align="center" />
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                      {anyFilter ? t("cellAtt.noMatch") : t("cellAtt.noRows")}
+                    </td>
+                  </tr>
+                ) : pageRows.map(r => {
+                  const c = cellById.get(r.cell_id ?? `x:${r.verifix_code}`);
+                  return (
+                    <tr key={r.id}>
+                      <td className="px-3 py-2">
+                        <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
+                        {c && cellName(c, lang) && (
+                          <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{cellName(c, lang)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
+                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
+                      <td className="px-3 py-2 font-mono text-[11px]" style={{ color: "var(--text-3)" }}>{r.day_raw || "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                        {r.hours_worked != null ? fmtNum(r.hours_worked, 2) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                        {r.early_arrival_min != null ? fmtNum(r.early_arrival_min, 0) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                        {r.effective_hours != null ? fmtNum(r.effective_hours, 2) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-center"><StatusChip status={r.status} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </TableCard>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              total={sorted.length}
+              pageSize={PAGE_SIZE}
+              onPage={setPage}
+            />
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
