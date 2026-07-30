@@ -16,6 +16,9 @@ Values are rendered by Postgres itself (``quote_nullable(col::text)``) rather
 than by Python. The literal Postgres prints always coerces back to the column
 type on INSERT, so JSONB, arrays, bytea, enums and timestamps round-trip
 without a per-type formatter here.
+
+Needs Postgres 12+ on the source (``pg_attribute.attgenerated``); the emitted
+script itself restores onto anything 10+.
 """
 
 from __future__ import annotations
