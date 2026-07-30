@@ -349,7 +349,8 @@ async function smoke() {
     const ok = r.status < 400 && hasData;
     if (!ok) bad++;
     say(`${ok ? "✓" : "✗"} ${r.status} ${m} ${p.split("?")[0].padEnd(24)} ${String(size).padStart(7)}B` +
-        (r.status < 400 && !hasData ? "   ← 200 but EMPTY (check the query params)" : ""));
+        (r.spa ? "   ← SPA index.html: no such route" :
+         r.status < 400 && !hasData ? "   ← 200 but EMPTY (check the query params)" : ""));
     if (r.status >= 400) say(`    ${r.text.slice(0, 200)}`);
   }
   say(bad ? `\n${bad} endpoint(s) failed` : "\nall endpoints OK");
