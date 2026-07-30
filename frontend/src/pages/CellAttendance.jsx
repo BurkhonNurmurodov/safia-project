@@ -88,9 +88,11 @@ export default function CellAttendance() {
   const [supIds, setSupIds] = useState([]);         // [] = every supervisor
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState("all"); // all | worked | absent
-  const [jobFilter, setJobFilter] = useState([]);    // came-by-role chips
+  const [jobFilter, setJobFilter] = useState([]);    // came-by-role chips + Lavozim column
+  const [colF, setColF] = useState(INIT_COL);        // the column-only filters
   const [sort, setSort] = useState({ key: "worker_name", dir: "asc" });
   const [page, setPage] = useState(1);
+  const setCol = (k, v) => setColF(f => ({ ...f, [k]: v }));
 
   // Days that actually carry rows. The report is uploaded for the day it
   // covers (usually yesterday), so landing on an empty "today" would look like
