@@ -62,18 +62,18 @@ const WEEKS = ["04.05", "11.05", "18.05", "25.05", "01.06", "08.06", "15.06", "2
 
 /* ────────────────────────── dummy data ──────────────────────────────── */
 const RAW = [
-  { name: "Malika Qodirova",   unit: "2-uchastka",  img: { photo: "/images/supervisors/malika.png", render: "/images/supervisors/malika.png" }, s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
-  { name: "Dilshod Karimov",   unit: "5-uchastka",  img: { photo: "/images/supervisors/dilshod.png", render: "/images/supervisors/dilshod.png" }, s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
-  { name: "Aziza Tosheva",     unit: "1-uchastka",  img: { photo: "/images/supervisors/aziza.png", render: "/images/supervisors/aziza.png" }, s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
-  { name: "Murodali Ochilov",  unit: "7-uchastka",  img: { photo: "/images/supervisors/murodali.png", render: "/images/supervisors/murodali.png" }, s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
-  { name: "Sherzod Aliyev",    unit: "3-uchastka",  img: { photo: "/images/supervisors/sherzod.png", render: "/images/supervisors/sherzod.png" }, s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
-  { name: "Nodira Yusupova",   unit: "4-uchastka",  img: { photo: "/images/supervisors/nodira.png", render: "/images/supervisors/nodira.png" }, s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
-  { name: "Jasur Rahimov",     unit: "9-uchastka",  img: { photo: "/images/supervisors/jasur.png", render: "/images/supervisors/jasur.png" }, s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
-  { name: "Gulnora Ismoilova", unit: "8-uchastka",  img: { photo: "/images/supervisors/gulnora.png", render: "/images/supervisors/gulnora.png" }, s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
-  { name: "Bekzod Tursunov",   unit: "6-uchastka",  img: { photo: "/images/supervisors/bekzod.png", render: "/images/supervisors/bekzod.png" }, s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
-  { name: "Kamola Ergasheva",  unit: "11-uchastka", img: { photo: "/images/supervisors/kamola.png", render: "/images/supervisors/kamola.png" }, s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
-  { name: "Rustam Nazarov",    unit: "10-uchastka", img: { photo: "/images/supervisors/rustam.png", render: "/images/supervisors/rustam.png" }, s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
-  { name: "Sardor Xolmatov",   unit: "12-uchastka", img: { photo: "/images/supervisors/sardor.png", render: "/images/supervisors/sardor.png" }, s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
+  { name: "Malika Qodirova",   unit: "2-uchastka",  img: { photo: "/images/supervisors/malika.png", render: "/images/supervisors/malika_cut.png" }, s: { zag: 92, naz: 88, kai: 90, xav: 84, kir: 96 } },
+  { name: "Dilshod Karimov",   unit: "5-uchastka",  img: { photo: "/images/supervisors/dilshod.png", render: "/images/supervisors/dilshod_cut.png" }, s: { zag: 90, naz: 92, kai: 78, xav: 88, kir: 91 } },
+  { name: "Aziza Tosheva",     unit: "1-uchastka",  img: { photo: "/images/supervisors/aziza.png", render: "/images/supervisors/aziza_cut.png" }, s: { zag: 87, naz: 74, kai: 92, xav: 90, kir: 88 } },
+  { name: "Murodali Ochilov",  unit: "7-uchastka",  img: { photo: "/images/supervisors/murodali.png", render: "/images/supervisors/murodali_cut.png" }, s: { zag: 84, naz: 81, kai: 70, xav: 76, kir: 90 } },
+  { name: "Sherzod Aliyev",    unit: "3-uchastka",  img: { photo: "/images/supervisors/sherzod.png", render: "/images/supervisors/sherzod_cut.png" }, s: { zag: 86, naz: 70, kai: 75, xav: 72, kir: 84 } },
+  { name: "Nodira Yusupova",   unit: "4-uchastka",  img: { photo: "/images/supervisors/nodira.png", render: "/images/supervisors/nodira_cut.png" }, s: { zag: 78, naz: 85, kai: 80, xav: 74, kir: 81 } },
+  { name: "Jasur Rahimov",     unit: "9-uchastka",  img: { photo: "/images/supervisors/jasur.png", render: "/images/supervisors/jasur_cut.png" }, s: { zag: 83, naz: 62, kai: 68, xav: 80, kir: 77 } },
+  { name: "Gulnora Ismoilova", unit: "8-uchastka",  img: { photo: "/images/supervisors/gulnora.png", render: "/images/supervisors/gulnora_cut.png" }, s: { zag: 71, naz: 78, kai: 74, xav: 70, kir: 79 } },
+  { name: "Bekzod Tursunov",   unit: "6-uchastka",  img: { photo: "/images/supervisors/bekzod.png", render: "/images/supervisors/bekzod_cut.png" }, s: { zag: 74, naz: 66, kai: null, xav: 72, kir: 76 } },
+  { name: "Kamola Ergasheva",  unit: "11-uchastka", img: { photo: "/images/supervisors/kamola.png", render: "/images/supervisors/kamola_cut.png" }, s: { zag: 69, naz: 72, kai: 60, xav: 66, kir: 74 } },
+  { name: "Rustam Nazarov",    unit: "10-uchastka", img: { photo: "/images/supervisors/rustam.png", render: "/images/supervisors/rustam_cut.png" }, s: { zag: 66, naz: 58, kai: 55, xav: 62, kir: 70 } },
+  { name: "Sardor Xolmatov",   unit: "12-uchastka", img: { photo: "/images/supervisors/sardor.png", render: "/images/supervisors/sardor_cut.png" }, s: { zag: 58, naz: 52, kai: 48, xav: 60, kir: 63 } },
 ];
 
 function mulberry32(a) {
