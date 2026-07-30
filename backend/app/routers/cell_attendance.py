@@ -134,6 +134,8 @@ def day_attendance(
             "name_en":      c.name_workshop_en,
             "manager_id":   c.manager_id,
             "manager_name": mgr_names.get(c.manager_id),
+            "leader_id":    c.leader_id,
+            "leader_name":  leader_names.get(c.leader_id),
             "unmatched":    False,
         }
         for c in cells if c.id in present
@@ -143,7 +145,8 @@ def day_attendance(
             cell_json.append({
                 "cell_id": None, "verifix_code": code or None, "sap_code": None,
                 "name_uz": None, "name_uz_cyrl": None, "name_ru": None, "name_en": None,
-                "manager_id": None, "manager_name": None, "unmatched": True,
+                "manager_id": None, "manager_name": None,
+                "leader_id": None, "leader_name": None, "unmatched": True,
             })
     cell_json.sort(key=lambda c: (c["unmatched"], (c["verifix_code"] or "zzz").lower()))
 
