@@ -589,7 +589,11 @@ export default function Leaderboard() {
                       <div className="tabular-nums" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: bandInk(st, top.s[c.key]) }}>{fmt(top.s[c.key])}%</div>
                       <div className="text-[10.5px] mt-1 tabular-nums" style={{ color: "var(--text-4)" }}>{t("leaderboard.teamAvg")}: {fmt(avg)}%</div>
                     </div>
-                    <Spark arr={top.sparks[c.key]} w={76} h={30} color={meta.hue} />
+                    {/* neutral on purpose: the number beside it is already
+                        traffic-light (bandInk), so an identity-hued line —
+                        red for zagruzka — would read as a trend verdict that
+                        contradicts it. Identity stays in the icon chip. */}
+                    <Spark arr={top.sparks[c.key]} w={76} h={30} color="var(--text-3)" />
                   </div>
                 </div>
               );
