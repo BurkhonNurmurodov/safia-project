@@ -3444,6 +3444,7 @@ const t = {
     "admin.profiles.cellsEmpty": "Ячейка топилмади",
     "admin.profiles.cellsEmptyHint": "Қидирув ёки филтрларни ўзгартиринг.",
     "admin.profiles.cellSupervisorFromOwner": "Бригадир лидердан мерос олинади",
+    "ui.langInput.ruFallback": "Бўш қолдирилса, русча номи кўрсатилади",
     "admin.profiles.cellCreate":       "Ячейка яратиш",
     "admin.profiles.cellPickPlaceholder": "Ячейкаларни танланг…",
     "admin.profiles.cellSearchOrCreate": "Код бўйича қидиринг ёки янги киритинг…",
