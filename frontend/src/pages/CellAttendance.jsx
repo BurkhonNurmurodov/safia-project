@@ -201,14 +201,31 @@ export default function CellAttendance() {
   }
 
   const cellOptions = cells.map(c => {
-    const key = String(c.cell_id ?? `x:${c.verifix_code}`);
     const name = cellName(c, lang);
     return {
-      value: key,
+      value: cellKey(c),
       label: `${c.verifix_code || "—"}${name ? " · " + name : ""}${c.unmatched ? " ⚠" : ""}`,
       title: `${c.verifix_code || ""} ${name}${c.manager_name ? " — " + tl(c.manager_name) : ""}`,
     };
   });
+
+  // Owner pickers list only people who actually own a cell with rows today, so
+  // no option can filter the table down to nothing. Cells with no owner collapse
+  // into one explicit "not assigned" entry rather than silently disappearing.
+  const ownerOptions = (idField, nameField, noneLabel) => {
+    const m = new Map();
+    for (const c of cells) {
+      const id = c[idField];
+      const key = String(id ?? "none");
+      if (!m.has(key)) m.set(key, id ? (tl(c[nameField]) || c[nameField] || `#${id}`) : noneLabel);
+    }
+    return [...m.entries()]
+      .sort((a, b) => (a[0] === "none") - (b[0] === "none") || a[1].localeCompare(b[1]))
+      .map(([value, label]) => ({ value, label, title: label }));
+  };
+  const leaderOptions = ownerOptions("leader_id", "leader_name", t("cellAtt.noLeader"));
+  const supOptions    = ownerOptions("manager_id", "manager_name", t("cellAtt.noSupervisor"));
+
   const unmatchedCount = cells.filter(c => c.unmatched).length;
   const anyFilter = !!search || statusTab !== "all" || jobFilter.length > 0;
 
