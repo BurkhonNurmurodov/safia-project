@@ -39,6 +39,11 @@ function cellName(c, lang) {
   return byLang || c.name_ru || c.name_uz || c.name_en || c.name_uz_cyrl || "";
 }
 
+// One identity for a cell across the catalog and the rows. Unmatched codes have
+// no cell_id, so they key off the raw code instead — string-prefixed so they can
+// never collide with a real numeric id.
+const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
+
 // Worked = green, day-off / excused markers = neutral slate (traffic-light
 // convention — brand gold is never a status). Mirrors the upload-tab preview.
 function StatusChip({ status }) {
