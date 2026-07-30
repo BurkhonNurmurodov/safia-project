@@ -297,7 +297,7 @@ async function shot(route, opts) {
     else if (errs.length) { say(`  ⚠ ${errs.length} console error(s):`); errs.slice(0, 5).forEach((l) => say("  " + l.slice(0, 200))); }
     cdp.close();
   } finally {
-    chrome.kill();
+    await chrome.kill();
   }
   return out;
 }
