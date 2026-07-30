@@ -211,7 +211,7 @@ export default function CellAttendance() {
       }
       return true;
     });
-  }, [scopeRows, search, statusTab, jobFilter, tl]);
+  }, [scopeRows, search, statusTab, jobFilter, colF, tl]);
 
   const sorted = useMemo(() => {
     const { key, dir } = sort;
