@@ -1091,6 +1091,10 @@ def _send_db_dump(tg_id: int, include_drops: bool) -> None:
             "The script runs in one transaction — if it fails, nothing is applied.",
             "⚠️ This file holds all personal data. Delete this message once restored.",
         ]
+        if stats.get("skipped"):
+            # Never let a hand-made trigger/domain vanish quietly in a move.
+            items = "\n".join(f"• {s}" for s in stats["skipped"][:20])
+            steps.insert(1, f"<b>Not in the dump — recreate by hand:</b>\n{items}")
         bot.send_message(tg_id, "\n\n".join(steps), parse_mode="HTML")
 
     except Exception as e:                                    # noqa: BLE001
