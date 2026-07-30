@@ -158,6 +158,11 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false }) 
           </label>
         ))}
       </div>
+      {searchable && shown.length < opts.length && (
+        <p className="text-[10px] text-center pb-1" style={{ color: "var(--text-4)" }}>
+          {shown.length} / {opts.length}
+        </p>
+      )}
       {opts.length > 0 && sel.length < opts.length && (
         <button onClick={() => onChange([...opts])} className="text-[10px] w-full text-center pt-1 border-t"
           style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
