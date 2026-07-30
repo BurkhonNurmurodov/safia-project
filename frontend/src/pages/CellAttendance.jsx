@@ -177,12 +177,32 @@ export default function CellAttendance() {
   }, [workedRows]);
 
   // ── Table rows ─────────────────────────────────────────────────────────────
+  // Column option lists come from ALL of the day's rows, not the filtered ones,
+  // so ticking a box never makes the other columns' options disappear.
+  const distinct = useMemo(() => {
+    const pick = (f) => [...new Set(allRows.map(r => r[f] || ""))].filter(Boolean).sort();
+    return {
+      worker:   pick("worker_name"),
+      schedule: pick("schedule"),
+      day:      pick("day_raw"),
+      status:   pick("status"),
+      job:      pick("job_title"),
+    };
+  }, [allRows]);
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return scopeRows.filter(r => {
       if (statusTab === "worked" && r.status !== "worked") return false;
       if (statusTab === "absent" && r.status === "worked") return false;
       if (jobFilter.length && !jobFilter.includes(r.job_title || "")) return false;
+      if (colF.worker.length   && !colF.worker.includes(r.worker_name || ""))  return false;
+      if (colF.schedule.length && !colF.schedule.includes(r.schedule || ""))   return false;
+      if (colF.day.length      && !colF.day.includes(r.day_raw || ""))         return false;
+      if (colF.status.length   && !colF.status.includes(r.status || ""))       return false;
+      if (!inRange(r.hours_worked, colF.hours))      return false;
+      if (!inRange(r.early_arrival_min, colF.early)) return false;
+      if (!inRange(r.effective_hours, colF.eff))     return false;
       if (q) {
         const hay = `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.verifix_code || ""} `
           + `${r.job_title || ""} ${r.cell_name || ""} `
