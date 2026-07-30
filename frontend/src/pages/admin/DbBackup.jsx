@@ -61,10 +61,31 @@ export default function DbBackup() {
     mutationFn: () => api.post("/admin/db-dump", { include_drops: drops }),
     onSuccess: () => {
       setConfirm(false);
-      setToast(true);
-      setTimeout(() => setToast(false), 8000);
+      setToast("export");
+      setTimeout(() => setToast(null), 8000);
     },
   });
+
+  const importMut = useMutation({
+    mutationFn: () => {
+      const form = new FormData();
+      // Sorted so the server joins .partNNN in the right order even if the
+      // file picker handed them over shuffled.
+      [...picked]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach((f) => form.append("files", f));
+      return api.post("/admin/db-restore", form);
+    },
+    onSuccess: () => {
+      setImpConfirm(false);
+      setPicked([]);
+      if (fileRef.current) fileRef.current.value = "";
+      setToast("import");
+      setTimeout(() => setToast(null), 10000);
+    },
+  });
+
+  const pickedBytes = picked.reduce((s, f) => s + f.size, 0);
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-5">
