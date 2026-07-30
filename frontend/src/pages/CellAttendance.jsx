@@ -176,7 +176,7 @@ export default function CellAttendance() {
     const mul = dir === "asc" ? 1 : -1;
     return [...rows].sort((a, b) => {
       let av = a[key], bv = b[key];
-      if (key === "worker_name" || key === "job_title") { av = tl(av) || ""; bv = tl(bv) || ""; }
+      if (TRANSLIT_COLS.has(key)) { av = av ? tl(av) : null; bv = bv ? tl(bv) : null; }
       if (av == null) return 1;          // blanks last, both directions
       if (bv == null) return -1;
       return typeof av === "number" && typeof bv === "number"
