@@ -351,7 +351,8 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
         with gzip.open(path, "wt", encoding="utf-8", newline="\n") as f:
             w = f.write
 
-            w("--\n-- Safia dashboard — full database dump\n")
+            # Keep this line built from DUMP_MARKER — the restore path gates on it.
+            w(f"--\n-- {DUMP_MARKER}\n")
             w(f"-- Generated {started.strftime('%Y-%m-%d %H:%M:%S')} UTC "
               f"by the admin panel (no pg_dump on this host).\n")
             w(f"-- Schema: {SCHEMA}   Tables: {len(tables)}\n")
