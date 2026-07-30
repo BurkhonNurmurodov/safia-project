@@ -264,8 +264,26 @@ export default function CellAttendance() {
   const leaderOptions = ownerOptions("leader_id", "leader_name", t("cellAtt.noLeader"));
   const supOptions    = ownerOptions("manager_id", "manager_name", t("cellAtt.noSupervisor"));
 
+  // Column headers filter by the SAME id values the toolbar pickers use, so the
+  // two surfaces drive one state each instead of contradicting each other —
+  // ticking a leader in the header updates the leader picker above, and back.
+  const cellKeys    = cellOptions.map(o => o.value);
+  const leaderKeys  = leaderOptions.map(o => o.value);
+  const supKeys     = supOptions.map(o => o.value);
+  const labelOf     = (opts) => (v) => opts.find(o => o.value === v)?.label ?? v;
+
   const unmatchedCount = cells.filter(c => c.unmatched).length;
-  const anyFilter = !!search || statusTab !== "all" || jobFilter.length > 0;
+  const anyFilter =
+    !!search || statusTab !== "all" || jobFilter.length > 0 ||
+    cellIds.length > 0 || leaderIds.length > 0 || supIds.length > 0 ||
+    colF.worker.length > 0 || colF.schedule.length > 0 || colF.day.length > 0 ||
+    colF.status.length > 0 ||
+    rngActive(colF.hours) || rngActive(colF.early) || rngActive(colF.eff);
+
+  function clearFilters() {
+    setSearch(""); setStatusTab("all"); setJobFilter([]); setColF(INIT_COL);
+    setCellIds([]); setLeaderIds([]); setSupIds([]);
+  }
 
   return (
     <Layout title={t("cellAtt.title")}>
