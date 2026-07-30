@@ -16,6 +16,7 @@ import { SkeletonBlock } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import { cellName } from "../utils/cellName";
 
 // ── i18n copy, 4 platform languages ──────────────────────────────────────────
 const TXT = {
