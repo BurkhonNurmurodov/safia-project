@@ -101,7 +101,7 @@ def page_cap(page: str) -> str:
 # "own" and "all" mean different things. Every other page is already
 # factory-wide for whoever may open it, so its grant is stored at "all" and the
 # Permissions tab shows a static chip instead of a selector that does nothing.
-SCOPED_PAGES = ("staff", "daily", "production", "concerns", "tasks", "leaders", "quality", "idle-cell")
+SCOPED_PAGES = ("staff", "daily", "production", "concerns", "tasks", "leaders", "quality", "idle-cell", "cell-attendance")
 
 # key   → the capability id, also the i18n key suffix (caps.<key>.label/.hint)
 # group → UI grouping on the Permissions tab
