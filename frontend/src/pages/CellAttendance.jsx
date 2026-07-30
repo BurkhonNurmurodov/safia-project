@@ -196,7 +196,11 @@ export default function CellAttendance() {
           <SkeletonTable rows={8} cols={7} />
         </div>
       ) : allRows.length === 0 ? (
-        <EmptyState icon={UserCheck} title={t("cellAtt.noDataTitle")} hint={t("cellAtt.noDataHint")} />
+        <EmptyState
+          title={t("cellAtt.noDataTitle")}
+          message={t("cellAtt.noDataHint")}
+          showUploadLink={false}
+        />
       ) : (
         <div className="space-y-4">
           {/* KPI header */}
