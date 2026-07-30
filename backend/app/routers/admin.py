@@ -1003,3 +1003,128 @@ def admin_tg_file_raw(file_id: str, _: dict = Depends(verify_admin)):
     if meta["file_size"]:
         headers["Content-Length"] = str(meta["file_size"])
     return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+
+
+# ── Full database dump → Telegram DM ──────────────────────────────────────────
+#
+# ahost has no pg_dump binary and no psql, so the only way to get the database
+# off it is from inside the app. Admin-only and deliberately NOT capability-
+# grantable: the file is every phone number, name and stored secret in one
+# place, so it stays a real admin's action (see app/db_dump.py).
+
+# Bot API caps sendDocument at 50 MB; leave headroom for the multipart envelope.
+_TG_DOC_LIMIT = 45 * 1024 * 1024
+
+
+def _human_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+
+
+def _split_dump(path: str, base: str) -> list[tuple[str, str]]:
+    """Cut an over-limit dump into (path, filename) parts of _TG_DOC_LIMIT."""
+    parts: list[tuple[str, str]] = []
+    with open(path, "rb") as src:
+        idx = 1
+        while True:
+            chunk = src.read(_TG_DOC_LIMIT)
+            if not chunk:
+                break
+            ppath = f"{path}.part{idx:03d}"
+            with open(ppath, "wb") as out:
+                out.write(chunk)
+            parts.append((ppath, f"{base}.part{idx:03d}"))
+            idx += 1
+    return parts
+
+
+def _send_db_dump(tg_id: int, include_drops: bool) -> None:
+    """Build the dump and DM it. Runs after the response — never inline, since
+    a large database takes longer than a gateway is willing to wait."""
+    from app import db_dump
+    from app.telegram_bot import bot
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    base  = f"safia_db_{stamp}.sql.gz"
+    fd, tmp_path = tempfile.mkstemp(prefix="safia_dump_", suffix=".sql.gz")
+    os.close(fd)
+    cleanup = [tmp_path]
+
+    try:
+        stats = db_dump.dump_to_file(tmp_path, include_drops=include_drops)
+        size  = stats["bytes"]
+        log.info("db-dump: %s tables, %s rows, %s for tg=%s",
+                 stats["tables"], stats["rows"], _human_bytes(size), tg_id)
+
+        caption = (f"🗄 Full database dump\n"
+                   f"{stats['tables']} tables · {stats['rows']:,} rows · {_human_bytes(size)}\n"
+                   f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]} {stamp[9:11]}:{stamp[11:]} UTC")
+
+        if size <= _TG_DOC_LIMIT:
+            with open(tmp_path, "rb") as fh:
+                bot.send_document(chat_id=tg_id, document=(base, fh),
+                                  caption=caption, timeout=600)
+            n_parts = 1
+        else:
+            parts = _split_dump(tmp_path, base)
+            cleanup += [p for p, _ in parts]
+            n_parts = len(parts)
+            for i, (ppath, pname) in enumerate(parts, 1):
+                with open(ppath, "rb") as fh:
+                    bot.send_document(
+                        chat_id=tg_id, document=(pname, fh), timeout=600,
+                        caption=(f"{caption}\nPart {i}/{n_parts}" if i == 1
+                                 else f"Part {i}/{n_parts}"))
+
+        steps = ["<b>Restore on the new server</b>"]
+        if n_parts > 1:
+            steps.append(f"0) Rejoin the parts:\n<pre>cat {base}.part* &gt; {base}</pre>")
+        steps += [
+            "1) Create an empty database and role there (once).",
+            f"2) Import:\n<pre>gunzip -c {base} | psql \"$DATABASE_URL\"</pre>",
+            "3) Point <code>backend/.env</code> at the new DATABASE_URL and restart Passenger.",
+            "The script runs in one transaction — if it fails, nothing is applied.",
+            "⚠️ This file holds all personal data. Delete this message once restored.",
+        ]
+        bot.send_message(tg_id, "\n\n".join(steps), parse_mode="HTML")
+
+    except Exception as e:                                    # noqa: BLE001
+        log.exception("db-dump failed for tg=%s", tg_id)
+        try:
+            bot.send_message(tg_id, f"❌ Database dump failed:\n<pre>{str(e)[:900]}</pre>",
+                             parse_mode="HTML")
+        except Exception:
+            pass
+    finally:
+        for p in cleanup:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
+class DbDumpBody(BaseModel):
+    include_drops: bool = True
+
+
+@router.get("/db-dump/inventory")
+def admin_db_dump_inventory(_: dict = Depends(verify_admin)):
+    """What the dump would contain — estimated rows and on-disk size per table."""
+    from app import db_dump
+
+    rows = db_dump.table_inventory()
+    return {"tables": rows, "total_bytes": sum(r["bytes"] for r in rows)}
+
+
+@router.post("/db-dump")
+def admin_db_dump(
+    body: DbDumpBody,
+    background: BackgroundTasks,
+    caller: dict = Depends(verify_admin),
+):
+    """Dump the whole database and DM it to the caller as a .sql.gz file."""
+    tg_id = int(caller["sub"])
+    background.add_task(_send_db_dump, tg_id, body.include_drops)
+    return {"ok": True}
