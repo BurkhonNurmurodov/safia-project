@@ -20,6 +20,7 @@ import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import ActionHistory from "./ActionHistory";
 import LeaderTasksAdmin from "./LeaderTasksAdmin";
+import DbBackup from "./DbBackup";
 import { fillDescs } from "../../utils/segments";
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
