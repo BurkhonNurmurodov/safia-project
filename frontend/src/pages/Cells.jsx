@@ -438,25 +438,20 @@ export default function Cells() {
               style={inputStyle}
             />
           </FormField>
-          <div className="pt-1">
-            <div className={labelCls} style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.colWorkshop")}
-            </div>
-            <div className="mt-2 space-y-2">
-              {["uz", ...NAME_LANGS].map((l) => (
-                <label key={l} className="flex items-center gap-2">
-                  <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase" style={{ color: "var(--text-4)" }}>{l}</span>
-                  <input
-                    type="text"
-                    value={form[`name_workshop_${l}`] || ""}
-                    onChange={(e) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: e.target.value }))}
-                    className={inputCls + " !mt-0"}
-                    style={inputStyle}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
+          <FormField label={t("admin.profiles.colWorkshop")}>
+            {/* One tabbed field, not four stacked inputs: every language column
+                is optional and a blank one falls back to Russian on display,
+                so the empty tabs preview the Russian text as a placeholder. */}
+            <LangTextInput
+              value={{
+                uz: form.name_workshop_uz,
+                uz_cyrl: form.name_workshop_uz_cyrl,
+                ru: form.name_workshop_ru,
+                en: form.name_workshop_en,
+              }}
+              onChange={(l, v) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: v }))}
+            />
+          </FormField>
           <FormField label={t("admin.profiles.colSupervisor")}>
             <StyledSelect
               value={form.manager_id || ""}
