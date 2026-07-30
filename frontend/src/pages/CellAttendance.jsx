@@ -140,10 +140,7 @@ export default function CellAttendance() {
   const totalHours  = useMemo(() => workedRows.reduce((s, r) => s + (r.hours_worked || 0), 0), [workedRows]);
   const avgHours    = workedRows.length ? totalHours / workedRows.length : null;
   const cameRatio   = scopeRows.length ? workedRows.length / scopeRows.length : null;
-  const cellsShown  = useMemo(
-    () => new Set(scopeRows.map(r => r.cell_id ?? `x:${r.verifix_code}`)).size,
-    [scopeRows],
-  );
+  const cellsShown  = useMemo(() => new Set(scopeRows.map(r => r._key)).size, [scopeRows]);
 
   // Came-to-work broken down by exact job title, count desc — the clickable
   // chips toggle the job filter (same interaction as the Staff page).
