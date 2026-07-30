@@ -146,6 +146,7 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false }) 
         {shown.map(o => (
           <label key={o}
             {...dragRow(o)}
+            title={label(o)}
             className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
             style={{ color: "var(--text-2)" }}
             onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
