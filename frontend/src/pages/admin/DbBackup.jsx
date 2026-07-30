@@ -186,6 +186,121 @@ export default function DbBackup() {
         </TableCard>
       )}
 
+      {/* Restore — the other half of a server move, so the new host needs no shell */}
+      <div className="rounded-2xl p-4 sm:p-5 space-y-4"
+           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="flex items-start gap-3">
+          <span className="flex-shrink-0 grid place-items-center w-9 h-9 rounded-xl"
+                style={{ background: "color-mix(in srgb, #ef4444 14%, transparent)" }}>
+            <Upload size={17} style={{ color: "#ef4444" }} />
+          </span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
+              {t("admin.dbdump.importTitle")}
+            </div>
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {t("admin.dbdump.importDesc")}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2.5 rounded-xl px-3 py-2.5"
+             style={{ background: "color-mix(in srgb, #ef4444 12%, transparent)" }}>
+          <ShieldAlert size={14} className="flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+          <span className="text-[11px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+            {t("admin.dbdump.importWarning")}
+          </span>
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          accept={DUMP_ACCEPT}
+          className="hidden"
+          onChange={(e) => setPicked(Array.from(e.target.files || []))}
+        />
+
+        {picked.length > 0 && (
+          <div className="space-y-1.5">
+            {[...picked].sort((a, b) => a.name.localeCompare(b.name)).map((f) => (
+              <div key={f.name}
+                   className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
+                   style={{ background: "var(--bg-inner)" }}>
+                <FileArchive size={13} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                <span className="text-[11px] font-mono flex-1 truncate" style={{ color: "var(--text-2)" }}>
+                  {f.name}
+                </span>
+                <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>
+                  {fmtBytes(f.size)}
+                </span>
+              </div>
+            ))}
+            {picked.length > 1 && (
+              <p className="text-[11px] pt-0.5" style={{ color: "var(--text-4)" }}>
+                {t("admin.dbdump.partsHint").replace("{n}", picked.length)}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              icon={<Upload size={14} />}
+              onClick={() => fileRef.current?.click()}
+              disabled={importMut.isPending}
+            >
+              {t("admin.dbdump.pickBtn")}
+            </Button>
+            {picked.length > 0 && !importMut.isPending && (
+              <Button
+                variant="ghost"
+                size="lg"
+                icon={<X size={14} />}
+                onClick={() => {
+                  setPicked([]);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+              >
+                {t("admin.broadcast.cancel")}
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {picked.length > 0 && (
+              <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                {fmtBytes(pickedBytes)}
+              </span>
+            )}
+            <Button
+              variant="danger"
+              size="lg"
+              icon={<Upload size={14} />}
+              disabled={picked.length === 0}
+              loading={importMut.isPending}
+              onClick={() => setImpConfirm(true)}
+            >
+              {t("admin.dbdump.importBtn")}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={impConfirm}
+        tone="danger"
+        onCancel={() => !importMut.isPending && setImpConfirm(false)}
+        onConfirm={() => importMut.mutate()}
+        title={t("admin.dbdump.importConfirmTitle")}
+        message={t("admin.dbdump.importConfirmMsg")}
+        confirmLabel={t("admin.dbdump.importBtn")}
+        cancelLabel={t("admin.broadcast.cancel")}
+        loading={importMut.isPending}
+      />
+
       <ConfirmDialog
         open={confirm}
         onCancel={() => !dumpMut.isPending && setConfirm(false)}
