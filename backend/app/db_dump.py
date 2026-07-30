@@ -447,6 +447,7 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
         "rows":    total_rows,
         "bytes":   os.path.getsize(path),
         "started": started.isoformat(),
+        "skipped": skipped,
     }
 
 
