@@ -98,7 +98,7 @@ const SMOKE = [
   ["GET", `/api/brigadirs?${RANGE}`, (j) => Array.isArray(j) && j.length > 0],
   ["GET", `/api/heatmap?${RANGE}`, (j) => j?.dates?.length > 0],
   ["GET", `/api/downtime?${RANGE}&kpi_only=1`, (j) => j?.dates?.length > 0],
-  ["GET", "/api/profiles/me", (j) => !!j],
+  ["GET", "/api/profiles/mine", (j) => !!j],
 ];
 
 const say = (...a) => console.log(...a);
