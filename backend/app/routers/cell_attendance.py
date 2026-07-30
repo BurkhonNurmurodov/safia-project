@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Cell, CellAttendance, Manager
+from app.models import Cell, CellAttendance, Manager, RoleProfile
 from app.capabilities import page_scope_is_all, profile_unit_ids
 from app.permissions import require_page
 from app import identity
