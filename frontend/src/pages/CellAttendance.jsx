@@ -461,7 +461,7 @@ export default function CellAttendance() {
                   {/* Every column carries the same funnel: a checkbox list of
                       its distinct values, or min/max where the values are
                       numeric. The first three drive the toolbar pickers' state. */}
-                  <Th label={t("cellAtt.colCell")} k="verifix_code" sort={sort} onSort={onSort}
+                  <Th label={t("cellAtt.colCell")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]"
                     filter={
                       <ColFilter active={cellIds.length > 0}>
                         <OptsFilter searchable opts={cellKeys} sel={cellIds} onChange={setCellIds} render={labelOf(cellOptions)} />
