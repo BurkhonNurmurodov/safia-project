@@ -25,6 +25,7 @@ import { useLang } from "../../context/LangContext";
  *   fallbackLang – language whose text placeholders the empty tabs ("ru")
  *   placeholder  – shown when the fallback language is empty too
  *   hint         – false to drop the "empty → Russian is shown" explainer line
+ *   className    – extra wrapper classes (spacing only)
  */
 
 const LANG_LABEL = { uz: "UZ", uz_cyrl: "ЎЗ", ru: "RU", en: "EN" };
