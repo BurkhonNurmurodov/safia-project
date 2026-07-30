@@ -37,7 +37,7 @@ from app.services.sheets_sync import (
 )
 from app.permissions import get_page_access, set_page_access, role_can_access, PAGE_KEYS, TOGGLEABLE_ROLES
 from app.routers.auth import VALID_ROLES
-from app.upload_guard import validate_spreadsheet
+from app.upload_guard import check_dump_name, validate_db_dump, validate_spreadsheet
 
 log = logging.getLogger(__name__)
 
