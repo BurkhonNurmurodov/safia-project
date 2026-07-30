@@ -339,13 +339,15 @@ async function doctor() {
 async function smoke() {
   await login();
   let bad = 0;
-  for (const [m, p] of SMOKE) {
+  for (const [m, p, expect] of SMOKE) {
     const r = await apiCall(m, p);
     const size = r.json ? JSON.stringify(r.json).length : r.text.length;
-    const ok = r.status < 400;
+    const hasData = r.status < 400 && (!expect || (() => { try { return expect(r.json); } catch { return false; } })());
+    const ok = r.status < 400 && hasData;
     if (!ok) bad++;
-    say(`${ok ? "✓" : "✗"} ${r.status} ${m} ${p.split("?")[0].padEnd(24)} ${String(size).padStart(7)}B`);
-    if (!ok) say(`    ${r.text.slice(0, 200)}`);
+    say(`${ok ? "✓" : "✗"} ${r.status} ${m} ${p.split("?")[0].padEnd(24)} ${String(size).padStart(7)}B` +
+        (r.status < 400 && !hasData ? "   ← 200 but EMPTY (check the query params)" : ""));
+    if (r.status >= 400) say(`    ${r.text.slice(0, 200)}`);
   }
   say(bad ? `\n${bad} endpoint(s) failed` : "\nall endpoints OK");
   process.exit(bad ? 1 : 0);
