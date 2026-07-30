@@ -335,6 +335,7 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
         views      = _views(cur)
         constraints = _constraints(cur)
         indexes    = _indexes(cur)
+        skipped    = _unsupported(cur)
         columns    = {t: _columns(cur, t) for t in tables}
 
         with gzip.open(path, "wt", encoding="utf-8", newline="\n") as f:
