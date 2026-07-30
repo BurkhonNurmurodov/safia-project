@@ -294,7 +294,7 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
         with gzip.open(path, "wt", encoding="utf-8", newline="\n") as f:
             w = f.write
 
-            w(f"--\n-- Safia dashboard — full database dump\n")
+            w("--\n-- Safia dashboard — full database dump\n")
             w(f"-- Generated {started.strftime('%Y-%m-%d %H:%M:%S')} UTC "
               f"by the admin panel (no pg_dump on this host).\n")
             w(f"-- Schema: {SCHEMA}   Tables: {len(tables)}\n")
