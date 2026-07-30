@@ -156,7 +156,10 @@ async function apiCall(method, urlPath, body, { retry = true } = {}) {
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* not json */ }
-  return { status: res.status, json, text };
+  // An /api path with no matching route falls through to the SPA catch-all and
+  // answers 200 + index.html — a typo'd endpoint looks like success. Flag it.
+  const spa = json === null && text.startsWith("<!doctype html");
+  return { status: res.status, json, text, spa };
 }
 
 // ── CDP ───────────────────────────────────────────────────────────────────
