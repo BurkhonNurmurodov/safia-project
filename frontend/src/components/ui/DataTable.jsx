@@ -87,6 +87,10 @@ export function Th({ label, icon: Icon, k, sort, onSort, align = "left", hint, c
  *               (set each column's width via its Th `cls`, e.g. "w-[20%]"),
  *               NOT row content — keeps columns from re-sizing when rows are
  *               filtered/sorted. Give overflow-prone cells wrap/truncate.
+ *   minWidth  – floor for the table's width (px number or CSS length). Pair it
+ *               with `fixed` on wide tables: percentage columns resolve against
+ *               max(container, minWidth), so narrow screens scroll horizontally
+ *               instead of squeezing every column to nothing.
  *   hover     – row hover highlight (default true)
  *   mobile    – optional stacked-card list for phones: when given, the table
  *               renders from `sm:` up only and this node takes its place
