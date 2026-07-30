@@ -128,10 +128,13 @@ export default function CellAttendance() {
   // ── KPIs over the picked cells (before search / status / role filters, so the
   // header stays a stable denominator while you drill into the table) ────────
   const scopeRows = useMemo(() => {
-    if (!cellIds.length) return allRows;
-    const sel = new Set(cellIds);
-    return allRows.filter(r => sel.has(String(r.cell_id ?? `x:${r.verifix_code}`)));
-  }, [allRows, cellIds]);
+    if (!cellIds.length && !leaderIds.length && !supIds.length) return allRows;
+    const cs = new Set(cellIds), ls = new Set(leaderIds), ms = new Set(supIds);
+    return allRows.filter(r =>
+      (!cs.size || cs.has(r._key)) &&
+      (!ls.size || ls.has(String(r.leader_id ?? "none"))) &&
+      (!ms.size || ms.has(String(r.manager_id ?? "none"))));
+  }, [allRows, cellIds, leaderIds, supIds]);
 
   const workedRows  = useMemo(() => scopeRows.filter(r => r.status === "worked"), [scopeRows]);
   const totalHours  = useMemo(() => workedRows.reduce((s, r) => s + (r.hours_worked || 0), 0), [workedRows]);
