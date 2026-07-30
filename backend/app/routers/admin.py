@@ -39,6 +39,8 @@ from app.permissions import get_page_access, set_page_access, role_can_access, P
 from app.routers.auth import VALID_ROLES
 from app.upload_guard import validate_spreadsheet
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
 
