@@ -49,6 +49,7 @@ export default function LangTextInput({
   placeholder = "",
   hint = true,
   autoFocus = false,
+  className = "",
 }) {
   const { t } = useLang();
   const [active, setActive] = useState(
