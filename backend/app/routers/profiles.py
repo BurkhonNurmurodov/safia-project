@@ -47,6 +47,7 @@ from app.models import (
     TelegramUserRole, Translation,
 )
 from app.reg_token import validate_reg_token
+from app.services.cell_lookup import row_workshop_name
 from app.routers.auth import _validate_init_data
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
