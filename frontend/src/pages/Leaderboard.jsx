@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Trophy, Crown, Medal, Gauge, ClipboardCheck, Lightbulb, ShieldCheck,
+  Trophy, Gauge, ClipboardCheck, Lightbulb, ShieldCheck,
   UserCheck, ListOrdered, TrendingUp, Activity, ArrowUp, ArrowDown, Minus,
   Info, ChevronDown, Download, ArrowRight,
 } from "lucide-react";
