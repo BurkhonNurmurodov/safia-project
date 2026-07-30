@@ -355,9 +355,9 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.6)}, transparent)` }} />
         <span className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)", paddingTop: 6 }}>
           {CATS.map((c, i) => (
-            <span key={c.key} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
+            <span key={c.key} title={`${catMeta[c.key].name}: ${fmt(s.s[c.key])}%`} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
               <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
-              <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.75, marginTop: 3 }}>{catMeta[c.key].short.slice(0, 3)}</span>
+              <span style={{ fontSize: first ? 10 : 9, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.88, marginTop: 3 }}>{catMeta[c.key].short.slice(0, 3)}</span>
             </span>
           ))}
         </span>
