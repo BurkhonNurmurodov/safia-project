@@ -146,11 +146,9 @@ export default function ProfilesManagement() {
   const activeType = TYPES.find((x) => x.key === type);
   const items = data?.[activeType.listKey] ?? [];
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
-  // Workshop name in the viewer's language, first known language as fallback
-  // (used by the leader cell-picker labels + the inline cell-create modal).
-  const wname = (c) =>
-    c[`name_workshop_${lang}`] || c.name_workshop_uz || c.name_workshop_uz_cyrl ||
-    c.name_workshop_ru || c.name_workshop_en || "";
+  // Workshop name in the viewer's language, Russian as the fallback (used by
+  // the leader cell-picker labels + the inline cell-create modal).
+  const wname = (c) => cellName(c, lang);
 
   // Per-column sort — key:null keeps the server order until a header is clicked.
   const [sort, setSort] = useState({ key: null, dir: "asc" });
