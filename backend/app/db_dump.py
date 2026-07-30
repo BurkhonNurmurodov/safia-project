@@ -413,8 +413,9 @@ def _write_table_data(w, pg, table: str, colnames: list[str]) -> int:
     # Named cursor = server-side; the result set never lands in this process
     # whole. Falls back to a client-side cursor if the driver has no such
     # thing (psycopg2 does; keep the fallback so a driver swap doesn't break).
+    safe = "".join(ch if ch.isalnum() else "_" for ch in table)
     try:
-        cur = pg.cursor(name=f"safia_dump_{table}")
+        cur = pg.cursor(name=f"safia_dump_{safe}")
         cur.itersize = FETCH_SIZE
     except Exception:
         cur = pg.cursor()
