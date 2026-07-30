@@ -26,11 +26,18 @@ from __future__ import annotations
 import gzip
 import logging
 import os
+import re
+import time
 from datetime import datetime, timezone
 
 from app.database import engine
 
 log = logging.getLogger(__name__)
+
+# The restore path refuses any script that doesn't carry this line. It is the
+# real guard on that endpoint: without it, "upload a file" would be a
+# general-purpose SQL console pointed at production.
+DUMP_MARKER = "Safia dashboard — full database dump"
 
 SCHEMA = "public"
 
