@@ -42,7 +42,6 @@ import api from "../utils/api";
 
 const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
 const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
-const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
 
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
 // the mobile card so both surfaces read identically.
