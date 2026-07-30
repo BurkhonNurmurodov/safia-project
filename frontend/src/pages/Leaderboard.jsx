@@ -283,7 +283,6 @@ const PLATE = {
 function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
   const first = place === 1;
   const p = PLATE[place];
-  const medal = MEDAL[place];
   const up = s.scoreDelta >= 0;
   return (
     <button
@@ -291,58 +290,68 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
       className={`fut-card place-${place}${first ? " fut-champ" : ""} relative flex flex-col overflow-hidden rounded-2xl`}
       style={{
         aspectRatio: "0.73",
-        color: p.ink,
-        background: `linear-gradient(158deg, ${p.hi} 0%, ${p.mid} 46%, ${p.lo} 100%)`,
-        border: `1px solid ${hexA(medal, 0.8)}`,
+        color: "#FFFFFF",
+        background: `radial-gradient(130% 70% at 50% -6%, ${hexA(p.metal, 0.32)} 0%, transparent 58%), linear-gradient(172deg, #262119 0%, #17140F 56%, #0F0D0A 100%)`,
+        border: `1px solid ${hexA(p.metal, 0.55)}`,
         boxShadow: selected
-          ? `0 24px 50px -20px ${hexA(medal, 0.7)}, 0 0 0 3px var(--brand-ring)`
-          : `0 24px 50px -22px ${hexA(medal, 0.6)}`,
+          ? `0 24px 50px -18px ${hexA(p.metal, 0.6)}, 0 0 0 3px var(--brand-ring)`
+          : `0 24px 50px -22px rgba(0,0,0,0.6), 0 16px 40px -18px ${hexA(p.metal, 0.5)}`,
       }}
     >
-      {/* plate finish — a raking highlight and a glow off the top edge */}
-      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `linear-gradient(104deg, transparent 6%, ${hexA(p.edge, 0.5)} 20%, transparent 33%), radial-gradient(120% 55% at 50% -4%, ${hexA(p.edge, 0.55)} 0%, transparent 64%)` }} />
+      {/* stage finish — a metal top edge catching the spotlight */}
+      <span aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `linear-gradient(180deg, ${hexA(p.hi, 0.18)} 0%, transparent 10%)` }} />
       {/* champion halo — a slow breathing glow behind the render */}
-      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.edge, 0.8)} 0%, transparent 62%)` }} />}
+      {first && <span aria-hidden className="podium-halo absolute pointer-events-none rounded-full" style={{ inset: "2% 10% auto 10%", height: "58%", background: `radial-gradient(circle at 50% 45%, ${hexA(p.metal, 0.5)} 0%, transparent 62%)` }} />}
 
       {/* the render — contain + bottom-anchored, so any portrait ratio stands
           on the name band instead of being cropped through the face */}
       {s.render
-        ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "78%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 16px rgba(0,0,0,0.3))" }} />
-        : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.3 }}>{initials(s.name)}</span>}
+        ? <img src={s.render} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ left: 0, right: 0, top: "4%", height: "78%", width: "100%", objectFit: "contain", objectPosition: "bottom center", filter: "drop-shadow(0 12px 18px rgba(0,0,0,0.5))" }} />
+        : <span aria-hidden className="absolute left-0 right-0 text-center font-black select-none" style={{ top: "24%", fontSize: first ? 60 : 44, opacity: 0.22, color: p.hi }}>{initials(s.name)}</span>}
 
-      {/* foot scrim — sinks the base of the plate so the white band and stats
-          read over both the metal and the render standing on them */}
-      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "46%", background: `linear-gradient(to top, ${hexA(p.deep, 0.92)} 24%, ${hexA(p.deep, 0.6)} 52%, transparent)` }} />
-      {first && <span aria-hidden className="fut-sheen absolute pointer-events-none" style={{ top: "-25%", bottom: "-25%", width: "36%", background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.42)}, transparent)` }} />}
+      {/* frosted foot — progressive backdrop blur (the render's legs melt into
+          the glass; the mask fades the blur in so there is no hard seam) plus
+          a dark tint that keeps the band legible and stands in as the scrim
+          when backdrop-filter is unsupported (old Telegram WebViews) */}
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "44%", backdropFilter: "blur(14px) saturate(1.2)", WebkitBackdropFilter: "blur(14px) saturate(1.2)", maskImage: "linear-gradient(to top, black 58%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 58%, transparent 100%)" }} />
+      <span aria-hidden className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{ height: "50%", background: "linear-gradient(to top, rgba(13,11,8,0.8) 0%, rgba(13,11,8,0.42) 55%, transparent 100%)" }} />
+      {first && <span aria-hidden className="fut-sheen absolute pointer-events-none" style={{ top: "-25%", bottom: "-25%", width: "36%", background: `linear-gradient(90deg, transparent, ${hexA(p.hi, 0.18)}, transparent)` }} />}
 
-      {/* rating column — the card's headline number, underlined by its band */}
-      <span className="absolute flex flex-col items-center" style={{ top: first ? 11 : 8, left: first ? 13 : 9, lineHeight: 1 }}>
-        <b className="tabular-nums" style={{ fontSize: first ? 40 : 31, fontWeight: 900, letterSpacing: "-0.03em" }}>{fmt(s.comp)}</b>
-        <i className="block rounded-full" style={{ width: first ? 26 : 20, height: 3, marginTop: 4, background: bandFill(st, s.comp) }} />
-        <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.1em", marginTop: 4, textTransform: "uppercase", opacity: 0.72 }}>{t("leaderboard.overallShort")}</span>
-        <span className="rounded" style={{ fontSize: first ? 9 : 8, fontWeight: 800, letterSpacing: "0.05em", marginTop: 5, padding: "1px 5px", background: hexA(p.ink, 0.16) }}>S{s.shift}</span>
+      {/* rank column — the big metal place number over its skewed score flag,
+          underscored by the composite's traffic-light band */}
+      <span className="absolute flex flex-col items-start" style={{ top: first ? 8 : 6, left: first ? 14 : 10, lineHeight: 1 }}>
+        <b className="tabular-nums" style={{ fontSize: first ? 44 : 33, fontWeight: 900, letterSpacing: "-0.04em", color: p.metal, textShadow: `0 0 16px ${hexA(p.metal, 0.5)}` }}>{s.rank}</b>
+        <span className="tabular-nums" style={{ marginTop: 5, marginLeft: 3, padding: first ? "3px 9px" : "2px 7px", fontSize: first ? 15 : 12.5, fontWeight: 900, color: p.ink, background: `linear-gradient(165deg, ${p.hi} 0%, ${p.metal} 78%)`, transform: "skewX(-10deg)", borderRadius: 3, boxShadow: `0 4px 14px -4px ${hexA(p.metal, 0.7)}` }}>
+          <span style={{ display: "inline-block", transform: "skewX(10deg)" }}>{fmt(s.comp)}</span>
+        </span>
+        <span className="flex items-center gap-1" style={{ marginTop: 5, marginLeft: 3 }}>
+          <i className="rounded-full" style={{ width: 6, height: 6, background: bandFill(st, s.comp) }} />
+          <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}>{t("leaderboard.overallShort")}</span>
+        </span>
       </span>
 
-      {/* place badge + the period's score movement */}
-      <span className="absolute flex items-center gap-1 rounded-full" style={{ top: first ? 11 : 8, right: first ? 11 : 8, padding: "3px 7px 3px 5px", background: hexA(p.ink, 0.84), color: p.hi }}>
-        {first ? <Crown size={12} /> : <Medal size={12} />}
-        <b className="tabular-nums" style={{ fontSize: 11, fontWeight: 800 }}>{s.rank}</b>
-      </span>
-      <span className="absolute inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ top: first ? 37 : 32, right: first ? 11 : 8, fontSize: 10, fontWeight: 800, padding: "1px 5px", background: hexA("#FFFFFF", 0.66), color: up ? "#15803D" : "#B91C1C" }}>
-        {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
+      {/* the cup — every podium place carries its metal trophy, with the
+          period's score movement riding underneath */}
+      <span className="absolute flex flex-col items-end gap-1.5" style={{ top: first ? 11 : 8, right: first ? 12 : 9 }}>
+        <Trophy size={first ? 34 : 26} strokeWidth={1.9} style={{ color: p.metal, fill: hexA(p.metal, 0.28), filter: `drop-shadow(0 0 10px ${hexA(p.metal, 0.55)})` }} />
+        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", background: "rgba(255,255,255,0.14)", color: up ? "#4ADE80" : "#F87171" }}>
+          {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
+        </span>
       </span>
 
-      {/* name band + stat grid — written in light ink on the sunken foot */}
-      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", color: "#FFFFFF", textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
-        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.55)}, transparent)` }} />
-        <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", padding: "5px 2px 0" }}>{s.name}</span>
-        <span className="block text-center" style={{ fontSize: first ? 10 : 9, fontWeight: 600, opacity: 0.82, padding: "1px 0 5px" }}>{s.unit}</span>
-        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA("#FFFFFF", 0.55)}, transparent)` }} />
+      {/* name band + stat grid — riding the frosted foot */}
+      <span className="relative mt-auto w-full" style={{ padding: first ? "0 11px 11px" : "0 7px 8px", textShadow: "0 1px 2px rgba(0,0,0,0.45)" }}>
+        <span className="block truncate text-center" style={{ fontSize: first ? 15.5 : 12.5, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.02em", padding: "5px 2px 0" }}>{s.name}</span>
+        <span className="flex items-center justify-center gap-1.5" style={{ fontSize: first ? 10 : 9, fontWeight: 600, color: "rgba(255,255,255,0.78)", padding: "2px 0 6px" }}>
+          {s.unit}
+          <span className="rounded tabular-nums" style={{ fontSize: first ? 8.5 : 8, fontWeight: 800, letterSpacing: "0.05em", padding: "1px 5px", background: "rgba(255,255,255,0.16)", color: "#FFFFFF" }}>S{s.shift}</span>
+        </span>
+        <span className="block" style={{ height: 1, background: `linear-gradient(90deg, transparent, ${hexA(p.metal, 0.75)}, transparent)` }} />
         <span className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)", paddingTop: 6 }}>
           {CATS.map((c, i) => (
-            <span key={c.key} className="flex flex-col items-center" style={{ borderLeft: i ? `1px solid ${hexA("#FFFFFF", 0.24)}` : undefined }}>
+            <span key={c.key} className="flex flex-col items-center" style={{ borderLeft: i ? "1px solid rgba(255,255,255,0.2)" : undefined }}>
               <b className="tabular-nums" style={{ fontSize: first ? 15 : 12.5, fontWeight: 900, lineHeight: 1 }}>{fmt(s.s[c.key])}</b>
-              <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.8, marginTop: 3 }}>{catMeta[c.key].short.slice(0, 3)}</span>
+              <span style={{ fontSize: first ? 8.5 : 7.5, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.75, marginTop: 3 }}>{catMeta[c.key].short.slice(0, 3)}</span>
             </span>
           ))}
         </span>
