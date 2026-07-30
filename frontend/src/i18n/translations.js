@@ -7296,6 +7296,7 @@ const t = {
     "admin.profiles.cellsEmpty": "No cells found",
     "admin.profiles.cellsEmptyHint": "Try adjusting your search or filters.",
     "admin.profiles.cellSupervisorFromOwner": "Inherited from the owner",
+    "ui.langInput.ruFallback": "Left empty, the Russian name is shown instead",
     "admin.profiles.cellCreate":       "Create cell",
     "admin.profiles.cellPickPlaceholder": "Select cells…",
     "admin.profiles.cellSearchOrCreate": "Search or type a new code…",
