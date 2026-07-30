@@ -93,6 +93,10 @@ DEFAULT_PAGE_ACCESS = {
     # open to leaders/supervisors from the Access tab (or per-person via
     # page.view.idle-cell on the Permissions tab). Does NOT replace the sheet import.
     "idle-cell": [],
+    # Per-cell attendance viewer over the verifix «Отчёт по посещениям» import —
+    # read-only, admin-only by default; open to roles here or per-person via
+    # page.view.cell-attendance on the Permissions tab.
+    "cell-attendance": [],
 }
 
 
