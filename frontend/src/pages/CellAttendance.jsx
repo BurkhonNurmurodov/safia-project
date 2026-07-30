@@ -23,6 +23,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
+import { cellName as pickCellName } from "../utils/cellName";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
