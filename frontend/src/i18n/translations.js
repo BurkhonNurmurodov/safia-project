@@ -1518,6 +1518,7 @@ const t = {
     "admin.profiles.cellsEmpty": "Yacheyka topilmadi",
     "admin.profiles.cellsEmptyHint": "Qidiruv yoki filtrlarni o'zgartiring.",
     "admin.profiles.cellSupervisorFromOwner": "Brigadir liderdan meros olinadi",
+    "ui.langInput.ruFallback": "Bo'sh qoldirilsa, ruscha nomi ko'rsatiladi",
     "admin.profiles.cellCreate":       "Yacheyka yaratish",
     "admin.profiles.cellPickPlaceholder": "Yacheykalarni tanlang…",
     "admin.profiles.cellSearchOrCreate": "Kod bo'yicha qidiring yoki yangi kiriting…",
