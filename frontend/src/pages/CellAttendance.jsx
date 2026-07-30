@@ -391,6 +391,8 @@ export default function CellAttendance() {
               <thead>
                 <tr>
                   <Th label={t("cellAtt.colCell")}     k="verifix_code"      sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colLeader")}   k="leader_name"       sort={sort} onSort={onSort} />
+                  <Th label={t("cellAtt.colSup")}      k="manager_name"      sort={sort} onSort={onSort} />
                   <Th label={t("cellAtt.colWorker")}   k="worker_name"       sort={sort} onSort={onSort} />
                   <Th label={t("cellAtt.colRole")}     k="job_title"         sort={sort} onSort={onSort} />
                   <Th label={t("cellAtt.colSchedule")} k="schedule"          sort={sort} onSort={onSort} />
