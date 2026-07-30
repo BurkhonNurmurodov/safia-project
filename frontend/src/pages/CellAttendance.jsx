@@ -44,6 +44,10 @@ function cellName(c, lang) {
 // never collide with a real numeric id.
 const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
 
+// Columns holding DB text: sort on the transliterated form so the order matches
+// what the viewer actually reads.
+const TRANSLIT_COLS = new Set(["worker_name", "job_title", "schedule", "leader_name", "manager_name"]);
+
 // Worked = green, day-off / excused markers = neutral slate (traffic-light
 // convention — brand gold is never a status). Mirrors the upload-tab preview.
 function StatusChip({ status }) {
