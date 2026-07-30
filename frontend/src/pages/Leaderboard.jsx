@@ -336,11 +336,24 @@ function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
         </span>
       </span>
 
-      {/* the cup — every podium place carries its engraved trophy, with the
-          period's score movement riding underneath */}
-      <span className="absolute flex flex-col items-end gap-1.5" style={{ top: first ? 11 : 8, right: first ? 12 : 9 }}>
-        <Trophy size={first ? 34 : 26} strokeWidth={1.9} style={{ color: p.ink, fill: hexA(p.ink, 0.2), filter: `drop-shadow(0 2px 5px ${hexA(p.deep, 0.45)})` }} />
-        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", background: hexA("#FFFFFF", 0.66), color: up ? "#15803D" : "#B91C1C" }}>
+      {/* the cup — a medallion struck into the plate, not an icon laid on it:
+          a recessed coin (dark-to-light recess, inset top shadow, lit bottom
+          lip, frosted so the arcs melt away beneath it) holding the trophy as
+          a clean engraved stroke — no fill: lucide glyphs are stroke-drawn and
+          flooding them blots the open bowl — lit by the same 1px edge-light
+          the rank numeral carries. The period's score movement rides under it
+          on the coin's own center axis. */}
+      <span className="absolute flex flex-col items-center gap-1.5" style={{ top: first ? 10 : 8, right: first ? 12 : 9 }}>
+        <span aria-hidden className="flex items-center justify-center rounded-full" style={{
+          width: first ? 40 : 31, height: first ? 40 : 31,
+          background: `linear-gradient(168deg, ${hexA(p.lo, 0.34)} 0%, ${hexA(p.mid, 0.18)} 52%, ${hexA(p.edge, 0.4)} 100%)`,
+          border: `1px solid ${hexA(p.ink, 0.16)}`,
+          boxShadow: `inset 0 1.5px 3px ${hexA(p.deep, 0.34)}, inset 0 -1px 1px ${hexA(p.edge, 0.5)}, 0 1px 0 ${hexA(p.edge, 0.5)}`,
+          backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+        }}>
+          <Trophy size={first ? 21 : 16} strokeWidth={first ? 2.25 : 2.5} style={{ color: p.ink, filter: `drop-shadow(0 1px 0 ${hexA(p.edge, 0.55)})` }} />
+        </span>
+        <span className="inline-flex items-center gap-0.5 rounded-full tabular-nums" style={{ fontSize: 10, fontWeight: 800, padding: "1.5px 7px", background: hexA("#FFFFFF", 0.78), border: `1px solid ${hexA(p.ink, 0.1)}`, boxShadow: `0 2px 6px -3px ${hexA(p.deep, 0.6)}`, color: up ? "#15803D" : "#B91C1C" }}>
           {up ? <ArrowUp size={9} /> : <ArrowDown size={9} />}{fmt1(Math.abs(s.scoreDelta))}
         </span>
       </span>
