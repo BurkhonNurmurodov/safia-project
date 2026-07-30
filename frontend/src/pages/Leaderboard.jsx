@@ -568,6 +568,14 @@ export default function Leaderboard() {
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center rounded-lg flex-shrink-0" style={{ width: 28, height: 28, background: hexA(meta.hue, 0.14), color: meta.hue }}><c.icon size={15} /></span>
                     <span className="text-[11px] font-bold uppercase leading-tight" style={{ letterSpacing: "0.06em", color: "var(--text-3)" }}>{meta.name}</span>
+                    {/* the podium's three-letter stat codes are undecodable on
+                        the card itself — this strip already lists all five
+                        categories in the same order, so carrying the code here
+                        turns it into the legend. Same .slice(0, 3) as the card
+                        so the two can never drift apart. */}
+                    <span className="ml-auto text-[10px] font-black tracking-wider rounded px-1.5 py-0.5 flex-shrink-0" style={{ color: "var(--text-4)", background: "var(--bg-inner)" }}>
+                      {meta.short.slice(0, 3)}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 min-w-0">
                     <Avatar sup={top} size={26} />
