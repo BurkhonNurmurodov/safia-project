@@ -443,6 +443,7 @@ export default function Cells() {
                 is optional and a blank one falls back to Russian on display,
                 so the empty tabs preview the Russian text as a placeholder. */}
             <LangTextInput
+              className="mt-1"
               value={{
                 uz: form.name_workshop_uz,
                 uz_cyrl: form.name_workshop_uz_cyrl,
