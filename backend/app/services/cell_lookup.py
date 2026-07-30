@@ -117,11 +117,25 @@ def resolve_sap(table: dict[str, dict], code) -> dict | None:
 
 def workshop_name(cell: dict | None, lang: str = "ru") -> str | None:
     """Pick the workshop name for the viewer language, falling back across the
-    other languages so a partially-filled cell still shows something."""
+    other languages — RUSSIAN FIRST — so a partially-filled cell still shows
+    something. Every language column is nullable and Russian is the one the
+    plant actually fills in, so it is the fallback the UI promises."""
     if not cell:
         return None
     for l in (lang, *_LANGS):
         v = cell.get(l)
+        if v:
+            return v
+    return None
+
+
+def row_workshop_name(cell, lang: str = "ru") -> str | None:
+    """workshop_name() for a raw `cells` ORM row instead of a _cell_dict()."""
+    if cell is None:
+        return None
+    for l in (lang, *_LANGS):
+        col = _WS_COL.get(l)
+        v = getattr(cell, col, None) if col else None
         if v:
             return v
     return None
