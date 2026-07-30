@@ -464,6 +464,163 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
     }
 
 
+# ── Restore ───────────────────────────────────────────────────────────────────
+
+_DOLLAR_RE = re.compile(r"\$[A-Za-z_]\w*\$|\$\$")
+
+# Transaction control is Python's job during a restore (see restore_from_file),
+# and these two session settings are ours to choose, so they're dropped from the
+# script rather than obeyed.
+_SKIP_PREFIXES = (
+    "begin", "commit", "rollback", "start transaction", "end",
+    "set statement_timeout", "set lock_timeout",
+)
+
+
+def iter_statements(fh):
+    """Yield SQL statements from a dump file object, one at a time.
+
+    Splitting on ``;`` alone is wrong: any note or worker name containing a
+    semicolon would cut a statement in half. So this tracks quoting properly —
+    single-quoted literals (where ``''`` is the escape, since the dump sets
+    standard_conforming_strings=on), quoted identifiers, dollar-quoted bodies,
+    and both comment styles. Streams line by line, so a 100 MB dump never lands
+    in memory whole.
+    """
+    buf: list[str] = []
+    state = "normal"
+    tag = ""
+    depth = 0
+
+    for line in fh:
+        i, n = 0, len(line)
+        while i < n:
+            ch = line[i]
+
+            if state == "normal":
+                if ch == "'":
+                    state = "squote"; buf.append(ch); i += 1
+                elif ch == '"':
+                    state = "dquote"; buf.append(ch); i += 1
+                elif line.startswith("--", i):
+                    i = n                      # comment runs to end of line
+                elif line.startswith("/*", i):
+                    state = "block"; depth = 1; i += 2
+                elif ch == "$" and (m := _DOLLAR_RE.match(line, i)):
+                    tag = m.group(0); state = "dollar"
+                    buf.append(tag); i = m.end()
+                elif ch == ";":
+                    stmt = "".join(buf).strip()
+                    buf = []; i += 1
+                    if stmt:
+                        yield stmt
+                else:
+                    buf.append(ch); i += 1
+
+            elif state == "squote":
+                buf.append(ch)
+                if ch == "'":
+                    if i + 1 < n and line[i + 1] == "'":
+                        buf.append("'"); i += 2; continue
+                    state = "normal"
+                i += 1
+
+            elif state == "dquote":
+                buf.append(ch)
+                if ch == '"':
+                    if i + 1 < n and line[i + 1] == '"':
+                        buf.append('"'); i += 2; continue
+                    state = "normal"
+                i += 1
+
+            elif state == "block":
+                if line.startswith("/*", i):
+                    depth += 1; i += 2
+                elif line.startswith("*/", i):
+                    depth -= 1; i += 2
+                    if depth == 0:
+                        state = "normal"
+                else:
+                    i += 1
+
+            elif state == "dollar":
+                if line.startswith(tag, i):
+                    buf.append(tag); i += len(tag); state = "normal"
+                else:
+                    buf.append(ch); i += 1
+
+    tail = "".join(buf).strip()
+    if tail:
+        yield tail
+
+
+def _open_dump(path: str, gzipped: bool):
+    if gzipped:
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    return open(path, "r", encoding="utf-8", errors="replace")
+
+
+def restore_from_file(path: str, *, gzipped: bool) -> dict:
+    """Execute a dump produced by :func:`dump_to_file` against this database.
+
+    Everything runs in ONE transaction that this function controls, so a failure
+    anywhere leaves the database exactly as it was — a half-restored database
+    would be far worse than a failed restore. The script's own BEGIN/COMMIT are
+    skipped so that guarantee can't be subverted by the file.
+    """
+    with _open_dump(path, gzipped) as fh:
+        head = fh.read(4096)
+    if DUMP_MARKER not in head:
+        raise ValueError(
+            "This file is not a Safia database dump (missing the header marker). "
+            "Only a dump produced by the Backup tab can be restored here."
+        )
+
+    started = time.monotonic()
+    executed = skipped = 0
+
+    # Drop our own idle pooled connections first: they hold no locks, but
+    # clearing them removes the most likely reason a DROP TABLE would block.
+    engine.dispose()
+
+    raw = engine.raw_connection()
+    pg = _driver_connection(raw)
+    try:
+        cur = pg.cursor()
+        cur.execute("SET statement_timeout = 0")
+        # Fail fast instead of hanging forever if a live request holds a lock.
+        cur.execute("SET lock_timeout = '60s'")
+
+        with _open_dump(path, gzipped) as fh:
+            for stmt in iter_statements(fh):
+                low = stmt.lstrip().lower()
+                if low.startswith(_SKIP_PREFIXES):
+                    skipped += 1
+                    continue
+                try:
+                    cur.execute(stmt)
+                except Exception as exc:
+                    pg.rollback()
+                    snippet = " ".join(stmt.split())[:300]
+                    raise RuntimeError(
+                        f"Failed after {executed} statements: {exc}\n\nStatement: {snippet}"
+                    ) from exc
+                executed += 1
+
+        pg.commit()
+        cur.close()
+    finally:
+        raw.close()
+        # New pooled connections, so nothing cached against the old tables.
+        engine.dispose()
+
+    return {
+        "statements": executed,
+        "skipped":    skipped,
+        "elapsed":    round(time.monotonic() - started, 1),
+    }
+
+
 def _write_table_data(w, pg, table: str, colnames: list[str]) -> int:
     """Stream one table out as batched multi-row INSERTs. Returns the row count.
 
