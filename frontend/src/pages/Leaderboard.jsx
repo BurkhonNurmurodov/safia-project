@@ -265,19 +265,21 @@ function DistributionStrips({ sups, selectedId, onSelect, catMeta, st, onTip }) 
 }
 
 /* ═══════════════════════ podium — player cards ═══════════════════════
- * The top three ride rating-list cards: a dark charcoal stage lit from above
- * by the place's metal (gold / silver / bronze), the brigadir standing on it
- * as a cut-out render, the big rank number over a skewed metal score flag on
- * the left, the metal cup top-right, and a frosted-glass foot the render's
- * legs melt into, carrying the name band and the five ranked statistics.
+ * The top three ride metal player cards: the gold / silver / bronze plate,
+ * FIDE-style decoration — engraved arcs radiating from behind the brigadir's
+ * cut-out render under a top spotlight — the big rank number over a dark
+ * score flag on the left, the engraved cup top-right, and a frosted-glass
+ * foot (progressive backdrop blur) the render's legs melt into, carrying the
+ * name band and the five ranked statistics.
  *
  * A card is its own surface, so its palette is fixed in both themes (like the
- * chart identity colours): one metal per place — a bright stop, the body stop
- * and the dark ink written on metal — over the shared charcoal stage. */
+ * chart identity colours): three stops of the medal metal, the dark ink
+ * written on the plate, the bright edge that lights the decoration, and the
+ * deep tone tinting the frosted foot. */
 const PLATE = {
-  1: { hi: "#F9E7A8", metal: "#E0AF35", ink: "#3B2A06" },
-  2: { hi: "#F1F5FA", metal: "#B4BFCC", ink: "#1E2530" },
-  3: { hi: "#F2CBA0", metal: "#CE8B51", ink: "#33190A" },
+  1: { hi: "#F9E7A8", mid: "#DBAB2C", lo: "#8A6410", ink: "#3B2A06", edge: "#FFF6CE", deep: "#4E3604" },
+  2: { hi: "#F1F5FA", mid: "#A9B3BF", lo: "#5C6673", ink: "#1E2530", edge: "#FFFFFF", deep: "#2E3742" },
+  3: { hi: "#F2CBA0", mid: "#C68249", lo: "#7A4A20", ink: "#33190A", edge: "#FFE6CC", deep: "#472409" },
 };
 
 function PlayerCard({ s, place, selected, onSelect, catMeta, st, t }) {
