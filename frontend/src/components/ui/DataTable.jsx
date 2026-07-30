@@ -106,6 +106,7 @@ export default function TableCard({
   maxHeight = "70vh",
   wrap = false,
   fixed = false,
+  minWidth,
   hover = true,
   mobile,
   mobileCards = false,
