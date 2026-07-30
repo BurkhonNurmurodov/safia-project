@@ -83,9 +83,17 @@ def validate_spreadsheet(file: UploadFile, content: bytes) -> None:
     check_magic(content, _ZIP_MAGIC)
 
 
-def validate_db_dump(file: UploadFile, head: bytes) -> bool:
-    """Enforce that an uploaded database dump is a .sql or .sql.gz, and that its
-    bytes match. Returns True when the payload is gzip-compressed.
+def check_dump_name(filename: str | None) -> None:
+    """Raise 400 unless the name is a .sql / .sql.gz dump or one of its parts."""
+    if _PART_RE.search(filename or ""):
+        return
+    check_extension(filename, DUMP_EXTS)
+
+
+def validate_db_dump(filename: str | None, head: bytes) -> bool:
+    """Enforce that an uploaded database dump is a .sql / .sql.gz (or a numbered
+    part of one) and that its leading bytes agree. ``head`` must come from the
+    FIRST part. Returns True when the payload is gzip-compressed.
 
     The extension whitelist matters far less here than the header marker the
     restore path checks afterwards: this file gets EXECUTED against the live
@@ -93,14 +101,16 @@ def validate_db_dump(file: UploadFile, head: bytes) -> bool:
     gate is that the script must carry this platform's own dump signature, which
     keeps the endpoint from degrading into a general-purpose SQL console.
     """
-    check_extension(file.filename, DUMP_EXTS)
+    check_dump_name(filename)
     gzipped = head.startswith(_GZIP_MAGIC[0])
-    if _ext(file.filename) == ".gz" and not gzipped:
+    name = (filename or "").lower()
+    stem = _PART_RE.sub("", name)
+    if stem.endswith(".gz") and not gzipped:
         raise HTTPException(
             status_code=400,
             detail="File is named .gz but is not gzip-compressed.",
         )
-    if _ext(file.filename) == ".sql" and gzipped:
+    if stem.endswith(".sql") and gzipped:
         raise HTTPException(
             status_code=400,
             detail="File is gzip-compressed — rename it to .sql.gz.",
