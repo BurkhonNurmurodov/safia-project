@@ -375,7 +375,8 @@ switch (argv[0]) {
     const [, method, p, body] = argv;
     if (!p) die("usage: driver.mjs api <METHOD> <path> [jsonBody]");
     const r = await apiCall(method.toUpperCase(), p, body);
-    say(`${r.status} ${method.toUpperCase()} ${API}${p}`);
+    say(`${r.status} ${method.toUpperCase()} ${API}${p}${r.spa ? "   ⚠ SPA index.html — no such API route" : ""}`);
+    if (r.spa) process.exit(1);
     say(r.json ? JSON.stringify(r.json, null, 2).slice(0, 4000) : r.text.slice(0, 2000));
     process.exit(r.status < 400 ? 0 : 1);
   }
