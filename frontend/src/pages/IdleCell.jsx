@@ -14,6 +14,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { cellName as pickCellName } from "../utils/cellName";
 import { useLang } from "../context/LangContext";
 
 // Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
