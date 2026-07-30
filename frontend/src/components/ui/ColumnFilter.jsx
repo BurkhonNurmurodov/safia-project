@@ -131,11 +131,19 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false }) 
   );
   return (
     <div>
+      {searchable && (
+        <input
+          value={q} onChange={e => setQ(e.target.value)}
+          placeholder={t("common.search")} autoFocus
+          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+        />
+      )}
       <div className="max-h-44 overflow-y-auto space-y-0.5 mb-1">
-        {opts.length === 0 && (
+        {shown.length === 0 && (
           <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
         )}
-        {opts.map(o => (
+        {shown.map(o => (
           <label key={o}
             {...dragRow(o)}
             className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
