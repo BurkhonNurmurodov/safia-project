@@ -18,6 +18,7 @@ import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useTranslit, transliterate, convertFromUz } from "../../utils/transliterate";
+import { cellName } from "../../utils/cellName";
 
 // The profile sections. `listKey` = field in GET /api/profiles/admin/list.
 // Guests are self-created at registration — the section manages (rename /
