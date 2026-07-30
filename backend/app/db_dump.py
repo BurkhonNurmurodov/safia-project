@@ -353,6 +353,11 @@ def dump_to_file(path: str, *, include_drops: bool = True) -> dict:
                 w("--\n-- WARNING: this dump DROPS every object listed below before\n")
                 w("-- recreating it. Do not run it against a database whose contents\n")
                 w("-- you still need.\n")
+            if skipped:
+                w("--\n-- NOT INCLUDED — this dumper covers tables, sequences, enums,\n")
+                w("-- indexes, constraints and views only. Recreate these by hand:\n")
+                for item in skipped:
+                    w(f"--     {item}\n")
             w("--\n\n")
             w(_HEADER_SETTINGS)
             w("\nBEGIN;\n")
