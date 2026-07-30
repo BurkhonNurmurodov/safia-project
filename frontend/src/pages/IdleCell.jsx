@@ -77,10 +77,8 @@ const focusIntoView = (e) => {
   const el = e.currentTarget;
   setTimeout(() => el.scrollIntoView({ block: "center" }), 250);
 };
-function cellName(c, lang) {
-  const byLang = { uz: c.name_uz, uz_cyrl: c.name_uz_cyrl, ru: c.name_ru, en: c.name_en }[lang];
-  return byLang || c.name_ru || c.name_uz || c.name_en || c.name_uz_cyrl || "";
-}
+// Viewer language first, then Russian — the shared registry fallback.
+const cellName = (c, lang) => pickCellName(c, lang, "name_");
 // Stable per-cell hue so each verifix badge is visually distinct (identity, not
 // status) — solid mid-tone with white text reads in both themes.
 function hueFromString(s) {
