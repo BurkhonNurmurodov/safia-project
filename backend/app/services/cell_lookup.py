@@ -127,15 +127,3 @@ def workshop_name(cell: dict | None, lang: str = "ru") -> str | None:
         if v:
             return v
     return None
-
-
-def row_workshop_name(cell, lang: str = "ru") -> str | None:
-    """workshop_name() for a raw `cells` ORM row instead of a _cell_dict()."""
-    if cell is None:
-        return None
-    for l in (lang, *_LANGS):
-        col = _WS_COL.get(l)
-        v = getattr(cell, col, None) if col else None
-        if v:
-            return v
-    return None
