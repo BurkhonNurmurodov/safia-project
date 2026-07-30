@@ -35,11 +35,8 @@ const todayIso = () => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-function cellName(c, lang) {
-  if (!c) return "";
-  const byLang = { uz: c.name_uz, uz_cyrl: c.name_uz_cyrl, ru: c.name_ru, en: c.name_en }[lang];
-  return byLang || c.name_ru || c.name_uz || c.name_en || c.name_uz_cyrl || "";
-}
+// Viewer language first, then Russian — the shared registry fallback.
+const cellName = (c, lang) => pickCellName(c, lang, "name_");
 
 // One identity for a cell across the catalog and the rows. Unmatched codes have
 // no cell_id, so they key off the raw code instead — string-prefixed so they can
