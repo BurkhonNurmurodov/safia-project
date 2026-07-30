@@ -89,13 +89,16 @@ const ROUTES = [
 export const DATA_START = "2026-05-08";
 export const DATA_END = "2026-05-20";
 
+// NOTE the param names: date_from / date_to. Wrong names (start/end) still
+// answer 200 — with every metric zeroed — so each row asserts on the payload.
+const RANGE = `date_from=${DATA_START}&date_to=${DATA_END}`;
 const SMOKE = [
-  ["GET", "/api/translations"],
-  ["GET", `/api/summary?start=${DATA_START}&end=${DATA_END}`],
-  ["GET", `/api/heatmap?start=${DATA_START}&end=${DATA_END}`],
-  ["GET", `/api/downtime?start=${DATA_START}&end=${DATA_END}&kpi_only=1`],
-  ["GET", "/api/profiles/me"],
-  ["GET", "/api/notifications"],
+  ["GET", "/api/translations", (j) => Object.keys(j || {}).length > 0],
+  ["GET", `/api/summary?${RANGE}`, (j) => j?.total_brigadirs > 0],
+  ["GET", `/api/brigadirs?${RANGE}`, (j) => Array.isArray(j) && j.length > 0],
+  ["GET", `/api/heatmap?${RANGE}`, (j) => j?.dates?.length > 0],
+  ["GET", `/api/downtime?${RANGE}&kpi_only=1`, (j) => j?.dates?.length > 0],
+  ["GET", "/api/profiles/me", (j) => !!j],
 ];
 
 const say = (...a) => console.log(...a);
