@@ -76,7 +76,7 @@ const CHROME_CANDIDATES = [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ].filter(Boolean);
 
-function readdirSafe(d) { try { return require("node:fs").readdirSync(d); } catch { return []; } }
+function readdirSafe(d) { try { return readdirSync(d); } catch { return []; } }
 
 const ROUTES = [
   "/", "/zagruzka", "/leaderboard", "/workers", "/plan", "/downtime", "/staff",
