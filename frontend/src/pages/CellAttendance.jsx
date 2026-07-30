@@ -231,22 +231,47 @@ export default function CellAttendance() {
 
   return (
     <Layout title={t("cellAtt.title")}>
-      {/* Toolbar — one aligned row: day stepper, cell picker, then the test note */}
+      {/* Toolbar — one aligned row: day stepper, then the three owner/cell
+          filters (leader → supervisor → cell), then the test note */}
       <div className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <DayStepper value={date} onChange={setDate} />
         {cells.length > 0 && (
-          <StyledSelect
-            multiple searchable
-            value={cellIds}
-            onChange={setCellIds}
-            options={cellOptions}
-            allLabel={t("cellAtt.allCells")}
-            countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
-            searchPlaceholder={t("cellAtt.searchCell")}
-            triggerClassName="px-3 py-2 text-sm"
-            className="w-full md:w-auto md:min-w-[200px]"
-          />
+          <>
+            <StyledSelect
+              multiple searchable
+              value={leaderIds}
+              onChange={setLeaderIds}
+              options={leaderOptions}
+              allLabel={t("cellAtt.allLeaders")}
+              countLabel={(n) => `${n} ${t("cellAtt.leadersWord")}`}
+              searchPlaceholder={t("cellAtt.searchLeader")}
+              triggerClassName="px-3 py-2 text-sm"
+              className="w-full md:w-auto md:min-w-[170px]"
+            />
+            <StyledSelect
+              multiple searchable
+              value={supIds}
+              onChange={setSupIds}
+              options={supOptions}
+              allLabel={t("cellAtt.allSupervisors")}
+              countLabel={(n) => `${n} ${t("cellAtt.supervisorsWord")}`}
+              searchPlaceholder={t("cellAtt.searchSupervisor")}
+              triggerClassName="px-3 py-2 text-sm"
+              className="w-full md:w-auto md:min-w-[170px]"
+            />
+            <StyledSelect
+              multiple searchable
+              value={cellIds}
+              onChange={setCellIds}
+              options={cellOptions}
+              allLabel={t("cellAtt.allCells")}
+              countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
+              searchPlaceholder={t("cellAtt.searchCell")}
+              triggerClassName="px-3 py-2 text-sm"
+              className="w-full md:w-auto md:min-w-[200px]"
+            />
+          </>
         )}
         <span className="w-full md:w-auto md:ml-auto flex items-center gap-1.5 text-xs"
           style={{ color: "var(--text-4)" }}>
