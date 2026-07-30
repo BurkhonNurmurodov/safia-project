@@ -76,6 +76,31 @@ def validate_spreadsheet(file: UploadFile, content: bytes) -> None:
     check_magic(content, _ZIP_MAGIC)
 
 
+def validate_db_dump(file: UploadFile, head: bytes) -> bool:
+    """Enforce that an uploaded database dump is a .sql or .sql.gz, and that its
+    bytes match. Returns True when the payload is gzip-compressed.
+
+    The extension whitelist matters far less here than the header marker the
+    restore path checks afterwards: this file gets EXECUTED against the live
+    database, so "looks like SQL" is nowhere near a sufficient guard. The real
+    gate is that the script must carry this platform's own dump signature, which
+    keeps the endpoint from degrading into a general-purpose SQL console.
+    """
+    check_extension(file.filename, DUMP_EXTS)
+    gzipped = head.startswith(_GZIP_MAGIC[0])
+    if _ext(file.filename) == ".gz" and not gzipped:
+        raise HTTPException(
+            status_code=400,
+            detail="File is named .gz but is not gzip-compressed.",
+        )
+    if _ext(file.filename) == ".sql" and gzipped:
+        raise HTTPException(
+            status_code=400,
+            detail="File is gzip-compressed — rename it to .sql.gz.",
+        )
+    return gzipped
+
+
 def validate_broadcast_media(file: UploadFile) -> None:
     """Enforce the broadcast attachment whitelist by extension. (Content is
     forwarded to Telegram, not run locally, so an extension whitelist that blocks
