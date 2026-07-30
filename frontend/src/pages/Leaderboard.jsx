@@ -537,10 +537,13 @@ export default function Leaderboard() {
             />
           </div>
           <div className="flex items-center gap-2.5 sm:ml-auto sm:self-end">
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ color: "var(--brand-text)", background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+            {/* the demo badge is a caveat, not an accent: amber keeps it from
+                reading as a third gold action beside the export, and leaves
+                brand gold to mean one thing on this page — the champion. */}
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ color: st.warnInk, background: hexA(st.warn, 0.12), border: `1px solid ${hexA(st.warn, 0.32)}` }}>
               {t("leaderboard.demoBadge")}
             </span>
-            <Button size="lg" icon={<Download size={14} />} title={t("leaderboard.exportHint")} onClick={() => onDemoExport(setTip)}>
+            <Button size="lg" variant="secondary" icon={<Download size={14} />} title={t("leaderboard.exportHint")} onClick={() => onDemoExport(setTip)}>
               {t("leaderboard.export")}
             </Button>
           </div>
