@@ -3504,7 +3504,7 @@ export default function Staff() {
   // It widens READING only — creating documents stays their own unit's job.
   const seesAllUnits = seesAllOn("staff") || seesAllOn("daily");
 
-  const [tab, setTab] = useState(role === "shift-manager" ? "requests" : "workers");
+  const [rawTab, setTab] = usePersistentState("staff_tab", role === "shift-manager" ? "requests" : "workers");
   // Persisted so the date + supervisor stay selected after navigating away and
   // back (separate keys from the Daily page — each page remembers its own).
   const [selectedDate, setSelectedDate] = usePersistentState("staff_selected_date", "");
