@@ -391,10 +391,12 @@ export default function CellAttendance() {
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <SkeletonTable rows={8} cols={7} />
         </div>
-      ) : allRows.length === 0 ? (
+      ) : scopedRows.length === 0 ? (
+        // The day may hold rows and still have nothing in the load slice —
+        // saying "no data" there would read as a broken upload.
         <EmptyState
-          title={t("cellAtt.noDataTitle")}
-          message={t("cellAtt.noDataHint")}
+          title={allRows.length === 0 ? t("cellAtt.noDataTitle") : t("cellAtt.noLoadTitle")}
+          message={allRows.length === 0 ? t("cellAtt.noDataHint") : t("cellAtt.noLoadHint")}
           showUploadLink={false}
         />
       ) : (
