@@ -114,7 +114,7 @@ export default function CellAttendance() {
   // same picks every time. One storage key per control, so a stale shape in one
   // can't poison the rest, and each is prefixed for this page only.
   const [date, setDate] = usePersistentState("cellatt_date", todayIso());
-  const [scope, setScope] = usePersistentState("cellatt_scope", "load"); // load | all
+  const [rawScope, setScope] = usePersistentState("cellatt_scope", "load"); // load | all | config
   const [cellIds, setCellIds] = usePersistentState("cellatt_cells", []);      // [] = every cell in scope
   const [leaderIds, setLeaderIds] = usePersistentState("cellatt_leaders", []); // [] = every leader
   const [supIds, setSupIds] = usePersistentState("cellatt_sups", []);          // [] = every supervisor
