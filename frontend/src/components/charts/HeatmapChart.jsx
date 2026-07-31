@@ -166,7 +166,7 @@ function SingleGrid({
   const cellW      = containerW > 0
     ? Math.max(CELL_W, Math.floor((containerW - labelWidth - avgW) / BASIS_DAYS))
     : CELL_W;
-  const tableWidth = LABEL_W + effDays * cellW + avgW;
+  const tableWidth = labelWidth + effDays * cellW + avgW;
   const pads       = Array.from({ length: padCount });
 
   // Summary column is pinned to the right edge; data scrolls underneath it.
