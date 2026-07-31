@@ -159,21 +159,15 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
         {shown.length === 0 && (
           <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
         )}
-        {shown.map(o => (
-          <label key={o}
-            {...dragRow(o)}
-            title={label(o)}
-            className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
-            style={{ color: "var(--text-2)" }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-          >
-            <input type="checkbox" checked={sel.includes(o)}
-              onChange={() => onChange(sel.includes(o) ? sel.filter(v => v !== o) : [...sel, o])}
-              style={{ accentColor: "var(--brand)" }} />
-            <span className="truncate">{render ? render(o) : (o || "—")}</span>
-          </label>
-        ))}
+        {groups
+          ? groups.map(([g, items]) => (
+              <div key={g}>
+                <div className="px-1.5 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--text-4)" }}>{g}</div>
+                <div className="space-y-0.5">{items.map(optRow)}</div>
+              </div>
+            ))
+          : shown.map(optRow)}
       </div>
       {searchable && shown.length < opts.length && (
         <p className="text-[10px] text-center pb-1" style={{ color: "var(--text-4)" }}>
