@@ -388,327 +388,348 @@ export default function CellAttendance() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <SegmentedToggle
           value={scope}
-          onChange={setScope}
+          onChange={askScope}
           options={[
             { value: "load", label: t("cellAtt.scopeLoad"), title: t("cellAtt.scopeLoadHint") },
             { value: "all",  label: t("cellAtt.scopeAll"),  title: t("cellAtt.scopeAllHint") },
+            // The tab that DEFINES the load slice, so it sits next to it.
+            ...(isAdmin
+              ? [{ value: "config", label: t("cellAtt.scopeConfig"), title: t("cellAtt.scopeConfigHint") }]
+              : []),
           ]}
         />
-        {scope === "load" && (
+        {scope !== "all" && (
           <span className="text-xs" style={{ color: "var(--text-4)" }}>
-            {t("cellAtt.scopeNote")}
+            {scope === "load" ? t("cellAtt.scopeNote") : t("cellAtt.cfgNote")}
           </span>
         )}
       </div>
 
-      {/* Toolbar — one aligned row: day stepper, then the three owner/cell
-          filters (leader → supervisor → cell), then the test note */}
-      <div className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <DayStepper value={date} onChange={setDate} />
-        {scopedCells.length > 0 && (
-          <>
-            <StyledSelect
-              multiple searchable
-              value={leaderIds}
-              onChange={setLeaderIds}
-              options={leaderOptions}
-              allLabel={t("cellAtt.allLeaders")}
-              countLabel={(n) => `${n} ${t("cellAtt.leadersWord")}`}
-              searchPlaceholder={t("cellAtt.searchLeader")}
-              triggerClassName="px-3 py-2 text-sm"
-              className="w-full md:w-auto md:min-w-[170px]"
-            />
-            <StyledSelect
-              multiple searchable
-              value={supIds}
-              onChange={setSupIds}
-              options={supOptions}
-              allLabel={t("cellAtt.allSupervisors")}
-              countLabel={(n) => `${n} ${t("cellAtt.supervisorsWord")}`}
-              searchPlaceholder={t("cellAtt.searchSupervisor")}
-              triggerClassName="px-3 py-2 text-sm"
-              className="w-full md:w-auto md:min-w-[170px]"
-            />
-            <StyledSelect
-              multiple searchable
-              value={cellIds}
-              onChange={setCellIds}
-              options={cellOptions}
-              allLabel={t("cellAtt.allCells")}
-              countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
-              searchPlaceholder={t("cellAtt.searchCell")}
-              triggerClassName="px-3 py-2 text-sm"
-              className="w-full md:w-auto md:min-w-[200px]"
-            />
-          </>
-        )}
-        <span className="w-full md:w-auto md:ml-auto flex items-center gap-1.5 text-xs"
-          style={{ color: "var(--text-4)" }}>
-          <FlaskConical size={12} /> {t("cellAtt.testNote")}
-        </span>
-      </div>
-
-      {isLoading ? (
-        <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SkeletonTable rows={8} cols={7} />
-        </div>
-      ) : scopedRows.length === 0 ? (
-        // The day may hold rows and still have nothing in the load slice —
-        // saying "no data" there would read as a broken upload.
-        <EmptyState
-          title={allRows.length === 0 ? t("cellAtt.noDataTitle") : t("cellAtt.noLoadTitle")}
-          message={allRows.length === 0 ? t("cellAtt.noDataHint") : t("cellAtt.noLoadHint")}
-          showUploadLink={false}
-        />
+      {scope === "config" ? (
+        <LoadConfig onDirtyChange={setConfigDirty} />
       ) : (
-        <div className="space-y-4">
-          {/* KPI header */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <KPICard
-              label={t("cellAtt.kpiCame")}
-              value={workedRows.length}
-              sub={`${t("cellAtt.of")} ${scopeRows.length} · ${fmtPct(cameRatio)}`}
-            />
-            <KPICard
-              label={t("cellAtt.kpiCells")}
-              value={cellsShown}
-              sub={t("cellAtt.kpiCellsSub")}
-            />
-            <KPICard
-              label={t("cellAtt.kpiTotalHours")}
-              value={workedRows.length ? `${fmtNum(totalHours, 1)} ${t("daily.hrs")}` : "—"}
-              sub={t("cellAtt.kpiWorkedOnly")}
-            />
-            <KPICard
-              label={t("cellAtt.kpiAvgHours")}
-              value={avgHours !== null ? `${fmtNum(avgHours, 2)} ${t("daily.hrs")}` : "—"}
-              sub={t("cellAtt.kpiWorkedOnly")}
-            />
-          </div>
-
-          {/* Unmatched «Код подразделения» — those rows belong to no cell yet */}
-          {unmatchedCount > 0 && (
-            <div className="flex items-start gap-1.5 text-[11px] px-1" style={{ color: "#eab308" }}>
-              <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-              <span>{t("cellAtt.unmatchedNote").replace("{n}", unmatchedCount)}</span>
-            </div>
+        <>
+        {/* Toolbar — one aligned row: day stepper, then the three owner/cell
+            filters (leader → supervisor → cell), then the test note */}
+        <div className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <DayStepper value={date} onChange={setDate} />
+          {scopedCells.length > 0 && (
+            <>
+              <StyledSelect
+                multiple searchable
+                value={leaderIds}
+                onChange={setLeaderIds}
+                options={leaderOptions}
+                allLabel={t("cellAtt.allLeaders")}
+                countLabel={(n) => `${n} ${t("cellAtt.leadersWord")}`}
+                searchPlaceholder={t("cellAtt.searchLeader")}
+                triggerClassName="px-3 py-2 text-sm"
+                className="w-full md:w-auto md:min-w-[170px]"
+              />
+              <StyledSelect
+                multiple searchable
+                value={supIds}
+                onChange={setSupIds}
+                options={supOptions}
+                allLabel={t("cellAtt.allSupervisors")}
+                countLabel={(n) => `${n} ${t("cellAtt.supervisorsWord")}`}
+                searchPlaceholder={t("cellAtt.searchSupervisor")}
+                triggerClassName="px-3 py-2 text-sm"
+                className="w-full md:w-auto md:min-w-[170px]"
+              />
+              <StyledSelect
+                multiple searchable
+                value={cellIds}
+                onChange={setCellIds}
+                options={cellOptions}
+                allLabel={t("cellAtt.allCells")}
+                countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
+                searchPlaceholder={t("cellAtt.searchCell")}
+                triggerClassName="px-3 py-2 text-sm"
+                className="w-full md:w-auto md:min-w-[200px]"
+              />
+            </>
           )}
-
-          {/* Came-to-work by role — chips toggle the job filter */}
-          {roleCounts.length > 0 && (
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-                {t("cellAtt.byRole")}
-              </span>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {roleCounts.map(([title, count]) => {
-                  const active = jobFilter.includes(title);
-                  return (
-                    <button
-                      key={title}
-                      onClick={() => toggleRole(title)}
-                      title={tl(title) || title}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
-                      style={{
-                        background: active ? "var(--brand-bg)" : "var(--bg-inner)",
-                        border: `1px solid ${active ? "var(--brand-bg)" : "var(--border-md)"}`,
-                        color: active ? "var(--brand-text)" : "var(--text-2)",
-                      }}
-                    >
-                      <span className="truncate max-w-[160px]">{tl(title) || title}</span>
-                      <span className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
-                        style={{
-                          background: active ? "var(--brand-text)" : "var(--border-md)",
-                          color: active ? "var(--bg-card)" : "var(--text-1)",
-                        }}>
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <TableCard
-              icon={LayoutGrid}
-              title={t("cellAtt.tableTitle")}
-              // Widths come from the header, not from whichever 50 rows happen
-              // to be on screen — otherwise every sort/page/filter reflows the
-              // columns. minWidth keeps them readable on narrow screens.
-              fixed
-              minWidth={1500}
-              right={
-                <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                  {sorted.length.toLocaleString("ru-RU")} / {scopeRows.length.toLocaleString("ru-RU")}
-                </span>
-              }
-              toolbar={
-                <>
-                  <SearchInput
-                    value={search}
-                    onChange={setSearch}
-                    placeholder={t("cellAtt.searchWorker")}
-                    className="flex-1 min-w-[180px]"
-                  />
-                  <SegmentedToggle
-                    value={statusTab}
-                    onChange={setStatusTab}
-                    options={[
-                      ["all", t("cellAtt.tabAll")],
-                      ["worked", t("cellAtt.tabWorked")],
-                      ["absent", t("cellAtt.tabAbsent")],
-                    ]}
-                  />
-                  {anyFilter && (
-                    <Button variant="secondary" size="lg" onClick={clearFilters}>
-                      {t("staff.clearFilters")}
-                    </Button>
-                  )}
-                </>
-              }
-            >
-              <thead>
-                <tr>
-                  {/* Every column carries the same funnel: a checkbox list of
-                      its distinct values, or min/max where the values are
-                      numeric. The first three drive the toolbar pickers' state. */}
-                  <Th label={t("cellAtt.colCell")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]"
-                    filter={
-                      <ColFilter active={cellIds.length > 0}>
-                        <OptsFilter searchable opts={cellKeys} sel={cellIds} onChange={setCellIds} render={labelOf(cellOptions)} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colLeader")} k="leader_name" sort={sort} onSort={onSort} cls="w-[11%]"
-                    filter={
-                      <ColFilter active={leaderIds.length > 0}>
-                        <OptsFilter searchable opts={leaderKeys} sel={leaderIds} onChange={setLeaderIds} render={labelOf(leaderOptions)} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colSup")} k="manager_name" sort={sort} onSort={onSort} cls="w-[10%]"
-                    filter={
-                      <ColFilter active={supIds.length > 0}>
-                        <OptsFilter searchable opts={supKeys} sel={supIds} onChange={setSupIds} render={labelOf(supOptions)} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colWorker")} k="worker_name" sort={sort} onSort={onSort} cls="w-[12%]"
-                    filter={
-                      <ColFilter active={colF.worker.length > 0}>
-                        <OptsFilter searchable opts={distinct.worker} sel={colF.worker}
-                          onChange={v => setCol("worker", v)} render={o => tl(o) || o} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colRole")} k="job_title" sort={sort} onSort={onSort} cls="w-[11%]"
-                    filter={
-                      <ColFilter active={jobFilter.length > 0}>
-                        <OptsFilter searchable opts={distinct.job} sel={jobFilter}
-                          onChange={setJobFilter} render={o => tl(o) || o} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colSchedule")} k="schedule" sort={sort} onSort={onSort} cls="w-[8%]"
-                    filter={
-                      <ColFilter active={colF.schedule.length > 0}>
-                        <OptsFilter opts={distinct.schedule} sel={colF.schedule}
-                          onChange={v => setCol("schedule", v)} render={o => tl(o) || o} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colDay")} k="day_raw" sort={sort} onSort={onSort} cls="w-[9%]"
-                    filter={
-                      <ColFilter active={colF.day.length > 0}>
-                        <OptsFilter searchable opts={distinct.day} sel={colF.day} onChange={v => setCol("day", v)} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colHours")} k="hours_worked" sort={sort} onSort={onSort} align="right" cls="w-[5%]"
-                    filter={
-                      <ColFilter active={rngActive(colF.hours)}>
-                        <RngFilter minV={colF.hours.min} maxV={colF.hours.max}
-                          onMin={v => setCol("hours", { ...colF.hours, min: v })}
-                          onMax={v => setCol("hours", { ...colF.hours, max: v })} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colEarly")} k="early_arrival_min" sort={sort} onSort={onSort} align="right" cls="w-[8%]"
-                    filter={
-                      <ColFilter active={rngActive(colF.early)}>
-                        <RngFilter minV={colF.early.min} maxV={colF.early.max}
-                          onMin={v => setCol("early", { ...colF.early, min: v })}
-                          onMax={v => setCol("early", { ...colF.early, max: v })} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colEffHours")} k="effective_hours" sort={sort} onSort={onSort} align="right" cls="w-[7%]"
-                    filter={
-                      <ColFilter active={rngActive(colF.eff)}>
-                        <RngFilter minV={colF.eff.min} maxV={colF.eff.max}
-                          onMin={v => setCol("eff", { ...colF.eff, min: v })}
-                          onMax={v => setCol("eff", { ...colF.eff, max: v })} />
-                      </ColFilter>} />
-                  <Th label={t("cellAtt.colStatus")} k="status" sort={sort} onSort={onSort} align="center" cls="w-[6%]"
-                    filter={
-                      <ColFilter active={colF.status.length > 0}>
-                        <OptsFilter opts={distinct.status} sel={colF.status} onChange={v => setCol("status", v)} />
-                      </ColFilter>} />
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
-                      {anyFilter ? t("cellAtt.noMatch") : t("cellAtt.noRows")}
-                    </td>
-                  </tr>
-                ) : pageRows.map(r => (
-                    <tr key={r.id}>
-                      {/* Fixed layout means text can't widen its column, so the
-                          long ones truncate and carry the full value in a title. */}
-                      <td className="px-3 py-2 truncate" title={`${r.verifix_code || ""} ${r.cell_name || ""}`.trim()}>
-                        <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
-                        {r.cell_name && (
-                          <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{r.cell_name}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 truncate" title={tl(r.leader_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.leader_name) || "—"}</td>
-                      <td className="px-3 py-2 truncate" title={tl(r.manager_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.manager_name) || "—"}</td>
-                      <td className="px-3 py-2 truncate" title={tl(r.worker_name) || ""} style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
-                      <td className="px-3 py-2 truncate" title={tl(r.job_title) || ""} style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
-                      <td className="px-3 py-2 truncate" title={tl(r.schedule) || ""} style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
-                      <td className="px-3 py-2 truncate font-mono text-[11px]" title={r.day_raw || ""} style={{ color: "var(--text-3)" }}>{r.day_raw || "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
-                        {r.hours_worked != null ? fmtNum(r.hours_worked, 2) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
-                        {r.early_arrival_min != null ? fmtNum(r.early_arrival_min, 0) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
-                        {r.effective_hours != null ? fmtNum(r.effective_hours, 2) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-center"><StatusChip status={r.status} /></td>
-                    </tr>
-                ))}
-              </tbody>
-            </TableCard>
-            <Pagination
-              page={page}
-              pageCount={pageCount}
-              total={sorted.length}
-              pageSize={PAGE_SIZE}
-              onPage={setPage}
-            />
-            {/* Clearance for the floating row-count badge, which otherwise
-                sits on top of the pager's page buttons. */}
-            <div className="h-14" aria-hidden="true" />
-          </div>
-
-          {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
-              animation (fill-mode both) keeps a transform, which would make it
-              the containing block for position:fixed and pin the badge to the
-              page. Same badge as the Verifix (Staff) table. */}
-          {createPortal(
-            <div
-              className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-md)",
-                color: "var(--text-2)",
-              }}
-            >
-              {t("staff.showingRows").replace("{n}", sorted.length)}
-            </div>,
-            document.body,
-          )}
+          <span className="w-full md:w-auto md:ml-auto flex items-center gap-1.5 text-xs"
+            style={{ color: "var(--text-4)" }}>
+            <FlaskConical size={12} /> {t("cellAtt.testNote")}
+          </span>
         </div>
+
+        {isLoading ? (
+          <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <SkeletonTable rows={8} cols={7} />
+          </div>
+        ) : scopedRows.length === 0 ? (
+          // The day may hold rows and still have nothing in the load slice —
+          // saying "no data" there would read as a broken upload.
+          <EmptyState
+            title={allRows.length === 0 ? t("cellAtt.noDataTitle") : t("cellAtt.noLoadTitle")}
+            message={allRows.length === 0 ? t("cellAtt.noDataHint") : t("cellAtt.noLoadHint")}
+            showUploadLink={false}
+          />
+        ) : (
+          <div className="space-y-4">
+            {/* KPI header */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <KPICard
+                label={t("cellAtt.kpiCame")}
+                value={workedRows.length}
+                sub={`${t("cellAtt.of")} ${scopeRows.length} · ${fmtPct(cameRatio)}`}
+              />
+              <KPICard
+                label={t("cellAtt.kpiCells")}
+                value={cellsShown}
+                sub={t("cellAtt.kpiCellsSub")}
+              />
+              <KPICard
+                label={t("cellAtt.kpiTotalHours")}
+                value={workedRows.length ? `${fmtNum(totalHours, 1)} ${t("daily.hrs")}` : "—"}
+                sub={t("cellAtt.kpiWorkedOnly")}
+              />
+              <KPICard
+                label={t("cellAtt.kpiAvgHours")}
+                value={avgHours !== null ? `${fmtNum(avgHours, 2)} ${t("daily.hrs")}` : "—"}
+                sub={t("cellAtt.kpiWorkedOnly")}
+              />
+            </div>
+
+            {/* Unmatched «Код подразделения» — those rows belong to no cell yet */}
+            {unmatchedCount > 0 && (
+              <div className="flex items-start gap-1.5 text-[11px] px-1" style={{ color: "#eab308" }}>
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                <span>{t("cellAtt.unmatchedNote").replace("{n}", unmatchedCount)}</span>
+              </div>
+            )}
+
+            {/* Came-to-work by role — chips toggle the job filter */}
+            {roleCounts.length > 0 && (
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                  {t("cellAtt.byRole")}
+                </span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {roleCounts.map(([title, count]) => {
+                    const active = jobFilter.includes(title);
+                    return (
+                      <button
+                        key={title}
+                        onClick={() => toggleRole(title)}
+                        title={tl(title) || title}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors"
+                        style={{
+                          background: active ? "var(--brand-bg)" : "var(--bg-inner)",
+                          border: `1px solid ${active ? "var(--brand-bg)" : "var(--border-md)"}`,
+                          color: active ? "var(--brand-text)" : "var(--text-2)",
+                        }}
+                      >
+                        <span className="truncate max-w-[160px]">{tl(title) || title}</span>
+                        <span className="font-semibold tabular-nums px-1.5 rounded-md text-[11px]"
+                          style={{
+                            background: active ? "var(--brand-text)" : "var(--border-md)",
+                            color: active ? "var(--bg-card)" : "var(--text-1)",
+                          }}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <TableCard
+                icon={LayoutGrid}
+                title={t("cellAtt.tableTitle")}
+                // Widths come from the header, not from whichever 50 rows happen
+                // to be on screen — otherwise every sort/page/filter reflows the
+                // columns. minWidth keeps them readable on narrow screens.
+                fixed
+                minWidth={1500}
+                right={
+                  <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                    {sorted.length.toLocaleString("ru-RU")} / {scopeRows.length.toLocaleString("ru-RU")}
+                  </span>
+                }
+                toolbar={
+                  <>
+                    <SearchInput
+                      value={search}
+                      onChange={setSearch}
+                      placeholder={t("cellAtt.searchWorker")}
+                      className="flex-1 min-w-[180px]"
+                    />
+                    <SegmentedToggle
+                      value={statusTab}
+                      onChange={setStatusTab}
+                      options={[
+                        ["all", t("cellAtt.tabAll")],
+                        ["worked", t("cellAtt.tabWorked")],
+                        ["absent", t("cellAtt.tabAbsent")],
+                      ]}
+                    />
+                    {anyFilter && (
+                      <Button variant="secondary" size="lg" onClick={clearFilters}>
+                        {t("staff.clearFilters")}
+                      </Button>
+                    )}
+                  </>
+                }
+              >
+                <thead>
+                  <tr>
+                    {/* Every column carries the same funnel: a checkbox list of
+                        its distinct values, or min/max where the values are
+                        numeric. The first three drive the toolbar pickers' state. */}
+                    <Th label={t("cellAtt.colCell")} k="verifix_code" sort={sort} onSort={onSort} cls="w-[13%]"
+                      filter={
+                        <ColFilter active={cellIds.length > 0}>
+                          <OptsFilter searchable opts={cellKeys} sel={cellIds} onChange={setCellIds} render={labelOf(cellOptions)} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colLeader")} k="leader_name" sort={sort} onSort={onSort} cls="w-[11%]"
+                      filter={
+                        <ColFilter active={leaderIds.length > 0}>
+                          <OptsFilter searchable opts={leaderKeys} sel={leaderIds} onChange={setLeaderIds} render={labelOf(leaderOptions)} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colSup")} k="manager_name" sort={sort} onSort={onSort} cls="w-[10%]"
+                      filter={
+                        <ColFilter active={supIds.length > 0}>
+                          <OptsFilter searchable opts={supKeys} sel={supIds} onChange={setSupIds} render={labelOf(supOptions)} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colWorker")} k="worker_name" sort={sort} onSort={onSort} cls="w-[12%]"
+                      filter={
+                        <ColFilter active={colF.worker.length > 0}>
+                          <OptsFilter searchable opts={distinct.worker} sel={colF.worker}
+                            onChange={v => setCol("worker", v)} render={o => tl(o) || o} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colRole")} k="job_title" sort={sort} onSort={onSort} cls="w-[11%]"
+                      filter={
+                        <ColFilter active={jobFilter.length > 0}>
+                          <OptsFilter searchable opts={distinct.job} sel={jobFilter}
+                            onChange={setJobFilter} render={o => tl(o) || o} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colSchedule")} k="schedule" sort={sort} onSort={onSort} cls="w-[8%]"
+                      filter={
+                        <ColFilter active={colF.schedule.length > 0}>
+                          <OptsFilter opts={distinct.schedule} sel={colF.schedule}
+                            onChange={v => setCol("schedule", v)} render={o => tl(o) || o} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colDay")} k="day_raw" sort={sort} onSort={onSort} cls="w-[9%]"
+                      filter={
+                        <ColFilter active={colF.day.length > 0}>
+                          <OptsFilter searchable opts={distinct.day} sel={colF.day} onChange={v => setCol("day", v)} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colHours")} k="hours_worked" sort={sort} onSort={onSort} align="right" cls="w-[5%]"
+                      filter={
+                        <ColFilter active={rngActive(colF.hours)}>
+                          <RngFilter minV={colF.hours.min} maxV={colF.hours.max}
+                            onMin={v => setCol("hours", { ...colF.hours, min: v })}
+                            onMax={v => setCol("hours", { ...colF.hours, max: v })} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colEarly")} k="early_arrival_min" sort={sort} onSort={onSort} align="right" cls="w-[8%]"
+                      filter={
+                        <ColFilter active={rngActive(colF.early)}>
+                          <RngFilter minV={colF.early.min} maxV={colF.early.max}
+                            onMin={v => setCol("early", { ...colF.early, min: v })}
+                            onMax={v => setCol("early", { ...colF.early, max: v })} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colEffHours")} k="effective_hours" sort={sort} onSort={onSort} align="right" cls="w-[7%]"
+                      filter={
+                        <ColFilter active={rngActive(colF.eff)}>
+                          <RngFilter minV={colF.eff.min} maxV={colF.eff.max}
+                            onMin={v => setCol("eff", { ...colF.eff, min: v })}
+                            onMax={v => setCol("eff", { ...colF.eff, max: v })} />
+                        </ColFilter>} />
+                    <Th label={t("cellAtt.colStatus")} k="status" sort={sort} onSort={onSort} align="center" cls="w-[6%]"
+                      filter={
+                        <ColFilter active={colF.status.length > 0}>
+                          <OptsFilter opts={distinct.status} sel={colF.status} onChange={v => setCol("status", v)} />
+                        </ColFilter>} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                        {anyFilter ? t("cellAtt.noMatch") : t("cellAtt.noRows")}
+                      </td>
+                    </tr>
+                  ) : pageRows.map(r => (
+                      <tr key={r.id}>
+                        {/* Fixed layout means text can't widen its column, so the
+                            long ones truncate and carry the full value in a title. */}
+                        <td className="px-3 py-2 truncate" title={`${r.verifix_code || ""} ${r.cell_name || ""}`.trim()}>
+                          <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
+                          {r.cell_name && (
+                            <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{r.cell_name}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 truncate" title={tl(r.leader_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.leader_name) || "—"}</td>
+                        <td className="px-3 py-2 truncate" title={tl(r.manager_name) || ""} style={{ color: "var(--text-2)" }}>{tl(r.manager_name) || "—"}</td>
+                        <td className="px-3 py-2 truncate" title={tl(r.worker_name) || ""} style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</td>
+                        <td className="px-3 py-2 truncate" title={tl(r.job_title) || ""} style={{ color: "var(--text-3)" }}>{tl(r.job_title) || "—"}</td>
+                        <td className="px-3 py-2 truncate" title={tl(r.schedule) || ""} style={{ color: "var(--text-3)" }}>{tl(r.schedule) || "—"}</td>
+                        <td className="px-3 py-2 truncate font-mono text-[11px]" title={r.day_raw || ""} style={{ color: "var(--text-3)" }}>{r.day_raw || "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                          {r.hours_worked != null ? fmtNum(r.hours_worked, 2) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                          {r.early_arrival_min != null ? fmtNum(r.early_arrival_min, 0) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>
+                          {r.effective_hours != null ? fmtNum(r.effective_hours, 2) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center"><StatusChip status={r.status} /></td>
+                      </tr>
+                  ))}
+                </tbody>
+              </TableCard>
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                total={sorted.length}
+                pageSize={PAGE_SIZE}
+                onPage={setPage}
+              />
+              {/* Clearance for the floating row-count badge, which otherwise
+                  sits on top of the pager's page buttons. */}
+              <div className="h-14" aria-hidden="true" />
+            </div>
+
+            {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
+                animation (fill-mode both) keeps a transform, which would make it
+                the containing block for position:fixed and pin the badge to the
+                page. Same badge as the Verifix (Staff) table. */}
+            {createPortal(
+              <div
+                className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-md)",
+                  color: "var(--text-2)",
+                }}
+              >
+                {t("staff.showingRows").replace("{n}", sorted.length)}
+              </div>,
+              document.body,
+            )}
+          </div>
+        )}
+        </>
       )}
+
+      {/* Leaving the config tab with ticks that were never saved */}
+      <ConfirmDialog
+        open={pendingScope !== null}
+        title={t("cellAtt.cfgLeaveTitle")}
+        message={t("cellAtt.cfgLeaveHint").replace("{n}", configDirty)}
+        confirmLabel={t("cellAtt.cfgLeaveConfirm")}
+        cancelLabel={t("common.cancel")}
+        onCancel={() => setPendingScope(null)}
+        onConfirm={() => { setScope(pendingScope); setPendingScope(null); setConfigDirty(0); }}
+      />
     </Layout>
   );
 }
