@@ -872,6 +872,7 @@ export default function ComparisonTable({
           rawCell={comment.rawCell}
           mode={comment.mode}
           onClose={() => setComment(null)}
+          formulaOnly={!allowComments}
           formulaCollapsible
         />
       )}
