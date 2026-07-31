@@ -625,6 +625,24 @@ export default function CellAttendance() {
               onPage={setPage}
             />
           </div>
+
+          {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
+              animation (fill-mode both) keeps a transform, which would make it
+              the containing block for position:fixed and pin the badge to the
+              page. Same badge as the Verifix (Staff) table. */}
+          {createPortal(
+            <div
+              className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-xl text-xs font-semibold shadow-lg"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-md)",
+                color: "var(--text-2)",
+              }}
+            >
+              {t("staff.showingRows").replace("{n}", sorted.length)}
+            </div>,
+            document.body,
+          )}
         </div>
       )}
     </Layout>
