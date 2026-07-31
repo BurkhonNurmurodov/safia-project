@@ -304,7 +304,9 @@ export default function CellAttendance() {
   const supKeys     = supOptions.map(o => o.value);
   const labelOf     = (opts) => (v) => opts.find(o => o.value === v)?.label ?? v;
 
-  const unmatchedCount = cells.filter(c => c.unmatched).length;
+  // Load scope has no unmatched cells by construction (no cell record ⇒ no
+  // brigadir), so the warning simply stops applying there.
+  const unmatchedCount = scopedCells.filter(c => c.unmatched).length;
   const anyFilter =
     !!search || statusTab !== "all" || jobFilter.length > 0 ||
     cellIds.length > 0 || leaderIds.length > 0 || supIds.length > 0 ||
