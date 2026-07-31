@@ -598,8 +598,8 @@ export default function CellAttendance() {
   const supKeys     = supOptions.map(o => o.value);
   const labelOf     = (opts) => (v) => opts.find(o => o.value === v)?.label ?? v;
 
-  // Load scope has no unmatched cells by construction (no cell record ⇒ no
-  // brigadir), so the warning simply stops applying there.
+  // Load scope has no unmatched cells by construction (no cell record ⇒ nothing
+  // an admin could have ticked), so the warning simply stops applying there.
   const unmatchedCount = scopedCells.filter(c => c.unmatched).length;
   const anyFilter =
     !!search || statusTab !== "all" || jobFilter.length > 0 ||
