@@ -284,7 +284,7 @@ export default function CellAttendance() {
   // into one explicit "not assigned" entry rather than silently disappearing.
   const ownerOptions = (idField, nameField, noneLabel) => {
     const m = new Map();
-    for (const c of cells) {
+    for (const c of scopedCells) {
       const id = c[idField];
       const key = String(id ?? "none");
       if (!m.has(key)) m.set(key, id ? (tl(c[nameField]) || c[nameField] || `#${id}`) : noneLabel);
