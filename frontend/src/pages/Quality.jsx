@@ -403,17 +403,17 @@ export default function Quality() {
 
   // Default window: year-to-date — from Jan 1 of the current year through today.
   const today = iso(new Date());
-  const [dateFrom, setDateFrom] = useState(today.slice(0, 4) + "-01-01");
-  const [dateTo, setDateTo] = useState(today);
+  const [dateFrom, setDateFrom] = usePersistentState("quality_date_from", today.slice(0, 4) + "-01-01");
+  const [dateTo, setDateTo] = usePersistentState("quality_date_to", today);
 
-  const [srcSel, setSrcSel] = useState([]);
-  const [typeSel, setTypeSel] = useState([]);
-  const [catSel, setCatSel] = useState([]);
-  const [statusSel, setStatusSel] = useState([]);
-  const [retSel, setRetSel] = useState([]);
-  const [brigSel, setBrigSel] = useState([]);
-  const [shiftSel, setShiftSel] = useState([]);
-  const [mgrSel, setMgrSel] = useState([]);
+  const [srcSel, setSrcSel] = usePersistentState("quality_src_sel", []);
+  const [typeSel, setTypeSel] = usePersistentState("quality_type_sel", []);
+  const [catSel, setCatSel] = usePersistentState("quality_cat_sel", []);
+  const [statusSel, setStatusSel] = usePersistentState("quality_status_sel", []);
+  const [retSel, setRetSel] = usePersistentState("quality_ret_sel", []);
+  const [brigSel, setBrigSel] = usePersistentState("quality_brig_sel", []);
+  const [shiftSel, setShiftSel] = usePersistentState("quality_shift_sel", []);
+  const [mgrSel, setMgrSel] = usePersistentState("quality_mgr_sel", []);
 
   // Page-level view switch: "overall" = the whole register; "production" (the
   // «Brigadirs» tab) narrows every KPI/chart/table row to the ones the QA team
