@@ -2434,15 +2434,15 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
   const [expandedId, setExpandedId] = useState(null);
   const [viewId, setViewId]         = useState(null);
   const [historyId, setHistoryId]   = useState(null);
-  const [typeFilter, setTypeFilter]             = useState([]);
-  const [statusFilter, setStatusFilter]         = useState("all"); // all | pending | yes | no
-  const [supervisorFilter, setSupervisorFilter] = useState([]);
-  const [approverFilter, setApproverFilter]     = useState([]);
-  const [dateFilter, setDateFilter]             = useState(""); // single ISO date, "" = all
-  const [createdFilter, setCreatedFilter]       = useState(""); // single ISO date (creation day), "" = all
+  const [typeFilter, setTypeFilter]             = usePersistentState("staff_requests_type_filter", []);
+  const [statusFilter, setStatusFilter]         = usePersistentState("staff_requests_status_filter", "all"); // all | pending | yes | no
+  const [supervisorFilter, setSupervisorFilter] = usePersistentState("staff_requests_supervisor_filter", []);
+  const [approverFilter, setApproverFilter]     = usePersistentState("staff_requests_approver_filter", []);
+  const [dateFilter, setDateFilter]             = usePersistentState("staff_requests_date_filter", ""); // single ISO date, "" = all
+  const [createdFilter, setCreatedFilter]       = usePersistentState("staff_requests_created_filter", ""); // single ISO date (creation day), "" = all
   const [sheetOpen, setSheetOpen]               = useState(false);
-  const [sortCol, setSortCol]                   = useState(null);  // "created"|"date"|"supervisor"|"type"|"status"|"approver"
-  const [sortDir, setSortDir]                   = useState("asc"); // "asc"|"desc"
+  const [sortCol, setSortCol]                   = usePersistentState("staff_requests_sort_col", null);  // "created"|"date"|"supervisor"|"type"|"status"|"approver"
+  const [sortDir, setSortDir]                   = usePersistentState("staff_requests_sort_dir", "asc"); // "asc"|"desc"
 
   function handleSort(col) {
     if (sortCol !== col) { setSortCol(col); setSortDir("asc"); }
