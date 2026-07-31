@@ -141,6 +141,19 @@ export default function CellAttendance() {
       : DEFAULT_SORT),
     [rawSort],
   );
+  // A stored "config" from a previous (admin) visit must not strand a
+  // non-admin on a tab they can't be shown — same reconciliation as the rest.
+  const scope = rawScope === "config" && !isAdmin ? "load" : rawScope;
+
+  // Unsaved ticks on the config tab: switching away would silently drop them,
+  // so the switch is confirmed first. `pendingScope` holds the tab the admin
+  // asked for while the dialog is open.
+  const [configDirty, setConfigDirty] = useState(0);
+  const [pendingScope, setPendingScope] = useState(null);
+  const askScope = (next) => {
+    if (scope === "config" && configDirty > 0 && next !== "config") setPendingScope(next);
+    else setScope(next);
+  };
 
   // Days that actually carry rows. The report is uploaded for the day it
   // covers (usually yesterday), so landing on an empty "today" would look like
