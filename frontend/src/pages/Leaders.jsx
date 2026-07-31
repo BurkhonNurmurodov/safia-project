@@ -1082,19 +1082,24 @@ export default function Leaders({ botMode = false }) {
   // sheet to sync, so no refresh at all.
   const canRefresh = !botMode;
 
+  // Filters persist across visits, namespaced per route — /leaders and
+  // /leaders-bot are the same component but must not share saved state.
+  // botMode is fixed for the lifetime of a mount, so the keys are stable.
+  const prefix = botMode ? "leadersbot" : "leaders";
+
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
-  const [startDate, setStartDate] = useState(() => isoShift(todayISO(), -6));
-  const [endDate, setEndDate] = useState(() => todayISO());
-  const [fShift, setFShift] = useState(null);                // null = all shifts | 1 | 2
-  const [fSup, setFSup] = useState("All");
-  const [fLeader, setFLeader] = useState("All");
-  const [standMode, setStandMode] = useState("leader");
-  const [standDir, setStandDir] = useState("desc");
-  const [standMetric, setStandMetric] = useState("rating");  // rating | consist
-  const [standSearch, setStandSearch] = useState("");
-  const [standPage, setStandPage] = useState(1);             // ranking register pager
-  const [hmPage, setHmPage] = useState(1);                   // day-calendar pager
+  const [startDate, setStartDate] = usePersistentState(`${prefix}_date_from`, () => isoShift(todayISO(), -6));
+  const [endDate, setEndDate] = usePersistentState(`${prefix}_date_to`, () => todayISO());
+  const [fShift, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
+  const [fSup, setFSup] = usePersistentState(`${prefix}_supervisor`, "All");
+  const [fLeader, setFLeader] = usePersistentState(`${prefix}_leader`, "All");
+  const [standMode, setStandMode] = usePersistentState(`${prefix}_stand_mode`, "leader");
+  const [standDir, setStandDir] = usePersistentState(`${prefix}_stand_dir`, "desc");
+  const [standMetric, setStandMetric] = usePersistentState(`${prefix}_stand_metric`, "rating"); // rating | consist
+  const [standSearch, setStandSearch] = usePersistentState(`${prefix}_stand_search`, "");
+  const [standPage, setStandPage] = usePersistentState(`${prefix}_stand_page`, 1); // ranking register pager
+  const [hmPage, setHmPage] = usePersistentState(`${prefix}_hm_page`, 1);          // day-calendar pager
   const [standInfo, setStandInfo] = useState(false);
   const [tierEdit, setTierEdit] = useState(null);            // admin's draft cutoffs
   const [detail, setDetail] = useState(null);
