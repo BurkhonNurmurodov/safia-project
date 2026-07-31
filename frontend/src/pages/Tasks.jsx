@@ -480,14 +480,14 @@ export default function Tasks() {
   // Top filter bar: period (by creation date) + supervisor/leader cascade.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
-  const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
-  const [endDate, setEndDate] = useState(() => localTodayIso());
-  const [fShift, setFShift] = useState(null);    // admin only — null = all shifts | 1 | 2
-  const [fSup, setFSup] = useState("All");       // admin only
-  const [fLeader, setFLeader] = useState("All"); // admin + supervisor
-  const [search, setSearch] = useState("");
-  const [statusSel, setStatusSel] = useState([]);
-  const [sort, setSort] = useState({ key: "priority", dir: "asc" });
+  const [startDate, setStartDate] = usePersistentState("tasks_date_from", () => isoMinusDays(localTodayIso(), 6));
+  const [endDate, setEndDate] = usePersistentState("tasks_date_to", () => localTodayIso());
+  const [fShift, setFShift] = usePersistentState("tasks_shift", null);    // admin only — null = all shifts | 1 | 2
+  const [fSup, setFSup] = usePersistentState("tasks_supervisor", "All");       // admin only
+  const [fLeader, setFLeader] = usePersistentState("tasks_leader", "All"); // admin + supervisor
+  const [search, setSearch] = usePersistentState("tasks_search", "");
+  const [statusSel, setStatusSel] = usePersistentState("tasks_status_sel", []);
+  const [sort, setSort] = usePersistentState("tasks_sort", { key: "priority", dir: "asc" });
 
   const [expandedId, setExpandedId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
