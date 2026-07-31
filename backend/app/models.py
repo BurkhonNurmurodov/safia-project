@@ -298,6 +298,11 @@ class Cell(Base):
     # Owning supervisor unit — a cell may belong to a supervisor with no leader.
     manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
     leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    # 2026-07-31: does this cell count toward the production load (загрузка)?
+    # Until now that was DERIVED from "the cell has a supervisor"; it is now an
+    # explicit admin decision, ticked on the /cell-attendance «Sozlash» tab.
+    # Default off — a newly registered cell counts only once an admin says so.
+    in_load      = Column(Boolean, nullable=False, server_default="false", default=False)
 
 
 class CellOjidaniya(Base):
