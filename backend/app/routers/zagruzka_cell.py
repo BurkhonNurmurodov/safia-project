@@ -277,9 +277,14 @@ def cell_zagruzka(
             p_actual = actual_min.get((wc, d), 0.0) if wc else 0.0
             hc = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0)) if wc else 0.0
 
-            # Nothing at all for this cell/day — leave the grid cell empty rather
-            # than emit a 0% that reads as "the cell underperformed".
-            if not att_rows and not p_plan and not p_actual:
+            # Attendance is a REQUIRED input, not an optional one. With no rows
+            # verifix_labor is 0, so the surplus term (0 − prod_actual) ÷ base is
+            # strongly negative, effective_hc collapses past zero and the result
+            # explodes or flips sign (the ±1000% cells). The per-cell verifix
+            # export is uploaded for only SOME days while SAP production covers
+            # every working day, so an attendance-less day must read as "no
+            # data" — never as a number derived from a zero headcount.
+            if not att_rows:
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 continue
 
