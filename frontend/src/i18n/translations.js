@@ -6016,7 +6016,7 @@ const t = {
     "cellAtt.tabAbsent":       "Absent",
     "cellAtt.scopeLoad":       "In load",
     "cellAtt.scopeAll":        "All data",
-    "cellAtt.scopeLoadHint":   "Only what the load counts: konditers and fasovchiks in cells that have a brigadir",
+    "cellAtt.scopeLoadHint":   "Only what the load counts: konditers and fasovchiks in the cells marked under «Setup»",
     "cellAtt.scopeAllHint":    "Every row of the day",
     "cellAtt.scopeNote":       "Konditers and fasovchiks · cells with a brigadir",
     "cellAtt.noLoadTitle":     "Nothing counted in the load",
