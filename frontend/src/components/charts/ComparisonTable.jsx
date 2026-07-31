@@ -155,6 +155,10 @@ export default function ComparisonTable({
   // fullscreen instances stay in sync. Button hidden when the handler is absent.
   calcFactors = DEFAULT_CALC_FACTORS,
   onCalcFactorsChange = null,
+  // Comments are keyed to a (manager, date). When the rows aren't managers —
+  // the per-cell загрузка page passes cells — there is nothing to key them to,
+  // so the value still opens its formula but the thread and its POST are gone.
+  allowComments = true,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
