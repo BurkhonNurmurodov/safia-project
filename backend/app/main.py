@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     migrate_cells_table()
     migrate_cells_leaders_columns()
     migrate_cell_supervisor_column()
+    migrate_cell_in_load_column()
     migrate_cell_ojidaniya_percat()
     add_concern_profile_columns()
     add_concern_done_at()
