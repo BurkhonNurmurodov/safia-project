@@ -852,7 +852,7 @@ export default function Concerns() {
       }
       return true;
     };
-  }, [search, statusSel, ownerSel, levelSel, respSel, categorySel, onlyMyLevel, myLevel, role, deadlineMin, deadlineMax]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, statusSel, ownerSel, levelPred, respSel, categorySel, deadlineMin, deadlineMax]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => scoped.filter(tableFilterPred), [scoped, tableFilterPred]);
   const chartFiltered = useMemo(
