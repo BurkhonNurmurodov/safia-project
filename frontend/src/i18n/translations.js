@@ -6175,6 +6175,8 @@ const t = {
     "zcell.diagNoLabor":        "Catalog lines without labor_time",
     "zcell.diagExcluded":       "Attendance rows excluded by job title",
     "zcell.diagClean":          "Every cell joins production, no rows excluded.",
+    "zcell.diagAttDays":        "Attendance uploaded for {n} of {m} days",
+    "zcell.diagCollapsed":      "Cells hidden — attendance too incomplete to compute",
     "zcell.rowsWord":           "rows",
     "cellAtt.title":           "Attendance by cell",
     "cellAtt.testNote":        "Test — «Attendance by cell» import",
