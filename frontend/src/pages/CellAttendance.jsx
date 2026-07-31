@@ -624,6 +624,9 @@ export default function CellAttendance() {
               pageSize={PAGE_SIZE}
               onPage={setPage}
             />
+            {/* Clearance for the floating row-count badge, which otherwise
+                sits on top of the pager's page buttons. */}
+            <div className="h-14" aria-hidden="true" />
           </div>
 
           {/* Row-count badge — portaled to <body>: the .page-enter wrapper's
