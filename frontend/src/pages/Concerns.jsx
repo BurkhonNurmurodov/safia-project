@@ -665,7 +665,7 @@ export default function Concerns() {
   // Page view tabs — the register ("list") and the chart board ("analytics").
   // KPIs and the period/shift/brigadir bar stay above both; everything else is
   // split so each tab shows one thing well.
-  const [view, setView] = useState("list");
+  const [view, setView] = usePersistentState("concerns_view", "list");
 
   // ApexCharts measures its container width once at mount; inside the
   // responsive grid the cells only get their final width a frame or two after
