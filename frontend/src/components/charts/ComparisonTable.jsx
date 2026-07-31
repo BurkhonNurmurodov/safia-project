@@ -159,6 +159,11 @@ export default function ComparisonTable({
   // the per-cell загрузка page passes cells — there is nothing to key them to,
   // so the value still opens its formula but the thread and its POST are gone.
   allowComments = true,
+  // Row-identity column: what the rows ARE, and how much room their names need.
+  // Defaults are the fleet page's (supervisors, whose names fit 172px); the
+  // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
+  rowLabel = "Brigadir",
+  labelWidth = LABEL_W,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
