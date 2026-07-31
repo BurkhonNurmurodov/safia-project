@@ -175,3 +175,83 @@ def day_attendance(
             for r in rows
         ],
     }
+
+
+# ── «Sozlash» tab — which cells count toward the load ─────────────────────────
+# The whole registry, not just the cells that carry rows on the open day: this
+# is configuration, so stepping through dates must not change what is listed.
+
+@router.get("/registry")
+def load_registry(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Every registered cell with its owners and its in-load flag. Admin-only —
+    it is the read side of a settings screen, not of the attendance view."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    cells = db.query(Cell).all()
+    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    leader_names = {p.id: p.name for p in db.query(RoleProfile).all()}
+    out = [
+        {
+            "cell_id":      c.id,
+            "verifix_code": c.verifix_code,
+            "sap_code":     c.sap_code,
+            "name_uz":      c.name_workshop_uz,
+            "name_uz_cyrl": c.name_workshop_uz_cyrl,
+            "name_ru":      c.name_workshop_ru,
+            "name_en":      c.name_workshop_en,
+            "manager_id":   c.manager_id,
+            "manager_name": mgr_names.get(c.manager_id),
+            "leader_id":    c.leader_id,
+            "leader_name":  leader_names.get(c.leader_id),
+            "in_load":      bool(c.in_load),
+        }
+        for c in cells
+    ]
+    out.sort(key=lambda c: (c["verifix_code"] or "zzz").lower())
+    return out
+
+
+@router.put("/registry")
+def save_load_registry(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Persist the ticks. The page sends only what it CHANGED
+    (``{"changes": [{"cell_id": 12, "in_load": true}, …]}``), so two admins
+    editing different cells don't overwrite each other."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+    changes = body.get("changes")
+    if not isinstance(changes, list):
+        raise HTTPException(status_code=400, detail="changes must be a list")
+
+    wanted: dict[int, bool] = {}
+    for ch in changes:
+        if not isinstance(ch, dict):
+            raise HTTPException(status_code=400, detail="Bad change entry")
+        try:
+            cid = int(ch["cell_id"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Bad cell_id")
+        wanted[cid] = bool(ch.get("in_load"))
+
+    if not wanted:
+        return {"updated": 0}
+
+    cells = db.query(Cell).filter(Cell.id.in_(wanted.keys())).all()
+    if len(cells) != len(wanted):
+        raise HTTPException(status_code=404, detail="Unknown cell in changes")
+
+    updated = 0
+    for c in cells:
+        if bool(c.in_load) != wanted[c.id]:
+            c.in_load = wanted[c.id]
+            updated += 1
+    db.commit()
+    return {"updated": updated}
