@@ -34,6 +34,7 @@ import { SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
+import cellName from "../utils/cellName";
 import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
@@ -129,7 +130,7 @@ function DiagRow({ label, items, tone = "warn" }) {
 export default function ZagruzkaCell() {
   const { ready, dateFrom, dateTo, setDateFrom, setDateTo } = useFilters();
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const [heatmapMode, setHeatmapMode] = useState("actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);
