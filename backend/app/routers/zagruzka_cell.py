@@ -325,7 +325,7 @@ def cell_zagruzka(
             downtime = idle_by_cell.get((c.id, d.isoformat()), 0.0)
             p_plan = plan_min.get((wc, d), 0.0) if wc else 0.0
             p_actual = actual_min.get((wc, d), 0.0) if wc else 0.0
-            hc = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0)) if wc else 0.0
+            hc, hc_pinned = o_soni(wc, d) if wc else (0.0, False)
 
             # Attendance is a REQUIRED input, not an optional one. With no rows
             # verifix_labor is 0, so the surplus term (0 − prod_actual) ÷ base is

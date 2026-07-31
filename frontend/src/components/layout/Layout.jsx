@@ -5,7 +5,7 @@ import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
 import { Sun, Moon, Menu, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import useActivityPing from "../../hooks/useActivityPing";
