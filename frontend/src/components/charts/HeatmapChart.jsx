@@ -120,6 +120,7 @@ function SingleGrid({
   onCellClick, onPendingClick, segs, selection, toggleSel, clearSel,
   managerIds, commentedCells, isoOf, approvedCells,
   avgMode, onCycleAvg,
+  rowLabel = "Brigadir", labelWidth = LABEL_W,
 }) {
   const { t } = useLang();
   const { tl } = useTranslit();
