@@ -498,14 +498,14 @@ export default function Concerns() {
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
   // Period is a concrete date range picked with the same control as Leaders
   // (presets + calendar popover); defaults to the last 7 days.
-  const [startDate, setStartDate] = useState(() => isoMinusDays(localTodayIso(), 6));
-  const [endDate, setEndDate] = useState(() => localTodayIso());
-  const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = usePersistentState("concerns_date_from", () => isoMinusDays(localTodayIso(), 6));
+  const [endDate, setEndDate] = usePersistentState("concerns_date_to", () => localTodayIso());
+  const [search, setSearch] = usePersistentState("concerns_search", "");
   // Shift / supervisor top-bar filters (client-side, like the period). Hidden
   // for single-unit viewers: a supervisor or leader only ever sees their own
   // rows, and a shift-manager is already pinned to one shift.
-  const [fShift, setFShift] = useState(null);  // null = all | 1 | 2
-  const [fSup, setFSup] = useState("");        // "" = all | String(manager_id)
+  const [fShift, setFShift] = usePersistentState("concerns_shift", null);  // null = all | 1 | 2
+  const [fSup, setFSup] = usePersistentState("concerns_supervisor", "");   // "" = all | String(manager_id)
   const canFilterShift = role === "admin" || role === "top-manager";
   const canFilterSup = canFilterShift || role === "shift-manager";
 
