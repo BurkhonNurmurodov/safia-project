@@ -477,6 +477,7 @@ export default function HeatmapChart({
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
     avgMode, onCycleAvg: cycleAvg,
+    rowLabel, labelWidth,
   };
 
   return (
