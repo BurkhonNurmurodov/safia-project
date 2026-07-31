@@ -192,18 +192,27 @@ export default function CellAttendance() {
   }, [cells, scopedRows, scope]);
 
   // A new day brings a different cell catalog — stale picks would silently
-  // filter everything out.
+  // filter everything out. Only an actual CHANGE of the day resets them: the
+  // first run is the mount, where the filters were just restored from the
+  // previous visit and belong to this very date.
+  const prevDate = useRef(date);
   useEffect(() => {
+    if (prevDate.current === date) return;
+    prevDate.current = date;
     setCellIds([]); setLeaderIds([]); setSupIds([]);
     setJobFilter([]); setColF(INIT_COL); setSearch(""); setStatusTab("all"); setPage(1);
-  }, [date]);
+  }, [date, setCellIds, setLeaderIds, setSupIds, setJobFilter, setColF, setSearch, setStatusTab]);
 
   // Switching scope changes which cells, owners and roles exist at all. Drop
   // the picks that key off those lists; search and the status tab survive —
   // they're plain predicates that a narrower population can't invalidate.
+  // Mount-guarded for the same reason as the day above.
+  const prevScope = useRef(scope);
   useEffect(() => {
+    if (prevScope.current === scope) return;
+    prevScope.current = scope;
     setCellIds([]); setLeaderIds([]); setSupIds([]); setJobFilter([]); setColF(INIT_COL); setPage(1);
-  }, [scope]);
+  }, [scope, setCellIds, setLeaderIds, setSupIds, setJobFilter, setColF]);
 
   // ── KPIs over the picked cells (before search / status / role filters, so the
   // header stays a stable denominator while you drill into the table) ────────
