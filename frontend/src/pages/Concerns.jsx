@@ -797,6 +797,7 @@ export default function Concerns() {
   const responsibleOptions = useMemo(() => {
     const lvlOf = new Map();
     for (const r of scoped) {
+      if (!levelPred(r)) continue;   // a narrowed Daraja narrows the people too
       const lv = LEVELS.includes(r.level) ? r.level : "supervisor";
       for (const n of splitResponsible(r.responsible_name)) {
         const prev = lvlOf.get(n);
@@ -806,7 +807,19 @@ export default function Concerns() {
     const names = [...lvlOf.keys()].sort((a, b) =>
       (LEVELS.indexOf(lvlOf.get(a)) - LEVELS.indexOf(lvlOf.get(b))) || tl(a).localeCompare(tl(b)));
     return { names, lvlOf };
-  }, [scoped, tl]);
+  }, [scoped, levelPred, tl]);
+
+  // Narrowing Daraja can strand ticks for people who just left the list — they
+  // would keep filtering invisibly and empty the table. Drop them, but never
+  // while the list is empty: that reads as "still loading", not "no such
+  // people", and would wipe the selection on every refetch.
+  useEffect(() => {
+    if (!responsibleOptions.names.length) return;
+    setRespSel((sel) => {
+      const keep = sel.filter((n) => responsibleOptions.lvlOf.has(n));
+      return keep.length === sel.length ? sel : keep;   // same ref = no re-render
+    });
+  }, [responsibleOptions]);
 
   // Table-level filters (status/owner/deadline) + free-text search, applied to
   // both the period-scoped rows (table/donut) and the chart-scoped rows.
