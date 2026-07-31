@@ -718,7 +718,7 @@ export default function Production() {
   // exactly the scope that unpins them (mirrors _resolve_manager_id).
   const canPickManager = ["admin", "top-manager", "shift-manager"].includes(auth?.role)
     || seesAllOn("production");
-  const [selManager, setSelManager] = useState(null);
+  const [selManager, setSelManager] = usePersistentState("production_manager", null);
 
   const { data: mgrData } = useQuery({
     queryKey: ["production-managers"],
