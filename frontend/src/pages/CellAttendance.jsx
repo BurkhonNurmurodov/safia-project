@@ -91,6 +91,9 @@ export default function CellAttendance() {
   // The date survives navigating away and back (its own key — every page
   // remembers its own selection).
   const [date, setDate] = usePersistentState("cellatt_date", todayIso());
+  // Page scope. Deliberately NOT persisted — the page always opens on the
+  // zagruzka slice, the population people compare against the load.
+  const [scope, setScope] = useState("load");       // load | all
   const [cellIds, setCellIds] = useState([]);       // [] = every cell in scope
   const [leaderIds, setLeaderIds] = useState([]);   // [] = every leader
   const [supIds, setSupIds] = useState([]);         // [] = every supervisor
