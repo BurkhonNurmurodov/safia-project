@@ -25,6 +25,7 @@ import { useCapabilities } from "../hooks/useCapabilities";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { usePersistentState } from "../hooks/usePersistentState";
 
 // ── score colours (tuned for the dark dashboard — softer emerald/amber/rose,
 //    deliberately desaturated so they glow rather than glare against charcoal) ──
