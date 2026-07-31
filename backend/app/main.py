@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, idle_cell, cell_attendance
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, idle_cell, cell_attendance, zagruzka_cell
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import webhook as webhook_router
