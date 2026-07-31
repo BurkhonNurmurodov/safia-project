@@ -76,7 +76,7 @@ const t = {
     "cellAtt.tabAbsent":       "Kelmaganlar",
     "cellAtt.scopeLoad":       "Zagruzkada",
     "cellAtt.scopeAll":        "Barchasi",
-    "cellAtt.scopeLoadHint":   "Faqat zagruzkada hisoblanadiganlar: konditer va fasovchiklar, brigadiri biriktirilgan yacheykalarda",
+    "cellAtt.scopeLoadHint":   "Faqat zagruzkada hisoblanadiganlar: «Sozlash»da belgilangan yacheykalardagi konditer va fasovchiklar",
     "cellAtt.scopeAllHint":    "Kunning barcha qatorlari",
     "cellAtt.scopeNote":       "Konditer va fasovchiklar · brigadiri bor yacheykalar",
     "cellAtt.noLoadTitle":     "Zagruzkada hisoblanadigan qator yo'q",
