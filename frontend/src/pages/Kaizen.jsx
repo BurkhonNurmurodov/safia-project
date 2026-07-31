@@ -20,6 +20,7 @@ import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { usePersistentState } from "../hooks/usePersistentState";
 
 // ── palette ────────────────────────────────────────────────────────────────
 // Traffic-light status hues from the admin-panel palette. Not-started stays
