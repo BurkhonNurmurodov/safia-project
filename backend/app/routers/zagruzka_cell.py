@@ -436,6 +436,12 @@ def cell_zagruzka(
         "fleet": fleet,
         "diagnostics": {
             "lock_warning": lock_warning,
+            # The days the per-cell verifix export covers. Everything outside
+            # this list is blank BY DESIGN, not because the cells were idle.
+            "days_with_attendance": [d.strftime("%d.%m.%Y") for d in days_with_attendance],
+            "days_in_range": len(dates),
+            # Cells dropped because partial attendance drove effective_hc ≤ 0.
+            "collapsed_effective_hc": collapsed_hc,
             # A cell with no SAP code, or one whose code matches no configured
             # work centre, can never carry production numbers — say so loudly
             # instead of letting the row sit empty and look like a quiet day.
