@@ -145,6 +145,21 @@ export function OptsFilter({ opts, sel, onChange, render, searchable = false, gr
       onEnd:   () => { workRef.current = null; },
     },
   );
+  const optRow = (o) => (
+    <label key={o}
+      {...dragRow(o)}
+      title={label(o)}
+      className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
+      style={{ color: "var(--text-2)" }}
+      onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >
+      <input type="checkbox" checked={sel.includes(o)}
+        onChange={() => onChange(sel.includes(o) ? sel.filter(v => v !== o) : [...sel, o])}
+        style={{ accentColor: "var(--brand)" }} />
+      <span className="truncate">{render ? render(o) : (o || "—")}</span>
+    </label>
+  );
   return (
     <div>
       {searchable && (
