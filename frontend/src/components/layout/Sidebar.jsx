@@ -42,6 +42,7 @@ const ALL_LINKS = [
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer },
   { to: "/cell-attendance", page: "cell-attendance", key: "nav.cellAttendance", icon: UserCheck },
+  { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical },
 ];
 
 // Layout (and this sidebar) remounts on every route change, which would reset
