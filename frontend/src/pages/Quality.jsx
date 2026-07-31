@@ -440,12 +440,12 @@ export default function Quality() {
     () => (lockOwn ? (data?.supervisors?.find((s) => s.id === auth.role_id)?.name || "") : ""),
     [lockOwn, data, auth?.role_id]
   );
-  const [gran, setGran] = useState("month");
-  const [topMode, setTopMode] = useState("product");
-  const [accMode, setAccMode] = useState("brig");
-  const [supStatMode, setSupStatMode] = useState("count");
-  const [sort, setSort] = useState({ key: "date", dir: "desc" });
-  const [page, setPage] = useState(1);
+  const [gran, setGran] = usePersistentState("quality_gran", "month");
+  const [topMode, setTopMode] = usePersistentState("quality_top_mode", "product");
+  const [accMode, setAccMode] = usePersistentState("quality_acc_mode", "brig");
+  const [supStatMode, setSupStatMode] = usePersistentState("quality_sup_stat_mode", "count");
+  const [sort, setSort] = usePersistentState("quality_sort", { key: "date", dir: "desc" });
+  const [page, setPage] = usePersistentState("quality_page", 1);
   const [openId, setOpenId] = useState(null);
 
   // Mount the charts one frame after the layout settles (same trick as Kaizen —
