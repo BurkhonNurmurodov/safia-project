@@ -379,6 +379,8 @@ export default function ZagruzkaCell() {
                   segments={segments}
                   commentedCells={new Set()}
                   approvedCells={null}
+                  rowLabel={t("zcell.colCell")}
+                  labelWidth={LABEL_W}
                   onCellClick={handleCellClick}
                   fullscreen
                 />
