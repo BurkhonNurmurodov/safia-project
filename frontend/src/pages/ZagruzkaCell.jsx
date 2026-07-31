@@ -42,10 +42,6 @@ const HEATMAP_MODES = ["planned", "actual"];
 const num = (v, d = 0) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
 const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`);
-const isoOf = (ddmmyyyy) => {
-  const [d, m, y] = ddmmyyyy.split(".");
-  return `${y}-${m}-${d}`;
-};
 
 /** Heatmap card header — mirrors the fleet page's, minus the per-manager bits. */
 function HeatmapHeader({ payload, heatmapMode, setHeatmapMode, segments, fullscreen, onToggleFullscreen, t }) {
