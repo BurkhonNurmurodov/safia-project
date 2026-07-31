@@ -356,7 +356,7 @@ export default function ComparisonTable({
         }}>
           {/* colgroup defines the real column grid (2 cols per date, each colW) */}
           <colgroup>
-            <col style={{ width: LABEL_W }} />
+            <col style={{ width: labelWidth }} />
             {dates.flatMap((_, i) => [
               <col key={`cg-${i}-1`} style={{ width: colW }} />,
               <col key={`cg-${i}-2`} style={{ width: colW }} />,
