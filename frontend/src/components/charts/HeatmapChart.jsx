@@ -164,7 +164,7 @@ function SingleGrid({
   const effDays    = Math.max(BASIS_DAYS, dates.length);
   const avgW       = isMobile ? 0 : AVG_W;  // summary column is dropped on phones
   const cellW      = containerW > 0
-    ? Math.max(CELL_W, Math.floor((containerW - LABEL_W - avgW) / BASIS_DAYS))
+    ? Math.max(CELL_W, Math.floor((containerW - labelWidth - avgW) / BASIS_DAYS))
     : CELL_W;
   const tableWidth = LABEL_W + effDays * cellW + avgW;
   const pads       = Array.from({ length: padCount });
