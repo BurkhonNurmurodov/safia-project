@@ -538,6 +538,32 @@ export default function ZagruzkaCell() {
               {t("zcell.diagTitle")}
             </div>
           </div>
+          {/* Attendance coverage — always shown, and first. Every blank day on
+              the grid is a day whose per-cell verifix file was never uploaded,
+              which is otherwise indistinguishable from "the cells were idle". */}
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1 mb-1">
+            <span className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: diag.days_with_attendance?.length ? "#22c55e" : "#ef4444" }} />
+            <span style={{ color: "var(--text-3)" }}>
+              {t("zcell.diagAttDays")
+                .replace("{n}", diag.days_with_attendance?.length ?? 0)
+                .replace("{m}", diag.days_in_range ?? 0)}:
+            </span>
+            <span className="font-medium" style={{ color: "var(--text-2)" }}>
+              {diag.days_with_attendance?.length
+                ? diag.days_with_attendance.join(", ")
+                : "—"}
+            </span>
+          </div>
+          {diag.collapsed_effective_hc > 0 && (
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />
+              <span style={{ color: "var(--text-3)" }}>{t("zcell.diagCollapsed")}:</span>
+              <span className="font-medium" style={{ color: "var(--text-2)" }}>
+                {diag.collapsed_effective_hc}
+              </span>
+            </div>
+          )}
           {(() => {
             const rows = [
               [t("zcell.diagNoSap"), diag.cells_without_sap],
