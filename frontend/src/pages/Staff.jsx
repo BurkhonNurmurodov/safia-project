@@ -3543,6 +3543,11 @@ export default function Staff() {
     : selectedManagerId;
   const showWorkersTab      = true;
   const showApprovalsTab    = role === "admin" || role === "supervisor";
+  // A restored "approvals" from an admin/supervisor session must not strand a
+  // role that can't see that tab — fall back to the role's default.
+  const tab = rawTab === "approvals" && !showApprovalsTab
+    ? (role === "shift-manager" ? "requests" : "workers")
+    : rawTab;
   const canCreate           = role === "admin" || role === "supervisor";
   // …but a widened supervisor browsing ANOTHER unit is only reading it: the
   // backend files every supervisor document against their own unit, so the
