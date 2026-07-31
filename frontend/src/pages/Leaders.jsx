@@ -1558,8 +1558,12 @@ export default function Leaders({ botMode = false }) {
   const heatPageRows = heatRows.slice((hmPg - 1) * HM_ROWS_OPEN, hmPg * HM_ROWS_OPEN);
   // Re-ranking sends you back to page 1: after flipping the sort or the tab,
   // row 1 is the whole point, and staying on page 3 hides that anything changed.
-  useEffect(() => { setStandPage(1); setHmPage(1); },
-    [standMetric, standDir, effStandMode, standSearch, startDate, endDate, fShift, fSup, fLeader]);
+  // Skipped on first mount so the persisted page numbers survive a revisit.
+  const pagerResetMounted = useRef(false);
+  useEffect(() => {
+    if (!pagerResetMounted.current) { pagerResetMounted.current = true; return; }
+    setStandPage(1); setHmPage(1);
+  }, [standMetric, standDir, effStandMode, standSearch, startDate, endDate, fShift, fSup, fLeader]);
   // Tabs and sortable headers drive the same pair of knobs — re-picking the
   // column that is already active flips the direction, as a table should.
   const standSort = { key: standMetric, dir: standDir };
