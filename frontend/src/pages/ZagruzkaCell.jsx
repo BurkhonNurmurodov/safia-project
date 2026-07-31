@@ -487,7 +487,7 @@ export default function ZagruzkaCell() {
                   return (
                     <tr key={c}>
                       <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={c}>
-                        {meta ? `${meta.verifix_code} · ${tl(meta.name_ru || "")}` : c}
+                        {meta ? `${meta.verifix_code} · ${cellName(meta, lang, "name_")}` : c}
                       </td>
                       <td className="px-3 py-2 text-center" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>
                         {meta?.sap_code || "—"}
