@@ -57,6 +57,15 @@ const countsInLoad = (r) => r.manager_id != null && LOAD_ROLE_RE.test(r.job_titl
 // what the viewer actually reads.
 const TRANSLIT_COLS = new Set(["worker_name", "job_title", "schedule", "leader_name", "manager_name"]);
 
+// Sortable column keys. A sort restored from a previous session is checked
+// against this list, so a column renamed since then can't leave the table
+// sorting on a field that no longer exists.
+const SORT_KEYS = new Set([
+  "verifix_code", "leader_name", "manager_name", "worker_name", "job_title",
+  "schedule", "day_raw", "hours_worked", "early_arrival_min", "effective_hours", "status",
+]);
+const DEFAULT_SORT = { key: "worker_name", dir: "asc" };
+
 // Per-column filters that aren't already driven by a toolbar control. The three
 // numeric columns take a min/max range — a checkbox list of hundreds of distinct
 // floats would be unusable; every other column is a checkbox list.
