@@ -298,8 +298,10 @@ export default function CellAttendance() {
   const pageRows  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   useEffect(() => { setPage(1); }, [search, statusTab, jobFilter, colF, cellIds, leaderIds, supIds, sort]);
 
+  // Reads the reconciled `sort`, not the stored one, so a discarded restored
+  // value can't make the first click toggle a direction nobody sees.
   function onSort(k) {
-    setSort(s => s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" });
+    setSort(sort.key === k ? { key: k, dir: sort.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" });
   }
   function toggleRole(title) {
     setJobFilter(f => f.includes(title) ? f.filter(x => x !== title) : [...f, title]);
