@@ -400,7 +400,7 @@ def cell_zagruzka(
             r["prod_actual"] += p_actual
             r["official_hc"] += hc
             # Downtime is a per-person minute deduction, so rolling it up means
-            # weighting each cell's minutes by that cell's штатка.
+            # weighting each cell's minutes by that cell's headcount (O. SONI).
             r["downtime_w"] += downtime * hc
             r["att"] += att_rows
 
