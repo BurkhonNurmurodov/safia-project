@@ -11,8 +11,10 @@ tables instead of the per-supervisor sheet imports:
     prod_plan      production_data.prod_plan       Σ pp_products.labor_time
     prod_actual    production_data.prod_actual       × pp_daily.plan_qty|actual_qty ÷ 60
                                                      over the cell's work centre
-    official_hc    headcount_data.official_hc      pp_work_centers.shtatka (W),
-                                                     pp_work_center_daily pin wins
+    official_hc    headcount_data.official_hc      effective O. SONI (N): the
+                                                     pp_work_center_daily.people pin,
+                                                     else ROUND(W × Q ÷ S) exactly as
+                                                     services/pp_calc derives it
     attendance     attendance (verifix, per unit)  cell_attendance (per cell)
     equip_downtime downtime_data (sheet import)    cell_ojidaniya.stopped
 
