@@ -772,6 +772,26 @@ export default function Concerns() {
     return [...s].sort((a, b) => tl(a).localeCompare(tl(b)));
   }, [scoped, tl]);
 
+  // Distinct responsible holders in scope, each tagged with the step they
+  // answer on — feeds the responsible multi-select, which groups them by level
+  // (chain order, alphabetical inside) and tints each name badge with that
+  // level's hue. One checkbox per PERSON: the filter matches on the name, so a
+  // name somehow seen on two steps keeps the higher one rather than splitting
+  // into two rows that would select identically.
+  const responsibleOptions = useMemo(() => {
+    const lvlOf = new Map();
+    for (const r of scoped) {
+      const lv = LEVELS.includes(r.level) ? r.level : "supervisor";
+      for (const n of splitResponsible(r.responsible_name)) {
+        const prev = lvlOf.get(n);
+        if (prev == null || LEVELS.indexOf(lv) > LEVELS.indexOf(prev)) lvlOf.set(n, lv);
+      }
+    }
+    const names = [...lvlOf.keys()].sort((a, b) =>
+      (LEVELS.indexOf(lvlOf.get(a)) - LEVELS.indexOf(lvlOf.get(b))) || tl(a).localeCompare(tl(b)));
+    return { names, lvlOf };
+  }, [scoped, tl]);
+
   // Table-level filters (status/owner/deadline) + free-text search, applied to
   // both the period-scoped rows (table/donut) and the chart-scoped rows.
   const tableFilterPred = useMemo(() => {
