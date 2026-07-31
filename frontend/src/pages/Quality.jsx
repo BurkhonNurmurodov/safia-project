@@ -537,7 +537,11 @@ export default function Quality() {
     };
   }, [rows, dateFrom, dateTo, view, matchesFilters]);
 
-  useEffect(() => { setPage(1); }, [view, dateFrom, dateTo, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, hairMode]);
+  const pageResetMounted = useRef(false);
+  useEffect(() => {
+    if (!pageResetMounted.current) { pageResetMounted.current = true; return; }
+    setPage(1);
+  }, [view, dateFrom, dateTo, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, hairMode]);
   // The Production tab hides the Source filter; drop any leftover source selection
   // so a "guest"-only pick carried over from Overall doesn't zero the whole page.
   useEffect(() => { if (isProd) setSrcSel([]); }, [isProd]);
