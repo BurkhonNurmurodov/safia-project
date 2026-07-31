@@ -313,14 +313,19 @@ function ReconciliationCard({ data, onSave, saving }) {
 // ── raw SAP file view (Фаза / Заголовок) ─────────────────────────────────────
 function RawView({ fileType, date, managerParam, ready = true }) {
   const { t } = useLang();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentState("production_raw_search", "");
   const { data, isLoading } = useQuery({
     queryKey: ["production-raw", fileType, date, managerParam.manager_id ?? "self"],
     queryFn: () => api.get("/api/production/raw", { params: { file_type: fileType, date, ...managerParam } }).then((r) => r.data),
     enabled: ready,
   });
   // clear a stale query when the file/date changes so its matches don't hide the new rows
-  useEffect(() => { setSearch(""); }, [fileType, date]);
+  // (mount-guarded so the restored search survives the first render)
+  const searchResetMounted = useRef(false);
+  useEffect(() => {
+    if (!searchResetMounted.current) { searchResetMounted.current = true; return; }
+    setSearch("");
+  }, [fileType, date]);
 
   // free-text filter across every column — the endpoint returns all rows, so this is client-side
   const rows = data?.rows;
