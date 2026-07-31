@@ -209,15 +209,23 @@ def cell_zagruzka(
         plan_min[(d.work_center, d.date)] += labor * float(plan_qty or 0) / _SEC_PER_MIN
         actual_min[(d.work_center, d.date)] += labor * float(actual_qty or 0) / _SEC_PER_MIN
 
-    # ── Штатка (W) per work centre, with the per-day pin winning ──────────────
-    shtatka: dict[str, float] = {}
-    for w in db.query(PPWorkCenter).filter(
+    # ── O. SONI (N) per (work centre, day) — the formula's headcount ─────────
+    # Same derivation as the Production dashboard (services/pp_calc.py), so the
+    # number here always equals the «Jamoa tarkibi» card: a per-day people pin
+    # wins outright; otherwise N = ROUND(W × Q ÷ S) where W is the (possibly
+    # pinned) штатка, Q the day's plan minutes and S the WC's capacity — unless
+    # the day pins an efficiency, then S = W × that rate for every cell.
+    wcs = db.query(PPWorkCenter).filter(
         PPWorkCenter.manager_id == mgr.id, PPWorkCenter.active.is_(True)
-    ).all():
-        shtatka[w.code] = float(w.shtatka or 0)
+    ).all()
+    shtatka: dict[str, float] = {w.code: float(w.shtatka or 0) for w in wcs}
+    capacity: dict[str, Optional[float]] = {
+        w.code: (float(w.capacity) if w.capacity is not None else None) for w in wcs
+    }
     work_centers_without_cell = sorted(set(shtatka) - wanted_wcs)
 
     shtatka_pin: dict[tuple[str, date], float] = {}
+    people_pin: dict[tuple[str, date], float] = {}
     for o in db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == mgr.id,
         PPWorkCenterDaily.date >= date_from,
@@ -225,6 +233,34 @@ def cell_zagruzka(
     ).all():
         if o.shtatka is not None:
             shtatka_pin[(o.work_center, o.date)] = float(o.shtatka)
+        if o.people is not None:
+            people_pin[(o.work_center, o.date)] = float(o.people)
+
+    day_pm_pin: dict[date, float] = {}
+    for s in db.query(PPDaySetting).filter(
+        PPDaySetting.manager_id == mgr.id,
+        PPDaySetting.date >= date_from,
+        PPDaySetting.date <= date_to,
+    ).all():
+        if s.productive_min is not None:
+            day_pm_pin[s.date] = float(s.productive_min)
+
+    _, _global_pm = _pp_constants(db)
+    unit_pm = _unit_per_head(wcs, _global_pm)
+
+    def o_soni(wc: str, d: date) -> tuple[float, bool]:
+        """Effective O. SONI for one (work centre, day): (value, was_pinned)."""
+        pin = people_pin.get((wc, d))
+        if pin is not None:
+            return pin, True
+        w_eff = shtatka_pin.get((wc, d), shtatka.get(wc, 0.0))
+        pm_pin = day_pm_pin.get(d)
+        cap = capacity.get(wc)
+        use_cap = bool(cap and cap > 0) and pm_pin is None
+        s_eff = cap if use_cap else w_eff * (pm_pin if pm_pin else unit_pm)
+        if s_eff > 0 and w_eff > 0:
+            return float(_round_half_up(w_eff * plan_min.get((wc, d), 0.0) / s_eff)), False
+        return 0.0, False
 
     # ── Attendance per (cell, date) ───────────────────────────────────────────
     att_by_cell: dict[tuple[int, date], list] = defaultdict(list)
