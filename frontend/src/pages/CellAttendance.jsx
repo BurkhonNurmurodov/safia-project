@@ -180,6 +180,7 @@ export default function CellAttendance() {
       leader_name:   c?.leader_name ?? null,
       manager_id:    c?.manager_id ?? null,
       manager_name:  c?.manager_name ?? null,
+      in_load:       c?.in_load === true,
     };
   }), [rawRows, cellById, lang]);
 
