@@ -393,7 +393,7 @@ def cell_zagruzka(
             "verifix_labor": m.verifix_labor,
             "verifix_hc": m.verifix_hc,
         }
-        if m.effective_hc is None or m.effective_hc <= 0:
+        if m.verifix_hc == 0 or m.effective_hc is None or m.effective_hc <= 0:
             totals[key] = {"baseline_util": None, "net_util": None}
 
     # ── The fleet page's own figure for this unit, to reconcile against ───────
