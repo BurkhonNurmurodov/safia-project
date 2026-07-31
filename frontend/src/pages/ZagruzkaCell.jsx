@@ -39,6 +39,12 @@ import api from "../utils/api";
 
 const HEATMAP_MODES = ["planned", "actual"];
 
+// Row-label column width. Wider than the grids' 172px default because a cell
+// reads «4311 · Участок оформ. глазур. тортов №1.1», not «Aripova Manzura» —
+// still truncated with a tooltip past this, but the code + most of the workshop
+// name fit without eating the date columns.
+const LABEL_W = 260;
+
 const num = (v, d = 0) =>
   v === null || v === undefined || Number.isNaN(v) ? "—" : Number(v).toFixed(d);
 const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`);
