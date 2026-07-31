@@ -100,6 +100,238 @@ function StatusChip({ status }) {
   );
 }
 
+/**
+ * «Sozlash» tab — which cells the загрузка counts.
+ *
+ * Lists the WHOLE cell registry, not the cells that happen to carry rows on the
+ * open day: this is configuration, so stepping through dates must not change
+ * what can be ticked. Ticks are held as a draft of real diffs and written by an
+ * explicit Save, so a half-finished pass over a hundred cells is never
+ * committed by accident — the parent confirms before letting the tab go.
+ */
+function LoadConfig({ onDirtyChange }) {
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["cell-attendance-registry"],
+    queryFn: () => api.get("/api/cell-attendance/registry").then(r => r.data),
+  });
+  const registry = useMemo(() => data ?? [], [data]);
+
+  // cell_id → wanted value, holding ONLY genuine diffs: ticking a box back to
+  // where it started drops the entry, so the dirty count is always truthful and
+  // Save sends the minimum.
+  const [draft, setDraft] = useState({});
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState("all"); // all | in | out
+  const [savedAt, setSavedAt] = useState(0);
+
+  const dirty = Object.keys(draft).length;
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+
+  const valueOf = (c) => (c.cell_id in draft ? draft[c.cell_id] : c.in_load === true);
+
+  function setOne(c, next) {
+    setDraft(d => {
+      const { [c.cell_id]: _drop, ...rest } = d;
+      return next === (c.in_load === true) ? rest : { ...rest, [c.cell_id]: next };
+    });
+  }
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return registry.filter(c => {
+      const on = valueOf(c);
+      if (tab === "in" && !on) return false;
+      if (tab === "out" && on) return false;
+      if (!q) return true;
+      return [
+        c.verifix_code, c.sap_code, cellName(c, lang),
+        tl(c.leader_name), c.leader_name, tl(c.manager_name), c.manager_name,
+      ].some(v => (v || "").toLowerCase().includes(q));
+    });
+    // `draft` drives valueOf, so the list must re-run when a tick moves a row
+    // between the Belgilangan / Belgilanmagan tabs.
+  }, [registry, search, tab, draft, lang, tl]);
+
+  // The header box acts on what is ON SCREEN: all shown ticked → clear them,
+  // otherwise tick the rest. Never touches rows hidden by the search.
+  const shownOn = shown.filter(valueOf).length;
+  const headState = shown.length === 0 || shownOn === 0 ? "off" : shownOn === shown.length ? "on" : "some";
+  function toggleShown() {
+    const next = headState !== "on";
+    setDraft(d => {
+      const out = { ...d };
+      for (const c of shown) {
+        if (next === (c.in_load === true)) delete out[c.cell_id];
+        else out[c.cell_id] = next;
+      }
+      return out;
+    });
+  }
+
+  const save = useMutation({
+    mutationFn: () => api.put("/api/cell-attendance/registry", {
+      changes: Object.entries(draft).map(([id, v]) => ({ cell_id: Number(id), in_load: v })),
+    }),
+    onSuccess: () => {
+      setDraft({});
+      setSavedAt(Date.now());
+      // The day view reads in_load off the cell catalog it ships with, so it
+      // has to be refetched before «Zagruzkada» reflects the new marks.
+      qc.invalidateQueries({ queryKey: ["cell-attendance-registry"] });
+      qc.invalidateQueries({ queryKey: ["cell-attendance"] });
+    },
+  });
+
+  useEffect(() => {
+    if (!savedAt) return;
+    const id = setTimeout(() => setSavedAt(0), 2500);
+    return () => clearTimeout(id);
+  }, [savedAt]);
+
+  const markedTotal = registry.filter(valueOf).length;
+
+  if (isLoading) {
+    return (
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SkeletonTable rows={8} cols={4} />
+      </div>
+    );
+  }
+  if (registry.length === 0) {
+    return <EmptyState title={t("cellAtt.cfgEmptyTitle")} message={t("cellAtt.cfgEmptyHint")} showUploadLink={false} />;
+  }
+
+  return (
+    <>
+      <TableCard
+        icon={SlidersHorizontal}
+        title={t("cellAtt.cfgTitle")}
+        fixed
+        minWidth={860}
+        right={
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
+            {t("cellAtt.cfgMarked").replace("{n}", markedTotal).replace("{total}", registry.length)}
+          </span>
+        }
+        toolbar={
+          <>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("cellAtt.cfgSearch")}
+              className="flex-1 min-w-[180px]"
+            />
+            <SegmentedToggle
+              value={tab}
+              onChange={setTab}
+              options={[
+                ["all", t("cellAtt.tabAll")],
+                ["in",  t("cellAtt.cfgTabIn")],
+                ["out", t("cellAtt.cfgTabOut")],
+              ]}
+            />
+            {dirty > 0 && (
+              <Button variant="secondary" size="lg" onClick={() => setDraft({})} disabled={save.isPending}>
+                {t("cellAtt.cfgReset")}
+              </Button>
+            )}
+            <Button
+              size="lg"
+              onClick={() => save.mutate()}
+              disabled={dirty === 0}
+              loading={save.isPending}
+            >
+              {dirty > 0 ? t("cellAtt.cfgSaveN").replace("{n}", dirty) : t("cellAtt.cfgSave")}
+            </Button>
+          </>
+        }
+      >
+        <thead>
+          <tr>
+            <th
+              onClick={toggleShown}
+              className="sticky top-0 z-10 px-3 py-2.5 w-[46px] cursor-pointer select-none transition-colors hover:bg-[var(--bg-accent)]"
+              style={{ background: "var(--bg-inner)" }}
+              title={t("cellAtt.cfgToggleAll")}
+            >
+              <span className="inline-flex"><CheckBox state={headState} /></span>
+            </th>
+            <Th label={t("cellAtt.colCell")} cls="w-[34%]" />
+            <Th label={t("cellAtt.cfgColSap")} cls="w-[12%]" />
+            <Th label={t("cellAtt.colLeader")} cls="w-[24%]" />
+            <Th label={t("cellAtt.colSup")} cls="w-[24%]" />
+          </tr>
+        </thead>
+        <tbody>
+          {shown.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                {t("cellAtt.noMatch")}
+              </td>
+            </tr>
+          ) : shown.map(c => {
+            const on = valueOf(c);
+            const changed = c.cell_id in draft;
+            const name = cellName(c, lang);
+            return (
+              <tr
+                key={c.cell_id}
+                onClick={() => setOne(c, !on)}
+                className="cursor-pointer"
+                // An unsaved row is tinted, so a long scroll still shows what
+                // this Save is about to change.
+                style={changed ? { background: "var(--brand-bg)" } : undefined}
+              >
+                <td className="px-3 py-2">
+                  <span className="inline-flex"><CheckBox state={on ? "on" : "off"} /></span>
+                </td>
+                <td className="px-3 py-2 truncate" title={`${c.verifix_code || ""} ${name || ""}`.trim()}>
+                  <span className="font-mono" style={{ color: "var(--text-1)" }}>{c.verifix_code || "—"}</span>
+                  {name && <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{name}</span>}
+                </td>
+                <td className="px-3 py-2 truncate font-mono text-[11px]" style={{ color: "var(--text-3)" }}>
+                  {c.sap_code || "—"}
+                </td>
+                <td className="px-3 py-2 truncate" title={tl(c.leader_name) || ""} style={{ color: "var(--text-2)" }}>
+                  {tl(c.leader_name) || "—"}
+                </td>
+                <td className="px-3 py-2 truncate" title={tl(c.manager_name) || ""} style={{ color: "var(--text-2)" }}>
+                  {tl(c.manager_name) || "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </TableCard>
+
+      {save.isError && (
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] px-1" style={{ color: "#ef4444" }}>
+          <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+          <span>{t("cellAtt.cfgSaveError")}</span>
+        </div>
+      )}
+
+      {savedAt > 0 && (
+        <div
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{
+            position: "fixed", top: 16, right: 16, zIndex: 9999,
+            background: "#22c55e", color: "#fff", maxWidth: 320,
+            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
+          }}
+        >
+          <CheckCircle size={15} style={{ flexShrink: 0 }} />
+          <span>{t("cellAtt.cfgSaved")}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function CellAttendance() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
