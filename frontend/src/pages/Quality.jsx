@@ -18,6 +18,7 @@ import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
