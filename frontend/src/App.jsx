@@ -379,6 +379,7 @@ function AppWithLang() {
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />
             <Route path="/cell-attendance" element={<AuthGate><RequirePage page="cell-attendance"><CellAttendance /></RequirePage></AuthGate>} />
+            <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             <Route
               path="/admin/upload"
               element={<AuthGate><RequireAdminPanel><AdminUpload /></RequireAdminPanel></AuthGate>}
