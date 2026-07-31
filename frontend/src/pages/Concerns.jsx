@@ -772,6 +772,22 @@ export default function Concerns() {
     return [...s].sort((a, b) => tl(a).localeCompare(tl(b)));
   }, [scoped, tl]);
 
+  // The level-side constraints — the Daraja multi-select plus the "my level
+  // only" toggle — pulled out because they gate BOTH the rows and the
+  // responsible option list, and the two must not drift. "My level only" means
+  // the concerns sitting on the viewer's step; for a top-manager that's the
+  // ones assigned to THEM (can_edit), not every top-level concern in the
+  // read-only global view.
+  const levelPred = useMemo(() => (r) => {
+    const lv = r.level || "supervisor";
+    if (levelSel.length && !levelSel.includes(lv)) return false;
+    if (onlyMyLevel && myLevel) {
+      if (lv !== myLevel) return false;
+      if (role === "top-manager" && !r.can_edit) return false;
+    }
+    return true;
+  }, [levelSel, onlyMyLevel, myLevel, role]);
+
   // Distinct responsible holders in scope, each tagged with the step they
   // answer on — feeds the responsible multi-select, which groups them by level
   // (chain order, alphabetical inside) and tints each name badge with that
