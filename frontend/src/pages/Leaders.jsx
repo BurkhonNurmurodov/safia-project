@@ -1106,9 +1106,9 @@ export default function Leaders({ botMode = false }) {
   const [taskInfo, setTaskInfo] = useState(false);
 
   // table-level filters (independent of the page filters above)
-  const [tSearch, setTSearch] = useState("");
-  const [tBand, setTBand] = useState("all");                 // all | good | mid | bad
-  const [tSort, setTSort] = useState({ key: "score", dir: "asc" });
+  const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
+  const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
+  const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [botMode ? "leaders-bot" : "leaders"],
