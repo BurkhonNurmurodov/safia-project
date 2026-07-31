@@ -44,6 +44,14 @@ const cellName = (c, lang) => pickCellName(c, lang, "name_");
 // never collide with a real numeric id.
 const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
 
+// «Zagruzkada hisoblanadigan» — the slice the production load actually counts:
+// every flavour of konditer plus the fasovchiks, and only where the cell has a
+// brigadir (unmatched codes carry no cell record, so they drop out here too).
+// Job titles arrive raw from the upload ("Konditer/Tsekh prigotovleniya…",
+// "Кондитер"), so match a substring instead of an exact list.
+const LOAD_ROLE_RE = /kondit|конди|fasov|фасов/i;
+const countsInLoad = (r) => r.manager_id != null && LOAD_ROLE_RE.test(r.job_title || "");
+
 // Columns holding DB text: sort on the transliterated form so the order matches
 // what the viewer actually reads.
 const TRANSLIT_COLS = new Set(["worker_name", "job_title", "schedule", "leader_name", "manager_name"]);
