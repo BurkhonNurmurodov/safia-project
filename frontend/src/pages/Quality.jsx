@@ -427,7 +427,7 @@ export default function Quality() {
   // (соч/волос) foreign-object record from the WHOLE page — KPIs, charts, tables
   // and the previous-period deltas alike — so the register reads as if hair
   // complaints don't exist. "with" (default) keeps them, i.e. today's behaviour.
-  const [hairMode, setHairMode] = useState("without");
+  const [hairMode, setHairMode] = usePersistentState("quality_hair_mode", "without");
 
   // Brigadir (supervisor) profile: the page is locked to this one supervisor's
   // own data — no view / shift / brigadir switching, only the date range stays.
