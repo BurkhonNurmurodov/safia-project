@@ -49,12 +49,15 @@ const cellName = (c, lang) => pickCellName(c, lang, "name_");
 const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
 
 // «Zagruzkada hisoblanadigan» — the slice the production load actually counts:
-// every flavour of konditer plus the fasovchiks, and only where the cell has a
-// brigadir (unmatched codes carry no cell record, so they drop out here too).
-// Job titles arrive raw from the upload ("Konditer/Tsekh prigotovleniya…",
-// "Кондитер"), so match a substring instead of an exact list.
+// every flavour of konditer plus the fasovchiks, inside a cell the admin has
+// TICKED on the «Sozlash» tab. Which cells belong in the load used to be
+// inferred from "the cell has a brigadir"; since 2026-07-31 it is an explicit
+// decision stored on the cell (`in_load`), so a cell can be left out even with
+// an owner, and unmatched codes — which carry no cell record at all — still
+// drop out here. Job titles arrive raw from the upload ("Konditer/Tsekh
+// prigotovleniya…", "Кондитер"), so match a substring instead of an exact list.
 const LOAD_ROLE_RE = /kondit|конди|fasov|фасов/i;
-const countsInLoad = (r) => r.manager_id != null && LOAD_ROLE_RE.test(r.job_title || "");
+const countsInLoad = (r) => r.in_load === true && LOAD_ROLE_RE.test(r.job_title || "");
 
 // Columns holding DB text: sort on the transliterated form so the order matches
 // what the viewer actually reads.
