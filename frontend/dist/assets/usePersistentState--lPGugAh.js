@@ -1,1 +1,0 @@
-import{x as u,y as c}from"./transliterate-B3CGQvLh.js";var o=u(c(),1);function l(e,a){const[t,s]=(0,o.useState)(()=>{try{const r=localStorage.getItem(e);if(r!==null)return JSON.parse(r)}catch(r){}return typeof a=="function"?a():a});return(0,o.useEffect)(()=>{try{t==null?localStorage.removeItem(e):localStorage.setItem(e,JSON.stringify(t))}catch(r){}},[e,t]),[t,s]}export{l as t};
