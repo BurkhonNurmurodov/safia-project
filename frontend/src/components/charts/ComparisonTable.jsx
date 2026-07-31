@@ -586,12 +586,20 @@ export default function ComparisonTable({
                       fontWeight: thisMgrSel ? 700 : 500,
                       color: thisMgrGray ? "var(--text-4)" : thisMgrSel ? "var(--text-1)" : labelColor,
                       opacity: thisMgrGray ? 0.35 : 1,
+                      // nowrap without clipping let a long row name spill across
+                      // the date columns — clip it and keep the full text in the
+                      // tooltip. Names wider than the column are normal now that
+                      // the rows can be cells («4311 · Участок …»), not just
+                      // supervisors, whose names happened to fit.
                       whiteSpace: "nowrap",
+                      overflow: "hidden", textOverflow: "ellipsis",
+                      maxWidth: labelWidth,
                       verticalAlign: "middle", height: 34,
-                      width: LABEL_W, minWidth: LABEL_W,
+                      width: labelWidth, minWidth: labelWidth,
                       transition: "background .08s, opacity .1s, color .1s",
                       cursor: "pointer", userSelect: "none",
                     }}
+                    title={tl(name)}
                   >
                     {tl(name)}
                   </td>
