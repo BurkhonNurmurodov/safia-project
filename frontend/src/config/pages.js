@@ -78,6 +78,9 @@ export const DEFAULT_PAGE_ACCESS = {
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
   "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled
   "cell-attendance": [], // Per-cell attendance viewer (verifix import) — admin-only until enabled
+  // Per-cell загрузка TEST twin of /zagruzka, locked to one supervisor's cells.
+  // Admin-only while the per-cell method is validated; feeds nothing downstream.
+  "zagruzka-cell": [],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants
