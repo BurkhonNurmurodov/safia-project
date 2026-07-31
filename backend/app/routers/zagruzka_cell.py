@@ -264,6 +264,12 @@ def cell_zagruzka(
         d: {"prod_plan": 0.0, "prod_actual": 0.0, "official_hc": 0.0,
             "downtime_w": 0.0, "att": []} for d in dates
     }
+    collapsed_hc = 0   # cells blanked for a non-positive effective headcount
+
+    # Days the per-cell verifix export actually covers, for this unit's cells.
+    # SAP production covers every working day, so without this the page can't
+    # tell "nobody worked" from "the file for that day was never uploaded".
+    days_with_attendance = sorted({d for (_cid, d) in att_by_cell})
 
     for c in cells:
         label = _cell_label(c)
