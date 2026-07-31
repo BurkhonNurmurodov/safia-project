@@ -306,13 +306,18 @@ def cell_zagruzka(
                 equip_downtime=downtime,
                 downtime_by_cat=idle_cats.get((c.id, d.isoformat()), {}),
             )
-            # PARTIAL attendance collapses effective_hc the same way a missing
-            # file does — a cell whose recorded labour is far below the labour it
-            # produced gets a non-positive effective headcount, which has no
-            # physical meaning. compute_metrics only guards against exactly 0
-            # (the fleet page never sees this: its attendance is always whole),
-            # so negatives would surface as the −471% cells. Blank them.
-            if m.effective_hc is None or m.effective_hc <= 0:
+            # PARTIAL attendance collapses the maths the same way a missing file
+            # does, in two shapes:
+            #   verifix_hc == 0 — rows exist but NONE survived the direct-role /
+            #     hours filter, so verifix_labor is 0 and the load is derived
+            #     from nobody. (`excluded_job_titles` below names the titles
+            #     that were dropped, which is usually the reason.)
+            #   effective_hc <= 0 — recorded labour far below produced labour
+            #     drives the surplus term negative past официальный headcount.
+            # compute_metrics only guards against effective_hc being exactly 0 —
+            # the fleet page never sees either case because its attendance is
+            # always whole — so unguarded these surface as the ±1000% cells.
+            if m.verifix_hc == 0 or m.effective_hc is None or m.effective_hc <= 0:
                 data[label][key] = {"baseline_util": None, "net_util": None}
                 collapsed_hc += 1
                 continue
