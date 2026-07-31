@@ -64,6 +64,12 @@ const CATEGORY_ICON = {
 // sit below the chain: they create and edit but never hold a level.
 const LEVELS = ["supervisor", "shift-manager", "top-manager"];
 
+// responsible_name names ONE picked person per row — every path that lands a
+// concern on a step (create, uplift, send-back, admin retarget) requires the
+// holder. Only rows written before the shift-manager picker became mandatory
+// can still fall back to a comma-joined pair, hence the split.
+const splitResponsible = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
+
 // Level → identity hue in the shared generic-first order (red → green → blue
 // as the concern climbs the chain — identity, not traffic-light). "leader"
 // stays only so pre-migration escalation-history entries keep rendering.
