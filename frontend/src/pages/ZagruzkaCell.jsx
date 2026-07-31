@@ -481,7 +481,7 @@ export default function ZagruzkaCell() {
                   <Th label={t("zcell.colWc")} align="center" />
                   <Th label={t("zcell.colTrudPlan")} align="right" />
                   <Th label={t("zcell.colTrudActual")} align="right" />
-                  <Th label={t("zcell.colShtatka")} align="right" />
+                  <Th label={t("production.oSoni")} align="right" />
                   <Th label={t("zcell.colHours")} align="right" />
                   <Th label={t("zcell.colPeople")} align="right" />
                   <Th label={t("zcell.colIdle")} align="right" />
