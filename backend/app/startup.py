@@ -476,6 +476,25 @@ def migrate_cell_supervisor_column() -> None:
         db.close()
 
 
+def migrate_cell_in_load_column() -> None:
+    """2026-07-31: «counts in загрузка» becomes an explicit per-cell flag instead
+    of being derived from "the cell has a supervisor". Every existing row starts
+    FALSE by deliberate choice — the admin ticks the cells that belong in the
+    load on the /cell-attendance «Sozlash» tab, rather than inheriting a set
+    nobody chose. Idempotent; runs after migrate_cell_supervisor_column."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE cells ADD COLUMN IF NOT EXISTS in_load BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] cell in_load column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
