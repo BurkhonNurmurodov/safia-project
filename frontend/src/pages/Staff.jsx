@@ -3344,11 +3344,11 @@ function ApprovalsCalendar({ role, supervisors }) {
   const canReopen = isAdmin || can(CAP.DAY_REOPEN);
   const crossUnit = isAdmin || canAll(CAP.DAY_REOPEN);
 
-  const [selManagerId, setSelManagerId] = useState(null);
+  const [selManagerId, setSelManagerId] = usePersistentState("staff_approvals_manager_id", null);
   const effManagerId = crossUnit ? selManagerId : auth?.role_id;
 
   const now = new Date();
-  const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [view, setView] = usePersistentState("staff_approvals_month", { year: now.getFullYear(), month: now.getMonth() });
   const todayIso = monthIso(now.getFullYear(), now.getMonth(), now.getDate());
 
   const { data, isLoading } = useQuery({
