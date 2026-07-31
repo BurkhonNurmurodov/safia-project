@@ -98,22 +98,38 @@ export default function CellAttendance() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
 
-  // The date survives navigating away and back (its own key — every page
-  // remembers its own selection).
+  // The whole filter set survives navigating away and back — leaving the page
+  // to check another one and returning to a wiped toolbar meant rebuilding the
+  // same picks every time. One storage key per control, so a stale shape in one
+  // can't poison the rest, and each is prefixed for this page only.
   const [date, setDate] = usePersistentState("cellatt_date", todayIso());
-  // Page scope. Deliberately NOT persisted — the page always opens on the
-  // zagruzka slice, the population people compare against the load.
-  const [scope, setScope] = useState("load");       // load | all
-  const [cellIds, setCellIds] = useState([]);       // [] = every cell in scope
-  const [leaderIds, setLeaderIds] = useState([]);   // [] = every leader
-  const [supIds, setSupIds] = useState([]);         // [] = every supervisor
-  const [search, setSearch] = useState("");
-  const [statusTab, setStatusTab] = useState("all"); // all | worked | absent
-  const [jobFilter, setJobFilter] = useState([]);    // came-by-role chips + Lavozim column
-  const [colF, setColF] = useState(INIT_COL);        // the column-only filters
-  const [sort, setSort] = useState({ key: "worker_name", dir: "asc" });
+  const [scope, setScope] = usePersistentState("cellatt_scope", "load"); // load | all
+  const [cellIds, setCellIds] = usePersistentState("cellatt_cells", []);      // [] = every cell in scope
+  const [leaderIds, setLeaderIds] = usePersistentState("cellatt_leaders", []); // [] = every leader
+  const [supIds, setSupIds] = usePersistentState("cellatt_sups", []);          // [] = every supervisor
+  const [search, setSearch] = usePersistentState("cellatt_search", "");
+  const [statusTab, setStatusTab] = usePersistentState("cellatt_status", "all"); // all | worked | absent
+  const [jobFilter, setJobFilter] = usePersistentState("cellatt_jobs", []);      // came-by-role chips + Lavozim column
+  const [rawColF, setColF] = usePersistentState("cellatt_cols", INIT_COL);       // the column-only filters
+  const [rawSort, setSort] = usePersistentState("cellatt_sort", DEFAULT_SORT);
+  // Page position is deliberately NOT persisted — the day's rows may have
+  // changed under it, so coming back always starts at the top.
   const [page, setPage] = useState(1);
   const setCol = (k, v) => setColF(f => ({ ...f, [k]: v }));
+
+  // Restored values are old data: reconcile them against the CURRENT shape so a
+  // column added or renamed since the visit that saved them can't crash the
+  // filter predicates or strand the table on a dead sort key.
+  const colF = useMemo(
+    () => ({ ...INIT_COL, ...(rawColF && typeof rawColF === "object" ? rawColF : null) }),
+    [rawColF],
+  );
+  const sort = useMemo(
+    () => (rawSort && SORT_KEYS.has(rawSort.key) && (rawSort.dir === "asc" || rawSort.dir === "desc")
+      ? rawSort
+      : DEFAULT_SORT),
+    [rawSort],
+  );
 
   // Days that actually carry rows. The report is uploaded for the day it
   // covers (usually yesterday), so landing on an empty "today" would look like
