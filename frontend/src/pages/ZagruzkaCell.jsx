@@ -314,6 +314,8 @@ export default function ZagruzkaCell() {
                   calcFactors={calcFactors}
                   onCalcFactorsChange={setCalcFactors}
                   allowComments={false}
+                  rowLabel={t("zcell.colCell")}
+                  labelWidth={LABEL_W}
                   fullscreen
                   onToggleFullscreen={() => setCompFullscreen(false)}
                 />
