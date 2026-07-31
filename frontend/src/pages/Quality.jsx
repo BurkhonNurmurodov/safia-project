@@ -420,7 +420,7 @@ export default function Quality() {
   // pinned on a matched supervisor unit (r.sup set) — regardless of source, so
   // производство, торговые точки and guest complaints all count. Brigadirs is
   // the default landing tab.
-  const [view, setView] = useState("production");
+  const [view, setView] = usePersistentState("quality_view", "production");
   const isProd = view === "production";
 
   // Top-level «Soch bilan / Sochsiz» switch: "without" drops every hair-category
