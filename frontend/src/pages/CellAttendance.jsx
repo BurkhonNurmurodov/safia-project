@@ -270,7 +270,7 @@ export default function CellAttendance() {
     setJobFilter(f => f.includes(title) ? f.filter(x => x !== title) : [...f, title]);
   }
 
-  const cellOptions = cells.map(c => {
+  const cellOptions = scopedCells.map(c => {
     const name = cellName(c, lang);
     return {
       value: cellKey(c),
