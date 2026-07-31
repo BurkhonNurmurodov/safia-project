@@ -220,7 +220,7 @@ export default function CellAttendance() {
       status:   pick("status"),
       job:      pick("job_title"),
     };
-  }, [allRows]);
+  }, [scopedRows]);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
