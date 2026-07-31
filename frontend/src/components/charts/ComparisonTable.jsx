@@ -378,12 +378,12 @@ export default function ComparisonTable({
                   ...thBase,
                   position: "sticky", left: 0, zIndex: 4,
                   borderRight: "2px solid var(--border-md)",
-                  width: LABEL_W, textAlign: "left", paddingLeft: 12,
+                  width: labelWidth, textAlign: "left", paddingLeft: 12,
                   cursor: "pointer", userSelect: "none",
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                  Brigadir
+                  {rowLabel}
                   {nameAsc === null
                     ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
                     : nameAsc
