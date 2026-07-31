@@ -51,7 +51,10 @@ function filterNode(node, q) {
   return kids.length ? { ...node, children: kids } : null;
 }
 
-function CheckBox({ state, disabled }) { // state: "on" | "some" | "off"
+// The tick itself — exported so other multi-select surfaces (e.g. the
+// /cell-attendance load-config table) reuse this exact box instead of drawing
+// their own. Presentational only: the caller owns the click target.
+export function CheckBox({ state, disabled }) { // state: "on" | "some" | "off"
   const on = state !== "off";
   return (
     <span
