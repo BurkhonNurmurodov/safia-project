@@ -377,15 +377,25 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const { t } = useLang();
   const { tl } = useTranslit();
-  const [filters, setFilters]           = useState(INIT_FILTERS);
+  const [rawFilters, setFilters]        = usePersistentState("staff_workers_filters", INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
   const [exporting, setExporting]       = useState(false);
   const [exportDone, setExportDone]     = useState(false);
-  const [nameAsc, setNameAsc]           = useState(true);
-  const [isCollapsed, setIsCollapsed]   = useState(false);
+  const [nameAsc, setNameAsc]           = usePersistentState("staff_workers_name_sort", true);
+  const [isCollapsed, setIsCollapsed]   = usePersistentState("staff_workers_table_collapsed", false);
 
-  // Reset filters whenever the date or supervisor changes
+  // Restored values are old data: merge over the CURRENT shape so a filter
+  // added since the visit that saved them can't crash the predicates.
+  const filters = useMemo(
+    () => ({ ...INIT_FILTERS, ...(rawFilters && typeof rawFilters === "object" ? rawFilters : null) }),
+    [rawFilters],
+  );
+
+  // Reset filters whenever the date or supervisor changes (skip the first run —
+  // it would clobber the value restored from the previous visit)
+  const filtersResetMounted = useRef(false);
   useEffect(() => {
+    if (!filtersResetMounted.current) { filtersResetMounted.current = true; return; }
     setFilters(INIT_FILTERS);
   }, [selectedDate, managerId]);
 
