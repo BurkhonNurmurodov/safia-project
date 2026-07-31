@@ -357,7 +357,9 @@ def cell_zagruzka(
     totals: dict[str, dict] = {}
     for d, key in zip(dates, date_keys):
         r = roll[d]
-        if not r["att"] and not r["prod_plan"] and not r["prod_actual"]:
+        # Same rule as the individual cells: no attendance ⇒ no number, or the
+        # roll-up would publish a figure derived from a zero headcount.
+        if not r["att"]:
             totals[key] = {"baseline_util": None, "net_util": None}
             continue
         hc = r["official_hc"]
