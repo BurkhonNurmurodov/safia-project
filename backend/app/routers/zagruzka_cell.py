@@ -300,6 +300,16 @@ def cell_zagruzka(
                 equip_downtime=downtime,
                 downtime_by_cat=idle_cats.get((c.id, d.isoformat()), {}),
             )
+            # PARTIAL attendance collapses effective_hc the same way a missing
+            # file does — a cell whose recorded labour is far below the labour it
+            # produced gets a non-positive effective headcount, which has no
+            # physical meaning. compute_metrics only guards against exactly 0
+            # (the fleet page never sees this: its attendance is always whole),
+            # so negatives would surface as the −471% cells. Blank them.
+            if m.effective_hc is None or m.effective_hc <= 0:
+                data[label][key] = {"baseline_util": None, "net_util": None}
+                collapsed_hc += 1
+                continue
             data[label][key] = {
                 "baseline_util": m.baseline_util,
                 "net_util": m.net_util,
