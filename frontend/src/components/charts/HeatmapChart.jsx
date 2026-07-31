@@ -216,7 +216,7 @@ function SingleGrid({
               style={{
                 ...stickyNameBase,
                 ...thBase,
-                width: LABEL_W,
+                width: labelWidth,
                 zIndex: 4,
                 textAlign: "left",
                 paddingLeft: 12,
@@ -225,7 +225,7 @@ function SingleGrid({
               }}
             >
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                Brigadir
+                {rowLabel}
                 {nameAsc === null
                   ? <span style={{ opacity: .4, fontSize: 9 }}>⇅</span>
                   : nameAsc
