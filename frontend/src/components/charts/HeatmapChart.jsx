@@ -323,7 +323,14 @@ function SingleGrid({
                     fontSize:      12,
                     fontWeight:    thisSel ? 700 : 500,
                     color:         thisGray ? "var(--text-4)" : thisSel ? "var(--text-1)" : labelColor,
+                    // nowrap alone let a long row name widen the column past
+                    // labelWidth (which tableWidth was computed from) or spill
+                    // over the date cells. Clip it; the tooltip keeps the rest.
                     whiteSpace:    "nowrap",
+                    overflow:      "hidden",
+                    textOverflow:  "ellipsis",
+                    width:         labelWidth,
+                    maxWidth:      labelWidth,
                     verticalAlign: "middle",
                     cursor:        "pointer",
                     opacity:       thisGray ? 0.35 : 1,
@@ -331,6 +338,7 @@ function SingleGrid({
                     userSelect:    "none",
                     height:        34,
                   }}
+                  title={tl(name)}
                 >
                   {tl(name)}
                 </td>
