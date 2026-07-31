@@ -726,7 +726,7 @@ export default function CellAttendance() {
         title={t("cellAtt.cfgLeaveTitle")}
         message={t("cellAtt.cfgLeaveHint").replace("{n}", configDirty)}
         confirmLabel={t("cellAtt.cfgLeaveConfirm")}
-        cancelLabel={t("common.cancel")}
+        cancelLabel={t("cellAtt.cancel")}
         onCancel={() => setPendingScope(null)}
         onConfirm={() => { setScope(pendingScope); setPendingScope(null); setConfigDirty(0); }}
       />
