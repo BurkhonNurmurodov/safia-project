@@ -686,13 +686,13 @@ export default function Production() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
-  const [date, setDate] = useState(todayISO());
-  const [view, setView] = useState("zagruzka"); // zagruzka | people | faza | zaga
+  const [date, setDate] = usePersistentState("production_date", todayISO());
+  const [view, setView] = usePersistentState("production_view", "zagruzka"); // zagruzka | people | faza | zaga
   const [unknownOpen, setUnknownOpen] = useState(false);
   // table controls: free-text search (Сап код + Наименование), Команда multi-select, sort
-  const [search, setSearch] = useState("");
-  const [wcSel, setWcSel] = useState([]); // [] = all teams
-  const [sort, setSort] = useState({ key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
+  const [search, setSearch] = usePersistentState("production_search", "");
+  const [wcSel, setWcSel] = usePersistentState("production_wc_filter", []); // [] = all teams
+  const [sort, setSort] = usePersistentState("production_sort", { key: null, dir: "asc" }); // 3-state cycle: asc → desc → off
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [staffingSaved, setStaffingSaved] = useState(false); // «Saqlandi» flash on the people tab
