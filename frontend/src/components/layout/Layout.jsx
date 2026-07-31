@@ -367,10 +367,65 @@ function SettingsButton() {
 const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
 const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
 
+// ─── Scroll memory ────────────────────────────────────────────────────────────
+// The <main> viewport below is THE scroll container for every page, and Layout
+// remounts on each route change (resetting scrollTop to 0). Remember the last
+// position per pathname so returning to a page lands where the user left off.
+// Mirrored to sessionStorage so it also survives the stale-version reload.
+const scrollMemory = new Map(); // pathname -> scrollTop
+const SCROLL_MEM_KEY = "page_scroll_mem";
+try {
+  const saved = JSON.parse(sessionStorage.getItem(SCROLL_MEM_KEY) || "{}");
+  for (const [k, v] of Object.entries(saved)) scrollMemory.set(k, v);
+} catch { /* corrupt/unavailable storage — start empty */ }
+let scrollFlush = 0;
+function rememberScroll(pathname, top) {
+  scrollMemory.set(pathname, top);
+  cancelAnimationFrame(scrollFlush);
+  scrollFlush = requestAnimationFrame(() => {
+    try {
+      sessionStorage.setItem(SCROLL_MEM_KEY, JSON.stringify(Object.fromEntries(scrollMemory)));
+    } catch { /* quota/blocked — in-memory map still works for this session */ }
+  });
+}
+
 export default function Layout({ children, title }) {
   const notif = useNotifications();
   useActivityPing(); // heartbeat for the Users-Activity dashboard
+  const { pathname } = useLocation();
+  const mainRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Restore the remembered position. Page data arrives async (skeletons are
+  // shorter than the real content), so retry each frame until the container
+  // is tall enough to hold the target offset — giving up if the user scrolls
+  // first, or clamping best-effort after 4s (content may have gotten shorter).
+  useEffect(() => {
+    const el = mainRef.current;
+    const target = scrollMemory.get(pathname) || 0;
+    if (!el || target <= 0) return undefined;
+    let raf = 0;
+    let done = false;
+    const deadline = performance.now() + 4000;
+    const stop = () => { done = true; cancelAnimationFrame(raf); };
+    const attempt = () => {
+      if (done) return;
+      if (el.scrollHeight - el.clientHeight >= target || performance.now() > deadline) {
+        el.scrollTop = target; // browser clamps if the page ended up shorter
+        stop();
+        return;
+      }
+      raf = requestAnimationFrame(attempt);
+    };
+    el.addEventListener("wheel", stop, { passive: true });
+    el.addEventListener("touchstart", stop, { passive: true });
+    attempt();
+    return () => {
+      stop();
+      el.removeEventListener("wheel", stop);
+      el.removeEventListener("touchstart", stop);
+    };
+  }, [pathname]);
   const [sidebarPinned, setSidebarPinned] = useState(
     () => localStorage.getItem("sidebar_pinned") === "true"
   );
