@@ -656,8 +656,8 @@ export default function Quality() {
   // still narrow every row): yearly = 12 calendar months of a chosen year;
   // weekly = one column per ISO week across the page date range. 12 VISIBLE data
   // columns — scroll past 12, blank-pad under 12 (see SeasonalityHeatmap).
-  const [seasonMode, setSeasonMode] = useState("year");
-  const [seasonYear, setSeasonYear] = useState(null);
+  const [seasonMode, setSeasonMode] = usePersistentState("quality_season_mode", "year");
+  const [seasonYear, setSeasonYear] = usePersistentState("quality_season_year", null);
 
   const seasonYears = useMemo(() => {
     const ys = new Set();
