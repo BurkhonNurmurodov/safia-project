@@ -438,6 +438,11 @@ export default function HeatmapChart({
   approvedCells = null,
   onCellClick = () => {},
   fullscreen = false,
+  // Row-identity column: what the rows ARE, and how much room their names need.
+  // Defaults are the fleet page's (supervisors, whose names fit 172px); the
+  // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
+  rowLabel = "Brigadir",
+  labelWidth = LABEL_W,
 }) {
   const { labelColor } = useChartTheme();
   const { t } = useLang();
