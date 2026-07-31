@@ -212,7 +212,7 @@ export default function CellAttendance() {
   // Column option lists come from ALL of the day's rows, not the filtered ones,
   // so ticking a box never makes the other columns' options disappear.
   const distinct = useMemo(() => {
-    const pick = (f) => [...new Set(allRows.map(r => r[f] || ""))].filter(Boolean).sort();
+    const pick = (f) => [...new Set(scopedRows.map(r => r[f] || ""))].filter(Boolean).sort();
     return {
       worker:   pick("worker_name"),
       schedule: pick("schedule"),
