@@ -511,15 +511,15 @@ export default function Concerns() {
 
   // Table-level filters, consolidated behind the "Filtrlar" button (mirrors the
   // Production/Staff tables) — status + owner multi-selects, deadline-day range.
-  const [statusSel, setStatusSel] = useState([]);       // [] = all statuses
-  const [ownerSel, setOwnerSel] = useState([]);         // [] = all owners
-  const [levelSel, setLevelSel] = useState([]);         // [] = all levels
-  const [respSel, setRespSel] = useState([]);           // [] = all responsible holders
-  const [categorySel, setCategorySel] = useState([]);   // [] = all categories
-  const [deadlineMin, setDeadlineMin] = useState("");
-  const [deadlineMax, setDeadlineMax] = useState("");
-  const [onlyMyLevel, setOnlyMyLevel] = useState(false); // toolbar toggle (chain roles), default OFF
-  const [sort, setSort] = useState({ key: null, dir: "asc" });   // table column sort
+  const [statusSel, setStatusSel] = usePersistentState("concerns_status_sel", []);       // [] = all statuses
+  const [ownerSel, setOwnerSel] = usePersistentState("concerns_owner_sel", []);          // [] = all owners
+  const [levelSel, setLevelSel] = usePersistentState("concerns_level_sel", []);          // [] = all levels
+  const [respSel, setRespSel] = usePersistentState("concerns_resp_sel", []);             // [] = all responsible holders
+  const [categorySel, setCategorySel] = usePersistentState("concerns_category_sel", []); // [] = all categories
+  const [deadlineMin, setDeadlineMin] = usePersistentState("concerns_deadline_min", "");
+  const [deadlineMax, setDeadlineMax] = usePersistentState("concerns_deadline_max", "");
+  const [onlyMyLevel, setOnlyMyLevel] = usePersistentState("concerns_only_my_level", false); // toolbar toggle (chain roles), default OFF
+  const [sort, setSort] = usePersistentState("concerns_sort", { key: null, dir: "asc" });    // table column sort
 
   const [expandedId, setExpandedId] = useState(null);   // row whose action bar is open
   const [modalOpen, setModalOpen] = useState(false);
