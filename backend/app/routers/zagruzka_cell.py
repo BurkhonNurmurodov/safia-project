@@ -53,11 +53,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Cell, CellAttendance, CellOjidaniya, Manager,
-    PPDaily, PPProduct, PPWorkCenter, PPWorkCenterDaily,
+    PPDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
 )
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
+from app.routers.production import _constants as _pp_constants, _unit_per_head
 from app.services.kpi_calculator import compute_metrics, is_direct_role
+from app.services.pp_calc import _round_half_up
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
 router = APIRouter(prefix="/api/zagruzka-cell", tags=["zagruzka-cell"])
