@@ -103,13 +103,29 @@ export function TxtFilter({ value, onChange, placeholder }) {
 // distinct values run into the hundreds (worker names, clock strings), where
 // scrolling a raw list is useless. Typing narrows the visible checkboxes only;
 // "select all" still means every option, not just the matching ones.
-export function OptsFilter({ opts, sel, onChange, render, searchable = false }) {
+// `groupBy` (optional) buckets the rows under small caption headers — pass a
+// fn returning an option's group label. Groups keep the order they first
+// appear in `opts`, so the caller controls both the group and the row order.
+export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null }) {
   const { t } = useLang();
   const [q, setQ] = useState("");
-  const label = (o) => String(render ? render(o) : (o ?? ""));
+  // `render` may return a node (chips, icons) — fall back to the raw option so
+  // search and the row tooltip stay meaningful instead of "[object Object]".
+  const label = (o) => {
+    const r = render ? render(o) : o;
+    return typeof r === "string" || typeof r === "number" ? String(r) : String(o ?? "");
+  };
   const shown = searchable && q.trim()
     ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
     : opts;
+  // [groupLabel, opts[]] in first-appearance order; null when ungrouped.
+  const groups = groupBy
+    ? [...shown.reduce((m, o) => {
+        const g = groupBy(o) ?? "";
+        (m.get(g) || m.set(g, []).get(g)).push(o);
+        return m;
+      }, new Map())]
+    : null;
   // `onChange` replaces the whole array and can't compose functional updates, so
   // keep a working Set snapshotted for the duration of a drag.
   const selRef = useRef(sel);
