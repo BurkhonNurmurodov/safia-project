@@ -106,6 +106,8 @@ const t = {
     "zcell.diagNoLabor":        "Mehnat sig'imisiz katalog qatorlari",
     "zcell.diagExcluded":       "Lavozimi bo'yicha chiqarib tashlangan davomat qatorlari",
     "zcell.diagClean":          "Barcha yacheykalar ishlab chiqarish bilan bog'langan, istisno yo'q.",
+    "zcell.diagAttDays":        "Davomat {m} kundan {n} tasi uchun yuklangan",
+    "zcell.diagCollapsed":      "Yashirilgan yacheykalar — davomat hisoblash uchun juda to'liqsiz",
     "zcell.rowsWord":           "qator",
     "cellAtt.title":           "Yacheykalar bo'yicha davomat",
     "cellAtt.testNote":        "Test — «Yacheyka bo'yicha davomat» importi",
