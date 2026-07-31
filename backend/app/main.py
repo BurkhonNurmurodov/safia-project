@@ -238,6 +238,9 @@ app.include_router(idle_cell.router)
 # Per-cell attendance viewer (read-only sibling of the Staff verifix page) —
 # self-gates via require_page("cell-attendance").
 app.include_router(cell_attendance.router)
+# Per-cell загрузка TEST twin of /zagruzka, hard-locked to one supervisor —
+# self-gates via require_page("zagruzka-cell") (admin-only by default).
+app.include_router(zagruzka_cell.router)
 
 
 @app.get("/health")
