@@ -6,7 +6,7 @@
  * and request workflow: this page only shows what the admin «Attendance by cell»
  * upload put into the isolated `cell_attendance` test table.
  */
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FlaskConical, LayoutGrid, AlertTriangle } from "lucide-react";
