@@ -103,6 +103,11 @@ function StatusChip({ status }) {
 export default function CellAttendance() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
+  const { auth } = useAuth();
+  // Marking the cells that belong in the load is an admin decision, so the
+  // third («Sozlash») tab exists for admins only — the endpoint behind it is
+  // gated the same way.
+  const isAdmin = auth?.role === "admin";
 
   // The whole filter set survives navigating away and back — leaving the page
   // to check another one and returning to a wiped toolbar meant rebuilding the
