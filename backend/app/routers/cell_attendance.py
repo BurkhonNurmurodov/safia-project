@@ -10,6 +10,9 @@ Scoping mirrors idle_cell.py: admins/top-managers and a ``page.view.cell-attenda
 "all" grant see every cell, supervisors/shift-managers their unit's cells,
 leaders their own. Rows whose «Код подразделения» matched no cell (cell_id NULL)
 are only visible to the all-scope viewers — nobody else can be shown to own them.
+
+``/registry`` is the page's admin-only «Sozlash» tab: the full cell catalog with
+the ``in_load`` tick that decides which cells the загрузка counts.
 """
 from datetime import datetime
 
