@@ -490,7 +490,11 @@ export default function Layout({ children, title }) {
             .page-enter wrapper replays its fade-up once per navigation — a
             light, instant-feeling swap in place of the old logo overlay. */}
         <div className="relative flex-1 min-h-0">
-          <main className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6">
+          <main
+            ref={mainRef}
+            onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
+            className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"
+          >
             <div className="page-enter">
               {children}
             </div>

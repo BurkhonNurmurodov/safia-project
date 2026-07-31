@@ -505,8 +505,8 @@ export default function ZagruzkaCell() {
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.trud_plan)}</td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>{num(inp?.trud_actual)}</td>
                       <td className="px-3 py-2 text-right" style={{ color: "var(--text-2)" }}>
-                        {num(inp?.shtatka)}
-                        {inp?.shtatka_pinned && (
+                        {num(inp?.o_soni)}
+                        {inp?.o_soni_pinned && (
                           <span className="ml-1 text-[9px]" style={{ color: "var(--brand-text)" }}>
                             {t("zcell.pinned")}
                           </span>
