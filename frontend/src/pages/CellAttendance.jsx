@@ -321,12 +321,30 @@ export default function CellAttendance() {
 
   return (
     <Layout title={t("cellAtt.title")}>
+      {/* Page scope — sits ABOVE the filter row because it re-bases everything
+          under it, the filters' own option lists included. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <SegmentedToggle
+          value={scope}
+          onChange={setScope}
+          options={[
+            { value: "load", label: t("cellAtt.scopeLoad"), title: t("cellAtt.scopeLoadHint") },
+            { value: "all",  label: t("cellAtt.scopeAll"),  title: t("cellAtt.scopeAllHint") },
+          ]}
+        />
+        {scope === "load" && (
+          <span className="text-xs" style={{ color: "var(--text-4)" }}>
+            {t("cellAtt.scopeNote")}
+          </span>
+        )}
+      </div>
+
       {/* Toolbar — one aligned row: day stepper, then the three owner/cell
           filters (leader → supervisor → cell), then the test note */}
       <div className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <DayStepper value={date} onChange={setDate} />
-        {cells.length > 0 && (
+        {scopedCells.length > 0 && (
           <>
             <StyledSelect
               multiple searchable
