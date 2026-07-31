@@ -8,8 +8,8 @@
  */
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
-import { FlaskConical, LayoutGrid, AlertTriangle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FlaskConical, LayoutGrid, AlertTriangle, SlidersHorizontal, CheckCircle } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import TableCard, { Th } from "../components/ui/DataTable";
@@ -18,6 +18,8 @@ import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DayStepper from "../components/ui/DayStepper";
 import Button from "../components/ui/Button";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { CheckBox } from "../components/ui/CheckboxTree";
 import { ColFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
@@ -25,6 +27,7 @@ import { SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
 import { cellName as pickCellName } from "../utils/cellName";
+import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
