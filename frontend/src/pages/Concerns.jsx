@@ -5,7 +5,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
   ChevronDown, Check, Eye,
-  CalendarClock, UserRound, ShieldCheck, FileText, CircleDot, Clock,
+  CalendarClock, UserRound, UserCheck, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
   Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
