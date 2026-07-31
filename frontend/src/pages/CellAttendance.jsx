@@ -140,21 +140,22 @@ function LoadConfig({ onDirtyChange }) {
     });
   }
 
+  // The two tabs describe the SAVED state on purpose: filtering on the draft
+  // would make a row vanish the instant it was ticked, which is exactly when
+  // you still want to see it (and be able to undo it). Rows stay put, tinted,
+  // until Save — after which the refetched list re-sorts them.
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return registry.filter(c => {
-      const on = valueOf(c);
-      if (tab === "in" && !on) return false;
-      if (tab === "out" && on) return false;
+      if (tab === "in" && c.in_load !== true) return false;
+      if (tab === "out" && c.in_load === true) return false;
       if (!q) return true;
       return [
         c.verifix_code, c.sap_code, cellName(c, lang),
         tl(c.leader_name), c.leader_name, tl(c.manager_name), c.manager_name,
       ].some(v => (v || "").toLowerCase().includes(q));
     });
-    // `draft` drives valueOf, so the list must re-run when a tick moves a row
-    // between the Belgilangan / Belgilanmagan tabs.
-  }, [registry, search, tab, draft, lang, tl]);
+  }, [registry, search, tab, lang, tl]);
 
   // The header box acts on what is ON SCREEN: all shown ticked → clear them,
   // otherwise tick the rest. Never touches rows hidden by the search.
