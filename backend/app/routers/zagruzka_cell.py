@@ -25,6 +25,10 @@ the Production page's work-centre codes (see seed_cells_from_sheet.py).
 Decisions taken with the user (2026-07-31), all deliberate:
   * ALL of the locked unit's cells are computed — ``Cell.in_load`` is ignored so
     that ticking cells for the real загрузка can never change this test page.
+  * The formula's headcount is O. SONI, NOT штатка — the user corrected the
+    first version, which fed штатка in. O. SONI is the Production page's
+    effective value: the per-day pin when the brigadir set one, else the derived
+    ROUND(W × Q ÷ S), so the number here always matches the «Jamoa tarkibi» card.
   * Ojidaniya = To'xtaganda (stopped) minutes only, excluding OJIDANIYA_ONLY_CATS
     (Cat H / Cat I), mirroring the fleet page's rule.
   * A missing input is a plain zero, not a marker: no ojidaniya row for a day
