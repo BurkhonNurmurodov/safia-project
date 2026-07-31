@@ -802,6 +802,9 @@ export default function Concerns() {
       if (statusSel.length && !statusSel.includes(r.status)) return false;
       if (ownerSel.length && !ownerSel.includes(r.owner_name)) return false;
       if (levelSel.length && !levelSel.includes(r.level || "supervisor")) return false;
+      // Responsible = who holds the concern right now. A legacy row naming a
+      // pair matches if EITHER of them is ticked.
+      if (respSel.length && !splitResponsible(r.responsible_name).some((n) => respSel.includes(n))) return false;
       if (categorySel.length && !categorySel.includes(r.category)) return false;
       // "My level only": concerns currently sitting on the viewer's step. For a
       // top-manager that's the ones assigned to THEM (can_edit), not every
