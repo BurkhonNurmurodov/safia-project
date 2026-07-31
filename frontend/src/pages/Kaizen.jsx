@@ -273,11 +273,11 @@ export default function Kaizen() {
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
 
-  const [projectSel, setProjectSel] = useState([]);   // task-table row filters (multi-select)
-  const [statusSel, setStatusSel] = useState([]);
-  const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState("12");   // activity-chart window: 6 · 12 · all
-  const [sort, setSort] = useState({ key: null, dir: "asc" });  // task-table column sort
+  const [projectSel, setProjectSel] = usePersistentState("kaizen_project_sel", []);   // task-table row filters (multi-select)
+  const [statusSel, setStatusSel] = usePersistentState("kaizen_status_sel", []);
+  const [search, setSearch] = usePersistentState("kaizen_search", "");
+  const [period, setPeriod] = usePersistentState("kaizen_period", "12");   // activity-chart window: 6 · 12 · all
+  const [sort, setSort] = usePersistentState("kaizen_sort", { key: null, dir: "asc" });  // task-table column sort
   // Click cycles asc → desc → off (original order), mirroring the Overview table.
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" }
