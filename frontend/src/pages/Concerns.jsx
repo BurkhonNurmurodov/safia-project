@@ -1218,6 +1218,26 @@ export default function Concerns() {
       ),
     },
     {
+      // Sits under Daraja: same chain, one step finer — the person, not the
+      // step. Names render as the level pill so the hue says which step they
+      // answer on without reading the group caption.
+      key: "responsible", icon: UserCheck, label: t("concerns.responsible"),
+      active: respSel.length > 0,
+      display: `${respSel.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter
+          opts={responsibleOptions.names}
+          sel={respSel}
+          onChange={setRespSel}
+          searchable={responsibleOptions.names.length > 8}
+          groupBy={(n) => levelLabel(responsibleOptions.lvlOf.get(n) || "supervisor")}
+          render={(n) => (
+            <LevelChip level={responsibleOptions.lvlOf.get(n) || "supervisor"} label={tl(n) || n} />
+          )}
+        />
+      ),
+    },
+    {
       key: "category", icon: Tag, label: t("concerns.colCategory"),
       active: categorySel.length > 0,
       display: `${categorySel.length} ${t("filter.selected2")}`,
