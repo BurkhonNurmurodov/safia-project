@@ -151,12 +151,33 @@ export default function CellAttendance() {
     };
   }), [rawRows, cellById, lang]);
 
+  // The scope cut runs BEFORE everything else, so the KPIs, the role chips, the
+  // owner pickers and the table all describe one population.
+  const scopedRows = useMemo(
+    () => (scope === "load" ? allRows.filter(countsInLoad) : allRows),
+    [allRows, scope],
+  );
+  // Keep the pickers' promise that no option can filter the table down to
+  // nothing: in load scope only cells that still carry a row stay listed.
+  const scopedCells = useMemo(() => {
+    if (scope !== "load") return cells;
+    const keys = new Set(scopedRows.map(r => r._key));
+    return cells.filter(c => keys.has(cellKey(c)));
+  }, [cells, scopedRows, scope]);
+
   // A new day brings a different cell catalog — stale picks would silently
   // filter everything out.
   useEffect(() => {
     setCellIds([]); setLeaderIds([]); setSupIds([]);
     setJobFilter([]); setColF(INIT_COL); setSearch(""); setStatusTab("all"); setPage(1);
   }, [date]);
+
+  // Switching scope changes which cells, owners and roles exist at all. Drop
+  // the picks that key off those lists; search and the status tab survive —
+  // they're plain predicates that a narrower population can't invalidate.
+  useEffect(() => {
+    setCellIds([]); setLeaderIds([]); setSupIds([]); setJobFilter([]); setColF(INIT_COL); setPage(1);
+  }, [scope]);
 
   // ── KPIs over the picked cells (before search / status / role filters, so the
   // header stays a stable denominator while you drill into the table) ────────
