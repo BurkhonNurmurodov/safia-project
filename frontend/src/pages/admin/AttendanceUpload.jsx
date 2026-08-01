@@ -490,8 +490,11 @@ export default function AttendanceUpload() {
 
   const status = data?.status ?? "none";
   const isDraft = status === "draft";
+  const isPartial = status === "partial";   // some cells saved, others still staged
   const isLegacy = status === "legacy";
   const locked = isLegacy;   // days from the old per-supervisor path are read-only
+  // Nothing reaches `attendance` until Save, so this count IS the call to action.
+  const pendingCells = data?.totals?.pending ?? 0;
 
   // ── mutations ──────────────────────────────────────────────────────────────
   const onMutError = useCallback((e) => {
