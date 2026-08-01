@@ -3,6 +3,7 @@ import { Plus, Save, Globe, Check, Loader2 } from "lucide-react";
 import SearchInput from "../../components/ui/SearchInput";
 import dict from "../../i18n/translations";
 import { useLang } from "../../context/LangContext";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import { transliterate } from "../../utils/transliterate";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
