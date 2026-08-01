@@ -94,7 +94,8 @@ def _peren_json(p: Optional[CellPerenaladka]) -> Optional[dict]:
     }
 
 
-def _cell_json(c: Cell, entries: list, peren: Optional[CellPerenaladka] = None) -> dict:
+def _cell_json(c: Cell, entries: list, peren: Optional[CellPerenaladka] = None,
+               leader: Optional[str] = None) -> dict:
     return {
         "cell_id": c.id,
         "verifix_code": c.verifix_code,
@@ -103,6 +104,11 @@ def _cell_json(c: Cell, entries: list, peren: Optional[CellPerenaladka] = None) 
         "name_uz_cyrl": c.name_workshop_uz_cyrl,
         "name_ru": c.name_workshop_ru,
         "name_en": c.name_workshop_en,
+        # The cell's owning leader (role_profiles) — canonical uz-Latin name, the
+        # UI transliterates it. Nearly 1:1 with cells, so the page shows it per
+        # row and filters by it rather than grouping. NULL = unassigned.
+        "leader_id": c.leader_id,
+        "leader": leader,
         "entries": entries,
         # null = nothing entered for the Perenaladka tab (0 is never stored).
         "perenaladka": _peren_json(peren),
