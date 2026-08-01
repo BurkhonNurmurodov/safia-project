@@ -22,7 +22,7 @@ export default function AttendanceCleanup() {
 
   const [date, setDate]         = useState("");
   const [selected, setSelected] = useState(() => new Set());
-  const [filter, setFilter]     = useState("");
+  const [filter, setFilter]     = usePersistentState("cleanup_search", "");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toast, setToast]       = useState(null);   // { rows, count } | null
 
