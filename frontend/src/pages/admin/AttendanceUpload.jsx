@@ -240,7 +240,7 @@ function UploadsList({ uploads, t, tl, busy, onRemove }) {
 
 // ── worker table (inside an expanded cell row) ────────────────────────────────
 
-function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd }) {
+function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert }) {
   const cols = [
     t("attUp.colWorker"), t("attUp.colJob"), t("attUp.colSchedule"),
     t("attUp.colClock"), t("attUp.colHours"), t("attUp.colEarly"),
