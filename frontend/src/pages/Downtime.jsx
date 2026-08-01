@@ -375,8 +375,8 @@ export default function Downtime() {
   // column per day / per ISO week — computed from the rows the page already
   // holds, so they cost nothing. The page tab decides which half
   // («тўхтаганда» / «тўхтамаганда») the shares are taken from.
-  const [seasonMode, setSeasonMode] = useState("month"); // "day" | "week" | "month"
-  const [seasonYear, setSeasonYear] = useState(null);
+  const [seasonMode, setSeasonMode] = usePersistentState("downtime_season_mode", "month"); // "day" | "week" | "month"
+  const [seasonYear, setSeasonYear] = usePersistentState("downtime_season_year", null);
 
   const seasonParams = useMemo(() => ({
     ...(shift ? { shift } : {}),
