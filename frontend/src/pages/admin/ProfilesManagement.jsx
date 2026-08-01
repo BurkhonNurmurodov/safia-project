@@ -155,7 +155,7 @@ export default function ProfilesManagement() {
   const wname = (c) => cellName(c, lang);
 
   // Per-column sort — key:null keeps the server order until a header is clicked.
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [sort, setSort] = usePersistentState("profiles_sort", { key: null, dir: "asc" });
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
