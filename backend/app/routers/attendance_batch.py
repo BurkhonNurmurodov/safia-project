@@ -100,12 +100,17 @@ def _recompute_row(row: AttendanceBatchRow) -> None:
     effective hours = worked − early)."""
     from app.services.attendance_sheet import clock_metrics
 
-    clock_in, _out, _hrs, early, _off = clock_metrics(row.schedule or "", row.clock_in_out or "")
+    _in, _out, _hrs, early, _off = clock_metrics(row.schedule or "", row.clock_in_out or "")
     row.early_arrival_min = early
     hw = _num(row.hours_worked)
     row.effective_hours = round(hw - early / 60, 4) if hw is not None else None
-    if row.status != "manual":
-        row.status = "worked" if clock_in else ((row.clock_in_out or "").strip() or "—")
+    # Hours are what the calculation actually keys on (is_direct_role), so the
+    # status label follows them — a hand-added row with hours but no clock
+    # string still reads as "worked" rather than as an absence marker.
+    if hw:
+        row.status = "worked"
+    else:
+        row.status = (row.clock_in_out or "").strip() or "—"
 
 
 def _cell_catalog(db: Session, codes) -> dict:
