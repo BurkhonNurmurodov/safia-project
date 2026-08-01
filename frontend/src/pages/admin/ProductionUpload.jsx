@@ -171,7 +171,7 @@ export default function ProductionUpload() {
     queryKey: ["managers-all"],
     queryFn: () => api.get("/api/managers/all").then((r) => r.data),
   });
-  const [managerId, setManagerId] = useState(null);
+  const [managerId, setManagerId] = usePersistentState("produpload_manager", null);
   // Default to the first unit once the list loads; keep the pick valid.
   useEffect(() => {
     if (brigadirs.length && (managerId == null || !brigadirs.some((b) => b.manager_id === managerId))) {
