@@ -318,6 +318,17 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert })
                 <td className="px-3 py-2">
                   {!locked && (
                     <div className="flex items-center gap-1 justify-end">
+                      {r.file_values && (
+                        <button
+                          type="button"
+                          onClick={() => onRevert(r)}
+                          title={t("attUp.revertHint").replace("{v}", fmtNum(r.file_values.hours_worked, 2))}
+                          className="p-1 rounded-md transition-colors hover:bg-white/10"
+                          style={{ color: "#eab308" }}
+                        >
+                          <Undo2 size={12} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onEdit(r)}
