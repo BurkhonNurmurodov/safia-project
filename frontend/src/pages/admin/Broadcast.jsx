@@ -5,6 +5,7 @@ import {
   FileText, CheckCircle, Loader2, Type, Sparkles,
 } from "lucide-react";
 import api from "../../utils/api";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import Button from "../../components/ui/Button";
 import SearchInput from "../../components/ui/SearchInput";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
