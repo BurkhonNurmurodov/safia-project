@@ -597,7 +597,7 @@ function PerenaladkaCard({ cells, date, t, tl, lang }) {
             <div className={HEAD_CELL} />
           </div>
           {cells.map((c) => (
-            <PerenRow key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} onSaved={onSaved} />
+            <PerenRow key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} onSaved={onSaved} />
           ))}
         </div>
       </div>
