@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Attendance, AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow,
-    Cell, Manager,
+    Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
 from app.routers.admin import verify_admin
 from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
