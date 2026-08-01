@@ -75,8 +75,8 @@ export default function Downtime() {
   const totalKey   = ns ? "total_ns" : "total";
   const catKey     = ns ? "by_category_ns" : "by_category";
   const flaggedKey = ns ? "flagged_days_ns" : "flagged_days";
-  const [chartView, setChartView] = useState("total"); // "total" | "category"
-  const [selectedCats, setSelectedCats] = useState([]); // categories chosen via doughnut clicks → filter the left chart
+  const [chartView, setChartView] = usePersistentState("downtime_chart_view", "total"); // "total" | "category"
+  const [selectedCats, setSelectedCats] = usePersistentState("downtime_selected_cats", []); // categories chosen via doughnut clicks → filter the left chart
   const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
   const minLabel = t("general.min");
   const hrsLabel = t("general.hrs");
