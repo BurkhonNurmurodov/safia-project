@@ -377,6 +377,93 @@ class CellAttendance(Base):
     cell = relationship("Cell")
 
 
+class AttendanceBatch(Base):
+    """One day's «Отчёт по посещениям сотрудников» upload, staged for review.
+
+    The single-file attendance flow is deliberately two-phase: the admin uploads,
+    ADJUSTS (ticks cells in/out, drags cells between supervisors, edits worker
+    rows), and only then presses Save — which is the moment anything reaches the
+    `attendance` table and the supervisors get their Telegram notification.
+    Nothing here is visible to a supervisor before that.
+
+    One batch per date (unique), so re-uploading the same day replaces the
+    pending batch rather than accumulating drafts. After Save the batch is KEPT
+    (`status='saved'`): it stays the editable source of truth for that day, which
+    is what lets an unticked cell be re-ticked later — its worker rows are still
+    here, so the attendance can simply be re-projected instead of re-uploaded.
+    """
+    __tablename__ = "attendance_batches"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    date            = Column(Date, nullable=False, unique=True, index=True)
+    status          = Column(String, nullable=False, default="draft")  # draft | saved
+    source_filename = Column(String, nullable=True)
+    export_ts       = Column(DateTime(timezone=True), nullable=True)
+    uploaded_by     = Column(BigInteger, nullable=True)   # telegram id, audit
+    uploaded_by_name = Column(String, nullable=True)
+    uploaded_at     = Column(DateTime(timezone=True), server_default=func.now())
+    saved_at        = Column(DateTime(timezone=True), nullable=True)
+    saved_by_name   = Column(String, nullable=True)
+
+    cells = relationship("AttendanceBatchCell", back_populates="batch",
+                         cascade="all, delete-orphan")
+    rows  = relationship("AttendanceBatchRow", back_populates="batch",
+                         cascade="all, delete-orphan")
+
+
+class AttendanceBatchCell(Base):
+    """Per-day routing decision for ONE «Код подразделения» in a batch.
+
+    `manager_id` is the supervisor this cell's people count for ON THIS DAY —
+    seeded from the cell registry and changed by dragging the row into another
+    supervisor's section. `included` is the row's checkbox. Both start from the
+    registry (`Cell.manager_id` / `Cell.att_included`) and override it for this
+    date only; making a change permanent writes back to `cells` as well.
+    """
+    __tablename__ = "attendance_batch_cells"
+    __table_args__ = (UniqueConstraint("batch_id", "verifix_code", name="uq_batch_cell_code"),)
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id     = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    verifix_code = Column(String, nullable=False, index=True)
+    cell_id      = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    included     = Column(Boolean, nullable=False, default=False)
+    # Label to fall back on when the cell record carries no workshop name —
+    # taken from the file's «Орг. единица» header line.
+    source_name  = Column(String, nullable=True)
+
+    batch = relationship("AttendanceBatch", back_populates="cells")
+
+
+class AttendanceBatchRow(Base):
+    """One worker's day inside a batch — same shape as an `attendance` row plus
+    the cell code it belongs to. These stay editable (and addable/deletable) on
+    the «Davomat» tab; every Save re-projects them into `attendance` for the
+    supervisors whose cells are ticked and whose day is still open."""
+    __tablename__ = "attendance_batch_rows"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id          = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                               nullable=False, index=True)
+    verifix_code      = Column(String, nullable=True, index=True)
+    worker_name       = Column(String)
+    job_title         = Column(String)
+    schedule          = Column(String)
+    clock_in_out      = Column(String)
+    hours_worked      = Column(Numeric(10, 4), nullable=True)
+    early_arrival_min = Column(Numeric(10, 2), nullable=True)
+    effective_hours   = Column(Numeric(10, 4), nullable=True)
+    status            = Column(String, nullable=True)   # 'worked' | marker (X/О/…)
+    # Set once an admin edits or hand-adds the row, so the UI can flag it and
+    # a future re-upload can warn before discarding manual work.
+    edited            = Column(Boolean, nullable=False, default=False)
+    manual            = Column(Boolean, nullable=False, default=False)
+
+    batch = relationship("AttendanceBatch", back_populates="rows")
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
