@@ -10,7 +10,7 @@ import {
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, Bot, LayoutGrid, Timer, UserCheck,
-  FlaskConical,
+  FlaskConical, Medal,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -23,6 +23,9 @@ const ALL_LINKS = [
   { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard },
   { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2 },
   { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy },
+  // Admin-only gamification & rewards design preview («Safia Honors») — demo
+  // data only, no page-access key (mirrors the /leaders-bot pilot pattern).
+  { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal },
   { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users },
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target },
   { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock },
