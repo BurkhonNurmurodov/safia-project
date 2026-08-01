@@ -52,7 +52,12 @@ export default function LeaderTasksAdmin() {
   const [cell, setCell] = useState(null);
   const [lcell, setLcell] = useState(null);
   const [col, setCol] = useState(null);
-  const [open, setOpen] = useState(() => new Set());
+  // Expanded supervisor rows, stored as an array (localStorage can't hold a
+  // Set) and exposed as a Set.
+  const [openArr, setOpenArr] = usePersistentState("ltasks_open_supervisors", []);
+  const open = useMemo(() => new Set(openArr), [openArr]);
+  const setOpen = (next) =>
+    setOpenArr((prev) => Array.from(typeof next === "function" ? next(new Set(prev)) : next));
   const [confirm, setConfirm] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showExc, setShowExc] = useState(false);
