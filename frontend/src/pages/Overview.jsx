@@ -119,14 +119,20 @@ export default function Overview() {
   const { tl, lang } = useTranslit();
   const hcLabel = t("overview.diffUnitHc"); // localized name for the HC (headcount) diff unit
   const navigate = useNavigate();
-  const [filters, setFilters] = useState(INIT_FILTERS);
-  const [sort, setSort] = useState({ key: null, dir: "asc" }); // key=null → original order
+  // Stored blob merged over INIT_FILTERS so older saved shapes can't lose keys
+  const [rawFilters, setFilters] = usePersistentState("overview_table_filters", INIT_FILTERS);
+  const filters = useMemo(() => ({ ...INIT_FILTERS, ...rawFilters }), [rawFilters]);
+  const [sort, setSort] = usePersistentState("overview_sort", { key: null, dir: "asc" }); // key=null → original order
   const [modal, setModal] = useState(null); // { managerId, dateFrom, dateTo, name }
-  const [rankMode, setRankMode] = useState("actual"); // "planned" | "actual" | "diff"
-  const [lineMode, setLineMode] = useState("actual"); // "planned" | "actual" | "diff"
-  // Fleet-trend picker state (lifted here so the card-header picker drives the chart)
-  const [fleetSel, setFleetSel] = useState(() => new Set());
-  const [fleetAvg, setFleetAvg] = useState(true);
+  const [rankMode, setRankMode] = usePersistentState("overview_rank_mode", "actual"); // "planned" | "actual" | "diff"
+  const [lineMode, setLineMode] = usePersistentState("overview_line_mode", "actual"); // "planned" | "actual" | "diff"
+  // Fleet-trend picker state (lifted here so the card-header picker drives the
+  // chart). Stored as an array (localStorage can't hold a Set), exposed as a Set.
+  const [fleetSelArr, setFleetSelArr] = usePersistentState("overview_fleet_sel", []);
+  const fleetSel = useMemo(() => new Set(fleetSelArr), [fleetSelArr]);
+  const setFleetSel = (next) =>
+    setFleetSelArr((prev) => Array.from(typeof next === "function" ? next(new Set(prev)) : next));
+  const [fleetAvg, setFleetAvg] = usePersistentState("overview_fleet_avg", true);
   const toggleFleetManager = (name) => setFleetSel((prev) => {
     const next = new Set(prev);
     next.has(name) ? next.delete(name) : next.add(name);
