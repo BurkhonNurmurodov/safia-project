@@ -220,10 +220,10 @@ export default function UsersActivity() {
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
 
-  const [days, setDays] = useState(30);
-  const [search, setSearch] = useState("");
-  const [calUser, setCalUser] = useState("all");   // 'all' | person identity key
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [days, setDays] = usePersistentState("users_activity_days", 30);
+  const [search, setSearch] = usePersistentState("users_activity_search", "");
+  const [calUser, setCalUser] = usePersistentState("users_activity_cal_user", "all");   // 'all' | person identity key
+  const [sort, setSort] = usePersistentState("users_activity_sort", { key: null, dir: "asc" });
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" } : s.dir === "asc" ? { key: k, dir: "desc" } : { key: null, dir: "asc" });
 
