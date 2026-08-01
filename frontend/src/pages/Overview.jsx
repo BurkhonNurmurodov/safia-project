@@ -20,6 +20,7 @@ import { FilterPanel } from "../components/ui/ColumnFilter";
 import { brigadirFilterSections, brigadirActiveCount } from "../components/ui/brigadirFilters";
 import { SkeletonCard, SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
