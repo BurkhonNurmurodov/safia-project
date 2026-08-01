@@ -4378,6 +4378,14 @@ const t = {
     "idleCell.noCells":           "У этого бригадира нет ячеек.",
     "idleCell.saved":             "Сохранено",
     "idleCell.incompleteHint":    "Заполните минуты и причину",
+    "idleCell.tabOjidaniya":      "Ожидание",
+    "idleCell.tabPerenaladka":    "Переналадка",
+    "idleCell.minutes":           "Минуты",
+    "idleCell.minShort":          "мин",
+    "idleCell.noteOptional":      "Примечание (необязательно)",
+    "idleCell.perenNotePlaceholder": "Причина переналадки (необязательно)",
+    "idleCell.perenClearHint":    "Для удаления — ↺",
+    "idleCell.perenClearConfirm": "Запись переналадки для этой ячейки и даты будет удалена.",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Посещаемость / ячейка",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
