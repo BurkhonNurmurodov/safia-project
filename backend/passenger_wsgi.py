@@ -53,6 +53,7 @@ try:
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
         migrate_cell_ojidaniya_percat,
+        migrate_attendance_batches,
         backfill_role_profiles,
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_shift_manager, add_concern_category,
@@ -84,6 +85,7 @@ try:
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     migrate_cell_ojidaniya_percat()
+    migrate_attendance_batches()
     add_concern_profile_columns()
     add_concern_done_at()
     add_concern_level_columns()
