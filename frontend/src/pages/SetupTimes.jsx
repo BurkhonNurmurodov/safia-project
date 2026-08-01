@@ -116,9 +116,9 @@ export default function SetupTimes() {
   const qc = useQueryClient();
   const T = TXT[lang] || TXT.ru;
 
-  const [search, setSearch] = useState("");
-  const [supSel, setSupSel] = useState("all");
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [search, setSearch] = usePersistentState("setup_times_search", "");
+  const [supSel, setSupSel] = usePersistentState("setup_times_supervisor", "all");
+  const [sort, setSort] = usePersistentState("setup_times_sort", { key: null, dir: "asc" });
   const onSort = (k) => setSort((s) =>
     s.key !== k ? { key: k, dir: "asc" } : s.dir === "asc" ? { key: k, dir: "desc" } : { key: null, dir: "asc" });
 
