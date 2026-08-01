@@ -463,6 +463,19 @@ class AttendanceBatchCell(Base):
     # Label to fall back on when the cell record carries no workshop name —
     # taken from the file's «Орг. единица» header line.
     source_name  = Column(String, nullable=True)
+    # The file that last supplied this cell (NULL once that file is removed but
+    # hand-added rows keep the cell alive). Drives per-upload undo.
+    upload_id    = Column(Integer, ForeignKey("attendance_upload_files.id", ondelete="SET NULL"),
+                          nullable=True, index=True)
+    # Has this cell changed since it was last projected into `attendance`?
+    # Save only touches supervisors that own (or just lost) a pending cell, so a
+    # second upload can't rewrite a supervisor whose data did not change — and
+    # only those supervisors get notified.
+    pending          = Column(Boolean, nullable=False, server_default="true", default=True)
+    # The supervisor this cell was last SAVED under. When a cell is dragged, both
+    # the old and the new owner must be re-projected; this is how the old one is
+    # found after `manager_id` has already moved on.
+    prev_manager_id  = Column(Integer, nullable=True)
 
     batch = relationship("AttendanceBatch", back_populates="cells")
 
