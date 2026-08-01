@@ -378,7 +378,7 @@ class CellAttendance(Base):
 
 
 class AttendanceBatch(Base):
-    """One day's «Отчёт по посещениям сотрудников» upload, staged for review.
+    """One DAY of «Отчёт по посещениям сотрудников» data, staged for review.
 
     The single-file attendance flow is deliberately two-phase: the admin uploads,
     ADJUSTS (ticks cells in/out, drags cells between supervisors, edits worker
