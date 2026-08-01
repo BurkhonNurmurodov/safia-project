@@ -280,11 +280,26 @@ def _project(db: Session, batch: AttendanceBatch, d: date_t, targets=None):
     return written, skipped
 
 
-def _resync_saved(db: Session, batch: AttendanceBatch, d: date_t, codes=None) -> list:
-    """Keep `attendance` in step after an in-place edit. A batch that has never
-    been saved writes nothing — its cells simply stay pending."""
-    if codes:
-        _mark_pending(batch, codes)
+def _stage(batch: AttendanceBatch, codes) -> None:
+    """Record a change WITHOUT touching `attendance`.
+
+    Everything the admin does on the tab — uploading another file, ticking,
+    dragging, editing or adding a worker — is staged. Save is the single moment
+    data goes live and supervisors are told, which is the whole point of the
+    two-phase flow: an upload that quietly rewrote an already-saved day would
+    change a supervisor's numbers with nobody notified.
+
+    The three explicitly destructive actions (remove upload, delete a cell's day,
+    delete a supervisor's day) are the deliberate exception — they are confirmed
+    deletions that only ever REMOVE data, so they apply at once via `_project`.
+    """
+    _mark_pending(batch, codes)
+
+
+def _apply_removal(db: Session, batch: AttendanceBatch, d: date_t) -> list:
+    """Push a confirmed deletion through to `attendance` immediately. Returns the
+    supervisors skipped because their day is closed (there are none in practice —
+    the callers gate on `_require_open_day` first)."""
     if batch.saved_at is None:
         return []
     db.flush()
