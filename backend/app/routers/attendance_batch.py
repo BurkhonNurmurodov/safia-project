@@ -68,7 +68,15 @@ def _num(v):
 
 
 def _admin_name(payload: dict) -> str:
-    return payload.get("full_name") or payload.get("name") or "admin"
+    return payload.get("full_name") or "admin"
+
+
+def _admin_tg_id(payload: dict):
+    """The app JWT carries the telegram id as the string `sub` claim."""
+    try:
+        return int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _default_included(cell: Optional[Cell]) -> bool:
