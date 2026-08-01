@@ -223,8 +223,6 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
 
   const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
   const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
-  const hue = hueFromString(cell.verifix_code || "");
-  const name = cellName(cell, lang);
 
   return (
     // overflow-clip (not hidden) — clip doesn't create a scroll container, so the
