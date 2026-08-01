@@ -440,7 +440,7 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
 const P_GRID_COLS =
   "grid-cols-[minmax(0,1fr)_6.5rem] md:grid-cols-[minmax(150px,1.5fr)_7rem_minmax(180px,1.7fr)_auto]";
 
-function PerenRow({ cell, date, t, lang, onSaved }) {
+function PerenRow({ cell, date, t, tl, lang, onSaved }) {
   const seed = cell.perenaladka;
   const [minutes, setMinutes] = useState(seed && Number(seed.minutes) ? String(seed.minutes) : "");
   const [note, setNote] = useState(seed?.note || "");
