@@ -499,10 +499,18 @@ class AttendanceBatchRow(Base):
     early_arrival_min = Column(Numeric(10, 2), nullable=True)
     effective_hours   = Column(Numeric(10, 4), nullable=True)
     status            = Column(String, nullable=True)   # 'worked' | marker (X/О/…)
-    # Set once an admin edits or hand-adds the row, so the UI can flag it and
-    # a future re-upload can warn before discarding manual work.
+    # Set once an admin edits or hand-adds the row. An edited row SURVIVES a
+    # re-upload of its cell — the admin's correction outranks the file's value.
     edited            = Column(Boolean, nullable=False, default=False)
     manual            = Column(Boolean, nullable=False, default=False)
+    # The file that supplied this row; NULL for hand-added rows, which is what
+    # keeps them alive when that upload is removed.
+    upload_id         = Column(Integer, ForeignKey("attendance_upload_files.id", ondelete="SET NULL"),
+                               nullable=True, index=True)
+    # What a LATER file said about this worker while an admin edit was winning.
+    # Without it the newer export's value would be lost silently; with it the tab
+    # can flag the row and offer a one-click revert.
+    file_values       = Column(JSONB, nullable=True)
 
     batch = relationship("AttendanceBatch", back_populates="rows")
 
