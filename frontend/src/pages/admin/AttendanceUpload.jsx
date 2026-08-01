@@ -1077,6 +1077,10 @@ export default function AttendanceUpload() {
       {/* Add / edit worker */}
       {rowForm && (
         <RowFormModal
+          // Remount per target row: the form seeds its state from `form.row`
+          // once, so switching rows without a remount would keep the previous
+          // worker's values in the inputs.
+          key={`${rowForm.mode}:${rowForm.row?.id ?? rowForm.cell.verifix_code}`}
           form={rowForm}
           t={t}
           busy={rowMut.isPending}
