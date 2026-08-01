@@ -57,7 +57,7 @@ export default function Broadcast() {
   const [editorKey, setEditorKey] = useState(0);
   const [attachment, setAttachment] = useState(null);
   const [selected, setSelected] = useState([]);
-  const [treeFilter, setTreeFilter] = useState("");
+  const [treeFilter, setTreeFilter] = usePersistentState("broadcast_search", "");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [toast, setToast] = useState(false);
