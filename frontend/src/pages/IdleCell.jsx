@@ -402,10 +402,12 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
 
 export default function IdleCell() {
   const { t, lang } = useLang();
+  // date deliberately NOT persisted: this is a data-entry page — a silently
+  // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
-  const [shiftTab, setShiftTab] = useState("all"); // "all" | 1 | 2
-  const [supervisorId, setSupervisorId] = useState(null);
-  const [selectedCellIds, setSelectedCellIds] = useState([]); // [] = show all of the supervisor's cells
+  const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
+  const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
+  const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
 
   const { data: supData } = useQuery({
     queryKey: ["idle-supervisors"],
