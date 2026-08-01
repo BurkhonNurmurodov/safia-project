@@ -49,7 +49,9 @@ const METALS = {
   gold:     { hi: "#F6E3A6", mid1: "#E9C476", mid2: "#C8973F", lo: "#8A6226", deep: "#5F421A", gHi: "#F2D48C", gLo: "#C8973F" },
   bronze:   { hi: "#EFB98A", mid1: "#D89158", mid2: "#B5713A", lo: "#7A431C", deep: "#542E12", gHi: "#EFB98A", gLo: "#C07E44" },
   silver:   { hi: "#F5F8FB", mid1: "#D4DBE3", mid2: "#AEB8C4", lo: "#77828F", deep: "#525C68", gHi: "#EDF1F6", gLo: "#AEB8C4" },
-  platinum: { hi: "#F0FAFC", mid1: "#C8DDE4", mid2: "#9BB8C2", lo: "#5E7A85", deep: "#3E545E", gHi: "#E4F4F8", gLo: "#9BB8C2" },
+  /* Platinum is the terminal tier — deeper ice-blue than silver's grey, with an
+   * iridescent violet mid-stop, a faceted starburst and a cyan aura (below). */
+  platinum: { hi: "#F7FDFF", mid1: "#CFE9F6", mid2: "#8FB0D8", lo: "#58709A", deep: "#31445F", gHi: "#F2FAFF", gLo: "#AECDEE" },
   locked:   { hi: "#3A4353", mid1: "#2E3644", mid2: "#242B37", lo: "#161B24", deep: "#10141b", gHi: "#39424f", gLo: "#39424f" },
 };
 
@@ -74,6 +76,16 @@ const TICKS = Array.from({ length: 72 }, (_, i) => {
     x2: (60 + Math.cos(a) * 58.5).toFixed(2), y2: (60 + Math.sin(a) * 58.5).toFixed(2),
   };
 });
+
+/* 8-point faceted starburst worn only by platinum coins — the terminal tier
+ * changes silhouette, not just metal (points at r=70, valleys at r=57). */
+const BURST = Array.from({ length: 16 }, (_, i) => {
+  const r = i % 2 === 0 ? 70 : 57;
+  const a = (Math.PI / 8) * i - Math.PI / 2;
+  return `${(60 + r * Math.cos(a)).toFixed(1)},${(60 + r * Math.sin(a)).toFixed(1)}`;
+}).join(" ");
+
+const GLINT = "M0 -6 L1.3 -1.3 L6 0 L1.3 1.3 L0 6 L-1.3 1.3 L-6 0 L-1.3 -1.3 Z";
 
 function GlyphPaths({ glyph }) {
   return (GLYPHS[glyph] || []).map((d, i) => {
@@ -101,7 +113,11 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
       <defs>
         <linearGradient id={`${id}r`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor={m.hi} /><stop offset="0.35" stopColor={m.mid1} />
+          {metal === "platinum" && !locked && <stop offset="0.5" stopColor="#C9C2F2" />}
           <stop offset="0.62" stopColor={m.mid2} /><stop offset="1" stopColor={m.lo} />
+        </linearGradient>
+        <linearGradient id={`${id}b`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={m.mid1} /><stop offset="0.55" stopColor={m.lo} /><stop offset="1" stopColor={m.deep} />
         </linearGradient>
         <linearGradient id={`${id}v`} x1="1" y1="1" x2="0" y2="0">
           <stop offset="0" stopColor={m.hi} /><stop offset="0.5" stopColor={m.mid2} /><stop offset="1" stopColor={m.lo} />
@@ -114,7 +130,10 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
         <linearGradient id={`${id}g`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={m.gHi} /><stop offset="1" stopColor={m.gLo} />
         </linearGradient>
-        <filter id={`${id}d`} x="-30%" y="-30%" width="160%" height="160%">
+        <filter id={`${id}d`} x="-40%" y="-40%" width="180%" height="180%">
+          {metal === "platinum" && !locked && (
+            <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#7FD9F2" floodOpacity="0.5" />
+          )}
           <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000" floodOpacity={locked ? 0.32 : 0.45} />
         </filter>
       </defs>
@@ -126,6 +145,9 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
         </>
       )}
       <g filter={`url(#${id}d)`}>
+        {metal === "platinum" && (
+          <polygon points={BURST} fill={`url(#${id}b)`} stroke={m.hi} strokeWidth="0.8" strokeOpacity={locked ? 0.25 : 0.55} />
+        )}
         <circle cx="60" cy="60" r="58" fill={`url(#${id}r)`} />
         <g stroke={m.deep} strokeWidth="1.1" opacity="0.55">
           {TICKS.map((t, i) => <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} />)}
@@ -158,6 +180,12 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
           </>
         )}
         <path d="M 22 34 A 46 46 0 0 1 86 18 A 56 56 0 0 0 24 42 Z" fill="#fff" opacity={locked ? 0.04 : 0.09} />
+        {metal === "platinum" && !locked && (
+          <g fill="#fff" opacity="0.9">
+            <path transform="translate(41,33) scale(0.85)" d={GLINT} />
+            <path transform="translate(81,29) scale(0.5)" d={GLINT} />
+          </g>
+        )}
       </g>
       {counter != null && !locked && (
         <g>
@@ -237,7 +265,7 @@ const PEOPLE = [
 ];
 const compOf = (cats) => CATS.reduce((a, c) => a + c.weight * cats[c.key], 0);
 /* Tier-pip fill colors (bronze → platinum), for the compare ladder. */
-const PIP_COLORS = ["#B5713A", "#AEB8C4", "#C8973F", "#9BB8C2"];
+const PIP_COLORS = ["#B5713A", "#AEB8C4", "#C8973F", "#8FB0D8"];
 
 const STREAKS = [
   { key: "dayClose",     icon: CalendarCheck, days: 21, next: 30, best: 21 },
