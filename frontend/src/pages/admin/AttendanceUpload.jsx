@@ -25,7 +25,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRightLeft, CalendarClock, Check, CheckCircle2, ChevronDown,
   ChevronRight, GripVertical, Lock, LockOpen, MoreVertical, Pencil, Pin, Plus,
-  Save, Search, Trash2, TriangleAlert, Upload, UserPlus, Users, X,
+  Save, Trash2, TriangleAlert, Upload, UserPlus, Users, X,
 } from "lucide-react";
 
 import api from "../../utils/api";
@@ -298,7 +298,7 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd }) {
 // ── one cell row ──────────────────────────────────────────────────────────────
 
 function CellRow({
-  cell, locked, expanded, dragging, t, tl, cellName,
+  cell, locked, expanded, dragging, t, cellName,
   onToggleExpand, onToggleTick, onDragStart, menuItems,
 }) {
   const dim = !cell.included;
@@ -432,7 +432,6 @@ function Section({
             expanded={expandedCells.includes(cell.verifix_code)}
             dragging={dragCode === cell.verifix_code}
             t={t}
-            tl={tl}
             cellName={cellName}
             onToggleExpand={onToggleExpand}
             onToggleTick={onToggleTick}

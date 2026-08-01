@@ -891,8 +891,14 @@ def delete_supervisor_day(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    """Wipe one supervisor's whole day: their attendance plus every cell routed
-    to them in this batch. Mirrors the «Cleanup» tab, reachable inline."""
+    """Wipe one supervisor's whole day: their attendance plus everything that
+    hangs off it, plus every cell routed to them in this batch. Mirrors the
+    «Cleanup» tab, reachable inline.
+
+    The requests and documents go too — leaving them behind would keep the day
+    unconfirmable forever, pointing at worker rows that no longer exist. The day
+    is guaranteed OPEN here (`_require_open_day`), so there is no DayApproval to
+    remove and no confirmation is being undone."""
     d = _parse_date(date)
     mgr = db.query(Manager).filter(Manager.id == manager_id).first()
     if not mgr:
@@ -901,6 +907,15 @@ def delete_supervisor_day(
 
     rows_deleted = db.query(Attendance).filter(
         Attendance.manager_id == manager_id, Attendance.date == d,
+    ).delete(synchronize_session=False)
+    db.query(EditRequest).filter(
+        EditRequest.manager_id == manager_id, EditRequest.date == d,
+    ).delete(synchronize_session=False)
+    db.query(HrDocument).filter(
+        HrDocument.manager_id == manager_id, HrDocument.date == d,
+    ).delete(synchronize_session=False)
+    db.query(DailySubmission).filter(
+        DailySubmission.manager_id == manager_id, DailySubmission.date == d,
     ).delete(synchronize_session=False)
 
     batch = _batch_for(db, d)
