@@ -228,26 +228,27 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
     // overflow-clip (not hidden) — clip doesn't create a scroll container, so the
     // sticky save footer below can track the page scrollport.
     <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2.5 min-h-[44px] text-left">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2 min-h-[44px] text-left">
         <ChevronDown
           size={16}
           style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
         />
-        <span
-          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
-          style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
-        >
-          {cell.verifix_code}
-        </span>
-        <span className="truncate text-sm" style={{ color: "var(--text-1)" }}>{name || "—"}</span>
-        {hasDraft && (
-          <span
-            className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{ background: "#eab308" }}
-            title={t("idleCell.incompleteHint")}
-          />
-        )}
-        <span className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0 text-xs tabular-nums">
+        {/* flex-1 inside CellIdent replaces the old ml-auto on the sums. */}
+        <CellIdent
+          cell={cell}
+          t={t}
+          tl={tl}
+          lang={lang}
+          nameCls="text-sm"
+          extra={hasDraft && (
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: "#eab308" }}
+              title={t("idleCell.incompleteHint")}
+            />
+          )}
+        />
+        <span className="flex items-center gap-2 sm:gap-3 flex-shrink-0 text-xs tabular-nums">
           {sumStopped + sumNs === 0 ? (
             // Backend rejects 0/0 saves, so zero sums reliably mean "no entries
             // yet" — a muted dash makes cells with real data pop out of the list.
