@@ -157,8 +157,15 @@ def list_cells(
         CellPerenaladka.cell_id.in_(ids),
         CellPerenaladka.date == date,
     ).all()}
+    lids = {c.leader_id for c in cells if c.leader_id}
+    leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(lids),
+    ).all()} if lids else {}
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
-    return {"cells": [_cell_json(c, by_cell.get(c.id, []), peren.get(c.id)) for c in cells]}
+    return {"cells": [
+        _cell_json(c, by_cell.get(c.id, []), peren.get(c.id), leaders.get(c.leader_id))
+        for c in cells
+    ]}
 
 
 class IdleIn(BaseModel):
