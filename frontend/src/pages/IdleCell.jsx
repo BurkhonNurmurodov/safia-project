@@ -488,14 +488,8 @@ function PerenRow({ cell, date, t, tl, lang, onSaved }) {
     // inputs on a phone. At md+ the box collapses back to the table row rule.
     <div className="rounded-xl overflow-clip border border-[var(--border)] bg-[var(--bg-card)] md:rounded-none md:border-x-0 md:border-b-0">
       <div className={`grid ${COL_SEP} ${P_GRID_COLS}`}>
-        <div className={`${CELL} flex items-center gap-2 py-2 md:py-1.5`}>
-          <span
-            className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
-            style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
-          >
-            {cell.verifix_code}
-          </span>
-          <span className="truncate text-xs" style={{ color: "var(--text-1)" }}>{name || "—"}</span>
+        <div className={`${CELL} flex items-center py-2 md:py-1.5`}>
+          <CellIdent cell={cell} t={t} tl={tl} lang={lang} />
         </div>
         <label className={`${CELL} flex flex-col justify-center`}>
           <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.minutes")}</span>
