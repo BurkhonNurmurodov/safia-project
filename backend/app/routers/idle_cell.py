@@ -133,7 +133,8 @@ def list_cells(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """Cells under one supervisor (must be in the caller's scope) plus each
-    cell's saved entries for the date — the accordions."""
+    cell's saved entries for the date — the accordions. Both tabs' saved data
+    ships in this one payload, so the view toggle never refetches."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
     cells = [c for c in _scoped_cells(db, payload) if c.manager_id == supervisor_id]
@@ -146,8 +147,12 @@ def list_cells(
         CellOjidaniya.date == date,
     ).all():
         by_cell[e.cell_id].append(_entry_json(e))
+    peren = {p.cell_id: p for p in db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id.in_(ids),
+        CellPerenaladka.date == date,
+    ).all()}
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
-    return {"cells": [_cell_json(c, by_cell.get(c.id, [])) for c in cells]}
+    return {"cells": [_cell_json(c, by_cell.get(c.id, []), peren.get(c.id)) for c in cells]}
 
 
 class IdleIn(BaseModel):
