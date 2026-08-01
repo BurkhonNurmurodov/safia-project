@@ -111,7 +111,7 @@ export default function Permissions() {
   // revoke. Anything untouched stays absent and is left alone on save — that's
   // what makes multi-select safe.
   const [draft, setDraft]       = useState({});
-  const [view, setView]         = useState("grants"); // grants | audit
+  const [view, setView]         = usePersistentState("perms_view", "grants"); // grants | audit
   const [saving, setSaving]     = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
 
