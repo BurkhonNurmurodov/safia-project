@@ -90,9 +90,39 @@ function hueFromString(s) {
   return h;
 }
 
+// Cell identity block: verifix badge + workshop name on line 1, the cell's
+// OWNING LEADER (role_profiles) muted underneath. Shared by both views so the
+// leader always sits in exactly the same spot, and it lives on the row rather
+// than as a grouping level because leaders are ~1:1 with cells (93 leaders /
+// 108 cells) — grouping would put a heading over almost every single row.
+function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
+  const hue = hueFromString(cell.verifix_code || "");
+  const name = cellName(cell, lang);
+  return (
+    <span className="min-w-0 flex-1 flex flex-col gap-0.5">
+      <span className="flex items-center gap-2 min-w-0">
+        <span
+          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
+          style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
+        >
+          {cell.verifix_code}
+        </span>
+        <span className={`truncate ${nameCls}`} style={{ color: "var(--text-1)" }}>{name || "—"}</span>
+        {extra}
+      </span>
+      <span className="flex items-center gap-1.5 min-w-0 text-[11px] leading-tight" title={t("idleCell.leader")}>
+        <Flag size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+        <span className="truncate" style={{ color: cell.leader ? "var(--text-3)" : "var(--text-4)" }}>
+          {cell.leader ? tl(cell.leader) : t("idleCell.noLeader")}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 // One production cell = one collapsible accordion. Owns its per-category draft
 // inputs + last-saved snapshot; each category row saves independently.
-function CellAccordion({ cell, date, t, lang, autoOpen }) {
+function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
   const [open, setOpen] = useState(autoOpen);
   const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
   const [confirmCode, setConfirmCode] = useState(null); // code of the category pending a reset-to-0 confirm
