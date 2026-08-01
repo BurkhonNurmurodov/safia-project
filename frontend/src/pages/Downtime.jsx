@@ -63,7 +63,7 @@ export default function Downtime() {
   // cell («тўхтаганда») or it did not («тўхтамаганда»). One fetch carries both
   // halves, so the tab only swaps which fields the whole page reads; filters, the
   // 50-min threshold and the doughnut selection are shared across both.
-  const [tab, setTab] = useState("stopped"); // "stopped" | "notStopped"
+  const [tab, setTab] = usePersistentState("downtime_tab", "stopped"); // "stopped" | "notStopped"
   const ns = tab === "notStopped";
   // Second axis, orthogonal to the halves above: WHICH categories count.
   // «загрузкада» (default) = only the categories the загрузка KPIs count, i.e.
