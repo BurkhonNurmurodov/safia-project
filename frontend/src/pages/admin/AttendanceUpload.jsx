@@ -852,21 +852,62 @@ export default function AttendanceUpload() {
         </div>
       )}
 
+      {/* What the last upload actually did — merges are invisible otherwise. */}
+      {uploadSummary && (
+        <div
+          className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
+          style={{ background: "color-mix(in srgb, #22c55e 10%, transparent)", border: "1px solid color-mix(in srgb, #22c55e 30%, transparent)" }}
+        >
+          <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#22c55e" }} />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
+              {uploadSummary.filename}
+            </div>
+            <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
+              {t("attUp.mergeSummary")
+                .replace("{added}", uploadSummary.cells_added?.length ?? 0)
+                .replace("{updated}", uploadSummary.cells_replaced?.length ?? 0)
+                .replace("{rows}", uploadSummary.rows_added ?? 0)}
+            </div>
+            {uploadSummary.created_cells?.length > 0 && (
+              <div className="text-[11px]" style={{ color: "#eab308" }}>
+                {t("attUp.mergeNewCells").replace("{n}", uploadSummary.created_cells.length)}
+                {": "}{uploadSummary.created_cells.join(", ")}
+              </div>
+            )}
+            {uploadSummary.kept_edits > 0 && (
+              <div className="text-[11px]" style={{ color: "#eab308" }}>
+                {t("attUp.mergeKeptEdits").replace("{n}", uploadSummary.kept_edits)}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setUploadSummary(null)}
+            className="p-1 rounded-md flex-shrink-0"
+            style={{ color: "var(--text-4)" }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       {/* Banners */}
-      {isDraft && (
+      {(isDraft || isPartial) && (
         <div
           className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
           style={{ background: "color-mix(in srgb, #eab308 12%, transparent)", border: "1px solid color-mix(in srgb, #eab308 35%, transparent)" }}
         >
           <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#eab308" }} />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{t("attUp.draftTitle")}</div>
-            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{t("attUp.draftMsg")}</div>
-            {data?.batch?.filename && (
-              <div className="text-[10px] mt-1 font-mono truncate" style={{ color: "var(--text-4)" }}>
-                {data.batch.filename}
-              </div>
-            )}
+            <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>
+              {isDraft
+                ? t("attUp.draftTitle")
+                : t("attUp.partialTitle").replace("{n}", pendingCells)}
+            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>
+              {isDraft ? t("attUp.draftMsg") : t("attUp.partialMsg")}
+            </div>
           </div>
           <Button
             variant="ghost"
@@ -882,6 +923,25 @@ export default function AttendanceUpload() {
             {t("attUp.discard")}
           </Button>
         </div>
+      )}
+
+      {/* The day's files — each removable on its own. */}
+      {(data?.uploads?.length ?? 0) > 0 && (
+        <UploadsList
+          uploads={data.uploads}
+          t={t}
+          tl={tl}
+          busy={removeUploadMut.isPending}
+          onRemove={(u) => setConfirm({
+            tone: "danger",
+            title: t("attUp.removeUploadTitle"),
+            message: t("attUp.removeUploadMsg")
+              .replace("{file}", u.filename || "—")
+              .replace("{n}", u.cells_now),
+            confirmLabel: t("attUp.removeUpload"),
+            onConfirm: () => { removeUploadMut.mutate(u.id); setConfirm(null); },
+          })}
+        />
       )}
 
       {status === "saved" && data?.batch?.saved_at && (
