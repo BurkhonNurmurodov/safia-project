@@ -284,6 +284,17 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd, onRevert })
                     <span className="truncate" style={{ color: "var(--text-1)" }}>{tl(r.worker_name)}</span>
                     {r.manual && <Chip tone="brand">{t("attUp.manual")}</Chip>}
                     {!r.manual && r.edited && <Chip tone="warn">{t("attUp.edited")}</Chip>}
+                    {/* A newer file disagreed with this edit — your value won,
+                        but the file's is one click away rather than lost. */}
+                    {r.file_values && (
+                      <Chip
+                        tone="danger"
+                        icon={FileWarning}
+                        title={t("attUp.conflictHint").replace("{v}", fmtNum(r.file_values.hours_worked, 2))}
+                      >
+                        {t("attUp.conflict")}
+                      </Chip>
+                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-3)", borderRight: "1px solid var(--border)" }}>
