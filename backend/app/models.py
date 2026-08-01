@@ -386,17 +386,24 @@ class AttendanceBatch(Base):
     `attendance` table and the supervisors get their Telegram notification.
     Nothing here is visible to a supervisor before that.
 
-    One batch per date (unique), so re-uploading the same day replaces the
-    pending batch rather than accumulating drafts. After Save the batch is KEPT
-    (`status='saved'`): it stays the editable source of truth for that day, which
-    is what lets an unticked cell be re-ticked later — its worker rows are still
-    here, so the attendance can simply be re-projected instead of re-uploaded.
+    One batch per DATE (unique), but a date is fed by MANY files: the export is
+    taken per «Орг. единица» group, so a day arrives as several workbooks each
+    covering different cells. An upload therefore MERGES into the day's batch —
+    it never replaces it. Cells a file doesn't mention are left completely alone,
+    with their routing, ticks and row edits intact. `AttendanceUploadFile` records
+    each contributing file so one can be pulled back out on its own.
+
+    After Save the batch is KEPT: it stays the editable source of truth for that
+    day, which is what lets an unticked cell be re-ticked later — its worker rows
+    are still here, so the attendance is simply re-projected, never re-uploaded.
     """
     __tablename__ = "attendance_batches"
 
     id              = Column(Integer, primary_key=True, autoincrement=True)
     date            = Column(Date, nullable=False, unique=True, index=True)
     status          = Column(String, nullable=False, default="draft")  # draft | saved
+    # First file's name — kept for continuity; the authoritative per-file list
+    # lives in `uploads`.
     source_filename = Column(String, nullable=True)
     export_ts       = Column(DateTime(timezone=True), nullable=True)
     uploaded_by     = Column(BigInteger, nullable=True)   # telegram id, audit
@@ -405,10 +412,33 @@ class AttendanceBatch(Base):
     saved_at        = Column(DateTime(timezone=True), nullable=True)
     saved_by_name   = Column(String, nullable=True)
 
-    cells = relationship("AttendanceBatchCell", back_populates="batch",
-                         cascade="all, delete-orphan")
-    rows  = relationship("AttendanceBatchRow", back_populates="batch",
-                         cascade="all, delete-orphan")
+    cells   = relationship("AttendanceBatchCell", back_populates="batch",
+                           cascade="all, delete-orphan")
+    rows    = relationship("AttendanceBatchRow", back_populates="batch",
+                           cascade="all, delete-orphan")
+    uploads = relationship("AttendanceUploadFile", back_populates="batch",
+                           cascade="all, delete-orphan")
+
+
+class AttendanceUploadFile(Base):
+    """One workbook contributed to a day. Cells and rows point back at the file
+    that last supplied them, which is what makes «remove this upload» able to
+    take out exactly its cells and leave every other file's alone."""
+    __tablename__ = "attendance_upload_files"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id      = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    filename      = Column(String, nullable=True)
+    export_ts     = Column(DateTime(timezone=True), nullable=True)
+    uploaded_by   = Column(BigInteger, nullable=True)
+    uploaded_by_name = Column(String, nullable=True)
+    uploaded_at   = Column(DateTime(timezone=True), server_default=func.now())
+    cells_added   = Column(Integer, nullable=False, default=0)
+    cells_replaced = Column(Integer, nullable=False, default=0)
+    rows_added    = Column(Integer, nullable=False, default=0)
+
+    batch = relationship("AttendanceBatch", back_populates="uploads")
 
 
 class AttendanceBatchCell(Base):
