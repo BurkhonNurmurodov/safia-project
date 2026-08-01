@@ -401,6 +401,190 @@ function CellAccordion({ cell, date, t, lang, autoOpen }) {
   );
 }
 
+// ─── Perenaladka (changeover) view ──────────────────────────────────────────
+// The flat twin of the accordion above: ONE minutes input per cell (+ an
+// OPTIONAL note), each row saving on its own. No categories, no stopped /
+// not-stopped split. Blank means "not entered" — the backend never stores a 0,
+// so removing a value goes through the explicit ↺ clear (confirmed), which is
+// why a blanked saved row shows a hint instead of silently doing nothing.
+const P_GRID_COLS =
+  "grid-cols-[minmax(0,1fr)_6.5rem] md:grid-cols-[minmax(150px,1.5fr)_7rem_minmax(180px,1.7fr)_auto]";
+
+function PerenRow({ cell, date, t, lang, onSaved }) {
+  const seed = cell.perenaladka;
+  const [minutes, setMinutes] = useState(seed && Number(seed.minutes) ? String(seed.minutes) : "");
+  const [note, setNote] = useState(seed?.note || "");
+  const [id, setId] = useState(seed?.id ?? null);
+  const [snap, setSnap] = useState(seed ? { minutes: Number(seed.minutes) || 0, note: seed.note || "" } : null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      api
+        .post("/api/idle-cell/perenaladka", {
+          cell_id: cell.cell_id,
+          date,
+          minutes: num(minutes),
+          note: note.trim(),
+        })
+        .then((r) => r.data),
+    onSuccess: (d) => {
+      setId(d.id);
+      setMinutes(d.minutes ? String(d.minutes) : "");
+      setNote(d.note || "");
+      setSnap({ minutes: d.minutes || 0, note: d.note || "" });
+      onSaved(cell.cell_id, d.minutes || 0);
+    },
+  });
+
+  const delMut = useMutation({
+    mutationFn: () => api.delete(`/api/idle-cell/perenaladka/${id}`),
+    onSuccess: () => {
+      setMinutes(""); setNote(""); setId(null); setSnap(null); setConfirmOpen(false);
+      onSaved(cell.cell_id, 0);
+    },
+  });
+
+  const mins = num(minutes);
+  const dirty = !snap || mins !== snap.minutes || note.trim() !== snap.note;
+  const canSave = dirty && mins > 0;
+  // A saved row whose minutes were emptied: Save can't commit a 0, so point at ↺
+  // rather than leaving a disabled button and no explanation.
+  const blanked = !!snap && mins <= 0;
+  const hue = hueFromString(cell.verifix_code || "");
+  const name = cellName(cell, lang);
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border)" }}>
+      <div className={`grid ${COL_SEP} ${P_GRID_COLS}`}>
+        <div className={`${CELL} flex items-center gap-2 py-2 md:py-1.5`}>
+          <span
+            className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
+            style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
+          >
+            {cell.verifix_code}
+          </span>
+          <span className="truncate text-xs" style={{ color: "var(--text-1)" }}>{name || "—"}</span>
+        </div>
+        <label className={`${CELL} flex flex-col justify-center`}>
+          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.minutes")}</span>
+          <input
+            type="text" inputMode="decimal"
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            onFocus={focusIntoView}
+            className={INPUT_NUM}
+            style={blanked ? { ...INPUT_STYLE, border: "1px solid #eab308" } : INPUT_STYLE}
+          />
+        </label>
+        <label className={`${CELL} col-span-2 md:col-span-1 flex flex-col justify-center`}>
+          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.note")}</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onFocus={focusIntoView}
+            placeholder={t("idleCell.perenNotePlaceholder")}
+            className={INPUT_TXT}
+            style={INPUT_STYLE}
+          />
+        </label>
+        <div className={`${CELL} col-span-2 md:col-span-1 flex items-center justify-end gap-2 pb-3 md:pb-1.5`}>
+          {blanked && (
+            <span className="text-[11px] md:hidden" style={{ color: "#eab308" }}>{t("idleCell.perenClearHint")}</span>
+          )}
+          <Button
+            size="sm"
+            variant="primary"
+            className="flex-1 md:flex-none min-h-[44px] md:min-h-0 text-sm md:text-xs"
+            disabled={!canSave}
+            loading={saveMut.isPending}
+            icon={<Save size={14} />}
+            title={blanked ? t("idleCell.perenClearHint") : undefined}
+            onClick={() => saveMut.mutate()}
+          >
+            {t("idleCell.save")}
+          </Button>
+          {snap && (
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 transition-colors hover:bg-white/10"
+              style={{ color: blanked ? "#eab308" : "var(--text-3)", cursor: "pointer" }}
+              title={t("idleCell.clear")}
+              aria-label={t("idleCell.clear")}
+            >
+              <RotateCcw size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        tone="danger"
+        title={t("idleCell.clearTitle")}
+        message={t("idleCell.perenClearConfirm")}
+        confirmLabel={t("idleCell.delete")}
+        cancelLabel={t("idleCell.cancel")}
+        loading={delMut.isPending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => (id ? delMut.mutate() : setConfirmOpen(false))}
+      />
+    </div>
+  );
+}
+
+function PerenaladkaCard({ cells, date, t, lang }) {
+  // Saved-minutes mirror for the footer total. Rows own their drafts; this is
+  // server truth, re-seeded whenever the query returns (incl. a date change).
+  const [sums, setSums] = useState({});
+  useEffect(() => {
+    setSums(Object.fromEntries(cells.map((c) => [c.cell_id, Number(c.perenaladka?.minutes) || 0])));
+  }, [cells]);
+  const onSaved = (cellId, m) => setSums((s) => ({ ...s, [cellId]: m }));
+
+  const total = cells.reduce((a, c) => a + (sums[c.cell_id] || 0), 0);
+  const filled = cells.filter((c) => (sums[c.cell_id] || 0) > 0).length;
+
+  return (
+    <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 px-3 py-2.5" style={{ color: "var(--text-2)" }}>
+        <Repeat2 size={15} style={{ color: "var(--brand)" }} />
+        <span className="text-xs font-semibold uppercase tracking-wide">{t("idleCell.tabPerenaladka")}</span>
+        <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
+          {filled}/{cells.length}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="md:min-w-[640px]">
+          <div
+            className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${P_GRID_COLS}`}
+            style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
+          >
+            <div className={HEAD_CELL}>{t("idleCell.colCell")}</div>
+            <div className={`${HEAD_CELL} text-right`}>{t("idleCell.minutes")}</div>
+            <div className={HEAD_CELL}>{t("idleCell.noteOptional")}</div>
+            <div className={HEAD_CELL} />
+          </div>
+          {cells.map((c) => (
+            <PerenRow key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} onSaved={onSaved} />
+          ))}
+        </div>
+      </div>
+      <div
+        className="flex items-center justify-end gap-2 px-3 py-2 text-xs"
+        style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}
+      >
+        <span style={{ color: "var(--text-4)" }}>{t("idleCell.total")}</span>
+        <span className="tabular-nums font-semibold" style={{ color: total ? "var(--text-1)" : "var(--text-4)" }}>
+          {fmtMin(total)} {t("idleCell.minShort")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function IdleCell() {
   const { t, lang } = useLang();
   // date deliberately NOT persisted: this is a data-entry page — a silently
