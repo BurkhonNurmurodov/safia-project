@@ -616,12 +616,14 @@ function PerenaladkaCard({ cells, date, t, tl, lang }) {
 
 export default function IdleCell() {
   const { t, lang } = useLang();
+  const { tl } = useTranslit();
   // date deliberately NOT persisted: this is a data-entry page — a silently
   // restored stale day could direct entries to the wrong date.
   const [date, setDate] = useState(localTodayIso());
   const [view, setView] = usePersistentState("idle_cell_view", "ojidaniya"); // "ojidaniya" | "perenaladka"
   const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
   const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
+  const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
   const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
 
   const { data: supData } = useQuery({
