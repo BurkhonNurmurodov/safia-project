@@ -62,6 +62,14 @@ const t = {
     "idleCell.noCells":           "Bu brigadirda yacheyka yo'q.",
     "idleCell.saved":             "Saqlandi",
     "idleCell.incompleteHint":    "Daqiqa va sababni to'ldiring",
+    "idleCell.tabOjidaniya":      "Kutish",
+    "idleCell.tabPerenaladka":    "Perenaladka",
+    "idleCell.minutes":           "Daqiqa",
+    "idleCell.minShort":          "min",
+    "idleCell.noteOptional":      "Izoh (ixtiyoriy)",
+    "idleCell.perenNotePlaceholder": "Perenaladka sababi (ixtiyoriy)",
+    "idleCell.perenClearHint":    "O'chirish uchun ↺",
+    "idleCell.perenClearConfirm": "Bu yacheyka va sana uchun perenaladka yozuvi o'chiriladi.",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Yacheyka davomati",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
