@@ -42,10 +42,15 @@ export default function ShiftDaily() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Initial date can be restored from the URL (e.g. returning from a drill-down).
-  const [date, setDate] = useState(() => searchParams.get("date") || isoDaysAgo(1));
-  const [loadDiff, setLoadDiff] = useState(false);
-  const [rankMode, setRankMode] = useState("actual"); // "planned" | "actual" | "diff"
+  // Remembered across navigations; an explicit ?date= in the URL (e.g.
+  // returning from a drill-down) beats the stored value.
+  const [date, setDate] = usePersistentState("shift_daily_date", () => isoDaysAgo(1));
+  useEffect(() => {
+    const urlDate = searchParams.get("date");
+    if (urlDate) setDate(urlDate);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [loadDiff, setLoadDiff] = usePersistentState("shift_daily_load_diff", false);
+  const [rankMode, setRankMode] = usePersistentState("shift_daily_rank_mode", "actual"); // "planned" | "actual" | "diff"
 
   const winFrom = addDaysISO(date, -(WINDOW_DAYS - 1));
 
