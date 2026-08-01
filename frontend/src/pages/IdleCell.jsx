@@ -481,8 +481,6 @@ function PerenRow({ cell, date, t, tl, lang, onSaved }) {
   // A saved row whose minutes were emptied: Save can't commit a 0, so point at ↺
   // rather than leaving a disabled button and no explanation.
   const blanked = !!snap && mins <= 0;
-  const hue = hueFromString(cell.verifix_code || "");
-  const name = cellName(cell, lang);
 
   return (
     // Below md every cell is its OWN card (the list gaps come from
