@@ -551,8 +551,10 @@ function PerenaladkaCard({ cells, date, t, lang }) {
   const filled = cells.filter((c) => (sums[c.cell_id] || 0) > 0).length;
 
   return (
-    <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 px-3 py-2.5" style={{ color: "var(--text-2)" }}>
+    // Phones: a plain section head over a stack of per-cell cards (mirrors the
+    // Ojidaniya tab's accordion list). md+: the one table card it has always been.
+    <div className="space-y-2 md:space-y-0 md:rounded-xl md:overflow-clip md:bg-[var(--bg-card)] md:border md:border-[var(--border)]">
+      <div className="flex items-center gap-2 px-1 md:px-3 md:py-2.5" style={{ color: "var(--text-2)" }}>
         <Repeat2 size={15} style={{ color: "var(--brand)" }} />
         <span className="text-xs font-semibold uppercase tracking-wide">{t("idleCell.tabPerenaladka")}</span>
         <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
@@ -560,7 +562,7 @@ function PerenaladkaCard({ cells, date, t, lang }) {
         </span>
       </div>
       <div className="overflow-x-auto">
-        <div className="md:min-w-[640px]">
+        <div className="md:min-w-[640px] space-y-2 md:space-y-0">
           <div
             className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${P_GRID_COLS}`}
             style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
