@@ -808,12 +808,10 @@ async def upload(
     db.flush()
     db.refresh(batch)
 
-    # Already-saved day: push the newly merged cells through immediately so the
-    # tab and `attendance` don't disagree. Only the supervisors this file touched
-    # are rewritten — everyone else's day is untouched, and unaffected
-    # supervisors are not notified again on the next Save.
-    skipped = _resync_saved(db, batch, d)
-
+    # Staged, never live: the merged cells are marked pending by `_merge_file`
+    # and reach `attendance` only when the admin presses Save. Uploading a second
+    # file into an already-saved day therefore changes nobody's numbers until
+    # that Save — and then only the supervisors this file actually touched.
     try:
         db.commit()
     except IntegrityError:
@@ -836,7 +834,6 @@ async def upload(
         "rows_added":     rows_added,
         "kept_edits":     kept_edits,
         "created_cells":  created,
-        "skipped_managers": skipped,
     }
     return result
 
@@ -908,7 +905,7 @@ def remove_upload(
             bc.pending = True
 
     _mark_pending(batch, codes)
-    skipped = _resync_saved(db, batch, d)
+    skipped = _apply_removal(db, batch, d)
 
     # Now that attendance no longer references them, the emptied cells can go.
     for bc in list(batch.cells):
@@ -1030,13 +1027,9 @@ def update_cells(
                 cell.manager_id = bc.manager_id
                 cell.att_included = bool(bc.included)
 
-    skipped = _resync_saved(db, batch, d)
     db.commit()
     db.refresh(batch)
-
-    out = _batch_payload(db, batch, d)
-    out["skipped_managers"] = skipped
-    return out
+    return _batch_payload(db, batch, d)
 
 
 # ── worker rows ───────────────────────────────────────────────────────────────
@@ -1104,7 +1097,7 @@ def add_row(
     _recompute_row(row)
     db.add(row)
     db.flush()
-    _resync_saved(db, batch, d, [body.verifix_code])
+    _stage(batch, [body.verifix_code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -1152,7 +1145,7 @@ def edit_row(
     row.edited = True
     row.file_values = None          # the admin has now spoken again
     _recompute_row(row)
-    _resync_saved(db, batch, d, [row.verifix_code])
+    _stage(batch, [row.verifix_code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -1184,7 +1177,7 @@ def revert_row(
     row.file_values = None
     row.edited = False
     _recompute_row(row)
-    _resync_saved(db, batch, d, [row.verifix_code])
+    _stage(batch, [row.verifix_code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -1208,7 +1201,7 @@ def delete_row(
 
     db.delete(row)
     db.flush()
-    _resync_saved(db, batch, d, [code])
+    _stage(batch, [code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -1239,7 +1232,7 @@ def delete_cell_day(
     bc.included = False
     bc.pending = True
     db.flush()
-    _resync_saved(db, batch, d)
+    _apply_removal(db, batch, d)
     db.delete(bc)
     db.commit()
     db.refresh(batch)

@@ -566,36 +566,44 @@ export default function AttendanceUpload() {
   });
 
   // ── upload ─────────────────────────────────────────────────────────────────
-  const doUpload = useCallback(async (file, replace) => {
+  // A day is fed by SEVERAL files (one per «Орг. единица» group), so an upload
+  // always merges: no "replace existing?" prompt, and cells the file doesn't
+  // mention keep their routing, ticks and row edits untouched.
+  const doUpload = useCallback(async (file) => {
     setUploading(true);
     const form = new FormData();
     form.append("files", file);
     try {
-      const { data: payload } = await api.post("/api/attendance-batch/upload", form, {
-        params: replace ? { replace: true } : undefined,
-      });
+      const { data: payload } = await api.post("/api/attendance-batch/upload", form);
       setDate(payload.date);
       qc.setQueryData([QK, payload.date], payload);
       qc.invalidateQueries({ queryKey: [QK, "dates"] });
-      setPendingFile(null);
-      const created = payload.created_cells?.length ?? 0;
-      say(created
-        ? t("attUp.uploadedNewCells").replace("{n}", created)
-        : t("attUp.uploaded").replace("{date}", payload.date));
+      setUploadSummary(payload.upload_result || null);
+      say(t("attUp.uploaded").replace("{date}", payload.date));
     } catch (e) {
-      const d = e?.response?.data?.detail;
-      if (d && typeof d === "object" && d.code === "batch_exists") {
-        setPendingFile({ file, existing: d });
-      } else {
-        say(errText(e, t("attUp.uploadFailed")), "danger");
-      }
+      say(errText(e, t("attUp.uploadFailed")), "danger");
     } finally {
       setUploading(false);
     }
   }, [qc, say, setDate, t]);
 
+  const removeUploadMut = useMutation({
+    mutationFn: (uploadId) => api.delete(`/api/attendance-batch/uploads/${uploadId}`, {
+      params: { date },
+    }).then((r) => r.data),
+    onSuccess: (payload) => {
+      applyData(payload);
+      setUploadSummary(null);
+      const r = payload.removed || {};
+      say(t("attUp.uploadRemoved")
+        .replace("{cells}", r.cells_removed?.length ?? 0)
+        .replace("{rows}", r.rows_deleted ?? 0), "warn");
+    },
+    onError: onMutError,
+  });
+
   const onDrop = useCallback((accepted) => {
-    if (accepted.length) doUpload(accepted[0], false);
+    if (accepted.length) doUpload(accepted[0]);
   }, [doUpload]);
 
   const { getRootProps, getInputProps, isDragActive, open: openFilePicker } = useDropzone({
