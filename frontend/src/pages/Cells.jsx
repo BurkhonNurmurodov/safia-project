@@ -15,6 +15,7 @@ import TableCard, { Th } from "../components/ui/DataTable";
 import LangTextInput from "../components/ui/LangTextInput";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
