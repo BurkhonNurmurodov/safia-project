@@ -144,12 +144,12 @@ export default function Cells() {
   // resolver — every language column is nullable, see utils/cellName).
   const wname = (c) => cellName(c, lang);
 
-  const [search, setSearch] = useState("");
-  const [fBrigadir, setFBrigadir] = useState("");  // "" all · "none" unassigned · manager_id
-  const [fLeader, setFLeader] = useState("");        // "" all · "none" unassigned · leader_id
+  const [search, setSearch] = usePersistentState("cells_search", "");
+  const [fBrigadir, setFBrigadir] = usePersistentState("cells_filter_brigadir", "");  // "" all · "none" unassigned · manager_id
+  const [fLeader, setFLeader] = usePersistentState("cells_filter_leader", "");        // "" all · "none" unassigned · leader_id
 
   // Per-column sort (desktop table headers) — key:null falls back to verifix.
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [sort, setSort] = usePersistentState("cells_sort", { key: null, dir: "asc" });
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
