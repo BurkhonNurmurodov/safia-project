@@ -688,6 +688,20 @@ export default function IdleCell() {
         <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
       </div>
 
+      {/* View tabs sit UNDER the filter card — date / shift / supervisor / cells
+          all scope both views, and both views' saved data ships in the one
+          /cells payload, so switching never refetches. */}
+      <div className="mb-4">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[
+            ["ojidaniya", t("idleCell.tabOjidaniya")],
+            ["perenaladka", t("idleCell.tabPerenaladka")],
+          ]}
+        />
+      </div>
+
       {supervisorId == null ? (
         emptyBox(t("idleCell.pickSupervisorHint"))
       ) : isFetching ? (
@@ -696,6 +710,8 @@ export default function IdleCell() {
         </div>
       ) : shownCells.length === 0 ? (
         emptyBox(t("idleCell.noCells"))
+      ) : view === "perenaladka" ? (
+        <PerenaladkaCard cells={shownCells} date={date} t={t} lang={lang} />
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (
