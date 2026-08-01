@@ -5,13 +5,20 @@
  * worker row carries a «Код подразделения» (a cell's verifix code) which
  * resolves to that cell's supervisor, so the page is a two-phase review:
  *
- *   upload  → the file is parsed into a DRAFT. Nothing is in `attendance`,
- *             no supervisor has been notified.
+ *   upload  → the file MERGES into the day. Nothing is in `attendance`, no
+ *             supervisor has been notified.
  *   adjust  → one section per supervisor, one ROW PER CELL. The row's checkbox
  *             says "these people count for this supervisor"; the row can be
  *             dragged into another supervisor's section (or back out to the
  *             "no supervisor" bucket at the top).
- *   save    → writes attendance and notifies the supervisors.
+ *   save    → writes attendance and notifies the supervisors that changed.
+ *
+ * A DAY IS FED BY SEVERAL FILES (the export is taken per «Орг. единица» group),
+ * so uploading never replaces the day and there is no "replace existing?" prompt.
+ * Cells another file brought keep their routing, ticks and row edits. Each file
+ * is listed and can be pulled back out on its own. Every change stays STAGED —
+ * the amber "N cells not saved" badge is the call to action — because Save is the
+ * only moment data goes live and supervisors are told.
  *
  * Drag uses pointer events, not HTML5 dnd, so it works with a finger inside the
  * Telegram WebView — same choice ColumnsPicker made. Every drag is also
@@ -25,7 +32,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRightLeft, CalendarClock, Check, CheckCircle2, ChevronDown,
   ChevronRight, GripVertical, Lock, LockOpen, MoreVertical, Pencil, Pin, Plus,
-  Save, Trash2, TriangleAlert, Upload, UserPlus, Users, X,
+  Save, Trash2, TriangleAlert, Undo2, Upload, UserPlus, Users, X,
+  FileSpreadsheet, FileWarning,
 } from "lucide-react";
 
 import api from "../../utils/api";
@@ -538,7 +546,7 @@ export default function AttendanceUpload() {
   const [savePreview, setSavePreview] = useState(null);
   const [rowForm, setRowForm] = useState(null);        // {mode, row?, cell}
   const [moveFor, setMoveFor] = useState(null);        // cell awaiting a "move to"
-  const [pendingFile, setPendingFile] = useState(null);
+  const [uploadSummary, setUploadSummary] = useState(null);
   const [uploading, setUploading] = useState(false);
 
   const toastTimer = useRef(null);
@@ -597,6 +605,7 @@ export default function AttendanceUpload() {
     mutationFn: async ({ action, row, body }) => {
       if (action === "add") return (await api.post("/api/attendance-batch/rows", { date, ...body })).data;
       if (action === "edit") return (await api.patch(`/api/attendance-batch/rows/${row.id}`, { date, ...body })).data;
+      if (action === "revert") return (await api.post(`/api/attendance-batch/rows/${row.id}/revert`, null, { params: { date } })).data;
       return (await api.delete(`/api/attendance-batch/rows/${row.id}`, { params: { date } })).data;
     },
     onSuccess: (payload) => { applyData(payload); say(t("attUp.savedChange")); },
@@ -852,6 +861,16 @@ export default function AttendanceUpload() {
       tl={tl}
       onEdit={(row) => setRowForm({ mode: "edit", row, cell })}
       onAdd={() => setRowForm({ mode: "add", cell })}
+      onRevert={(row) => setConfirm({
+        tone: "warning",
+        title: t("attUp.revertTitle"),
+        message: t("attUp.revertMsg")
+          .replace("{name}", tl(row.worker_name))
+          .replace("{mine}", fmtNum(row.hours_worked, 2))
+          .replace("{file}", fmtNum(row.file_values?.hours_worked, 2)),
+        confirmLabel: t("attUp.revert"),
+        onConfirm: () => { rowMut.mutate({ action: "revert", row }); setConfirm(null); },
+      })}
       onDelete={(row) => setConfirm({
         tone: "danger",
         title: t("attUp.deleteWorkerTitle"),
@@ -1171,23 +1190,6 @@ export default function AttendanceUpload() {
         document.body,
       )}
 
-      {/* Replace-existing-upload confirm */}
-      {pendingFile && (
-        <ConfirmDialog
-          open
-          tone="warning"
-          title={t("attUp.replaceTitle")}
-          message={t("attUp.replaceMsg")
-            .replace("{date}", pendingFile.existing.date)
-            .replace("{status}", t(`attUp.status${pendingFile.existing.status === "draft" ? "Draft" : "Saved"}`))}
-          confirmLabel={t("attUp.replaceConfirm")}
-          cancelLabel={t("attUp.cancel")}
-          loading={uploading}
-          onCancel={() => setPendingFile(null)}
-          onConfirm={() => doUpload(pendingFile.file, true)}
-        />
-      )}
-
       {/* Generic confirm */}
       {confirm && (
         <ConfirmDialog
@@ -1366,6 +1368,14 @@ function SavePreviewModal({ preview, t, tl, busy, onClose, onConfirm }) {
       </div>
 
       <div className="text-[11px]" style={{ color: "var(--text-3)" }}>{t("attUp.saveMsg")}</div>
+
+      {/* The whole point of pending tracking: a second Save for a day fed by two
+          files leaves everyone else alone and doesn't re-ping them. */}
+      {preview.unchanged?.length > 0 && (
+        <div className="text-[11px]" style={{ color: "var(--text-4)" }}>
+          {t("attUp.saveUnchanged").replace("{n}", preview.unchanged.length)}: {preview.unchanged.map(tl).join(", ")}
+        </div>
+      )}
 
       <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
         <div className="max-h-56 overflow-y-auto">
