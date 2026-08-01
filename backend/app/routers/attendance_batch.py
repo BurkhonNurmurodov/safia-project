@@ -1051,9 +1051,13 @@ def save(
                         "manager_name": mgr.name if mgr else f"#{mid}",
                         "rows": n})
 
-    batch.status = "saved"
-    batch.saved_at = datetime.now(timezone.utc)
-    batch.saved_by_name = _admin_name(payload)
+    # Only a save that actually reached at least one supervisor counts as saved.
+    # If EVERY target's day was closed nothing was written, so the batch stays a
+    # draft — otherwise the tab would claim "Saved" over a day it never touched.
+    if written:
+        batch.status = "saved"
+        batch.saved_at = datetime.now(timezone.utc)
+        batch.saved_by_name = _admin_name(payload)
     db.commit()
 
     # Notification is best-effort and deliberately AFTER the commit: a Telegram
