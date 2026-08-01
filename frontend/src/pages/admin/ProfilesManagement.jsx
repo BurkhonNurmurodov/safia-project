@@ -75,7 +75,10 @@ export default function ProfilesManagement() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
-  const [type, setType] = useState("top-manager");
+  // Remembered across visits; a restored section the viewer can't see (a
+  // grantee never gets the admin section) falls back to the default.
+  const [rawType, setType] = usePersistentState("profiles_type", "top-manager");
+  const type = sections.some((s) => s.key === rawType) ? rawType : "top-manager";
   const [modal, setModal] = useState(null);        // {mode:"add"|"edit", item?} — form modal
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
