@@ -8,6 +8,7 @@ import { useLang } from "../../context/LangContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { useCapabilities } from "../../hooks/useCapabilities";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import TranslationsEditor from "./TranslationsEditor";
 import UsersManagement from "./UsersManagement";
 import ProfilesManagement from "./ProfilesManagement";
