@@ -669,10 +669,14 @@ export default function AdminUpload() {
   const { capTabs, isLoading: capsLoading } = useCapabilities();
   const isAdmin = auth?.role === "admin";
   const allowedTabs = isAdmin ? ADMIN_TABS : ADMIN_TABS.filter((id) => capTabs.includes(id));
-  // ?tab=users deep-links a specific tab (used by the bot's notification button)
+  // ?tab=users deep-links a specific tab (used by the bot's notification button).
+  // The last-viewed tab is remembered otherwise; an explicit ?tab= beats it.
   const [searchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
-  const [adminTab, setAdminTab] = useState(ADMIN_TABS.includes(urlTab) ? urlTab : "data");
+  const [adminTab, setAdminTab] = usePersistentState("admin_tab", "data");
+  useEffect(() => {
+    if (ADMIN_TABS.includes(urlTab)) setAdminTab(urlTab);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // A grantee's landing tab can't be the hardcoded "data" — settle on their
   // first allowed tab once the grants arrive, unless the URL already named a
   // tab they may open.
