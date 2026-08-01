@@ -455,7 +455,10 @@ function PerenRow({ cell, date, t, lang, onSaved }) {
   const name = cellName(cell, lang);
 
   return (
-    <div style={{ borderTop: "1px solid var(--border)" }}>
+    // Below md every cell is its OWN card (the list gaps come from
+    // PerenaladkaCard) — a stack of hairline-separated rows reads as one wall of
+    // inputs on a phone. At md+ the box collapses back to the table row rule.
+    <div className="rounded-xl overflow-clip border border-[var(--border)] bg-[var(--bg-card)] md:rounded-none md:border-x-0 md:border-b-0">
       <div className={`grid ${COL_SEP} ${P_GRID_COLS}`}>
         <div className={`${CELL} flex items-center gap-2 py-2 md:py-1.5`}>
           <span
