@@ -1,29 +1,42 @@
 """Single-file attendance ingest — the admin «Davomat» tab.
 
-Replaces uploading one verifix workbook per supervisor: ONE «Отчёт по посещениям
-сотрудников» export covers the whole factory, every worker row carrying a «Код
-подразделения» (a cell's verifix code) that resolves to the cell's supervisor.
+Replaces uploading one verifix workbook per supervisor: the «Отчёт по посещениям
+сотрудников» export carries every worker row tagged with a «Код подразделения»
+(a cell's verifix code) that resolves to the cell's supervisor.
 
 Two phases, deliberately:
 
-    upload  →  the file is parsed into a DRAFT batch. Nothing is in `attendance`
+    upload  →  the file MERGES into the day's batch. Nothing is in `attendance`
                yet, no supervisor has been told anything.
     adjust  →  the admin ticks cells in/out, drags cells between supervisors,
                edits/adds/deletes worker rows.
-    save    →  the batch is projected into `attendance` for every ticked cell
-               whose supervisor's day is still open, task exchanges are
-               re-applied, and only THEN are the supervisors notified.
+    save    →  the batch is projected into `attendance` for the supervisors whose
+               data actually changed, and only THEY are notified.
+
+A DATE IS FED BY SEVERAL FILES. The export is taken per «Орг. единица» group, so
+one day arrives as several workbooks covering different cells. Uploading never
+replaces the day: cells a file doesn't mention keep their routing, ticks and row
+edits untouched. When a file DOES re-supply a cell, the newer rows win — except
+that the cell's routing/tick and the admin's own row work survive, because those
+are decisions the file knows nothing about. A row an admin edited keeps the
+admin's value and stores what the file said in `file_values`, so the tab can flag
+it and offer a revert instead of losing the newer number silently.
+
+`AttendanceBatchCell.pending` is what keeps repeat Saves cheap and safe: it marks
+a cell whose state has not reached `attendance` yet, so Save only rewrites (and
+only notifies) supervisors that actually changed since the last Save.
 
 The batch is kept after Save and stays the editable source of truth for the day:
-that is what lets an unticked cell be re-ticked later without re-uploading, and
-it means every mutation has exactly one write path
-(`AttendanceBatchRow` → `_sync_manager`), never two that can drift.
+that is what lets an unticked cell be re-ticked without re-uploading, and it means
+every mutation has exactly one write path (`AttendanceBatchRow` → `_sync_manager`),
+never two that can drift.
 
 A supervisor's CLOSED day is immutable here, as on every other surface — Save
-skips it and the tab offers Re-open instead. Days that predate this flow (no
-batch) are shown read-only, grouped by cell where the code is known.
+skips it and the tab offers Re-open. Days that predate this flow (no batch) are
+shown read-only, grouped by cell where the code is known.
 """
 import logging
+import re
 from datetime import date as date_t, datetime, timezone
 from typing import Optional
 
@@ -35,7 +48,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (
     Attendance, AttendanceBatch, AttendanceBatchCell, AttendanceBatchRow,
-    Cell, DailySubmission, EditRequest, HrDocument, Manager,
+    AttendanceUploadFile, Cell, DailySubmission, EditRequest, HrDocument, Manager,
 )
 from app.routers.admin import verify_admin
 from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
@@ -53,6 +66,11 @@ DATE_LIMIT = 180
 
 # Row fields an admin may edit by hand.
 EDITABLE_FIELDS = ("worker_name", "job_title", "schedule", "clock_in_out", "hours_worked")
+
+# Fields a file supplies for a worker — snapshotted into `file_values` when an
+# admin edit outranks a newer file, so the newer numbers stay recoverable.
+FILE_FIELDS = ("job_title", "schedule", "clock_in_out", "hours_worked",
+               "early_arrival_min", "effective_hours", "status")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -78,6 +96,12 @@ def _admin_tg_id(payload: dict):
         return int(payload.get("sub"))
     except (TypeError, ValueError):
         return None
+
+
+def _name_key(name: Optional[str]) -> str:
+    """Match a worker across two exports of the same cell. Verifix spells names
+    consistently but pads/cases them loosely, so compare on a squeezed form."""
+    return re.sub(r"\s+", " ", (name or "").strip()).upper()
 
 
 def _default_included(cell: Optional[Cell]) -> bool:
@@ -108,10 +132,7 @@ def _recompute_row(row: AttendanceBatchRow) -> None:
     # Hours are what the calculation actually keys on (is_direct_role), so the
     # status label follows them — a hand-added row with hours but no clock
     # string still reads as "worked" rather than as an absence marker.
-    if hw:
-        row.status = "worked"
-    else:
-        row.status = (row.clock_in_out or "").strip() or "—"
+    row.status = "worked" if hw else ((row.clock_in_out or "").strip() or "—")
 
 
 def _cell_catalog(db: Session, codes) -> dict:
@@ -128,11 +149,34 @@ def _managers_map(db: Session) -> dict:
     return {m.id: m for m in db.query(Manager).all()}
 
 
-def _touched_managers(db: Session, batch: AttendanceBatch, d: date_t) -> set:
-    """Supervisors whose `attendance` for this day is owned by this batch —
-    the ones currently assigned PLUS the ones still holding rows from a previous
-    save (so dragging a cell away actually removes it from the old owner)."""
+def _mark_pending(batch: AttendanceBatch, codes) -> None:
+    codes = set(codes)
+    for bc in batch.cells:
+        if bc.verifix_code in codes:
+            bc.pending = True
+
+
+def _pending_targets(batch: AttendanceBatch) -> set:
+    """Supervisors that Save must re-project: the owner of every pending cell,
+    plus the owner it was last saved under (so a dragged cell leaves the old
+    supervisor as well as joining the new one)."""
+    ids = set()
+    for bc in batch.cells:
+        if not bc.pending:
+            continue
+        if bc.manager_id:
+            ids.add(bc.manager_id)
+        if bc.prev_manager_id:
+            ids.add(bc.prev_manager_id)
+    return ids
+
+
+def _holding_managers(db: Session, batch: AttendanceBatch, d: date_t) -> set:
+    """Every supervisor whose `attendance` for this day is owned by this batch —
+    assigned now, saved under it before, or still holding rows tagged with one of
+    its codes. Used by the destructive paths (discard, upload removal)."""
     ids = {bc.manager_id for bc in batch.cells if bc.manager_id}
+    ids |= {bc.prev_manager_id for bc in batch.cells if bc.prev_manager_id}
     codes = [bc.verifix_code for bc in batch.cells if bc.verifix_code]
     if codes:
         prev = db.query(Attendance.manager_id).filter(
@@ -140,7 +184,7 @@ def _touched_managers(db: Session, batch: AttendanceBatch, d: date_t) -> set:
             Attendance.verifix_code.in_(codes),
         ).distinct().all()
         ids |= {m for (m,) in prev if m}
-    return ids
+    return {m for m in ids if m}
 
 
 def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_t) -> int:
@@ -150,7 +194,9 @@ def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_
     Wiping the whole (manager, date) — not just the batch's codes — is the same
     thing the per-supervisor upload has always done. It is what prevents a
     double count when a day was also uploaded the old way, and it keeps
-    "what you see on the tab" identical to "what is in attendance".
+    "what you see on the tab" identical to "what is in attendance". The batch
+    holds every file's cells for the day, so nothing another upload contributed
+    is lost by the wipe.
 
     Caller commits. Returns the number of rows written.
     """
@@ -196,18 +242,53 @@ def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_
     return written
 
 
-def _resync_open(db: Session, batch: AttendanceBatch, manager_ids, d: date_t) -> list:
-    """Re-project the given supervisors, skipping any whose day is closed.
-    Only meaningful once the batch has been saved — a draft writes nothing."""
-    if batch.status != "saved":
-        return []
-    skipped = []
-    for mid in sorted({m for m in manager_ids if m}):
+def _clear_pending(batch: AttendanceBatch, synced: set) -> None:
+    """A cell stops being pending once BOTH ends of its move have been written:
+    its current owner and the supervisor it used to be saved under. A cell whose
+    new owner's day is closed stays pending, which is exactly right — the tab
+    keeps showing it as unsaved until the day is re-opened and saved."""
+    for bc in batch.cells:
+        if not bc.pending:
+            continue
+        old_done = bc.prev_manager_id is None or bc.prev_manager_id in synced
+        if bc.manager_id is None:
+            if old_done:
+                bc.pending = False
+                bc.prev_manager_id = None
+        elif bc.manager_id in synced and old_done:
+            bc.pending = False
+            bc.prev_manager_id = bc.manager_id
+
+
+def _project(db: Session, batch: AttendanceBatch, d: date_t, targets=None):
+    """Write the batch into `attendance` for the given supervisors (default: the
+    ones with pending changes), skipping any whose day is closed.
+
+    Returns (written, skipped) where `written` is [{manager_id, rows}] — the list
+    Save notifies from, so a supervisor untouched by this round is never pinged.
+    """
+    if targets is None:
+        targets = _pending_targets(batch)
+    written, skipped = [], []
+    for mid in sorted({m for m in targets if m}):
         state, _closure, _counts = day_state(db, mid, d)
         if state != "open":
             skipped.append(mid)
             continue
-        _sync_manager(db, batch, mid, d)
+        written.append({"manager_id": mid, "rows": _sync_manager(db, batch, mid, d)})
+    _clear_pending(batch, {w["manager_id"] for w in written})
+    return written, skipped
+
+
+def _resync_saved(db: Session, batch: AttendanceBatch, d: date_t, codes=None) -> list:
+    """Keep `attendance` in step after an in-place edit. A batch that has never
+    been saved writes nothing — its cells simply stay pending."""
+    if codes:
+        _mark_pending(batch, codes)
+    if batch.saved_at is None:
+        return []
+    db.flush()
+    _written, skipped = _project(db, batch, d)
     return skipped
 
 
@@ -234,6 +315,24 @@ def _require_open_day(db: Session, manager_id: Optional[int], d: date_t) -> None
 
 # ── payload builders ──────────────────────────────────────────────────────────
 
+def _row_json(r: AttendanceBatchRow) -> dict:
+    return {
+        "id":                r.id,
+        "worker_name":       r.worker_name,
+        "job_title":         r.job_title,
+        "schedule":          r.schedule,
+        "clock_in_out":      r.clock_in_out,
+        "hours_worked":      _num(r.hours_worked),
+        "early_arrival_min": _num(r.early_arrival_min),
+        "effective_hours":   _num(r.effective_hours),
+        "status":            r.status,
+        "counted":           is_direct_role(r.job_title, r.hours_worked),
+        "edited":            bool(r.edited),
+        "manual":            bool(r.manual),
+        "file_values":       r.file_values,
+    }
+
+
 def _cell_json(bc: AttendanceBatchCell, cell: Optional[Cell], rows: list) -> dict:
     counted = [r for r in rows if is_direct_role(r.job_title, r.hours_worked)]
     hours = sum(float(r.hours_worked or 0) for r in counted)
@@ -252,26 +351,13 @@ def _cell_json(bc: AttendanceBatchCell, cell: Optional[Cell], rows: list) -> dic
         "included":           bool(bc.included),
         "registry_included":  _default_included(cell),
         "moved":              bc.manager_id != registry_manager,
+        "pending":            bool(bc.pending),
+        "upload_id":          bc.upload_id,
         "workers":            len(rows),
         "present":            len(counted),
         "hours":              round(hours, 2),
-        "rows": [
-            {
-                "id":                r.id,
-                "worker_name":       r.worker_name,
-                "job_title":         r.job_title,
-                "schedule":          r.schedule,
-                "clock_in_out":      r.clock_in_out,
-                "hours_worked":      _num(r.hours_worked),
-                "early_arrival_min": _num(r.early_arrival_min),
-                "effective_hours":   _num(r.effective_hours),
-                "status":            r.status,
-                "counted":           is_direct_role(r.job_title, r.hours_worked),
-                "edited":            bool(r.edited),
-                "manual":            bool(r.manual),
-            }
-            for r in sorted(rows, key=lambda x: (x.worker_name or "").lower())
-        ],
+        "conflicts":          sum(1 for r in rows if r.file_values),
+        "rows":               [_row_json(r) for r in sorted(rows, key=lambda x: (x.worker_name or "").lower())],
     }
 
 
@@ -283,6 +369,7 @@ def _section_totals(cells: list) -> dict:
         "workers":  sum(c["workers"] for c in on),
         "present":  sum(c["present"] for c in on),
         "hours":    round(sum(c["hours"] for c in on), 2),
+        "pending":  sum(1 for c in cells if c["pending"]),
     }
 
 
@@ -322,17 +409,39 @@ def _batch_payload(db: Session, batch: AttendanceBatch, d: date_t) -> dict:
     out_sections.sort(key=lambda s: (s["manager_name"] or "").lower())
 
     all_cells = [c for s in out_sections for c in s["cells"]] + unassigned
+    pending_cells = sum(1 for c in all_cells if c["pending"])
+
+    # Status is DERIVED, so a merged day reads honestly: nothing saved yet →
+    # draft; some cells saved and others still waiting → partial.
+    if batch.saved_at is None:
+        status = "draft"
+    elif pending_cells:
+        status = "partial"
+    else:
+        status = "saved"
+
     return {
         "date":   d.isoformat(),
-        "status": batch.status,
+        "status": status,
         "batch": {
-            "filename":     batch.source_filename,
-            "export_ts":    batch.export_ts.isoformat() if batch.export_ts else None,
-            "uploaded_at":  batch.uploaded_at.isoformat() if batch.uploaded_at else None,
-            "uploaded_by":  batch.uploaded_by_name,
             "saved_at":     batch.saved_at.isoformat() if batch.saved_at else None,
             "saved_by":     batch.saved_by_name,
+            "pending_cells": pending_cells,
         },
+        "uploads": [
+            {
+                "id":             u.id,
+                "filename":       u.filename,
+                "uploaded_at":    u.uploaded_at.isoformat() if u.uploaded_at else None,
+                "uploaded_by":    u.uploaded_by_name,
+                "export_ts":      u.export_ts.isoformat() if u.export_ts else None,
+                "cells_added":    u.cells_added,
+                "cells_replaced": u.cells_replaced,
+                "rows_added":     u.rows_added,
+                "cells_now":      sum(1 for bc in batch.cells if bc.upload_id == u.id),
+            }
+            for u in sorted(batch.uploads, key=lambda x: (x.uploaded_at or datetime.min.replace(tzinfo=timezone.utc)))
+        ],
         "sections":   out_sections,
         "unassigned": unassigned,
         "totals": {
@@ -344,6 +453,8 @@ def _batch_payload(db: Session, batch: AttendanceBatch, d: date_t) -> dict:
             "counted":       sum(c["present"] for c in all_cells if c["included"]),
             "hours":         round(sum(c["hours"] for c in all_cells if c["included"]), 2),
             "excluded_rows": sum(c["workers"] for c in all_cells if not c["included"]),
+            "pending":       pending_cells,
+            "conflicts":     sum(c["conflicts"] for c in all_cells),
         },
     }
 
@@ -353,13 +464,12 @@ def _legacy_payload(db: Session, d: date_t) -> dict:
     IS in `attendance`, grouped the same way, read-only. Rows with no cell code
     fall into one "—" group per supervisor rather than being hidden."""
     rows = db.query(Attendance).filter(Attendance.date == d).all()
+    empty_totals = {"cells": 0, "included": 0, "unassigned": 0, "supervisors": 0,
+                    "workers": 0, "counted": 0, "hours": 0, "excluded_rows": 0,
+                    "pending": 0, "conflicts": 0}
     if not rows:
-        return {
-            "date": d.isoformat(), "status": "none", "batch": None,
-            "sections": [], "unassigned": [],
-            "totals": {"cells": 0, "included": 0, "unassigned": 0, "supervisors": 0,
-                       "workers": 0, "counted": 0, "hours": 0, "excluded_rows": 0},
-        }
+        return {"date": d.isoformat(), "status": "none", "batch": None, "uploads": [],
+                "sections": [], "unassigned": [], "totals": empty_totals}
 
     managers = _managers_map(db)
     cells_by_code = _cell_catalog(db, {r.verifix_code for r in rows})
@@ -389,9 +499,12 @@ def _legacy_payload(db: Session, d: date_t) -> dict:
                 "included":            True,
                 "registry_included":   True,
                 "moved":               False,
+                "pending":             False,
+                "upload_id":           None,
                 "workers":             len(rws),
                 "present":             len(counted),
                 "hours":               round(sum(float(r.hours_worked or 0) for r in counted), 2),
+                "conflicts":           0,
                 "rows": [
                     {
                         "id":                r.id,
@@ -406,6 +519,7 @@ def _legacy_payload(db: Session, d: date_t) -> dict:
                         "counted":           is_direct_role(r.job_title, r.hours_worked),
                         "edited":            False,
                         "manual":            False,
+                        "file_values":       None,
                     }
                     for r in sorted(rws, key=lambda x: (x.worker_name or "").lower())
                 ],
@@ -424,20 +538,17 @@ def _legacy_payload(db: Session, d: date_t) -> dict:
     sections.sort(key=lambda s: (s["manager_name"] or "").lower())
 
     all_cells = [c for s in sections for c in s["cells"]]
-    return {
-        "date": d.isoformat(), "status": "legacy", "batch": None,
-        "sections": sections, "unassigned": [],
-        "totals": {
-            "cells":       len(all_cells),
-            "included":    len(all_cells),
-            "unassigned":  0,
-            "supervisors": len(sections),
-            "workers":     sum(c["workers"] for c in all_cells),
-            "counted":     sum(c["present"] for c in all_cells),
-            "hours":       round(sum(c["hours"] for c in all_cells), 2),
-            "excluded_rows": 0,
-        },
-    }
+    totals = dict(empty_totals)
+    totals.update({
+        "cells":       len(all_cells),
+        "included":    len(all_cells),
+        "supervisors": len(sections),
+        "workers":     sum(c["workers"] for c in all_cells),
+        "counted":     sum(c["present"] for c in all_cells),
+        "hours":       round(sum(c["hours"] for c in all_cells), 2),
+    })
+    return {"date": d.isoformat(), "status": "legacy", "batch": None, "uploads": [],
+            "sections": sections, "unassigned": [], "totals": totals}
 
 
 # ── read ──────────────────────────────────────────────────────────────────────
@@ -448,7 +559,8 @@ def list_dates(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     that already has attendance from the older per-supervisor path."""
     out: dict = {}
     for b in db.query(AttendanceBatch).order_by(AttendanceBatch.date.desc()).limit(DATE_LIMIT).all():
-        out[b.date] = {"date": b.date.isoformat(), "status": b.status}
+        out[b.date] = {"date": b.date.isoformat(),
+                       "status": "draft" if b.saved_at is None else "saved"}
     rows = (
         db.query(Attendance.date)
         .distinct()
@@ -487,17 +599,115 @@ def get_day(
     return _legacy_payload(db, d)
 
 
-# ── upload ────────────────────────────────────────────────────────────────────
+# ── upload (merge) ────────────────────────────────────────────────────────────
+
+def _merge_file(db: Session, batch: AttendanceBatch, upload: AttendanceUploadFile,
+                parsed: dict, known: dict):
+    """Fold one workbook into the day. Returns (added, replaced, rows_added,
+    kept_edits) — `added`/`replaced` are cell codes, for the upload summary.
+
+    Cells this file does not mention are never touched. For a cell it DOES bring:
+      * the cell's supervisor and tick are left exactly as the admin set them —
+        the file has no opinion about routing;
+      * file-supplied rows are replaced by the newer ones;
+      * rows the admin edited, and rows the admin added by hand, SURVIVE. When
+        the newer file disagrees with an edited row, the file's version is kept
+        in `file_values` so the tab can flag it and offer a revert.
+    """
+    org_units = parsed["org_units"]
+    by_code: dict = {}
+    for r in parsed["rows"]:
+        by_code.setdefault(r["verifix_code"], []).append(r)
+
+    existing_cells = {bc.verifix_code: bc for bc in batch.cells}
+    added, replaced, rows_added, kept_edits = [], [], 0, 0
+
+    for code, new_rows in by_code.items():
+        if not code:
+            continue
+        cell = known.get(code)
+        bc = existing_cells.get(code)
+        if bc is None:
+            bc = AttendanceBatchCell(
+                batch_id=batch.id,
+                verifix_code=code,
+                cell_id=cell.id if cell else None,
+                manager_id=cell.manager_id if cell else None,
+                included=_default_included(cell) and bool(cell and cell.manager_id),
+                source_name=org_units.get(code),
+                upload_id=upload.id,
+                pending=True,
+            )
+            db.add(bc)
+            existing_cells[code] = bc
+            added.append(code)
+        else:
+            bc.upload_id = upload.id
+            bc.pending = True
+            if not bc.source_name:
+                bc.source_name = org_units.get(code)
+            replaced.append(code)
+
+        prior = db.query(AttendanceBatchRow).filter(
+            AttendanceBatchRow.batch_id == batch.id,
+            AttendanceBatchRow.verifix_code == code,
+        ).all()
+        # The admin's own work outranks the file (their explicit choice).
+        protected = {_name_key(r.worker_name): r for r in prior if r.edited or r.manual}
+        for r in prior:
+            if not (r.edited or r.manual):
+                db.delete(r)
+
+        for nr in new_rows:
+            keep = protected.get(_name_key(nr["worker_name"]))
+            if keep is not None:
+                snapshot = {k: nr.get(k) for k in FILE_FIELDS}
+                current = {
+                    "job_title": keep.job_title, "schedule": keep.schedule,
+                    "clock_in_out": keep.clock_in_out,
+                    "hours_worked": _num(keep.hours_worked),
+                    "early_arrival_min": _num(keep.early_arrival_min),
+                    "effective_hours": _num(keep.effective_hours),
+                    "status": keep.status,
+                }
+                # Only flag a real disagreement — an identical re-export is not
+                # a conflict and must not litter the table with badges.
+                if any(snapshot.get(k) != current.get(k) for k in FILE_FIELDS):
+                    keep.file_values = snapshot
+                    kept_edits += 1
+                else:
+                    keep.file_values = None
+                continue
+            db.add(AttendanceBatchRow(
+                batch_id=batch.id,
+                upload_id=upload.id,
+                verifix_code=code,
+                worker_name=nr["worker_name"],
+                job_title=nr["job_title"],
+                schedule=nr["schedule"],
+                clock_in_out=nr["clock_in_out"],
+                hours_worked=nr["hours_worked"],
+                early_arrival_min=nr["early_arrival_min"],
+                effective_hours=nr["effective_hours"],
+                status=nr["status"],
+            ))
+            rows_added += 1
+
+    return added, replaced, rows_added, kept_edits
+
 
 @router.post("/upload")
 async def upload(
     files: list[UploadFile] = File(...),
-    replace: bool = Query(default=False),
     db: Session = Depends(get_db),
     payload: dict = Depends(verify_admin),
 ):
-    """Parse one export into a DRAFT batch. Writes nothing to `attendance` and
-    notifies nobody — that is what /save is for.
+    """MERGE one export into its day. Writes nothing to `attendance` and notifies
+    nobody — that is what /save is for.
+
+    A day is normally fed by several files (one per «Орг. единица» group), so an
+    upload only ever adds to the day. It never disturbs cells another file
+    contributed, and never resets routing or ticks the admin has already made.
 
     Unknown «Код подразделения» values auto-register as supervisor-less cells
     (named from the file's «Орг. единица» line) so they surface in the tab's
@@ -530,21 +740,9 @@ async def upload(
         )
 
     d = parsed["period_from"]
-    existing = _batch_for(db, d)
-    if existing and not replace:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "batch_exists",
-                "date": d.isoformat(),
-                "status": existing.status,
-                "filename": existing.source_filename,
-            },
-        )
-
-    rows = parsed["rows"]
-    codes = sorted({r["verifix_code"] for r in rows if r["verifix_code"]})
-    org_units = parsed["org_units"]
+    codes = sorted({r["verifix_code"] for r in parsed["rows"] if r["verifix_code"]})
+    if not codes:
+        raise HTTPException(status_code=400, detail="Faylda «Код подразделения» yo'q")
 
     # Auto-register unknown cells: supervisor-less, out of the load, named from
     # the header line. They land in the "no supervisor" bucket, unticked.
@@ -555,7 +753,7 @@ async def upload(
             continue
         cell = Cell(
             verifix_code=code,
-            name_workshop_ru=org_units.get(code),
+            name_workshop_ru=parsed["org_units"].get(code),
             manager_id=None,
             in_load=False,
         )
@@ -565,52 +763,47 @@ async def upload(
     if created:
         db.flush()
 
-    # Replace any pending/saved batch for the date. Attendance already written by
-    # a previous save is left alone — the next Save re-projects it.
-    if existing:
-        db.delete(existing)
+    batch = _batch_for(db, d)
+    if batch is None:
+        batch = AttendanceBatch(
+            date=d,
+            status="draft",
+            source_filename=f.filename,
+            export_ts=parsed["export_ts"],
+            uploaded_by=_admin_tg_id(payload),
+            uploaded_by_name=_admin_name(payload),
+        )
+        db.add(batch)
         db.flush()
 
-    batch = AttendanceBatch(
-        date=d,
-        status="draft",
-        source_filename=f.filename,
+    upload_row = AttendanceUploadFile(
+        batch_id=batch.id,
+        filename=f.filename,
         export_ts=parsed["export_ts"],
         uploaded_by=_admin_tg_id(payload),
         uploaded_by_name=_admin_name(payload),
     )
-    db.add(batch)
+    db.add(upload_row)
     db.flush()
 
-    for code in codes:
-        cell = known.get(code)
-        db.add(AttendanceBatchCell(
-            batch_id=batch.id,
-            verifix_code=code,
-            cell_id=cell.id if cell else None,
-            manager_id=cell.manager_id if cell else None,
-            included=_default_included(cell) and bool(cell and cell.manager_id),
-            source_name=org_units.get(code),
-        ))
-    for r in rows:
-        db.add(AttendanceBatchRow(
-            batch_id=batch.id,
-            verifix_code=r["verifix_code"],
-            worker_name=r["worker_name"],
-            job_title=r["job_title"],
-            schedule=r["schedule"],
-            clock_in_out=r["clock_in_out"],
-            hours_worked=r["hours_worked"],
-            early_arrival_min=r["early_arrival_min"],
-            effective_hours=r["effective_hours"],
-            status=r["status"],
-        ))
+    added, replaced, rows_added, kept_edits = _merge_file(db, batch, upload_row, parsed, known)
+    upload_row.cells_added = len(added)
+    upload_row.cells_replaced = len(replaced)
+    upload_row.rows_added = rows_added
+    db.flush()
+    db.refresh(batch)
+
+    # Already-saved day: push the newly merged cells through immediately so the
+    # tab and `attendance` don't disagree. Only the supervisors this file touched
+    # are rewritten — everyone else's day is untouched, and unaffected
+    # supervisors are not notified again on the next Save.
+    skipped = _resync_saved(db, batch, d)
+
     try:
         db.commit()
     except IntegrityError:
         # Two admins uploading at the same moment: one of them loses the race on
-        # `cells.verifix_code` / the one-batch-per-date constraint. Ask for a
-        # retry rather than surfacing a 500.
+        # `cells.verifix_code` / the one-batch-per-date constraint.
         db.rollback()
         log.warning("attendance batch upload raced for %s", d)
         raise HTTPException(
@@ -620,9 +813,121 @@ async def upload(
     db.refresh(batch)
 
     result = _batch_payload(db, batch, d)
-    result["created_cells"] = created
-    result["replaced"] = bool(existing)
+    result["upload_result"] = {
+        "upload_id":      upload_row.id,
+        "filename":       f.filename,
+        "cells_added":    added,
+        "cells_replaced": replaced,
+        "rows_added":     rows_added,
+        "kept_edits":     kept_edits,
+        "created_cells":  created,
+        "skipped_managers": skipped,
+    }
     return result
+
+
+@router.delete("/uploads/{upload_id}")
+def remove_upload(
+    upload_id: int,
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """Pull one file back out of the day, leaving every other file's cells alone.
+
+    Removes exactly the rows this file supplied. A cell left with no rows goes
+    with it; a cell that still holds hand-added rows STAYS (that work was not the
+    file's to take), just detached from the upload. Cells a later file re-supplied
+    belong to that file and are untouched.
+    """
+    d = _parse_date(date)
+    batch = _batch_for(db, d)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
+    up = db.query(AttendanceUploadFile).filter(
+        AttendanceUploadFile.id == upload_id,
+        AttendanceUploadFile.batch_id == batch.id,
+    ).first()
+    if not up:
+        raise HTTPException(status_code=404, detail="Yuklama topilmadi")
+
+    rows = db.query(AttendanceBatchRow).filter(
+        AttendanceBatchRow.batch_id == batch.id,
+        AttendanceBatchRow.upload_id == up.id,
+    ).all()
+    codes = {r.verifix_code for r in rows} | {
+        bc.verifix_code for bc in batch.cells if bc.upload_id == up.id
+    }
+
+    # Every supervisor that owns an affected cell must be open — removing an
+    # upload rewrites their attendance, and a closed day is immutable.
+    owners = {bc.manager_id for bc in batch.cells if bc.verifix_code in codes and bc.manager_id}
+    for mid in sorted(owners):
+        _require_open_day(db, mid, d)
+
+    rows_deleted = 0
+    for r in rows:
+        db.delete(r)
+        rows_deleted += 1
+    db.flush()
+
+    kept_manual, dropped_cells = 0, []
+    for bc in list(batch.cells):
+        if bc.verifix_code not in codes:
+            continue
+        remaining = db.query(AttendanceBatchRow).filter(
+            AttendanceBatchRow.batch_id == batch.id,
+            AttendanceBatchRow.verifix_code == bc.verifix_code,
+        ).count()
+        if remaining == 0:
+            if bc.prev_manager_id or bc.manager_id:
+                # Its supervisor must be re-projected so the rows leave attendance.
+                bc.included = False
+                bc.pending = True
+            else:
+                dropped_cells.append(bc.verifix_code)
+        else:
+            kept_manual += remaining
+            if bc.upload_id == up.id:
+                bc.upload_id = None
+            bc.pending = True
+
+    _mark_pending(batch, codes)
+    skipped = _resync_saved(db, batch, d)
+
+    # Now that attendance no longer references them, the emptied cells can go.
+    for bc in list(batch.cells):
+        if bc.verifix_code in codes:
+            remaining = db.query(AttendanceBatchRow).filter(
+                AttendanceBatchRow.batch_id == batch.id,
+                AttendanceBatchRow.verifix_code == bc.verifix_code,
+            ).count()
+            if remaining == 0:
+                if bc.verifix_code not in dropped_cells:
+                    dropped_cells.append(bc.verifix_code)
+                db.delete(bc)
+
+    db.delete(up)
+    db.flush()
+    db.refresh(batch)
+
+    if not batch.cells:
+        db.delete(batch)
+        db.commit()
+        return {**_legacy_payload(db, d),
+                "removed": {"rows_deleted": rows_deleted, "cells_removed": sorted(dropped_cells),
+                            "manual_rows_kept": kept_manual, "skipped_managers": skipped}}
+
+    db.commit()
+    db.refresh(batch)
+    out = _batch_payload(db, batch, d)
+    out["removed"] = {
+        "rows_deleted":     rows_deleted,
+        "cells_removed":    sorted(dropped_cells),
+        "manual_rows_kept": kept_manual,
+        "skipped_managers": skipped,
+    }
+    return out
 
 
 @router.delete("")
@@ -631,24 +936,23 @@ def discard(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    """Throw away a batch. A DRAFT vanishes without trace; discarding a SAVED
-    batch also removes the attendance it wrote (for supervisors whose day is
-    still open), so the day goes back to having no data at all."""
+    """Throw away the WHOLE day — every file, every adjustment. Attendance that
+    was already saved goes too (for supervisors whose day is still open). Use the
+    per-upload removal for a single wrong file."""
     d = _parse_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
 
     skipped = []
-    if batch.status == "saved":
-        for mid in sorted(_touched_managers(db, batch, d)):
-            state, _c, _n = day_state(db, mid, d)
-            if state != "open":
-                skipped.append(mid)
-                continue
-            db.query(Attendance).filter(
-                Attendance.manager_id == mid, Attendance.date == d,
-            ).delete(synchronize_session=False)
+    for mid in sorted(_holding_managers(db, batch, d)):
+        state, _c, _n = day_state(db, mid, d)
+        if state != "open":
+            skipped.append(mid)
+            continue
+        db.query(Attendance).filter(
+            Attendance.manager_id == mid, Attendance.date == d,
+        ).delete(synchronize_session=False)
 
     db.delete(batch)
     db.commit()
@@ -688,7 +992,6 @@ def update_cells(
 
     by_code = {bc.verifix_code: bc for bc in batch.cells}
     valid_managers = {m.id for m in db.query(Manager.id).all()}
-    affected: set = set()
 
     for ch in body.changes:
         bc = by_code.get(ch.verifix_code)
@@ -697,7 +1000,6 @@ def update_cells(
         if ch.manager_id is not None and ch.manager_id not in valid_managers:
             raise HTTPException(status_code=400, detail=f"Noma'lum brigadir: {ch.manager_id}")
 
-        affected.add(bc.manager_id)
         if ch.clear_manager:
             bc.manager_id = None
             bc.included = False        # nobody owns it → it counts for nobody
@@ -705,7 +1007,7 @@ def update_cells(
             bc.manager_id = ch.manager_id
         if ch.included is not None:
             bc.included = bool(ch.included) and bc.manager_id is not None
-        affected.add(bc.manager_id)
+        bc.pending = True
 
         if body.permanent and bc.cell_id:
             cell = db.query(Cell).filter(Cell.id == bc.cell_id).first()
@@ -713,9 +1015,7 @@ def update_cells(
                 cell.manager_id = bc.manager_id
                 cell.att_included = bool(bc.included)
 
-    # A saved day must keep `attendance` in step with what the tab now shows.
-    # Closed supervisors are skipped and reported so the UI can say why.
-    skipped = _resync_open(db, batch, affected, d)
+    skipped = _resync_saved(db, batch, d)
     db.commit()
     db.refresh(batch)
 
@@ -759,7 +1059,8 @@ def add_row(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    """Hand-add a worker the export missed (a forgotten punch, a late entry)."""
+    """Hand-add a worker the export missed (a forgotten punch, a late entry).
+    Manual rows survive any later re-upload of their cell."""
     d = _parse_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
@@ -782,14 +1083,13 @@ def add_row(
         schedule=(body.schedule or "").strip(),
         clock_in_out=(body.clock_in_out or "").strip(),
         hours_worked=body.hours_worked,
-        status="worked" if body.hours_worked else "—",
         manual=True,
         edited=True,
     )
     _recompute_row(row)
     db.add(row)
     db.flush()
-    _resync_open(db, batch, [manager_id], d)
+    _resync_saved(db, batch, d, [body.verifix_code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -835,8 +1135,41 @@ def edit_row(
         raise HTTPException(status_code=400, detail="Xodim ismi bo'sh bo'lishi mumkin emas")
 
     row.edited = True
+    row.file_values = None          # the admin has now spoken again
     _recompute_row(row)
-    _resync_open(db, batch, [manager_id], d)
+    _resync_saved(db, batch, d, [row.verifix_code])
+    db.commit()
+    db.refresh(batch)
+    return _batch_payload(db, batch, d)
+
+
+@router.post("/rows/{row_id}/revert")
+def revert_row(
+    row_id: int,
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    _: dict = Depends(verify_admin),
+):
+    """Drop the admin's edit and take the newer file's values for this worker.
+    Only offered on rows where a later upload actually disagreed."""
+    d = _parse_date(date)
+    batch = _batch_for(db, d)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
+    row = _row_or_404(db, row_id, batch)
+    if not row.file_values:
+        raise HTTPException(status_code=400, detail="Bu qatorda fayl qiymati saqlanmagan")
+    manager_id = _owner_of(batch, row.verifix_code)
+    _require_open_day(db, manager_id, d)
+
+    fv = row.file_values
+    for k in FILE_FIELDS:
+        if k in fv:
+            setattr(row, k, fv[k])
+    row.file_values = None
+    row.edited = False
+    _recompute_row(row)
+    _resync_saved(db, batch, d, [row.verifix_code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -856,10 +1189,11 @@ def delete_row(
     row = _row_or_404(db, row_id, batch)
     manager_id = _owner_of(batch, row.verifix_code)
     _require_open_day(db, manager_id, d)
+    code = row.verifix_code
 
     db.delete(row)
     db.flush()
-    _resync_open(db, batch, [manager_id], d)
+    _resync_saved(db, batch, d, [code])
     db.commit()
     db.refresh(batch)
     return _batch_payload(db, batch, d)
@@ -872,23 +1206,26 @@ def delete_cell_day(
     db: Session = Depends(get_db),
     _: dict = Depends(verify_admin),
 ):
-    """Drop every worker row of one cell for this day."""
+    """Drop every worker row of one cell for this day, and the cell with them."""
     d = _parse_date(date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
-    if verifix_code not in {bc.verifix_code for bc in batch.cells}:
+    bc = next((c for c in batch.cells if c.verifix_code == verifix_code), None)
+    if bc is None:
         raise HTTPException(status_code=404, detail=f"Yacheyka topilmadi: {verifix_code}")
 
-    manager_id = _owner_of(batch, verifix_code)
-    _require_open_day(db, manager_id, d)
+    _require_open_day(db, bc.manager_id, d)
 
     deleted = db.query(AttendanceBatchRow).filter(
         AttendanceBatchRow.batch_id == batch.id,
         AttendanceBatchRow.verifix_code == verifix_code,
     ).delete(synchronize_session=False)
+    bc.included = False
+    bc.pending = True
     db.flush()
-    _resync_open(db, batch, [manager_id], d)
+    _resync_saved(db, batch, d)
+    db.delete(bc)
     db.commit()
     db.refresh(batch)
     out = _batch_payload(db, batch, d)
@@ -932,20 +1269,20 @@ def delete_supervisor_day(
 
     batch = _batch_for(db, d)
     if batch:
-        codes = [bc.verifix_code for bc in batch.cells if bc.manager_id == manager_id]
+        doomed = [bc for bc in batch.cells if bc.manager_id == manager_id]
+        codes = [bc.verifix_code for bc in doomed]
         if codes:
             db.query(AttendanceBatchRow).filter(
                 AttendanceBatchRow.batch_id == batch.id,
                 AttendanceBatchRow.verifix_code.in_(codes),
             ).delete(synchronize_session=False)
-            for bc in batch.cells:
-                if bc.manager_id == manager_id:
-                    bc.included = False
+        for bc in doomed:
+            db.delete(bc)
     db.commit()
 
     if batch:
         db.refresh(batch)
-        out = _batch_payload(db, batch, d)
+        out = _batch_payload(db, batch, d) if batch.cells else _legacy_payload(db, d)
     else:
         out = _legacy_payload(db, d)
     out["rows_deleted"] = rows_deleted
@@ -961,7 +1298,10 @@ def save_preview(
     _: dict = Depends(verify_admin),
 ):
     """Exactly what Save is about to do, per supervisor: rows to write, rows it
-    will overwrite, and who will be skipped because their day is closed."""
+    will overwrite, and who is skipped because their day is closed.
+
+    Only supervisors with CHANGES appear — a second Save for the same day leaves
+    everyone else's attendance untouched and does not notify them again."""
     d = _parse_date(date)
     batch = _batch_for(db, d)
     if not batch:
@@ -972,17 +1312,12 @@ def save_preview(
     for r in db.query(AttendanceBatchRow).filter(AttendanceBatchRow.batch_id == batch.id).all():
         rows_by_code.setdefault(r.verifix_code, []).append(r)
 
-    plan: dict = {}
+    targets = _pending_targets(batch)
+    plan = {mid: {"write": 0, "cells": 0} for mid in targets}
     for bc in batch.cells:
-        if not bc.manager_id:
-            continue
-        entry = plan.setdefault(bc.manager_id, {"write": 0, "cells": 0})
-        if bc.included:
-            entry["cells"] += 1
-            entry["write"] += len(rows_by_code.get(bc.verifix_code, []))
-
-    for mid in _touched_managers(db, batch, d):
-        plan.setdefault(mid, {"write": 0, "cells": 0})
+        if bc.manager_id in plan and bc.included:
+            plan[bc.manager_id]["cells"] += 1
+            plan[bc.manager_id]["write"] += len(rows_by_code.get(bc.verifix_code, []))
 
     items, skipped = [], []
     for mid, info in plan.items():
@@ -1007,17 +1342,23 @@ def save_preview(
     skipped.sort(key=lambda x: (x["manager_name"] or "").lower())
     unassigned = [bc.verifix_code for bc in batch.cells if not bc.manager_id]
     excluded = [bc.verifix_code for bc in batch.cells if bc.manager_id and not bc.included]
+    unchanged = sorted(
+        {managers[bc.manager_id].name for bc in batch.cells
+         if bc.manager_id and not bc.pending and bc.manager_id in managers}
+        - {i["manager_name"] for i in items} - {s["manager_name"] for s in skipped}
+    )
 
     return {
-        "date":            d.isoformat(),
-        "status":          batch.status,
-        "supervisors":     items,
-        "skipped":         skipped,
+        "date":             d.isoformat(),
+        "status":           "draft" if batch.saved_at is None else "saved",
+        "supervisors":      items,
+        "skipped":          skipped,
+        "unchanged":        unchanged,
         "unassigned_cells": sorted(unassigned),
-        "excluded_cells":  sorted(excluded),
-        "rows_to_write":   sum(i["rows_to_write"] for i in items),
-        "rows_to_replace": sum(i["rows_existing"] for i in items),
-        "will_notify":     [i["manager_id"] for i in items if i["rows_to_write"] > 0],
+        "excluded_cells":   sorted(excluded),
+        "rows_to_write":    sum(i["rows_to_write"] for i in items),
+        "rows_to_replace":  sum(i["rows_existing"] for i in items),
+        "will_notify":      [i["manager_id"] for i in items if i["rows_to_write"] > 0],
     }
 
 
@@ -1032,36 +1373,36 @@ def save(
     db: Session = Depends(get_db),
     payload: dict = Depends(verify_admin),
 ):
-    """Commit the batch: project it into `attendance` for every supervisor whose
-    day is still open, then notify each of them exactly as the per-supervisor
-    upload used to. Closed days are skipped and returned so the admin can
-    re-open them and press Save again."""
+    """Commit the day's pending changes: project them into `attendance` for every
+    CHANGED supervisor whose day is still open, then notify exactly those.
+    Supervisors whose cells did not change are neither rewritten nor pinged, so
+    saving twice for a day fed by two files is safe. Closed days are skipped and
+    returned so the admin can re-open them and press Save again."""
     d = _parse_date(body.date)
     batch = _batch_for(db, d)
     if not batch:
         raise HTTPException(status_code=404, detail="Bu sana uchun yuklama yo'q")
 
-    managers = _managers_map(db)
-    targets = _touched_managers(db, batch, d)
+    targets = _pending_targets(batch)
     if not targets:
-        raise HTTPException(
-            status_code=400,
-            detail="Birorta yacheyka brigadirga biriktirilmagan — avval ularni joylashtiring",
-        )
+        if any(bc.pending for bc in batch.cells):
+            raise HTTPException(
+                status_code=400,
+                detail="Birorta yacheyka brigadirga biriktirilmagan — avval ularni joylashtiring",
+            )
+        raise HTTPException(status_code=400, detail="Saqlanmagan o'zgarish yo'q")
 
-    written, skipped, notified = [], [], []
-    for mid in sorted(targets):
-        mgr = managers.get(mid)
-        state, _closure, _counts = day_state(db, mid, d)
-        if state != "open":
-            skipped.append({"manager_id": mid,
-                            "manager_name": mgr.name if mgr else f"#{mid}",
-                            "day_state": state})
-            continue
-        n = _sync_manager(db, batch, mid, d)
-        written.append({"manager_id": mid,
-                        "manager_name": mgr.name if mgr else f"#{mid}",
-                        "rows": n})
+    managers = _managers_map(db)
+    written, skipped_ids = _project(db, batch, d, targets)
+    for w in written:
+        mgr = managers.get(w["manager_id"])
+        w["manager_name"] = mgr.name if mgr else f"#{w['manager_id']}"
+    skipped = [
+        {"manager_id": mid,
+         "manager_name": managers[mid].name if mid in managers else f"#{mid}",
+         "day_state": day_state(db, mid, d)[0]}
+        for mid in skipped_ids
+    ]
 
     # Only a save that actually reached at least one supervisor counts as saved.
     # If EVERY target's day was closed nothing was written, so the batch stays a
@@ -1074,6 +1415,7 @@ def save(
 
     # Notification is best-effort and deliberately AFTER the commit: a Telegram
     # hiccup must never roll back attendance that is already correct.
+    notified = []
     if body.notify:
         from app.routers.staff import notify_supervisor_verifix_upload
         for item in written:
