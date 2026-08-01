@@ -67,6 +67,8 @@ const GLYPHS = {
   earlyBird: ["M12 2v8", "m4.93 10.93 1.41 1.41", "M2 18h2", "M20 18h2", "m19.07 10.93-1.41 1.41", "M22 22H2", "m8 6 4-4 4 4", "M16 18a4 4 0 0 0-8 0"],
   champion: ["M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z", "M5 21h14"],
   derbyCup: ["M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978", "M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978", "M18 9h1.5a1 1 0 0 0 0-5H18", "M4 22h16", "M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z", "M6 9H4.5a1 1 0 0 1 0-5H6"],
+  planMaster: ["CIRCLE:12,12,10", "CIRCLE:12,12,6", "CIRCLE:12,12,2"],
+  leaderMentor: ["RECT:8,2,8,4,1", "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "m9 14 2 2 4-4"],
 };
 
 /* 72 milling teeth around the rim, precomputed once. */
@@ -228,15 +230,18 @@ const TIER_METALS = ["bronze", "silver", "gold", "platinum"];
 const TIER_NUMERALS = ["I", "II", "III", "IV"];
 const TIER_XP_MULT = [1, 2, 4, 8];
 const FAMILIES = [
-  { key: "perfectWeek",    baseXp: 150, tiers: [7, 14, 30, 60],    done: 2, cur: 12, dates: ["08.06.2026", "21.07.2026"] },
-  { key: "ironDiscipline", baseXp: 300, tiers: [7, 14, 30, 60],    done: 2, cur: 21, dates: ["05.05.2026", "12.07.2026"] },
-  { key: "qualityShield",  baseXp: 250, tiers: [1, 3, 6, 12],      done: 1, cur: 1,  dates: ["01.07.2026"] },
-  { key: "fastResolver",   baseXp: 150, tiers: [10, 25, 50, 100],  done: 4, cur: 112, dates: ["03.03.2026", "18.04.2026", "05.06.2026", "22.07.2026"] },
-  { key: "selfSufficient", baseXp: 200, tiers: [20, 50, 100, 200], done: 1, cur: 22, dates: ["28.07.2026"] },
-  { key: "kaizenChampion", baseXp: 250, tiers: [3, 10, 25, 50],    done: 0, cur: 2,  dates: [] },
-  { key: "earlyBird",      baseXp: 200, tiers: [30, 60, 120, 250], done: 1, cur: 34, dates: ["09.07.2026"] },
-  { key: "champion",       baseXp: 500, tiers: [1, 3, 5, 10],      done: 1, cur: 2,  dates: ["01.06.2026"] },
-  { key: "derbyCup",       baseXp: 100, tiers: [1, 3, 5, 10],      done: 1, cur: 1,  dates: ["01.07.2026"], team: true },
+  /* `held` = how many of the 14 supervisors hold each tier (rarity labels). */
+  { key: "perfectWeek",    baseXp: 150, tiers: [7, 14, 30, 60],    done: 2, cur: 12, dates: ["08.06.2026", "21.07.2026"], held: [12, 9, 4, 1] },
+  { key: "ironDiscipline", baseXp: 300, tiers: [7, 14, 30, 60],    done: 2, cur: 21, dates: ["05.05.2026", "12.07.2026"], held: [11, 7, 3, 0] },
+  { key: "qualityShield",  baseXp: 250, tiers: [1, 3, 6, 12],      done: 1, cur: 1,  dates: ["01.07.2026"], held: [8, 3, 1, 0] },
+  { key: "fastResolver",   baseXp: 150, tiers: [10, 25, 50, 100],  done: 4, cur: 112, dates: ["03.03.2026", "18.04.2026", "05.06.2026", "22.07.2026"], held: [13, 10, 6, 1] },
+  { key: "selfSufficient", baseXp: 200, tiers: [20, 50, 100, 200], done: 1, cur: 22, dates: ["28.07.2026"], held: [10, 6, 2, 0] },
+  { key: "kaizenChampion", baseXp: 250, tiers: [3, 10, 25, 50],    done: 0, cur: 2,  dates: [], held: [7, 4, 1, 0] },
+  { key: "earlyBird",      baseXp: 200, tiers: [30, 60, 120, 250], done: 1, cur: 34, dates: ["09.07.2026"], held: [12, 8, 3, 1] },
+  { key: "planMaster",     baseXp: 200, tiers: [10, 25, 50, 100],  done: 1, cur: 18, dates: ["10.07.2026"], held: [11, 6, 2, 0] },
+  { key: "leaderMentor",   baseXp: 250, tiers: [7, 14, 30, 60],    done: 1, cur: 9,  dates: ["18.07.2026"], held: [9, 5, 1, 0] },
+  { key: "champion",       baseXp: 500, tiers: [1, 3, 5, 10],      done: 1, cur: 2,  dates: ["01.07.2026"], held: [3, 1, 0, 0] },
+  { key: "derbyCup",       baseXp: 100, tiers: [1, 3, 5, 10],      done: 1, cur: 1,  dates: ["01.07.2026"], team: true, held: [8, 4, 0, 0] },
 ];
 /* Tier i of a family: earned / progress (the next attainable) / locked. */
 const tierState = (fam, i) => (i < fam.done ? "earned" : i === fam.done ? "progress" : "locked");
@@ -260,23 +265,23 @@ const PEOPLE = [
   { name: "Malika Qodirova", unit: "2-uchastka", color: "#2563eb", delta: 0.8,
     cats: { zag: 86, kir: 89, naz: 72, kai: 60, xav: 79 }, xp: 8420, tier: 2,
     streaks: { dayClose: 27, onTrack: 15, zeroDowntime: 6 },
-    badges: { perfectWeek: 3, ironDiscipline: 2, qualityShield: 2, fastResolver: 2, selfSufficient: 1, kaizenChampion: 1, earlyBird: 2, champion: 0, derbyCup: 0 } },
+    badges: { perfectWeek: 3, ironDiscipline: 2, qualityShield: 2, fastResolver: 2, selfSufficient: 1, kaizenChampion: 1, earlyBird: 2, planMaster: 2, leaderMentor: 1, champion: 0, derbyCup: 0 } },
   { name: "Dilshod Karimov", unit: "5-uchastka", color: "#22c55e", delta: 1.2,
     cats: { zag: 84, kir: 80, naz: 74, kai: 67, xav: 70 }, xp: 5830, tier: 2,
     streaks: { dayClose: 9, onTrack: 8, zeroDowntime: 2 },
-    badges: { perfectWeek: 2, ironDiscipline: 1, qualityShield: 1, fastResolver: 1, selfSufficient: 2, kaizenChampion: 1, earlyBird: 1, champion: 0, derbyCup: 1 } },
+    badges: { perfectWeek: 2, ironDiscipline: 1, qualityShield: 1, fastResolver: 1, selfSufficient: 2, kaizenChampion: 1, earlyBird: 1, planMaster: 1, leaderMentor: 1, champion: 0, derbyCup: 1 } },
   { name: "Aziza Tosheva", unit: "1-uchastka", color: "#8b5cf6", delta: 0.4,
     cats: { zag: 80, kir: 82, naz: 70, kai: 62, xav: 72 }, xp: 4310, tier: 1,
     streaks: { dayClose: 5, onTrack: 6, zeroDowntime: 1 },
-    badges: { perfectWeek: 1, ironDiscipline: 1, qualityShield: 0, fastResolver: 1, selfSufficient: 1, kaizenChampion: 2, earlyBird: 1, champion: 0, derbyCup: 1 } },
+    badges: { perfectWeek: 1, ironDiscipline: 1, qualityShield: 0, fastResolver: 1, selfSufficient: 1, kaizenChampion: 2, earlyBird: 1, planMaster: 1, leaderMentor: 0, champion: 0, derbyCup: 1 } },
   { name: "Jasur Rahimov", unit: "9-uchastka", color: "#f97316", delta: -0.6,
     cats: { zag: 78, kir: 76, naz: 66, kai: 58, xav: 70 }, xp: 2950, tier: 1,
     streaks: { dayClose: 3, onTrack: 2, zeroDowntime: 0 },
-    badges: { perfectWeek: 1, ironDiscipline: 0, qualityShield: 0, fastResolver: 1, selfSufficient: 0, kaizenChampion: 0, earlyBird: 1, champion: 0, derbyCup: 1 } },
+    badges: { perfectWeek: 1, ironDiscipline: 0, qualityShield: 0, fastResolver: 1, selfSufficient: 0, kaizenChampion: 0, earlyBird: 1, planMaster: 0, leaderMentor: 0, champion: 0, derbyCup: 1 } },
   { name: "Nodira Yusupova", unit: "4-uchastka", color: "#ec4899", delta: 0.9,
     cats: { zag: 75, kir: 78, naz: 64, kai: 60, xav: 66 }, xp: 2140, tier: 1,
     streaks: { dayClose: 6, onTrack: 1, zeroDowntime: 1 },
-    badges: { perfectWeek: 0, ironDiscipline: 1, qualityShield: 0, fastResolver: 0, selfSufficient: 1, kaizenChampion: 0, earlyBird: 0, champion: 0, derbyCup: 0 } },
+    badges: { perfectWeek: 0, ironDiscipline: 1, qualityShield: 0, fastResolver: 0, selfSufficient: 1, kaizenChampion: 0, earlyBird: 0, planMaster: 1, leaderMentor: 1, champion: 0, derbyCup: 0 } },
 ];
 const compOf = (cats) => CATS.reduce((a, c) => a + c.weight * cats[c.key], 0);
 /* Tier-pip fill colors (bronze → platinum), for the compare ladder. */
@@ -423,6 +428,14 @@ export default function Gamification() {
   const [view, setView] = useState("badges");
   const [detail, setDetail] = useState(null);
   const [rivalIdx, setRivalIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [ceremony, setCeremony] = useState(null); // { key, tierIdx } unlock-moment overlay
+  const [expandedCat, setExpandedCat] = useState(null);
+
+  const openDetail = (key) => { setFlipped(false); setDetail(key); };
+  const haptic = () => {
+    try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); } catch { /* not in Telegram */ }
+  };
 
   const myName = (auth?.full_name || "Safia Admin").trim();
   const earnedTiers = FAMILIES.reduce((a, f) => a + f.done, 0);
@@ -431,6 +444,8 @@ export default function Gamification() {
   const curTier = TIERS[ME.tier];
   const tierPct = nextTier ? (ME.xp - curTier.from) / (nextTier.from - curTier.from) : 1;
   const gapToFirst = compOf(PEOPLE[0].cats) - ME.score;
+  const daysLeft = Math.max(0, Math.ceil((FREEZE_TS - Date.now()) / 86400000));
+  const finalWeek = daysLeft <= 7;
 
   const badgeName = (k) => t(`gami.badge.${k}`);
   const badgeDesc = (k) => t(`gami.badge.${k}Desc`);
@@ -460,9 +475,24 @@ export default function Gamification() {
         .gami-badge.is-locked:hover { filter: none; }
         @keyframes gamiPlatSheen { 0% { transform: translateX(-130px); } 55% { transform: translateX(130px); } 100% { transform: translateX(130px); } }
         .gami-plat-sheen { animation: gamiPlatSheen 3.4s ease-in-out infinite; }
+        @keyframes gamiStamp { 0% { transform: scale(2.4) rotate(-14deg); opacity: 0; } 55% { transform: scale(0.92) rotate(2deg); opacity: 1; } 78% { transform: scale(1.07); } 100% { transform: scale(1); } }
+        .gami-stamp { animation: gamiStamp .8s cubic-bezier(.2,.8,.3,1) both; }
+        @keyframes gamiRise { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .gami-rise { animation: gamiRise .5s ease-out .45s both; }
+        @keyframes gamiRays { to { transform: rotate(360deg); } }
+        .gami-rays { animation: gamiRays 16s linear infinite; }
+        @keyframes gamiConfetti { 0% { transform: translateY(-8vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(108vh) rotate(560deg); opacity: .85; } }
+        .gami-confetti { animation: gamiConfetti linear both; }
+        .gami-flip { perspective: 900px; cursor: pointer; }
+        .gami-flip-inner { position: relative; transition: transform .7s cubic-bezier(.25,.7,.3,1.05); transform-style: preserve-3d; }
+        .gami-flip.flipped .gami-flip-inner { transform: rotateY(180deg); }
+        .gami-flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .gami-flip-back { position: absolute; inset: 0; transform: rotateY(180deg); display: flex; align-items: center; justify-content: center; }
         @media (prefers-reduced-motion: reduce) {
-          .gami-halo, .gami-flame, .gami-live, .gami-shimmer, .gami-plat-sheen { animation: none; }
+          .gami-halo, .gami-flame, .gami-live, .gami-shimmer, .gami-plat-sheen, .gami-stamp, .gami-rise, .gami-rays { animation: none; }
+          .gami-confetti { display: none; }
           .gami-badge:hover { transform: none; filter: none; }
+          .gami-flip-inner { transition: none; }
         }
       `}</style>
 
@@ -496,7 +526,41 @@ export default function Gamification() {
         </div>
 
         {/* ════════ BADGES ════════ */}
-        {view === "badges" && (
+        {view === "badges" && (() => {
+          /* the 3 tiers closest to completion — the "what should I chase" strip */
+          const nextUp = FAMILIES
+            .filter((f) => f.done < 4)
+            .map((f) => ({ f, goal: f.tiers[f.done], pct: f.cur / f.tiers[f.done] }))
+            .sort((a, b) => b.pct - a.pct)
+            .slice(0, 3);
+          return (
+          <>
+          <Card>
+            <SectionHead icon={TrendingUp} title={t("gami.nextUp")} />
+            <div className="grid gap-2.5 p-3.5 sm:grid-cols-3">
+              {nextUp.map(({ f, goal, pct }) => (
+                <button key={f.key} onClick={() => openDetail(f.key)}
+                  className="gami-badge flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left"
+                  style={{ background: "var(--bg-inner)", border: "1px solid var(--brand-border)" }}>
+                  <Medallion size={46} glyph={f.key} metal={TIER_METALS[f.done]} progress={Math.min(1, pct)} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-bold leading-tight truncate">
+                      {badgeName(f.key)} {TIER_NUMERALS[f.done]}
+                    </div>
+                    <div className="text-[10.5px] tabular-nums mt-0.5" style={{ color: "var(--text-3)" }}>
+                      {f.cur} / {goal}
+                    </div>
+                    <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-card)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct * 100)}%`, background: "var(--brand)" }} />
+                    </div>
+                  </div>
+                  <span className="text-[10.5px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>
+                    +{fmtXp(f.baseXp * TIER_XP_MULT[f.done])} XP
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Card>
           <Card>
             <SectionHead icon={Award} title={t("gami.collection")}
               right={
@@ -508,9 +572,15 @@ export default function Gamification() {
             <div className="px-4 pt-3 pb-1 text-[12px]" style={{ color: "var(--text-3)" }}>{t("gami.collectionSub")}</div>
             <div className="grid gap-3 p-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}>
               {FAMILIES.map((fam) => (
-                <button key={fam.key} onClick={() => setDetail(fam.key)}
-                  className="gami-badge flex flex-col gap-2.5 rounded-2xl p-3.5 text-left"
-                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                <button key={fam.key} onClick={() => openDetail(fam.key)}
+                  className="gami-badge relative overflow-hidden flex flex-col gap-2.5 rounded-2xl p-3.5 text-left"
+                  style={fam.done === 4
+                    ? { background: "var(--bg-inner)", border: `1.5px solid ${hexA("#C8973F", 0.55)}`, boxShadow: `0 10px 30px -14px ${hexA("#C8973F", 0.55)}` }
+                    : { background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                  {fam.done === 4 && (
+                    <span aria-hidden className="absolute inset-0 pointer-events-none"
+                      style={{ background: `radial-gradient(120% 90% at 50% -25%, ${hexA("#C8973F", 0.16)} 0%, transparent 60%)` }} />
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold leading-tight">{badgeName(fam.key)}</div>
@@ -546,7 +616,9 @@ export default function Gamification() {
               ))}
             </div>
           </Card>
-        )}
+          </>
+          );
+        })()}
 
         {/* ════════ MY PROGRESS ════════ */}
         {view === "progress" && (
@@ -668,27 +740,54 @@ export default function Gamification() {
                     <ArrowUp size={11} /> {t("gami.gapToFirst").replace("{n}", fmt1(gapToFirst))}
                   </span>
                 </div>
-                <div className="flex flex-col gap-2.5 min-w-0">
-                  {CATS.map((c) => {
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  {CATS.map((c, ci) => {
                     const Icon = c.icon;
                     const hue = hues[c.key];
                     const contrib = c.weight * c.val;
+                    const open = expandedCat === c.key;
                     return (
-                      <div key={c.key} className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(120px, 190px) 1fr auto" }}>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="inline-flex items-center justify-center rounded-md flex-shrink-0" style={{ width: 22, height: 22, background: hexA(hue, 0.14), color: hue }}>
-                            <Icon size={12} />
-                          </span>
-                          <span className="text-[11.5px] font-semibold truncate">{t(`leaderboard.cat.${c.key}`)}</span>
-                          <span className="text-[9.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{Math.round(c.weight * 100)}%</span>
-                        </div>
-                        <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
-                          <div className="h-full rounded-full" style={{ width: `${c.val}%`, background: hue }} />
-                        </div>
-                        <div className="text-right tabular-nums">
-                          <span className="text-[12.5px] font-bold">{c.val}</span>
-                          <span className="text-[10px] ml-1" style={{ color: "var(--text-4)" }}>→ {fmt1(contrib)}</span>
-                        </div>
+                      <div key={c.key} className="rounded-xl" style={open ? { background: "var(--bg-inner)", border: "1px solid var(--border)" } : { border: "1px solid transparent" }}>
+                        <button onClick={() => setExpandedCat(open ? null : c.key)}
+                          className="w-full grid items-center gap-2 px-2 py-1.5 text-left cursor-pointer"
+                          style={{ gridTemplateColumns: "minmax(120px, 190px) 1fr auto" }}
+                          title={t("gami.last30")}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="inline-flex items-center justify-center rounded-md flex-shrink-0" style={{ width: 22, height: 22, background: hexA(hue, 0.14), color: hue }}>
+                              <Icon size={12} />
+                            </span>
+                            <span className="text-[11.5px] font-semibold truncate">{t(`leaderboard.cat.${c.key}`)}</span>
+                            <span className="text-[9.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{Math.round(c.weight * 100)}%</span>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{ background: open ? "var(--bg-card)" : "var(--bg-inner)" }}>
+                            <div className="h-full rounded-full" style={{ width: `${c.val}%`, background: hue }} />
+                          </div>
+                          <div className="text-right tabular-nums">
+                            <span className="text-[12.5px] font-bold">{c.val}</span>
+                            <span className="text-[10px] ml-1" style={{ color: "var(--text-4)" }}>→ {fmt1(contrib)}</span>
+                          </div>
+                        </button>
+                        {open && (
+                          <div className="px-2.5 pb-2.5">
+                            <div className="text-[9.5px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: "var(--text-4)" }}>{t("gami.last30")}</div>
+                            <div className="flex flex-wrap gap-[3px]">
+                              {Array.from({ length: 30 }, (_, di) => {
+                                /* deterministic daily demo values around the category mean */
+                                const v = Math.max(28, Math.min(99, Math.round(
+                                  c.val + 13 * Math.sin(di * 1.7 + ci * 2.1) + ((di * 7 + ci * 13) % 9) - 4
+                                )));
+                                const d = new Date(2026, 7, 1);
+                                d.setDate(d.getDate() - (29 - di));
+                                const label = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+                                const col = v >= 80 ? "#22c55e" : v >= 65 ? "#eab308" : "#ef4444";
+                                return (
+                                  <span key={di} title={`${label} · ${v}`} className="rounded-[3px]"
+                                    style={{ width: 11, height: 11, background: hexA(col, 0.8) }} />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -766,9 +865,25 @@ export default function Gamification() {
                       {fmt1(ME.score)}
                     </div>
                   </div>
-                  <div className="relative inline-flex items-center justify-center rounded-full flex-shrink-0"
-                    style={{ width: 46, height: 46, background: `linear-gradient(135deg, #F2D48C, #C8973F 55%, #8A6226)`, boxShadow: `0 6px 20px -6px ${hexA("#C8973F", 0.8)}` }}>
-                    <span style={{ fontSize: 14, fontWeight: 900, fontStyle: "italic", color: "#fff", letterSpacing: "0.02em" }}>VS</span>
+                  <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                    <div className="relative inline-flex items-center justify-center rounded-full"
+                      style={{ width: 46, height: 46, background: `linear-gradient(135deg, #F2D48C, #C8973F 55%, #8A6226)`, boxShadow: `0 6px 20px -6px ${hexA("#C8973F", 0.8)}` }}>
+                      <span style={{ fontSize: 14, fontWeight: 900, fontStyle: "italic", color: "#fff", letterSpacing: "0.02em" }}>VS</span>
+                    </div>
+                    {(() => {
+                      const lead = CATS.filter((c) => MY_CATS[c.key] >= rival.cats[c.key]).length;
+                      return (
+                        <>
+                          <span className="text-[10px] font-semibold text-center tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ color: "var(--brand-text)", background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }}>
+                            {t("gami.leadCats").replace("{a}", lead).replace("{b}", CATS.length)}
+                          </span>
+                          <span className="text-[9.5px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+                            {t("gami.lastMonth").replace("{v}", `${Math.max(0, lead - 1)}/${CATS.length}`)}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex flex-col items-center gap-1 text-center min-w-0">
                     <Avatar name={rival.name} size={56} color={rival.color} />
@@ -874,8 +989,14 @@ export default function Gamification() {
                       style={{ background: "var(--brand)", color: "#fff", letterSpacing: "0.05em", boxShadow: `0 4px 14px -4px ${hexA("#C8973F", 0.8)}` }}>
                       {t("gami.seasonChip")}
                     </span>
-                    <span className="gami-live inline-flex rounded-full" style={{ width: 8, height: 8, background: "#22c55e" }} />
+                    <span className="gami-live inline-flex rounded-full" style={{ width: 8, height: 8, background: finalWeek ? "#eab308" : "#22c55e" }} />
                     <GoldPill>{t("gami.quarterChip")}</GoldPill>
+                    {finalWeek && (
+                      <span className="gami-live inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-bold"
+                        style={{ color: "var(--kpi-amber)", background: hexA("#eab308", 0.14), border: `1px solid ${hexA("#eab308", 0.35)}` }}>
+                        <Flame size={11} /> {t("gami.finalWeek")}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <div className="font-extrabold" style={{ fontSize: "clamp(24px, 4vw, 32px)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
@@ -971,6 +1092,69 @@ export default function Gamification() {
               </span>
             </Card>
 
+            {/* shift derby — live tug-of-war on mean supervisor composite */}
+            {(() => {
+              const all = [{ unit: ME.unit, comp: ME.score, name: myName, color: "#C8973F", me: true },
+                ...PEOPLE.map((p) => ({ unit: p.unit, comp: compOf(p.cats), name: p.name, color: p.color, me: false }))];
+              const s1 = all.filter((p) => parseInt(p.unit) % 2 === 1);
+              const s2 = all.filter((p) => parseInt(p.unit) % 2 === 0);
+              const m1 = s1.reduce((a, p) => a + p.comp, 0) / s1.length;
+              const m2 = s2.reduce((a, p) => a + p.comp, 0) / s2.length;
+              const lead = m1 - m2;
+              const w1 = Math.max(18, Math.min(82, 50 + lead * 6));
+              const S2C = "#2563eb";
+              return (
+                <Card>
+                  <SectionHead icon={Swords} title={t("gami.derby")}
+                    right={<span className="text-[11px] hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("gami.derbyNote")}</span>} />
+                  <div className="p-4 flex flex-col gap-3">
+                    <div className="flex items-end justify-between gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-extrabold text-[15px]" style={{ color: "var(--brand-text)" }}>S1</span>
+                          {lead >= 0 && <Crown size={14} style={{ color: "var(--brand-text)" }} />}
+                        </div>
+                        <div className="flex -space-x-1.5">
+                          {s1.map((p) => (
+                            <span key={p.unit} title={tl(p.name)} className="inline-flex items-center justify-center rounded-full font-bold"
+                              style={{ width: 26, height: 26, fontSize: 9.5, background: hexA(p.color, 0.2), color: p.color, border: `1.5px solid ${p.me ? "var(--brand)" : "var(--bg-card)"}` }}>
+                              {initials(p.name)}
+                            </span>
+                          ))}
+                        </div>
+                        <span className="tabular-nums" style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: "var(--brand-text)" }}>{fmt1(m1)}</span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold tabular-nums mb-1"
+                        style={{ color: "var(--text-3)", background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
+                        {lead >= 0 ? "S1" : "S2"} +{fmt1(Math.abs(lead))}
+                      </span>
+                      <div className="flex flex-col gap-1.5 items-end">
+                        <div className="flex items-center gap-1.5">
+                          {lead < 0 && <Crown size={14} style={{ color: S2C }} />}
+                          <span className="font-extrabold text-[15px]" style={{ color: S2C }}>S2</span>
+                        </div>
+                        <div className="flex -space-x-1.5">
+                          {s2.map((p) => (
+                            <span key={p.unit} title={tl(p.name)} className="inline-flex items-center justify-center rounded-full font-bold"
+                              style={{ width: 26, height: 26, fontSize: 9.5, background: hexA(p.color, 0.2), color: p.color, border: "1.5px solid var(--bg-card)" }}>
+                              {initials(p.name)}
+                            </span>
+                          ))}
+                        </div>
+                        <span className="tabular-nums" style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: S2C }}>{fmt1(m2)}</span>
+                      </div>
+                    </div>
+                    <div className="relative h-3.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+                      <span className="absolute inset-y-0 left-0" style={{ width: `${w1}%`, background: `linear-gradient(90deg, ${hexA("#C8973F", 0.85)}, #C8973F)` }} />
+                      <span className="absolute inset-y-0 right-0" style={{ width: `${100 - w1}%`, background: `linear-gradient(90deg, ${S2C}, ${hexA(S2C, 0.85)})` }} />
+                      <span className="absolute inset-y-[-3px] w-[3px] rounded-full" style={{ left: `${w1}%`, background: "var(--bg-card)", boxShadow: "0 0 0 1px var(--border-md)" }} />
+                    </div>
+                    <div className="sm:hidden text-[10.5px]" style={{ color: "var(--text-4)" }}>{t("gami.derbyNote")}</div>
+                  </div>
+                </Card>
+              );
+            })()}
+
             {/* ceremony timeline */}
             <Card>
               <SectionHead icon={ListOrdered} title={t("gami.ceremony")} right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>01.09 · 09:00</span>} />
@@ -994,6 +1178,28 @@ export default function Gamification() {
                     </div>
                   );
                 })}
+              </div>
+            </Card>
+
+            {/* wall of fame — frozen past champions */}
+            <Card>
+              <SectionHead icon={Crown} title={t("gami.hallOfFame")} />
+              <div className="p-3 flex flex-col gap-1">
+                {[
+                  { m: "07.2026", name: myName, color: "#C8973F", score: 81.7, me: true },
+                  { m: "06.2026", name: myName, color: "#C8973F", score: 82.4, me: true },
+                  { m: "05.2026", name: PEOPLE[0].name, color: PEOPLE[0].color, score: 80.1, me: false },
+                ].map((w, i) => (
+                  <div key={w.m} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={i % 2 ? {} : { background: "var(--bg-inner)" }}>
+                    <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)", width: 52 }}>{w.m}</span>
+                    <Avatar name={w.name} size={26} color={w.color} />
+                    <span className="text-[12.5px] font-semibold flex-1 min-w-0 truncate">
+                      {tl(w.name)}{w.me && <span className="ml-1.5"><GoldPill>{t("gami.me")}</GoldPill></span>}
+                    </span>
+                    <Crown size={13} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+                    <span className="text-[13px] font-bold tabular-nums flex-shrink-0">{fmt1(w.score)}</span>
+                  </div>
+                ))}
               </div>
             </Card>
           </>
@@ -1104,12 +1310,48 @@ export default function Gamification() {
             subtitle={`${t("gami.collection")} · ${detailFam.done}/4`}
             icon={<Award size={18} style={{ color: "var(--brand-text)" }} />}
             onClose={() => setDetail(null)}
-            footer={<Button variant="secondary" onClick={() => setDetail(null)}>{t("gami.close")}</Button>}
+            footer={
+              <>
+                <Button variant="ghost" icon={<Sparkles size={14} />}
+                  onClick={() => { haptic(); setCeremony({ key: detailFam.key, tierIdx: heroIdx }); }}>
+                  {t("gami.previewUnlock")}
+                </Button>
+                <Button variant="secondary" onClick={() => setDetail(null)}>{t("gami.close")}</Button>
+              </>
+            }
           >
             <div className="flex flex-col items-center gap-2 pt-1 text-center">
-              <Medallion size={124} glyph={detailFam.key} metal={TIER_METALS[heroIdx]}
-                locked={heroSt === "locked"} check={heroSt === "earned"}
-                progress={heroSt === "progress" ? Math.min(1, detailFam.cur / detailFam.tiers[heroIdx]) : null} />
+              {/* the coin has a reverse side — tap to flip */}
+              <div className={`gami-flip ${flipped ? "flipped" : ""}`} onClick={() => setFlipped(!flipped)}
+                role="button" aria-label={t("gami.tapFlip")}>
+                <div className="gami-flip-inner" style={{ width: 124, height: 124 }}>
+                  <div className="gami-flip-face">
+                    <Medallion size={124} glyph={detailFam.key} metal={TIER_METALS[heroIdx]}
+                      locked={heroSt === "locked"} check={heroSt === "earned"}
+                      progress={heroSt === "progress" ? Math.min(1, detailFam.cur / detailFam.tiers[heroIdx]) : null} />
+                  </div>
+                  <div className="gami-flip-back gami-flip-face">
+                    <div className="flex flex-col items-center justify-center text-center rounded-full"
+                      style={{
+                        width: 116, height: 116, padding: "0 12px",
+                        background: "radial-gradient(circle at 38% 32%, #2b3344, #131826)",
+                        boxShadow: `inset 0 0 0 3px ${hexA("#C8973F", 0.75)}, inset 0 0 0 6px #131826, inset 0 0 0 7px ${hexA("#C8973F", 0.4)}, 0 3px 10px rgba(0,0,0,0.45)`,
+                      }}>
+                      <div style={{ fontSize: 6.5, letterSpacing: "0.3em", fontWeight: 700, color: hexA("#C8973F", 0.85) }}>SAFIA HONORS</div>
+                      <div style={{ fontFamily: "Georgia, serif", fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: "#E9C476", textShadow: "0 1px 0 rgba(0,0,0,0.6)" }}>
+                        {TIER_NUMERALS[heroIdx]}
+                      </div>
+                      <div style={{ fontSize: 8.5, lineHeight: 1.35, color: "#C7B38A" }}>
+                        {t(`gami.req.${detailFam.key}`).replace("{n}", detailFam.tiers[heroIdx])}
+                      </div>
+                      <div className="tabular-nums" style={{ fontSize: 7.5, marginTop: 3, color: hexA("#C8973F", 0.7) }}>
+                        {heroSt === "earned" ? detailFam.dates[heroIdx] : `+${fmtXp(detailFam.baseXp * TIER_XP_MULT[heroIdx])} XP`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="text-[10px]" style={{ color: "var(--text-4)" }}>{t("gami.tapFlip")}</div>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 {heroSt === "progress" && (
                   <span className="text-[12px] font-bold tabular-nums" style={{ color: "var(--brand-text)" }}>
@@ -1144,6 +1386,10 @@ export default function Gamification() {
                         <div className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
                           {t(`gami.req.${detailFam.key}`).replace("{n}", n)}
                         </div>
+                        <div className="flex items-center gap-1 mt-0.5 text-[9.5px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                          <Users size={9} />
+                          {t("gami.heldBy").replace("{n}", detailFam.held?.[i] ?? 0).replace("{m}", 14)}
+                        </div>
                         {st === "progress" && (
                           <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, (detailFam.cur / n) * 100)}%`, background: "var(--brand)" }} />
@@ -1165,6 +1411,59 @@ export default function Gamification() {
               </div>
             </div>
           </Modal>
+        );
+      })()}
+
+      {/* unlock-ceremony overlay — the moment a tier is earned */}
+      {ceremony && (() => {
+        const fam = FAMILIES.find((f) => f.key === ceremony.key);
+        if (!fam) return null;
+        const ti = ceremony.tierIdx;
+        const CONFETTI = ["#F2D48C", "#C8973F", "#4FA8E8", "#ffffff", "#E9C476"];
+        return (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center overflow-hidden cursor-pointer"
+            style={{ background: "rgba(5,7,12,0.9)", paddingTop: "var(--tg-safe-top, 0px)" }}
+            onClick={() => setCeremony(null)}>
+            {/* rotating gold rays */}
+            <span aria-hidden className="gami-rays absolute rounded-full pointer-events-none"
+              style={{
+                width: 720, height: 720,
+                background: `repeating-conic-gradient(from 0deg, transparent 0deg 11deg, ${hexA("#C8973F", 0.13)} 11deg 22deg)`,
+                WebkitMaskImage: "radial-gradient(circle, #000 0%, transparent 68%)",
+                maskImage: "radial-gradient(circle, #000 0%, transparent 68%)",
+              }} />
+            {/* confetti */}
+            {Array.from({ length: 28 }, (_, i) => (
+              <span key={i} aria-hidden className="gami-confetti absolute pointer-events-none"
+                style={{
+                  left: `${(i * 37 + 11) % 100}%`, top: "-8vh",
+                  width: i % 3 === 0 ? 9 : 6, height: i % 3 === 0 ? 13 : 9,
+                  borderRadius: 2, background: CONFETTI[i % CONFETTI.length],
+                  transform: `rotate(${(i * 53) % 360}deg)`,
+                  animationDuration: `${(1.9 + (i % 5) * 0.28).toFixed(2)}s`,
+                  animationDelay: `${((i % 8) * 0.13).toFixed(2)}s`,
+                }} />
+            ))}
+            <div className="relative flex flex-col items-center gap-3 px-6 text-center" onClick={(e) => e.stopPropagation()}>
+              <span aria-hidden className="gami-halo absolute rounded-full pointer-events-none"
+                style={{ width: 300, height: 300, top: -40, background: `radial-gradient(circle, ${hexA("#C8973F", 0.45)} 0%, transparent 65%)` }} />
+              <div className="gami-stamp relative">
+                <Medallion size={190} glyph={fam.key} metal={TIER_METALS[ti]} />
+              </div>
+              <div className="gami-rise flex flex-col items-center gap-1.5">
+                <div className="text-[11px] font-bold uppercase" style={{ letterSpacing: "0.3em", color: "var(--brand-text)" }}>
+                  {t("gami.earned")}
+                </div>
+                <div className="text-[22px] font-extrabold leading-tight" style={{ color: "#f3f4f6" }}>
+                  {badgeName(fam.key)} {TIER_NUMERALS[ti]}
+                </div>
+                <div className="text-[12px]" style={{ color: "#9ca3af" }}>
+                  {t(`gami.tier.${["bronze", "silver", "gold", "platinum"][ti]}`)} · +{fmtXp(fam.baseXp * TIER_XP_MULT[ti])} XP
+                </div>
+                <Button variant="secondary" size="sm" className="mt-2" onClick={() => setCeremony(null)}>{t("gami.close")}</Button>
+              </div>
+            </div>
+          </div>
         );
       })()}
     </Layout>
