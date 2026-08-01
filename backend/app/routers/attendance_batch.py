@@ -604,7 +604,18 @@ async def upload(
             effective_hours=r["effective_hours"],
             status=r["status"],
         ))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two admins uploading at the same moment: one of them loses the race on
+        # `cells.verifix_code` / the one-batch-per-date constraint. Ask for a
+        # retry rather than surfacing a 500.
+        db.rollback()
+        log.warning("attendance batch upload raced for %s", d)
+        raise HTTPException(
+            status_code=409,
+            detail="Bir vaqtda boshqa yuklama bo'ldi — qayta urinib ko'ring",
+        )
     db.refresh(batch)
 
     result = _batch_payload(db, batch, d)
