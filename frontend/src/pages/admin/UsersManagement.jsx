@@ -53,13 +53,15 @@ export default function UsersManagement() {
   const { t } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
-  // ?status=pending deep-links a filter (used by the bot's notification button)
+  // ?status=pending deep-links a filter (used by the bot's notification button).
+  // The last-used filter is remembered otherwise; an explicit ?status= beats it.
   const [searchParams] = useSearchParams();
   const urlStatus = searchParams.get("status");
-  const [statusFilter, setStatusFilter] = useState(
-    STATUS_FILTERS.includes(urlStatus) ? urlStatus : "all",
-  );
-  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = usePersistentState("users_status_filter", "all");
+  useEffect(() => {
+    if (STATUS_FILTERS.includes(urlStatus)) setStatusFilter(urlStatus);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [query, setQuery] = usePersistentState("users_search", "");
   const [confirmDelete, setConfirmDelete] = useState(null); // {user, role} pending deletion
   // Add-role modal: pick an existing user + a role to grant (approved on the
   // spot). Shift narrows the profile pickers, mirroring the registration flow.
