@@ -589,6 +589,8 @@ function PerenaladkaCard({ cells, date, t, tl, lang }) {
             className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${P_GRID_COLS}`}
             style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
           >
+            {/* One header for the cell column — the leader rides under the cell
+                name inside it, so the grid keeps its four columns. */}
             <div className={HEAD_CELL}>{t("idleCell.colCell")}</div>
             <div className={`${HEAD_CELL} text-right`}>{t("idleCell.minutes")}</div>
             <div className={HEAD_CELL}>{t("idleCell.noteOptional")}</div>
