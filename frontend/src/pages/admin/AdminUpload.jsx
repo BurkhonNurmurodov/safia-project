@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck, Factory, Copy, Check, AtSign, IdCard, Sun, Moon, Megaphone, Trash2, ListChecks, ExternalLink, KeyRound, LayoutGrid, History, DatabaseBackup } from "lucide-react";
+import { Upload, CheckCircle2, XCircle, Database, Loader2, RefreshCw, Sliders, Languages, Users, ShieldCheck, Factory, Copy, Check, AtSign, IdCard, Sun, Moon, Megaphone, Trash2, ListChecks, ExternalLink, KeyRound, LayoutGrid, History, DatabaseBackup, ClipboardCheck } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
@@ -17,6 +17,7 @@ import PageAccess from "./PageAccess";
 import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
 import CellAttendanceUpload from "./CellAttendanceUpload";
+import AttendanceUpload from "./AttendanceUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
 import ActionHistory from "./ActionHistory";
@@ -655,7 +656,7 @@ function ComparisonThresholdEditor() {
 // "dbdump" is admin-only for a different reason: one press produces a file
 // holding every phone number and stored secret on the platform, so it has no
 // capability key at all and can never appear in capTabs.
-const ADMIN_TABS = ["data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions", "actions", "dbdump"];
+const ADMIN_TABS = ["attendance", "data", "cellatt", "production", "translations", "users", "profiles", "access", "broadcast", "cleanup", "ltasks", "permissions", "actions", "dbdump"];
 
 export default function AdminUpload() {
   const navigate = useNavigate();
@@ -673,7 +674,7 @@ export default function AdminUpload() {
   // The last-viewed tab is remembered otherwise; an explicit ?tab= beats it.
   const [searchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
-  const [adminTab, setAdminTab] = usePersistentState("admin_tab", "data");
+  const [adminTab, setAdminTab] = usePersistentState("admin_tab", "attendance");
   useEffect(() => {
     if (ADMIN_TABS.includes(urlTab)) setAdminTab(urlTab);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -761,7 +762,7 @@ export default function AdminUpload() {
         <SegmentedToggle
           value={adminTab}
           onChange={setAdminTab}
-          options={[["data", t("admin.tabData"), Database], ["cellatt", t("admin.tabCellAtt"), LayoutGrid], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck], ["permissions", t("admin.tabPermissions"), KeyRound], ["actions", t("admin.tabActions"), History], ["broadcast", t("admin.tabBroadcast"), Megaphone], ["cleanup", t("admin.tabCleanup"), Trash2], ["ltasks", t("admin.tabLtasks"), ListChecks], ["dbdump", t("admin.tabDbDump"), DatabaseBackup]].filter(([id]) => allowedTabs.includes(id)).map(([id, label, Icon]) => ({
+          options={[["attendance", t("admin.tabAttendance"), ClipboardCheck], ["data", t("admin.tabData"), Database], ["cellatt", t("admin.tabCellAtt"), LayoutGrid], ["production", t("admin.tabProduction"), Factory], ["translations", t("admin.tabTranslations"), Languages], ["users", t("admin.tabUsers"), Users], ["profiles", t("admin.tabProfiles"), IdCard], ["access", t("admin.tabAccess"), ShieldCheck], ["permissions", t("admin.tabPermissions"), KeyRound], ["actions", t("admin.tabActions"), History], ["broadcast", t("admin.tabBroadcast"), Megaphone], ["cleanup", t("admin.tabCleanup"), Trash2], ["ltasks", t("admin.tabLtasks"), ListChecks], ["dbdump", t("admin.tabDbDump"), DatabaseBackup]].filter(([id]) => allowedTabs.includes(id)).map(([id, label, Icon]) => ({
             value: id,
             label: <span className="inline-flex items-center gap-1.5"><Icon size={14} /> {label}</span>,
           }))}
@@ -775,6 +776,8 @@ export default function AdminUpload() {
       )}
 
       {adminTab === "production" && <ProductionUpload />}
+
+      {adminTab === "attendance" && <AttendanceUpload />}
 
       {adminTab === "cellatt" && <CellAttendanceUpload />}
 

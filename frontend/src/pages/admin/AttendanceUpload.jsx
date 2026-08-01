@@ -270,7 +270,7 @@ function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd }) {
                       <button
                         type="button"
                         onClick={() => onDelete(r)}
-                        title={t("common.delete")}
+                        title={t("attUp.delete")}
                         className="p-1 rounded-md transition-colors hover:bg-white/10"
                         style={{ color: "#ef4444" }}
                       >
@@ -725,7 +725,7 @@ export default function AttendanceUpload() {
         message: t("attUp.deleteCellDayMsg")
           .replace("{code}", cell.verifix_code)
           .replace("{n}", cell.workers),
-        confirmLabel: t("common.delete"),
+        confirmLabel: t("attUp.delete"),
         onConfirm: () => { cellDayMut.mutate(cell.verifix_code); setConfirm(null); },
       }),
     },
@@ -750,7 +750,7 @@ export default function AttendanceUpload() {
         message: t("attUp.deleteSupervisorDayMsg")
           .replace("{name}", tl(section.manager_name))
           .replace("{n}", section.totals.workers),
-        confirmLabel: t("common.delete"),
+        confirmLabel: t("attUp.delete"),
         onConfirm: () => { supDayMut.mutate(section.manager_id); setConfirm(null); },
       }),
     },
@@ -768,7 +768,7 @@ export default function AttendanceUpload() {
         tone: "danger",
         title: t("attUp.deleteWorkerTitle"),
         message: t("attUp.deleteWorkerMsg").replace("{name}", tl(row.worker_name)),
-        confirmLabel: t("common.delete"),
+        confirmLabel: t("attUp.delete"),
         onConfirm: () => { rowMut.mutate({ action: "delete", row }); setConfirm(null); },
       })}
     />
@@ -912,7 +912,7 @@ export default function AttendanceUpload() {
           <TriangleAlert size={22} className="mx-auto mb-2" style={{ color: "#ef4444" }} />
           <div className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>{t("attUp.loadFailed")}</div>
           <div className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{errText(error, "")}</div>
-          <Button className="mt-3" size="sm" variant="secondary" onClick={() => refetch()}>{t("common.retry")}</Button>
+          <Button className="mt-3" size="sm" variant="secondary" onClick={() => refetch()}>{t("attUp.retry")}</Button>
         </div>
       )}
 
@@ -1026,7 +1026,7 @@ export default function AttendanceUpload() {
             .replace("{date}", pendingFile.existing.date)
             .replace("{status}", t(`attUp.status${pendingFile.existing.status === "draft" ? "Draft" : "Saved"}`))}
           confirmLabel={t("attUp.replaceConfirm")}
-          cancelLabel={t("common.cancel")}
+          cancelLabel={t("attUp.cancel")}
           loading={uploading}
           onCancel={() => setPendingFile(null)}
           onConfirm={() => doUpload(pendingFile.file, true)}
@@ -1041,7 +1041,7 @@ export default function AttendanceUpload() {
           title={confirm.title}
           message={confirm.message}
           confirmLabel={confirm.confirmLabel}
-          cancelLabel={t("common.cancel")}
+          cancelLabel={t("attUp.cancel")}
           onCancel={() => setConfirm(null)}
           onConfirm={confirm.onConfirm}
         />
@@ -1056,7 +1056,7 @@ export default function AttendanceUpload() {
           subtitle={`${moveFor.verifix_code} · ${cellName(moveFor)}`}
           icon={<ArrowRightLeft size={15} style={{ color: "var(--brand-text)" }} />}
           maxWidth="max-w-sm"
-          footer={<Button variant="secondary" onClick={() => setMoveFor(null)}>{t("common.cancel")}</Button>}
+          footer={<Button variant="secondary" onClick={() => setMoveFor(null)}>{t("attUp.cancel")}</Button>}
         >
           <FormField label={t("attUp.supervisor")}>
             <StyledSelect
@@ -1137,7 +1137,7 @@ function RowFormModal({ form, t, busy, onClose, onSubmit }) {
       maxWidth="max-w-md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="secondary" onClick={onClose}>{t("attUp.cancel")}</Button>
           <Button
             loading={busy}
             disabled={!valid}
@@ -1146,7 +1146,7 @@ function RowFormModal({ form, t, busy, onClose, onSubmit }) {
               hours_worked: v.hours_worked === "" ? null : Number(v.hours_worked),
             })}
           >
-            {t("common.save")}
+            {t("attUp.saveRow")}
           </Button>
         </>
       }
@@ -1191,7 +1191,7 @@ function SavePreviewModal({ preview, t, tl, busy, onClose, onConfirm }) {
       dismissable={!busy}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={busy}>{t("common.cancel")}</Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>{t("attUp.cancel")}</Button>
           <Button onClick={onConfirm} loading={busy} disabled={nothing}>{t("attUp.saveConfirm")}</Button>
         </>
       }
