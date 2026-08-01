@@ -188,8 +188,8 @@ export default function BrigadirProfile() {
   const { params, unit, dateFrom, dateTo } = useFilters();
   const { t } = useLang();
   const { tl } = useTranslit();
-  const [showAdj, setShowAdj]     = useState(false);
-  const [trendTab, setTrendTab]   = useState("workload");
+  const [showAdj, setShowAdj]     = usePersistentState("brigadir_profile_show_adj", false);
+  const [trendTab, setTrendTab]   = usePersistentState("brigadir_profile_trend_tab", "workload");
   const [attendanceDate, setAttendanceDate] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [formulaModal, setFormulaModal] = useState(null); // { title, value, formula, inputs }
