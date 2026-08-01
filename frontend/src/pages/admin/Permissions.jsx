@@ -105,8 +105,8 @@ export default function Permissions() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
-  const [search, setSearch]     = useState("");
-  const [selected, setSelected] = useState([]);   // telegram ids (leaf keys, as strings)
+  const [search, setSearch]     = usePersistentState("perms_search", "");
+  const [selected, setSelected] = usePersistentState("perms_selected", []);   // telegram ids (leaf keys, as strings)
   // Explicit admin edits only: { capability: "own" | "all" | null }, null =
   // revoke. Anything untouched stays absent and is left alone on save — that's
   // what makes multi-select safe.
