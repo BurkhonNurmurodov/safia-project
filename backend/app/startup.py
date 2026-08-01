@@ -516,6 +516,19 @@ def migrate_attendance_batches() -> None:
         db.execute(text(
             "ALTER TABLE cells ADD COLUMN IF NOT EXISTS att_included BOOLEAN"
         ))
+        # 2026-08-01 (same day, before first production use): a date is fed by
+        # SEVERAL files, one per «Орг. единица» group, so uploads MERGE instead
+        # of replacing. Per-file provenance + per-cell pending tracking.
+        for stmt in (
+            "ALTER TABLE attendance_batch_cells ADD COLUMN IF NOT EXISTS upload_id INTEGER",
+            "ALTER TABLE attendance_batch_cells ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE attendance_batch_cells ADD COLUMN IF NOT EXISTS prev_manager_id INTEGER",
+            "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS upload_id INTEGER",
+            "ALTER TABLE attendance_batch_rows ADD COLUMN IF NOT EXISTS file_values JSONB",
+            "CREATE INDEX IF NOT EXISTS ix_att_batch_cells_upload ON attendance_batch_cells (upload_id)",
+            "CREATE INDEX IF NOT EXISTS ix_att_batch_rows_upload ON attendance_batch_rows (upload_id)",
+        ):
+            db.execute(text(stmt))
         db.commit()
     except Exception as exc:
         db.rollback()
