@@ -15,6 +15,7 @@ import ContributionHeatmap from "../components/charts/ContributionHeatmap";
 import { Sparkline } from "../components/ui/KpiDeltaCard";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 
