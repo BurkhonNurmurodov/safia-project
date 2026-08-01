@@ -303,6 +303,7 @@ _T = {
     "l.stopped": ("To'xtaganda", "Тўхтаганда", "Остановлена (мин)", "Stopped (min)"),
     "l.not_stopped": ("To'xtamaganda", "Тўхтамаганда",
                       "Не остановлена (мин)", "Not stopped (min)"),
+    "l.minutes": ("Daqiqa", "Дақиқа", "Минуты", "Minutes"),
     "l.text": ("Matn", "Матн", "Текст", "Text"),
     "l.deadline": ("Muddat (kun)", "Муддат (кун)", "Срок (дней)", "Deadline (days)"),
 
