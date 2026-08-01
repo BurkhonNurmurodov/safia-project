@@ -70,7 +70,7 @@ export default function Downtime() {
   // the endpoint's kpi_only view; «hammasi» = every category the shift report
   // has, including the Ojidaniya-only ones (Cat H / Cat I). Server-side so the
   // totals, flags and shares below stay consistent with the picked scope.
-  const [scope, setScope] = useState("zagruzka"); // "zagruzka" | "all"
+  const [scope, setScope] = usePersistentState("downtime_scope", "zagruzka"); // "zagruzka" | "all"
   const kpiOnly = scope === "zagruzka";
   const totalKey   = ns ? "total_ns" : "total";
   const catKey     = ns ? "by_category_ns" : "by_category";
