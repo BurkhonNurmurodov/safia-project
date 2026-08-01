@@ -340,6 +340,35 @@ class CellOjidaniya(Base):
     __table_args__ = (UniqueConstraint("cell_id", "date", "category", name="uq_cellojid_cell_date_cat"),)
 
 
+class CellPerenaladka(Base):
+    """Manual per-cell CHANGEOVER (перenaладка) minutes — the second tab of the
+    same TEST page as :class:`CellOjidaniya`. ONE row per (cell, date): how many
+    minutes that cell spent changing over that day, with an OPTIONAL note. No
+    categories, no stopped/not-stopped split.
+
+    Distinct from :class:`SetupTime`, which is a hand-maintained REFERENCE of the
+    *average* changeover time per cell with no date — this table is the daily
+    actual. Like ``cell_ojidaniya`` it is isolated TEST data: nothing else reads
+    it, and it is neither additive to nor a replacement for the sheets import.
+
+    Blank means "not entered" — a 0 is never stored (clearing deletes the row),
+    so a row's existence always means a real reported value. The shift is a
+    property of the cell (its supervisor's shift), so it is derived on read.
+    ``entered_by_profile`` = "role:id" of the last writer."""
+    __tablename__ = "cell_perenaladka"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id            = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    date               = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    minutes            = Column(Numeric(10, 4), default=0.0)             # changeover minutes (> 0)
+    note               = Column(Text, nullable=True)                     # OPTIONAL reason
+    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("cell_id", "date", name="uq_cellperen_cell_date"),)
+
+
 class CellAttendance(Base):
     """Per-CELL attendance ingested from the «Отчёт по посещениям сотрудников»
     export — one row per (worker, cell, day). This is a TEST-MODE, fully isolated
