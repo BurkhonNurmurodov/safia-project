@@ -570,7 +570,7 @@ async def upload(
         status="draft",
         source_filename=f.filename,
         export_ts=parsed["export_ts"],
-        uploaded_by=payload.get("telegram_id"),
+        uploaded_by=_admin_tg_id(payload),
         uploaded_by_name=_admin_name(payload),
     )
     db.add(batch)
