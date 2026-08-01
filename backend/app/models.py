@@ -33,6 +33,10 @@ class Attendance(Base):
     hours_worked = Column(Numeric(10, 4))
     early_arrival_min = Column(Numeric(10, 2))
     effective_hours = Column(Numeric(10, 4))
+    # 2026-08-01: which production cell («Код подразделения») the row came from,
+    # set by the single-file «Davomat» upload. NULL on rows from the older
+    # per-supervisor verifix files — those days simply group under "no cell".
+    verifix_code = Column(String, nullable=True, index=True)
 
     manager = relationship("Manager", back_populates="attendance")
 
