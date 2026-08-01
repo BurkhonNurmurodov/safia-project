@@ -259,7 +259,7 @@ const LEDGER = [
   { icon: ShieldAlert,   reason: "gami.xp.concernClosed", xp: 25, when: "31.07 16:40" },
   { icon: Lightbulb,     reason: "gami.xp.kaizenDone",   xp: 25,  when: "30.07 11:05" },
   { icon: Flame,         reason: "gami.xp.streak14",     xp: 100, when: "29.07 09:00" },
-  { icon: Award,         reason: "gami.xp.badgeEarned",  badge: "selfSufficient", xp: 200, when: "28.07 18:22" },
+  { icon: Award,         reason: "gami.xp.badgeEarned",  badge: "selfSufficient", badgeTier: "I", xp: 200, when: "28.07 18:22" },
   { icon: CalendarCheck, reason: "gami.xp.dayConfirmed", xp: 10,  when: "28.07 08:47" },
   { icon: Gauge,         reason: "gami.xp.onTrack",      xp: 10,  when: "27.07 09:03" },
 ];
@@ -476,15 +476,23 @@ export default function Gamification() {
                   <div className="grid grid-cols-4 gap-1.5">
                     {fam.tiers.map((n, i) => {
                       const st = tierState(fam, i);
+                      const unitSfx = fam.key === "qualityShield" ? ` ${t("gami.unit.months")}` : "";
                       return (
                         <div key={i} className="flex flex-col items-center gap-1">
                           <Medallion size={56} glyph={fam.key} metal={TIER_METALS[i]}
                             locked={st === "locked"} check={st === "earned"}
                             progress={st === "progress" ? Math.min(1, fam.cur / n) : null} />
-                          <div className="text-[10px] font-semibold tabular-nums"
+                          <div className="text-[10px] font-semibold tabular-nums leading-none"
                             style={{ color: st === "locked" ? "var(--text-4)" : st === "progress" ? "var(--brand-text)" : "var(--text-2)" }}>
-                            {st === "progress" ? `${fam.cur}/${n}` : n}
+                            {st === "progress" ? `${fam.cur}/${n}` : `${n}${unitSfx}`}
                           </div>
+                          {/* game-style reward preview under tiers still ahead */}
+                          {st !== "earned" && (
+                            <div className="text-[9px] font-semibold tabular-nums leading-none"
+                              style={{ color: st === "progress" ? "var(--brand-text)" : "var(--text-4)", opacity: st === "progress" ? 1 : 0.8 }}>
+                              +{fmtXp(fam.baseXp * TIER_XP_MULT[i])} XP
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -656,7 +664,7 @@ export default function Gamification() {
                         <Icon size={14} />
                       </span>
                       <span className="text-[12.5px] flex-1 min-w-0 truncate">
-                        {t(e.reason).replace("{b}", e.badge ? badgeName(e.badge) : "")}
+                        {t(e.reason).replace("{b}", e.badge ? `${badgeName(e.badge)} ${e.badgeTier || ""}`.trim() : "")}
                       </span>
                       <span className="text-[10.5px] tabular-nums flex-shrink-0" style={{ color: "var(--text-4)" }}>{e.when}</span>
                       <span className="text-[12px] font-bold tabular-nums flex-shrink-0" style={{ color: "var(--brand-text)" }}>+{e.xp} XP</span>

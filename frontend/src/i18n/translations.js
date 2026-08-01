@@ -2302,6 +2302,7 @@ const t = {
     "gami.compareCats":        "Kategoriyalar bo'yicha",
     "gami.compareStats":       "Umumiy ko'rsatkichlar",
     "gami.compareBadges":      "Nishon darajalari",
+    "gami.unit.months":        "oy",
   },
 
   uz_cyrl: {
@@ -4607,6 +4608,7 @@ const t = {
     "gami.compareCats":        "Категориялар бўйича",
     "gami.compareStats":       "Умумий кўрсаткичлар",
     "gami.compareBadges":      "Нишон даражалари",
+    "gami.unit.months":        "ой",
   },
 
   ru: {
@@ -6912,6 +6914,7 @@ const t = {
     "gami.compareCats":        "По категориям",
     "gami.compareStats":       "Общие показатели",
     "gami.compareBadges":      "Уровни знаков",
+    "gami.unit.months":        "мес",
   },
 
   en: {
@@ -9217,6 +9220,7 @@ const t = {
     "gami.compareCats":        "By category",
     "gami.compareStats":       "Overall stats",
     "gami.compareBadges":      "Badge tiers",
+    "gami.unit.months":        "mo",
   },
 };
 
