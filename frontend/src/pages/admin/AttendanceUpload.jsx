@@ -806,6 +806,11 @@ export default function AttendanceUpload() {
       <div className="flex flex-wrap items-center gap-2">
         <DayStepper value={date} onChange={setDate} max={null} />
         {status === "draft" && <Chip tone="warn" icon={AlertTriangle}>{t("attUp.statusDraft")}</Chip>}
+        {isPartial && (
+          <Chip tone="warn" icon={AlertTriangle}>
+            {t("attUp.statusPartial").replace("{n}", pendingCells)}
+          </Chip>
+        )}
         {status === "saved" && <Chip tone="ok" icon={CheckCircle2}>{t("attUp.statusSaved")}</Chip>}
         {status === "legacy" && <Chip tone="neutral" icon={CalendarClock}>{t("attUp.statusLegacy")}</Chip>}
 
