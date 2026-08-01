@@ -578,8 +578,8 @@ function PerenaladkaCard({ cells, date, t, lang }) {
         </div>
       </div>
       <div
-        className="flex items-center justify-end gap-2 px-3 py-2 text-xs"
-        style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}
+        className="flex items-center justify-end gap-2 px-3 py-2 text-xs rounded-xl border border-[var(--border)] md:rounded-none md:border-x-0 md:border-b-0"
+        style={{ background: "var(--bg-inner)" }}
       >
         <span style={{ color: "var(--text-4)" }}>{t("idleCell.total")}</span>
         <span className="tabular-nums font-semibold" style={{ color: total ? "var(--text-1)" : "var(--text-4)" }}>
