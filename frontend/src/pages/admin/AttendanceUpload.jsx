@@ -420,6 +420,13 @@ function CellRow({
             {cellName(cell)}
           </span>
           {cell.moved && <Chip tone="warn" icon={ArrowRightLeft} title={t("attUp.movedHint")}>{t("attUp.moved")}</Chip>}
+          {/* Staged: this cell's state has not reached `attendance` yet. */}
+          {cell.pending && <Chip tone="warn" title={t("attUp.pendingHint")}>{t("attUp.pendingCell")}</Chip>}
+          {cell.conflicts > 0 && (
+            <Chip tone="danger" icon={FileWarning} title={t("attUp.conflictHint").replace("{v}", "—")}>
+              {cell.conflicts}
+            </Chip>
+          )}
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
