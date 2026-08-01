@@ -944,7 +944,7 @@ export default function AttendanceUpload() {
         />
       )}
 
-      {status === "saved" && data?.batch?.saved_at && (
+      {status !== "legacy" && data?.batch?.saved_at && (
         <div className="text-[11px] px-1" style={{ color: "var(--text-4)" }}>
           {t("attUp.savedMeta")
             .replace("{by}", tl(data.batch.saved_by || "—"))
