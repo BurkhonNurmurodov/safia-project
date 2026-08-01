@@ -307,6 +307,12 @@ class Cell(Base):
     # explicit admin decision, ticked on the /cell-attendance «Sozlash» tab.
     # Default off — a newly registered cell counts only once an admin says so.
     in_load      = Column(Boolean, nullable=False, server_default="false", default=False)
+    # 2026-08-01: permanent answer to "do this cell's people count toward its
+    # supervisor's attendance?" on the «Davomat» tab. NULL = derive it (a cell
+    # with a supervisor counts, an orphan cell does not), TRUE/FALSE = an admin
+    # made it permanent. Each upload day may still override it for that day
+    # alone; this is only the starting state a new day inherits.
+    att_included = Column(Boolean, nullable=True)
 
 
 class CellOjidaniya(Base):
