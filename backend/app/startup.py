@@ -451,6 +451,14 @@ def migrate_cell_ojidaniya_percat() -> None:
     CellOjidaniya.__table__.create(bind=engine, checkfirst=True)
 
 
+def migrate_cell_perenaladka() -> None:
+    """2026-08-01: the «Perenaladka» tab of the idle-cell TEST page — one
+    changeover-minutes row per (cell, date). New table only, no data to move."""
+    from app.database import engine
+    from app.models import CellPerenaladka
+    CellPerenaladka.__table__.create(bind=engine, checkfirst=True)
+
+
 def migrate_cell_supervisor_column() -> None:
     """2026-07-27: cells gain a direct supervisor link (manager_id → managers.id,
     nullable). A cell now belongs to a supervisor independently of its leader —
