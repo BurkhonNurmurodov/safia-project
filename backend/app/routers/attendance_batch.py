@@ -27,8 +27,9 @@ import logging
 from datetime import date as date_t, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
