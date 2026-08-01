@@ -188,7 +188,7 @@ const FAMILIES = [
   { key: "perfectWeek",    baseXp: 150, tiers: [7, 14, 30, 60],    done: 2, cur: 12, dates: ["08.06.2026", "21.07.2026"] },
   { key: "ironDiscipline", baseXp: 300, tiers: [7, 14, 30, 60],    done: 2, cur: 21, dates: ["05.05.2026", "12.07.2026"] },
   { key: "qualityShield",  baseXp: 250, tiers: [1, 3, 6, 12],      done: 1, cur: 1,  dates: ["01.07.2026"] },
-  { key: "fastResolver",   baseXp: 150, tiers: [10, 25, 50, 100],  done: 1, cur: 14, dates: ["22.07.2026"] },
+  { key: "fastResolver",   baseXp: 150, tiers: [10, 25, 50, 100],  done: 4, cur: 112, dates: ["03.03.2026", "18.04.2026", "05.06.2026", "22.07.2026"] },
   { key: "selfSufficient", baseXp: 200, tiers: [20, 50, 100, 200], done: 1, cur: 22, dates: ["28.07.2026"] },
   { key: "kaizenChampion", baseXp: 250, tiers: [3, 10, 25, 50],    done: 0, cur: 2,  dates: [] },
   { key: "earlyBird",      baseXp: 200, tiers: [30, 60, 120, 250], done: 1, cur: 34, dates: ["09.07.2026"] },
