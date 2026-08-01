@@ -16,6 +16,7 @@ import api from "../utils/api";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import { cellName as pickCellName } from "../utils/cellName";
 import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
 import { usePersistentState } from "../hooks/usePersistentState";
 
 // Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
