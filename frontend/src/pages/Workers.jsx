@@ -106,11 +106,11 @@ export default function Workers() {
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
-  const [view, setView] = useState("attendance");   // "attendance" | "movements"
-  const [tgtTab, setTgtTab] = useState("supervisor"); // exchange-targets chart: "supervisor" | "task"
-  const [treeMode, setTreeMode] = useState("all");    // treemap metric: "all" | "zagruzka"
-  const [roleMode, setRoleMode] = useState("all");    // role charts: "all" roles | "zagruzka" subset
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements"
+  const [tgtTab, setTgtTab] = usePersistentState("workers_tgt_tab", "supervisor"); // exchange-targets chart: "supervisor" | "task"
+  const [treeMode, setTreeMode] = usePersistentState("workers_tree_mode", "all");    // treemap metric: "all" | "zagruzka"
+  const [roleMode, setRoleMode] = usePersistentState("workers_role_mode", "all");    // role charts: "all" roles | "zagruzka" subset
+  const [sort, setSort] = usePersistentState("workers_sort", { key: null, dir: "asc" });
   const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
   const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
 
