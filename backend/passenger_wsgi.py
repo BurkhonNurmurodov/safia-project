@@ -86,6 +86,7 @@ try:
     migrate_cell_supervisor_column()
     migrate_cell_in_load_column()
     migrate_cell_ojidaniya_percat()
+    migrate_cell_perenaladka()
     migrate_attendance_batches()
     add_concern_profile_columns()
     add_concern_done_at()
