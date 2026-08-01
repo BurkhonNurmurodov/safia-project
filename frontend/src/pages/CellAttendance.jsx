@@ -124,8 +124,8 @@ function LoadConfig({ onDirtyChange }) {
   // where it started drops the entry, so the dirty count is always truthful and
   // Save sends the minimum.
   const [draft, setDraft] = useState({});
-  const [search, setSearch] = useState("");
-  const [tab, setTab] = useState("all"); // all | in | out
+  const [search, setSearch] = usePersistentState("cellatt_cfg_search", "");
+  const [tab, setTab] = usePersistentState("cellatt_cfg_tab", "all"); // all | in | out
   const [savedAt, setSavedAt] = useState(0);
 
   const dirty = Object.keys(draft).length;
