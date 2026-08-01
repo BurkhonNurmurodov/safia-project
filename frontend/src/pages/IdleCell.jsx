@@ -789,7 +789,9 @@ export default function IdleCell() {
         emptyBox(t("idleCell.pickSupervisorHint"))
       ) : isFetching ? (
         <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-12 w-full rounded-xl" />)}
+          {/* h-14 = the collapsed row's real height now that the leader line
+              sits under the cell name — the skeleton must not jump on load. */}
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-14 w-full rounded-xl" />)}
         </div>
       ) : shownCells.length === 0 ? (
         emptyBox(t("idleCell.noCells"))
