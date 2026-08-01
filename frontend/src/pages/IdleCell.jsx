@@ -643,11 +643,46 @@ export default function IdleCell() {
   });
   const cells = cellsData?.cells ?? [];
 
+  // Leader narrows the supervisor's cells, and the cell picker below it only
+  // offers what the leader filter left — the toolbar reads as one chain,
+  // day → shift → brigadir → lider → yacheyka.
+  const leaderCells = useMemo(() => {
+    if (!leaderId) return cells;
+    return cells.filter((c) => (leaderId === "none" ? !c.leader_id : String(c.leader_id) === leaderId));
+  }, [cells, leaderId]);
+
   const shownCells = useMemo(() => {
-    if (!selectedCellIds.length) return cells;
+    if (!selectedCellIds.length) return leaderCells;
     const set = new Set(selectedCellIds);
-    return cells.filter((c) => set.has(String(c.cell_id)));
-  }, [cells, selectedCellIds]);
+    return leaderCells.filter((c) => set.has(String(c.cell_id)));
+  }, [leaderCells, selectedCellIds]);
+
+  // Distinct leaders owning the supervisor's cells, name-sorted, "all" first and
+  // the leaderless bucket only when there IS one.
+  const leaderOptions = useMemo(() => {
+    const byId = new Map();
+    let anyNone = false;
+    for (const c of cells) {
+      if (c.leader_id) byId.set(String(c.leader_id), tl(c.leader) || String(c.leader_id));
+      else anyNone = true;
+    }
+    return [
+      { value: "", label: t("idleCell.allLeaders") },
+      ...(anyNone ? [{ value: "none", label: t("idleCell.noLeader") }] : []),
+      ...[...byId.entries()]
+        .map(([value, label]) => ({ value, label, title: label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells, lang]);
+
+  // A persisted leader survives a supervisor switch — drop it when nobody in the
+  // new list matches, so the page never shows an unexplained empty list.
+  useEffect(() => {
+    if (!leaderId || !cells.length) return;
+    if (!leaderOptions.some((o) => o.value === leaderId)) setLeaderId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaderOptions]);
 
   // A new shift may exclude the picked supervisor — drop it if so.
   function onShift(v) {
@@ -655,18 +690,21 @@ export default function IdleCell() {
     setSupervisorId((prev) =>
       prev != null && supervisors.some((s) => s.id === prev && (v === "all" || s.shift === v)) ? prev : null,
     );
+    setLeaderId("");
     setSelectedCellIds([]);
   }
 
-  const cellOptions = cells.map((c) => ({
+  const cellOptions = leaderCells.map((c) => ({
     value: String(c.cell_id),
     label: `${c.verifix_code}${cellName(c, lang) ? " · " + cellName(c, lang) : ""}`,
     title: `${c.verifix_code} ${cellName(c, lang)}`,
   }));
 
   // Auto-open when there is exactly one visible cell, or the user explicitly
-  // narrowed to a few — a large selection stays collapsed to keep the list scannable.
-  const autoOpen = shownCells.length === 1 || (selectedCellIds.length > 0 && shownCells.length <= 3);
+  // narrowed to a few — a large selection stays collapsed to keep the list
+  // scannable. Picking a leader counts as narrowing (they own ~1 cell each).
+  const narrowed = selectedCellIds.length > 0 || !!leaderId;
+  const autoOpen = shownCells.length === 1 || (narrowed && shownCells.length <= 3);
 
   const emptyBox = (msg) => (
     <div
