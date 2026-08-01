@@ -1,7 +1,7 @@
-import { useMemo, useState, useId } from "react";
+import { useState, useId } from "react";
 import {
   Award, Crown, Medal, Trophy, Flame, Gauge, ClipboardCheck, Lightbulb,
-  ShieldCheck, ShieldAlert, CalendarCheck, Sparkles, Gift, ScrollText,
+  ShieldAlert, CalendarCheck, Sparkles, Gift, ScrollText,
   CalendarClock, Users, TrendingUp, ArrowUp, ListOrdered, Snowflake,
   Megaphone, BadgeCheck, Lock,
 } from "lucide-react";
