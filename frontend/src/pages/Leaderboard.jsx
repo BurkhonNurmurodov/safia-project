@@ -467,16 +467,16 @@ export default function Leaderboard() {
   // Page-local period + shift + supervisor filters (the standard top-row set).
   // Local, NOT the global FilterContext: dummy ids must never leak into the
   // shared filter state other pages send to real endpoints.
-  const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 13); return isoDay(d); });
-  const [dateTo, setDateTo] = useState(() => isoDay(new Date()));
-  const [shiftF, setShiftF] = useState(null); // null = all | 1 | 2
-  const [supF, setSupF] = useState(null);     // brigadir id | null = all
+  const [dateFrom, setDateFrom] = usePersistentState("leaderboard_date_from", () => { const d = new Date(); d.setDate(d.getDate() - 13); return isoDay(d); });
+  const [dateTo, setDateTo] = usePersistentState("leaderboard_date_to", () => isoDay(new Date()));
+  const [shiftF, setShiftF] = usePersistentState("leaderboard_shift", null); // null = all | 1 | 2
+  const [supF, setSupF] = usePersistentState("leaderboard_sup", null);     // brigadir id | null = all
   const { sups, byRank } = useLeaderboardData(dateFrom, dateTo, shiftF, supF);
 
-  const [selectedId, setSelectedId] = useState(3);
-  const [expandedId, setExpandedId] = useState(3);
-  const [sortKey, setSortKey] = useState("overall");
-  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = usePersistentState("leaderboard_selected_id", 3);
+  const [expandedId, setExpandedId] = usePersistentState("leaderboard_expanded_id", 3);
+  const [sortKey, setSortKey] = usePersistentState("leaderboard_sort", "overall");
+  const [query, setQuery] = usePersistentState("leaderboard_search", "");
   const [tip, setTip] = useState(null);
 
   // Supervisor picker options track the active shift so the list never offers
