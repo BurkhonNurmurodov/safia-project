@@ -560,7 +560,7 @@ function PerenRow({ cell, date, t, tl, lang, onSaved }) {
   );
 }
 
-function PerenaladkaCard({ cells, date, t, lang }) {
+function PerenaladkaCard({ cells, date, t, tl, lang }) {
   // Saved-minutes mirror for the footer total. Rows own their drafts; this is
   // server truth, re-seeded whenever the query returns (incl. a date change).
   const [sums, setSums] = useState({});
