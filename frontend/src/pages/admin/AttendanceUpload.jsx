@@ -827,15 +827,17 @@ export default function AttendanceUpload() {
         >
           {t("attUp.upload")}
         </Button>
-        {(isDraft || status === "saved") && (
+        {!locked && status !== "none" && (
           <Button
             size="lg"
             icon={<Save size={14} />}
             onClick={openSave}
             loading={saveMut.isPending}
-            disabled={!data || totals?.included === 0}
+            // Nothing pending = everything on this page is already in attendance.
+            disabled={!data || pendingCells === 0}
+            title={pendingCells === 0 ? t("attUp.allSaved") : undefined}
           >
-            {isDraft ? t("attUp.save") : t("attUp.resave")}
+            {isDraft ? t("attUp.save") : t("attUp.saveChanges")}
           </Button>
         )}
       </div>
