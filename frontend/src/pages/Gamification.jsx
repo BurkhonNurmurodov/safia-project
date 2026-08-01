@@ -49,9 +49,10 @@ const METALS = {
   gold:     { hi: "#F6E3A6", mid1: "#E9C476", mid2: "#C8973F", lo: "#8A6226", deep: "#5F421A", gHi: "#F2D48C", gLo: "#C8973F" },
   bronze:   { hi: "#EFB98A", mid1: "#D89158", mid2: "#B5713A", lo: "#7A431C", deep: "#542E12", gHi: "#EFB98A", gLo: "#C07E44" },
   silver:   { hi: "#F5F8FB", mid1: "#D4DBE3", mid2: "#AEB8C4", lo: "#77828F", deep: "#525C68", gHi: "#EDF1F6", gLo: "#AEB8C4" },
-  /* Platinum is the terminal tier — deeper ice-blue than silver's grey, with an
-   * iridescent violet mid-stop, a faceted starburst and a cyan aura (below). */
-  platinum: { hi: "#F7FDFF", mid1: "#CFE9F6", mid2: "#8FB0D8", lo: "#58709A", deep: "#31445F", gHi: "#F2FAFF", gLo: "#AECDEE" },
+  /* Platinum is the terminal tier — saturated diamond-blue (nowhere near
+   * silver's neutral grey), with a violet flash in the rim, a faceted
+   * starburst, a cyan aura and an animated face shimmer (below). */
+  platinum: { hi: "#EAFBFF", mid1: "#8FE0F7", mid2: "#4FA8E8", lo: "#3D5FC4", deep: "#23306E", gHi: "#EAFBFF", gLo: "#7CC6F2" },
   locked:   { hi: "#3A4353", mid1: "#2E3644", mid2: "#242B37", lo: "#161B24", deep: "#10141b", gHi: "#39424f", gLo: "#39424f" },
 };
 
@@ -113,7 +114,7 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
       <defs>
         <linearGradient id={`${id}r`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor={m.hi} /><stop offset="0.35" stopColor={m.mid1} />
-          {metal === "platinum" && !locked && <stop offset="0.5" stopColor="#C9C2F2" />}
+          {metal === "platinum" && !locked && <stop offset="0.5" stopColor="#A88FF5" />}
           <stop offset="0.62" stopColor={m.mid2} /><stop offset="1" stopColor={m.lo} />
         </linearGradient>
         <linearGradient id={`${id}b`} x1="0" y1="0" x2="1" y2="1">
@@ -123,16 +124,21 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
           <stop offset="0" stopColor={m.hi} /><stop offset="0.5" stopColor={m.mid2} /><stop offset="1" stopColor={m.lo} />
         </linearGradient>
         <radialGradient id={`${id}c`} cx="0.38" cy="0.32" r="0.95">
-          <stop offset="0" stopColor={locked ? "#1a2029" : "#2b3344"} />
-          <stop offset="0.55" stopColor={locked ? "#12161f" : "#1c2331"} />
-          <stop offset="1" stopColor={locked ? "#0d1118" : "#131826"} />
+          {/* platinum's enamel is blue-tinted night, not the neutral navy */}
+          <stop offset="0" stopColor={locked ? "#1a2029" : metal === "platinum" ? "#2B3E63" : "#2b3344"} />
+          <stop offset="0.55" stopColor={locked ? "#12161f" : metal === "platinum" ? "#1C2A4A" : "#1c2331"} />
+          <stop offset="1" stopColor={locked ? "#0d1118" : metal === "platinum" ? "#131C38" : "#131826"} />
         </radialGradient>
+        <linearGradient id={`${id}s`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#fff" stopOpacity="0" /><stop offset="0.5" stopColor="#fff" stopOpacity="0.55" /><stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+        <clipPath id={`${id}cp`}><circle cx="60" cy="60" r="57" /></clipPath>
         <linearGradient id={`${id}g`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={m.gHi} /><stop offset="1" stopColor={m.gLo} />
         </linearGradient>
         <filter id={`${id}d`} x="-40%" y="-40%" width="180%" height="180%">
           {metal === "platinum" && !locked && (
-            <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#7FD9F2" floodOpacity="0.5" />
+            <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#4FC3F0" floodOpacity="0.6" />
           )}
           <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000" floodOpacity={locked ? 0.32 : 0.45} />
         </filter>
@@ -181,10 +187,19 @@ function Medallion({ size = 112, glyph = null, numeral = null, metal = "gold", l
         )}
         <path d="M 22 34 A 46 46 0 0 1 86 18 A 56 56 0 0 0 24 42 Z" fill="#fff" opacity={locked ? 0.04 : 0.09} />
         {metal === "platinum" && !locked && (
-          <g fill="#fff" opacity="0.9">
-            <path transform="translate(41,33) scale(0.85)" d={GLINT} />
-            <path transform="translate(81,29) scale(0.5)" d={GLINT} />
-          </g>
+          <>
+            <g fill="#fff" opacity="0.9">
+              <path transform="translate(41,33) scale(0.85)" d={GLINT} />
+              <path transform="translate(81,29) scale(0.5)" d={GLINT} />
+              <path transform="translate(87,75) scale(0.4)" d={GLINT} />
+            </g>
+            {/* slow diamond shimmer sweeping the coin face */}
+            <g clipPath={`url(#${id}cp)`} opacity="0.7">
+              <g transform="rotate(24 60 60)">
+                <rect className="gami-plat-sheen" x="46" y="-30" width="24" height="180" fill={`url(#${id}s)`} style={{ transform: "translateX(-130px)" }} />
+              </g>
+            </g>
+          </>
         )}
       </g>
       {counter != null && !locked && (
@@ -265,7 +280,7 @@ const PEOPLE = [
 ];
 const compOf = (cats) => CATS.reduce((a, c) => a + c.weight * cats[c.key], 0);
 /* Tier-pip fill colors (bronze → platinum), for the compare ladder. */
-const PIP_COLORS = ["#B5713A", "#AEB8C4", "#C8973F", "#8FB0D8"];
+const PIP_COLORS = ["#B5713A", "#AEB8C4", "#C8973F", "#4FA8E8"];
 
 const STREAKS = [
   { key: "dayClose",     icon: CalendarCheck, days: 21, next: 30, best: 21 },
@@ -443,8 +458,10 @@ export default function Gamification() {
         .gami-badge { transition: transform .22s ease, filter .22s ease; }
         .gami-badge:hover { transform: translateY(-4px) scale(1.02); filter: drop-shadow(0 12px 24px rgba(200,151,63,.25)); }
         .gami-badge.is-locked:hover { filter: none; }
+        @keyframes gamiPlatSheen { 0% { transform: translateX(-130px); } 55% { transform: translateX(130px); } 100% { transform: translateX(130px); } }
+        .gami-plat-sheen { animation: gamiPlatSheen 3.4s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .gami-halo, .gami-flame, .gami-live, .gami-shimmer { animation: none; }
+          .gami-halo, .gami-flame, .gami-live, .gami-shimmer, .gami-plat-sheen { animation: none; }
           .gami-badge:hover { transform: none; filter: none; }
         }
       `}</style>
