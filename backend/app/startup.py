@@ -495,6 +495,35 @@ def migrate_cell_in_load_column() -> None:
         db.close()
 
 
+def migrate_attendance_batches() -> None:
+    """2026-08-01: the single-file «Davomat» upload.
+
+    Two additive columns — `attendance.verifix_code` (which cell a row came
+    from; NULL on every historical row written by the per-supervisor verifix
+    path) and `cells.att_included` (the permanent form of the tab's per-cell
+    checkbox; NULL means "derive it from whether the cell has a supervisor").
+    The three `attendance_batch*` tables come from `Base.metadata.create_all`,
+    which both entrypoints already run. Idempotent."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS verifix_code VARCHAR"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_attendance_verifix_code "
+            "ON attendance (verifix_code)"
+        ))
+        db.execute(text(
+            "ALTER TABLE cells ADD COLUMN IF NOT EXISTS att_included BOOLEAN"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] attendance batch migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_profile_columns() -> None:
     """Concerns re-key (shift-manager/supervisor rollout): a concern is owned by
     the leader's pre-created profile so it can be logged for a leader who hasn't
