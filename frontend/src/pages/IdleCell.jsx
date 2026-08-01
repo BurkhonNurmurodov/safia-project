@@ -733,7 +733,7 @@ export default function IdleCell() {
         </div>
         <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
-          onChange={(v) => { setSupervisorId(v ? Number(v) : null); setSelectedCellIds([]); }}
+          onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
           options={shiftSupervisors.map((s) => ({ value: String(s.id), label: s.name, title: s.name }))}
           placeholder={t("idleCell.pickSupervisor")}
           searchable
@@ -741,6 +741,20 @@ export default function IdleCell() {
           triggerClassName="px-3 py-2 text-sm"
           className="w-full md:w-auto md:min-w-[180px]"
         />
+        {/* The brigadir's leaders, between brigadir and cells: each select
+            narrows the next. Hidden when the unit has a single leader (or the
+            cells aren't loaded) — a one-option filter is just noise. */}
+        {supervisorId != null && leaderOptions.length > 2 && (
+          <StyledSelect
+            value={leaderId}
+            onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }}
+            options={leaderOptions}
+            searchable
+            searchPlaceholder={t("idleCell.searchLeader")}
+            triggerClassName="px-3 py-2 text-sm"
+            className="w-full md:w-auto md:min-w-[170px]"
+          />
+        )}
         {supervisorId != null && cells.length > 0 && (
           <StyledSelect
             multiple searchable
