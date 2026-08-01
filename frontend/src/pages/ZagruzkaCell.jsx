@@ -134,12 +134,12 @@ export default function ZagruzkaCell() {
   const { ready, dateFrom, dateTo, setDateFrom, setDateTo } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
-  const [heatmapMode, setHeatmapMode] = useState("actual");
+  const [heatmapMode, setHeatmapMode] = usePersistentState("zagruzka_cell_heatmap_mode", "actual");
   const [heatmapFullscreen, setHeatmapFullscreen] = useState(false);
   const [compFullscreen, setCompFullscreen] = useState(false);
   const [comment, setComment] = useState(null);
   const [calcFactors, setCalcFactors] = useState(DEFAULT_CALC_FACTORS);
-  const [inputDate, setInputDate] = useState(null); // day shown in the inputs table
+  const [inputDate, setInputDate] = usePersistentState("zagruzka_cell_input_date", null); // day shown in the inputs table
 
   useEffect(() => {
     function onKey(e) {
