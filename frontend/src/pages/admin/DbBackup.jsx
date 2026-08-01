@@ -28,10 +28,10 @@ function fmtBytes(n) {
 export default function DbBackup() {
   const { t } = useLang();
 
-  const [drops, setDrops]   = useState(true);
+  const [drops, setDrops]   = usePersistentState("dbbackup_drops", true);
   const [confirm, setConfirm] = useState(false);
   const [toast, setToast]   = useState(null);   // "export" | "import" | null
-  const [sort, setSort]     = useState({ key: "bytes", dir: "desc" });
+  const [sort, setSort]     = usePersistentState("dbbackup_sort", { key: "bytes", dir: "desc" });
 
   const fileRef = useRef(null);
   const [picked, setPicked]   = useState([]);   // File[]
