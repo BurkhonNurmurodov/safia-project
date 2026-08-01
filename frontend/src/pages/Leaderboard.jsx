@@ -13,6 +13,7 @@ import DateRangePicker from "../components/ui/DateRangePicker";
 import Button from "../components/ui/Button";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 
