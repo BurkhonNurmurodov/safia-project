@@ -22,7 +22,9 @@ export default function PlanFulfillment() {
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
-  const [nameAsc, setNameAsc] = useState(true);
+  // Tri-state (true asc / false desc / null unsorted); null removes the stored
+  // key, so an unsorted state restores as the asc default — accepted.
+  const [nameAsc, setNameAsc] = usePersistentState("plan_name_asc", true);
 
   const { data, isLoading } = useQuery({
     queryKey: ["plan", params],
