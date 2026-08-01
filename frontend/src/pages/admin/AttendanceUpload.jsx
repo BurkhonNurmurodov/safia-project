@@ -189,6 +189,55 @@ function RowMenu({ items }) {
   );
 }
 
+/** The day's contributing files. A day normally arrives as several exports (one
+ *  per «Орг. единица» group), so each one has to be removable on its own — the
+ *  whole-day Discard is the blunt instrument, this is the scalpel. */
+function UploadsList({ uploads, t, tl, busy, onRemove }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5"
+        style={{ background: "var(--bg-inner)" }}
+      >
+        <FileSpreadsheet size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+          {t("attUp.filesTitle").replace("{n}", uploads.length)}
+        </span>
+        <span className="ml-auto">
+          {open ? <ChevronDown size={13} style={{ color: "var(--text-4)" }} /> : <ChevronRight size={13} style={{ color: "var(--text-4)" }} />}
+        </span>
+      </button>
+      {open && uploads.map((u) => (
+        <div key={u.id} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-mono truncate" style={{ color: "var(--text-1)" }}>{u.filename || "—"}</div>
+            <div className="text-[10px] mt-0.5" style={{ color: "var(--text-4)" }}>
+              {u.uploaded_at ? new Date(u.uploaded_at).toLocaleString() : "—"}
+              {u.uploaded_by ? ` · ${tl(u.uploaded_by)}` : ""}
+            </div>
+          </div>
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+            {u.cells_now} {t("attUp.cellsWord")} · {u.rows_added} {t("attUp.rowsWord")}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => onRemove(u)}
+            title={t("attUp.removeUpload")}
+            style={{ color: "#ef4444" }}
+          >
+            <Trash2 size={12} />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── worker table (inside an expanded cell row) ────────────────────────────────
 
 function WorkerTable({ cell, locked, t, tl, onEdit, onDelete, onAdd }) {
