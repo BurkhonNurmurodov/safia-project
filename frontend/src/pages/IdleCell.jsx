@@ -794,11 +794,11 @@ export default function IdleCell() {
       ) : shownCells.length === 0 ? (
         emptyBox(t("idleCell.noCells"))
       ) : view === "perenaladka" ? (
-        <PerenaladkaCard cells={shownCells} date={date} t={t} lang={lang} />
+        <PerenaladkaCard cells={shownCells} date={date} t={t} tl={tl} lang={lang} />
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (
-            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} lang={lang} autoOpen={autoOpen} />
+            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} autoOpen={autoOpen} />
           ))}
         </div>
       )}
