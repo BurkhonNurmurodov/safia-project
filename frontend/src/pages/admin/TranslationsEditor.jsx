@@ -48,8 +48,8 @@ export default function TranslationsEditor() {
   const [extraKeys, setExtraKeys] = useState([]);          // newly-added keys not in the static dict
   const [dbNames, setDbNames] = useState({ brigadirs: [], job_titles: [], workers: [] });
   const [edits, setEdits] = useState({});                  // { "lang|key": value }
-  const [group, setGroup] = useState("nav");
-  const [search, setSearch] = useState("");
+  const [group, setGroup] = usePersistentState("translations_group", "nav");
+  const [search, setSearch] = usePersistentState("translations_search", "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
