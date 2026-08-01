@@ -18,9 +18,17 @@ const PAGE_SIZE = 50;
  */
 export default function ActionHistory() {
   const { t, lang } = useLang();
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePersistentState("actions_page", 1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // A restored page can outlive the register shrinking — clamp back to 1 when
+  // the fetched total says it no longer exists.
+  useEffect(() => {
+    if (!data) return;
+    const pages = Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE));
+    if (page > pages) setPage(1);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let dead = false;
