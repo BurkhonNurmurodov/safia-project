@@ -23,7 +23,6 @@ import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import api from "../utils/api";
-import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
