@@ -147,9 +147,6 @@ function fmtDuration(minutes, t, dash = "—") {
   if (m > 0 || !parts.length) parts.push(`${m} ${t("hansey.mShort")}`);
   return parts.join(" ");
 }
-// Compact hours for axes and dense cells, where the verbose form would wrap.
-const fmtHours = (minutes) => (minutes == null ? "—" : `${(minutes / 60).toFixed(1)}`);
-
 // Minutes an open problem has been running, as of now.
 const openAge = (row) => {
   const started = dtMinutes(row.started_at);
