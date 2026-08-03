@@ -1494,7 +1494,11 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
     if (!unitBoard) return null;
     const topCells = cellStats.slice(0, 12);
     if (!topCells.length) return null;
-    const activeDepts = depts.map((d) => d.key);
+    // Column order is fixed by problem COUNT and never follows the department
+    // chart's count/time toggle — a matrix whose columns reshuffle under an
+    // unrelated switch is unreadable.
+    const byCount = [...depts].sort((a, b) => b.count - a.count);
+    const activeDepts = byCount.map((d) => d.key);
     if (!activeDepts.length) return null;
     const lostBy = new Map();
     for (const r of rows) {
