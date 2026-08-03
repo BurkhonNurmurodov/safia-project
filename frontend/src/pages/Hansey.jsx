@@ -751,7 +751,7 @@ export default function Hansey() {
       if (va === vb) return 0;
       return (va > vb ? 1 : -1) * mul;
     });
-  }, [filtered, sort, lang, t]);
+  }, [filtered, sort, t]);
 
   // asc → desc → off, the canonical three-state header toggle.
   const onSort = (key) =>
