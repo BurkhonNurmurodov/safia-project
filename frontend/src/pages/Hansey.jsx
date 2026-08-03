@@ -691,52 +691,57 @@ export default function Hansey() {
   const showLeaderFilter = leaderOptions.length > 2;
   const showSupFilter = supOptions.length > 2;
 
-  const filterSections = useMemo(
-    () => [
-      {
-        key: "status",
-        label: t("hansey.fltStatus"),
-        active: fStatus !== "all",
-        onClear: () => setFStatus("all"),
-        render: () => (
-          <OptsFilter
-            options={[
-              { value: "all", label: t("general.all") },
-              { value: "open", label: t("hansey.statusOpen") },
-              { value: "closed", label: t("hansey.statusClosed") },
-            ]}
-            value={fStatus}
-            onChange={setFStatus}
-          />
-        ),
-      },
-      {
-        key: "dept",
-        label: t("hansey.fltDepartment"),
-        active: fDepts.length > 0,
-        onClear: () => setFDepts([]),
-        render: () => (
-          <OptsFilter
-            multiple
-            options={DEPARTMENTS.map((d) => ({ value: d, label: t(`concerns.category.${d}`) }))}
-            value={fDepts}
-            onChange={setFDepts}
-          />
-        ),
-      },
-      {
-        key: "cell",
-        label: t("hansey.fltCell"),
-        active: fCells.length > 0,
-        onClear: () => setFCells([]),
-        render: () => <OptsFilter multiple searchable options={cellOptions} value={fCells} onChange={setFCells} />,
-      },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fStatus, fDepts, fCells, cellOptions, lang],
+  // Cell codes are the filter's option values (verifix_code is unique), so the
+  // selection survives a cells refetch without depending on row ids.
+  const cellCodes = useMemo(
+    () => [...new Set(cells.map((c) => c.verifix_code).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [cells],
   );
-  const filterActiveCount = (fStatus !== "all" ? 1 : 0) + (fDepts.length ? 1 : 0) + (fCells.length ? 1 : 0);
-  const clearAllFilters = () => { setFStatus("all"); setFDepts([]); setFCells([]); };
+  const cellNameByCode = useMemo(() => {
+    const m = new Map();
+    for (const c of cells) m.set(c.verifix_code, pickCellName(c, lang));
+    return m;
+  }, [cells, lang]);
+
+  const filterSections = [
+    {
+      key: "status", icon: CircleDot, label: t("hansey.fltStatus"),
+      active: fStatus.length > 0,
+      display: `${fStatus.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter
+          opts={["open", "closed"]}
+          sel={fStatus}
+          onChange={setFStatus}
+          render={(s) => <StatusPill closed={s === "closed"} t={t} />}
+        />
+      ),
+    },
+    {
+      key: "dept", icon: Layers, label: t("hansey.fltDepartment"),
+      active: fDepts.length > 0,
+      display: `${fDepts.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter opts={DEPARTMENTS} sel={fDepts} onChange={setFDepts} render={(d) => <DeptChip dept={d} t={t} />} />
+      ),
+    },
+    {
+      key: "cell", icon: LayoutGrid, label: t("hansey.fltCell"),
+      active: fCells.length > 0,
+      display: `${fCells.length} ${t("filter.selected2")}`,
+      render: () => (
+        <OptsFilter
+          opts={cellCodes}
+          sel={fCells}
+          onChange={setFCells}
+          searchable={cellCodes.length > 8}
+          render={(c) => <CellBadge code={c} name={cellNameByCode.get(c)} />}
+        />
+      ),
+    },
+  ];
+  const filterActiveCount = (fStatus.length ? 1 : 0) + (fDepts.length ? 1 : 0) + (fCells.length ? 1 : 0);
+  const clearAllFilters = () => { setFStatus([]); setFDepts([]); setFCells([]); };
 
   // ── sorting ────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
