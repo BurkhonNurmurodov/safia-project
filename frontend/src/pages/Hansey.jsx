@@ -582,7 +582,6 @@ function ProblemModal({ open, form, setForm, cells, lang, t, tl, onClose, onSave
 }
 
 export default function Hansey() {
-  const { auth } = useAuth();
   const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
