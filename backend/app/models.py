@@ -1648,8 +1648,12 @@ class HanseyProblem(Base):
     comment          = Column(Text, nullable=False)       # изох / комментарий
     answers          = Column(Text, nullable=False)       # ответы — what the department answered
     countermeasure   = Column(Text, nullable=False)       # контрмера — what was changed so it doesn't recur
-    started_at       = Column(DateTime(timezone=True), nullable=False, index=True)
-    closed_at        = Column(DateTime(timezone=True), nullable=True, index=True)  # NULL = still open
+    # Factory WALL-CLOCK time as typed by a human, stored naive on purpose: the
+    # value means "14:30 on the shop floor" and must never be shifted by a
+    # session timezone. `date` and `duration_minutes` are both derived from these
+    # two, so all three stay consistent with each other.
+    started_at       = Column(DateTime, nullable=False, index=True)
+    closed_at        = Column(DateTime, nullable=True, index=True)   # NULL = still open
     duration_minutes = Column(Integer, nullable=True, index=True)  # server-computed; NULL while open
     date             = Column(Date, nullable=False, index=True)    # derived from started_at — the period key
     # Creator identity, same convention as leader_concerns: role_profiles.id for
