@@ -650,15 +650,6 @@ export default function Hansey() {
   }, [rows, search, fStatus, fDepts, fCells, fLeader, fSup]);
 
   // ── filter option lists, derived from what the viewer actually has ──────────
-  const cellOptions = useMemo(
-    () =>
-      cells.map((c) => {
-        const nm = pickCellName(c, lang);
-        return { value: String(c.cell_id), label: `${c.verifix_code}${nm ? " · " + nm : ""}`, title: `${c.verifix_code} ${nm}` };
-      }),
-    [cells, lang],
-  );
-
   const leaderOptions = useMemo(() => {
     const byId = new Map();
     let anyNone = false;
