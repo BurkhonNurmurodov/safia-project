@@ -74,6 +74,10 @@ export const DEFAULT_PAGE_ACCESS = {
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,
   // supervisors their unit, shift-managers their shift, top-managers read-only all.
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],
+  // «Hansey» production-problem register — leaders log on their own cells and
+  // see only those; supervisors log on any cell of their unit (incl. leaderless
+  // ones), manage it all and get the unit-wide analytics board.
+  hansey: ["supervisor", "leader"],
   tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
