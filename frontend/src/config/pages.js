@@ -42,6 +42,7 @@ export const PAGES = [
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
+  { key: "hansey", route: "/hansey", labelKey: "nav.hansey" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
