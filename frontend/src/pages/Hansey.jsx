@@ -992,7 +992,9 @@ export default function Hansey() {
       ) : (
         sorted.map((r) => (
           <div key={r.id} className="rounded-2xl p-3.5 space-y-2.5" style={cardStyle}>
-            <div className="flex items-start gap-2">
+            {/* Whole-card tap target: the full record (incl. the three
+                reflection fields) opens in the detail view. */}
+            <button type="button" onClick={() => setDetailRow(r)} className="w-full flex items-start gap-2 text-left">
               <div className="min-w-0 flex-1 space-y-1.5">
                 <CellBadge code={r.cell_code} name={cellLabel(r, lang)} className="text-[11px]" />
                 <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
@@ -1000,7 +1002,7 @@ export default function Hansey() {
                 </div>
               </div>
               <StatusPill closed={!!r.closed_at} t={t} />
-            </div>
+            </button>
 
             <div className="flex flex-wrap items-center gap-1.5">
               <DeptChip dept={r.department} t={t} />
