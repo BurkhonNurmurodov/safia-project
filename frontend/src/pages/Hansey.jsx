@@ -887,47 +887,6 @@ export default function Hansey() {
     </div>
   );
 
-  // Phones get cards, not a 9-column table squeezed sideways.
-  const mobileList = (
-    <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-      {sorted.map((r) => (
-        <div key={r.id} className="p-3.5 space-y-2.5">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <CellBadge code={r.cell_code} name={cellLabel(r, lang)} className="text-[11px]" />
-              <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
-                {tl(r.problem)}
-              </div>
-            </div>
-            <StatusPill closed={!!r.closed_at} t={t} />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <DeptChip dept={r.department} t={t} />
-            {unitBoard && r.leader_name && (
-              <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-3)" }}>
-                <Flag size={10} /> {tl(r.leader_name)}
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-            <div className="flex justify-between gap-2">
-              <span style={{ color: "var(--text-4)" }}>{t("hansey.colDate")}</span>
-              <span style={{ color: "var(--text-2)" }}>{fmtShortDate(r.date)} {splitDT(r.started_at).time}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span style={{ color: "var(--text-4)" }}>{t("hansey.colDuration")}</span>
-              {durationCell(r)}
-            </div>
-          </div>
-
-          {(r.can_edit || r.can_delete) && <div className="pt-0.5">{rowActions(r)}</div>}
-        </div>
-      ))}
-    </div>
-  );
-
   const emptyState = (
     <div className="px-4 py-14 text-center">
       <SearchCheck size={28} className="mx-auto mb-3" style={{ color: "var(--text-4)" }} />
@@ -938,6 +897,57 @@ export default function Hansey() {
         <div className="text-xs max-w-xs mx-auto" style={{ color: "var(--text-4)" }}>{t("hansey.emptyHint")}</div>
       )}
     </div>
+  );
+
+  // Phones get a stack of standalone cards, not a 10-column table squeezed
+  // sideways. `mobileCards` renders these OUTSIDE the card, so each one carries
+  // its own chrome.
+  const mobileList = (
+    <>
+      {isLoading ? (
+        Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-32 w-full rounded-2xl" />)
+      ) : !sorted.length ? (
+        <div className="rounded-2xl" style={cardStyle}>{emptyState}</div>
+      ) : (
+        sorted.map((r) => (
+          <div key={r.id} className="rounded-2xl p-3.5 space-y-2.5" style={cardStyle}>
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <CellBadge code={r.cell_code} name={cellLabel(r, lang)} className="text-[11px]" />
+                <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+                  {tl(r.problem)}
+                </div>
+              </div>
+              <StatusPill closed={!!r.closed_at} t={t} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <DeptChip dept={r.department} t={t} />
+              {unitBoard && r.leader_name && (
+                <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                  <Flag size={10} /> {tl(r.leader_name)}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+              <div className="flex justify-between gap-2">
+                <span style={{ color: "var(--text-4)" }}>{t("hansey.colDate")}</span>
+                <span style={{ color: "var(--text-2)" }}>{fmtShortDate(r.date)} {splitDT(r.started_at).time}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span style={{ color: "var(--text-4)" }}>{t("hansey.colDuration")}</span>
+                {durationCell(r)}
+              </div>
+            </div>
+
+            {(r.can_edit || r.can_delete) && (
+              <div className="pt-0.5" style={{ borderTop: "1px solid var(--border)" }}>{rowActions(r)}</div>
+            )}
+          </div>
+        ))
+      )}
+    </>
   );
 
   const addButton = canCreate && (
