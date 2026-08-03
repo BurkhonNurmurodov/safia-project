@@ -630,13 +630,13 @@ export default function Hansey() {
   // ── filters (client-side over the one payload, so every board reshapes live) ─
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const statusSet = new Set(fStatus);
     const deptSet = new Set(fDepts);
-    const cellSet = new Set(fCells.map(String));
+    const cellSet = new Set(fCells);
     return rows.filter((r) => {
-      if (fStatus === "open" && r.closed_at) return false;
-      if (fStatus === "closed" && !r.closed_at) return false;
+      if (statusSet.size && !statusSet.has(r.closed_at ? "closed" : "open")) return false;
       if (deptSet.size && !deptSet.has(r.department)) return false;
-      if (cellSet.size && !cellSet.has(String(r.cell_id))) return false;
+      if (cellSet.size && !cellSet.has(r.cell_code)) return false;
       if (fLeader) {
         if (fLeader === "none" ? r.leader_id : String(r.leader_id) !== fLeader) return false;
       }
