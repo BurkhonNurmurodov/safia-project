@@ -680,6 +680,7 @@ export default function Hansey() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
+  const [detailRow, setDetailRow] = useState(null);
   const [confirmRow, setConfirmRow] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
