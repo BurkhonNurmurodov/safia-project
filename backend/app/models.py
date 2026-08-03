@@ -1607,3 +1607,59 @@ class CapabilityUse(Base):
     details     = Column(JSONB, nullable=True)
     changes     = Column(JSONB, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class HanseyProblem(Base):
+    """A production problem logged on the «Hansey» page — one incident that cost
+    a cell time, with the department that caused it and the reflection on it
+    (hansei: what happened, what we answered, what we changed).
+
+    Always about a CELL: the cell names its supervisor unit (``manager_id``) and,
+    when one is assigned, its leader — which is exactly what the page's scoping
+    is built on (a leader works their own cells, a supervisor their unit). Cells
+    with a supervisor and no leader are first-class here: the supervisor logs on
+    them directly, so ``leader_profile_id`` is nullable.
+
+    ``manager_id``/``leader_profile_id`` are snapshots taken at write time so a
+    later cell re-assignment can't silently move historical rows between units;
+    the cell's CURRENT leader is resolved live for display.
+
+    ``duration_minutes`` is NEVER accepted from the client — it is recomputed
+    from started_at/closed_at on every write (mirroring the source project's
+    model-level `saving` hook), so a reported downtime can't be forged by the
+    request. NULL while the problem is still open.
+
+    ``date`` is derived from ``started_at`` (factory-local), not from the moment
+    the row was typed: a problem that started at 23:40 and was logged after
+    midnight still belongs to the day it happened, which is what every period
+    filter and trend chart on the page counts on."""
+    __tablename__ = "hansey_problems"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id          = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    cell_code        = Column(String, nullable=True)      # verifix_code snapshot (display + export)
+    manager_id       = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)  # owning unit — the supervisor scope key
+    leader_profile_id = Column(Integer, nullable=True, index=True)   # role_profiles.id at write time; NULL on leaderless cells
+    # Department at fault — the shared 12-department whitelist (CATEGORIES in
+    # routers/hansey.py), the same vocabulary the Concerns page uses so a chip
+    # means the same thing on both pages.
+    department       = Column(String, nullable=False, index=True)
+    problem          = Column(Text, nullable=False)       # what happened
+    comment          = Column(Text, nullable=False)       # изох / комментарий
+    answers          = Column(Text, nullable=False)       # ответы — what the department answered
+    countermeasure   = Column(Text, nullable=False)       # контрмера — what was changed so it doesn't recur
+    started_at       = Column(DateTime(timezone=True), nullable=False, index=True)
+    closed_at        = Column(DateTime(timezone=True), nullable=True, index=True)  # NULL = still open
+    duration_minutes = Column(Integer, nullable=True, index=True)  # server-computed; NULL while open
+    date             = Column(Date, nullable=False, index=True)    # derived from started_at — the period key
+    # Creator identity, same convention as leader_concerns: role_profiles.id for
+    # leader/shift-manager/admin, managers.id for a supervisor. Resolved to the
+    # CURRENT profile name at view time so renames stay live.
+    owner_role       = Column(String, nullable=True)
+    owner_profile_id = Column(Integer, nullable=True)
+    owner_name       = Column(String, nullable=True)      # name snapshot, fallback for display
+    created_by       = Column(BigInteger, nullable=True)  # telegram_id of the author
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (Index("ix_hansey_unit_date", "manager_id", "date"),)
