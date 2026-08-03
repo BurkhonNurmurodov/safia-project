@@ -1254,6 +1254,18 @@ export default function Hansey() {
         </TableCard>
       )}
 
+      {detailRow && (
+        <DetailModal
+          row={detailRow}
+          lang={lang}
+          t={t}
+          tl={tl}
+          onClose={() => setDetailRow(null)}
+          onEdit={detailRow.can_edit ? () => { const r = detailRow; setDetailRow(null); openEdit(r); } : null}
+          onDelete={detailRow.can_delete ? () => { const r = detailRow; setDetailRow(null); setConfirmRow(r); } : null}
+        />
+      )}
+
       {modalOpen && (
         <ProblemModal
           open={modalOpen}
