@@ -122,12 +122,18 @@ def _own_cell_ids(db: Session, leader_profile_id: Optional[int]) -> list[int]:
     return [cid for (cid,) in db.query(Cell.id).filter(Cell.leader_id == leader_profile_id).all()]
 
 
-def _owner_filter(payload: dict):
-    """Rows the caller created. owner_profile_id is managers.id for supervisors
-    and role_profiles.id for everyone else — the same convention as the bell."""
+def _owner_filter(ctx: dict):
+    """Rows the caller created, matched on the identity _creator_identity stamps.
+
+    Keyed on ctx["owner_id"], NOT on the JWT's role_id — for a leader those are
+    different numbers: a leader role row's role_id is their UNIT (managers.id)
+    while the row stores their role_profiles.id, so comparing role_id here would
+    silently match nothing (or, worse, a same-numbered unrelated profile)."""
+    if ctx.get("owner_id") is None:
+        return HanseyProblem.id.is_(None)   # unresolvable identity → owns nothing
     return and_(
-        HanseyProblem.owner_role == payload.get("role"),
-        HanseyProblem.owner_profile_id == payload.get("role_id"),
+        HanseyProblem.owner_role == ctx["role"],
+        HanseyProblem.owner_profile_id == ctx["owner_id"],
     )
 
 
@@ -139,12 +145,17 @@ def _viewer_ctx(db: Session, payload: dict) -> dict:
         "role": role,
         "role_id": payload.get("role_id"),
         "profile_id": None,     # leader: their role_profiles.id
+        # The id ownership is stamped with (see _creator_identity): managers.id
+        # for a supervisor — the manager row IS their profile — and the
+        # role_profiles.id for every other role.
+        "owner_id": payload.get("role_id"),
         "cell_ids": set(),      # leader: the cells they currently own
         "shift_units": set(),   # shift-manager: units on their shift
     }
     if role == "leader":
         prof = _own_leader_profile(db, payload)
         ctx["profile_id"] = prof.id if prof else None
+        ctx["owner_id"] = ctx["profile_id"]
         ctx["cell_ids"] = set(_own_cell_ids(db, ctx["profile_id"]))
     elif role == "shift-manager":
         ctx["shift_units"] = set(_shift_unit_ids(db, _viewer_shift(db, payload)))
