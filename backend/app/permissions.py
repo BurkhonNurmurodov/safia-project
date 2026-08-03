@@ -80,6 +80,12 @@ DEFAULT_PAGE_ACCESS = {
     # rows, supervisors their unit's leaders, shift-managers their shift's
     # units, admins everything; top-managers get a read-only view of all.
     "concerns": ["top-manager", "shift-manager", "supervisor", "leader"],
+    # «Hansey» production-problem register. Leaders log problems on their own
+    # cells and see only those; supervisors log on any cell of their unit
+    # (including cells with no leader assigned), manage everything in it and get
+    # the unit-wide analytics. Shift-managers cover their shift, admins
+    # everything, top-managers read all.
+    "hansey": ["supervisor", "leader"],
     # Leader tasks ("DAILY протокол") board. Supervisors assign tasks to their
     # leaders; leaders work their own queue; admins see everything.
     "tasks": ["supervisor", "leader"],
