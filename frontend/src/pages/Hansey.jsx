@@ -1221,7 +1221,17 @@ export default function Hansey() {
                   <td className="px-3 py-2"><CellBadge code={r.cell_code} name={cellLabel(r, lang)} /></td>
                   <td className="px-3 py-2"><DeptChip dept={r.department} t={t} /></td>
                   <td className="px-3 py-2 max-w-md">
-                    <span className="line-clamp-2" style={{ color: "var(--text-1)" }} title={r.problem}>{tl(r.problem)}</span>
+                    {/* The whole record is behind this: the three reflection
+                        fields have nowhere else to be read. */}
+                    <button
+                      type="button"
+                      onClick={() => setDetailRow(r)}
+                      className="line-clamp-2 text-left hover:underline"
+                      style={{ color: "var(--text-1)" }}
+                      title={r.problem}
+                    >
+                      {tl(r.problem)}
+                    </button>
                   </td>
                   {unitBoard && (
                     <td className="px-3 py-2 whitespace-nowrap" style={{ color: r.leader_name ? "var(--text-2)" : "var(--text-4)" }}>
