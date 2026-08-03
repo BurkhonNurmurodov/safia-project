@@ -358,7 +358,7 @@ function RankList({ items, empty }) {
 // ── date + time control ──────────────────────────────────────────────────────
 // Never a native datetime-local: the platform's own single-date picker plus the
 // wheel time picker, which is what a phone user can actually hit.
-function DateTimeField({ date, time, onDate, onTime, t, max = null }) {
+function DateTimeField({ date, time, onDate, onTime, max = null }) {
   const [wheelOpen, setWheelOpen] = useState(false);
   return (
     <div className="flex items-center gap-2 flex-wrap">
