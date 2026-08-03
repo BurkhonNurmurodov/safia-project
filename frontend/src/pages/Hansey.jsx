@@ -610,7 +610,8 @@ export default function Hansey() {
     queryFn: () =>
       api.get("/api/hansey", { params: { date_from: dateFrom, date_to: dateTo } }).then((r) => r.data),
   });
-  const rows = resp?.data ?? [];
+  // Memoised: a fresh [] each render would re-run every downstream aggregate.
+  const rows = useMemo(() => resp?.data ?? [], [resp]);
   const canCreate = !!resp?.can_create;
   // Leaders get the personal board; every other role the unit-wide one with the
   // by-leader / by-cell comparisons that only make sense across a unit.
