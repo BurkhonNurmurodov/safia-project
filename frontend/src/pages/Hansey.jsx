@@ -1187,3 +1187,873 @@ export default function Hansey() {
     </Layout>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Analytics
+//
+// Two boards over the same numbers, because the two audiences ask different
+// questions of them:
+//
+//   leader  — "what is eating MY cells' time, and what is still running?"
+//             A personal board: no by-leader ranking (they are the only leader
+//             in it) and no cross-cell comparison (they own one or two cells).
+//   unit    — the supervisor's board: everything above, plus the comparisons
+//             that only exist across a unit — leader against leader, cell
+//             against cell, and which department blocks which cell.
+//
+// Every board is computed from the ALREADY FILTERED rows, so period, cell,
+// leader, department, status and search reshape all of them live.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TOP_N = 8;
+const stackHeight = (n) => Math.max(200, 56 + n * 30);
+
+function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo, t, tl, lang, chartTheme }) {
+  const [gran, setGran] = usePersistentState("hansey_gran", "day");
+  const [deptMode, setDeptMode] = usePersistentState("hansey_dept_mode", "count");
+  const [cellMode, setCellMode] = usePersistentState("hansey_cell_mode", "time");
+
+  // ApexCharts measures its container once on mount; a chart mounted in the same
+  // frame as the grid reads a pre-layout width and renders squashed.
+  const [chartsReady, setChartsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setChartsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const deptLabel = (d) => t(`concerns.category.${d}`);
+  const weekdays = WEEKDAYS[lang] || WEEKDAYS.uz;
+
+  // ── headline numbers ───────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const closed = rows.filter((r) => r.closed_at);
+    const open = rows.filter((r) => !r.closed_at);
+    const durations = closed
+      .map((r) => r.duration_minutes)
+      .filter((m) => m != null)
+      .sort((a, b) => a - b);
+    const lost = durations.reduce((a, b) => a + b, 0);
+    // Time already burnt by problems that are STILL running — the number a
+    // supervisor is actually losing right now, which "closed total" hides.
+    const openLost = open.reduce((a, r) => a + (openAge(r) || 0), 0);
+    return {
+      total: rows.length,
+      open: open.length,
+      closed: closed.length,
+      closedRate: rows.length ? Math.round((closed.length / rows.length) * 1000) / 10 : 0,
+      avg: durations.length ? Math.round(lost / durations.length) : null,
+      median: median(durations),
+      longest: durations.length ? durations[durations.length - 1] : null,
+      lost,
+      openLost,
+    };
+  }, [rows]);
+
+  // ── insight cards: the single worst offender in each dimension ─────────────
+  const insights = useMemo(() => {
+    const openRows = rows.filter((r) => !r.closed_at);
+    let longestOpen = null;
+    for (const r of openRows) {
+      const age = openAge(r);
+      if (age == null) continue;
+      if (!longestOpen || age > longestOpen.age) longestOpen = { row: r, age };
+    }
+
+    // Department that cost the most minutes (closed time + time still running).
+    const byDept = new Map();
+    for (const r of rows) {
+      const e = byDept.get(r.department) || { count: 0, lost: 0 };
+      e.count += 1;
+      e.lost += r.closed_at ? (r.duration_minutes || 0) : (openAge(r) || 0);
+      byDept.set(r.department, e);
+    }
+    let worstDept = null;
+    for (const [d, e] of byDept) if (!worstDept || e.lost > worstDept.lost) worstDept = { dept: d, ...e };
+
+    // Hour of day that starts the most problems — a shift-pattern tell (a spike
+    // at handover or at the start of a shift is a process problem, not luck).
+    const hours = new Array(24).fill(0);
+    for (const r of rows) {
+      const { time } = splitDT(r.started_at);
+      if (!time) continue;
+      hours[Number(time.slice(0, 2))] += 1;
+    }
+    const peakCount = Math.max(...hours);
+    const peakHour = peakCount > 0 ? hours.indexOf(peakCount) : null;
+
+    // The cell+department pair that keeps coming back: a recurring pair is a
+    // countermeasure that did not work, which is the whole point of the page.
+    const pairs = new Map();
+    for (const r of rows) {
+      const k = `${r.cell_code}||${r.department}`;
+      const e = pairs.get(k) || { count: 0, lost: 0, cell: r.cell_code, dept: r.department };
+      e.count += 1;
+      e.lost += r.closed_at ? (r.duration_minutes || 0) : (openAge(r) || 0);
+      pairs.set(k, e);
+    }
+    const repeats = [...pairs.values()].filter((p) => p.count > 1).sort((a, b) => b.count - a.count);
+
+    return { longestOpen, worstDept, peakHour, peakCount, repeats };
+  }, [rows]);
+
+  // ── trend: opened vs closed vs time lost, over a padded window ─────────────
+  // Closed is keyed on the CLOSING day, not the problem's own date: the two
+  // series then read as inflow against outflow instead of the same day twice.
+  const trend = useMemo(() => {
+    const from = padChartFrom(dateFrom, dateTo);
+    if (!from || !dateTo) return { labels: [], opened: [], closed: [], lost: [] };
+    const keyOf = (iso) => {
+      if (gran === "day") return iso;
+      if (gran === "month") return iso.slice(0, 7);
+      // Week buckets are keyed by their Monday so the axis stays chronological.
+      const d = new Date(`${iso}T00:00:00`);
+      const back = (d.getDay() + 6) % 7;
+      return isoMinusDays(iso, back);
+    };
+
+    const buckets = new Map();
+    // Seed every period in the window so a quiet day is a real zero, not a gap.
+    let cursor = from;
+    let guard = 0;
+    while (cursor <= dateTo && guard++ < 800) {
+      const k = keyOf(cursor);
+      if (!buckets.has(k)) buckets.set(k, { opened: 0, closed: 0, lost: 0 });
+      cursor = addDaysIso(cursor, 1);
+    }
+
+    for (const r of rows) {
+      const ok = keyOf(r.date);
+      const b = buckets.get(ok);
+      if (b) { b.opened += 1; b.lost += r.closed_at ? (r.duration_minutes || 0) : 0; }
+      if (r.closed_at) {
+        const ck = keyOf(splitDT(r.closed_at).date);
+        const cb = buckets.get(ck);
+        if (cb) cb.closed += 1;
+      }
+    }
+
+    const keys = [...buckets.keys()].sort();
+    const label = (k) => {
+      if (gran === "month") {
+        const [y, m] = k.split("-").map(Number);
+        return `${(MONTHS[lang] || MONTHS.uz)[m - 1].slice(0, 3)} ${String(y).slice(2)}`;
+      }
+      return fmtShortDate(k);
+    };
+    return {
+      labels: keys.map(label),
+      opened: keys.map((k) => buckets.get(k).opened),
+      closed: keys.map((k) => buckets.get(k).closed),
+      lost: keys.map((k) => Math.round((buckets.get(k).lost / 60) * 10) / 10),
+    };
+  }, [rows, dateFrom, dateTo, gran, lang]);
+
+  // ── by department ──────────────────────────────────────────────────────────
+  const depts = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) {
+      const e = m.get(r.department) || { key: r.department, count: 0, open: 0, closed: 0, lost: 0, durations: [] };
+      e.count += 1;
+      if (r.closed_at) {
+        e.closed += 1;
+        e.lost += r.duration_minutes || 0;
+        if (r.duration_minutes != null) e.durations.push(r.duration_minutes);
+      } else {
+        e.open += 1;
+        e.lost += openAge(r) || 0;
+      }
+      m.set(r.department, e);
+    }
+    const total = rows.length || 1;
+    const totalLost = [...m.values()].reduce((a, e) => a + e.lost, 0) || 1;
+    return [...m.values()]
+      .map((e) => ({
+        ...e,
+        avg: e.durations.length ? Math.round(e.durations.reduce((a, b) => a + b, 0) / e.durations.length) : null,
+        share: Math.round((e.count / total) * 1000) / 10,
+        lostShare: Math.round((e.lost / totalLost) * 1000) / 10,
+      }))
+      .sort((a, b) => (deptMode === "time" ? b.lost - a.lost : b.count - a.count));
+  }, [rows, deptMode]);
+
+  // ── resolution-time spread ─────────────────────────────────────────────────
+  const buckets = useMemo(() => {
+    const closed = rows.filter((r) => r.closed_at && r.duration_minutes != null);
+    return BUCKETS.map((b) => {
+      const n = closed.filter((r) => r.duration_minutes >= b.min && (b.max == null || r.duration_minutes < b.max)).length;
+      return { ...b, n, share: closed.length ? Math.round((n / closed.length) * 1000) / 10 : 0 };
+    });
+  }, [rows]);
+
+  // ── time-of-day and weekday patterns ───────────────────────────────────────
+  const hourly = useMemo(() => {
+    const counts = new Array(24).fill(0);
+    for (const r of rows) {
+      const { time } = splitDT(r.started_at);
+      if (time) counts[Number(time.slice(0, 2))] += 1;
+    }
+    return counts;
+  }, [rows]);
+
+  const weekly = useMemo(() => {
+    const counts = new Array(7).fill(0);
+    const mins = new Array(7).fill(0);
+    const closedN = new Array(7).fill(0);
+    for (const r of rows) {
+      if (!r.date) continue;
+      const wd = (new Date(`${r.date}T00:00:00`).getDay() + 6) % 7; // Mon = 0
+      counts[wd] += 1;
+      if (r.closed_at && r.duration_minutes != null) { mins[wd] += r.duration_minutes; closedN[wd] += 1; }
+    }
+    return {
+      counts,
+      avgHours: mins.map((m, i) => (closedN[i] ? Math.round((m / closedN[i] / 60) * 10) / 10 : 0)),
+    };
+  }, [rows]);
+
+  // ── lists: what is running now, what took longest ─────────────────────────
+  const longestOpenList = useMemo(
+    () =>
+      rows
+        .filter((r) => !r.closed_at)
+        .map((r) => ({ r, age: openAge(r) ?? 0 }))
+        .sort((a, b) => b.age - a.age)
+        .slice(0, TOP_N)
+        .map(({ r, age }) => ({
+          key: r.id,
+          label: tl(r.problem),
+          title: r.problem,
+          sub: `${r.cell_code} · ${deptLabel(r.department)}`,
+          value: fmtDuration(age, t),
+          color: C_OPEN,
+        })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, lang],
+  );
+
+  const slowestList = useMemo(
+    () =>
+      rows
+        .filter((r) => r.closed_at && r.duration_minutes != null)
+        .sort((a, b) => b.duration_minutes - a.duration_minutes)
+        .slice(0, TOP_N)
+        .map((r) => ({
+          key: r.id,
+          label: tl(r.problem),
+          title: r.problem,
+          sub: `${r.cell_code} · ${deptLabel(r.department)} · ${fmtShortDate(r.date)}`,
+          value: fmtDuration(r.duration_minutes, t),
+          color: "var(--text-1)",
+        })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, lang],
+  );
+
+  // ── unit-only aggregates ───────────────────────────────────────────────────
+  const leaders = useMemo(() => {
+    if (!unitBoard) return [];
+    const m = new Map();
+    for (const r of rows) {
+      const key = r.leader_id ? String(r.leader_id) : "none";
+      const e = m.get(key) || {
+        key, name: r.leader_name ? tl(r.leader_name) : t("hansey.noLeader"),
+        count: 0, open: 0, closed: 0, lost: 0, durations: [],
+      };
+      e.count += 1;
+      if (r.closed_at) {
+        e.closed += 1;
+        e.lost += r.duration_minutes || 0;
+        if (r.duration_minutes != null) e.durations.push(r.duration_minutes);
+      } else {
+        e.open += 1;
+        e.lost += openAge(r) || 0;
+      }
+      m.set(key, e);
+    }
+    return [...m.values()]
+      .map((e) => ({
+        ...e,
+        avg: e.durations.length ? Math.round(e.durations.reduce((a, b) => a + b, 0) / e.durations.length) : null,
+        rate: e.count ? Math.round((e.closed / e.count) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, unitBoard, lang]);
+
+  const cellStats = useMemo(() => {
+    if (!unitBoard) return [];
+    const m = new Map();
+    for (const r of rows) {
+      const e = m.get(r.cell_code) || { key: r.cell_code, name: cellLabel(r, lang), count: 0, open: 0, lost: 0 };
+      e.count += 1;
+      if (!r.closed_at) e.open += 1;
+      e.lost += r.closed_at ? (r.duration_minutes || 0) : (openAge(r) || 0);
+      m.set(r.cell_code, e);
+    }
+    return [...m.values()].sort((a, b) => (cellMode === "count" ? b.count - a.count : b.lost - a.lost));
+  }, [rows, unitBoard, cellMode, lang]);
+
+  // Cell × department: for each of the busiest cells, how its lost time splits
+  // across the departments. Row-normalised, so a row reads "what blocks THIS
+  // cell" rather than being drowned out by the unit's biggest cell.
+  const matrix = useMemo(() => {
+    if (!unitBoard) return null;
+    const topCells = cellStats.slice(0, 12);
+    if (!topCells.length) return null;
+    const activeDepts = depts.map((d) => d.key);
+    if (!activeDepts.length) return null;
+    const lostBy = new Map();
+    for (const r of rows) {
+      const k = `${r.cell_code}||${r.department}`;
+      lostBy.set(k, (lostBy.get(k) || 0) + (r.closed_at ? (r.duration_minutes || 0) : (openAge(r) || 0)));
+    }
+    return {
+      labels: activeDepts.map(deptLabel),
+      colTotals: activeDepts.map((d) => depts.find((x) => x.key === d)?.count || 0),
+      rows: topCells.map((c) => ({
+        key: c.key,
+        label: c.key,
+        title: `${c.key} ${c.name || ""}`.trim(),
+        data: activeDepts.map((d) => {
+          const v = lostBy.get(`${c.key}||${d}`) || 0;
+          return c.lost ? Math.round((v / c.lost) * 1000) / 10 : 0;
+        }),
+      })),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, cellStats, depts, unitBoard, lang]);
+
+  // ── chart options ──────────────────────────────────────────────────────────
+  const baseOpts = {
+    chart: { toolbar: { show: false }, zoom: { enabled: false }, background: "transparent", fontFamily: "inherit" },
+    theme: chartTheme.chartTheme,
+    grid: { borderColor: chartTheme.gridColor, strokeDashArray: 3, padding: { left: 8, right: 12 } },
+    dataLabels: { enabled: false },
+    legend: { labels: { colors: chartTheme.legendColor }, fontSize: "11px", markers: { radius: 3 } },
+    tooltip: { theme: chartTheme.tooltipTheme },
+  };
+  const axisLabel = { style: { colors: chartTheme.labelColor, fontSize: "10px" } };
+
+  const trendOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "area", stacked: false },
+    colors: [C_OPEN, C_CLOSED],
+    stroke: { curve: "smooth", width: 2 },
+    fill: { type: "gradient", gradient: { opacityFrom: 0.28, opacityTo: 0.02, shadeIntensity: 1 } },
+    xaxis: { categories: trend.labels, labels: { ...axisLabel, rotate: 0, hideOverlappingLabels: true }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { ...axisLabel, formatter: (v) => Math.round(v) }, min: 0, forceNiceScale: true },
+  };
+  const trendSeries = [
+    { name: t("hansey.opened"), data: trend.opened },
+    { name: t("hansey.closedWord"), data: trend.closed },
+  ];
+
+  const lostOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: [BRAND],
+    plotOptions: { bar: { columnWidth: "55%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: trend.labels, labels: { ...axisLabel, hideOverlappingLabels: true }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { ...axisLabel, formatter: (v) => `${Math.round(v)}` }, min: 0, forceNiceScale: true },
+    tooltip: { theme: chartTheme.tooltipTheme, y: { formatter: (v) => `${v} ${t("hansey.hShort")}` } },
+    legend: { show: false },
+  };
+  const lostSeries = [{ name: t("hansey.lostWord"), data: trend.lost }];
+
+  const deptRows = depts.slice(0, 12);
+  const deptOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: deptRows.map((d) => DEPT_COLOR[d.key] || C_NEUTRAL),
+    plotOptions: { bar: { horizontal: true, distributed: true, barHeight: "62%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: deptRows.map((d) => deptLabel(d.key)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { colors: chartTheme.labelColor, fontSize: "11px" } } },
+    legend: { show: false },
+    tooltip: {
+      theme: chartTheme.tooltipTheme,
+      y: {
+        formatter: (v) => (deptMode === "time" ? fmtDuration(Math.round(v * 60), t) : `${v} ${t("hansey.problemsWord")}`),
+      },
+    },
+  };
+  const deptSeries = [{
+    name: deptMode === "time" ? t("hansey.lostWord") : t("hansey.problemsWord"),
+    data: deptRows.map((d) => (deptMode === "time" ? Math.round((d.lost / 60) * 10) / 10 : d.count)),
+  }];
+
+  const bucketOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: buckets.map((b) => b.color),
+    plotOptions: { bar: { distributed: true, columnWidth: "48%", borderRadius: 4, borderRadiusApplication: "end" } },
+    xaxis: { categories: buckets.map((b) => t(`hansey.${b.key}`)), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { ...axisLabel, formatter: (v) => Math.round(v) }, min: 0, forceNiceScale: true },
+    legend: { show: false },
+    dataLabels: {
+      enabled: true,
+      formatter: (v, { dataPointIndex }) => (v ? `${buckets[dataPointIndex].share}%` : ""),
+      style: { fontSize: "10px", fontWeight: 600, colors: [chartTheme.legendColor] },
+      offsetY: -18,
+    },
+  };
+  const bucketSeries = [{ name: t("hansey.problemsWord"), data: buckets.map((b) => b.n) }];
+
+  const hourOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: [BRAND],
+    plotOptions: { bar: { columnWidth: "62%", borderRadius: 2, borderRadiusApplication: "end" } },
+    xaxis: {
+      categories: hourly.map((_, i) => `${pad2(i)}`),
+      labels: { ...axisLabel, hideOverlappingLabels: true },
+      axisBorder: { show: false }, axisTicks: { show: false },
+    },
+    yaxis: { labels: { ...axisLabel, formatter: (v) => Math.round(v) }, min: 0, forceNiceScale: true },
+    legend: { show: false },
+    tooltip: { theme: chartTheme.tooltipTheme, x: { formatter: (v) => `${v}:00` } },
+  };
+  const hourSeries = [{ name: t("hansey.problemsWord"), data: hourly }];
+
+  const weekOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "line", stacked: false },
+    colors: [CATEGORY_COLORS[2], BRAND],
+    stroke: { width: [0, 2.5], curve: "smooth" },
+    plotOptions: { bar: { columnWidth: "50%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: weekdays, labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: [
+      { labels: { ...axisLabel, formatter: (v) => Math.round(v) }, min: 0, forceNiceScale: true },
+      { opposite: true, labels: { ...axisLabel, formatter: (v) => `${v}${t("hansey.hShort")}` }, min: 0, forceNiceScale: true },
+    ],
+  };
+  const weekSeries = [
+    { name: t("hansey.problemsWord"), type: "column", data: weekly.counts },
+    { name: t("hansey.kpiAvg"), type: "line", data: weekly.avgHours },
+  ];
+
+  // Top leaders/cells fold into a slate «Other» bucket rather than growing the
+  // axis until the labels are unreadable.
+  const foldTop = (list, n, mapper) => {
+    if (list.length <= n) return list.map(mapper);
+    const head = list.slice(0, n).map(mapper);
+    const tail = list.slice(n);
+    return [...head, {
+      key: "__other__",
+      label: `${t("hansey.other")} (${tail.length})`,
+      open: tail.reduce((a, e) => a + e.open, 0),
+      closed: tail.reduce((a, e) => a + (e.closed || 0), 0),
+      count: tail.reduce((a, e) => a + e.count, 0),
+      lost: tail.reduce((a, e) => a + e.lost, 0),
+      fold: true,
+    }];
+  };
+
+  const leaderRows = foldTop(leaders, TOP_N, (e) => ({ ...e, label: e.name }));
+  const leaderOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar", stacked: true },
+    colors: [C_OPEN, C_CLOSED],
+    plotOptions: { bar: { horizontal: true, barHeight: "60%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: leaderRows.map((e) => e.label), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { colors: chartTheme.labelColor, fontSize: "11px" }, maxWidth: 150 } },
+  };
+  const leaderSeries = [
+    { name: t("hansey.statusOpen"), data: leaderRows.map((e) => e.open) },
+    { name: t("hansey.statusClosed"), data: leaderRows.map((e) => e.closed) },
+  ];
+
+  const cellRows = foldTop(cellStats, 10, (e) => ({ ...e, label: e.key }));
+  const cellOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: cellRows.map((e, i) => (e.fold ? FOLD_COLOR : CATEGORY_COLORS[i % CATEGORY_COLORS.length])),
+    plotOptions: { bar: { horizontal: true, distributed: true, barHeight: "62%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: cellRows.map((e) => e.label), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { colors: chartTheme.labelColor, fontSize: "11px" } } },
+    legend: { show: false },
+    tooltip: {
+      theme: chartTheme.tooltipTheme,
+      y: { formatter: (v) => (cellMode === "count" ? `${v} ${t("hansey.problemsWord")}` : fmtDuration(Math.round(v * 60), t)) },
+    },
+  };
+  const cellSeries = [{
+    name: cellMode === "count" ? t("hansey.problemsWord") : t("hansey.lostWord"),
+    data: cellRows.map((e) => (cellMode === "count" ? e.count : Math.round((e.lost / 60) * 10) / 10)),
+  }];
+
+  // Resolution speed per leader — only leaders who actually closed something,
+  // because an average over zero closed problems is not a speed.
+  const speedRows = leaders.filter((e) => e.avg != null).sort((a, b) => b.avg - a.avg).slice(0, TOP_N);
+  const speedOpts = {
+    ...baseOpts,
+    chart: { ...baseOpts.chart, type: "bar" },
+    colors: [CATEGORY_COLORS[4]],
+    plotOptions: { bar: { horizontal: true, barHeight: "58%", borderRadius: 3, borderRadiusApplication: "end" } },
+    xaxis: { categories: speedRows.map((e) => e.name), labels: axisLabel, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { colors: chartTheme.labelColor, fontSize: "11px" }, maxWidth: 150 } },
+    legend: { show: false },
+    tooltip: { theme: chartTheme.tooltipTheme, y: { formatter: (v) => fmtDuration(Math.round(v * 60), t) } },
+  };
+  const speedSeries = [{ name: t("hansey.kpiAvg"), data: speedRows.map((e) => Math.round((e.avg / 60) * 10) / 10) }];
+
+  const skeleton = (h) => <div className="p-4"><SkeletonChart className={h} /></div>;
+  const hasRows = rows.length > 0;
+
+  if (!isLoading && !allRows.length) {
+    return (
+      <div className="rounded-2xl py-16 text-center" style={{ ...cardStyle, borderStyle: "dashed" }}>
+        <SearchCheck size={30} className="mx-auto mb-3" style={{ color: "var(--text-4)" }} />
+        <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-2)" }}>{t("hansey.empty")}</div>
+        <div className="text-xs max-w-xs mx-auto" style={{ color: "var(--text-4)" }}>{t("hansey.emptyHint")}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-8 space-y-3">
+      {/* ── counted KPIs ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={Layers} tint={BRAND} label={t("hansey.kpiTotal")} value={stats.total} />
+        <StatCard
+          icon={CircleDot} tint={C_OPEN} label={t("hansey.kpiOpen")} value={stats.open}
+          sub={stats.openLost ? `· ${fmtDuration(stats.openLost, t)}` : undefined}
+        />
+        <StatCard
+          icon={CheckCircle2} tint={C_CLOSED} label={t("hansey.kpiClosed")} value={stats.closed}
+          sub={`· ${stats.closedRate}%`}
+        />
+        <StatCard icon={Hourglass} tint={CATEGORY_COLORS[5]} label={t("hansey.kpiLost")} value={fmtDuration(stats.lost, t, "0")} />
+      </div>
+
+      {/* ── measured KPIs: how long things take ──────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={Timer} tint={CATEGORY_COLORS[2]} label={t("hansey.kpiAvg")} value={fmtDuration(stats.avg, t)} />
+        <StatCard icon={Gauge} tint={CATEGORY_COLORS[6]} label={t("hansey.kpiMedian")} value={fmtDuration(stats.median, t)} />
+        <StatCard icon={AlertTriangle} tint="#f97316" label={t("hansey.kpiLongest")} value={fmtDuration(stats.longest, t)} />
+        <StatCard icon={CheckCircle2} tint={C_CLOSED} label={t("hansey.kpiClosedRate")} value={`${stats.closedRate}%`} />
+      </div>
+
+      {/* ── the four "who is the worst offender" insight cards ───────────── */}
+      <div className={`grid grid-cols-1 gap-3 ${unitBoard ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3"}`}>
+        <InsightCard icon={Hourglass} tint={C_OPEN} label={t("hansey.kpiLongestOpen")}>
+          {insights.longestOpen ? (
+            <>
+              <Subject text={tl(insights.longestOpen.row.problem)} title={insights.longestOpen.row.problem} />
+              <Metric
+                value={fmtDuration(insights.longestOpen.age, t)}
+                color="var(--kpi-red, #ef4444)"
+                suffix={insights.longestOpen.row.cell_code}
+              />
+            </>
+          ) : (
+            <Empty icon={CheckCircle2} color={C_CLOSED} text={t("hansey.allClear")} />
+          )}
+        </InsightCard>
+
+        <InsightCard icon={Layers} tint="#f59e0b" label={t("hansey.kpiWorstDept")}>
+          {insights.worstDept ? (
+            <>
+              <Subject text={deptLabel(insights.worstDept.dept)} />
+              <Metric
+                value={fmtDuration(insights.worstDept.lost, t)}
+                color="var(--kpi-amber, #eab308)"
+                suffix={`${insights.worstDept.count} ${t("hansey.problemsWord")}`}
+              />
+            </>
+          ) : (
+            <Empty icon={Layers} color="var(--text-4)" text={t("hansey.noData")} />
+          )}
+        </InsightCard>
+
+        <InsightCard icon={Sunrise} tint={CATEGORY_COLORS[2]} label={t("hansey.kpiPeakHour")}>
+          {insights.peakHour != null ? (
+            <>
+              <Subject text={`${pad2(insights.peakHour)}:00`} />
+              <Metric value={insights.peakCount} unit={t("hansey.problemsWord")} color="var(--kpi-blue, #3b82f6)" />
+            </>
+          ) : (
+            <Empty icon={Sunrise} color="var(--text-4)" text={t("hansey.noData")} />
+          )}
+        </InsightCard>
+
+        {/* Unit board only: a recurring cell+department pair means a
+            countermeasure that did not hold — the supervisor's cue to escalate. */}
+        {unitBoard && (
+          <InsightCard icon={Repeat} tint={CATEGORY_COLORS[5]} label={t("hansey.kpiRepeat")}>
+            {insights.repeats.length ? (
+              <>
+                <Subject
+                  text={`${insights.repeats[0].cell} · ${deptLabel(insights.repeats[0].dept)}`}
+                  title={`${insights.repeats[0].cell} — ${deptLabel(insights.repeats[0].dept)}`}
+                />
+                <Metric
+                  value={insights.repeats[0].count}
+                  unit={t("hansey.timesWord")}
+                  color="var(--kpi-purple, #a855f7)"
+                  suffix={fmtDuration(insights.repeats[0].lost, t)}
+                />
+              </>
+            ) : (
+              <Empty icon={CheckCircle2} color={C_CLOSED} text={t("hansey.noData")} />
+            )}
+          </InsightCard>
+        )}
+      </div>
+
+      {/* ── flow: opened vs closed, and the time it cost ─────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <ChartCard
+          className="lg:col-span-2"
+          icon={TrendingUp}
+          title={t("hansey.chartTrend")}
+          subtitle={t("hansey.chartTrendSub")}
+          right={
+            <SegmentedToggle
+              size="sm"
+              value={gran}
+              onChange={setGran}
+              options={[["day", t("hansey.granDay")], ["week", t("hansey.granWeek")], ["month", t("hansey.granMonth")]]}
+            />
+          }
+        >
+          {isLoading ? skeleton("h-56") : trend.labels.length ? (
+            <div className="px-1 pt-1"><Chart ready={chartsReady} height={250} options={trendOpts} series={trendSeries} type="area" /></div>
+          ) : <NoChart height={250} text={t("hansey.noData")} />}
+        </ChartCard>
+
+        <ChartCard icon={PieChart} title={t("hansey.chartBuckets")} subtitle={t("hansey.chartBucketsSub")}>
+          {isLoading ? skeleton("h-56") : stats.closed ? (
+            <>
+              <div className="px-1 pt-1"><Chart ready={chartsReady} height={200} options={bucketOpts} series={bucketSeries} type="bar" /></div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-4 pb-4 mt-auto">
+                {buckets.map((b) => (
+                  <div key={b.key} className="flex items-center gap-1.5 text-[11px]">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                    <span className="truncate" style={{ color: "var(--text-3)" }}>{t(`hansey.${b.key}`)}</span>
+                    <span className="ml-auto font-bold tabular-nums" style={{ color: "var(--text-1)" }}>{b.n}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : <NoChart height={200} text={t("hansey.noData")} />}
+        </ChartCard>
+      </div>
+
+      {/* ── time lost per period ─────────────────────────────────────────── */}
+      <ChartCard icon={Hourglass} title={t("hansey.chartLost")} subtitle={`${t("hansey.chartLostSub")} · ${t("hansey.hShort")}`}>
+        {isLoading ? skeleton("h-44") : trend.labels.length ? (
+          <div className="px-1 pt-1 pb-1"><Chart ready={chartsReady} height={200} options={lostOpts} series={lostSeries} type="bar" /></div>
+        ) : <NoChart height={200} text={t("hansey.noData")} />}
+      </ChartCard>
+
+      {/* ── departments: the causes, ranked ──────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+        <ChartCard
+          className="lg:col-span-3"
+          icon={Layers}
+          title={t("hansey.chartDept")}
+          subtitle={t("hansey.chartDeptSub")}
+          right={
+            <SegmentedToggle
+              size="sm"
+              value={deptMode}
+              onChange={setDeptMode}
+              options={[["count", t("hansey.byCount")], ["time", t("hansey.byTime")]]}
+            />
+          }
+        >
+          {isLoading ? skeleton("h-64") : deptRows.length ? (
+            <div className="px-1 pt-1 pb-1">
+              <Chart ready={chartsReady} height={stackHeight(deptRows.length)} options={deptOpts} series={deptSeries} type="bar" />
+            </div>
+          ) : <NoChart height={220} text={t("hansey.noData")} />}
+        </ChartCard>
+
+        <div className="lg:col-span-2 rounded-2xl overflow-hidden flex flex-col" style={cardStyle}>
+          <SectionHead icon={Grid3x3} title={t("hansey.tblDepts")} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ color: "var(--text-1)" }}>
+              <thead>
+                <tr>
+                  <Th label={t("hansey.colDepartment")} />
+                  <Th label={t("hansey.colCount")} align="right" />
+                  <Th label={t("hansey.colShare")} align="right" />
+                  <Th label={t("hansey.colTotalTime")} align="right" />
+                </tr>
+              </thead>
+              <tbody>
+                {depts.length ? depts.map((d) => (
+                  <tr key={d.key} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td className="px-3 py-2"><DeptChip dept={d.key} t={t} /></td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums">{d.count}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="hidden sm:block h-1.5 w-12 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}>
+                          <span className="block h-full rounded-full" style={{ width: `${Math.min(100, d.share)}%`, background: DEPT_COLOR[d.key] }} />
+                        </span>
+                        <span className="tabular-nums" style={{ color: "var(--text-3)" }}>{d.share}%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--text-2)" }}>
+                      {fmtDuration(d.lost, t, "—")}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan={4} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>{t("hansey.noData")}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* ── rhythm: when problems start, and how the week behaves ────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <ChartCard icon={Sunrise} title={t("hansey.chartHours")} subtitle={t("hansey.chartHoursSub")}>
+          {isLoading ? skeleton("h-52") : hasRows ? (
+            <div className="px-1 pt-1 pb-1"><Chart ready={chartsReady} height={220} options={hourOpts} series={hourSeries} type="bar" /></div>
+          ) : <NoChart height={220} text={t("hansey.noData")} />}
+        </ChartCard>
+
+        <ChartCard icon={CalendarDays} title={t("hansey.chartWeekday")} subtitle={t("hansey.chartWeekdaySub")}>
+          {isLoading ? skeleton("h-52") : hasRows ? (
+            <div className="px-1 pt-1 pb-1"><Chart ready={chartsReady} height={220} options={weekOpts} series={weekSeries} type="line" /></div>
+          ) : <NoChart height={220} text={t("hansey.noData")} />}
+        </ChartCard>
+      </div>
+
+      {/* ── unit-only comparison boards ──────────────────────────────────── */}
+      {unitBoard && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <ChartCard icon={UserRound} title={t("hansey.chartByLeader")} subtitle={t("hansey.chartByLeaderSub")}>
+              {isLoading ? skeleton("h-56") : leaderRows.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={stackHeight(leaderRows.length)} options={leaderOpts} series={leaderSeries} type="bar" />
+                </div>
+              ) : <NoChart height={220} text={t("hansey.noData")} />}
+            </ChartCard>
+
+            <ChartCard
+              icon={LayoutGrid}
+              title={t("hansey.chartByCell")}
+              subtitle={t("hansey.chartByCellSub")}
+              right={
+                <SegmentedToggle
+                  size="sm"
+                  value={cellMode}
+                  onChange={setCellMode}
+                  options={[["count", t("hansey.byCount")], ["time", t("hansey.byTime")]]}
+                />
+              }
+            >
+              {isLoading ? skeleton("h-56") : cellRows.length ? (
+                <div className="px-1 pt-1 pb-1">
+                  <Chart ready={chartsReady} height={stackHeight(cellRows.length)} options={cellOpts} series={cellSeries} type="bar" />
+                </div>
+              ) : <NoChart height={220} text={t("hansey.noData")} />}
+            </ChartCard>
+          </div>
+
+          <ChartCard icon={Gauge} title={t("hansey.chartSpeed")} subtitle={t("hansey.chartSpeedSub")}>
+            {isLoading ? skeleton("h-52") : speedRows.length ? (
+              <div className="px-1 pt-1 pb-1">
+                <Chart ready={chartsReady} height={stackHeight(speedRows.length)} options={speedOpts} series={speedSeries} type="bar" />
+              </div>
+            ) : <NoChart height={200} text={t("hansey.noData")} />}
+          </ChartCard>
+
+          {/* Cell × department share grid — the shared matrix template. Each row
+              is one cell's lost time split across departments, so a row reads
+              "what blocks this cell" independent of the cell's size. */}
+          {matrix && (
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+              <SectionHead icon={Grid3x3} title={t("hansey.chartMatrix")} subtitle={t("hansey.chartMatrixSub")} />
+              <div className="p-3">
+                <SeasonalityHeatmap
+                  labels={matrix.labels}
+                  colTotals={matrix.colTotals}
+                  rows={matrix.rows}
+                  firstColLabel={t("hansey.colCell")}
+                  colWidth={86}
+                  firstColWidth={112}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Leader league table — the numbers behind the two charts above. */}
+          <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+            <SectionHead
+              icon={UserRound}
+              title={t("hansey.tblLeaders")}
+              right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>{leaders.length}</span>}
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs whitespace-nowrap" style={{ color: "var(--text-1)" }}>
+                <thead>
+                  <tr>
+                    <Th label={t("hansey.colLeader")} />
+                    <Th label={t("hansey.colCount")} align="right" />
+                    <Th label={t("hansey.statusOpen")} align="right" />
+                    <Th label={t("hansey.statusClosed")} align="right" />
+                    <Th label={t("hansey.colRate")} align="right" />
+                    <Th label={t("hansey.colAvg")} align="right" />
+                    <Th label={t("hansey.colTotalTime")} align="right" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaders.length ? leaders.map((e) => (
+                    <tr key={e.key} style={{ borderTop: "1px solid var(--border)" }}>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Flag size={11} style={{ color: "var(--text-4)" }} />
+                          <span style={{ color: e.key === "none" ? "var(--text-4)" : "var(--text-1)" }}>{e.name}</span>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold tabular-nums">{e.count}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: e.open ? C_OPEN : "var(--text-4)" }}>{e.open}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: e.closed ? C_CLOSED : "var(--text-4)" }}>{e.closed}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{e.rate}%</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDuration(e.avg, t)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{fmtDuration(e.lost, t, "—")}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={7} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>{t("hansey.noData")}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── the two lists that name actual problems ──────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <ChartCard icon={CircleDot} title={t("hansey.chartOpenList")}>
+          {isLoading ? skeleton("h-40") : <RankList items={longestOpenList} empty={t("hansey.allClear")} />}
+        </ChartCard>
+        <ChartCard icon={Timer} title={t("hansey.chartSlowest")}>
+          {isLoading ? skeleton("h-40") : <RankList items={slowestList} empty={t("hansey.noData")} />}
+        </ChartCard>
+      </div>
+
+      {/* Recurrence list — unit board only; a leader sees the same signal in
+          their own department mix without a cross-cell ranking. */}
+      {unitBoard && insights.repeats.length > 0 && (
+        <ChartCard icon={Repeat} title={t("hansey.chartRepeat")} subtitle={t("hansey.chartRepeatSub")}>
+          <RankList
+            items={insights.repeats.slice(0, TOP_N).map((p) => ({
+              key: `${p.cell}-${p.dept}`,
+              label: `${p.cell} · ${deptLabel(p.dept)}`,
+              sub: fmtDuration(p.lost, t),
+              value: `${p.count} ${t("hansey.timesWord")}`,
+              color: DEPT_COLOR[p.dept],
+            }))}
+            empty={t("hansey.noData")}
+          />
+        </ChartCard>
+      )}
+    </div>
+  );
+}
