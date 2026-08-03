@@ -551,7 +551,6 @@ function ProblemModal({ open, form, setForm, cells, lang, t, tl, onClose, onSave
               time={form.close_time}
               onDate={set("close_date")}
               onTime={set("close_time")}
-              t={t}
             />
           </div>
         )}
