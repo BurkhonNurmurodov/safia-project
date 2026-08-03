@@ -1,0 +1,1189 @@
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import ReactApexChart from "react-apexcharts";
+import {
+  Plus, Pencil, Trash2, SearchCheck, Clock, CheckCircle2, CircleDot, Hourglass,
+  TrendingUp, PieChart, Timer, Gauge, CalendarClock, Layers, Flag, FileSpreadsheet,
+  Loader2, AlertTriangle, Repeat, Grid3x3, UserRound, LayoutGrid, Sunrise, CalendarDays,
+  Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
+  Droplets, CalendarRange, Users, FlaskConical, Wheat, ChevronDown,
+} from "lucide-react";
+import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import StyledSelect from "../components/ui/StyledSelect";
+import DateRangePicker from "../components/ui/DateRangePicker";
+import TimeWheelPicker from "../components/ui/TimeWheelPicker";
+import Modal from "../components/ui/Modal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import Button from "../components/ui/Button";
+import Field from "../components/ui/FormField";
+import SearchInput from "../components/ui/SearchInput";
+import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
+import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
+import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
+import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
+import api from "../utils/api";
+import { useAuth } from "../context/AuthContext";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { useChartTheme } from "../hooks/useChartTheme";
+import { usePersistentState } from "../hooks/usePersistentState";
+import { CATEGORY_COLORS, FOLD_COLOR } from "../utils/chartPalette";
+import { cellName as pickCellName } from "../utils/cellName";
+import { padChartFrom } from "../utils/chartRange";
+
+// ── departments ──────────────────────────────────────────────────────────────
+// The SAME whitelist, hues and icons as the Concerns page, so a department chip
+// carries one meaning across the platform. Keep in sync with DEPARTMENTS in
+// backend/app/routers/hansey.py; labels render via concerns.category.<key>.
+const DEPARTMENTS = [
+  "ars", "inventory", "warehouse", "fridge", "procurement", "logistics",
+  "it", "washing", "plan", "hr", "technologist", "raw_material",
+];
+
+const DEPT_COLOR = {
+  ars: "#ef4444", inventory: "#22c55e", warehouse: "#3b82f6", fridge: "#eab308",
+  procurement: "#f97316", logistics: "#a855f7", it: "#14b8a6", washing: "#ec4899",
+  plan: "#6366f1", hr: "#84cc16", technologist: "#06b6d4", raw_material: "#d946ef",
+};
+
+const DEPT_ICON = {
+  ars: Wrench, inventory: Boxes, warehouse: Warehouse, fridge: Refrigerator,
+  procurement: ShoppingCart, logistics: Truck, it: MonitorCog, washing: Droplets,
+  plan: CalendarRange, hr: Users, technologist: FlaskConical, raw_material: Wheat,
+};
+
+// Traffic-light status: an unresolved problem is still costing time (red), a
+// closed one is done (green). Brand gold is never a status.
+const C_OPEN = "#ef4444";
+const C_CLOSED = "#22c55e";
+const C_NEUTRAL = "#94a3b8";
+const BRAND = "#C8973F";
+
+// Resolution-time buckets — the source register's four, which map cleanly onto
+// how a shift reads time: within the hour, within half a shift, within a day,
+// and "this rolled over to another day".
+const BUCKETS = [
+  { key: "bucketLt1h", min: 0, max: 60, color: "#22c55e" },
+  { key: "bucket1_4h", min: 60, max: 240, color: "#eab308" },
+  { key: "bucket4_24h", min: 240, max: 1440, color: "#f97316" },
+  { key: "bucketGt24h", min: 1440, max: null, color: "#ef4444" },
+];
+
+const WEEKDAYS = {
+  uz: ["Du", "Se", "Cho", "Pay", "Ju", "Sha", "Yak"],
+  uz_cyrl: ["Ду", "Се", "Чо", "Пай", "Жу", "Ша", "Як"],
+  ru: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+};
+
+const MONTHS = {
+  en: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  ru: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"],
+  uz: ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"],
+  uz_cyrl: ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"],
+};
+
+const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+
+// ── date / time helpers ──────────────────────────────────────────────────────
+// String math over ISO dates — Date-based range arithmetic drifts across the
+// UTC/local midnight boundary and would move problems between days.
+const pad2 = (n) => String(n).padStart(2, "0");
+const localTodayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const localNowHHMM = () => {
+  const d = new Date();
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+const isoMinusDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const dayIndex = (iso) => Math.floor(new Date(`${iso}T00:00:00`).getTime() / 86400000);
+const addDaysIso = (iso, n) => isoMinusDays(iso, -n);
+
+const fmtDate = (iso, lang) => {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split(/[T ]/)[0].split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const mn = (MONTHS[lang] || MONTHS.uz)[m - 1];
+  return lang === "uz" || lang === "uz_cyrl" ? `${d}-${mn}, ${y}` : `${d} ${mn} ${y}`;
+};
+const fmtShortDate = (iso) => {
+  if (!iso) return "";
+  const [, m, d] = String(iso).split(/[T ]/)[0].split("-");
+  return `${d}.${m}`;
+};
+// "2026-08-03T14:30" → { date: "2026-08-03", time: "14:30" }
+const splitDT = (v) => {
+  if (!v) return { date: "", time: "" };
+  const [d, t = ""] = String(v).split("T");
+  return { date: d, time: t.slice(0, 5) };
+};
+const joinDT = (date, time) => (date && time ? `${date}T${time}` : "");
+const dtMinutes = (v) => {
+  if (!v) return null;
+  const { date, time } = splitDT(v);
+  if (!date || !time) return null;
+  const [h, m] = time.split(":").map(Number);
+  return dayIndex(date) * 1440 + h * 60 + m;
+};
+
+// "2 k 3 soat 15 daq" — the register's own duration vocabulary, days first so a
+// problem that ran overnight reads as such at a glance.
+function fmtDuration(minutes, t, dash = "—") {
+  if (minutes == null) return dash;
+  if (minutes <= 0) return `0 ${t("hansey.mShort")}`;
+  const d = Math.floor(minutes / 1440);
+  const h = Math.floor((minutes % 1440) / 60);
+  const m = minutes % 60;
+  const parts = [];
+  if (d > 0) parts.push(`${d} ${t("hansey.dShort")}`);
+  if (h > 0) parts.push(`${h} ${t("hansey.hShort")}`);
+  if (m > 0 || !parts.length) parts.push(`${m} ${t("hansey.mShort")}`);
+  return parts.join(" ");
+}
+// Compact hours for axes and dense cells, where the verbose form would wrap.
+const fmtHours = (minutes) => (minutes == null ? "—" : `${(minutes / 60).toFixed(1)}`);
+
+// Minutes an open problem has been running, as of now.
+const openAge = (row) => {
+  const started = dtMinutes(row.started_at);
+  if (started == null) return null;
+  const now = dayIndex(localTodayIso()) * 1440 + new Date().getHours() * 60 + new Date().getMinutes();
+  return Math.max(0, now - started);
+};
+
+const median = (sorted) => {
+  if (!sorted.length) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+};
+
+const cellLabel = (row, lang) =>
+  pickCellName({
+    name_workshop_uz: row.cell_name_uz,
+    name_workshop_uz_cyrl: row.cell_name_uz_cyrl,
+    name_workshop_ru: row.cell_name_ru,
+    name_workshop_en: row.cell_name_en,
+  }, lang);
+
+// Stable per-cell hue so a verifix badge is recognisable at a glance. Identity,
+// not status — a solid mid-tone with white text reads in both themes.
+function hueFromString(s) {
+  let h = 0;
+  for (let i = 0; i < String(s).length; i++) h = (h * 31 + String(s).charCodeAt(i)) % 360;
+  return h;
+}
+
+// ── small presentational pieces ──────────────────────────────────────────────
+
+function DeptChip({ dept, t, size = "sm" }) {
+  const color = DEPT_COLOR[dept] || C_NEUTRAL;
+  const Icon = DEPT_ICON[dept] || Layers;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md font-medium whitespace-nowrap ${
+        size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"
+      }`}
+      style={{ background: `${color}1f`, color, border: `1px solid ${color}38` }}
+    >
+      <Icon size={size === "sm" ? 11 : 13} className="flex-shrink-0" />
+      {t(`concerns.category.${dept}`)}
+    </span>
+  );
+}
+
+function CellBadge({ code, name, className = "" }) {
+  const hue = hueFromString(code || "");
+  return (
+    <span className={`inline-flex items-center gap-2 min-w-0 ${className}`}>
+      <span
+        className="text-[11px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0"
+        style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
+      >
+        {code || "—"}
+      </span>
+      {name && <span className="truncate" style={{ color: "var(--text-2)" }}>{name}</span>}
+    </span>
+  );
+}
+
+function StatusPill({ closed, t }) {
+  const color = closed ? C_CLOSED : C_OPEN;
+  const Icon = closed ? CheckCircle2 : CircleDot;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap"
+      style={{ background: `${color}1f`, color }}
+    >
+      <Icon size={11} className="flex-shrink-0" />
+      {t(closed ? "hansey.statusClosed" : "hansey.statusOpen")}
+    </span>
+  );
+}
+
+// ── KPI + chart card primitives (shared with the Concerns board's language) ──
+
+function InsightCard({ icon: Icon, tint, label, children }) {
+  return (
+    <div className="relative rounded-2xl p-4 flex flex-col overflow-hidden" style={cardStyle}>
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: `radial-gradient(140px 140px at calc(100% - 8px) -8px, ${tint}29, transparent 70%)` }}
+      />
+      <div className="flex items-center gap-2.5 relative">
+        <span
+          className="inline-flex items-center justify-center w-8 h-8 rounded-[10px] flex-shrink-0"
+          style={{ background: `${tint}1f`, color: tint }}
+        >
+          <Icon size={16} />
+        </span>
+        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold leading-tight" style={{ color: "var(--text-3)" }}>
+          {label}
+        </span>
+      </div>
+      <div className="relative flex flex-col gap-1 mt-4 grow justify-end min-h-[56px]">{children}</div>
+    </div>
+  );
+}
+
+function Metric({ value, unit, color, suffix }) {
+  return (
+    <div className="flex items-baseline gap-1 leading-none flex-wrap">
+      <span className="text-base font-bold tabular-nums" style={{ color }}>{value}</span>
+      {unit && <span className="text-[11px] font-semibold" style={{ color: "var(--text-3)" }}>{unit}</span>}
+      {suffix && <span className="text-[10px] font-medium" style={{ color: "var(--text-4)" }}>· {suffix}</span>}
+    </div>
+  );
+}
+
+function Subject({ text, title }) {
+  return (
+    <div className="text-lg font-bold leading-snug truncate" style={{ color: "var(--text-1)" }} title={title || text}>
+      {text}
+    </div>
+  );
+}
+
+// A plain number KPI — the counted half of the board (total / open / closed).
+function StatCard({ icon: Icon, tint, label, value, sub }) {
+  return (
+    <div className="rounded-2xl p-4 flex items-center gap-3" style={cardStyle}>
+      <span
+        className="inline-flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0"
+        style={{ background: `${tint}1f`, color: tint }}
+      >
+        <Icon size={18} />
+      </span>
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-[0.08em] font-semibold truncate" style={{ color: "var(--text-3)" }}>
+          {label}
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xl font-bold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>{value}</span>
+          {sub && <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{sub}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChartCard({ icon, title, subtitle, right, className = "", children }) {
+  return (
+    <div className={`rounded-2xl overflow-hidden flex flex-col ${className}`} style={cardStyle}>
+      <SectionHead icon={icon} title={title} subtitle={subtitle} right={right} />
+      {children}
+    </div>
+  );
+}
+
+// Mount guard: hold a fixed-height slot until the grid cell settles, so
+// ApexCharts measures its final width exactly once.
+function Chart({ ready, height, ...rest }) {
+  return ready ? <ReactApexChart height={height} {...rest} /> : <div style={{ height }} />;
+}
+
+function NoChart({ height, text }) {
+  return (
+    <div className="grid place-items-center text-xs flex-1 p-4" style={{ color: "var(--text-4)", minHeight: height }}>
+      {text}
+    </div>
+  );
+}
+
+function Empty({ icon: Icon, color, text }) {
+  return (
+    <div className="flex items-center gap-2 my-auto">
+      <Icon size={18} className="flex-shrink-0" style={{ color }} />
+      <span className="text-sm font-medium" style={{ color: "var(--text-3)" }}>{text}</span>
+    </div>
+  );
+}
+
+// A compact ranked list — the "top offenders" bodies under several cards.
+function RankList({ items, empty }) {
+  if (!items.length) return <div className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-4)" }}>{empty}</div>;
+  return (
+    <div>
+      {items.map((it, i) => (
+        <div
+          key={it.key}
+          className="flex items-center gap-3 px-4 py-2.5"
+          style={{ borderTop: i === 0 ? "none" : "1px solid var(--border)" }}
+        >
+          <span
+            className="w-5 h-5 rounded-md grid place-items-center text-[10px] font-bold flex-shrink-0 tabular-nums"
+            style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+          >
+            {i + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium truncate" style={{ color: "var(--text-1)" }} title={it.title || it.label}>
+              {it.label}
+            </div>
+            {it.sub && <div className="text-[10px] truncate mt-0.5" style={{ color: "var(--text-4)" }}>{it.sub}</div>}
+          </div>
+          <span className="text-xs font-bold tabular-nums whitespace-nowrap flex-shrink-0" style={{ color: it.color || "var(--text-1)" }}>
+            {it.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── date + time control ──────────────────────────────────────────────────────
+// Never a native datetime-local: the platform's own single-date picker plus the
+// wheel time picker, which is what a phone user can actually hit.
+function DateTimeField({ date, time, onDate, onTime, t, max = null }) {
+  const [wheelOpen, setWheelOpen] = useState(false);
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <DateRangePicker
+        single
+        dateFrom={date}
+        setDateFrom={onDate}
+        max={max}
+        triggerClassName="px-3 py-2 text-sm"
+      />
+      <button
+        type="button"
+        onClick={() => setWheelOpen(true)}
+        className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium tabular-nums transition-colors"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: time ? "var(--text-1)" : "var(--text-4)" }}
+      >
+        <Clock size={14} style={{ color: "var(--text-3)" }} />
+        {time || "--:--"}
+      </button>
+      <TimeWheelPicker
+        open={wheelOpen}
+        lo={0}
+        hi={1439}
+        value={time}
+        onConfirm={(v) => { onTime(v); setWheelOpen(false); }}
+        onClose={() => setWheelOpen(false)}
+      />
+    </div>
+  );
+}
+
+const emptyForm = () => ({
+  id: null,
+  cell_id: "",
+  department: "",
+  problem: "",
+  comment: "",
+  answers: "",
+  countermeasure: "",
+  start_date: localTodayIso(),
+  start_time: localNowHHMM(),
+  close_date: "",
+  close_time: "",
+  closed: false,
+});
+
+// ── the problem form ─────────────────────────────────────────────────────────
+function ProblemModal({ open, form, setForm, cells, lang, t, tl, onClose, onSave, saving, error }) {
+  const cellOptions = useMemo(
+    () =>
+      cells.map((c) => {
+        const nm = pickCellName(c, lang);
+        return {
+          value: String(c.cell_id),
+          label: `${c.verifix_code}${nm ? " · " + nm : ""}`,
+          title: `${c.verifix_code} ${nm}${c.leader ? " — " + tl(c.leader) : ""}`,
+        };
+      }),
+    [cells, lang, tl],
+  );
+
+  const picked = cells.find((c) => String(c.cell_id) === String(form.cell_id));
+  const startISO = joinDT(form.start_date, form.start_time);
+  const closeISO = form.closed ? joinDT(form.close_date, form.close_time) : "";
+  const startM = dtMinutes(startISO);
+  const closeM = dtMinutes(closeISO);
+  const liveDuration = startM != null && closeM != null ? closeM - startM : null;
+  const negative = liveDuration != null && liveDuration < 0;
+
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+  const setText = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const textArea = (key, rows = 3) => (
+    <textarea
+      value={form[key]}
+      onChange={setText(key)}
+      rows={rows}
+      placeholder={t(`hansey.ph${key.charAt(0).toUpperCase()}${key.slice(1)}`)}
+      // 16px below sm: iOS WebViews zoom the page when focusing anything smaller.
+      className="w-full rounded-xl px-3 py-2 text-base sm:text-sm outline-none resize-y"
+      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+    />
+  );
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      icon={<SearchCheck size={18} />}
+      title={t(form.id ? "hansey.editTitle" : "hansey.newTitle")}
+      subtitle={picked ? `${picked.verifix_code} · ${pickCellName(picked, lang)}` : undefined}
+      maxWidth="max-w-2xl"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>{t("hansey.cancel")}</Button>
+          <Button variant="primary" onClick={onSave} loading={saving} disabled={negative}>
+            {t("hansey.save")}
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2 text-xs"
+          style={{ background: "#ef444414", border: "1px solid #ef444440", color: "#ef4444" }}
+        >
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <Field label={t("hansey.fCell")} required>
+        <StyledSelect
+          value={form.cell_id ? String(form.cell_id) : ""}
+          onChange={set("cell_id")}
+          options={cellOptions}
+          placeholder={t("hansey.pickCell")}
+          searchable
+          searchPlaceholder={t("hansey.searchCell")}
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        {picked && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-[11px]">
+            <Flag size={11} style={{ color: "var(--text-4)" }} />
+            <span style={{ color: picked.leader ? "var(--text-3)" : "var(--text-4)" }}>
+              {picked.leader ? tl(picked.leader) : t("hansey.noLeader")}
+            </span>
+          </div>
+        )}
+      </Field>
+
+      {/* Department as a chip grid, not a dropdown: 12 fixed options that each
+          carry a colour and an icon read faster when they are all on screen. */}
+      <Field label={t("hansey.fDepartment")} required>
+        <div className="flex flex-wrap gap-1.5">
+          {DEPARTMENTS.map((d) => {
+            const active = form.department === d;
+            const color = DEPT_COLOR[d];
+            const Icon = DEPT_ICON[d] || Layers;
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => set("department")(d)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  background: active ? color : "var(--bg-inner)",
+                  color: active ? "#fff" : "var(--text-2)",
+                  border: `1px solid ${active ? color : "var(--border-md)"}`,
+                }}
+              >
+                <Icon size={13} className="flex-shrink-0" />
+                {t(`concerns.category.${d}`)}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <Field label={t("hansey.fProblem")} required>{textArea("problem")}</Field>
+
+      <Field label={t("hansey.fStart")} required>
+        <DateTimeField
+          date={form.start_date}
+          time={form.start_time}
+          onDate={set("start_date")}
+          onTime={set("start_time")}
+          t={t}
+        />
+      </Field>
+
+      {/* Closing is a deliberate act, not a pair of blank fields: the toggle
+          says in words whether the clock is still running. */}
+      <Field label={t("hansey.fClose")}>
+        <SegmentedToggle
+          value={form.closed}
+          onChange={(v) =>
+            setForm((f) => ({
+              ...f,
+              closed: v,
+              close_date: v ? (f.close_date || localTodayIso()) : "",
+              close_time: v ? (f.close_time || localNowHHMM()) : "",
+            }))
+          }
+          options={[[false, t("hansey.stillOpen")], [true, t("hansey.statusClosed")]]}
+        />
+        {form.closed && (
+          <div className="mt-2">
+            <DateTimeField
+              date={form.close_date}
+              time={form.close_time}
+              onDate={set("close_date")}
+              onTime={set("close_time")}
+              t={t}
+            />
+          </div>
+        )}
+        {/* Live duration: the number the whole page is built on, shown before
+            saving so a mistyped time is caught here and not in the analytics. */}
+        {liveDuration != null && (
+          <div
+            className="mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+            style={{
+              background: negative ? "#ef444414" : "var(--bg-inner)",
+              color: negative ? "#ef4444" : "var(--text-1)",
+              border: `1px solid ${negative ? "#ef444440" : "var(--border)"}`,
+            }}
+          >
+            <Timer size={13} />
+            {negative ? t("hansey.errCloseBefore") : fmtDuration(liveDuration, t)}
+          </div>
+        )}
+        {!form.closed && (
+          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-4)" }}>{t("hansey.closeHint")}</p>
+        )}
+      </Field>
+
+      <Field label={t("hansey.fComment")} required>{textArea("comment")}</Field>
+      <Field label={t("hansey.fAnswers")} required>{textArea("answers")}</Field>
+      <Field label={t("hansey.fCountermeasure")} required>{textArea("countermeasure")}</Field>
+    </Modal>
+  );
+}
+
+export default function Hansey() {
+  const { auth } = useAuth();
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
+  const qc = useQueryClient();
+  const chartTheme = useChartTheme();
+
+  const [view, setView] = usePersistentState("hansey_view", "list");
+  const [dateTo, setDateTo] = usePersistentState("hansey_date_to", localTodayIso());
+  const [dateFrom, setDateFrom] = usePersistentState("hansey_date_from", isoMinusDays(localTodayIso(), 29));
+  const [search, setSearch] = usePersistentState("hansey_search", "");
+  const [fStatus, setFStatus] = usePersistentState("hansey_f_status", "all");
+  const [fDepts, setFDepts] = usePersistentState("hansey_f_depts", []);
+  const [fCells, setFCells] = usePersistentState("hansey_f_cells", []);
+  const [fLeader, setFLeader] = usePersistentState("hansey_f_leader", "");
+  const [fSup, setFSup] = usePersistentState("hansey_f_sup", "");
+  const [sort, setSort] = usePersistentState("hansey_sort", { k: "date", dir: "desc" });
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState("");
+  const [confirmRow, setConfirmRow] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
+
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ["hansey", dateFrom, dateTo],
+    queryFn: () =>
+      api.get("/api/hansey", { params: { date_from: dateFrom, date_to: dateTo } }).then((r) => r.data),
+  });
+  const rows = resp?.data ?? [];
+  const canCreate = !!resp?.can_create;
+  // Leaders get the personal board; every other role the unit-wide one with the
+  // by-leader / by-cell comparisons that only make sense across a unit.
+  const unitBoard = resp?.analytics !== "leader";
+
+  const { data: cells = [] } = useQuery({
+    queryKey: ["hansey-cells"],
+    queryFn: () => api.get("/api/hansey/cells").then((r) => r.data),
+  });
+
+  // ── filters (client-side over the one payload, so every board reshapes live) ─
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const deptSet = new Set(fDepts);
+    const cellSet = new Set(fCells.map(String));
+    return rows.filter((r) => {
+      if (fStatus === "open" && r.closed_at) return false;
+      if (fStatus === "closed" && !r.closed_at) return false;
+      if (deptSet.size && !deptSet.has(r.department)) return false;
+      if (cellSet.size && !cellSet.has(String(r.cell_id))) return false;
+      if (fLeader) {
+        if (fLeader === "none" ? r.leader_id : String(r.leader_id) !== fLeader) return false;
+      }
+      if (fSup && String(r.manager_id) !== fSup) return false;
+      if (q) {
+        const hay = `${r.problem} ${r.comment} ${r.answers} ${r.countermeasure} ${r.cell_code} ${r.leader_name || ""} ${r.owner_name || ""}`;
+        if (!hay.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, search, fStatus, fDepts, fCells, fLeader, fSup]);
+
+  // ── filter option lists, derived from what the viewer actually has ──────────
+  const cellOptions = useMemo(
+    () =>
+      cells.map((c) => {
+        const nm = pickCellName(c, lang);
+        return { value: String(c.cell_id), label: `${c.verifix_code}${nm ? " · " + nm : ""}`, title: `${c.verifix_code} ${nm}` };
+      }),
+    [cells, lang],
+  );
+
+  const leaderOptions = useMemo(() => {
+    const byId = new Map();
+    let anyNone = false;
+    for (const c of cells) {
+      if (c.leader_id) byId.set(String(c.leader_id), tl(c.leader) || String(c.leader_id));
+      else anyNone = true;
+    }
+    return [
+      { value: "", label: t("hansey.allLeaders") },
+      ...(anyNone ? [{ value: "none", label: t("hansey.noLeader") }] : []),
+      ...[...byId.entries()].map(([value, label]) => ({ value, label, title: label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells, lang]);
+
+  const supOptions = useMemo(() => {
+    const byId = new Map();
+    for (const c of cells) if (c.manager_id) byId.set(String(c.manager_id), tl(c.supervisor) || String(c.manager_id));
+    return [
+      { value: "", label: t("hansey.allSupervisors") },
+      ...[...byId.entries()].map(([value, label]) => ({ value, label, title: label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells, lang]);
+
+  // A leader owns ~1–2 cells and one supervisor: those pickers would be
+  // single-option noise, so they only appear once there is a real choice.
+  const showLeaderFilter = leaderOptions.length > 2;
+  const showSupFilter = supOptions.length > 2;
+
+  const filterSections = useMemo(
+    () => [
+      {
+        key: "status",
+        label: t("hansey.fltStatus"),
+        active: fStatus !== "all",
+        onClear: () => setFStatus("all"),
+        render: () => (
+          <OptsFilter
+            options={[
+              { value: "all", label: t("general.all") },
+              { value: "open", label: t("hansey.statusOpen") },
+              { value: "closed", label: t("hansey.statusClosed") },
+            ]}
+            value={fStatus}
+            onChange={setFStatus}
+          />
+        ),
+      },
+      {
+        key: "dept",
+        label: t("hansey.fltDepartment"),
+        active: fDepts.length > 0,
+        onClear: () => setFDepts([]),
+        render: () => (
+          <OptsFilter
+            multiple
+            options={DEPARTMENTS.map((d) => ({ value: d, label: t(`concerns.category.${d}`) }))}
+            value={fDepts}
+            onChange={setFDepts}
+          />
+        ),
+      },
+      {
+        key: "cell",
+        label: t("hansey.fltCell"),
+        active: fCells.length > 0,
+        onClear: () => setFCells([]),
+        render: () => <OptsFilter multiple searchable options={cellOptions} value={fCells} onChange={setFCells} />,
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fStatus, fDepts, fCells, cellOptions, lang],
+  );
+  const filterActiveCount = (fStatus !== "all" ? 1 : 0) + (fDepts.length ? 1 : 0) + (fCells.length ? 1 : 0);
+  const clearAllFilters = () => { setFStatus("all"); setFDepts([]); setFCells([]); };
+
+  // ── sorting ────────────────────────────────────────────────────────────────
+  const sorted = useMemo(() => {
+    const { k, dir } = sort || {};
+    if (!k) return filtered;
+    const mul = dir === "asc" ? 1 : -1;
+    const val = (r) => {
+      switch (k) {
+        case "date": return `${r.date} ${r.started_at || ""}`;
+        case "cell": return (r.cell_code || "").toLowerCase();
+        case "dept": return t(`concerns.category.${r.department}`).toLowerCase();
+        case "leader": return (r.leader_name || "").toLowerCase();
+        // Open problems sort by how long they have been running, so the worst
+        // offenders surface next to the longest closed ones instead of at the end.
+        case "duration": return r.closed_at ? (r.duration_minutes ?? 0) : (openAge(r) ?? 0);
+        case "status": return r.closed_at ? 1 : 0;
+        default: return "";
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (va === vb) return 0;
+      return (va > vb ? 1 : -1) * mul;
+    });
+  }, [filtered, sort, lang, t]);
+
+  const onSort = (k) =>
+    setSort((s) => (s?.k === k ? (s.dir === "desc" ? { k, dir: "asc" } : { k: null, dir: "desc" }) : { k, dir: "desc" }));
+
+  // ── mutations ──────────────────────────────────────────────────────────────
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["hansey"] });
+
+  const saveMut = useMutation({
+    mutationFn: (payload) =>
+      payload.id
+        ? api.put(`/api/hansey/${payload.id}`, payload.body).then((r) => r.data)
+        : api.post("/api/hansey", payload.body).then((r) => r.data),
+    onSuccess: () => { setModalOpen(false); setFormError(""); invalidate(); },
+    onError: (e) => setFormError(e?.response?.data?.detail || t("hansey.saveFailed")),
+  });
+
+  const delMut = useMutation({
+    mutationFn: (id) => api.delete(`/api/hansey/${id}`),
+    onSuccess: () => { setConfirmRow(null); invalidate(); },
+    onError: (e) => { setConfirmRow(null); alert(e?.response?.data?.detail || t("hansey.saveFailed")); },
+  });
+
+  function openNew() {
+    setFormError("");
+    // One cell to choose from = no choice at all: preselect it so a leader's
+    // form opens on the department chips, one tap from done.
+    setForm({ ...emptyForm(), cell_id: cells.length === 1 ? String(cells[0].cell_id) : "" });
+    setModalOpen(true);
+  }
+
+  function openEdit(row) {
+    setFormError("");
+    const s = splitDT(row.started_at);
+    const c = splitDT(row.closed_at);
+    setForm({
+      id: row.id,
+      cell_id: String(row.cell_id),
+      department: row.department,
+      problem: row.problem || "",
+      comment: row.comment || "",
+      answers: row.answers || "",
+      countermeasure: row.countermeasure || "",
+      start_date: s.date,
+      start_time: s.time,
+      close_date: c.date,
+      close_time: c.time,
+      closed: !!row.closed_at,
+    });
+    setModalOpen(true);
+  }
+
+  function submit() {
+    const required = ["problem", "comment", "answers", "countermeasure"];
+    if (!form.cell_id) return setFormError(t("hansey.pickCell"));
+    if (!form.department) return setFormError(t("hansey.pickDept"));
+    if (required.some((k) => !form[k].trim())) return setFormError(t("hansey.errRequired"));
+    const started = joinDT(form.start_date, form.start_time);
+    if (!started) return setFormError(t("hansey.errRequired"));
+    const closed = form.closed ? joinDT(form.close_date, form.close_time) : null;
+    if (form.closed && !closed) return setFormError(t("hansey.errRequired"));
+    if (closed && dtMinutes(closed) < dtMinutes(started)) return setFormError(t("hansey.errCloseBefore"));
+    setFormError("");
+    saveMut.mutate({
+      id: form.id,
+      body: {
+        cell_id: Number(form.cell_id),
+        department: form.department,
+        problem: form.problem.trim(),
+        comment: form.comment.trim(),
+        answers: form.answers.trim(),
+        countermeasure: form.countermeasure.trim(),
+        started_at: started,
+        closed_at: closed,
+      },
+    });
+  }
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await api.get("/api/hansey/export.xlsx", {
+        params: { date_from: dateFrom, date_to: dateTo, lang, send: 1 },
+      });
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 4000);
+    } catch (e) {
+      alert(e?.response?.data?.detail || "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // ── register rendering ─────────────────────────────────────────────────────
+  const durationCell = (r) => {
+    if (r.closed_at) {
+      return <span className="tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>{fmtDuration(r.duration_minutes, t)}</span>;
+    }
+    const age = openAge(r);
+    return (
+      <span className="tabular-nums font-semibold" style={{ color: C_OPEN }} title={t("hansey.ongoing")}>
+        {fmtDuration(age, t)}
+        <span className="ml-1 text-[10px] font-normal" style={{ color: "var(--text-4)" }}>· {t("hansey.ongoing")}</span>
+      </span>
+    );
+  };
+
+  const rowActions = (r) => (
+    <div className="flex items-center justify-end gap-1">
+      {r.can_edit && (
+        <button
+          onClick={() => openEdit(r)}
+          className="p-1.5 rounded-md transition-colors hover:bg-[var(--bg-inner)]"
+          style={{ color: "var(--text-3)" }}
+          title={t("hansey.edit")}
+        >
+          <Pencil size={14} />
+        </button>
+      )}
+      {r.can_delete && (
+        <button
+          onClick={() => setConfirmRow(r)}
+          className="p-1.5 rounded-md transition-colors hover:bg-[#ef444414]"
+          style={{ color: "#ef4444" }}
+          title={t("hansey.delete")}
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  );
+
+  // Phones get cards, not a 9-column table squeezed sideways.
+  const mobileList = (
+    <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+      {sorted.map((r) => (
+        <div key={r.id} className="p-3.5 space-y-2.5">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <CellBadge code={r.cell_code} name={cellLabel(r, lang)} className="text-[11px]" />
+              <div className="text-sm font-semibold leading-snug" style={{ color: "var(--text-1)" }}>
+                {tl(r.problem)}
+              </div>
+            </div>
+            <StatusPill closed={!!r.closed_at} t={t} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <DeptChip dept={r.department} t={t} />
+            {unitBoard && r.leader_name && (
+              <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                <Flag size={10} /> {tl(r.leader_name)}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+            <div className="flex justify-between gap-2">
+              <span style={{ color: "var(--text-4)" }}>{t("hansey.colDate")}</span>
+              <span style={{ color: "var(--text-2)" }}>{fmtShortDate(r.date)} {splitDT(r.started_at).time}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span style={{ color: "var(--text-4)" }}>{t("hansey.colDuration")}</span>
+              {durationCell(r)}
+            </div>
+          </div>
+
+          {(r.can_edit || r.can_delete) && <div className="pt-0.5">{rowActions(r)}</div>}
+        </div>
+      ))}
+    </div>
+  );
+
+  const emptyState = (
+    <div className="px-4 py-14 text-center">
+      <SearchCheck size={28} className="mx-auto mb-3" style={{ color: "var(--text-4)" }} />
+      <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-2)" }}>
+        {rows.length ? t("hansey.noMatch") : t("hansey.empty")}
+      </div>
+      {!rows.length && (
+        <div className="text-xs max-w-xs mx-auto" style={{ color: "var(--text-4)" }}>{t("hansey.emptyHint")}</div>
+      )}
+    </div>
+  );
+
+  const addButton = canCreate && (
+    <Button
+      size="lg"
+      variant="primary"
+      icon={<Plus size={15} />}
+      onClick={openNew}
+      disabled={!cells.length}
+      title={!cells.length ? t("hansey.noCells") : undefined}
+    >
+      <span className="hidden sm:inline">{t("hansey.add")}</span>
+      <span className="sm:hidden">{t("hansey.addShort")}</span>
+    </Button>
+  );
+
+  const exportButton = (
+    <Button
+      size="lg"
+      variant="secondary"
+      icon={exporting ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+      onClick={exportExcel}
+      disabled={exporting || !filtered.length}
+    >
+      {exporting ? t("hansey.exporting") : t("hansey.export")}
+    </Button>
+  );
+
+  return (
+    <Layout title={t("hansey.title")}>
+      {exportDone && (
+        <div
+          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
+          style={{
+            position: "fixed", top: 16, right: 16, zIndex: 9999,
+            background: "#22c55e", color: "#fff", maxWidth: 320,
+            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
+          }}
+        >
+          <CheckCircle2 size={15} style={{ flexShrink: 0 }} />
+          <span>{t("hansey.exportToast")}</span>
+        </div>
+      )}
+
+      {/* Filter row — period always, then the scope narrowers a viewer actually
+          has a choice about. One row, wrapping on phones. */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 mb-3">
+        <div className="sm:w-72">
+          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
+            {t("hansey.period")}
+          </label>
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+        {showSupFilter && (
+          <div className="sm:w-56 min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
+              {t("hansey.colSupervisor")}
+            </label>
+            <StyledSelect
+              value={fSup}
+              onChange={(v) => { setFSup(v); setFLeader(""); setFCells([]); }}
+              options={supOptions}
+              searchable
+              searchPlaceholder={t("hansey.searchSupervisor")}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+        )}
+        {showLeaderFilter && (
+          <div className="sm:w-56 min-w-0">
+            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
+              {t("hansey.fltLeader")}
+            </label>
+            <StyledSelect
+              value={fLeader}
+              onChange={(v) => { setFLeader(v); setFCells([]); }}
+              options={leaderOptions}
+              searchable
+              searchPlaceholder={t("hansey.searchLeader")}
+              triggerClassName="w-full px-3 py-2 text-sm"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* View tabs. On the analytics board the search + Filtrlar controls move up
+          here, so the filters that reshape the charts are never hidden state.
+          FilterPanel stays a DIRECT child of this row — its fit check measures
+          the row's own children. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[["list", t("hansey.viewList")], ["analytics", t("hansey.viewAnalytics")]]}
+        />
+        {view === "analytics" && (
+          <>
+            <div className="flex-1" />
+            <SearchInput value={search} onChange={setSearch} placeholder={t("hansey.search")} className="w-full sm:w-44" />
+            <FilterPanel
+              sections={filterSections}
+              activeCount={filterActiveCount}
+              anyActive={filterActiveCount > 0}
+              onClearAll={clearAllFilters}
+            />
+            {exportButton}
+          </>
+        )}
+      </div>
+
+      {view === "analytics" ? (
+        <HanseyAnalytics
+          rows={filtered}
+          allRows={rows}
+          isLoading={isLoading}
+          unitBoard={unitBoard}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          t={t}
+          tl={tl}
+          lang={lang}
+          chartTheme={chartTheme}
+        />
+      ) : (
+        <TableCard
+          className="mb-8"
+          icon={SearchCheck}
+          title={t("hansey.listTitle")}
+          subtitle={unitBoard ? t("hansey.subUnit") : t("hansey.subOwn")}
+          wrap
+          mobile={mobileList}
+          mobileCards
+          right={
+            <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
+              {filtered.length}
+            </span>
+          }
+          toolbar={
+            <>
+              <SearchInput value={search} onChange={setSearch} placeholder={t("hansey.search")} className="w-full sm:w-52" />
+              <FilterPanel
+                sections={filterSections}
+                activeCount={filterActiveCount}
+                anyActive={filterActiveCount > 0}
+                onClearAll={clearAllFilters}
+              />
+              <div className="flex-1" />
+              {exportButton}
+              {addButton}
+            </>
+          }
+        >
+          <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
+            <tr>
+              <Th label={t("hansey.colDate")} k="date" sort={sort} onSort={onSort} />
+              <Th label={t("hansey.colCell")} k="cell" sort={sort} onSort={onSort} />
+              <Th label={t("hansey.colDepartment")} k="dept" sort={sort} onSort={onSort} />
+              <Th label={t("hansey.colProblem")} />
+              {unitBoard && <Th label={t("hansey.colLeader")} k="leader" sort={sort} onSort={onSort} />}
+              <Th label={t("hansey.colStarted")} align="right" />
+              <Th label={t("hansey.colDuration")} k="duration" sort={sort} onSort={onSort} align="right" />
+              <Th label={t("hansey.colStatus")} k="status" sort={sort} onSort={onSort} />
+              <Th label={t("hansey.colOwner")} />
+              <Th label="" align="right" />
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i}>
+                  <td colSpan={unitBoard ? 10 : 9} className="px-3 py-2">
+                    <SkeletonBlock className="h-5 w-full rounded" />
+                  </td>
+                </tr>
+              ))
+            ) : !sorted.length ? (
+              <tr>
+                <td colSpan={unitBoard ? 10 : 9}>{emptyState}</td>
+              </tr>
+            ) : (
+              sorted.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-3)" }}>{fmtDate(r.date, lang)}</td>
+                  <td className="px-3 py-2"><CellBadge code={r.cell_code} name={cellLabel(r, lang)} /></td>
+                  <td className="px-3 py-2"><DeptChip dept={r.department} t={t} /></td>
+                  <td className="px-3 py-2 max-w-md">
+                    <span className="line-clamp-2" style={{ color: "var(--text-1)" }} title={r.problem}>{tl(r.problem)}</span>
+                  </td>
+                  {unitBoard && (
+                    <td className="px-3 py-2 whitespace-nowrap" style={{ color: r.leader_name ? "var(--text-2)" : "var(--text-4)" }}>
+                      {r.leader_name ? tl(r.leader_name) : t("hansey.noLeader")}
+                    </td>
+                  )}
+                  <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums" style={{ color: "var(--text-3)" }}>
+                    {splitDT(r.started_at).time}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{durationCell(r)}</td>
+                  <td className="px-3 py-2"><StatusPill closed={!!r.closed_at} t={t} /></td>
+                  <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-3)" }}>{tl(r.owner_name || "")}</td>
+                  <td className="px-3 py-2">{rowActions(r)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </TableCard>
+      )}
+
+      {modalOpen && (
+        <ProblemModal
+          open={modalOpen}
+          form={form}
+          setForm={setForm}
+          cells={cells}
+          lang={lang}
+          t={t}
+          tl={tl}
+          saving={saveMut.isPending}
+          error={formError}
+          onClose={() => { setModalOpen(false); setFormError(""); }}
+          onSave={submit}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmRow != null}
+        tone="danger"
+        title={t("hansey.deleteTitle")}
+        message={t("hansey.deleteConfirm")}
+        confirmLabel={t("hansey.delete")}
+        cancelLabel={t("hansey.cancel")}
+        loading={delMut.isPending}
+        onCancel={() => setConfirmRow(null)}
+        onConfirm={() => confirmRow && delMut.mutate(confirmRow.id)}
+      />
+    </Layout>
+  );
+}

@@ -10,7 +10,7 @@ import {
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, Bot, LayoutGrid, Timer, UserCheck,
-  FlaskConical, Medal,
+  FlaskConical, Medal, SearchCheck,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -41,6 +41,7 @@ const ALL_LINKS = [
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
+  { to: "/hansey", page: "hansey", key: "nav.hansey", icon: SearchCheck },
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
