@@ -389,6 +389,86 @@ function DateTimeField({ date, time, onDate, onTime, max = null }) {
   );
 }
 
+// ── read-only detail view ────────────────────────────────────────────────────
+// The register can only show the problem text; the other three required fields
+// (comment / answers / countermeasure) would otherwise be readable only by
+// opening the edit form — which a top-manager, and anyone outside their own
+// scope, cannot do. Tapping a row opens this instead.
+function DetailModal({ row, lang, t, tl, onClose, onEdit, onDelete }) {
+  const started = splitDT(row.started_at);
+  const closed = splitDT(row.closed_at);
+  const duration = row.closed_at ? row.duration_minutes : openAge(row);
+
+  const line = (label, value, color) => (
+    <div className="flex items-baseline justify-between gap-3 py-1.5" style={{ borderTop: "1px solid var(--border)" }}>
+      <span className="text-[11px] uppercase tracking-wider font-semibold flex-shrink-0" style={{ color: "var(--text-4)" }}>
+        {label}
+      </span>
+      <span className="text-xs text-right tabular-nums" style={{ color: color || "var(--text-1)" }}>{value}</span>
+    </div>
+  );
+
+  const block = (label, value) => (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{label}</div>
+      <div
+        className="text-sm rounded-xl px-3 py-2 whitespace-pre-wrap break-words"
+        style={{ background: "var(--bg-inner)", color: "var(--text-1)", lineHeight: 1.55 }}
+      >
+        {tl(value) || "—"}
+      </div>
+    </div>
+  );
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      icon={<SearchCheck size={18} />}
+      title={t("hansey.colProblem")}
+      subtitle={`${row.cell_code}${cellLabel(row, lang) ? " · " + cellLabel(row, lang) : ""}`}
+      maxWidth="max-w-2xl"
+      footer={
+        <>
+          {onDelete && (
+            <Button variant="danger" icon={<Trash2 size={14} />} onClick={onDelete}>{t("hansey.delete")}</Button>
+          )}
+          <Button variant="secondary" onClick={onClose}>{t("hansey.cancel")}</Button>
+          {onEdit && (
+            <Button variant="primary" icon={<Pencil size={14} />} onClick={onEdit}>{t("hansey.edit")}</Button>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <DeptChip dept={row.department} t={t} size="md" />
+        <StatusPill closed={!!row.closed_at} t={t} />
+        {row.leader_name && (
+          <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+            <Flag size={11} /> {tl(row.leader_name)}
+          </span>
+        )}
+      </div>
+
+      <div>
+        {line(t("hansey.colStarted"), `${fmtDate(started.date, lang)} · ${started.time}`)}
+        {line(
+          t("hansey.colClosed"),
+          row.closed_at ? `${fmtDate(closed.date, lang)} · ${closed.time}` : t("hansey.stillOpen"),
+          row.closed_at ? undefined : C_OPEN,
+        )}
+        {line(t("hansey.colDuration"), fmtDuration(duration, t), row.closed_at ? undefined : C_OPEN)}
+        {line(t("hansey.colOwner"), tl(row.owner_name || "") || "—")}
+      </div>
+
+      {block(t("hansey.fProblem"), row.problem)}
+      {block(t("hansey.fComment"), row.comment)}
+      {block(t("hansey.fAnswers"), row.answers)}
+      {block(t("hansey.fCountermeasure"), row.countermeasure)}
+    </Modal>
+  );
+}
+
 const emptyForm = () => ({
   id: null,
   cell_id: "",
@@ -1749,7 +1829,7 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
               <Subject text={tl(insights.longestOpen.row.problem)} title={insights.longestOpen.row.problem} />
               <Metric
                 value={fmtDuration(insights.longestOpen.age, t)}
-                color="var(--kpi-red, #ef4444)"
+                color="var(--kpi-red)"
                 suffix={insights.longestOpen.row.cell_code}
               />
             </>
@@ -1764,7 +1844,7 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
               <Subject text={deptLabel(insights.worstDept.dept)} />
               <Metric
                 value={fmtDuration(insights.worstDept.lost, t)}
-                color="var(--kpi-amber, #eab308)"
+                color="var(--kpi-amber)"
                 suffix={`${insights.worstDept.count} ${t("hansey.problemsWord")}`}
               />
             </>
@@ -1777,7 +1857,7 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
           {insights.peakHour != null ? (
             <>
               <Subject text={`${pad2(insights.peakHour)}:00`} />
-              <Metric value={insights.peakCount} unit={t("hansey.problemsWord")} color="var(--kpi-blue, #3b82f6)" />
+              <Metric value={insights.peakCount} unit={t("hansey.problemsWord")} color="var(--kpi-blue)" />
             </>
           ) : (
             <Empty icon={Sunrise} color="var(--text-4)" text={t("hansey.noData")} />
@@ -1797,7 +1877,7 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
                 <Metric
                   value={insights.repeats[0].count}
                   unit={t("hansey.timesWord")}
-                  color="var(--kpi-purple, #a855f7)"
+                  color={CATEGORY_COLORS[5]}
                   suffix={fmtDuration(insights.repeats[0].lost, t)}
                 />
               </>
