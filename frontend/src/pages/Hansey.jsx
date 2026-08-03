@@ -1507,7 +1507,7 @@ function HanseyAnalytics({ rows, allRows, isLoading, unitBoard, dateFrom, dateTo
     }
     return {
       labels: activeDepts.map(deptLabel),
-      colTotals: activeDepts.map((d) => depts.find((x) => x.key === d)?.count || 0),
+      colTotals: byCount.map((d) => d.count),
       rows: topCells.map((c) => ({
         key: c.key,
         label: c.key,
