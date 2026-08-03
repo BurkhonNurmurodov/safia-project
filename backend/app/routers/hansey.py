@@ -179,15 +179,15 @@ def _scope_query(query, payload: dict, db: Session, ctx: Optional[dict] = None):
     if role == "shift-manager":
         return query.filter(or_(
             HanseyProblem.manager_id.in_(ctx["shift_units"] or [0]),
-            _owner_filter(payload),
+            _owner_filter(ctx),
         ))
     if role == "supervisor":
         return query.filter(or_(
             HanseyProblem.manager_id == payload.get("role_id"),
-            _owner_filter(payload),
+            _owner_filter(ctx),
         ))
     if role == "leader":
-        conds = [_owner_filter(payload)]
+        conds = [_owner_filter(ctx)]
         if ctx["cell_ids"]:
             conds.append(HanseyProblem.cell_id.in_(list(ctx["cell_ids"])))
         if ctx["profile_id"]:
