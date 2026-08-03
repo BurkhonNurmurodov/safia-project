@@ -226,6 +226,9 @@ app.include_router(leaders.router)
 app.include_router(kaizen.router)
 app.include_router(activity.router)
 app.include_router(concerns.router)
+# «Hansey» production-problem register — self-gates via require_page("hansey"),
+# and every endpoint scopes by the caller's cells/unit.
+app.include_router(hansey.router)
 app.include_router(tasks.router)
 app.include_router(profiles.router)
 app.include_router(leaderboard.router)
