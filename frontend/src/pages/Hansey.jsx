@@ -1102,7 +1102,7 @@ export default function Hansey() {
             </>
           }
         >
-          <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
+          <thead>
             <tr>
               <Th label={t("hansey.colDate")} k="date" sort={sort} onSort={onSort} />
               <Th label={t("hansey.colCell")} k="cell" sort={sort} onSort={onSort} />
