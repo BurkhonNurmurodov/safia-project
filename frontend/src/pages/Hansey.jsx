@@ -3,10 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Plus, Pencil, Trash2, SearchCheck, Clock, CheckCircle2, CircleDot, Hourglass,
-  TrendingUp, PieChart, Timer, Gauge, CalendarClock, Layers, Flag, FileSpreadsheet,
+  TrendingUp, PieChart, Timer, Gauge, Layers, Flag, FileSpreadsheet,
   Loader2, AlertTriangle, Repeat, Grid3x3, UserRound, LayoutGrid, Sunrise, CalendarDays,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
-  Droplets, CalendarRange, Users, FlaskConical, Wheat, ChevronDown,
+  Droplets, CalendarRange, Users, FlaskConical, Wheat,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
