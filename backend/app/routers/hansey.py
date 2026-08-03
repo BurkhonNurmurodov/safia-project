@@ -197,10 +197,11 @@ def _scope_query(query, payload: dict, db: Session, ctx: Optional[dict] = None):
 
 
 def _is_owner(ctx: dict, p: HanseyProblem) -> bool:
+    """The caller CREATED this row — same identity _owner_filter matches in SQL."""
     return (
         p.owner_role == ctx["role"]
         and p.owner_profile_id is not None
-        and p.owner_profile_id == ctx["role_id"]
+        and p.owner_profile_id == ctx.get("owner_id")
     )
 
 
