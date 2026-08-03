@@ -597,12 +597,12 @@ export default function Hansey() {
   const [dateTo, setDateTo] = usePersistentState("hansey_date_to", localTodayIso());
   const [dateFrom, setDateFrom] = usePersistentState("hansey_date_from", isoMinusDays(localTodayIso(), 29));
   const [search, setSearch] = usePersistentState("hansey_search", "");
-  const [fStatus, setFStatus] = usePersistentState("hansey_f_status", "all");
+  const [fStatus, setFStatus] = usePersistentState("hansey_f_status", []);
   const [fDepts, setFDepts] = usePersistentState("hansey_f_depts", []);
   const [fCells, setFCells] = usePersistentState("hansey_f_cells", []);
   const [fLeader, setFLeader] = usePersistentState("hansey_f_leader", "");
   const [fSup, setFSup] = usePersistentState("hansey_f_sup", "");
-  const [sort, setSort] = usePersistentState("hansey_sort", { k: "date", dir: "desc" });
+  const [sort, setSort] = usePersistentState("hansey_sort", { key: "date", dir: "desc" });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
