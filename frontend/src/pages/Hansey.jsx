@@ -745,7 +745,7 @@ export default function Hansey() {
 
   // ── sorting ────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
-    const { k, dir } = sort || {};
+    const { key: k, dir } = sort || {};
     if (!k) return filtered;
     const mul = dir === "asc" ? 1 : -1;
     const val = (r) => {
