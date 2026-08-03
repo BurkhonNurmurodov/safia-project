@@ -768,8 +768,12 @@ export default function Hansey() {
     });
   }, [filtered, sort, lang, t]);
 
-  const onSort = (k) =>
-    setSort((s) => (s?.k === k ? (s.dir === "desc" ? { k, dir: "asc" } : { k: null, dir: "desc" }) : { k, dir: "desc" }));
+  // asc → desc → off, the canonical three-state header toggle.
+  const onSort = (key) =>
+    setSort((s) =>
+      s?.key === key
+        ? (s.dir === "desc" ? { key, dir: "asc" } : { key: null, dir: "desc" })
+        : { key, dir: "desc" });
 
   // ── mutations ──────────────────────────────────────────────────────────────
   const invalidate = () => qc.invalidateQueries({ queryKey: ["hansey"] });
