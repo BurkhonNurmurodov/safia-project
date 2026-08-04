@@ -88,15 +88,18 @@ export default function LangTextInput({
           title: LANG_TITLE[l] || l,
         }))}
       />
-      <input
-        type="text"
-        value={current}
-        onChange={(e) => onChange?.(active, e.target.value)}
-        placeholder={showFallback ? fallback : placeholder}
-        className={inputCls + " mt-2"}
-        style={inputStyle}
-        autoFocus={autoFocus}
-      />
+      <div className="mt-2 flex items-center gap-1.5">
+        <input
+          type="text"
+          value={current}
+          onChange={(e) => onChange?.(active, e.target.value)}
+          placeholder={shownPlaceholder}
+          className={inputCls + " flex-1 min-w-0"}
+          style={inputStyle}
+          autoFocus={autoFocus}
+        />
+        {typeof action === "function" ? action(active) : action}
+      </div>
       {hint && showFallback && !current && (
         <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
           {t("ui.langInput.ruFallback")}
