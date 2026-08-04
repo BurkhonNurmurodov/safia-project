@@ -18,6 +18,9 @@ import CheckboxTree, { collectLeafKeys } from "../../components/ui/CheckboxTree"
 import EmptyState from "../../components/ui/EmptyState";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { useToast } from "../../components/ui/Toast";
+import { useAdminDirty } from "./AdminPanel";
 
 /**
  * Per-ACCOUNT capabilities — the person-level half of the permission system.
@@ -113,7 +116,9 @@ export default function Permissions() {
   const [draft, setDraft]       = useState({});
   const [view, setView]         = usePersistentState("perms_view", "grants"); // grants | audit
   const [saving, setSaving]     = useState(false);
-  const [saveStatus, setSaveStatus] = useState("idle");
+  const [pendingSel, setPendingSel] = useState(null);  // selection awaiting a discard confirm
+  const [confirmSave, setConfirmSave] = useState(false);
+  const toast = useToast();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-capabilities"],
@@ -377,15 +382,11 @@ export default function Permissions() {
                   right={
                     <Button
                       size="md"
-                      onClick={save}
+                      onClick={() => (grantCount > 0 ? setConfirmSave(true) : save())}
                       loading={saving}
                       disabled={!dirty}
-                      variant={saveStatus === "error" ? "danger" : "primary"}
-                      icon={saveStatus === "ok" ? <Check size={14} /> : null}
                     >
-                      {saveStatus === "ok" ? t("admin.saved")
-                        : saveStatus === "error" ? t("admin.refreshFailed")
-                        : t("admin.save")}
+                      {dirty ? t("admin.perms.saveN").replace("{n}", grantCount + revokeCount) : t("admin.save")}
                     </Button>
                   }
                 />
@@ -463,6 +464,51 @@ export default function Permissions() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pendingSel}
+        title={t("admin.unsavedTitle")}
+        message={t("admin.perms.discardMsg").replace("{n}", grantCount + revokeCount)}
+        confirmLabel={t("admin.unsavedDiscard")}
+        onCancel={() => setPendingSel(null)}
+        onConfirm={() => { setSelected(pendingSel); setDraft({}); setPendingSel(null); }}
+      />
+
+      {/* The backend DMs every admin whenever a granted power is USED, yet the
+          UI conveyed no gravity at all: "delete attendance records" rendered
+          identically to a harmless page grant, and one tap on a branch checkbox
+          select-alls a whole role. Granting now reads back what it is about to
+          do, to how many accounts. */}
+      <ConfirmDialog
+        open={confirmSave}
+        tone="danger"
+        title={t("admin.perms.confirmTitle")}
+        message={
+          <>
+            <p className="mb-2">
+              {t("admin.perms.confirmMsg")
+                .replace("{n}", grantCount)
+                .replace("{m}", selected.length)}
+            </p>
+            <ul className="space-y-0.5">
+              {Object.entries(draft).filter(([, v]) => v != null).slice(0, 8).map(([k]) => (
+                <li key={k} style={{ color: "var(--text-2)" }}>+ {capLabel(k)}</li>
+              ))}
+            </ul>
+            {revokeCount > 0 && (
+              <p className="mt-2" style={{ color: "var(--text-3)" }}>
+                {t("admin.perms.confirmRevokes").replace("{n}", revokeCount)}
+              </p>
+            )}
+          </>
+        }
+        confirmLabel={t("admin.save")}
+        loading={saving}
+        onCancel={() => setConfirmSave(false)}
+        onConfirm={save}
+      />
+
+      {toast.node}
     </div>
   );
 }
