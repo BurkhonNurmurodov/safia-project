@@ -229,6 +229,8 @@ export function FileStateList({
             </div>
           )}
 
+          {renderExtra?.(f)}
+
           <div
             className="h-1 bg-[var(--bg-accent)] rounded-full overflow-hidden"
             role="progressbar"
