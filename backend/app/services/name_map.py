@@ -287,6 +287,20 @@ def leader_match(profiles: Iterable, entries: Iterable) -> dict[tuple, dict]:
         # unit is unknown, never when it is known but has no match (that would
         # hand the row to a same-named leader of another brigade).
         pool = by_unit.get(manager_id) if manager_id is not None else canon
+        # A pin beats both the unit pool and the scorer (see _LEADER_PINS). It
+        # resolves inside the row's unit first, then across the whole roster —
+        # the sheet's «Бригадир ФИО» can file a pinned leader under a unit their
+        # profile doesn't belong to, and the pin is still the surer statement.
+        # Two profiles under one folded name ⇒ skip: a pin must never guess
+        # which of two same-named leaders it meant.
+        forced = _LEADER_PINS.get(" ".join(tokens))
+        if forced:
+            hits = _pinned(forced, pool or []) or _pinned(forced, canon)
+            if len(hits) == 1:
+                p = hits[0]
+                out[(raw, manager_id)] = {"id": p.id, "name": p.name,
+                                          "manager_id": p.manager_id}
+                continue
         if not pool:
             continue
         exact = next((p for p, ctok in pool if " ".join(ctok) == " ".join(tokens)), None)
