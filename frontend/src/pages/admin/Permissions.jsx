@@ -193,6 +193,22 @@ export default function Permissions() {
   }
 
   const dirty = Object.keys(draft).length > 0;
+  // Tab switches unmount this component; the shell asks before discarding.
+  useAdminDirty(dirty);
+
+  /**
+   * Changing the selection used to call setDraft({}) — every tree click silently
+   * destroyed pending edits. Toggle five capabilities, mis-tap one more row on a
+   * phone, and the work was gone with no warning, no confirm, and no way to tell
+   * it had happened.
+   */
+  function requestSelection(next) {
+    if (dirty) { setPendingSel(next); return; }
+    setSelected(next);
+  }
+
+  const grantCount = Object.values(draft).filter((v) => v != null).length;
+  const revokeCount = Object.values(draft).filter((v) => v == null).length;
 
   async function save() {
     if (!selected.length || !dirty) return;
@@ -207,11 +223,14 @@ export default function Permissions() {
       // Grants are read live by their holders; refresh our own copy too.
       qc.invalidateQueries({ queryKey: ["my-capabilities"] });
       setDraft({});
-      setSaveStatus("ok");
-      setTimeout(() => setSaveStatus("idle"), 2500);
-    } catch {
-      setSaveStatus("error");
-      setTimeout(() => setSaveStatus("idle"), 3000);
+      setConfirmSave(false);
+      toast.success(
+        t("admin.perms.savedN").replace("{n}", grantCount + revokeCount).replace("{m}", selected.length),
+      );
+    } catch (e) {
+      // Was a borrowed generic word painted into the button for 3 seconds. On a
+      // permissions surface, "did that grant land?" must never be ambiguous.
+      toast.error(e?.response?.data?.detail || t("admin.perms.saveFailed"));
     } finally {
       setSaving(false);
     }
