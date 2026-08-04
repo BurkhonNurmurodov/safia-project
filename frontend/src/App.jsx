@@ -385,7 +385,7 @@ function AppWithLang() {
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
             <Route
               path="/admin/upload"
-              element={<AuthGate><RequireAdminPanel><AdminUpload /></RequireAdminPanel></AuthGate>}
+              element={<AuthGate><RequireAdminPanel><AdminPanel /></RequireAdminPanel></AuthGate>}
             />
             {/* /broadcast mini-app recipient picker — opened from the bot's inline
                 button; admin membership is enforced server-side (active role may
