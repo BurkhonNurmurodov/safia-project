@@ -268,6 +268,14 @@ def leader_match(profiles: Iterable, entries: Iterable) -> dict[tuple, dict]:
     for p, ctok in canon:
         by_unit.setdefault(p.manager_id, []).append((p, ctok))
 
+    def _pinned(target: str, pool) -> list:
+        """Profiles in ``pool`` whose folded name is the pin target, token-order
+        tolerantly — a hand-written pin shouldn't have to guess whether the
+        Profiles tab stores the name surname-first or first-first."""
+        key = " ".join(sorted(target.split()))
+        return [p for p, ctok in pool
+                if " ".join(ctok) == target or " ".join(sorted(ctok)) == key]
+
     out: dict[tuple, dict] = {}
     for raw, manager_id in entries:
         if not raw:
