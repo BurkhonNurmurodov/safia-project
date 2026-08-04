@@ -6,7 +6,7 @@ import { useLang } from "../../context/LangContext";
 import Button from "../../components/ui/Button";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
-import Toast, { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/ui/Toast";
 import UploadDropzone, { FileStateList, useFileStates } from "../../components/ui/UploadDropzone";
 
 /**
