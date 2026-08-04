@@ -1,11 +1,30 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, CheckCircle2, XCircle, Loader2, Factory, Save, BookOpen } from "lucide-react";
+import {
+  Upload, CheckCircle2, XCircle, Factory, Save, BookOpen, AlertTriangle, Users,
+} from "lucide-react";
 import api from "../../utils/api";
+import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import StyledSelect from "../../components/ui/StyledSelect";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import FormField from "../../components/ui/FormField";
+import Button from "../../components/ui/Button";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
+import { SkeletonBlock } from "../../components/ui/Skeleton";
+import { useToast } from "../../components/ui/Toast";
+import UploadDropzone, { FileStateList, useFileStates } from "../../components/ui/UploadDropzone";
+
+/**
+ * «Ishlab chiqarish» — the daily SAP production-plan upload, the per-brigadir
+ * catalog import, and the штатка/capacity editor.
+ *
+ * This tab used to carry a comment claiming the admin panel was "RU-only" and
+ * hardcoded every string in Russian. It never was RU-only: twelve sibling tabs
+ * run through t() in four languages, and a capability grantee can hold exactly
+ * this one tab. Everything here is translated now.
+ */
 
 // Timezone-safe (toISOString() drops a day east of UTC, e.g. Tashkent +5).
 const todayISO = () => {
@@ -13,87 +32,145 @@ const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-const card = "bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5";
-const label = "text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wider";
-const input = "bg-[var(--bg-inner)] border border-[var(--border-md)] rounded-lg px-3 py-2 text-sm text-[var(--text-1)] outline-none focus:border-[var(--brand)]";
+const CARD = { background: "var(--bg-card)", border: "1px solid var(--border)" };
+const inputCls = "rounded-lg px-3 py-2 text-sm outline-none";
+const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
 
-// Workshop name of a resolved cell (RU-only admin panel → prefer the Russian name).
+const fmtDay = (iso) => {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split("-");
+  return d ? `${d}.${m}.${y}` : iso;
+};
+
+// Workshop name of a resolved cell — falls back across the four languages.
 const wsName = (cell) => (cell ? cell.ru || cell.uz || cell.uz_cyrl || cell.en || "" : "");
 
 // ── штатка / capacity editor ─────────────────────────────────────────────────
-function WorkCenters({ managerId }) {
+function WorkCenters({ managerId, managerName }) {
+  const { t } = useLang();
   const qc = useQueryClient();
-  const { data = [] } = useQuery({
+  const toast = useToast();
+
+  const { data = [], isLoading } = useQuery({
     queryKey: ["pp-wc", managerId],
     queryFn: () => api.get("/admin/production/work-centers", { params: { manager_id: managerId } }).then((r) => r.data),
     enabled: managerId != null,
   });
+
+  const [draft, setDraft] = useState({});
+  const [savingId, setSavingId] = useState(null);
+
   const save = useMutation({
     mutationFn: ({ id, body }) => api.put(`/admin/production/work-centers/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pp-wc", managerId] }),
+    onMutate: ({ id }) => setSavingId(id),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
+      // Clear the row's draft so the input goes back to reflecting the server.
+      setDraft((p) => { const n = { ...p }; delete n[id]; return n; });
+      toast.success(t("admin.prod.wcSaved"));
+    },
+    // A failed PUT used to leave the draft on screen looking exactly like a
+    // saved value — the only confirmation the admin had was faith.
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.saveFailed")),
+    onSettled: () => setSavingId(null),
   });
-  const [draft, setDraft] = useState({});
+
   const val = (w, f) => (draft[w.id]?.[f] ?? w[f] ?? "");
   const set = (id, f, v) => setDraft((d) => ({ ...d, [id]: { ...d[id], [f]: v === "" ? null : Number(v) } }));
+  const isDirty = (w) => draft[w.id] != null;
 
   return (
-    <div className={card}>
-      <div className="flex items-center gap-2 mb-4">
-        <Factory size={15} className="text-[var(--brand-text)]" />
-        <div className={label}>Команды — штатка и мощность (S)</div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-[var(--text-1)]">
-          <thead>
-            <tr className="text-[var(--text-3)] text-xs">
-              <th className="text-left py-2">Команда</th>
-              <th className="text-right py-2">Штатка (W)</th>
-              <th className="text-right py-2">Мощность S</th>
-              <th className="text-right py-2"></th>
+    <>
+      <TableCard
+        icon={Factory}
+        title={t("admin.prod.wcTitle")}
+        // The card is scoped to one brigadir but never said which, so an admin
+        // who scrolled past the picker could edit the wrong unit's штатка.
+        right={managerName ? <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{managerName}</span> : null}
+      >
+        <thead>
+          <tr>
+            <Th label={t("admin.prod.wcTeam")} />
+            <Th label={t("admin.prod.wcShtatka")} align="right" />
+            <Th label={t("admin.prod.wcCapacity")} align="right" />
+            <Th label="" align="right" />
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            [...Array(4)].map((_, i) => (
+              <tr key={i}>
+                <td colSpan={4} className="px-3 py-2"><SkeletonBlock className="h-6 rounded" /></td>
+              </tr>
+            ))
+          ) : data.length === 0 ? (
+            // Was pixel-identical to "still loading" — an admin couldn't tell
+            // "no catalog yet" from "the query hasn't landed".
+            <tr>
+              <td colSpan={4} className="px-3 py-8 text-center text-xs" style={{ color: "var(--text-3)" }}>
+                {t("admin.prod.wcEmpty")}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {data.map((w) => (
-              <tr key={w.id} className="border-t border-[var(--border)]">
-                <td className="py-2 font-semibold">
+          ) : (
+            data.map((w) => (
+              <tr key={w.id}>
+                <td className="px-3 py-2 font-semibold" style={{ color: "var(--text-1)" }}>
                   {w.code}
                   {wsName(w.cell) && (
-                    <div className="text-[11px] font-normal text-[var(--text-4)]">{wsName(w.cell)}</div>
+                    <div className="text-[11px] font-normal" style={{ color: "var(--text-4)" }}>{wsName(w.cell)}</div>
                   )}
                 </td>
-                <td className="py-2 text-right">
-                  <input type="number" value={val(w, "shtatka")} onChange={(e) => set(w.id, "shtatka", e.target.value)}
-                    className={`${input} w-20 text-right`} />
+                <td className="px-3 py-2 text-right">
+                  <input
+                    type="number"
+                    value={val(w, "shtatka")}
+                    onChange={(e) => set(w.id, "shtatka", e.target.value)}
+                    className={`${inputCls} w-20 text-right`}
+                    style={inputStyle}
+                  />
                 </td>
-                <td className="py-2 text-right">
-                  <input type="number" value={val(w, "capacity")} onChange={(e) => set(w.id, "capacity", e.target.value)}
-                    className={`${input} w-24 text-right`} />
+                <td className="px-3 py-2 text-right">
+                  <input
+                    type="number"
+                    value={val(w, "capacity")}
+                    onChange={(e) => set(w.id, "capacity", e.target.value)}
+                    className={`${inputCls} w-24 text-right`}
+                    style={inputStyle}
+                  />
                 </td>
-                <td className="py-2 text-right">
-                  <button
+                <td className="px-3 py-2 text-right">
+                  <Button
+                    size="md"
+                    variant="primary"
+                    tint={!isDirty(w)}
+                    icon={<Save size={11} />}
+                    loading={savingId === w.id}
                     onClick={() => save.mutate({ id: w.id, body: { shtatka: val(w, "shtatka"), capacity: val(w, "capacity") } })}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--brand)] text-white">
-                    <Save size={11} /> Сохр.
-                  </button>
+                  >
+                    {t("common.save")}
+                  </Button>
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            ))
+          )}
+        </tbody>
+      </TableCard>
+      <div className="text-[11px] mt-2 px-1" style={{ color: "var(--text-3)" }}>
+        {t("admin.prod.wcFormula")}
       </div>
-      <div className="text-[11px] text-[var(--text-4)] mt-3">
-        Людей = ОКРУГЛ(W × Σтруд / S). S ≈ W × 408 (85% от 480 мин/смена).
-      </div>
-    </div>
+      {toast.node}
+    </>
   );
 }
 
 // ── catalog import (Sheet1 …) ────────────────────────────────────────────────
-function CatalogImport({ managerId, setManagerId, brigadirs }) {
+function CatalogImport({ managerId, managerName }) {
+  const { t } = useLang();
   const qc = useQueryClient();
   const [sheet, setSheet] = useState("Sheet1 Торт");
   const [file, setFile] = useState(null);
   const [state, setState] = useState({ status: "idle" });
+  const [confirm, setConfirm] = useState(false);
 
   async function doImport() {
     if (!file) return;
@@ -105,66 +182,105 @@ function CatalogImport({ managerId, setManagerId, brigadirs }) {
     try {
       const { data } = await api.post("/admin/production/catalog/import", form);
       setState({ status: "ok", data });
+      setConfirm(false);
       qc.invalidateQueries({ queryKey: ["pp-wc", managerId] });
     } catch (e) {
-      setState({ status: "error", detail: e?.response?.data?.detail || "Ошибка импорта" });
+      setState({ status: "error", detail: e?.response?.data?.detail || t("admin.prod.catalogFailed") });
     }
   }
 
   return (
-    <div className={card}>
-      <div className="flex items-center gap-2 mb-4">
-        <BookOpen size={15} className="text-[var(--brand-text)]" />
-        <div className={label}>Импорт каталога (лист «Sheet1 …»)</div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-        <FormField label="Бригадир">
-          <StyledSelect
-            value={managerId != null ? String(managerId) : ""}
-            onChange={(v) => setManagerId(Number(v))}
-            options={brigadirs.map((b) => ({
-              value: String(b.manager_id),
-              label: b.name + (b.shift ? ` · Смена ${b.shift}` : ""),
-            }))}
-            placeholder="Выберите бригадира"
-          />
-        </FormField>
-        <label className="flex flex-col gap-1.5">
-          <span className={label}>Имя листа</span>
-          <input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="Sheet1 Торт" className={input} />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className={label}>Файл (.xlsx / .xlsb)</span>
-          <input type="file" accept=".xlsx,.xlsb" onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold" />
-        </label>
-      </div>
-      <div className="text-[11px] text-[var(--text-4)] mb-3">
-        Заменяет товары и обновляет штатку/мощность из листа. Строки без SAP-кода («0») отбрасываются. Затем пересчитывает данные бригадира за все даты с загруженными файлами SAP — ручные правки за эти даты сбрасываются.
-      </div>
-      <button onClick={doImport} disabled={!file || managerId == null || state.status === "uploading"}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50">
-        {state.status === "uploading" ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />}
-        Импортировать
-      </button>
-      {state.status === "ok" && (
-        <div className="mt-3 flex items-center gap-2 text-green-400 text-sm">
-          <CheckCircle2 size={14} /> Лист «{state.data.sheet}»: {state.data.products} товаров, команд +{state.data.work_centers_added}/~{state.data.work_centers_updated}
-          {state.data.backfilled_days > 0 &&
-            `, пересчитано ${state.data.backfilled_days} дн. (${state.data.backfilled_rows} строк)`}
+    <div className="rounded-2xl" style={CARD}>
+      <SectionHead
+        icon={BookOpen}
+        title={t("admin.prod.catalogTitle")}
+        right={managerName ? <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{managerName}</span> : null}
+      />
+      <div className="p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          <FormField label={t("admin.prod.catalogSheet")}>
+            <input
+              value={sheet}
+              onChange={(e) => setSheet(e.target.value)}
+              placeholder="Sheet1 Торт"
+              className={`${inputCls} w-full`}
+              style={inputStyle}
+            />
+          </FormField>
+          <FormField label={t("admin.prod.catalogFile")}>
+            <input
+              type="file"
+              accept=".xlsx,.xlsb"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
+              style={{ color: "var(--text-2)" }}
+            />
+          </FormField>
         </div>
-      )}
-      {state.status === "error" && (
-        <div className="mt-3 flex items-center gap-2 text-red-400 text-sm">
-          <XCircle size={14} /> {state.detail}
+
+        {/* The destructive consequence was an 11px --text-4 footnote the eye
+            skips, above a button that fired immediately. It now leads the card
+            in warning colour AND is restated inside a danger confirm. */}
+        <div
+          className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs mb-3"
+          style={{ background: "rgba(234,179,8,0.10)", border: "1px solid rgba(234,179,8,0.30)", color: "#a16207" }}
+        >
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <span className="leading-snug">{t("admin.prod.catalogHint")}</span>
         </div>
-      )}
+
+        <Button
+          size="lg"
+          icon={<BookOpen size={14} />}
+          disabled={!file || managerId == null}
+          loading={state.status === "uploading"}
+          onClick={() => setConfirm(true)}
+        >
+          {t("admin.prod.catalogBtn")}
+        </Button>
+
+        {state.status === "ok" && (
+          <div className="mt-3 flex items-start gap-2 text-sm" style={{ color: "#22c55e" }}>
+            <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5" />
+            <span>
+              {t("admin.prod.catalogOk")
+                .replace("{sheet}", state.data.sheet)
+                .replace("{p}", state.data.products)
+                .replace("{a}", state.data.work_centers_added)
+                .replace("{u}", state.data.work_centers_updated)}
+              {state.data.backfilled_days > 0 &&
+                t("admin.prod.catalogBackfill")
+                  .replace("{d}", state.data.backfilled_days)
+                  .replace("{r}", state.data.backfilled_rows)}
+            </span>
+          </div>
+        )}
+        {state.status === "error" && (
+          <div className="mt-3 flex items-start gap-2 text-sm" style={{ color: "#ef4444" }}>
+            <XCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <span className="break-words">{state.detail}</span>
+          </div>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={confirm}
+        tone="danger"
+        title={t("admin.prod.catalogConfirmTitle")}
+        message={t("admin.prod.catalogConfirmMsg").replace("{name}", managerName || "")}
+        confirmLabel={t("admin.prod.catalogBtn")}
+        loading={state.status === "uploading"}
+        error={state.status === "error" ? state.detail : null}
+        onCancel={() => { setConfirm(false); setState({ status: "idle" }); }}
+        onConfirm={doImport}
+      />
     </div>
   );
 }
 
 // ── фаза upload ───────────────────────────────────────────────────────────────
 export default function ProductionUpload() {
+  const { t } = useLang();
   // All active brigadir units — an admin can configure/upload for any of them
   // (was hardcoded to the manager-5 pilot, so nobody else could be set up).
   const { data: brigadirs = [] } = useQuery({
@@ -172,7 +288,6 @@ export default function ProductionUpload() {
     queryFn: () => api.get("/api/managers/all").then((r) => r.data),
   });
   const [managerId, setManagerId] = usePersistentState("produpload_manager", null);
-  // Default to the first unit once the list loads; keep the pick valid.
   useEffect(() => {
     if (brigadirs.length && (managerId == null || !brigadirs.some((b) => b.manager_id === managerId))) {
       setManagerId(brigadirs[0].manager_id);
@@ -181,111 +296,192 @@ export default function ProductionUpload() {
 
   const [date, setDate] = useState(todayISO());
   const [mode, setMode] = useState("both");
-  const [fileType, setFileType] = useState("auto"); // auto | faza | zaga
-  const [files, setFiles] = useState([]);
+  const [fileType, setFileType] = useState("auto");
   const [state, setState] = useState({ status: "idle" });
+  const { states, begin, patch, addRejections, clear } = useFileStates();
 
-  async function doUpload() {
-    if (!files.length) return;
+  const managerName = brigadirs.find((b) => b.manager_id === managerId)?.name || "";
+
+  async function doUpload(picked) {
+    const entries = begin(picked);
     setState({ status: "uploading" });
     const form = new FormData();
-    files.forEach((f) => form.append("files", f));
+    picked.forEach((f) => form.append("files", f));
     // No manager_id → the SAP file is global; the backend fans it out to every
     // configured brigadir (each filtered by their own catalog).
     form.append("date", date);
     form.append("mode", mode);
     if (fileType !== "auto") form.append("file_type", fileType);
+    entries.forEach(({ id }) => patch(id, { status: "uploading", progress: 0 }));
     try {
-      const { data } = await api.post("/admin/production/upload", form);
+      const { data } = await api.post("/admin/production/upload", form, {
+        // Both sibling tabs report progress; this one posted multi-MB SAP
+        // exports over a phone connection with only a button spinner, which is
+        // indistinguishable from a hang and invites re-taps.
+        onUploadProgress: (e) => {
+          const pct = e.total ? Math.round((e.loaded / e.total) * 100) : 50;
+          entries.forEach(({ id }) => patch(id, { progress: pct, status: pct >= 100 ? "processing" : "uploading" }));
+        },
+      });
+      entries.forEach(({ id }) => patch(id, { status: "ok", progress: 100 }));
       setState({ status: "ok", data });
     } catch (e) {
-      setState({ status: "error", detail: e?.response?.data?.detail || "Ошибка загрузки" });
+      const detail = e?.response?.data?.detail || t("admin.prod.uploadFailed");
+      entries.forEach(({ id }) => patch(id, { status: "error", progress: 100, detail }));
+      setState({ status: "error", detail });
     }
   }
 
+  const ok = state.status === "ok" ? state.data : null;
+  // An unrecognized file used to render as an 11px footnote UNDER a green
+  // success header: pick two фаза files and half the pipeline is missing while
+  // the visual verdict still says success.
+  const unrecognized = ok?.files?.filter((f) => !f.faza && !f.zaga) ?? [];
+  const incomplete = !!ok && (unrecognized.length > 0 || !ok.zaga_orders || !ok.faza_operations);
+
   return (
-    <div className="space-y-6">
-      <div className={card}>
-        <div className="flex items-center gap-2 mb-4">
-          <Upload size={15} className="text-[var(--brand-text)]" />
-          <div className={label}>Загрузка SAP файлов (фаза + заголовок)</div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          <FormField label="Дата">
-            <DateRangePicker
-              single
-              dateFrom={date} dateTo={date}
-              setDateFrom={setDate} setDateTo={() => {}}
-              triggerClassName="px-3 py-2 text-sm w-full"
-            />
-          </FormField>
-          <FormField label="Режим">
-            <StyledSelect
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "both", label: "План + Факт" },
-                { value: "plan", label: "Только План (утро)" },
-                { value: "actual", label: "Только Факт (вечер)" },
-              ]}
-            />
-          </FormField>
-          <FormField label="Тип файла">
-            <StyledSelect
-              value={fileType}
-              onChange={setFileType}
-              options={[
-                { value: "auto", label: "Авто-определение" },
-                { value: "faza", label: "Фаза (операции)" },
-                { value: "zaga", label: "Заголовок (заказы)" },
-              ]}
-            />
-          </FormField>
-        </div>
-
-        <input
-          type="file" accept=".xlsx" multiple
-          onChange={(e) => setFiles(Array.from(e.target.files || []))}
-          className="block w-full text-sm text-[var(--text-2)] file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--brand)] file:text-white file:text-sm file:font-semibold"
+    <div className="space-y-4">
+      {/* ── Global: the SAP pair applies to every brigadir ── */}
+      <div className="rounded-2xl" style={CARD}>
+        <SectionHead
+          icon={Upload}
+          title={t("admin.prod.title")}
+          right={
+            <span
+              className="text-[11px] px-2 py-0.5 rounded-md font-semibold"
+              style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+            >
+              {t("admin.prod.globalFile")}
+            </span>
+          }
         />
-        <div className="text-[11px] text-[var(--text-4)] mt-1">
-          Выберите оба файла: «фаза» (операции) и «заголовок» (заказы→SKU). Тип определяется автоматически; соединяются по номеру заказа. Файл общий — загрузка применяется ко всем бригадирам (каждый по своему каталогу).
-        </div>
+        <div className="p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <FormField label={t("admin.prod.date")} hint={t("admin.prod.replaceWarn")}>
+              <DateRangePicker
+                single
+                dateFrom={date} dateTo={date}
+                setDateFrom={setDate} setDateTo={() => {}}
+                triggerClassName="px-3 py-2 text-sm w-full"
+              />
+            </FormField>
+            <FormField label={t("admin.prod.mode")}>
+              <StyledSelect
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "both", label: t("admin.prod.modeBoth") },
+                  { value: "plan", label: t("admin.prod.modePlan") },
+                  { value: "actual", label: t("admin.prod.modeActual") },
+                ]}
+              />
+            </FormField>
+            <FormField
+              label={t("admin.prod.fileType")}
+              hint={fileType !== "auto" ? t("admin.prod.ftSingleOnly") : null}
+            >
+              <StyledSelect
+                value={fileType}
+                onChange={setFileType}
+                options={[
+                  { value: "auto", label: t("admin.prod.ftAuto") },
+                  { value: "faza", label: t("admin.prod.ftFaza") },
+                  { value: "zaga", label: t("admin.prod.ftZaga") },
+                ]}
+              />
+            </FormField>
+          </div>
 
-        <button
-          onClick={doUpload}
-          disabled={!files.length || state.status === "uploading"}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--brand)] text-white disabled:opacity-50"
-        >
-          {state.status === "uploading" ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-          Загрузить
-        </button>
+          <UploadDropzone
+            accept={{ "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] }}
+            // A manual type tags the WHOLE request, so picking one forces a
+            // single file rather than silently mislabelling the other.
+            multiple={fileType === "auto"}
+            busy={state.status === "uploading"}
+            onFiles={doUpload}
+            onRejected={(r) => addRejections(r, t("admin.upload.onlyXlsx"))}
+            hint={t("admin.prod.uploadHint")}
+          />
 
-        {state.status === "ok" && (
-          <div className="mt-4 bg-[var(--bg-inner)] rounded-lg p-4 text-sm">
-            <div className="flex items-center gap-2 text-green-400 font-semibold mb-2">
-              <CheckCircle2 size={14} /> Обновлено бригадиров: {state.data.brigadirs} · строк (SKU×команда): {state.data.rows_written}
-            </div>
-            <div className="text-xs text-[var(--text-2)]">
-              Операций «фаза»: {state.data.faza_operations} · Заказов в карте: {state.data.zaga_orders}
-            </div>
-            {state.data.files?.map((f, i) => (
-              <div key={i} className="text-xs text-[var(--text-3)] mt-1 font-mono">
-                {f.file}: {f.faza ? `фаза — ${f.faza.operations} опер.` : f.zaga ? `заголовок — ${f.zaga.orders} заказов` : "не распознан"}
+          <FileStateList
+            states={states}
+            busy={state.status === "uploading"}
+            onClear={() => { clear(); setState({ status: "idle" }); }}
+            className="mt-4"
+          />
+
+          {ok && (
+            <div
+              className="mt-4 rounded-lg p-4 text-sm"
+              style={{
+                background: incomplete ? "rgba(234,179,8,0.10)" : "var(--bg-inner)",
+                border: `1px solid ${incomplete ? "rgba(234,179,8,0.30)" : "var(--border)"}`,
+              }}
+            >
+              <div
+                className="flex items-center gap-2 font-semibold mb-2"
+                style={{ color: incomplete ? "#a16207" : "#22c55e" }}
+              >
+                {incomplete ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+                {/* The date is echoed back: a fat-fingered DateRangePicker used
+                    to earn a green check with no chance to notice the wrong day
+                    had just been replaced. */}
+                {t("admin.prod.successHead")
+                  .replace("{date}", fmtDay(date))
+                  .replace("{b}", ok.brigadirs)
+                  .replace("{r}", ok.rows_written)}
               </div>
-            ))}
-          </div>
-        )}
-        {state.status === "error" && (
-          <div className="mt-4 flex items-center gap-2 text-red-400 text-sm">
-            <XCircle size={14} /> {state.detail}
-          </div>
-        )}
+              <div className="text-xs" style={{ color: "var(--text-2)" }}>
+                {t("admin.prod.successOps")
+                  .replace("{n}", ok.faza_operations)
+                  .replace("{m}", ok.zaga_orders)}
+              </div>
+              {incomplete && (
+                <div className="text-xs mt-2 leading-snug" style={{ color: "#a16207" }}>
+                  {t("admin.prod.warnIncomplete")}
+                </div>
+              )}
+              {ok.files?.map((f, i) => (
+                <div key={i} className="text-xs mt-1 font-mono break-all" style={{ color: "var(--text-3)" }}>
+                  {f.file}:{" "}
+                  {f.faza ? t("admin.prod.fileFaza").replace("{n}", f.faza.operations)
+                    : f.zaga ? t("admin.prod.fileZaga").replace("{n}", f.zaga.orders)
+                    : t("admin.prod.fileUnknown")}
+                </div>
+              ))}
+            </div>
+          )}
+          {state.status === "error" && (
+            <div className="mt-4 flex items-start gap-2 text-sm" style={{ color: "#ef4444" }}>
+              <XCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span className="break-words">{state.detail}</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      <CatalogImport managerId={managerId} setManagerId={setManagerId} brigadirs={brigadirs} />
-      <WorkCenters managerId={managerId} />
+      {/* ── Scope: everything below acts on ONE brigadir ── */}
+      <div className="rounded-2xl p-4" style={CARD}>
+        <FormField label={t("admin.prod.scope")} hint={t("admin.prod.scopeHint")}>
+          <StyledSelect
+            value={managerId != null ? String(managerId) : ""}
+            onChange={(v) => setManagerId(Number(v))}
+            searchable
+            options={brigadirs.map((b) => ({
+              value: String(b.manager_id),
+              label: b.name + (b.shift ? ` · ${t("admin.prod.shift")} ${b.shift}` : ""),
+            }))}
+            placeholder={t("admin.prod.scopePlaceholder")}
+          />
+        </FormField>
+      </div>
+
+      <CatalogImport managerId={managerId} managerName={managerName} />
+      <WorkCenters managerId={managerId} managerName={managerName} />
+
+      <div className="flex items-center gap-1.5 text-[11px] px-1" style={{ color: "var(--text-4)" }}>
+        <Users size={11} /> {t("admin.prod.scopeFooter").replace("{name}", managerName)}
+      </div>
     </div>
   );
 }
