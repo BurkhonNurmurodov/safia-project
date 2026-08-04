@@ -1,3 +1,5 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
 /**
  * SegmentedToggle — THE template for the app's inline "pill" toggles
  * (min/hrs, P·A·P−A, workload/headcount/idle, theme switch, shift, view
@@ -17,14 +19,26 @@
  *   value     – the currently selected option value (compared with ===)
  *   onChange  – (value) => void, called with the clicked option's value
  *   options   – array of either [value, label] tuples or
- *               { value, label, title } objects. `label` may be a string or
- *               a node (e.g. an icon for icon-only segments).
+ *               { value, label, title, disabled } objects. `label` may be a
+ *               string or a node (e.g. an icon for icon-only segments).
  *   size      – "md" (default) | "sm"
  *   fill      – when true, the track spans its container full-width and every
  *               segment grows to an equal share (flex-1). Use for form-panel
  *               fields (stacked in a flex column) so the pill fills the row
  *               instead of leaving dead track space on the right. Toolbars
  *               leave this off so the toggle shrink-wraps to its labels.
+ *   scrollable – for option sets that overflow on phones. The track scrolls
+ *               horizontally, the SELECTED segment is scrolled into view on
+ *               mount and on change, and edge fades appear on whichever side
+ *               still has content. Prefer this over wrapping the toggle in your
+ *               own `overflow-x-auto` div: a bare wrapper hides the scrollbar
+ *               without replacing the affordance, and leaves the selected
+ *               segment off-screen — at which point nothing looks selected and
+ *               the user can't tell where they are.
+ *   asTabs    – give the track tablist/tab semantics with aria-selected and
+ *               arrow-key navigation, for when the toggle switches VIEWS rather
+ *               than setting a value. (Plain toggles get aria-pressed instead.)
+ *   ariaLabel – accessible name for the group/tablist
  *   className – extra wrapper classes (widths / shrink / margins only)
  */
 export default function SegmentedToggle({
@@ -33,6 +47,9 @@ export default function SegmentedToggle({
   options = [],
   size = "md",
   fill = false,
+  scrollable = false,
+  asTabs = false,
+  ariaLabel,
   className = "",
 }) {
   // A 4px track inset gives the selected pill a little breathing room from the
@@ -44,30 +61,131 @@ export default function SegmentedToggle({
     Array.isArray(o) ? { value: o[0], label: o[1], title: o[2] } : o
   );
 
-  return (
+  const trackRef = useRef(null);
+  const activeRef = useRef(null);
+  const btnRefs = useRef([]);
+  const [edges, setEdges] = useState({ start: false, end: false });
+
+  const syncEdges = () => {
+    const el = trackRef.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdges({ start: el.scrollLeft > 2, end: el.scrollLeft < max - 2 });
+  };
+
+  // Keep the selected segment visible. Deliberately manual scrollLeft rather
+  // than scrollIntoView: the latter also scrolls ANCESTORS, so on mount it
+  // yanks the whole page down to the toggle.
+  useLayoutEffect(() => {
+    if (!scrollable) return;
+    const track = trackRef.current;
+    const btn = activeRef.current;
+    if (!track || !btn) return;
+    const pad = 12;
+    const bLeft = btn.offsetLeft;
+    const bRight = bLeft + btn.offsetWidth;
+    const vLeft = track.scrollLeft;
+    const vRight = vLeft + track.clientWidth;
+    if (bLeft < vLeft + pad) track.scrollLeft = Math.max(0, bLeft - pad);
+    else if (bRight > vRight - pad) track.scrollLeft = bRight - track.clientWidth + pad;
+    syncEdges();
+  }, [value, scrollable, items.length]);
+
+  useEffect(() => {
+    if (!scrollable) return undefined;
+    syncEdges();
+    const el = trackRef.current;
+    if (!el) return undefined;
+    const onScroll = () => syncEdges();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [scrollable, items.length]);
+
+  const enabledIdx = items.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
+
+  const onKeyDown = (e) => {
+    if (!asTabs) return;
+    const cur = items.findIndex((o) => o.value === value);
+    const pos = enabledIdx.indexOf(cur);
+    let next = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = enabledIdx[(pos + 1) % enabledIdx.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = enabledIdx[(pos - 1 + enabledIdx.length) % enabledIdx.length];
+    else if (e.key === "Home") next = enabledIdx[0];
+    else if (e.key === "End") next = enabledIdx[enabledIdx.length - 1];
+    if (next == null || next === cur) return;
+    e.preventDefault();
+    onChange?.(items[next].value);
+    btnRefs.current[next]?.focus();
+  };
+
+  const track = (
     <div
-      className={`${fill ? "flex w-full" : "inline-flex"} items-center gap-1 rounded-xl p-[4px] ${className}`}
+      ref={trackRef}
+      role={asTabs ? "tablist" : "group"}
+      aria-label={ariaLabel}
+      onKeyDown={onKeyDown}
+      className={`${
+        scrollable ? "flex w-full overflow-x-auto no-scrollbar" : fill ? "flex w-full" : "inline-flex"
+      } items-center gap-1 rounded-xl p-[4px] ${scrollable ? "" : className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
     >
-      {items.map((o) => {
+      {items.map((o, i) => {
         const active = value === o.value;
         return (
           <button
             key={String(o.value)}
+            ref={(el) => {
+              btnRefs.current[i] = el;
+              if (active) activeRef.current = el;
+            }}
             type="button"
+            role={asTabs ? "tab" : undefined}
+            aria-selected={asTabs ? active : undefined}
+            aria-pressed={asTabs ? undefined : active}
+            // Roving tabindex: one stop for the whole tablist, arrows move within.
+            tabIndex={asTabs ? (active ? 0 : -1) : undefined}
             title={o.title}
-            onClick={() => onChange(o.value)}
-            className={`${fill ? "flex-1" : ""} inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
+            disabled={o.disabled}
+            onClick={() => !o.disabled && onChange?.(o.value)}
+            className={`${fill && !scrollable ? "flex-1" : ""} ${
+              scrollable ? "flex-shrink-0" : ""
+            } inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${seg}`}
             style={
               active
                 ? { background: "var(--brand)", color: "#fff", fontWeight: 600 }
-                : { background: "transparent", color: "var(--text-3)" }
+                : { background: "transparent", color: "var(--text-3)", opacity: o.disabled ? 0.45 : 1 }
             }
           >
             {o.label}
           </button>
         );
       })}
+    </div>
+  );
+
+  if (!scrollable) return track;
+
+  // Edge fades stand in for the scrollbar the track hides — without them an
+  // overflowing set of options gives no hint that more exist off-screen.
+  return (
+    <div className={`relative min-w-0 ${className}`}>
+      {track}
+      {edges.start && (
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-xl"
+          style={{ background: "linear-gradient(to right, var(--bg-inner), transparent)" }}
+        />
+      )}
+      {edges.end && (
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-xl"
+          style={{ background: "linear-gradient(to left, var(--bg-inner), transparent)" }}
+        />
+      )}
     </div>
   );
 }
