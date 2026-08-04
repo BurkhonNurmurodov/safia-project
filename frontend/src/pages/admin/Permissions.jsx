@@ -227,7 +227,7 @@ export default function Permissions() {
     : t("admin.perms.bulkHint");
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-8 space-y-4">
+    <div className="space-y-4">
       {/* Toolbar — one aligned row, 38px baseline */}
       <div className="flex items-center gap-2 flex-wrap">
         <SearchInput

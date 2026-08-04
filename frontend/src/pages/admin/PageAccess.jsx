@@ -55,7 +55,7 @@ export default function PageAccess() {
   const COLUMNS = ["admin", ...TOGGLEABLE_ROLES];
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-8">
+    <div>
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
         {/* Header */}
         <div className="flex items-center justify-between mb-2">

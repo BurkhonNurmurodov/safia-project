@@ -47,7 +47,7 @@ const BrigadirProfile = lazyWithReload(() => import("./pages/BrigadirProfile"));
 const Workers = lazyWithReload(() => import("./pages/Workers"));
 const PlanFulfillment = lazyWithReload(() => import("./pages/PlanFulfillment"));
 const Downtime = lazyWithReload(() => import("./pages/Downtime"));
-const AdminUpload = lazyWithReload(() => import("./pages/admin/AdminUpload"));
+const AdminPanel = lazyWithReload(() => import("./pages/admin/AdminPanel"));
 const Staff = lazyWithReload(() => import("./pages/Staff"));
 const Daily = lazyWithReload(() => import("./pages/Daily"));
 const Production = lazyWithReload(() => import("./pages/Production"));

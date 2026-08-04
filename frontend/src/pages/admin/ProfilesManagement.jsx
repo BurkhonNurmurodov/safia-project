@@ -325,7 +325,7 @@ export default function ProfilesManagement() {
   const labelCls = "text-[11px] font-semibold uppercase tracking-wider";
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-8">
+    <div>
       {/* Canonical POSITIONS-style TableCard: count in the head, type pills +
           actions in the toolbar, per-column sort. */}
       <TableCard

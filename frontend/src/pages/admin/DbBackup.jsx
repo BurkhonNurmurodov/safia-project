@@ -89,7 +89,7 @@ export default function DbBackup() {
   const pickedBytes = picked.reduce((s, f) => s + f.size, 0);
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-5">
+    <div className="space-y-5">
       {/* What this does */}
       <div className="rounded-2xl p-4 sm:p-5 space-y-4"
            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>

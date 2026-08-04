@@ -896,7 +896,7 @@ export default function AttendanceUpload() {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div {...getRootProps()} className="max-w-6xl mx-auto p-3 sm:p-6 space-y-4">
+    <div {...getRootProps()} className="space-y-4">
       <input {...getInputProps()} />
 
       {/* Toolbar */}

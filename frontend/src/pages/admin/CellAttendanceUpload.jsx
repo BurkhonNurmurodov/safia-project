@@ -72,7 +72,7 @@ export default function CellAttendanceUpload() {
   const preview = [...fileStates].reverse().find((f) => f.status === "ok" && f.result?.sample?.length)?.result;
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-8 space-y-6">
+    <div className="space-y-6">
       {/* Upload drop zone */}
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
         <div className="flex items-center justify-between gap-2 mb-4">
