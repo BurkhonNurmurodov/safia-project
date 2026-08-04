@@ -41,6 +41,18 @@ export function collectLeafKeys(groups) {
   return [...new Set((groups || []).flatMap(leafKeys))];
 }
 
+/**
+ * The same narrowing the tree renders, exposed so callers can answer "what is
+ * currently VISIBLE?" with the identical logic. A page-level "select all" that
+ * ignores the active filter is a real trap: search a name, see three people,
+ * tap select-all, and silently target the whole company.
+ */
+export function filterGroups(groups, query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return groups || [];
+  return (groups || []).map((g) => filterNode(g, q)).filter(Boolean);
+}
+
 function filterNode(node, q) {
   const selfMatch =
     (node.label || "").toLowerCase().includes(q) ||

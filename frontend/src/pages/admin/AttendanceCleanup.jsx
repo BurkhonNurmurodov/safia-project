@@ -9,9 +9,17 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import DateRangePicker from "../../components/ui/DateRangePicker";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import Toast from "../../components/ui/Toast";
 import EmptyState from "../../components/ui/EmptyState";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
+
+/** dd.mm.yyyy — ru/uz operators do not read yyyy-mm-dd. */
+function fmtDay(iso) {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split("-");
+  return d ? `${d}.${m}.${y}` : iso;
+}
 
 const todayISO = () => new Date().toISOString().split("T")[0];
 
@@ -25,6 +33,7 @@ export default function AttendanceCleanup() {
   const [filter, setFilter]     = usePersistentState("cleanup_search", "");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toast, setToast]       = useState(null);   // { rows, count } | null
+  const [delError, setDelError] = useState("");
 
   const { data: supervisors = [], isLoading } = useQuery({
     queryKey: ["staff-supervisors"],
@@ -73,13 +82,19 @@ export default function AttendanceCleanup() {
       qc.invalidateQueries({ queryKey: ["staff-deleted"] });
       qc.invalidateQueries({ queryKey: ["staff-documents"] });
     },
-    onError: (e) => {
-      setConfirmOpen(false);
-      alert(e?.response?.data?.detail || t("admin.cleanup.fail"));
-    },
+    // Telegram's WebView suppresses window.alert, so on the single most
+    // dangerous action in the panel a failure produced NOTHING: the dialog
+    // closed and the admin could not tell whether the wipe had happened.
+    onError: (e) => setDelError(e?.response?.data?.detail || t("admin.cleanup.fail")),
   });
 
   const canDelete = !!date && selected.size > 0;
+  // Filtering narrows what is VISIBLE but leaves prior ticks selected, so the
+  // readback has to name them or a stale supervisor rides along invisibly.
+  const selectedNames = useMemo(
+    () => (supervisors ?? []).filter((s) => selected.has(s.id)).map((s) => tl(s.name)),
+    [supervisors, selected, tl],
+  );
 
   return (
     <div className="space-y-6">
@@ -190,37 +205,50 @@ export default function AttendanceCleanup() {
         </div>
       </div>
 
+      {/* Two taps used to wipe a whole day across many supervisors with no
+          undo, and the confirm read back only a COUNT — never the names, so a
+          stale off-screen selection could not be caught. Retyping the date
+          forces a re-read of the one thing that must be right. */}
       <ConfirmDialog
         open={confirmOpen}
         tone="danger"
-        onCancel={() => !delMut.isPending && setConfirmOpen(false)}
-        onConfirm={() => delMut.mutate()}
+        error={delError}
+        challenge={fmtDay(date)}
+        challengeLabel={t("admin.cleanup.challenge").replace("{date}", fmtDay(date))}
+        onCancel={() => { if (!delMut.isPending) { setConfirmOpen(false); setDelError(""); } }}
+        onConfirm={() => { setDelError(""); delMut.mutate(); }}
         title={t("admin.cleanup.confirmTitle")}
-        message={t("admin.cleanup.confirmMsg")
-          .replace("{n}", selected.size)
-          .replace("{date}", date)}
+        message={
+          <>
+            <p className="mb-2">
+              {t("admin.cleanup.confirmMsg")
+                .replace("{n}", selected.size)
+                .replace("{date}", fmtDay(date))}
+            </p>
+            <ul className="space-y-0.5">
+              {selectedNames.slice(0, 5).map((n) => (
+                <li key={n} style={{ color: "var(--text-2)" }}>· {n}</li>
+              ))}
+              {selectedNames.length > 5 && (
+                <li style={{ color: "var(--text-4)" }}>
+                  {t("admin.cleanup.andMore").replace("{n}", selectedNames.length - 5)}
+                </li>
+              )}
+            </ul>
+          </>
+        }
         confirmLabel={t("admin.cleanup.deleteBtn")}
-        cancelLabel={t("admin.broadcast.cancel")}
         loading={delMut.isPending}
       />
 
-      {toast && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed", top: 16, right: 16, zIndex: 9999,
-            background: "#22c55e", color: "#fff", maxWidth: 340,
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>
-            {t("admin.cleanup.successToast")
-              .replace("{rows}", toast.rows)
-              .replace("{n}", toast.count)}
-          </span>
-        </div>
-      )}
+      <Toast
+        open={!!toast}
+        message={toast && t("admin.cleanup.successToast")
+          .replace("{rows}", toast.rows)
+          .replace("{n}", toast.count)}
+        duration={0}
+        onClose={() => setToast(null)}
+      />
     </div>
   );
 }

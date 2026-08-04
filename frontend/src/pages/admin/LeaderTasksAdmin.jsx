@@ -7,6 +7,7 @@ import {
 import Modal from "../../components/ui/Modal";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import Toast, { useToast } from "../../components/ui/Toast";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
@@ -20,6 +21,31 @@ const C_ON = "#22c55e", C_OFF = "#94a3b8", C_WARN = "#eab308", C_BAD = "#ef4444"
 const LANGS = ["uz", "uz_cyrl", "ru", "en"];
 const LANG_LABELS = { uz: "UZ", uz_cyrl: "УЗ", ru: "РУ", en: "EN" };
 const OV_RING = "inset 0 0 0 2px rgba(255,255,255,0.75)";
+
+/**
+ * A disabled cell used to fade the WHOLE button to 0.45 opacity — white bold
+ * text on #94a3b8 is already under AA at full strength, and at 45% over the card
+ * it was effectively invisible (and nearly gone in light theme). Keep the grey
+ * solid, switch the ink to dark, and add a non-colour cue so the on/off
+ * distinction survives colourblindness and both themes.
+ */
+function cellStyle(c) {
+  return c.enabled
+    ? { background: C_ON, color: "#fff" }
+    : { background: C_OFF, color: "#1f2937", textDecoration: "line-through" };
+}
+
+/** min_media had zero visual encoding — two equal-weight cells with different
+ *  photo requirements looked identical without opening each modal. */
+function MediaDots({ n }) {
+  return (
+    <span className="absolute top-0.5 right-0.5 flex gap-[1px]" aria-hidden>
+      {Array.from({ length: Math.min(n, 3) }).map((_, i) => (
+        <span key={i} className="block w-[3px] h-[3px] rounded-full" style={{ background: "rgba(255,255,255,0.85)" }} />
+      ))}
+    </span>
+  );
+}
 const inputCls = "w-full px-3 py-2 rounded-xl text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
@@ -47,6 +73,7 @@ export default function LeaderTasksAdmin() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const [toast, setToast] = useState(false);
+  const toast2 = useToast();
   const [chan, setChan] = useState("");
   const [chanErr, setChanErr] = useState("");
   const [cell, setCell] = useState(null);
@@ -78,9 +105,15 @@ export default function LeaderTasksAdmin() {
     qc.invalidateQueries({ queryKey: ["ltasks-config"] });
     qc.invalidateQueries({ queryKey: ["ltasks-audit"] });
   };
+  // Telegram's Mini App WebView blocks window.alert on iOS, so on the primary
+  // phone platform a failed save produced NOTHING — the modal stayed open, the
+  // spinner stopped, and the admin had no idea whether the edit applied. The
+  // channel card already did this right with an inline error; the matrix
+  // mutations were the inconsistent ones.
   const onErr = (e) => {
     const d = e?.response?.data?.detail;
-    alert(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ") : (typeof d === "string" && d) || t("admin.ltasks.fail"));
+    toast2.error(Array.isArray(d) ? d.map((x) => x?.msg || String(x)).join("; ")
+      : (typeof d === "string" && d) || t("admin.ltasks.fail"));
   };
 
   const cellMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/cell", b), onSuccess: () => { invalidate(); setCell(null); ping(); }, onError: onErr });
@@ -266,13 +299,22 @@ export default function LeaderTasksAdmin() {
             <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3, tableLayout: "fixed", minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th className="text-left pr-2 font-semibold sticky left-0 z-10" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>{t("admin.ltasks.supervisor")}</th>
+                  <th className="text-left pr-2 font-semibold sticky left-0 top-0 z-20" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>{t("admin.ltasks.supervisor")}</th>
                   {tasks.map((task) => (
-                    <th key={task.id}>
+                    <th key={task.id} className="align-bottom sticky top-0 z-10" style={{ background: "var(--bg-card)" }}>
                       <button type="button" title={tname(task)}
                         onClick={() => { const f = getCell(managers[0]?.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, when: "now" }); }}
-                        className="w-full py-1.5 rounded-lg font-bold transition-opacity hover:opacity-75"
-                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>T{task.id}</button>
+                        className="w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
+                        style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
+                        <span className="block font-bold leading-none">T{task.id}</span>
+                        {/* The name itself, on screen, in two lines — no hover required. */}
+                        <span
+                          className="block text-[9px] font-medium leading-tight mt-0.5 overflow-hidden"
+                          style={{ color: "var(--text-3)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
+                        >
+                          {tname(task)}
+                        </span>
+                      </button>
                     </th>
                   ))}
                   <th style={{ width: 56 }} />
@@ -304,8 +346,11 @@ export default function LeaderTasksAdmin() {
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
                                 onClick={() => setCell({ mid: m.id, tid: task.id, ...c, when: "now" })}
-                                className="w-full h-7 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold text-white tabular-nums"
-                                style={{ background: c.enabled ? C_ON : C_OFF, opacity: c.enabled ? 1 : 0.45 }}>{c.weight}%</button>
+                                className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
+                                style={cellStyle(c)}>
+                                {c.weight}%
+                                {c.min_media > 1 && <MediaDots n={c.min_media} />}
+                              </button>
                             </td>
                           );
                         })}
@@ -324,8 +369,11 @@ export default function LeaderTasksAdmin() {
                                 <button type="button"
                                   title={`${leadTaskName(p.id, m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%${ov ? ` · ${t("admin.ltasks.overridden")}` : ""}`}
                                   onClick={() => openLeaderCell(p, m.id, task)}
-                                  className="w-full h-6 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold text-white tabular-nums"
-                                  style={{ background: c.enabled ? C_ON : C_OFF, opacity: c.enabled ? 1 : 0.45, boxShadow: ov ? OV_RING : undefined }}>{c.weight}%</button>
+                                  className="relative w-full h-8 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
+                                  style={{ ...cellStyle(c), boxShadow: ov ? OV_RING : undefined }}>
+                                  {c.weight}%
+                                  {c.min_media > 1 && <MediaDots n={c.min_media} />}
+                                </button>
                               </td>
                             );
                           })}
@@ -461,12 +509,8 @@ export default function LeaderTasksAdmin() {
           onCancel={() => setConfirm(null)} onConfirm={confirm.onConfirm} />
       )}
 
-      {toast && (
-        <div className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: C_ON, color: "#fff", maxWidth: 340, boxShadow: "0 8px 24px rgba(34,197,94,0.35)" }}>
-          <CheckCircle size={15} style={{ flexShrink: 0 }} /><span>{t("admin.ltasks.saved")}</span>
-        </div>
-      )}
+      <Toast open={toast} message={t("admin.ltasks.saved")} onClose={() => setToast(false)} />
+      {toast2.node}
     </div>
   );
 }

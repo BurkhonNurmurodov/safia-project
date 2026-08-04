@@ -10,6 +10,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import Modal from "../../components/ui/Modal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Button from "../../components/ui/Button";
+import SearchInput from "../../components/ui/SearchInput";
 import FormField from "../../components/ui/FormField";
 import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
@@ -83,6 +84,7 @@ export default function ProfilesManagement() {
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);   // profile item
+  const [actionError, setActionError] = useState("");         // shown INSIDE the open confirm
   const [confirmUnassign, setConfirmUnassign] = useState(null); // {item, binding}
   const [confirmSwitch, setConfirmSwitch] = useState(null);   // {body, detail} — 409 confirm_required
   const [newCell, setNewCell] = useState(null);       // inline cell-create form (leader flow) or null
@@ -114,7 +116,7 @@ export default function ProfilesManagement() {
   const deleteMut = useMutation({
     mutationFn: ({ ptype, pid }) => api.delete(`/api/profiles/admin/${ptype}/${pid}`),
     onSuccess: () => { done(); setConfirmDelete(null); },
-    onError: (e) => { setConfirmDelete(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
+    onError: (e) => setActionError(e?.response?.data?.detail || t("admin.profiles.error")),
   });
   const inlineCellCreateMut = useMutation({
     // Create a cell from inside the leader modal WITHOUT closing it: the new
@@ -133,7 +135,7 @@ export default function ProfilesManagement() {
   const unassignMut = useMutation({
     mutationFn: (body) => api.post("/api/profiles/admin/unassign", body),
     onSuccess: () => { done(); setConfirmUnassign(null); },
-    onError: (e) => { setConfirmUnassign(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
+    onError: (e) => setActionError(e?.response?.data?.detail || t("admin.profiles.error")),
   });
   const switchMut = useMutation({
     mutationFn: (body) => api.post("/api/profiles/admin/switch-role", body),
@@ -159,8 +161,18 @@ export default function ProfilesManagement() {
   const onSort = (k) =>
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
+  const [search, setSearch] = usePersistentState("profiles_search", "");
+  const needle = search.trim().toLowerCase();
+  const searched = useMemo(() => {
+    if (!needle) return items;
+    return items.filter((it) => [
+      it.name, tl(it.name), it.supervisor, tl(it.supervisor),
+      (it.cells || []).join(" "), (it.holders || []).map((h) => h.name || h.username).join(" "),
+    ].some((v) => v && String(v).toLowerCase().includes(needle)));
+  }, [items, needle, tl]);
+
   const sorted = useMemo(() => {
-    if (!sort.key) return items;
+    if (!sort.key) return searched;
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = (it) => {
       switch (sort.key) {
@@ -171,12 +183,12 @@ export default function ProfilesManagement() {
         default:           return tl(it.name) || "";
       }
     };
-    return [...items].sort((a, b) => {
+    return [...searched].sort((a, b) => {
       const va = val(a), vb = val(b);
       if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
       return String(va).localeCompare(String(vb), undefined, { numeric: true }) * dir;
     });
-  }, [items, sort, tl]);
+  }, [searched, sort, tl]);
 
   // name + holders + actions, plus the per-type extras.
   const colSpan = 3 + (type === "supervisor" || type === "leader" ? 2 : type === "shift-manager" ? 1 : 0);
@@ -334,14 +346,24 @@ export default function ProfilesManagement() {
         wrap
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-            {sorted.length}
+            {needle ? `${sorted.length} / ${items.length}` : items.length}
           </span>
         }
         toolbar={
           <>
-            {/* Type pills — the shared segmented-toggle template (scroll for phones). */}
-            <div className="no-scrollbar max-w-full overflow-x-auto">
-              <SegmentedToggle
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder={t("common.search")}
+              className="w-full sm:w-56"
+            />
+            {/* Type pills — the shared segmented-toggle template. `scrollable`
+                keeps the ACTIVE pill in view; a bare overflow wrapper hid the
+                scrollbar without replacing the affordance, so a grantee could
+                never discover the sections past the fold. */}
+            <SegmentedToggle
+                scrollable
+                className="max-w-full sm:max-w-none"
                 value={type}
                 onChange={(v) => { setType(v); setSort({ key: null, dir: "asc" }); }}
                 options={sections.map(({ key, tKey, icon: Icon, listKey }) => ({
@@ -357,7 +379,6 @@ export default function ProfilesManagement() {
                   ),
                 }))}
               />
-            </div>
             {type !== "guest" && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">
                 {t("admin.profiles.add")}
@@ -772,24 +793,27 @@ export default function ProfilesManagement() {
       {/* Delete / archive confirmation */}
       <ConfirmDialog
         open={!!confirmDelete}
-        onCancel={() => setConfirmDelete(null)}
-        onConfirm={() => deleteMut.mutate({ ptype: type, pid: confirmDelete.id })}
+        error={actionError}
+        onCancel={() => { setConfirmDelete(null); setActionError(""); }}
+        onConfirm={() => { setActionError(""); deleteMut.mutate({ ptype: type, pid: confirmDelete.id }); }}
         title={t("admin.profiles.deleteTitle")}
         message={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archiveMsg")
           : t("admin.profiles.deleteMsg")
-        ).replace("{name}", confirmDelete.name || "")}
+        ).replace("{name}", tl(confirmDelete.name) || "")}
         confirmLabel={confirmDelete && (type === "supervisor" && confirmDelete.has_data
           ? t("admin.profiles.archive") : t("admin.profiles.confirmDelete"))}
-        cancelLabel={t("admin.users.cancel")}
-        tone="danger"
+        /* Archive is fully reversible — the red chip and red confirm belong to
+           real deletions, and crying wolf here dulls the signal for those. */
+        tone={confirmDelete && type === "supervisor" && confirmDelete.has_data ? "warning" : "danger"}
         loading={deleteMut.isPending}
       />
 
       {/* Unassign confirmation */}
       <ConfirmDialog
         open={!!confirmUnassign}
-        onCancel={() => setConfirmUnassign(null)}
+        error={actionError}
+        onCancel={() => { setConfirmUnassign(null); setActionError(""); }}
         onConfirm={() => unassignMut.mutate({
           ptype: type,
           pid: confirmUnassign.item.id,
@@ -800,7 +824,7 @@ export default function ProfilesManagement() {
         message={confirmUnassign && t("admin.profiles.unassignMsg")
           .replace("{user}", confirmUnassign.binding.tg_name || confirmUnassign.binding.user_name ||
             (confirmUnassign.binding.username ? `@${confirmUnassign.binding.username}` : confirmUnassign.binding.telegram_id))
-          .replace("{name}", confirmUnassign.item.name)}
+          .replace("{name}", tl(confirmUnassign.item.name))}
         confirmLabel={t("admin.profiles.unassign")}
         cancelLabel={t("admin.users.cancel")}
         loading={unassignMut.isPending}

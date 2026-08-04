@@ -6,6 +6,14 @@ import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { transliterate } from "../../utils/transliterate";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import Pagination from "../../components/ui/Pagination";
+import Button from "../../components/ui/Button";
+import Modal from "../../components/ui/Modal";
+import FormField from "../../components/ui/FormField";
+import StyledSelect from "../../components/ui/StyledSelect";
+import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import { useToast } from "../../components/ui/Toast";
+import { useAdminDirty } from "./AdminPanel";
 import api from "../../utils/api";
 
 const BASE_LANGS = ["uz", "uz_cyrl", "ru", "en"];
@@ -50,6 +58,19 @@ export default function TranslationsEditor() {
   const [edits, setEdits] = useState({});                  // { "lang|key": value }
   const [group, setGroup] = usePersistentState("translations_group", "nav");
   const [search, setSearch] = usePersistentState("translations_search", "");
+  // "Which keys are missing uz_cyrl?" had no answer short of eyeballing
+  // placeholder-grey inputs across every group, 150 rows at a time.
+  const [missing, setMissing] = usePersistentState("translations_missing", "");
+  // Below md the 5-column grid collapses to ONE language at a time.
+  const [mobileLang, setMobileLang] = usePersistentState("translations_mlang", "ru");
+  const [keyModal, setKeyModal] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [keyError, setKeyError] = useState("");
+  const [langModal, setLangModal] = useState(false);
+  const [newLang, setNewLang] = useState({ code: "", name: "" });
+  const [langError, setLangError] = useState("");
+  const [langBusy, setLangBusy] = useState(false);
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
@@ -110,26 +131,54 @@ export default function TranslationsEditor() {
   // value and the key is its "name."-prefixed storage key.
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const missingIn = (key) => missing && !((overrides[missing]?.[key] ?? dict[missing]?.[key] ?? "").trim());
+
     if (isNameGroup(group)) {
       const src = NAME_GROUPS.find((n) => n.g === group)?.src;
       return (dbNames[src] || [])
         .filter((n) => !q || n.toLowerCase().includes(q) || transliterate(n, "en").toLowerCase().includes(q))
-        .map((n) => ({ key: `${NAME_PREFIX}${n}`, label: n, rawName: n }));
+        .map((n) => ({ key: `${NAME_PREFIX}${n}`, label: n, rawName: n }))
+        .filter(({ key }) => !missing || missingIn(key));
     }
-    return allKeys
-      .filter((k) => groupOf(k) === group)
-      .filter((k) => !q || k.toLowerCase().includes(q))
+
+    // A live query searches EVERY group and matches translated VALUES too — you
+    // rarely know the key of the string you just saw on a page.
+    const inScope = q ? allKeys : allKeys.filter((k) => groupOf(k) === group);
+    const matches = (k) => {
+      if (!q) return true;
+      if (k.toLowerCase().includes(q)) return true;
+      return languages.some((l) =>
+        String(overrides[l.code]?.[k] ?? dict[l.code]?.[k] ?? "").toLowerCase().includes(q));
+    };
+    return inScope
+      .filter(matches)
+      .filter(missingIn ? (k) => !missing || missingIn(k) : () => true)
       .sort()
       .map((k) => ({ key: k, label: k }));
-  }, [allKeys, group, search, dbNames]);
+  }, [allKeys, group, search, dbNames, missing, overrides, dict, languages]);
 
   const effective = (lang, key) => overrides[lang]?.[key] ?? dict[lang]?.[key] ?? "";
   const cellValue = (lang, key) => {
     const ek = `${lang}|${key}`;
     return ek in edits ? edits[ek] : effective(lang, key);
   };
-  const setCell = (lang, key, value) => setEdits((e) => ({ ...e, [`${lang}|${key}`]: value }));
+  const setCell = (lang, key, value) => setEdits((e) => {
+    const ek = `${lang}|${key}`;
+    // Typing a character and deleting it again is not a change.
+    if (value === effective(lang, key)) { const n = { ...e }; delete n[ek]; return n; }
+    return { ...e, [ek]: value };
+  });
   const dirtyCount = Object.keys(edits).length;
+  // Dozens of painstaking cell edits used to vanish on a tab switch, silently.
+  useAdminDirty(dirtyCount > 0);
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / MAX_ROWS));
+  const pageRows = useMemo(
+    () => rows.slice((page - 1) * MAX_ROWS, page * MAX_ROWS),
+    [rows, page],
+  );
+  useEffect(() => { setPage(1); }, [group, search, missing]);
 
   async function save() {
     if (!dirtyCount) return;
@@ -153,27 +202,40 @@ export default function TranslationsEditor() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       reloadTranslations?.();
+    } catch (e) {
+      // Edits are deliberately KEPT so a network blip doesn't cost the pass.
+      toast.error(e?.response?.data?.detail || t("admin.saveFailed"));
     } finally {
       setSaving(false);
     }
   }
 
-  function addKey() {
-    const key = window.prompt("New key (use a page prefix, e.g. \"daily.title\"):", isNameGroup(group) ? "general." : `${group}.`);
-    if (!key || !key.trim()) return;
-    const k = key.trim();
-    setExtraKeys((arr) => arr.includes(k) ? arr : [...arr, k]);
+  function submitKey() {
+    const k = newKey.trim();
+    if (!/^[a-z0-9_]+\.[a-z0-9_.]+$/i.test(k)) { setKeyError(t("admin.tr.keyFormat")); return; }
+    setExtraKeys((arr) => (arr.includes(k) ? arr : [...arr, k]));
     setGroup(groupOf(k));
+    setKeyModal(false);
+    setNewKey("");
   }
 
-  async function addLanguage() {
-    const code = window.prompt("New language code (e.g. \"kz\", \"tr\"):");
-    if (!code || !code.trim()) return;
-    const name = window.prompt("Language display name (e.g. \"Qazaqsha\"):", code.trim());
-    if (!name) return;
-    await api.post("/api/admin/translations/languages", { code: code.trim().toLowerCase(), name: name.trim() });
-    load();
-    reloadTranslations?.();
+  async function submitLanguage() {
+    const code = newLang.code.trim().toLowerCase();
+    const name = newLang.name.trim();
+    if (!/^[a-z]{2}(_[a-z]+)?$/.test(code)) { setLangError(t("admin.tr.langFormat")); return; }
+    if (!name) { setLangError(t("admin.tr.langNameRequired")); return; }
+    setLangBusy(true);
+    try {
+      await api.post("/api/admin/translations/languages", { code, name });
+      load();
+      reloadTranslations?.();
+      setLangModal(false);
+      setNewLang({ code: "", name: "" });
+    } catch (e) {
+      setLangError(e?.response?.data?.detail || t("admin.saveFailed"));
+    } finally {
+      setLangBusy(false);
+    }
   }
 
   const inputCls = "w-full bg-[var(--bg-base)] border border-[var(--border-md)] rounded px-2 py-1.5 text-xs text-[var(--text-1)] focus:border-[var(--brand)] outline-none";
@@ -188,25 +250,49 @@ export default function TranslationsEditor() {
           placeholder={t("admin.tr.search")}
           className="flex-1 min-w-[180px]"
         />
-        <button onClick={addLanguage} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-md)] text-[var(--text-2)] hover:border-[var(--brand-border)]">
-          <Globe size={13} /> {t("admin.tr.addLang")}
-        </button>
-        <button onClick={addKey} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-md)] text-[var(--text-2)] hover:border-[var(--brand-border)]">
-          <Plus size={13} /> {t("admin.tr.addKey")}
-        </button>
-        <button
-          onClick={save} disabled={!dirtyCount || saving}
-          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
-          style={{ background: dirtyCount ? "var(--brand)" : "var(--bg-accent)", color: dirtyCount ? "#fff" : "var(--text-3)" }}
-        >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : saved ? <Check size={13} /> : <Save size={13} />}
-          {saved ? t("admin.saved") : dirtyCount ? `${t("admin.save")} (${dirtyCount})` : t("admin.saved")}
-        </button>
+        <StyledSelect
+          value={missing}
+          onChange={setMissing}
+          triggerClassName="px-3 py-2 text-sm"
+          className="w-full sm:w-48"
+          options={[{ value: "", label: t("admin.tr.missingAny") },
+            ...languages.map((l) => ({ value: l.code, label: t("admin.tr.missingIn").replace("{lang}", l.name) }))]}
+        />
+        <Button variant="secondary" size="lg" icon={<Globe size={13} />} onClick={() => { setLangError(""); setLangModal(true); }}>
+          {t("admin.tr.addLang")}
+        </Button>
+        <Button variant="secondary" size="lg" icon={<Plus size={13} />} onClick={() => { setKeyError(""); setNewKey(isNameGroup(group) ? "general." : `${group}.`); setKeyModal(true); }}>
+          {t("admin.tr.addKey")}
+        </Button>
+        <Button size="lg" icon={saved ? <Check size={13} /> : <Save size={13} />} loading={saving} disabled={!dirtyCount} onClick={save}>
+          {dirtyCount ? `${t("admin.save")} (${dirtyCount})` : t("admin.save")}
+        </Button>
+      </div>
+
+      {/* Phone: the group rail becomes a select, and the 5-language grid folds
+          to one language at a time — the desktop layout was unusable at 390px,
+          which is the device this app actually runs on. */}
+      <div className="md:hidden flex flex-col gap-2">
+        <StyledSelect
+          value={group}
+          onChange={setGroup}
+          triggerClassName="px-3 py-2 text-sm"
+          options={[
+            ...nameGroups.map(({ g, label, count }) => ({ value: g, label: `${label} (${count})` })),
+            ...groups.map(({ g, label, count }) => ({ value: g, label: `${label} (${count})` })),
+          ]}
+        />
+        <SegmentedToggle
+          scrollable
+          value={mobileLang}
+          onChange={setMobileLang}
+          options={languages.map((l) => ({ value: l.code, label: l.name, title: l.code }))}
+        />
       </div>
 
       <div className="flex gap-4">
         {/* Group sidebar */}
-        <div className="w-44 flex-shrink-0 space-y-0.5">
+        <div className="hidden md:block w-44 flex-shrink-0 space-y-0.5">
           <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-4)]">{t("admin.tr.dbNames")}</div>
           {nameGroups.map(({ g, label, count }) => (
             <button
@@ -243,9 +329,16 @@ export default function TranslationsEditor() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-[var(--text-3)]" style={{ borderBottom: "1px solid var(--border)" }}>
-                  <th className="px-3 py-2 font-semibold sticky left-0 bg-[var(--bg-card)] min-w-[180px]">{t("admin.tr.key")}</th>
+                  {/* Sticky BOTH ways: after scrolling into a 150-row group the
+                      four identical input columns had no labels, and uz sits
+                      right next to uz_cyrl. */}
+                  <th className="px-3 py-2 font-semibold sticky left-0 top-0 z-20 min-w-[180px]" style={{ background: "var(--bg-card)", boxShadow: "1px 0 0 var(--border)" }}>{t("admin.tr.key")}</th>
                   {languages.map((l) => (
-                    <th key={l.code} className="px-3 py-2 font-semibold min-w-[200px]">
+                    <th
+                      key={l.code}
+                      className={`px-3 py-2 font-semibold min-w-[200px] sticky top-0 ${l.code === mobileLang ? "" : "hidden md:table-cell"}`}
+                      style={{ background: "var(--bg-card)" }}
+                    >
                       {l.name} <span className="text-[var(--text-4)]">({l.code})</span>
                     </th>
                   ))}
@@ -256,22 +349,22 @@ export default function TranslationsEditor() {
                   <tr key={`sk-${i}`} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td className="px-3 py-2 sticky left-0 bg-[var(--bg-card)]"><SkeletonBlock className="h-4 w-32" /></td>
                     {languages.map((l) => (
-                      <td key={l.code} className="px-2 py-2"><SkeletonBlock className="h-7 w-full" /></td>
+                      <td key={l.code} className={`px-2 py-2 ${l.code === mobileLang ? "" : "hidden md:table-cell"}`}><SkeletonBlock className="h-7 w-full" /></td>
                     ))}
                   </tr>
                 ))}
                 {!initLoading && rows.length === 0 && (
                   <tr><td colSpan={1 + languages.length} className="px-3 py-8 text-center text-[var(--text-3)]">{t("admin.tr.noKeys")}</td></tr>
                 )}
-                {!initLoading && rows.slice(0, MAX_ROWS).map(({ key, label, rawName }) => (
+                {!initLoading && pageRows.map(({ key, label, rawName }) => (
                   <tr key={key} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td className="px-3 py-1.5 font-mono text-[11px] text-[var(--text-2)] sticky left-0 bg-[var(--bg-card)] align-top">{label}</td>
+                    <td className="px-3 py-1.5 font-mono text-[11px] text-[var(--text-2)] sticky left-0 align-top" style={{ background: "var(--bg-card)", boxShadow: "1px 0 0 var(--border)" }}>{label}</td>
                     {languages.map((l) => {
                       const ek = `${l.code}|${key}`;
                       const overridden = (l.code in overrides) && (key in (overrides[l.code] || {}));
                       const dirty = ek in edits;
                       return (
-                        <td key={l.code} className="px-2 py-1.5 align-top">
+                        <td key={l.code} className={`px-2 py-1.5 align-top ${l.code === mobileLang ? "" : "hidden md:table-cell"}`}>
                           <input
                             value={cellValue(l.code, key)}
                             onChange={(e) => setCell(l.code, key, e.target.value)}
@@ -286,21 +379,61 @@ export default function TranslationsEditor() {
                     })}
                   </tr>
                 ))}
-                {rows.length > MAX_ROWS && (
-                  <tr>
-                    <td colSpan={1 + languages.length} className="px-3 py-3 text-center text-[var(--text-3)]">
-                      Showing first {MAX_ROWS} of {rows.length} — use search to narrow down.
-                    </td>
-                  </tr>
-                )}
+
               </tbody>
             </table>
           </div>
         </div>
       </div>
-      <div className="text-[10px] text-[var(--text-4)]">
-        Green border = customised value saved in DB · Blue border = unsaved edit · placeholder = English default (UI strings) or automatic transliteration (database names) · empty value = reset to automatic.
+      <Pagination page={page} pageCount={pageCount} total={rows.length} pageSize={MAX_ROWS} onPage={setPage} />
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded" style={{ border: "1px solid rgba(34,197,94,0.6)" }} />
+          {t("admin.tr.legendSaved")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded" style={{ border: "1px solid var(--brand)" }} />
+          {t("admin.tr.legendDirty")}
+        </span>
+        <span>{t("admin.tr.legendPlaceholder")}</span>
+        <span>{t("admin.tr.legendEmpty")}</span>
       </div>
+
+      {/* Both of these were window.prompt, which Telegram's WebView suppresses. */}
+      {keyModal && (
+        <Modal onClose={() => setKeyModal(false)} title={t("admin.tr.addKey")} maxWidth="max-w-sm" zIndex={60}
+          footer={<>
+            <Button variant="secondary" size="sm" onClick={() => setKeyModal(false)}>{t("common.cancel")}</Button>
+            <Button size="sm" onClick={submitKey}>{t("admin.tr.addKey")}</Button>
+          </>}>
+          <FormField label={t("admin.tr.key")} required hint={t("admin.tr.keyHint")} error={keyError}>
+            <input value={newKey} onChange={(e) => { setNewKey(e.target.value); setKeyError(""); }}
+              placeholder="daily.title" className={inputCls} autoFocus />
+          </FormField>
+        </Modal>
+      )}
+
+      {langModal && (
+        <Modal onClose={() => setLangModal(false)} dismissable={!langBusy} title={t("admin.tr.addLang")} maxWidth="max-w-sm" zIndex={60}
+          footer={<>
+            <Button variant="secondary" size="sm" disabled={langBusy} onClick={() => setLangModal(false)}>{t("common.cancel")}</Button>
+            <Button size="sm" loading={langBusy} onClick={submitLanguage}>{t("admin.tr.addLang")}</Button>
+          </>}>
+          <FormField label={t("admin.tr.langCode")} required hint={t("admin.tr.langCodeHint")} error={langError}>
+            <input value={newLang.code} onChange={(e) => { setNewLang((l) => ({ ...l, code: e.target.value })); setLangError(""); }}
+              placeholder="kz" className={inputCls} autoFocus />
+          </FormField>
+          <FormField label={t("admin.tr.langName")} required>
+            <input value={newLang.name} onChange={(e) => { setNewLang((l) => ({ ...l, name: e.target.value })); setLangError(""); }}
+              placeholder="Qazaqsha" className={inputCls} />
+          </FormField>
+          {/* There is no UI anywhere to remove or rename a language afterwards. */}
+          <p className="text-[11px] leading-snug" style={{ color: "#a16207" }}>{t("admin.tr.langWarn")}</p>
+        </Modal>
+      )}
+
+      {toast.node}
     </div>
   );
 }

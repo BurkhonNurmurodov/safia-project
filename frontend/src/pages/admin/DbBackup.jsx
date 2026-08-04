@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DatabaseBackup, Send, CheckCircle, ShieldAlert, Table2, Upload, FileArchive, X } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -7,6 +7,7 @@ import Button from "../../components/ui/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import Toast from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
 
 // An oversized dump is DM'd as .part001, .part002, … and those parts are what
@@ -27,6 +28,7 @@ function fmtBytes(n) {
 
 export default function DbBackup() {
   const { t } = useLang();
+  const qc = useQueryClient();
 
   const [drops, setDrops]   = usePersistentState("dbbackup_drops", true);
   const [confirm, setConfirm] = useState(false);
@@ -36,6 +38,8 @@ export default function DbBackup() {
   const fileRef = useRef(null);
   const [picked, setPicked]   = useState([]);   // File[]
   const [impConfirm, setImpConfirm] = useState(false);
+  const [impError, setImpError] = useState("");
+  const [dumpError, setDumpError] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["db-dump-inventory"],
@@ -65,6 +69,7 @@ export default function DbBackup() {
       setToast("export");
       setTimeout(() => setToast(null), 8000);
     },
+    onError: (e) => setDumpError(e?.response?.data?.detail || t("admin.dbdump.exportFailed")),
   });
 
   const importMut = useMutation({
@@ -83,7 +88,13 @@ export default function DbBackup() {
       if (fileRef.current) fileRef.current.value = "";
       setToast("import");
       setTimeout(() => setToast(null), 10000);
+      // The inventory (staleTime 60s) kept reporting pre-restore row counts, so
+      // the one on-page tool that could verify the restore lied about it.
+      qc.invalidateQueries({ queryKey: ["db-dump-inventory"] });
     },
+    // The single-transaction guarantee makes "the database was not modified"
+    // a safe thing to promise here.
+    onError: (e) => setImpError(e?.response?.data?.detail || t("admin.dbdump.importFailed")),
   });
 
   const pickedBytes = picked.reduce((s, f) => s + f.size, 0);
@@ -293,19 +304,33 @@ export default function DbBackup() {
       <ConfirmDialog
         open={impConfirm}
         tone="danger"
-        onCancel={() => !importMut.isPending && setImpConfirm(false)}
-        onConfirm={() => importMut.mutate()}
+        error={impError}
+        challenge="RESTORE"
+        challengeLabel={t("admin.dbdump.challenge")}
+        onCancel={() => { if (!importMut.isPending) { setImpConfirm(false); setImpError(""); } }}
+        onConfirm={() => { setImpError(""); importMut.mutate(); }}
         title={t("admin.dbdump.importConfirmTitle")}
-        message={t("admin.dbdump.importConfirmMsg")}
+        message={
+          <>
+            <p className="mb-2">{t("admin.dbdump.importConfirmMsg")}</p>
+            {/* The page already holds the inventory — state the concrete stakes
+                rather than a generic warning. */}
+            <p style={{ color: "#ef4444" }}>
+              {t("admin.dbdump.importStakes")
+                .replace("{tables}", rows.length)
+                .replace("{files}", picked.length)}
+            </p>
+          </>
+        }
         confirmLabel={t("admin.dbdump.importBtn")}
-        cancelLabel={t("admin.broadcast.cancel")}
         loading={importMut.isPending}
       />
 
       <ConfirmDialog
         open={confirm}
-        onCancel={() => !dumpMut.isPending && setConfirm(false)}
-        onConfirm={() => dumpMut.mutate()}
+        error={dumpError}
+        onCancel={() => { if (!dumpMut.isPending) { setConfirm(false); setDumpError(""); } }}
+        onConfirm={() => { setDumpError(""); dumpMut.mutate(); }}
         title={t("admin.dbdump.confirmTitle")}
         message={t("admin.dbdump.confirmMsg")}
         confirmLabel={t("admin.dbdump.exportBtn")}
@@ -313,23 +338,15 @@ export default function DbBackup() {
         loading={dumpMut.isPending}
       />
 
-      {toast && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed", top: 16, right: 16, zIndex: 9999,
-            background: "#22c55e", color: "#fff", maxWidth: 360,
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>
-            {toast === "import"
-              ? t("admin.dbdump.importToast")
-              : t("admin.dbdump.successToast")}
-          </span>
-        </div>
-      )}
+      {/* Was pinned at top:16 with no Telegram safe-top offset, so in a
+          fullscreen session the only confirmation a backup or restore gives
+          could render under the client's own header. */}
+      <Toast
+        open={!!toast}
+        message={toast === "import" ? t("admin.dbdump.importToast") : t("admin.dbdump.successToast")}
+        duration={0}
+        onClose={() => setToast(null)}
+      />
     </div>
   );
 }

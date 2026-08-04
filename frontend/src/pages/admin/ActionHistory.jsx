@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { History, KeyRound } from "lucide-react";
+import { History, KeyRound, AlertTriangle } from "lucide-react";
 import api from "../../utils/api";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import Pagination from "../../components/ui/Pagination";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import Button from "../../components/ui/Button";
 import { useLang } from "../../context/LangContext";
 import { usePersistentState } from "../../hooks/usePersistentState";
 
 const PAGE_SIZE = 50;
+
+// Number grouping follows the APP language, not a hardcoded ru-RU.
+const LOCALE = { uz: "uz-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
 
 /**
  * Admin «Action history» tab — the persistent register behind the grant-use
@@ -21,6 +25,8 @@ export default function ActionHistory() {
   const [page, setPage] = usePersistentState("actions_page", 1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reload, setReload] = useState(0);
 
   // A restored page can outlive the register shrinking — clamp back to 1 when
   // the fetched total says it no longer exists.
@@ -33,14 +39,22 @@ export default function ActionHistory() {
   useEffect(() => {
     let dead = false;
     setLoading(true);
+    setError(null);
     api.get("/admin/capability-uses", {
       params: { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, lang },
     })
       .then(({ data }) => { if (!dead) setData(data); })
-      .catch(() => { if (!dead) setData({ total: 0, rows: [] }); })
+      .catch((e) => {
+        // Mapping any failure to {total:0, rows:[]} rendered a 500 as "no
+        // actions recorded" — on a security register, that actively hides the
+        // events the admin came to verify.
+        if (dead) return;
+        setError(e?.response?.data?.detail || t("common.loadFailed"));
+        setData(null);
+      })
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
-  }, [page, lang]);
+  }, [page, lang, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = data?.rows || [];
   const total = data?.total || 0;
@@ -54,7 +68,7 @@ export default function ActionHistory() {
         subtitle={t("caphist.subtitle")}
         right={
           <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-            {total.toLocaleString("ru-RU")}
+            {total.toLocaleString(LOCALE[lang] || "ru-RU")}
           </span>
         }
         wrap
@@ -77,6 +91,16 @@ export default function ActionHistory() {
                 ))}
               </tr>
             ))
+          ) : error ? (
+            <tr>
+              <td colSpan={5} className="px-3 py-10 text-center">
+                <AlertTriangle size={20} className="mx-auto mb-2" style={{ color: "#ef4444" }} />
+                <div className="text-xs mb-3" style={{ color: "#ef4444" }}>{error}</div>
+                <Button size="md" variant="secondary" onClick={() => setReload((n) => n + 1)}>
+                  {t("common.retry")}
+                </Button>
+              </td>
+            </tr>
           ) : rows.length === 0 ? (
             <tr>
               <td colSpan={5} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>

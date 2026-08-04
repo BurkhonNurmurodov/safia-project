@@ -11,10 +11,11 @@ import SearchInput from "../../components/ui/SearchInput";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Modal from "../../components/ui/Modal";
 import RichTextEditor from "../../components/ui/RichTextEditor";
-import CheckboxTree, { collectLeafKeys } from "../../components/ui/CheckboxTree";
+import CheckboxTree, { collectLeafKeys, filterGroups } from "../../components/ui/CheckboxTree";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import Toast, { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { buildRecipientGroups } from "../../utils/broadcastTree";
@@ -61,6 +62,8 @@ export default function Broadcast() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [toast, setToast] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const toastCtl = useToast();
 
   const { data: recip, isLoading: listLoading } = useQuery({
     queryKey: ["broadcast-recipients"],
@@ -82,7 +85,7 @@ export default function Broadcast() {
   const addEmojiMut = useMutation({
     mutationFn: (body) => api.post("/api/broadcast/emojis", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["broadcast-emojis"] }),
-    onError: (e) => alert(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
+    onError: (e) => toastCtl.error(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
   });
   const delEmojiMut = useMutation({
     mutationFn: (id) => api.delete(`/api/broadcast/emojis/${id}`),
@@ -94,6 +97,27 @@ export default function Broadcast() {
     [recip, t, tl],
   );
   const allEnabledKeys = useMemo(() => collectLeafKeys(groups), [groups]);
+
+  // Top-level rollup for the send confirm: "who am I about to DM" answered as
+  // groups, not just a total.
+  const groupBreakdown = useMemo(() => {
+    const chosen = new Set(selected);
+    return groups
+      .map((g) => ({ label: g.label, n: collectLeafKeys([g]).filter((k) => chosen.has(k)).length }))
+      .filter((g) => g.n > 0);
+  }, [groups, selected]);
+
+  // Select-all must mean "everyone I can currently see".
+  const visibleKeys = useMemo(() => {
+    const q = treeFilter.trim().toLowerCase();
+    if (!q) return allEnabledKeys;
+    return collectLeafKeys(filterGroups(groups, q));
+  }, [groups, allEnabledKeys, treeFilter]);
+
+  const excerpt = useMemo(() => {
+    const plain = (msg.text || "").trim().replace(/\s+/g, " ");
+    return plain.length > 90 ? `${plain.slice(0, 90)}…` : plain;
+  }, [msg.text]);
 
   const rich = mode === "rich";
   const maxLen = rich ? 32768 : attachment ? 1024 : 4096;
@@ -127,10 +151,10 @@ export default function Broadcast() {
       setTimeout(() => setToast(false), 3000);
       qc.invalidateQueries({ queryKey: ["broadcast-history"] });
     },
-    onError: (e) => {
-      setConfirmOpen(false);
-      alert(e?.response?.data?.detail || t("admin.broadcast.sendFailed"));
-    },
+    // A failed mass-DM through window.alert was invisible on Telegram iOS: the
+    // confirm closed, nothing else happened, and the admin could not tell
+    // whether 100 people got the message or nobody did.
+    onError: (e) => setSendError(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
   });
 
   const pickFile = (e) => {
@@ -138,9 +162,9 @@ export default function Broadcast() {
     e.target.value = "";
     if (!f) return;
     const ext = (f.name.split(".").pop() || "").toLowerCase();
-    if (!BROADCAST_ALLOWED_EXT.has(ext)) { alert(t("admin.broadcast.attachBadType")); return; }
+    if (!BROADCAST_ALLOWED_EXT.has(ext)) { toastCtl.error(t("admin.broadcast.attachBadType")); return; }
     const limit = attachKind(f) === "photo" ? 10 * 1048576 : 50 * 1048576;
-    if (f.size > limit) { alert(t("admin.broadcast.attachTooLarge")); return; }
+    if (f.size > limit) { toastCtl.error(t("admin.broadcast.attachTooLarge")); return; }
     setAttachment(f);
   };
 
@@ -264,8 +288,10 @@ export default function Broadcast() {
               placeholder={t("admin.broadcast.searchPh")}
             />
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setSelected(allEnabledKeys)}>
-                {t("admin.broadcast.selectAll")}
+              <Button variant="ghost" size="sm" onClick={() => setSelected(visibleKeys)}>
+                {treeFilter.trim()
+                  ? t("admin.broadcast.selectMatches").replace("{n}", visibleKeys.length)
+                  : t("admin.broadcast.selectAll")}
               </Button>
               <Button variant="ghost" size="sm" disabled={!selected.length} onClick={() => setSelected([])}>
                 {t("admin.broadcast.clearAll")}
@@ -382,12 +408,34 @@ export default function Broadcast() {
       {/* ── Confirm send ────────────────────────────────────────────────────── */}
       <ConfirmDialog
         open={confirmOpen}
-        onCancel={() => !sendMut.isPending && setConfirmOpen(false)}
-        onConfirm={() => sendMut.mutate()}
+        error={sendError}
+        onCancel={() => { if (!sendMut.isPending) { setConfirmOpen(false); setSendError(""); } }}
+        onConfirm={() => { setSendError(""); sendMut.mutate(); }}
         title={t("admin.broadcast.confirmTitle")}
-        message={t("admin.broadcast.confirmMsg").replace("{n}", selected.length)}
+        /* Confirming a bare number gives friction but no verification value —
+           especially next to a "select all" that ignores the active filter.
+           The readback now names the groups and quotes the message. */
+        message={
+          <>
+            <p className="mb-2">{t("admin.broadcast.confirmMsg").replace("{n}", selected.length)}</p>
+            {groupBreakdown.length > 0 && (
+              <ul className="mb-2 space-y-0.5">
+                {groupBreakdown.map(({ label, n }) => (
+                  <li key={label} style={{ color: "var(--text-2)" }}>· {label} — {n}</li>
+                ))}
+              </ul>
+            )}
+            {excerpt && (
+              <p className="italic px-2 py-1.5 rounded-md" style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+                “{excerpt}”
+              </p>
+            )}
+            {attachment && (
+              <p className="mt-1.5" style={{ color: "var(--text-3)" }}>📎 {attachment.name}</p>
+            )}
+          </>
+        }
         confirmLabel={t("admin.broadcast.send")}
-        cancelLabel={t("admin.broadcast.cancel")}
         icon={<Megaphone size={20} />}
         loading={sendMut.isPending}
       />
@@ -454,19 +502,8 @@ export default function Broadcast() {
       )}
 
       {/* ── Queued toast — same pattern as the Staff export toast ──────────── */}
-      {toast && (
-        <div
-          className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg"
-          style={{
-            position: "fixed", top: 16, right: 16, zIndex: 9999,
-            background: "#22c55e", color: "#fff", maxWidth: 320,
-            boxShadow: "0 8px 24px rgba(34,197,94,0.35)",
-          }}
-        >
-          <CheckCircle size={15} style={{ flexShrink: 0 }} />
-          <span>{t("admin.broadcast.queuedToast")}</span>
-        </div>
-      )}
+      <Toast open={toast} message={t("admin.broadcast.queuedToast")} onClose={() => setToast(false)} />
+      {toastCtl.node}
     </div>
   );
 }

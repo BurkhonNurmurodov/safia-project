@@ -16,7 +16,7 @@ import StyledSelect from "../../components/ui/StyledSelect";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import CheckboxTree, { collectLeafKeys } from "../../components/ui/CheckboxTree";
 import EmptyState from "../../components/ui/EmptyState";
-import { SectionHead } from "../../components/ui/DataTable";
+import { SectionHead, Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/Toast";
@@ -69,6 +69,9 @@ const GROUP_TINTS = {
 // makes it grantable with no new translation keys in any of the 4 languages.
 const PAGE_LABEL_KEYS = Object.fromEntries(PAGES.map((p) => [p.key, p.labelKey]));
 
+// Audit rows follow the APP language, not the device locale.
+const AUDIT_LOCALE = { uz: "uz-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
+
 function GroupChip({ group, label }) {
   const Icon = GROUP_ICONS[group] ?? Shield;
   const tint = GROUP_TINTS[group] ?? "var(--brand)";
@@ -104,7 +107,7 @@ function CapBox({ state }) {   // "on" | "some" | "off"
 }
 
 export default function Permissions() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
@@ -311,7 +314,7 @@ export default function Permissions() {
                     return (
                       <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-                          {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
+                          {r.created_at ? new Date(r.created_at).toLocaleString(AUDIT_LOCALE[lang] || "ru-RU", { dateStyle: "short", timeStyle: "short" }) : "—"}
                         </td>
                         <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
                           {r.target_name || (r.telegram_id ? `#${r.telegram_id}` : "—")}
