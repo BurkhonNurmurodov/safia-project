@@ -55,6 +55,8 @@ export default function LangTextInput({
   onChange,
   fallbackLang = "ru",
   placeholder = "",
+  placeholderFn = null,
+  action = null,
   hint = true,
   autoFocus = false,
   className = "",
@@ -66,8 +68,12 @@ export default function LangTextInput({
 
   const current = value[active] || "";
   const fallback = (value[fallbackLang] || "").trim();
-  // An empty non-fallback tab previews the Russian text rather than saving it.
-  const showFallback = active !== fallbackLang && !!fallback;
+  const computed = placeholderFn ? (placeholderFn(active) || "").trim() : "";
+  // An empty non-fallback tab previews the Russian text rather than saving it —
+  // unless placeholderFn answers for this language, which wins because it
+  // previews what the app would actually derive.
+  const showFallback = !computed && active !== fallbackLang && !!fallback;
+  const shownPlaceholder = computed || (showFallback ? fallback : placeholder);
 
   return (
     <div className={className}>
