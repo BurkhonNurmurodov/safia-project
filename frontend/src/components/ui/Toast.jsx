@@ -75,11 +75,13 @@ export default function Toast({
       style={{
         position: "fixed",
         // Same safe-area contract the Modal template uses.
+        // Centred via auto margins, NOT translateX: the toast-in keyframe ends
+        // on `transform: none`, which would cancel a transform-based centring
+        // the moment the animation settles.
         ...(position === "bottom"
           ? {
               bottom: "calc(var(--tg-safe-bottom, 0px) + 24px)",
-              left: "50%",
-              transform: "translateX(-50%)",
+              left: 0, right: 0, marginInline: "auto", width: "fit-content",
             }
           : { top: "calc(var(--tg-safe-top, 0px) + 16px)", right: 16 }),
         // Never wider than the viewport at 390px.
