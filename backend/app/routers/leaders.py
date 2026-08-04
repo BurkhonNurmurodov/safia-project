@@ -12,7 +12,7 @@ from app.models import RoleProfile
 from app.services.name_map import (
     _norm as _fold_name,
     _name_tokens,
-    _pair_score,
+    leader_is,
     leader_match,
     supervisor_match,
 )
