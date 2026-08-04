@@ -145,6 +145,7 @@ export function useToast({ position = "top" } = {}) {
       message={state?.message}
       tone={state?.tone}
       duration={state?.duration}
+      position={position}
       onClose={hide}
     />
   );
