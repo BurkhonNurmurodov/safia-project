@@ -213,6 +213,38 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
     return out
 
 
+# ─── Manual leaders-sheet name → leader PROFILE pins ─────────────────────────
+# The checklist form captures whatever spelling the leader typed, and some of
+# those name the person in a form _pair_score can never reach: it requires the
+# given names to agree, and «SARIMSAQOVA ARAPATXON» is the profile «Sarimsoqova
+# Arofat Qosimjonovna» — the surname folds clean but ARAPATXON vs AROFAT scores
+# 0, so her rows kept the raw sheet spelling and stood in the dashboard as a
+# second, profile-less person. Keyed and valued on the folded skeleton (via
+# _norm) like _OVERRIDES, so either side may drift alphabet or spelling.
+_LEADER_PINS = {
+    _norm(sheet): _norm(profile)
+    for sheet, profile in {
+        "SARIMSAQOVA ARAPATXON": "Sarimsoqova Arofat Qosimjonovna",
+    }.items()
+}
+
+
+def leader_is(sheet_name: str, profile_name: str) -> bool:
+    """True when a leaders-sheet spelling names the given leader profile.
+
+    A pin wins outright where one exists — it is a human saying these two
+    spellings are one person, and the spellings it fixes are by definition ones
+    the scorer can't reach. Everything else falls back to the fuzzy score.
+    """
+    sheet_tok, prof_tok = _name_tokens(sheet_name), _name_tokens(profile_name)
+    if len(sheet_tok) < 2 or len(prof_tok) < 2:
+        return False
+    pinned = _LEADER_PINS.get(" ".join(sheet_tok))
+    if pinned:
+        return sorted(pinned.split()) == sorted(prof_tok)
+    return _pair_score(sheet_tok, prof_tok) > 0
+
+
 def leader_match(profiles: Iterable, entries: Iterable) -> dict[tuple, dict]:
     """Map each (sheet leader name, unit) pair to the leader PROFILE it names.
 
