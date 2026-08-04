@@ -1,1 +1,0 @@
-import{i as r}from"./transliterate-C5eSelX2.js";var a=[["path",{d:"M12 5v14",key:"s699le"}],["path",{d:"m19 12-7 7-7-7",key:"1idqje"}]],t=r("arrow-down",a),o=[["path",{d:"M5 12h14",key:"1ays0h"}],["path",{d:"m12 5 7 7-7 7",key:"xquz4c"}]],d=r("arrow-right",o);export{t as n,d as t};
