@@ -68,6 +68,9 @@ export default function UsersManagement() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [query, setQuery] = usePersistentState("users_search", "");
   const [confirmDelete, setConfirmDelete] = useState(null); // {user, role} pending deletion
+  const [deleteError, setDeleteError] = useState("");
+  const [confirmRole, setConfirmRole] = useState(null);     // {user, role, next}
+  const toast = useToast();
   // Add-role modal: pick an existing user + a role to grant (approved on the
   // spot). Shift narrows the profile pickers, mirroring the registration flow.
   const [addOpen, setAddOpen] = useState(false);
