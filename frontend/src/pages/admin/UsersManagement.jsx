@@ -15,16 +15,21 @@ import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import SearchInput from "../../components/ui/SearchInput";
 import TableCard, { Th } from "../../components/ui/DataTable";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
+import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 
 const ROLES = ["top-manager", "shift-manager", "supervisor", "leader"];
 
-function fmtDate(iso) {
+// The app language, not the phone's OS locale — an admin running the app in
+// Uzbek on an English-locale phone was getting "Jul" inside a Uzbek table.
+const LOCALE = { uz: "uz-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
+
+function fmtDate(iso, lang) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(LOCALE[lang] || "ru-RU", {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
