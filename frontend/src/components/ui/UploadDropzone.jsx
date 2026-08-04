@@ -142,8 +142,25 @@ export function UploadDropzone({
   );
 }
 
-/** Per-file progress + result rows, with the succeeded/failed summary and Clear. */
-export function FileStateList({ states = [], onClear, busy = false, className = "" }) {
+/**
+ * Per-file progress + result rows, with the succeeded/failed summary and Clear.
+ *
+ *   renderExtra – (state) => node, appended inside the row. Upload results
+ *                 differ per endpoint (covered dates, unmatched codes, per-file
+ *                 breakdowns); this is the seam that lets every tab keep its
+ *                 richer reporting without forking the row markup again.
+ *   onSelect    – makes rows clickable (e.g. to switch which file's parse
+ *                 preview is shown).
+ */
+export function FileStateList({
+  states = [],
+  onClear,
+  busy = false,
+  renderExtra = null,
+  onSelect = null,
+  selectedId = null,
+  className = "",
+}) {
   const { t } = useLang();
   if (!states.length) return null;
 
