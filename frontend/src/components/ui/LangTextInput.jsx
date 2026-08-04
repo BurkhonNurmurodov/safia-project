@@ -24,6 +24,14 @@ import { useLang } from "../../context/LangContext";
  *   onChange     – (lang, text) => void, fired for the edited language only
  *   fallbackLang – language whose text placeholders the empty tabs ("ru")
  *   placeholder  – shown when the fallback language is empty too
+ *   placeholderFn – (lang) => string, for fields whose empty state previews
+ *                  something computed rather than the Russian text — e.g. a
+ *                  transliteration of the canonical name. Takes precedence over
+ *                  the fallback preview for the languages it answers for.
+ *   action       – node rendered to the right of the input for the ACTIVE tab
+ *                  (e.g. a "transliterate into this language" button). This is
+ *                  what lets per-language name editors adopt the template
+ *                  instead of forking it into one stacked input per language.
  *   hint         – false to drop the "empty → Russian is shown" explainer line
  *   className    – extra wrapper classes (spacing only)
  */
