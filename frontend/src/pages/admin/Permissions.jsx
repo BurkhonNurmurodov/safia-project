@@ -332,7 +332,7 @@ export default function Permissions() {
                 <CheckboxTree
                   groups={tree}
                   selected={selected}
-                  onChange={(next) => { setSelected(next); setDraft({}); }}
+                  onChange={requestSelection}
                   filter={search}
                   emptyText={t("admin.perms.noPeople")}
                 />
