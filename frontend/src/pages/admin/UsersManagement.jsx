@@ -35,6 +35,51 @@ function fmtDate(iso, lang) {
   });
 }
 
+/**
+ * Approve / reject / delete for one row.
+ *
+ * Was three raw <button>s with inline rgba and onMouseEnter/onMouseLeave
+ * restyling. On touch those events never fire, so the delete chip stayed
+ * permanently styled like the neutral one — its danger semantics were invisible
+ * on the phone where the bot deep-links admins to approve people. Button's
+ * `tint` carries the semantics at rest, and `loading` finally shows the tap
+ * registered.
+ */
+function RowActions({ row, t, pending, disabled, onApprove, onReject, onDelete, block = false }) {
+  const { role } = row;
+  const cls = block ? "flex-1" : "";
+  return (
+    <div className={`flex items-center gap-1.5 ${block ? "w-full" : ""}`}>
+      {role.status !== "approved" && (
+        <Button
+          size={block ? "lg" : "sm"} variant="success" tint className={cls}
+          icon={<Check size={11} />} loading={pending} disabled={disabled}
+          onClick={() => onApprove(row)}
+        >
+          {t("admin.users.approve")}
+        </Button>
+      )}
+      {role.status !== "rejected" && (
+        <Button
+          size={block ? "lg" : "sm"} variant="danger" tint className={cls}
+          icon={<X size={11} />} loading={pending} disabled={disabled}
+          onClick={() => onReject(row)}
+        >
+          {t("admin.users.reject")}
+        </Button>
+      )}
+      <Button
+        size={block ? "lg" : "sm"} variant="danger" tint className={cls}
+        icon={<Trash2 size={11} />} disabled={disabled}
+        title={t("admin.users.delete")}
+        onClick={() => onDelete(row)}
+      >
+        {t("admin.users.delete")}
+      </Button>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   const { t } = useLang();
   const styles = {
