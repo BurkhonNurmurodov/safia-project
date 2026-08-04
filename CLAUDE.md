@@ -42,6 +42,37 @@ Other UI conventions:
 - Date-axis line/area charts never show fewer than 7 days — use `utils/chartRange.js`.
 - ApexCharts custom tooltips (`tooltip: { custom: … }`) draw their own glassy box, but ApexCharts still wraps them in a themed box → a white halo / extra layer around the tooltip. EVERY such chart MUST carry `apx-bare-tip` on an ancestor to strip that wrapper: `<ReactApexChart className="apx-bare-tip" … />` (react-apexcharts forwards `className` to the container div), or on an existing wrapper div. Default `theme`-only tooltips don't need it. See the `.apx-bare-tip` rule in `index.css`.
 
+## Admin panel structure
+
+`/admin/upload` is a first-class page inside the standard `Layout` (so admins keep
+the notifications bell, Settings and profile while doing daily uploads). The
+shell is `pages/admin/AdminPanel.jsx`; each destination is a plain component that
+renders its own content and **no frame of its own** — no `max-w-*`, no `mx-auto`,
+no outer padding. The shell owns one content column, so switching destinations
+never moves the frame.
+
+- **`ADMIN_NAV` in `AdminPanel.jsx` is the single source of truth** for order,
+  grouping, landing destination and capability filtering. Never introduce a
+  second parallel list — the old code kept two, they drifted, and a grantee's
+  computed landing tab stopped matching the one displayed first.
+- Four groups, ordered by how often they are used and how much they can destroy:
+  **Kunlik** (attendance · data · production · cellatt) → **Odamlar va ruxsat**
+  (users · profiles · access · permissions · actions) → **Vositalar** (broadcast ·
+  ltasks · translations · display) → **Xavfli zona** (cleanup · dbdump). Danger
+  items are marked red and stay last; never put a data-destroying tool next to a
+  daily one.
+- Navigation is a grouped sidebar on `lg+` and a grouped bottom sheet on phones.
+  A pill strip is NOT acceptable primary navigation here: at 390px only ~3 of 15
+  fit, and an off-screen selection makes the panel look like nothing is selected.
+- A destination with unsaved edits calls `useAdminDirty(true)`; the shell
+  interposes a confirm before unmounting it. Any new destination holding a local
+  draft must do this.
+- `?tab=` is two-way (the bot deep-links it) and every destination names itself
+  with a title + one-line description (`admin.desc.<id>`), so identity never
+  depends on a nav item being visible.
+- A destination added by splitting an existing one carries `capKey` pointing at
+  the original id, so the split cannot narrow any grantee's access.
+
 ## Workflow
 
 - Before any change: `git fetch` and pull if behind `origin/main`.
