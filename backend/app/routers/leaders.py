@@ -173,10 +173,10 @@ def get_leaders(
         if my_pid:
             rows = [r for r in rows if (_leader_of(r) or {}).get("id") == my_pid]
         else:
-            me = _name_tokens(payload.get("full_name") or "")
+            me = payload.get("full_name") or ""
             rows = (
-                [r for r in rows if r.leader and _pair_score(_name_tokens(r.leader), me) > 0]
-                if len(me) >= 2 else []
+                [r for r in rows if r.leader and leader_is(r.leader, me)]
+                if len(_name_tokens(me)) >= 2 else []
             )
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
