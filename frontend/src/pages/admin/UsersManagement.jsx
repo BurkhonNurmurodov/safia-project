@@ -100,7 +100,7 @@ function StatusBadge({ status }) {
 const STATUS_FILTERS = ["all", "pending", "approved", "rejected"];
 
 export default function UsersManagement() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   // ?status=pending deep-links a filter (used by the bot's notification button).
@@ -208,7 +208,7 @@ export default function UsersManagement() {
     updateMut.mutate({ userId: row.user.id, roleRef: row.role.id, payload: { status: "rejected" } });
   }
   function changeRole(row, role) {
-    updateMut.mutate({ userId: row.user.id, roleRef: row.role.id, payload: { role } });
+    setConfirmRole({ ...row, next: role });
   }
 
   // One table row per role a user holds (multi-role)
@@ -241,7 +241,7 @@ export default function UsersManagement() {
         title={t("admin.users.title")}
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
-            {rows.length}
+            {filtered.length === rows.length ? rows.length : `${filtered.length} / ${rows.length}`}
           </span>
         }
         toolbar={
@@ -254,6 +254,8 @@ export default function UsersManagement() {
             />
             {/* Status filter — single-select segmented toggle with live counts */}
             <SegmentedToggle
+              scrollable
+              className="w-full sm:w-auto"
               value={statusFilter}
               onChange={setStatusFilter}
               options={[
@@ -283,6 +285,53 @@ export default function UsersManagement() {
               </Button>
             </div>
           </>
+        }
+        /* At 390px the table is ~900px wide and Actions — the entire point of
+           this tab, and where the bot's registration notification deep-links —
+           was the LAST column, reachable only by a blind sideways scroll. */
+        mobile={
+          <div className="p-3 space-y-2.5">
+            {isLoading && [...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-28 rounded-xl" />)}
+            {!isLoading && filtered.length === 0 && (
+              <div className="py-8 text-center text-xs" style={{ color: "var(--text-4)" }}>
+                {t("admin.users.empty")}
+              </div>
+            )}
+            {!isLoading && filtered.map(({ user, role }) => (
+              <div
+                key={`m-${user.id}-${role.id}`}
+                className="rounded-xl p-3"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm truncate" style={{ color: "var(--text-1)" }}>
+                      {tl(role.full_name || user.full_name) || "—"}
+                    </div>
+                    <div className="text-[11px] truncate" style={{ color: "var(--text-4)" }}>
+                      {user.username ? `@${user.username}` : user.phone || "—"}
+                    </div>
+                  </div>
+                  <StatusBadge status={role.status} />
+                </div>
+                <div className="flex items-center gap-2 mb-2.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+                  <span>{t(ROLE_LABEL_KEYS[role.role]) || role.role}</span>
+                  <span style={{ color: "var(--text-4)" }}>·</span>
+                  <span>{fmtDate(user.last_seen, lang)}</span>
+                </div>
+                <RowActions
+                  row={{ user, role }}
+                  t={t}
+                  block
+                  pending={pendingRole === role.id}
+                  disabled={updateMut.isPending || deleteMut.isPending}
+                  onApprove={approve}
+                  onReject={reject}
+                  onDelete={setConfirmDelete}
+                />
+              </div>
+            ))}
+          </div>
         }
       >
               <thead>
@@ -333,7 +382,7 @@ export default function UsersManagement() {
                           <span
                             className="ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full align-middle"
                             style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}
-                            title={`${user.roles.length} roles`}
+                            title={t("admin.users.rolesCount").replace("{n}", user.roles.length)}
                           >
                             ×{user.roles.length}
                           </span>
@@ -383,7 +432,7 @@ export default function UsersManagement() {
 
                     {/* Last seen */}
                     <td className="py-2.5 px-3 whitespace-nowrap text-[11px]" style={{ color: "var(--text-4)" }}>
-                      {fmtDate(user.last_seen)}
+                      {fmtDate(user.last_seen, lang)}
                     </td>
 
                     {/* Actions */}
@@ -424,8 +473,10 @@ export default function UsersManagement() {
           }
         >
           {/* User */}
-          <FormField label={t("admin.users.fieldUser")}>
+          <FormField label={t("admin.users.fieldUser")} error={addError && !form.userId ? addError : null}>
             <StyledSelect
+              searchable
+              searchPlaceholder={t("common.search")}
               value={form.userId}
               onChange={(v) => setForm((f) => ({ ...f, userId: v }))}
               options={users.map((u) => ({
@@ -519,8 +570,8 @@ export default function UsersManagement() {
             </FormField>
           )}
 
-          {addError && (
-            <p className="text-[11px] font-medium text-red-400">{addError}</p>
+          {addError && form.userId && (
+            <p className="text-[11px] font-medium" style={{ color: "#ef4444" }}>{addError}</p>
           )}
         </Modal>
       )}
@@ -528,7 +579,8 @@ export default function UsersManagement() {
       {/* Delete confirmation */}
       <ConfirmDialog
         open={!!confirmDelete}
-        onCancel={() => setConfirmDelete(null)}
+        error={deleteError}
+        onCancel={() => { setConfirmDelete(null); setDeleteError(""); }}
         onConfirm={() => deleteMut.mutate({ userId: confirmDelete.user.id, roleRef: confirmDelete.role.id })}
         title={t("admin.users.deleteTitle")}
         message={confirmDelete && t("admin.users.deleteMsg").replace(
