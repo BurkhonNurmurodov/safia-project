@@ -75,8 +75,13 @@ export default function Toast({
       style={{
         position: "fixed",
         // Same safe-area contract the Modal template uses.
-        top: "calc(var(--tg-safe-top, 0px) + 16px)",
-        right: 16,
+        ...(position === "bottom"
+          ? {
+              bottom: "calc(var(--tg-safe-bottom, 0px) + 24px)",
+              left: "50%",
+              transform: "translateX(-50%)",
+            }
+          : { top: "calc(var(--tg-safe-top, 0px) + 16px)", right: 16 }),
         // Never wider than the viewport at 390px.
         maxWidth: "min(360px, calc(100vw - 32px))",
         zIndex,
