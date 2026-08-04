@@ -122,7 +122,7 @@ export default function Toast({
  *   ...
  *   {toast.node}
  */
-export function useToast() {
+export function useToast({ position = "top" } = {}) {
   const [state, setState] = useState(null);
   // Keeps `show` identity stable so it can sit in effect/callback deps safely.
   const seq = useRef(0);
