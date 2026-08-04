@@ -592,6 +592,30 @@ export default function UsersManagement() {
         tone="danger"
         loading={deleteMut.isPending}
       />
+
+      {/* Converting a role rebinds a production account's identity. Delete got a
+          confirm; this fired instantly from a dropdown with no undo. */}
+      <ConfirmDialog
+        open={!!confirmRole}
+        onCancel={() => setConfirmRole(null)}
+        onConfirm={() => {
+          updateMut.mutate({
+            userId: confirmRole.user.id,
+            roleRef: confirmRole.role.id,
+            payload: { role: confirmRole.next },
+          });
+          setConfirmRole(null);
+        }}
+        title={t("admin.users.roleChangeTitle")}
+        message={confirmRole && t("admin.users.roleChangeMsg")
+          .replace("{name}", tl(confirmRole.role.full_name || confirmRole.user.full_name) || "—")
+          .replace("{from}", t(ROLE_LABEL_KEYS[confirmRole.role.role]) || confirmRole.role.role)
+          .replace("{to}", t(ROLE_LABEL_KEYS[confirmRole.next]) || confirmRole.next)}
+        confirmLabel={t("admin.users.roleChangeConfirm")}
+        loading={updateMut.isPending}
+      />
+
+      {toast.node}
     </div>
   );
 }
