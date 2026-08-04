@@ -42,7 +42,6 @@ export const PAGES = [
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
-  { key: "hansey", route: "/hansey", labelKey: "nav.hansey" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
@@ -74,10 +73,6 @@ export const DEFAULT_PAGE_ACCESS = {
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,
   // supervisors their unit, shift-managers their shift, top-managers read-only all.
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],
-  // «Hansey» production-problem register — leaders log on their own cells and
-  // see only those; supervisors log on any cell of their unit (incl. leaderless
-  // ones), manage it all and get the unit-wide analytics board.
-  hansey: ["supervisor", "leader"],
   tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
