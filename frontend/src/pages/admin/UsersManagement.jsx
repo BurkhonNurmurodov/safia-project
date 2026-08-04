@@ -343,43 +343,15 @@ export default function UsersManagement() {
 
                     {/* Actions */}
                     <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1">
-                        {role.status !== "approved" && (
-                          <button
-                            onClick={() => approve({ user, role })}
-                            disabled={updateMut.isPending}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                            style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,197,94,0.25)")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(34,197,94,0.15)")}
-                          >
-                            <Check size={10} /> {t("admin.users.approve")}
-                          </button>
-                        )}
-                        {role.status !== "rejected" && (
-                          <button
-                            onClick={() => reject({ user, role })}
-                            disabled={updateMut.isPending}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                            style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.25)")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
-                          >
-                            <X size={10} /> {t("admin.users.reject")}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setConfirmDelete({ user, role })}
-                          disabled={deleteMut.isPending}
-                          title={t("admin.users.delete")}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors"
-                          style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.2)"; e.currentTarget.style.color = "#ef4444"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(148,163,184,0.12)"; e.currentTarget.style.color = "#94a3b8"; }}
-                        >
-                          <Trash2 size={10} /> {t("admin.users.delete")}
-                        </button>
-                      </div>
+                      <RowActions
+                        row={{ user, role }}
+                        t={t}
+                        pending={pendingRole === role.id}
+                        disabled={updateMut.isPending || deleteMut.isPending}
+                        onApprove={approve}
+                        onReject={reject}
+                        onDelete={setConfirmDelete}
+                      />
                     </td>
                   </tr>
                   );
