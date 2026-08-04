@@ -696,8 +696,15 @@ export default function AttendanceUpload() {
     if (accepted.length) doUpload(accepted[0]);
   }, [doUpload]);
 
+  // A wrong-type drop used to do nothing at all — no row, no error, no shake —
+  // which reads either as "it worked" or as "the app is broken".
+  const onDropRejected = useCallback(() => {
+    say(t("admin.upload.onlyXlsx"), "danger");
+  }, [say, t]);
+
   const { getRootProps, getInputProps, isDragActive, open: openFilePicker } = useDropzone({
     onDrop,
+    onDropRejected,
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
     multiple: false,
     noClick: true,
