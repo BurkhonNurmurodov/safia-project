@@ -236,7 +236,7 @@ function RequireAdmin({ children }) {
 /**
  * Gates the /admin panel specifically. Admins always pass. A non-admin passes
  * only while holding at least one capability whose tab lives in the panel —
- * and then sees ONLY those tabs (AdminUpload filters by the same list), so
+ * and then sees ONLY those tabs (AdminPanel filters by the same list), so
  * "run the Users tab" never becomes "run the admin panel". Deliberately
  * separate from RequireAdmin so widening the panel can't widen anything else.
  */
