@@ -317,7 +317,7 @@ export default function Permissions() {
                     {selected.length}/{allKeys.length}
                   </span>
                   <Button variant="ghost" size="sm" disabled={!selected.length}
-                          onClick={() => { setSelected([]); setDraft({}); }}>
+                          onClick={() => requestSelection([])}>
                     {t("admin.broadcast.clearAll")}
                   </Button>
                 </div>
