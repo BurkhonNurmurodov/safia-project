@@ -192,7 +192,12 @@ export function FileStateList({
       )}
 
       {states.map((f) => (
-        <div key={f.id ?? f.name} className="bg-[var(--bg-inner)] rounded-lg px-3 py-2.5">
+        <div
+          key={f.id ?? f.name}
+          onClick={onSelect ? () => onSelect(f) : undefined}
+          className={`bg-[var(--bg-inner)] rounded-lg px-3 py-2.5 ${onSelect ? "cursor-pointer" : ""}`}
+          style={selectedId && f.id === selectedId ? { boxShadow: "inset 0 0 0 1px var(--brand-border)" } : undefined}
+        >
           <div className="flex items-center gap-2 mb-1.5">
             {f.status === "uploading"  && <Loader2 size={13} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
             {f.status === "processing" && <Loader2 size={13} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />}
