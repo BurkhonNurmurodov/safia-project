@@ -97,10 +97,14 @@ export default function UsersManagement() {
     ? leaderProfiles.filter((p) => p.manager_id === Number(form.supervisorId))
     : [];
 
+  // Approve/reject/delete used to fail in complete silence: no onError anywhere,
+  // so on a dropped request the admin tapped Approve, saw nothing change, and
+  // moved on believing the person was let in while they stayed locked out.
   const updateMut = useMutation({
     mutationFn: ({ userId, roleRef, payload }) =>
       api.patch(`/admin/users/${userId}/roles/${roleRef}`, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.users.actionFailed")),
   });
 
   const deleteMut = useMutation({
@@ -108,8 +112,15 @@ export default function UsersManagement() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       setConfirmDelete(null);
+      setDeleteError("");
     },
+    // Keeps the dialog standing with the reason on it instead of leaving it
+    // inert with a stopped spinner.
+    onError: (e) => setDeleteError(e?.response?.data?.detail || t("admin.users.actionFailed")),
   });
+
+  /** Is THIS row the one currently mutating? Scopes the spinner and the disable. */
+  const pendingRole = updateMut.isPending ? updateMut.variables?.roleRef : null;
 
   const addRoleMut = useMutation({
     mutationFn: ({ userId, role, roleId }) =>
