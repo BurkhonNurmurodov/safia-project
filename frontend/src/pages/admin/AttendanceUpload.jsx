@@ -1174,21 +1174,17 @@ export default function AttendanceUpload() {
       )}
 
       {/* Toast */}
-      {toast && createPortal(
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-6" style={{ zIndex: 130 }}>
-          <div
-            className="toast-in flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm shadow-lg max-w-[92vw]"
-            style={{
-              background: toast.tone === "danger" ? "#ef4444" : toast.tone === "warn" ? "#eab308" : "#22c55e",
-              color: "#fff",
-            }}
-          >
-            {toast.tone === "danger" ? <TriangleAlert size={16} /> : <CheckCircle2 size={16} />}
-            <span className="min-w-0">{toast.text}</span>
-          </div>
-        </div>,
-        document.body,
-      )}
+      {/* Bottom-centred so it can't cover the toolbar this dense editing surface
+          is worked from — the shared template carries the placement as a prop. */}
+      <Toast
+        open={!!toast}
+        message={toast?.text}
+        tone={toast?.tone === "danger" ? "error" : toast?.tone === "warn" ? "warning" : "success"}
+        position="bottom"
+        duration={0}
+        closable={false}
+        zIndex={130}
+      />
 
       {/* Generic confirm */}
       {confirm && (
