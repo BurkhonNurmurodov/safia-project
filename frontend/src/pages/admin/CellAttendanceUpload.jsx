@@ -1,162 +1,183 @@
-import { useState, useCallback } from "react";
-import { useDropzone } from "react-dropzone";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Upload, CheckCircle2, XCircle, Loader2, LayoutGrid,
-  AlertTriangle, CalendarDays, FlaskConical, TableProperties,
+  LayoutGrid, AlertTriangle, CalendarDays, FlaskConical, TableProperties, ArrowRight,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
-import TableCard, { Th } from "../../components/ui/DataTable";
+import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
+import UploadDropzone, { FileStateList, useFileStates } from "../../components/ui/UploadDropzone";
+
+const ACCEPT = { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] };
+
+/** dd.mm.yyyy — the format ru/uz operators actually read, not raw ISO. */
+function fmtDay(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = String(iso).split("-");
+  return d && m && y ? `${d}.${m}.${y}` : iso;
+}
 
 // Small status chip for a parsed day cell: worked = green, day-off/excused
 // markers = neutral slate (never brand gold — traffic-light convention).
-function statusChip(status) {
+function StatusChip({ status }) {
+  const { t } = useLang();
   const worked = status === "worked";
-  const color = worked ? "#22c55e" : "#94a3b8";
+  const color = worked ? "#22c55e" : "#64748b";
+  // The raw backend enum used to print straight into an otherwise localized
+  // table; the value stays in `title` so it's still debuggable.
+  const label = worked ? t("admin.cellAtt.stWorked") : t("admin.cellAtt.stOff");
   return (
     <span
-      className="inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+      title={status}
+      className="inline-block rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
       style={{ color, background: `${color}1f` }}
     >
-      {status}
+      {label}
     </span>
   );
 }
 
 export default function CellAttendanceUpload() {
   const { t } = useLang();
-  const [fileStates, setFileStates] = useState([]);
+  const { states, begin, patch, addRejections, clear } = useFileStates();
   const [uploading, setUploading] = useState(false);
-
-  function setFileState(name, patch) {
-    setFileStates((prev) => prev.map((f) => (f.name === name ? { ...f, ...patch } : f)));
-  }
+  const [previewId, setPreviewId] = useState(null);
 
   async function uploadFiles(files) {
-    setFileStates(files.map((f) => ({ name: f.name, status: "pending", progress: 0 })));
+    const entries = begin(files);
     setUploading(true);
 
-    for (const file of files) {
-      setFileState(file.name, { status: "uploading", progress: 0 });
+    for (const { id, file } of entries) {
+      patch(id, { status: "uploading", progress: 0 });
       const form = new FormData();
       form.append("files", file);
       try {
         const { data } = await api.post("/admin/cell-attendance/upload", form, {
           onUploadProgress: (e) => {
             const pct = e.total ? Math.round((e.loaded / e.total) * 100) : 50;
-            setFileState(file.name, { progress: pct });
+            patch(id, { progress: pct, status: pct >= 100 ? "processing" : "uploading" });
           },
         });
         const result = data.results[0];
         if (result.status === "ok") {
-          setFileState(file.name, { status: "ok", progress: 100, result });
+          patch(id, {
+            status: "ok",
+            progress: 100,
+            result,
+            detail: `${result.rows_inserted} ${t("admin.cellAtt.rows")}`,
+          });
+          setPreviewId(id);
         } else {
-          setFileState(file.name, { status: "error", progress: 100, detail: result.detail });
+          patch(id, { status: "error", progress: 100, detail: result.detail });
         }
-      } catch {
-        setFileState(file.name, { status: "error", progress: 100, detail: t("admin.uploadFailed") });
+      } catch (err) {
+        // The sibling tabs extract the server's reason; this one used to throw
+        // it away and show a generic string on exactly the failures that matter.
+        patch(id, {
+          status: "error",
+          progress: 100,
+          detail: err?.response?.data?.detail || t("admin.uploadFailed"),
+        });
       }
     }
     setUploading(false);
   }
 
-  const onDrop = useCallback((accepted) => { if (accepted.length) uploadFiles(accepted); }, []);
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
-    multiple: true,
-    disabled: uploading,
-  });
+  const selected = states.find((f) => f.id === previewId && f.result?.sample?.length)
+    ?? [...states].reverse().find((f) => f.status === "ok" && f.result?.sample?.length);
+  const preview = selected?.result;
 
-  // Newest successful upload with a sample → drives the preview table.
-  const preview = [...fileStates].reverse().find((f) => f.status === "ok" && f.result?.sample?.length)?.result;
-
-  return (
-    <div className="space-y-6">
-      {/* Upload drop zone */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5">
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            <LayoutGrid size={15} className="text-[var(--brand-text)]" />
-            <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">{t("admin.cellAtt.title")}</div>
-          </div>
-          <span
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold"
-            style={{ color: "#eab308", background: "#eab30820" }}
-          >
-            <FlaskConical size={11} /> {t("admin.cellAtt.test")}
+  /** Period / covered cells / unmatched codes, per uploaded file. */
+  function renderResult(f) {
+    if (f.status !== "ok" || !f.result) return null;
+    const r = f.result;
+    return (
+      <>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] mb-1.5" style={{ color: "var(--text-3)" }}>
+          <span className="inline-flex items-center gap-1">
+            <CalendarDays size={12} style={{ color: "var(--text-4)" }} />
+            {t("admin.cellAtt.period")}:{" "}
+            <span style={{ color: "var(--text-2)" }}>
+              {fmtDay(r.period_from)}
+              {r.period_to !== r.period_from ? ` — ${fmtDay(r.period_to)}` : ""}
+            </span>
+            {r.days > 1 && <span style={{ color: "var(--text-4)" }}>({r.days} {t("admin.cellAtt.days")})</span>}
+          </span>
+          <span>
+            {t("admin.cellAtt.cells")}: <span style={{ color: "var(--text-2)" }}>{r.cells.join(", ") || "—"}</span>
           </span>
         </div>
 
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${
-            uploading    ? "border-[var(--border)] opacity-50 cursor-not-allowed"      :
-            isDragActive ? "border-[var(--brand)] bg-[var(--brand-bg)] cursor-pointer" :
-                           "border-[var(--border-md)] hover:border-[var(--brand-border)] cursor-pointer"
-          }`}
-        >
-          <input {...getInputProps()} />
-          <Upload size={32} className="mx-auto mb-3 text-[var(--text-3)]" />
-          <div className="text-sm text-[var(--text-2)]">
-            {uploading ? t("admin.uploading") : isDragActive ? t("admin.dropActive") : t("admin.dropzone")}
-          </div>
-          <div className="text-[11px] text-[var(--text-4)] mt-1.5 max-w-md mx-auto">{t("admin.cellAtt.hint")}</div>
-        </div>
-
-        {fileStates.length > 0 && (
-          <div className="mt-5 space-y-3">
-            {fileStates.map((f) => (
-              <div key={f.name} className="bg-[var(--bg-inner)] rounded-lg px-3 py-2.5">
-                <div className="flex items-center gap-2 mb-1.5">
-                  {f.status === "uploading" && <Loader2 size={13} className="text-[var(--brand-text)] animate-spin flex-shrink-0" />}
-                  {f.status === "ok"        && <CheckCircle2 size={13} className="text-green-400 flex-shrink-0" />}
-                  {f.status === "error"     && <XCircle size={13} className="text-red-400 flex-shrink-0" />}
-                  {f.status === "pending"   && <div className="w-3 h-3 rounded-full border border-[var(--border-md)] flex-shrink-0" />}
-                  <span className="font-mono text-xs text-[var(--text-2)] flex-1 truncate">{f.name}</span>
-                  <span className={`text-[11px] flex-shrink-0 ${
-                    f.status === "ok"        ? "text-green-400"        :
-                    f.status === "error"     ? "text-red-400"          :
-                    f.status === "uploading" ? "text-[var(--brand-text)]" : "text-[var(--text-4)]"
-                  }`}>
-                    {f.status === "ok"        ? `${f.result.rows_inserted} ${t("admin.cellAtt.rows")}` :
-                     f.status === "error"     ? f.detail                                                :
-                     f.status === "uploading" ? `${f.progress}%`                                        : t("admin.waiting")}
-                  </span>
-                </div>
-
-                {/* Success summary chips */}
-                {f.status === "ok" && (
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--text-3)] mt-2">
-                    <span className="inline-flex items-center gap-1">
-                      <CalendarDays size={12} className="text-[var(--text-4)]" />
-                      {t("admin.cellAtt.period")}: <span className="text-[var(--text-2)]">{f.result.period_from}{f.result.period_to !== f.result.period_from ? ` — ${f.result.period_to}` : ""}</span>
-                      {f.result.days > 1 && <span className="text-[var(--text-4)]">({f.result.days} {t("admin.cellAtt.days")})</span>}
-                    </span>
-                    <span>{t("admin.cellAtt.cells")}: <span className="text-[var(--text-2)]">{f.result.cells.join(", ") || "—"}</span></span>
-                  </div>
-                )}
-
-                {/* Unmatched cell codes warning */}
-                {f.status === "ok" && f.result.unmatched_codes?.length > 0 && (
-                  <div className="flex items-start gap-1.5 text-[11px] mt-1.5" style={{ color: "#eab308" }}>
-                    <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-                    <span>{t("admin.cellAtt.unmatched")}: {f.result.unmatched_codes.join(", ")}</span>
-                  </div>
-                )}
-
-                <div className="h-1 bg-[var(--bg-accent)] rounded-full overflow-hidden mt-2">
-                  <div
-                    className={`h-full rounded-full transition-all duration-200 ${
-                      f.status === "ok" ? "bg-green-500" : f.status === "error" ? "bg-red-500" : "bg-[var(--brand)]"
-                    }`}
-                    style={{ width: `${f.progress}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+        {r.unmatched_codes?.length > 0 && (
+          <div className="flex items-start gap-1.5 text-[11px] mb-1.5" style={{ color: "#a16207" }}>
+            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+            <span>
+              {t("admin.cellAtt.unmatched")}: {r.unmatched_codes.join(", ")}
+              {/* The warning used to name codes the cell register doesn't know,
+                  then leave the operator with no route to fix them. */}
+              <Link
+                to="/cells"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-0.5 ml-1.5 font-semibold underline"
+              >
+                {t("admin.cellAtt.openCells")} <ArrowRight size={11} />
+              </Link>
+            </span>
           </div>
         )}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead
+          icon={LayoutGrid}
+          title={t("admin.cellAtt.title")}
+          right={
+            <span
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+              style={{ color: "#a16207", background: "#eab30820" }}
+            >
+              <FlaskConical size={11} /> {t("admin.cellAtt.test")}
+            </span>
+          }
+        />
+
+        <div className="p-4">
+          <UploadDropzone
+            accept={ACCEPT}
+            busy={uploading}
+            onFiles={uploadFiles}
+            onRejected={(r) => addRejections(r, t("admin.upload.onlyXlsx"))}
+            // Spells out the two rules that used to be invisible until after the
+            // damage: the day comes from the «Период» date INSIDE the sheet, and
+            // re-uploading a covered date replaces it wholesale.
+            hint={t("admin.cellAtt.hint")}
+          />
+
+          <FileStateList
+            states={states}
+            busy={uploading}
+            onClear={clear}
+            renderExtra={renderResult}
+            onSelect={(f) => f.result?.sample?.length && setPreviewId(f.id)}
+            selectedId={selected?.id}
+            className="mt-4"
+          />
+
+          {/* The workflow spans three pages; this one is where uploads happen,
+              so it should say where the other two are. */}
+          <div className="mt-4 pt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ borderTop: "1px solid var(--border)", color: "var(--text-3)" }}>
+            <Link to="/cells" className="inline-flex items-center gap-1 hover:underline">
+              {t("admin.cellAtt.linkCells")} <ArrowRight size={11} />
+            </Link>
+            <Link to="/cell-attendance" className="inline-flex items-center gap-1 hover:underline">
+              {t("admin.cellAtt.linkSozlash")} <ArrowRight size={11} />
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Parsed preview — a spot-check of what landed in the test table */}
@@ -164,15 +185,23 @@ export default function CellAttendanceUpload() {
         <TableCard
           icon={TableProperties}
           title={t("admin.cellAtt.preview")}
-          right={<span className="text-[11px] text-[var(--text-3)]">{preview.sample.length} / {preview.rows_inserted}</span>}
+          right={
+            <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+              {t("admin.cellAtt.previewCount")
+                .replace("{n}", preview.sample.length)
+                .replace("{total}", preview.rows_inserted)}
+            </span>
+          }
         >
           <thead>
             <tr>
               <Th label={t("admin.cellAtt.colDate")} />
               <Th label={t("admin.cellAtt.colCell")} />
               <Th label={t("admin.cellAtt.colWorker")} />
-              <Th label={t("admin.cellAtt.colTitle")} />
-              <Th label={t("admin.cellAtt.colDay")} />
+              {/* Low-value columns fold away on a phone so Hours/Status — the
+                  point of a spot-check — are reachable without side-scrolling. */}
+              <Th label={t("admin.cellAtt.colTitle")} cls="hidden md:table-cell" />
+              <Th label={t("admin.cellAtt.colDay")} cls="hidden sm:table-cell" />
               <Th label={t("admin.cellAtt.colHours")} align="right" />
               <Th label={t("admin.cellAtt.colStatus")} align="center" />
             </tr>
@@ -180,13 +209,13 @@ export default function CellAttendanceUpload() {
           <tbody>
             {preview.sample.map((r, i) => (
               <tr key={i}>
-                <td className="px-3 py-2 text-[var(--text-3)] tabular-nums">{r.date}</td>
-                <td className="px-3 py-2 font-mono text-[var(--text-2)]">{r.verifix_code || "—"}</td>
-                <td className="px-3 py-2 text-[var(--text-1)]">{r.worker_name}</td>
-                <td className="px-3 py-2 text-[var(--text-3)]">{r.job_title || "—"}</td>
-                <td className="px-3 py-2 text-[var(--text-3)] font-mono text-[11px]">{r.day_raw}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[var(--text-2)]">{r.hours_worked != null ? r.hours_worked : "—"}</td>
-                <td className="px-3 py-2 text-center">{statusChip(r.status)}</td>
+                <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-3)" }}>{fmtDay(r.date)}</td>
+                <td className="px-3 py-2 font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</td>
+                <td className="px-3 py-2" style={{ color: "var(--text-1)" }}>{r.worker_name}</td>
+                <td className="px-3 py-2 hidden md:table-cell" style={{ color: "var(--text-3)" }}>{r.job_title || "—"}</td>
+                <td className="px-3 py-2 hidden sm:table-cell font-mono text-[11px]" style={{ color: "var(--text-3)" }}>{r.day_raw}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-2)" }}>{r.hours_worked != null ? r.hours_worked : "—"}</td>
+                <td className="px-3 py-2 text-center"><StatusChip status={r.status} /></td>
               </tr>
             ))}
           </tbody>
