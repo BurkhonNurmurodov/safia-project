@@ -29,6 +29,10 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
  *               vanished, and a failure is exactly what needs re-reading.
  *   onClose   – called on auto-dismiss and on the close button
  *   closable  – show the × (default true when there's an onClose)
+ *   position  – "top" (default, top-right) | "bottom" (bottom-centred). Dense
+ *               editing surfaces put it at the bottom so it can't cover the
+ *               toolbar the operator is working in. Both insets respect the
+ *               Telegram safe area.
  *   zIndex    – default 9999 (above modals; a toast reports on what they did)
  */
 
