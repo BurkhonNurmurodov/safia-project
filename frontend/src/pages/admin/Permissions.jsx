@@ -291,6 +291,19 @@ export default function Permissions() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs min-w-[560px]">
+                {/* Was tbody-only: five unlabelled columns where "target" and
+                    "actor" are both bare person names sitting next to each
+                    other — in an audit log, who-received vs who-granted is the
+                    one thing that must never be ambiguous. */}
+                <thead>
+                  <tr>
+                    <Th label={t("admin.perms.colWhen")} />
+                    <Th label={t("admin.perms.colTarget")} />
+                    <Th label={t("admin.perms.colCapability")} />
+                    <Th label={t("admin.perms.colAction")} />
+                    <Th label={t("admin.perms.colActor")} />
+                  </tr>
+                </thead>
                 <tbody>
                   {audit.map((r) => {
                     const tone = r.action === "revoked" ? "#ef4444"
