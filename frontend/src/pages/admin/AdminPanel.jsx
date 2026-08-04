@@ -330,6 +330,9 @@ export default function AdminPanel() {
               <button
                 type="button"
                 onClick={() => setSheetOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={sheetOpen}
+                aria-label={`${t("admin.title")} — ${current ? t(current.labelKey) : ""}`}
                 className="lg:hidden w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl mb-4"
                 style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}
               >

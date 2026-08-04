@@ -90,10 +90,15 @@ function TreeNode({ node, depth, sel, expanded, toggleExpand, toggleLeaf, toggle
         role="checkbox"
         aria-checked={on}
         aria-disabled={node.disabled || undefined}
-        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
+        tabIndex={node.disabled ? -1 : 0}
+        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--brand)] ${
           node.disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-[var(--bg-inner)]"
         }`}
         onClick={() => toggleLeaf(node)}
+        onKeyDown={(e) => {
+          if (node.disabled) return;
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleLeaf(node); }
+        }}
       >
         <CheckBox state={on ? "on" : "off"} disabled={node.disabled} />
         <span className="min-w-0" style={{ opacity: node.disabled ? 0.5 : 1 }}>
@@ -139,9 +144,15 @@ function TreeNode({ node, depth, sel, expanded, toggleExpand, toggleLeaf, toggle
         />
         <span
           onClick={(e) => { e.stopPropagation(); toggleBranch(node); }}
-          className="flex items-center"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault(); e.stopPropagation(); toggleBranch(node);
+          }}
+          className="flex items-center p-2 -m-2 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--brand)]"
           role="checkbox"
+          tabIndex={keys.length ? 0 : -1}
           aria-checked={state === "some" ? "mixed" : state === "on"}
+          aria-label={node.label}
         >
           <CheckBox state={state} disabled={!keys.length} />
         </span>
