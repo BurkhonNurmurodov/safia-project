@@ -51,6 +51,7 @@ export default function Toast({
   duration,
   onClose,
   closable,
+  position = "top",
   zIndex = 9999,
 }) {
   const { bg, fg, Icon, live } = TONES[tone] ?? TONES.success;
