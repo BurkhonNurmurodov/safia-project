@@ -113,7 +113,14 @@ def get_leaders(
     scoped server-side to their own unit's rows so they can never read another
     brigadir's data via the raw API; a leader is likewise scoped to their own
     checklist rows; admins / shift-managers / top-managers see everything — as
-    does anyone holding a personal ``page.view.leaders`` grant at "all"."""
+    does anyone holding a personal ``page.view.leaders`` grant at "all".
+
+    **Two collection layers.** Shift 2 files the checklist in the bot, so a
+    shift-2 (leader, date) with a CLOSED bot day is served from the bot and its
+    sheet row is dropped; every other day still comes from the Google Form
+    sheet, which keeps the whole history. Shift 1 is sheet-only — the rule is
+    the ROW's shift, not the viewer's, so one (leader, date) reads the same to
+    everybody. See services/leader_bot.py."""
     role = payload.get("role")
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
