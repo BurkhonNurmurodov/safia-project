@@ -196,6 +196,55 @@ def effective_leader_config(db: Session, prof) -> dict[int, dict]:
     return out
 
 
+def set_criteria(db: Session, *, task_id: int, criteria: str,
+                 manager_id: int | None = None, leader_id: int | None = None) -> None:
+    """Write the "what makes this task truly done" text at one level of the
+    chain. Blank clears the override (and falls back to the level above).
+
+    Deliberately NOT stageable through the "apply from next day" machinery that
+    carries enabled/min_media/weight: criteria change nothing a leader sees or
+    does in the bot — they only change how already-collected photos are judged
+    — so deferring them to a shift boundary would be a delay with no meaning.
+
+    When a level has no row yet, the row is materialised with the values that
+    level already resolves to, so writing criteria can never silently change
+    what the task requires.
+    """
+    text = (criteria or "").strip() or None
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if text is None:
+                return  # nothing stored, nothing to clear
+            # Every field on this table is nullable "inherit", so a fresh row
+            # carrying only criteria overrides nothing else.
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+        row.criteria = text
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if text is None:
+                return
+            # Absent row = the virtual default; materialise exactly that.
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+        row.criteria = text
+    else:
+        td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not td:
+            return
+        td.criteria = text
+    db.commit()
+
+
 def effective_date(shift: int | None = None, now: datetime | None = None) -> str:
     """ISO date of the checklist day, per the leader's shift (Tashkent time):
 
