@@ -382,7 +382,7 @@ export default function BotDataClear() {
                   <td className="px-3 py-2 text-right tabular-nums">{Math.round(r.completion)}%</td>
                   <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>{hhmm(r.closed_at)}</td>
                   <td className="px-3 py-2 text-right">
-                    <Button variant="danger" size="sm" tint icon={Trash2}
+                    <Button variant="danger" size="sm" tint icon={<Trash2 size={13} />}
                       aria-label={T.del} title={T.del}
                       onClick={() => openConfirm([r.id])} />
                   </td>
