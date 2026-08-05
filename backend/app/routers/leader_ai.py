@@ -167,6 +167,22 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     return {"ok": True, "task": _as_verdict(rev)}
 
 
+def _report_target(db: Session, uid: str) -> dict:
+    """The report behind a uid, as kwargs for `leader_ai.queue_report`."""
+    if uid.startswith("bot-"):
+        try:
+            return {"day": db.query(LeaderTaskDay).filter_by(id=int(uid[4:])).first()}
+        except ValueError:
+            return {}
+    row = None
+    if uid.startswith("row-"):
+        try:
+            row = db.query(LeaderChecklist).filter_by(id=int(uid[4:])).first()
+        except ValueError:
+            row = None
+    return {"row": row or db.query(LeaderChecklist).filter_by(submission_id=uid).first()}
+
+
 def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
     """ref → task_id for every task of one report, whichever layer filed it."""
     refs: dict[str, int] = {}
