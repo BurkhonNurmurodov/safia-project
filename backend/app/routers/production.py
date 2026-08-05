@@ -652,7 +652,7 @@ def list_production_managers(
     db: Session = Depends(get_db),
 ):
     """Brigadir units to offer in the dashboard picker, scoped to the caller:
-    supervisor → only their own unit; shift-manager → configured units in their
+    supervisor / leader → only their own unit; shift-manager → configured units in their
     shift; top-manager / admin → every configured unit. 'Configured' = has an ABC
     catalog or an uploaded daily snapshot (see _configured_manager_ids).
 
