@@ -433,7 +433,8 @@ def export_positions(
     lang = body.lang
     mid = _resolve_manager_id(payload, body.manager_id, db)
     day = _parse_date(body.date)
-    dash = _build_dashboard(db, mid, day)
+    # A leader exports exactly what their page shows — their own cells.
+    dash = _build_dashboard(db, mid, day, _leader_wc_scope(db, payload))
     rows = dash["rows"]
     if body.order:
         by_id = {r.get("id"): r for r in rows}
