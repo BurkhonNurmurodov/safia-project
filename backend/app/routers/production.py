@@ -713,7 +713,7 @@ def set_override(
     else:
         row.actual_override = body.value
     db.commit()
-    return _build_dashboard(db, mid, day)
+    return _build_dashboard(db, mid, day, scope)
 
 
 class WcOverrideBody(BaseModel):
