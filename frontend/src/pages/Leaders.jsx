@@ -1383,6 +1383,38 @@ export default function Leaders({ shiftLock = null }) {
       .then((r) => r.data),
     enabled: !!(isAdmin && detail?.uid),
   });
+  // "Check this task now": one deliberate call for one task, so the admin gets
+  // a verdict in seconds instead of waiting on a backlog they cannot see. The
+  // busy state is keyed by task id, so only the card that was tapped spins.
+  const [checkingTask, setCheckingTask] = useState(null);
+  const [checkErr, setCheckErr] = useState(null);
+  const aiCheckMut = useMutation({
+    mutationFn: ({ uid, task_id }) =>
+      api.post("/api/leader-ai/review-now", { uid, task_id }).then((r) => r.data),
+    onSuccess: (res, vars) => {
+      // Splice the verdict straight into the cached report so the card fills in
+      // where it stands — refetching would blank every card in the modal.
+      qc.setQueryData(["leader-ai-report", vars.uid], (old) => ({
+        enabled: true,
+        ...(old || {}),
+        tasks: { ...(old?.tasks || {}), [String(vars.task_id)]: res.task },
+      }));
+      qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+    },
+    // The failure belongs to the card that was tapped, so it is shown there —
+    // a toast for a per-card action would leave the card looking untouched.
+    onError: (e, vars) => setCheckErr({
+      id: vars.task_id,
+      msg: e?.response?.data?.detail || String(e?.message || e),
+    }),
+    onSettled: () => setCheckingTask(null),
+  });
+  const checkTask = (taskId) => {
+    setCheckErr(null);
+    setCheckingTask(taskId);
+    aiCheckMut.mutate({ uid: detail.uid, task_id: taskId });
+  };
+
   const aiRunMut = useMutation({
     mutationFn: () => api.post("/api/leader-ai/run").then((r) => r.data),
     onSuccess: () => {
