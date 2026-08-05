@@ -414,10 +414,14 @@ def _sheet_row(db: Session, rev: LeaderAiReview) -> LeaderChecklist | None:
     )
 
 
-def review_one(db: Session, rev: LeaderAiReview) -> None:
-    """Turn one pending row into a verdict. Raises GeminiQuotaError upward so
-    the caller can stop the whole drain; every other failure is recorded on the
-    row itself and the drain continues."""
+def review_one(db: Session, rev: LeaderAiReview) -> str:
+    """Turn one pending row into a verdict.
+
+    Returns what happened, so the drain can tell a per-row problem from a
+    systemic one: "done" | "image" (this report's photos are unreachable) |
+    "model" (the API rejected the call — every other row will fail the same
+    way). Raises GeminiQuotaError upward so the caller stops entirely.
+    """
     rev.attempts = (rev.attempts or 0) + 1
     try:
         images, omitted = _images_for(db, rev)
@@ -425,7 +429,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> None:
         rev.status = "error"
         rev.error = str(exc)[:500]
         db.commit()
-        return
+        return "image"
 
     prompt = _prompt(
         task=task_label(db, rev.task_id),
