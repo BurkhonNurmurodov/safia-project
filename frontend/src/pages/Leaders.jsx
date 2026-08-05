@@ -2304,7 +2304,15 @@ export default function Leaders({ shiftLock = null }) {
                           </span>
                         ) : "—"}
                       </td>
-                      <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</td>
+                      <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
+                        <span className="inline-flex items-center gap-1.5">
+                          {nm(r.leader)}
+                          {/* Admin-only: how many of this report's tasks the AI
+                              doubts, so a suspect day is findable without
+                              opening all of them. Null for everyone else. */}
+                          {aiOn && <AiChip n={aiFlags[r.uid]} T={T} />}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-center">
                         <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
                           {Math.round(r.completion)}%
