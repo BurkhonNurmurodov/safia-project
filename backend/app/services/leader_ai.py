@@ -393,18 +393,18 @@ def _images_for(db: Session, rev: LeaderAiReview) -> tuple[list[tuple[bytes, str
 
 
 def _sheet_row(db: Session, rev: LeaderAiReview) -> LeaderChecklist | None:
-    """Re-find the form row behind a sheet ref. Ids are recycled by the sync,
-    so the lookup goes through the durable handle the ref was built from."""
+    """Re-find the form row behind a sheet ref. Row ids are recycled by the
+    wipe-and-reload sync, so the lookup goes through the durable handle the ref
+    was built from — the submission id, or the date + leader spelling."""
+    parts = rev.ref.split(":")
     if rev.ref.startswith("sheet:"):
-        sub = rev.ref.split(":", 2)[1]
-        return db.query(LeaderChecklist).filter_by(submission_id=sub).first()
-    return (db.query(LeaderChecklist)
-            .filter(LeaderChecklist.date == rev.date)
-            .filter(LeaderChecklist.leader.isnot(None))
-            .all() and next(
-                (r for r in db.query(LeaderChecklist).filter_by(date=rev.date).all()
-                 if (r.leader or "").strip().lower()[:60] == rev.ref.split(":")[2]),
-                None))
+        return db.query(LeaderChecklist).filter_by(submission_id=parts[1]).first()
+    who = parts[2] if len(parts) > 3 else ""
+    return next(
+        (r for r in db.query(LeaderChecklist).filter_by(date=rev.date).all()
+         if (r.leader or "").strip().lower()[:60] == who),
+        None,
+    )
 
 
 def review_one(db: Session, rev: LeaderAiReview) -> None:
