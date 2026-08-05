@@ -461,6 +461,7 @@ export default function LeaderTasksAdmin() {
           <FormField label={t("admin.ltasks.status")} required>{statusToggle(lcell.enabled, (v) => setLcell((c) => ({ ...c, enabled: v })))}</FormField>
           {numField(t("admin.ltasks.minMedia"), lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
           {numField(t("admin.ltasks.weight"), lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
+          {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), supCrit(lcell.mid, lcell.tid))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
         </Modal>
       )}
