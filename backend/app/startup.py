@@ -503,6 +503,25 @@ def migrate_cell_in_load_column() -> None:
         db.close()
 
 
+def add_leader_task_criteria() -> None:
+    """2026-08-05: the AI proof reviewer needs a written "what makes this task
+    truly done" to judge a photo against. It rides the SAME global → supervisor
+    → leader chain as name/weight/min_media, so all three config tables get the
+    column; NULL means inherit the level above. Blank everywhere ⇒ the task is
+    simply not reviewed. Idempotent."""
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS criteria TEXT"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task criteria migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def migrate_attendance_batches() -> None:
     """2026-08-01: the single-file «Davomat» upload.
 
