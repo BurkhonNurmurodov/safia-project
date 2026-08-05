@@ -323,7 +323,7 @@ export default function LeaderTasksAdmin() {
                   {tasks.map((task) => (
                     <th key={task.id} className="align-bottom sticky top-0 z-10" style={{ background: "var(--bg-card)" }}>
                       <button type="button" title={tname(task)}
-                        onClick={() => { const f = getCell(managers[0]?.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, when: "now" }); }}
+                        onClick={() => { const f = getCell(managers[0]?.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, criteria: task.criteria || "", when: "now" }); }}
                         className="w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
                         <span className="block font-bold leading-none">T{task.id}</span>
