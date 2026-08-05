@@ -454,7 +454,7 @@ export default function LeaderTasksAdmin() {
           footer={<>
             {lcell.hasOv && <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>{t("admin.ltasks.reset")}</Button>}
             <Button variant="secondary" onClick={() => setLcell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={leaderMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={leaderMut.isPending || critMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.leaderHint")}</p>
           {nameFields(lcell.names, (l, v) => setLcell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => getCell(lcell.mid, lcell.tid).names?.[l] || lcellTask?.name?.[l] || "")}
