@@ -1341,6 +1341,32 @@ export default function Leaders({ shiftLock = null }) {
     },
   });
 
+  // ── AI proof review (admin-only pilot) ─────────────────────────────────────
+  // `enabled: isAdmin` is the whole gate on the client: for anybody else the
+  // request is never made and every AI affordance below evaluates to null, so
+  // the page is byte-for-byte what it was. The server gates it again.
+  // Only flag/queue COUNTS per report come down here — verdict prose is fetched
+  // per report when its modal opens, so this stays small over years of rows.
+  const { data: aiData } = useQuery({
+    queryKey: ["leader-ai-overview"],
+    queryFn: () => api.get("/api/leader-ai/overview").then((r) => r.data),
+    enabled: isAdmin,
+    // A drain runs in the background after a Refresh or a bot day-close, so the
+    // counts go stale on their own; refetching on focus is enough to follow it
+    // without polling the server all day.
+    refetchOnWindowFocus: true,
+  });
+  const aiOn = isAdmin && !!aiData?.enabled;
+  const aiFlags = aiData?.flags ?? {};
+  const aiRunMut = useMutation({
+    mutationFn: () => api.post("/api/leader-ai/run").then((r) => r.data),
+    onSuccess: () => {
+      // The drain is asynchronous; the counts here only move once it has done
+      // some work, so re-read shortly after rather than pretending it is done.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }), 4000);
+    },
+  });
+
   // Daraja cutoffs. One global row, so every viewer grades on the same scale;
   // the server decides who may write it back rather than the client's own role.
   const { data: tierData } = useQuery({
