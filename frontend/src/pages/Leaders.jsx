@@ -779,6 +779,14 @@ function AiReview({ rev, T, lang }) {
               </span>
             ))}
           </div>
+          {/* A date flag is only actionable next to the window it missed —
+              especially on shift 2, where the allowed window legitimately runs
+              into the next calendar morning. */}
+          {rev.expected && (rev.flags || []).some((f) => f === "date_mismatch" || f === "no_date") && (
+            <p className="text-[10px] tabular-nums mt-1" style={{ color: "var(--text-4)" }}>
+              {T.aiExpected}: {rev.expected}
+            </p>
+          )}
           {reason && (
             // Clamped to two lines: the cards sit two-up in the modal and an
             // unbounded verdict would push the photos of the next card off
