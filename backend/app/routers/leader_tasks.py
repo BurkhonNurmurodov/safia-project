@@ -31,7 +31,7 @@ from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, revert_audit,
-    write_change,
+    set_criteria, write_change,
 )
 
 router = APIRouter(tags=["leader-tasks"])
