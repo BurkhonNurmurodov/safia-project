@@ -70,9 +70,11 @@ _ERROR_STREAK_ABORT = 5
 _TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 _TG_API = "https://api.telegram.org"
 
-# One drain at a time per process. Refresh and day-close both kick a drain, and
-# two of them would race for the same pending rows and double-spend quota.
+# One drain at a time per process (cheap early-out); `_DRAIN_LOCK_KEY` extends
+# that across Passenger's worker processes. Refresh and day-close both kick a
+# drain, and two racing for the same rows would double-spend the free quota.
 _lock = threading.Lock()
+_DRAIN_LOCK_KEY = 8_140_573_112_004_331  # arbitrary, must not collide app-wide
 
 _SCHEMA = {
     "type": "OBJECT",
