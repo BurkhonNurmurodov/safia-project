@@ -160,7 +160,7 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     if role in ("supervisor", "leader") and not (sees_all and requested):
         mid = payload.get("role_id")
         if not mid:
-            raise HTTPException(status_code=403, detail="No unit assigned to this supervisor")
+            raise HTTPException(status_code=403, detail="No unit assigned to this profile")
         return int(mid)
     if sees_all or role in ("admin", "top-manager", "shift-manager"):
         if not requested:
