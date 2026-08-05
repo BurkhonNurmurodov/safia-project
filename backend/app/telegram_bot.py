@@ -2267,6 +2267,10 @@ def _lt_callback(call: types.CallbackQuery):
             day.closed_at = datetime.now(timezone.utc)
             day.completion = compute_completion(cfg, list(entries.values()))
             db.commit()
+            # The day is now a submission, so its proof photos become reviewable.
+            # Daemon thread: the leader is waiting on this callback, and a
+            # review round-trip is seconds per photo.
+            leader_ai.run_async()
             bot.answer_callback_query(call.id, _lt(lang, "closed_done").format(
                 score=round(float(day.completion))))
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)
