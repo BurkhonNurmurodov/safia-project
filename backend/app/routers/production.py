@@ -692,6 +692,11 @@ def set_override(
         raise HTTPException(status_code=400, detail="field must be 'plan' or 'actual'")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
+    # A leader edits Факт/ПЛАН on their own cells only — the read scope pins the
+    # write scope, so a cell they cannot see is a cell they cannot touch.
+    scope = _leader_wc_scope(db, payload)
+    if not _in_scope(scope, body.work_center):
+        raise HTTPException(status_code=403, detail="This team is not one of your cells")
 
     row = db.query(PPDaily).filter(
         PPDaily.manager_id == mid, PPDaily.date == day,
