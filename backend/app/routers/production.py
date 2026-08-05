@@ -394,7 +394,7 @@ def get_dashboard(
     db: Session = Depends(get_db),
 ):
     mid = _resolve_manager_id(payload, manager_id, db)
-    return _build_dashboard(db, mid, _parse_date(date))
+    return _build_dashboard(db, mid, _parse_date(date), _leader_wc_scope(db, payload))
 
 
 class PositionsExportBody(BaseModel):
