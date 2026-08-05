@@ -23,6 +23,7 @@ from app.models import (
     TelegramUserRole, Translation,
 )
 from app.reg_token import make_reg_token
+from app.services import leader_ai
 from app.services.leader_tasks import (
     channel_chat_id, compute_completion, config_name, effective_date,
     effective_leader_config, promote_due,
