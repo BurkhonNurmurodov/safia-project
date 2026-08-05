@@ -200,8 +200,8 @@ oynadan tashqarida bo'lsa — date_ok=false. Hammasi oyna ichida bo'lsa — date
 3) O'QILISHI. Rasm juda xira, qorong'i yoki kesilgan bo'lib, hech narsani
 aniqlab bo'lmasa — readable=false.
 
-Sabablarni TO'RT tilda yoz (reason_uz — o'zbek lotin, reason_uz_cyrl — o'zbек
-кирилл, reason_ru — rus, reason_en — ingliz). Har biri 1-2 qisqa jumla, oddiy
+Sabablarni TO'RT tilda yoz (reason_uz — o'zbek lotin, reason_uz_cyrl — o'zbek
+kirill alifbosida, reason_ru — rus, reason_en — ingliz). Har biri 1-2 qisqa jumla, oddiy
 matn, markdown ishlatma. Muammo bo'lsa — aynan nima noto'g'ri ekanini va rasmda
 ko'rgan sanani yoz. Muammo bo'lmasa — qisqa tasdiq yoz."""
 
