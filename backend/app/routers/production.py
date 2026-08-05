@@ -347,7 +347,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
         "manager_id": manager_id,
         "manager_name": mgr.name if mgr else None,
         "date": day.isoformat(),
-        "reconciliation": (recon.data if recon else {}),
+        # «Сколько должна на штатке» is the WHOLE unit's manual headcount block —
+        # it cannot be split per cell, so a cell-scoped view carries none of it
+        # (the client hides the card too) rather than showing a leader numbers
+        # that describe other people's cells.
+        "reconciliation": {} if wc_scope is not None else (recon.data if recon else {}),
         "unknown_skus": [{"sap_code": s, "work_center": w} for s, w in unknown],
         "missing_labor_count": sum(1 for r in result["rows"] if not r["has_labor"]),
     })
