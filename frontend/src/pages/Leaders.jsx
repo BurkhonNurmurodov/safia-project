@@ -90,6 +90,7 @@ const TXT = {
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun",
     aiTitle: "AI tekshiruvi",
+    aiCheck: "Tekshirish",
     aiOk: "Tasdiqlandi",
     aiFlagged: "Shubhali",
     aiPending: "Navbatda",
@@ -154,6 +155,7 @@ const TXT = {
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун",
     aiTitle: "AI текшируви",
+    aiCheck: "Текшириш",
     aiOk: "Тасдиқланди",
     aiFlagged: "Шубҳали",
     aiPending: "Навбатда",
@@ -218,6 +220,7 @@ const TXT = {
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.",
     aiTitle: "Проверка ИИ",
+    aiCheck: "Проверить",
     aiOk: "Подтверждено",
     aiFlagged: "Сомнительно",
     aiPending: "В очереди",
@@ -282,6 +285,7 @@ const TXT = {
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
     aiTitle: "AI review",
+    aiCheck: "Check now",
     aiOk: "Confirmed",
     aiFlagged: "Suspect",
     aiPending: "Queued",
@@ -746,7 +750,11 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
             : <Sparkles size={11} className="flex-shrink-0" />}
           <span className="truncate" title={line}>{line}</span>
         </span>
-        <Button size="sm" variant="secondary" tint loading={checking}
+        {/* `disabled`, not `loading`: Button's spinner would be a SECOND
+            spinning thing in a strip this small, next to the one on the status
+            line — which reads as a glitch rather than as progress. One motion
+            cue, on the line that says what is happening. */}
+        <Button size="sm" variant="secondary" tint disabled={checking}
           className="flex-shrink-0" onClick={onCheck}>
           {failed ? T.retry : T.aiCheck}
         </Button>
