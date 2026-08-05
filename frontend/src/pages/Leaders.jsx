@@ -150,7 +150,9 @@ const TXT = {
     photoFailed: "Расм юкланмади", retry: "Қайта уриниш",
   },
   ru: {
-    title: "Контроль лидеров", titleBot: "Контроль лидеров · Бот", avgSuccess: "Средний успех", timePeriod: "Период", shift: "Смена",
+    title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
+    tabMonitor: "Мониторинг", tabClear: "Очистка данных", srcBot: "Из бота",
+    avgSuccess: "Средний успех", timePeriod: "Период", shift: "Смена",
     supervisor: "Бригадир", allSups: "Все бригадиры", leader: "Лидер", allLeaders: "Все лидеры",
     trend: "Тренд выполнения", taskTitle: "Успех по задачам",
     standing: "Рейтинг лидеров", supStanding: "Рейтинг бригадиров",
