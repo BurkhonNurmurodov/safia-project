@@ -2488,7 +2488,15 @@ export default function Leaders({ shiftLock = null }) {
                       </div>
                     )}
                   </div>
-                  <AiReview rev={rev} T={T} lang={lang} />
+                  <AiReview rev={rev} T={T} lang={lang}
+                    // Only a task the leader answered YES to, with photos, has
+                    // anything to review — the button must not appear where it
+                    // could never do anything.
+                    canCheck={aiOn && !unasked && tk.done && nPhotos > 0
+                      && !(rev?.status === "ok" || rev?.status === "flagged")}
+                    checking={checkingTask === id}
+                    error={checkErr?.id === id ? checkErr.msg : null}
+                    onCheck={() => checkTask(id)} />
                 </div>
               );
             })}
