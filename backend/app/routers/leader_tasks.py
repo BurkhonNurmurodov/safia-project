@@ -275,6 +275,34 @@ def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(v
     return {"ok": True}
 
 
+class CriteriaIn(BaseModel):
+    """One level of the definition-of-done chain. `manager_id`/`leader_id`
+    absent = the global (column) level, which every unit inherits."""
+    task_id: int
+    criteria: str = ""
+    manager_id: int | None = None
+    leader_id: int | None = None
+
+
+@router.put("/admin/leader-tasks/criteria")
+def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
+                 _: dict = Depends(verify_admin)):
+    """Set what the AI must see before it calls this task done. Applies at once
+    (see services.leader_tasks.set_criteria for why it never stages), and the
+    next drain re-reads it — verdicts already written are NOT recomputed."""
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    if body.manager_id is not None and not db.query(Manager).filter_by(
+            id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
+            id=body.leader_id).first():
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    set_criteria(db, task_id=body.task_id, criteria=body.criteria,
+                 manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
 # ── Admin: staged changes + config audit ─────────────────────────────────────
 
 @router.get("/admin/leader-tasks/pending")
