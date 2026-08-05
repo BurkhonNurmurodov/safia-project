@@ -510,7 +510,7 @@ function LateChip({ days, T }) {
   );
 }
 
-function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit }) {
+function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit, loading }) {
   // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
   // the card width (abbreviating to "Surname G." only if it still won't fit).
   const fitFull = fit ? titleCaseShout(value) : value;
