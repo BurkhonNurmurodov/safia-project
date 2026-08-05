@@ -1928,6 +1928,9 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         day.closed_at = now
         day.completion = compute_completion(cfg, list(_lt_entries(db, day).values()))
     db.commit()
+    if stale:
+        # Auto-closed bygone days are submissions too — queue their photos.
+        leader_ai.run_async()
 
 
 def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):
