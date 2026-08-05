@@ -449,7 +449,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         rev.status = "error"
         rev.error = str(exc)[:500]
         db.commit()
-        return
+        return "model"
 
     flags: list[str] = []
     if not out.get("readable", True):
