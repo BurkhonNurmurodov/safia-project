@@ -24,7 +24,7 @@ const ALL_LINKS = [
   { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2 },
   { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy },
   // Admin-only gamification & rewards design preview («Safia Honors») — demo
-  // data only, no page-access key (mirrors the /leaders-bot pilot pattern).
+  // data only, no page-access key (the adminOnly pilot pattern).
   { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal },
   { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users },
   { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target },
