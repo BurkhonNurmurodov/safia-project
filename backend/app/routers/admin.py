@@ -31,6 +31,7 @@ from app.models import (
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
     Cell, CellAttendance,
 )
+from app.services import leader_ai
 from app.services.verifix_parser import parse_verifix_file
 from app.services.cell_attendance_parser import parse_cell_attendance_file
 from app.services.sheets_sync import (
