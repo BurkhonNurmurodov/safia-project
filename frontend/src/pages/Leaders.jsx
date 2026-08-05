@@ -2336,7 +2336,10 @@ export default function Leaders({ shiftLock = null }) {
               {displayRows.map((r, i) => (
                 <div key={r.uid} className="p-3 flex flex-col gap-2" style={i ? { borderTop: "1px solid var(--border)" } : undefined}>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{nm(r.leader)}</span>
+                    <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
+                      {nm(r.leader)}
+                      {aiOn && aiFlags[r.uid] ? <> <AiChip n={aiFlags[r.uid]} T={T} /></> : null}
+                    </span>
                     <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0" style={{ background: scoreColor(r.completion) }}>
                       {Math.round(r.completion)}%
                     </span>
