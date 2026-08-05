@@ -24,6 +24,12 @@ from app.services import gemini, leader_ai
 router = APIRouter(prefix="/api/leader-ai", tags=["leader-ai"])
 log = logging.getLogger(__name__)
 
+# Newest flagged rows resolved into the register's badge map. A cap rather than
+# a date filter because the page filters client-side and never tells the server
+# its range; newest-first means the badge is always right where anyone is
+# actually looking.
+FLAG_MAP_CAP = 4000
+
 
 def _bot_uid_map(db: Session, entry_ids: set[int]) -> dict[int, str]:
     """bot entry id → the uid /api/leaders prints for its day."""
