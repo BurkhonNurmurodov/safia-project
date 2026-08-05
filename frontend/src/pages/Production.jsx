@@ -1504,8 +1504,12 @@ export default function Production() {
             </tbody>
       </TableCard>
 
-      {/* reconciliation */}
-      <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
+      {/* reconciliation — the WHOLE unit's manual headcount block, which cannot
+          be split per cell, so a cell-scoped leader doesn't get it (the backend
+          sends no values and refuses the save either) */}
+      {!cellScope && (
+        <ReconciliationCard data={data?.reconciliation ?? {}} onSave={(d) => recon.mutate(d)} saving={recon.isPending} />
+      )}
 
       {/* staffing pin (admin) — O.soni / штатка for ONE work center on ONE date */}
       {wcEdit && (
