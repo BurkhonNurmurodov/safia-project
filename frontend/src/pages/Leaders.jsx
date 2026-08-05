@@ -1058,10 +1058,14 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
 }
 
 // ── main page ──────────────────────────────────────────────────────────────────
-// botMode: the admin-only COPY at /leaders-bot showing the in-bot checklist
-// submissions. Deliberately independent of the sheet-driven /leaders — two
-// pages, two data sources, no refresh button (the DB needs no sync).
-export default function Leaders({ botMode = false }) {
+// shiftLock: 1 | 2 pins the page to one shift's units — the two entries admins
+// and top-managers get in the nav («… · 1-smena» / «… · 2-smena»). Everyone
+// else opens the unlocked page and sees both shifts, scoped to their own rows.
+// The DATA is the same feed either way: /api/leaders serves shift-2 days from
+// the bot when the leader closed one there and from the sheet otherwise, so the
+// two pages differ only in which units they show — plus the admin-only data
+// clear tab, which rides on the shift-2 page where the bot data lives.
+export default function Leaders({ shiftLock = null }) {
   const { auth } = useAuth();
   const { seesAllOn } = useCapabilities();
   const { lang } = useLang();
