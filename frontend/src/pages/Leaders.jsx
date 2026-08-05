@@ -1882,7 +1882,7 @@ export default function Leaders({ shiftLock = null }) {
           </div>
         </div>
       )}
-      {!isLoading && !isError && !hasData && (
+      {!showLoading && !isError && !hasData && (
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <EmptyState title={T.noData} message={null} showUploadLink={false} />
         </div>
