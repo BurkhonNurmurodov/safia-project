@@ -358,6 +358,62 @@ def discover(db: Session) -> int:
     return added
 
 
+def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
+                 row: LeaderChecklist | None = None) -> int:
+    """Queue ONE report's reviewable tasks, by the same rule as `discover()`.
+
+    Exists for the per-task "check now" button: that press must not pay for a
+    scan of every report ever filed, which is what `discover()` does and what
+    the background drain is for. Matching is done for this row alone — a single
+    fuzzy match is cheap, it is the batch of thousands that is not.
+    """
+    added = 0
+    if day is not None:
+        mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+        entries = db.query(LeaderTaskEntry).filter_by(
+            day_id=day.id, done=True).all()
+        with_media = {
+            r[0] for r in db.query(LeaderTaskMedia.entry_id)
+            .filter(LeaderTaskMedia.entry_id.in_([e.id for e in entries] or [0]))
+            .distinct().all()
+        }
+        for e in entries:
+            ref = bot_ref(e.id)
+            if e.id not in with_media or db.query(LeaderAiReview).filter_by(ref=ref).first():
+                continue
+            db.add(LeaderAiReview(
+                ref=ref, source="bot", date=day.date, task_id=e.task_id,
+                leader_id=day.leader_id, manager_id=day.manager_id,
+                shift=mgr.shift if mgr else None, status="pending", flags=[],
+            ))
+            added += 1
+    elif row is not None:
+        name = relabel_supervisor(row.supervisor)
+        info = (supervisor_match(db.query(Manager).all(), {name}) or {}).get(name) or {}
+        who = {}
+        if row.leader:
+            who = (leader_match(
+                db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+                {(row.leader, info.get("id"))},
+            ) or {}).get((row.leader, info.get("id"))) or {}
+        for tk in (row.tasks or []):
+            if not tk.get("done") or not _sheet_photos(tk):
+                continue
+            tid = int(tk.get("id") or 0)
+            ref = sheet_ref(row, tid)
+            if db.query(LeaderAiReview).filter_by(ref=ref).first():
+                continue
+            db.add(LeaderAiReview(
+                ref=ref, source="sheet", date=row.date, task_id=tid,
+                leader_id=who.get("id"), manager_id=info.get("id"),
+                shift=info.get("shift"), status="pending", flags=[],
+            ))
+            added += 1
+    if added:
+        db.commit()
+    return added
+
+
 def _sheet_photos(task: dict) -> list[str]:
     return [p.strip() for p in (task.get("photo") or "").split(",")
             if "http" in p]
