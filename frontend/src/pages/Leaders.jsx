@@ -1834,13 +1834,13 @@ export default function Leaders({ shiftLock = null }) {
       {/* KPI / insight cards */}
       <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-3" : isLeader ? "lg:grid-cols-2" : "lg:grid-cols-4"} gap-3 mb-4`}>
         {/* Average success — hero: the only card with an accent glow */}
-        <StatCard label={T.avgSuccess} icon={Gauge} tip={T.tipAvg}
+        <StatCard label={T.avgSuccess} icon={Gauge} tip={T.tipAvg} loading={showLoading}
           value={hasData ? `${avg}%` : "—"}
           valueColor={hasData ? scoreColor(avg) : "var(--text-4)"}
           accent={hasData ? scoreColor(avg) : undefined} />
 
         {/* Lowest-success task */}
-        <StatCard label={T.lowTask} icon={AlertTriangle}
+        <StatCard label={T.lowTask} icon={AlertTriangle} loading={showLoading}
           tip={hasData && insights.lowTask ? `T${insights.lowTask.id}: ${taskDetail(insights.lowTask.id, lang).n}` : T.tipLowTask}
           value={hasData && insights.lowTask ? `T${insights.lowTask.id}` : "—"}
           badge={hasData && insights.lowTask ? `${insights.lowTask.val}%` : null}
@@ -1848,7 +1848,7 @@ export default function Leaders({ shiftLock = null }) {
 
         {/* Lowest-performing supervisor — shift-managers / admins only */}
         {!isSupervisor && !isLeader && (
-          <StatCard label={T.lowSup} icon={Users} tip={T.tipLowSup} fit
+          <StatCard label={T.lowSup} icon={Users} tip={T.tipLowSup} fit loading={showLoading}
             value={hasData && insights.lowSup ? nm(insights.lowSup.name) : "—"}
             badge={hasData && insights.lowSup ? `${insights.lowSup.val}%` : null}
             badgeColor={hasData && insights.lowSup ? scoreColor(insights.lowSup.val) : "var(--text-4)"} />
@@ -1856,7 +1856,7 @@ export default function Leaders({ shiftLock = null }) {
 
         {/* Lowest-performing leader — hidden for a leader (it's just themselves) */}
         {!isLeader && (
-          <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit
+          <StatCard label={T.lowLeader} icon={User} tip={T.tipLowLeader} fit loading={showLoading}
             value={hasData && insights.lowLeader ? nm(insights.lowLeader.name) : "—"}
             badge={hasData && insights.lowLeader ? `${insights.lowLeader.val}%` : null}
             badgeColor={hasData && insights.lowLeader ? scoreColor(insights.lowLeader.val) : "var(--text-4)"} />
