@@ -2259,7 +2259,28 @@ export default function Leaders({ shiftLock = null }) {
 
         {/* Recent submissions */}
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <SectionHead icon={ListChecks} title={T.tableTitle} />
+          <SectionHead icon={ListChecks} title={T.tableTitle}
+            right={aiOn ? (
+              /* Queue state for the pilot. Without it "no flags" is ambiguous —
+                 it reads the same whether nothing is suspect or nothing has
+                 been reviewed yet. The counts say which. */
+              <span className="flex items-center gap-2">
+                {!!aiData?.counts?.flagged && (
+                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: C_AI }}>
+                    {aiData.counts.flagged} {T.aiFlagsN}
+                  </span>
+                )}
+                {!!(aiData?.counts?.pending || aiData?.counts?.error) && (
+                  <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
+                    {(aiData.counts.pending || 0) + (aiData.counts.error || 0)} {T.aiPendingN}
+                  </span>
+                )}
+                <Button size="sm" variant="secondary" tint loading={aiRunMut.isPending}
+                  icon={<Sparkles size={13} />} onClick={() => aiRunMut.mutate()}>
+                  {aiRunMut.isPending ? T.aiRunning : T.aiRun}
+                </Button>
+              </span>
+            ) : undefined} />
 
           {/* table-level filters: leader search + score-band chips */}
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--border)" }}>
