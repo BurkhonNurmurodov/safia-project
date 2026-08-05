@@ -35,6 +35,7 @@ from app.services.leader_tasks import (
 )
 
 router = APIRouter(tags=["leader-tasks"])
+log = logging.getLogger(__name__)
 
 _LANGS = ("uz", "uz_cyrl", "ru", "en")
 
