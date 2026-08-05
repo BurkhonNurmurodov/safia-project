@@ -1104,7 +1104,10 @@ export default function Leaders({ shiftLock = null }) {
   // filters (presets + calendar popover). Defaults to the last 7 days.
   const [startDate, setStartDate] = usePersistentState(`${prefix}_date_from`, () => isoShift(todayISO(), -6));
   const [endDate, setEndDate] = usePersistentState(`${prefix}_date_to`, () => todayISO());
-  const [fShift, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
+  // On a shift-locked page the picker is gone and the lock does the narrowing,
+  // so the saved value must not narrow a second time.
+  const [fShiftSaved, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
+  const fShift = shiftLock ? null : fShiftSaved;
   const [fSup, setFSup] = usePersistentState(`${prefix}_supervisor`, "All");
   const [fLeader, setFLeader] = usePersistentState(`${prefix}_leader`, "All");
   const [standMode, setStandMode] = usePersistentState(`${prefix}_stand_mode`, "leader");
