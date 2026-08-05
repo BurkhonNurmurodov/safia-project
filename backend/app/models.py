@@ -1012,6 +1012,11 @@ class LeaderTaskDef(Base):
     note_uz_cyrl = Column(String, nullable=True)
     note_ru      = Column(String, nullable=True)
     note_en      = Column(String, nullable=True)
+    # "What makes this task truly done" — read by the AI proof reviewer, never
+    # shown to the leader in the bot. Single free text in any language: it is
+    # prompt material, not UI copy. Blank ⇒ the task is not reviewable, and its
+    # photos are left unjudged rather than measured against nothing.
+    criteria     = Column(Text, nullable=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
