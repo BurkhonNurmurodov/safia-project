@@ -1121,6 +1121,13 @@ export default function Leaders({ shiftLock = null }) {
   const [detail, setDetail] = useState(null);
   const [taskInfo, setTaskInfo] = useState(false);
 
+  // The bot-data clear tool is the page's second VIEW, admin-only and only on
+  // the shift-2 page — that is the shift whose days the bot files, so it is the
+  // only page where deleting one changes what anybody sees.
+  const showClearTab = isAdmin && shiftLock === 2;
+  const [tabSaved, setTab] = usePersistentState(`${prefix}_tab`, "monitor");
+  const tab = showClearTab ? tabSaved : "monitor";
+
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
   const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
