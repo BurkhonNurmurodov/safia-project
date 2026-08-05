@@ -58,7 +58,9 @@ const tipHTML = (label, val, color) => `
 // ── UI copy, all 4 platform languages ─────────────────────────────────────────
 const TXT = {
   uz: {
-    title: "Lider nazorati", titleBot: "Lider nazorati · Bot", avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr", shift: "Smena",
+    title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
+    tabMonitor: "Monitoring", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
+    avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr", shift: "Smena",
     supervisor: "Brigadir", allSups: "Barcha brigadirlar", leader: "Lider", allLeaders: "Barcha liderlar",
     trend: "Bajarilish dinamikasi", taskTitle: "Vazifalar kesimida muvaffaqiyat",
     standing: "Liderlar reytingi", supStanding: "Brigadirlar reytingi",
