@@ -541,6 +541,34 @@ def counts(db: Session) -> dict:
 
 # ── background kick ──────────────────────────────────────────────────────────
 
+def _try_db_lock(db: Session) -> bool:
+    """Claim the platform-wide drain slot via a Postgres advisory lock.
+
+    The in-process lock below is not enough on its own: Passenger runs several
+    worker processes, and a Refresh landing on one while a bot day-close lands
+    on another would have both drain the SAME pending rows — paying twice for
+    one verdict out of a quota that is the whole constraint here. The advisory
+    lock is held on this session's connection and released in `_work`'s finally;
+    if the process dies outright the connection dies with it and Postgres drops
+    the lock, so a crash can never strand the queue.
+    """
+    try:
+        return bool(db.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": _DRAIN_LOCK_KEY}
+        ).scalar())
+    except Exception as exc:  # non-Postgres dev DB — fall back to the process lock
+        log.debug("leader-ai: advisory lock unavailable (%s)", exc)
+        return True
+
+
+def _db_unlock(db: Session) -> None:
+    try:
+        db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _DRAIN_LOCK_KEY})
+        db.commit()
+    except Exception:
+        log.debug("leader-ai: advisory unlock failed", exc_info=True)
+
+
 def run_async(discover_first: bool = True) -> None:
     """Fire a discovery + drain on a daemon thread.
 
@@ -552,14 +580,19 @@ def run_async(discover_first: bool = True) -> None:
     if not gemini.available():
         return
     if _lock.locked():
-        log.debug("leader-ai: drain already running, skipping kick")
+        log.debug("leader-ai: drain already running in this worker, skipping kick")
         return
 
     def _work():
         if not _lock.acquire(blocking=False):
             return
         db = SessionLocal()
+        holding = False
         try:
+            holding = _try_db_lock(db)
+            if not holding:
+                log.debug("leader-ai: another worker is draining, skipping kick")
+                return
             if discover_first:
                 discover(db)
             res = drain(db)
@@ -567,6 +600,12 @@ def run_async(discover_first: bool = True) -> None:
         except Exception:
             log.exception("leader-ai: drain crashed")
         finally:
+            # Explicit unlock: db.close() only returns the connection to the
+            # pool, and the session outlives it — so an advisory lock left
+            # behind would ride that pooled connection and block every future
+            # drain in this worker.
+            if holding:
+                _db_unlock(db)
             db.close()
             _lock.release()
 
