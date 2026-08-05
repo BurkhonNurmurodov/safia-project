@@ -729,20 +729,26 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
   // deliberate ~3s call for THIS task.
   if (!judged) {
     if (!canCheck) return null;
+    // A failed press, the stored error from an earlier drain, or the plain
+    // invitation — in that order, because the newest thing that happened is
+    // what the admin needs to read.
+    const line = error ? error
+      : checking ? T.aiRunning
+      : rev?.status === "error" ? `${T.aiError}${rev.error ? ` — ${rev.error}` : ""}`
+      : rev ? T.aiQueued : T.aiTitle;
+    const failed = !!error || rev?.status === "error";
     return (
       <div className="px-3 py-1.5 flex items-center justify-between gap-2"
         style={{ borderTop: "1px solid var(--border)" }}>
-        <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-4)" }}>
-          <Sparkles size={11} className="flex-shrink-0" />
-          <span className="truncate">
-            {checking ? T.aiRunning
-              : rev?.status === "error" ? `${T.aiError}${rev.error ? ` — ${rev.error}` : ""}`
-              : rev ? T.aiQueued : T.aiTitle}
-          </span>
+        <span className="flex items-center gap-1.5 text-[11px] min-w-0"
+          style={{ color: failed && !checking ? C_BAD : "var(--text-4)" }}>
+          {checking ? <Loader2 size={11} className="animate-spin flex-shrink-0" />
+            : <Sparkles size={11} className="flex-shrink-0" />}
+          <span className="truncate" title={line}>{line}</span>
         </span>
         <Button size="sm" variant="secondary" tint loading={checking}
           className="flex-shrink-0" onClick={onCheck}>
-          {rev?.status === "error" ? T.retry : T.aiCheck}
+          {failed ? T.retry : T.aiCheck}
         </Button>
       </div>
     );
