@@ -424,8 +424,14 @@ def _sleep(seconds: float, stopping: dict) -> None:
     """Interruptible sleep — a Ctrl-C during a rate-limit wait should be felt
     immediately, not after the full minute."""
     end = time.time() + seconds
-    while time.time() < end and not stopping["now"]:
-        time.sleep(min(0.25, end - time.time()))
+    while not stopping["now"]:
+        # Measure the remaining gap ONCE — checking the deadline and then
+        # re-reading the clock lets time pass in between, so the slice could
+        # come out negative and time.sleep() would raise.
+        left = end - time.time()
+        if left <= 0:
+            break
+        time.sleep(min(0.25, left))
 
 
 def _summary(prog, flag_totals, errors, st, leader_ai, db) -> None:
