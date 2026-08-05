@@ -8,12 +8,15 @@ Viewer side (/api/leader-tasks/media/…): streams a proof photo from Telegram
 for the /leaders detail modal — page-access gated with the same row scoping as
 /api/leaders (supervisor → own unit, leader → own rows).
 """
+import logging
+
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -21,7 +24,9 @@ from app.models import (
     LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting, Manager,
     RoleProfile,
 )
+from app.permissions import require_page
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
+from app.services import leader_bot
 from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
