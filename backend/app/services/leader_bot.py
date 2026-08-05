@@ -146,16 +146,18 @@ def visible_day(db: Session, day: LeaderTaskDay, payload: dict, *, sees_all: boo
     role = payload.get("role")
     if role == "admin":
         return True
-    # Everyone below admin only ever sees merged rows, and only shift 2 merges.
+    # Everyone below admin only ever sees a bot day through a merged row, and
+    # only shift 2 merges — so a shift-1 day's photos stay unreachable for them.
     mgr = db.query(Manager).filter_by(id=day.manager_id).first()
     if not mgr or mgr.shift != MERGE_SHIFT:
         return False
-    if sees_all or role in ("top-manager", "shift-manager"):
-        return True
-    if role == "supervisor":
-        return day.manager_id == payload.get("role_id")
-    if role == "leader":
-        from app import identity
+    # Below that, mirror /api/leaders exactly: only supervisors and leaders are
+    # narrowed, and a personal "see all" page grant lifts both.
+    if not sees_all:
+        if role == "supervisor":
+            return day.manager_id == payload.get("role_id")
+        if role == "leader":
+            from app import identity
 
-        return day.leader_id == identity.viewer_leader_profile_id(db, payload)
-    return False
+            return day.leader_id == identity.viewer_leader_profile_id(db, payload)
+    return True
