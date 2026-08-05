@@ -21,18 +21,13 @@ from app.services.name_map import (
 router = APIRouter(prefix="/api", tags=["leaders"])
 
 
-# Leaders-form supervisor relabels. The checklist form tags some rows with a
-# person's name that doesn't match the supervisor unit those rows belong to;
-# correct them on read so the dashboard groups, scopes and ranks them under the
-# right unit (no re-sync needed). Keyed on the folded name skeleton so any
-# alphabet/spelling of the source resolves to the same entry.
-_SUPERVISOR_RELABEL = {
-    _fold_name("Abdugamitov Muhammad"): "Suvonov Elshod OF",
-}
-
-
-def _relabel(name: str | None) -> str:
-    return _SUPERVISOR_RELABEL.get(_fold_name(name or ""), name)
+# Leaders-form supervisor relabels: the checklist form tags some rows with a
+# person's name that doesn't match the supervisor unit those rows belong to,
+# and they're corrected on read so the dashboard groups, scopes and ranks them
+# under the right unit (no re-sync needed). The table itself lives in
+# services/name_map.py — the AI proof reviewer resolves the same rows to a unit
+# and must not diverge from this one.
+_relabel = relabel_supervisor
 
 
 # ── Daraja tier cutoffs ───────────────────────────────────────────────────────
