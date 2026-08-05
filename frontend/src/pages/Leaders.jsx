@@ -1134,7 +1134,7 @@ export default function Leaders({ shiftLock = null }) {
   const [tBand, setTBand] = usePersistentState(`${prefix}_table_band`, "all"); // all | good | mid | bad
   const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["leaders"],
     queryFn: () => api.get("/api/leaders").then((r) => r.data),
   });
