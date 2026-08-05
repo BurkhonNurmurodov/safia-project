@@ -19,6 +19,7 @@ import { SectionHead, Th } from "../components/ui/DataTable";
 import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
+import BotDataClear from "../components/leaders/BotDataClear";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -1764,7 +1765,7 @@ export default function Leaders({ shiftLock = null }) {
 
       {/* Filters */}
       <div className="flex flex-wrap items-start gap-3 mb-3">
-      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : isLeader ? "lg:grid-cols-1 sm:max-w-xs" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
+      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : isLeader ? "lg:grid-cols-1 sm:max-w-xs" : shiftLock ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
         {/* Period — same range picker as the global filters (presets + calendar).
             Mobile: full row, labels hidden (controls are self-describing). */}
         <div className="col-span-2 sm:col-span-1">
@@ -1779,9 +1780,10 @@ export default function Leaders({ shiftLock = null }) {
         </div>
 
         {/* Shift — narrows the supervisor picker (and all data) to one shift.
-            Hidden for supervisors, who are locked to their own unit/shift, and
-            for leaders, who see only their own (single-shift) rows. */}
-        {!isSupervisor && !isLeader && (
+            Hidden for supervisors, who are locked to their own unit/shift, for
+            leaders, who see only their own (single-shift) rows, and on the two
+            shift-locked pages, where it would be a one-value picker. */}
+        {!isSupervisor && !isLeader && !shiftLock && (
           <div className="min-w-0">
             <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.shift}</label>
             <SegmentedToggle fill value={fShift}
@@ -2134,9 +2136,14 @@ export default function Leaders({ shiftLock = null }) {
       {/* Detail modal */}
       {detail && (
         <Modal maxWidth="max-w-3xl" title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`}
-          subtitle={detail.submitted_at
-            ? `${T.submittedAt}: ${fmtDate(detail.submitted_at, lang)} ${hhmm(detail.submitted_at)}${lateDays(detail) > 0 ? ` (+${lateDays(detail)} ${T.dayAbbr})` : ""}`
-            : null}
+          subtitle={[
+            detail.submitted_at
+              ? `${T.submittedAt}: ${fmtDate(detail.submitted_at, lang)} ${hhmm(detail.submitted_at)}${lateDays(detail) > 0 ? ` (+${lateDays(detail)} ${T.dayAbbr})` : ""}`
+              : null,
+            // which collection layer this day came from — the sheet is silent
+            // history, the bot is the live one for shift 2
+            detail.source === "bot" ? T.srcBot : null,
+          ].filter(Boolean).join(" · ") || null}
           onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
