@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     # Notion internal-integration token for the Kaizen project analytics page.
     # Loaded from backend/.env; blank disables the integration.
     notion_token: str = ""
+    # Google AI Studio key for the leader-checklist proof-photo review.
+    # Loaded from backend/.env (gitignored); blank disables the whole feature —
+    # nothing is queued, nothing is shown. See services/gemini.py.
+    gemini_api_key: str = ""
+    # Free-tier vision model. Switch here when the billed tier is adopted.
+    gemini_model: str = "gemini-2.5-flash"
+    # Reviews attempted per drain. The free tier caps requests per minute AND
+    # per day, so a full backfill drains in slices rather than failing at once.
+    gemini_batch_size: int = 40
     # Telegram chat that receives boot-failure reports (the "Report the problem"
     # button on the recovery screen). Blank → falls back to the admins table.
     support_chat_id: str = ""
