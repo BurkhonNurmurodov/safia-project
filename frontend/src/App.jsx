@@ -370,7 +370,13 @@ function AppWithLang() {
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />
-            <Route path="/leaders-bot" element={<AuthGate><RequireAdmin><Leaders botMode /></RequireAdmin></AuthGate>} />
+            {/* One page per shift for the roles that oversee both. Same data
+                feed as /leaders, pinned to that shift's units. */}
+            <Route path="/leaders-shift1" element={<AuthGate><RequirePage page="leaders"><RequireAboveShift><Leaders shiftLock={1} /></RequireAboveShift></RequirePage></AuthGate>} />
+            <Route path="/leaders-shift2" element={<AuthGate><RequirePage page="leaders"><RequireAboveShift><Leaders shiftLock={2} /></RequireAboveShift></RequirePage></AuthGate>} />
+            {/* The bot-only copy this replaced — shift 2 is where its data now
+                lives, merged with the sheet history. */}
+            <Route path="/leaders-bot" element={<Navigate to="/leaders-shift2" replace />} />
             <Route path="/cells" element={<AuthGate><RequirePage page="cells"><Cells /></RequirePage></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
