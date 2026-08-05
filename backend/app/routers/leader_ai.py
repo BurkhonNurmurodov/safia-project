@@ -148,10 +148,9 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         # Never queued — the usual case before the first Refresh has run.
-        # Discovery is what decides whether this task is reviewable at all
-        # (answered yes, has photos), so let it make that call rather than
-        # duplicating the rule here.
-        leader_ai.discover(db)
+        # Queue THIS report only: a full discover() walks every report ever
+        # filed and would turn one button press into a half-minute request.
+        leader_ai.queue_report(db, **_report_target(db, body.uid))
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
