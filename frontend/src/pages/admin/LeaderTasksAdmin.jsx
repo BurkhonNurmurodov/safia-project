@@ -228,6 +228,18 @@ export default function LeaderTasksAdmin() {
       <input type="number" min={0} max={max} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} style={inputStyle} />
     </FormField>
   );
+  // "What makes this task truly done" — prompt material for the AI proof
+  // reviewer, not UI copy, so it stays ONE free-text box in whatever language
+  // the admin thinks in rather than the 4-language stack the names use.
+  // `inherited` previews the level above: blank here means inherit, and an
+  // admin has to be able to see what that inherits TO before leaving it blank.
+  const criteriaField = (value, onChange, inherited) => (
+    <FormField label={t("admin.ltasks.criteria")} hint={t("admin.ltasks.criteriaHint")}>
+      <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)}
+        placeholder={inherited || t("admin.ltasks.criteriaPh")}
+        className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
+    </FormField>
+  );
   const nameFields = (names, setName, placeholderFor) =>
     LANGS.map((l) => (
       <FormField key={l} label={`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`}>
