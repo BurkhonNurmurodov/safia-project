@@ -881,6 +881,18 @@ export default function Production() {
   const totals = data?.totals ?? {};
   const unknown = data?.unknown_skus ?? [];
   const missingLabor = data?.missing_labor_count ?? 0;
+  // A leader owns CELLS, not a unit: the backend narrows this whole page —
+  // catalog, teams, KPIs, raw SAP rows, export — to the cells they own and says
+  // so here. `cells` = the SAP codes assigned to them (empty = none yet),
+  // `work_centers` = the ones this brigadir's unit actually runs. Null for every
+  // role that sees the whole unit, so `!cellScope` is "unit-wide view".
+  const cellScope = data?.scope ?? null;
+  const scopeCodes = cellScope
+    ? (cellScope.work_centers?.length ? cellScope.work_centers : cellScope.cells)
+    : [];
+  // No cell assigned (or none with a SAP code): every panel below would be a row
+  // of zeros, which reads as "the factory did nothing today".
+  const noCells = cellScope != null && !cellScope.cells?.length;
   // Catalog SKU → work centers it's configured on. Lets us tell a true
   // "missing SKU" apart from a work-center mismatch (same SKU, different участок).
   const catalogWcsBySku = rows.reduce((m, r) => {
