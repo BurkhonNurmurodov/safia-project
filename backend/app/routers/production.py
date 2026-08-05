@@ -2,7 +2,9 @@
 Production-planning API (ABC form).
 
 Brigadir-facing (supervisor scoped to their own Manager via the JWT role_id;
-admin may pass ?manager_id=):
+admin may pass ?manager_id=). A LEADER opens the same page pinned to their unit
+AND narrowed to the cells they own — catalog, teams, day snapshot, staffing pins,
+raw SAP rows and the Excel export all follow `_leader_wc_scope`:
     GET  /api/production/dashboard?date=YYYY-MM-DD
     GET  /api/production/dates
     POST /api/production/override          {date, sap_code, work_center, field, value}
