@@ -1127,10 +1127,17 @@ export default function Leaders({ shiftLock = null }) {
   const [tSort, setTSort] = usePersistentState(`${prefix}_table_sort`, { key: "score", dir: "asc" });
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: [botMode ? "leaders-bot" : "leaders"],
-    queryFn: () => api.get(botMode ? "/admin/leaders-bot" : "/api/leaders").then((r) => r.data),
+    queryKey: ["leaders"],
+    queryFn: () => api.get("/api/leaders").then((r) => r.data),
   });
-  const rows = data?.data ?? [];
+  // A shift-locked page drops every other unit's rows before anything else runs,
+  // so the pickers, the scoring window and the standings all see one shift only.
+  // Rows the backend could not resolve to a unit carry a null shift and fall out
+  // of both locked pages — they stay visible on the unlocked one.
+  const rows = useMemo(() => {
+    const all = data?.data ?? [];
+    return shiftLock ? all.filter((r) => r.shift === shiftLock) : all;
+  }, [data, shiftLock]);
   const lastSynced = fmtDateTime(data?.last_synced);
 
   // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
