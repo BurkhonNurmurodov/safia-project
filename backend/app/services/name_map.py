@@ -160,6 +160,25 @@ _OVERRIDES = {
 }
 
 
+# ─── Leaders-form supervisor relabels ────────────────────────────────────────
+# A different problem from _OVERRIDES above: these rows name a person who is
+# not the supervisor of the unit the rows belong to, so the NAME itself is
+# corrected on read (grouping, scoping and ranking all follow it) rather than
+# just its unit lookup. Keyed on the folded skeleton so any alphabet resolves.
+#
+# Lives here, not in routers/leaders.py, because the AI proof reviewer resolves
+# the same rows to a unit — and the unit decides the shift, which decides the
+# allowed photo-timestamp window. Two copies would silently judge one unit's
+# night photos against the wrong window.
+_SUPERVISOR_RELABEL = {
+    _norm("Abdugamitov Muhammad"): "Suvonov Elshod OF",
+}
+
+
+def relabel_supervisor(name: str | None) -> str:
+    return _SUPERVISOR_RELABEL.get(_norm(name or ""), name)
+
+
 def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict]:
     """Map each sheet name to the supervisor unit it belongs to.
 
