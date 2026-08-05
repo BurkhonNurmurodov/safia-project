@@ -226,10 +226,21 @@ function AuthGate({ children }) {
 }
 
 /** Strictly admin-only. Used by pages that are not part of the capability
- *  catalog (e.g. /leaders-bot) — a grant must never widen those. */
+ *  catalog (e.g. /gamification) — a grant must never widen those. */
 function RequireAdmin({ children }) {
   const { auth } = useAuth();
   if (auth?.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
+/** The two shift-split copies of the leaders page, for the roles that oversee
+ *  more than one shift. Anyone else lands on the unlocked page, which shows
+ *  them the same rows without asking which shift they belong to. Page ACCESS is
+ *  still the ordinary `leaders` grant — this only picks the layout. */
+function RequireAboveShift({ children }) {
+  const { auth } = useAuth();
+  if (auth?.role !== "admin" && auth?.role !== "top-manager")
+    return <Navigate to="/leaders" replace />;
   return children;
 }
 
