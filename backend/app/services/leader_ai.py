@@ -28,6 +28,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
