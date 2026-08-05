@@ -176,6 +176,33 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     raise HTTPException(status_code=403, detail="Not allowed to view production data")
 
 
+def _leader_wc_scope(db: Session, payload: dict) -> Optional[set[str]]:
+    """The work centers a LEADER may see: the normalised SAP codes of the cells
+    they own (``cells.sap_code`` = ``pp_daily.work_center`` — the join the cells
+    registry was seeded for).
+
+    ``None`` = no cell pin, i.e. the whole unit — every other role, and a leader
+    holding ``page.view.production`` at "all", since that grant is the deliberate
+    way out of every scope pin on this page.
+
+    An EMPTY set is a real answer, NOT "no filter": a leader with no cells (or
+    whose cells carry no SAP code yet) owns no work center, so their page shows
+    nothing rather than the whole brigadir's unit.
+    """
+    if payload.get("role") != "leader" or page_scope_is_all(db, payload, PAGE):
+        return None
+    pid = viewer_leader_profile_id(db, payload)
+    if not pid:
+        raise HTTPException(status_code=403, detail="No leader profile resolved for this account")
+    return sap_codes_for_leader(db, pid)
+
+
+def _in_scope(scope: Optional[set[str]], code) -> bool:
+    """Is this work center inside the caller's cell scope? True for everyone who
+    has no scope pin, so call sites read the same for scoped and unscoped roles."""
+    return scope is None or norm_code(code) in scope
+
+
 def _constants(db: Session) -> tuple[float, float]:
     rows = {r.key: r.value for r in db.query(AppSetting).filter(
         AppSetting.key.in_(["pp_shift_min", "pp_productive_min"])).all()}
