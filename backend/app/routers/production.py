@@ -857,6 +857,10 @@ def save_reconciliation(
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
 ):
+    # The block describes the whole unit's headcount, so a cell-scoped caller (a
+    # leader) neither reads nor writes it — see _build_dashboard.
+    if _leader_wc_scope(db, payload) is not None:
+        raise HTTPException(status_code=403, detail="Reconciliation belongs to the whole unit")
     mid = _resolve_manager_id(payload, manager_id, db)
     day = _parse_date(body.date)
     row = db.query(PPReconciliation).filter(
