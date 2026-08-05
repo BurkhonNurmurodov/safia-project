@@ -140,15 +140,15 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     """Resolve the single brigadir unit a request targets, enforcing role scope:
 
         supervisor    → pinned to their own unit (JWT role_id); ?manager_id= ignored.
+        leader        → pinned to their own unit too (a leader's JWT role_id is
+                        that unit), and narrowed to the cells they own by
+                        _leader_wc_scope on top of this.
         shift-manager → any unit *in their own shift* (?manager_id= required).
         top-manager   → any unit (?manager_id= required).
         admin         → any unit (?manager_id= required).
 
     Everyone else is refused. Shift scope is enforced here (not only in the
     picker) so a shift-manager can't reach another shift by forging manager_id.
-
-        leader        → pinned to their own unit as well, and narrowed further to
-                        the cells they own (see _leader_wc_scope).
 
     A personal ``page.view.production`` grant at "all" is the one way out of
     those pins: it makes the caller reach every configured unit, whatever their
