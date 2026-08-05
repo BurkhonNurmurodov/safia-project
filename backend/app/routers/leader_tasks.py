@@ -69,6 +69,9 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 "id": td.id,
                 "name": {l: getattr(td, f"name_{l}") for l in _LANGS},
                 "note": {l: getattr(td, f"note_{l}") for l in _LANGS},
+                # Global "definition of done" for the AI proof reviewer;
+                # supervisors and leaders may override it in their own cells.
+                "criteria": td.criteria or "",
                 "default_weight": td.default_weight,
             }
             for td in defs
