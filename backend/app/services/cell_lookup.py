@@ -101,6 +101,29 @@ def by_sap(db: Session, with_leader: bool = False) -> dict[str, dict]:
     return out
 
 
+def norm_code(code) -> str:
+    """The matching normal form (whitespace stripped, upper-cased) — public so
+    callers that compare codes THEMSELVES (rather than through a lookup table)
+    apply the same rule the tables above are built with."""
+    return _norm(code)
+
+
+def sap_codes_for_leader(db: Session, leader_id: int) -> set[str]:
+    """Normalised SAP work-center codes of every cell this leader owns.
+
+    THE scope of a leader: they own cells, not a unit, so any page that shows a
+    brigadir's production narrows to this set. An EMPTY set is a real answer —
+    a leader with no cells (or whose cells have no SAP code filled in yet) owns
+    no work centers, which is not the same as "no filter".
+    """
+    rows = (
+        db.query(Cell.sap_code)
+        .filter(Cell.leader_id == leader_id, Cell.sap_code.isnot(None))
+        .all()
+    )
+    return {n for (code,) in rows if (n := _norm(code))}
+
+
 def resolve_verifix(table: dict[str, dict], code) -> dict | None:
     """Look a verifix-family code up in a by_verifix() table (raw then zero-stripped)."""
     n = _norm(code)
