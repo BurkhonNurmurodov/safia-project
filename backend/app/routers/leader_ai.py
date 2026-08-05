@@ -109,55 +109,112 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     if not gemini.available():
         return {"enabled": False, "tasks": {}}
 
-    refs: dict[str, int] = {}  # ref → task_id
-    if uid.startswith("bot-"):
-        try:
-            day_id = int(uid[4:])
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Bad uid")
-        day = db.query(LeaderTaskDay).filter_by(id=day_id).first()
-        if not day:
-            return {"enabled": True, "tasks": {}}
-        for e in db.query(LeaderTaskEntry).filter_by(day_id=day_id).all():
-            refs[leader_ai.bot_ref(e.id)] = e.task_id
-    else:
-        row = None
-        if uid.startswith("row-"):
-            try:
-                row = db.query(LeaderChecklist).filter_by(id=int(uid[4:])).first()
-            except ValueError:
-                row = None
-        if row is None:
-            row = db.query(LeaderChecklist).filter_by(submission_id=uid).first()
-        if row is None:
-            return {"enabled": True, "tasks": {}}
-        for tk in (row.tasks or []):
-            tid = int(tk.get("id") or 0)
-            refs[leader_ai.sheet_ref(row, tid)] = tid
-
+    refs = _refs_for_uid(db, uid)
     if not refs:
         return {"enabled": True, "tasks": {}}
 
     out = {}
     for rev in db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all():
-        lo, hi = leader_ai.date_window(rev.date, rev.shift)
-        out[str(refs[rev.ref])] = {
-            "status": rev.status,
-            "flags": rev.flags or [],
-            "imageDate": rev.image_date,
-            # The window the verdict was measured against, from the SAME
-            # function the checker used — a date flag is only actionable if you
-            # can see what the photo was supposed to fall inside, and a second
-            # copy of the shift rule in the client would eventually disagree.
-            "expected": f"{lo} — {hi}",
-            "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
-            "photos": rev.photos,
-            "error": rev.error,
-            "attempts": rev.attempts,
-            "exhausted": (rev.attempts or 0) >= leader_ai.MAX_ATTEMPTS,
-            "reviewedAt": rev.reviewed_at.isoformat() if rev.reviewed_at else None,
-        }
+        out[str(refs[rev.ref])] = _as_verdict(rev)
     return {"enabled": True, "tasks": out}
+
+
+class ReviewNowIn(BaseModel):
+    uid: str
+    task_id: int
+
+
+@router.post("/review-now")
+def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
+               _: dict = Depends(verify_admin)):
+    """Review ONE task's photos right now and return the verdict.
+
+    Deliberately synchronous and deliberately per-task. A whole report is up to
+    13 calls, and the free tier's per-MINUTE cap means that would be a
+    minute-long request that mostly 429s — whereas one task is a single call an
+    admin waits about three seconds for, which is what makes the wait feel like
+    an action instead of a queue.
+    """
+    if not gemini.available():
+        raise HTTPException(status_code=400,
+                            detail="GEMINI_API_KEY is not set on the server")
+
+    refs = _refs_for_uid(db, body.uid)
+    ref = next((r for r, tid in refs.items() if tid == body.task_id), None)
+    if ref is None:
+        raise HTTPException(status_code=404, detail="Unknown report or task")
+
+    rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
+    if rev is None:
+        # Never queued — the usual case before the first Refresh has run.
+        # Discovery is what decides whether this task is reviewable at all
+        # (answered yes, has photos), so let it make that call rather than
+        # duplicating the rule here.
+        leader_ai.discover(db)
+        rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
+    if rev is None:
+        raise HTTPException(status_code=404, detail="Nothing to review for this task")
+    if rev.status in ("ok", "flagged"):
+        return {"ok": True, "task": _as_verdict(rev)}  # already judged; never re-spend
+
+    # An admin asking again IS the retry — give a burned-out row its attempts back.
+    rev.attempts = 0
+    try:
+        leader_ai.review_one(db, rev)
+    except gemini.GeminiQuotaError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+    db.refresh(rev)
+    return {"ok": True, "task": _as_verdict(rev)}
+
+
+def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
+    """ref → task_id for every task of one report, whichever layer filed it."""
+    refs: dict[str, int] = {}
+    if uid.startswith("bot-"):
+        try:
+            day_id = int(uid[4:])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Bad uid")
+        if not db.query(LeaderTaskDay).filter_by(id=day_id).first():
+            return refs
+        for e in db.query(LeaderTaskEntry).filter_by(day_id=day_id).all():
+            refs[leader_ai.bot_ref(e.id)] = e.task_id
+        return refs
+
+    row = None
+    if uid.startswith("row-"):
+        try:
+            row = db.query(LeaderChecklist).filter_by(id=int(uid[4:])).first()
+        except ValueError:
+            row = None
+    if row is None:
+        row = db.query(LeaderChecklist).filter_by(submission_id=uid).first()
+    if row is None:
+        return refs
+    for tk in (row.tasks or []):
+        tid = int(tk.get("id") or 0)
+        refs[leader_ai.sheet_ref(row, tid)] = tid
+    return refs
+
+
+def _as_verdict(rev: LeaderAiReview) -> dict:
+    lo, hi = leader_ai.date_window(rev.date, rev.shift)
+    return {
+        "status": rev.status,
+        "flags": rev.flags or [],
+        "imageDate": rev.image_date,
+        # The window the verdict was measured against, from the SAME function
+        # the checker used — a date flag is only actionable if you can see what
+        # the photo was supposed to fall inside, and a second copy of the shift
+        # rule in the client would eventually disagree with the backend.
+        "expected": f"{lo} — {hi}",
+        "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
+        "photos": rev.photos,
+        "error": rev.error,
+        "attempts": rev.attempts,
+        "exhausted": (rev.attempts or 0) >= leader_ai.MAX_ATTEMPTS,
+        "reviewedAt": rev.reviewed_at.isoformat() if rev.reviewed_at else None,
+    }
 
 
 @router.post("/run")
