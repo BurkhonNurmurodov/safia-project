@@ -363,6 +363,11 @@ def refresh_sheet(
             meta.message = None
             meta.row_count = result.get("leader_rows", 0)
             db.commit()
+            # Newly arrived reports are queued for AI proof review and the
+            # backlog drains a slice at a time. Fire-and-forget on a daemon
+            # thread: a first-run backfill is far longer than any request, and
+            # nothing here may make Refresh feel slower than it did.
+            leader_ai.run_async()
             return {"status": "ok", "sheet": name, **result}
 
         if name == "quality":

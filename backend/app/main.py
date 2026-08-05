@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import engine, Base
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, idle_cell, cell_attendance, zagruzka_cell, attendance_batch
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import webhook as webhook_router
@@ -236,6 +236,9 @@ app.include_router(ui_prefs.router)
 app.include_router(broadcast.router)
 app.include_router(setup_times.router)
 app.include_router(leader_tasks.router, dependencies=_admin_guard)
+# AI proof review for the leader checklist. Every route self-gates with
+# verify_admin (pilot), and lives under /api so the global dep covers it.
+app.include_router(leader_ai.router)
 # Manual per-cell idle-time (ojidaniya) TEST entry — self-gates via
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).
