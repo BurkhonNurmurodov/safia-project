@@ -11,10 +11,10 @@ from app import identity
 from app.models import RoleProfile
 from app.services import leader_bot
 from app.services.name_map import (
-    _norm as _fold_name,
     _name_tokens,
     leader_is,
     leader_match,
+    relabel_supervisor,
     supervisor_match,
 )
 
