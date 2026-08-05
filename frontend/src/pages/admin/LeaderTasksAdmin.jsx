@@ -436,13 +436,14 @@ export default function LeaderTasksAdmin() {
         <Modal title={t("admin.ltasks.cellTitle")} subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setCell(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setCell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellMut.isPending} onClick={() => cellMut.mutate({ manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled, min_media: Number(cell.min_media) || 0, weight: Number(cell.weight) || 0, names: Object.fromEntries(LANGS.map((l) => [l, cell.names?.[l] || ""])), when: cell.when })}>{t("admin.ltasks.save")}</Button>
+            <Button loading={cellMut.isPending || critMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.supNameHint")}</p>
           {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
           <FormField label={t("admin.ltasks.status")} required>{statusToggle(cell.enabled, (v) => setCell((c) => ({ ...c, enabled: v })))}</FormField>
           {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
+          {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           <WhenBar when={cell.when} setWhen={(v) => setCell((c) => ({ ...c, when: v }))} nextDate={cellNext} t={t} />
         </Modal>
       )}
