@@ -59,44 +59,39 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     """Queue state + flag counts per report uid. Only reports that actually
     carry a flag are listed — a clean report contributes nothing to the map."""
     if not gemini.available():
-        return {"enabled": False, "counts": {}, "flags": {}, "pendingByUid": {}}
+        return {"enabled": False, "counts": {}, "flags": {}}
 
-    flagged = db.query(LeaderAiReview).filter(LeaderAiReview.status == "flagged").all()
-    pending = (
+    # ONLY flagged rows are resolved to uids. The pending queue is a backfill of
+    # everything ever filed — tens of thousands of rows — and loading it on
+    # every page open would be the most expensive query on the page for a
+    # number that `counts` already reports in one aggregate.
+    flagged = (
         db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status.in_(("pending", "error")))
+        .filter(LeaderAiReview.status == "flagged")
+        .order_by(LeaderAiReview.date.desc())
+        .limit(FLAG_MAP_CAP)
         .all()
     )
 
-    bot_ids = {int(r.ref.split(":")[1]) for r in flagged + pending
-               if r.ref.startswith("bot:")}
-    bot_uid = _bot_uid_map(db, bot_ids)
-    sheet_uid = _sheet_uid_map(
-        db, {r.ref for r in flagged + pending if not r.ref.startswith("bot:")}
+    bot_uid = _bot_uid_map(
+        db, {int(r.ref.split(":")[1]) for r in flagged if r.ref.startswith("bot:")}
     )
-
-    def uid_of(rev) -> str | None:
-        if rev.ref.startswith("bot:"):
-            return bot_uid.get(int(rev.ref.split(":")[1]))
-        return sheet_uid.get(rev.ref)
+    sheet_uid = _sheet_uid_map(
+        db, {r.ref for r in flagged if not r.ref.startswith("bot:")}
+    )
 
     flags: dict[str, int] = {}
     for rev in flagged:
-        uid = uid_of(rev)
+        uid = (bot_uid.get(int(rev.ref.split(":")[1]))
+               if rev.ref.startswith("bot:") else sheet_uid.get(rev.ref))
         if uid:
             flags[uid] = flags.get(uid, 0) + 1
-    waiting: dict[str, int] = {}
-    for rev in pending:
-        uid = uid_of(rev)
-        if uid:
-            waiting[uid] = waiting.get(uid, 0) + 1
 
     return {
         "enabled": True,
         "model": settings.gemini_model,
         "counts": leader_ai.counts(db),
         "flags": flags,
-        "pendingByUid": waiting,
     }
 
 
