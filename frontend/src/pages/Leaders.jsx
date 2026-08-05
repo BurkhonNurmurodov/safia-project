@@ -1358,6 +1358,14 @@ export default function Leaders({ shiftLock = null }) {
   });
   const aiOn = isAdmin && !!aiData?.enabled;
   const aiFlags = aiData?.flags ?? {};
+  // Verdict prose for the ONE report whose detail modal is open. Keyed on the
+  // uid so reopening a report reuses the cached answer.
+  const { data: aiReport } = useQuery({
+    queryKey: ["leader-ai-report", detail?.uid],
+    queryFn: () => api.get("/api/leader-ai/report", { params: { uid: detail.uid } })
+      .then((r) => r.data),
+    enabled: !!(isAdmin && detail?.uid),
+  });
   const aiRunMut = useMutation({
     mutationFn: () => api.post("/api/leader-ai/run").then((r) => r.data),
     onSuccess: () => {
