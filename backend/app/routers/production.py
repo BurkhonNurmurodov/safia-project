@@ -46,11 +46,12 @@ from app.models import (
     TelegramUserRole, RoleProfile,
 )
 from app.capabilities import page_scope_is_all
+from app.identity import viewer_leader_profile_id
 from app.permissions import require_page
 from app.upload_guard import validate_spreadsheet
 from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook, FAZA_COLUMNS
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
-from app.services.cell_lookup import by_sap, resolve_sap
+from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
 
 router = APIRouter(tags=["production"])
