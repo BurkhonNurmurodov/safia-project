@@ -193,10 +193,31 @@ export default function LeaderTasksAdmin() {
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
 
+  // Criteria never stage, so they are saved on their own endpoint alongside
+  // whatever the cell's own Save does — one button, two writes, because an
+  // admin editing a cell does not care which field routes where.
+  const saveCriteria = (draft, stored, ids) => {
+    if ((draft || "") === (stored || "")) return;
+    critMut.mutate({ ...ids, criteria: draft || "" });
+  };
+
+  const saveCell = () => {
+    saveCriteria(cell.criteria, getCell(cell.mid, cell.tid).criteria,
+      { task_id: cell.tid, manager_id: cell.mid });
+    cellMut.mutate({
+      manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
+      min_media: Number(cell.min_media) || 0, weight: Number(cell.weight) || 0,
+      names: Object.fromEntries(LANGS.map((l) => [l, cell.names?.[l] || ""])),
+      when: cell.when,
+    });
+  };
+
   const saveLeaderCell = () => {
     const base = getCell(lcell.mid, lcell.tid);
     const mm = Number(lcell.min_media) || 0;
     const w = Number(lcell.weight) || 0;
+    saveCriteria(lcell.criteria, getOv(lcell.lid, lcell.tid)?.criteria,
+      { task_id: lcell.tid, leader_id: lcell.lid });
     leaderMut.mutate({
       leader_id: lcell.lid, task_id: lcell.tid,
       enabled: lcell.enabled === base.enabled ? null : lcell.enabled,
