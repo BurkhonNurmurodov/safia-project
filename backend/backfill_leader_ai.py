@@ -453,3 +453,7 @@ def _summary(prog, flag_totals, errors, st, leader_ai, db) -> None:
     if left["pending"] or left["error"]:
         print(f"\n{left['pending']} pending · {left['error']} failed still queued. "
               f"Re-run to continue.")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
