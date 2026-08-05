@@ -126,6 +126,9 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             "min_media": s.min_media if s else 1,
             "weight": s.weight if s else td.default_weight,
             "names": _row_names(s) if s else {l: None for l in _LANGS},
+            # RAW like `names`: None = inherit the global definition-of-done.
+            # The AI reviewer reads this chain (services/leader_ai.criteria_for).
+            "criteria": (s.criteria if s else None) or None,
         }
     return out
 
