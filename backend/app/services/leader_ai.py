@@ -491,9 +491,11 @@ def drain(db: Session, limit: int | None = None) -> dict:
     )
     done = flagged = errors = 0
     quota = False
+    aborted = None
+    streak = 0  # consecutive API-level failures
     for rev in rows:
         try:
-            review_one(db, rev)
+            outcome = review_one(db, rev)
         except gemini.GeminiQuotaError as exc:
             log.warning("leader-ai: quota reached, stopping drain (%s)", exc)
             quota = True
@@ -503,8 +505,17 @@ def drain(db: Session, limit: int | None = None) -> dict:
             flagged += 1
         elif rev.status == "error":
             errors += 1
+        # A retired model, a revoked key or a dead network fails EVERY row
+        # identically. Without this the drain would walk the whole batch
+        # burning each row's retries on a fault that has nothing to do with it.
+        streak = streak + 1 if outcome == "model" else 0
+        if streak >= _ERROR_STREAK_ABORT:
+            aborted = rev.error
+            log.error("leader-ai: %s consecutive API failures, aborting drain (%s)",
+                      streak, aborted)
+            break
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
-            "quota": quota}
+            "quota": quota, "aborted": aborted}
 
 
 def counts(db: Session) -> dict:
