@@ -370,6 +370,16 @@ def _build_dashboard(db: Session, manager_id: int, day: date,
     sap_tbl = by_sap(db, with_leader=True)
     for wc in result["work_centers"]:
         wc["cell"] = resolve_sap(sap_tbl, wc.get("work_center"))
+
+    if wc_scope is not None:
+        # Tell the client the page is pinned to the caller's own cells, and
+        # which ones — so it can label the view and tell "no cells assigned to
+        # me" (owned = 0) apart from "this unit has no data for that date".
+        result["scope"] = {
+            "kind": "leader",
+            "cells": sorted(wc_scope),
+            "work_centers": sorted(w["work_center"] for w in result["work_centers"]),
+        }
     return result
 
 
