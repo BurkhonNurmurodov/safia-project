@@ -93,7 +93,7 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
     return {
         "enabled": True,
-        "model": leader_ai.settings.gemini_model,
+        "model": settings.gemini_model,
         "counts": leader_ai.counts(db),
         "flags": flags,
         "pendingByUid": waiting,
