@@ -480,6 +480,19 @@ export default function LeaderTasksAdmin() {
             <Button size="sm" loading={taskMut.isPending} onClick={() => taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when })}>{t("admin.ltasks.rename")}</Button>
           </div>
           <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
+          {/* The GROUPED definition-of-done: every supervisor and leader who
+              has not written their own inherits this one, so editing it here
+              is how the whole platform's answer to "what counts as done" is
+              set in one place. */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.criteriaGlobal")}</p>
+            {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
+            <Button size="sm" loading={critMut.isPending}
+              onClick={() => critMut.mutate({ task_id: col.tid, criteria: col.criteria || "" })}>
+              {t("admin.ltasks.save")}
+            </Button>
+          </div>
+          <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
           <div className="space-y-2">
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.applyAll")}</p>
             <p className="text-[11px]" style={{ color: C_WARN }}>{t("admin.ltasks.applyAllHint").replace("{n}", managers.length)}</p>
