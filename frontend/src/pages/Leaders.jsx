@@ -89,6 +89,25 @@ const TXT = {
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun",
+    aiTitle: "AI tekshiruvi",
+    aiOk: "Tasdiqlandi",
+    aiFlagged: "Shubhali",
+    aiPending: "Navbatda",
+    aiError: "Tekshirib bo'lmadi",
+    aiImgDate: "Rasmdagi sana",
+    aiExpected: "Ruxsat etilgan oyna",
+    aiFdate_mismatch: "Sana mos emas",
+    aiFno_date: "Rasmda sana yo'q",
+    aiFnot_proven: "Bajarilgani ko'rinmayapti",
+    aiFunreadable: "Rasm o'qilmadi",
+    aiRowBadge: "AI shubhali deb belgilagan vazifalar",
+    aiQueued: "AI tekshiruvi navbatda",
+    aiRun: "AI tekshiruvi",
+    aiRunning: "Tekshirilmoqda…",
+    aiStarted: "AI tekshiruvi boshlandi",
+    aiFlagsN: "shubhali",
+    aiPendingN: "navbatda",
+    aiNote: "AI xulosasi — yordamchi belgi, yakuniy hukm emas.",
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
     details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
@@ -135,6 +154,25 @@ const TXT = {
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун",
+    aiTitle: "AI текшируви",
+    aiOk: "Тасдиқланди",
+    aiFlagged: "Шубҳали",
+    aiPending: "Навбатда",
+    aiError: "Текшириб бўлмади",
+    aiImgDate: "Расмдаги сана",
+    aiExpected: "Рухсат этилган ойна",
+    aiFdate_mismatch: "Сана мос эмас",
+    aiFno_date: "Расмда сана йўқ",
+    aiFnot_proven: "Бажарилгани кўринмаяпти",
+    aiFunreadable: "Расм ўқилмади",
+    aiRowBadge: "AI шубҳали деб белгилаган вазифалар",
+    aiQueued: "AI текшируви навбатда",
+    aiRun: "AI текшируви",
+    aiRunning: "Текширилмоқда…",
+    aiStarted: "AI текшируви бошланди",
+    aiFlagsN: "шубҳали",
+    aiPendingN: "навбатда",
+    aiNote: "AI хулосаси — ёрдамчи белги, якуний ҳукм эмас.",
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
@@ -181,6 +219,25 @@ const TXT = {
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.",
+    aiTitle: "Проверка ИИ",
+    aiOk: "Подтверждено",
+    aiFlagged: "Сомнительно",
+    aiPending: "В очереди",
+    aiError: "Проверить не удалось",
+    aiImgDate: "Дата на фото",
+    aiExpected: "Допустимое окно",
+    aiFdate_mismatch: "Дата не совпадает",
+    aiFno_date: "На фото нет даты",
+    aiFnot_proven: "Выполнение не видно",
+    aiFunreadable: "Фото не читается",
+    aiRowBadge: "Задачи, отмеченные ИИ как сомнительные",
+    aiQueued: "Ожидает проверки ИИ",
+    aiRun: "Проверка ИИ",
+    aiRunning: "Проверяется…",
+    aiStarted: "Проверка ИИ запущена",
+    aiFlagsN: "сомнительных",
+    aiPendingN: "в очереди",
+    aiNote: "Вывод ИИ — подсказка, а не окончательное решение.",
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
@@ -227,6 +284,25 @@ const TXT = {
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
+    aiTitle: "AI review",
+    aiOk: "Confirmed",
+    aiFlagged: "Suspect",
+    aiPending: "Queued",
+    aiError: "Could not review",
+    aiImgDate: "Date on photo",
+    aiExpected: "Allowed window",
+    aiFdate_mismatch: "Date does not match",
+    aiFno_date: "No date on the photo",
+    aiFnot_proven: "Does not show the work done",
+    aiFunreadable: "Photo unreadable",
+    aiRowBadge: "Tasks the AI flagged as suspect",
+    aiQueued: "Waiting for AI review",
+    aiRun: "AI review",
+    aiRunning: "Reviewing…",
+    aiStarted: "AI review started",
+    aiFlagsN: "flagged",
+    aiPendingN: "queued",
+    aiNote: "The AI verdict is a hint, not a final ruling.",
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
@@ -547,12 +623,12 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
 // A report photo that keeps its own load state: on failure it shows a compact
 // "failed to load + retry" placeholder in the image's place instead of letting
 // the broken <img> bubble up to the boot-diagnostics error overlay in index.html.
-function ReportPhoto({ src, T }) {
+function ReportPhoto({ src, T, className = "mt-2" }) {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   if (failed) {
     return (
-      <div className="mt-2 w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center"
+      <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
         style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
         <ImageOff size={22} color="var(--text-4)" />
         <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
@@ -569,7 +645,7 @@ function ReportPhoto({ src, T }) {
   return (
     <img src={url} alt="" onClick={() => window.open(src, "_blank")} loading="lazy"
       onError={() => setFailed(true)}
-      className="mt-2 w-full rounded-lg border cursor-zoom-in"
+      className={`${className} w-full rounded-lg border cursor-zoom-in`}
       style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
   );
 }
@@ -578,7 +654,7 @@ function ReportPhoto({ src, T }) {
 // behind the auth-gated backend proxy (the JWT rides the Authorization header),
 // so it's fetched as a BLOB and rendered via an object URL — a bare <img src>
 // can't attach the token.
-function BotPhoto({ id, T }) {
+function BotPhoto({ id, T, className = "mt-2" }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -598,7 +674,7 @@ function BotPhoto({ id, T }) {
   }, [id, attempt]);
   if (failed) {
     return (
-      <div className="mt-2 w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center"
+      <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
         style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
         <ImageOff size={22} color="var(--text-4)" />
         <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
@@ -610,11 +686,112 @@ function BotPhoto({ id, T }) {
       </div>
     );
   }
-  if (!url) return <SkeletonBlock className="mt-2 h-28 w-full" />;
+  if (!url) return <SkeletonBlock className={`${className} h-28 w-full`} />;
   return (
     <img src={url} alt="" onClick={() => window.open(url, "_blank")} loading="lazy"
-      className="mt-2 w-full rounded-lg border cursor-zoom-in"
+      className={`${className} w-full rounded-lg border cursor-zoom-in`}
       style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
+  );
+}
+
+/* ══ AI proof review (admin-only pilot) ═══════════════════════════════════════
+ * Two questions are asked of each proof photo — is its drawn-on timestamp
+ * inside the checklist day (per the leader's SHIFT, so a 02:00 shift-2 photo
+ * is on time), and does it show the work actually done, measured against the
+ * criteria an admin wrote on the ltasks config page. See backend
+ * services/leader_ai.py; nothing here renders for a non-admin.
+ *
+ * Visual weight is deliberately asymmetric. A clean verdict is one quiet line
+ * — an admin scanning ten cards should not have to read ten "all good"
+ * paragraphs. A flag turns the strip amber and spells out what is wrong, since
+ * that is the only state anyone has to act on. */
+const C_AI = "#eab308";  // amber: needs a look, not a failure — red stays "not done"
+
+// The register-row badge: how many of this report's tasks the AI doubts.
+function AiChip({ n, T }) {
+  if (!n) return null;
+  return (
+    <span title={T.aiRowBadge}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums align-middle flex-shrink-0"
+      style={{ background: hexA(C_AI, 0.14), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
+      <Sparkles size={11} />{n}
+    </span>
+  );
+}
+
+// The strip at the foot of a task card. `rev` is one entry of
+// GET /api/leader-ai/report — absent means this task was never queued (no
+// photos, or answered "no"), and absent must render nothing at all.
+function AiReview({ rev, T, lang }) {
+  const [open, setOpen] = useState(false);
+  if (!rev) return null;
+
+  const reason = rev.reason?.[lang] || rev.reason?.ru || rev.reason?.en || "";
+  const flagged = rev.status === "flagged";
+  const tone = flagged ? C_AI : rev.status === "ok" ? C_GOOD : "#94a3b8";
+
+  // Queued / unreviewable: one muted line, no tint. There is nothing to read.
+  if (rev.status === "pending" || rev.status === "error") {
+    return (
+      <div className="px-3 py-1.5 flex items-center gap-1.5 text-[11px]"
+        style={{ borderTop: "1px solid var(--border)", color: "var(--text-4)" }}>
+        <Sparkles size={11} />
+        <span className="truncate">
+          {rev.status === "pending" ? T.aiQueued : `${T.aiError}${rev.error ? ` — ${rev.error}` : ""}`}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2"
+      style={{
+        borderTop: `1px solid ${flagged ? hexA(C_AI, 0.35) : "var(--border)"}`,
+        background: flagged ? hexA(C_AI, 0.1) : "transparent",
+      }}>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <Sparkles size={12} color={tone} className="flex-shrink-0" />
+        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: tone }}>
+          {T.aiTitle}
+        </span>
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+          style={{ background: hexA(tone, 0.15), color: tone }}>
+          {flagged ? T.aiFlagged : T.aiOk}
+        </span>
+        {/* The timestamp the model read, verbatim — an admin can judge the
+            judge without opening the photo, which is the whole point of a
+            pilot. Kept on the header line so a clean card stays one row. */}
+        {rev.imageDate && (
+          <span className="text-[10px] tabular-nums ml-auto truncate max-w-[52%]"
+            style={{ color: "var(--text-4)" }} title={`${T.aiImgDate}: ${rev.imageDate}`}>
+            {rev.imageDate}
+          </span>
+        )}
+      </div>
+
+      {flagged && (
+        <>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {(rev.flags || []).map((f) => (
+              <span key={f} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                style={{ background: hexA(C_AI, 0.16), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
+                {T[`aiF${f}`] || f}
+              </span>
+            ))}
+          </div>
+          {reason && (
+            // Clamped to two lines: the cards sit two-up in the modal and an
+            // unbounded verdict would push the photos of the next card off
+            // screen. Tapping opens the rest in place.
+            <p onClick={() => setOpen((o) => !o)}
+              className={`text-[11px] leading-snug mt-1.5 cursor-pointer ${open ? "" : "line-clamp-2"}`}
+              style={{ color: "var(--text-2)" }} title={reason}>
+              {reason}
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
