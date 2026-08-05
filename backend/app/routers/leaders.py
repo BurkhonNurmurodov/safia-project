@@ -209,25 +209,55 @@ def get_leaders(
 
     meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
 
+    sheet_data = [
+        {
+            # The form's submission id when we have it — unlike the row id it
+            # survives the wipe-and-reload of every sheet refresh.
+            "uid": r.submission_id or f"row-{r.id}",
+            "source": "sheet",
+            "date": r.date,
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            "supervisor": _relabel(r.supervisor),
+            "shift": sup_shift.get(_relabel(r.supervisor)),
+            # The PERSON: a stable profile id plus their canonical profile
+            # name, so every spelling of one leader groups as one person.
+            "leader_id": (_leader_of(r) or {}).get("id"),
+            "leader": (_leader_of(r) or {}).get("name") or r.leader,
+            "completion": float(r.completion or 0),
+            "tasks": r.tasks or [],
+        }
+        for r in rows
+    ]
+
+    # ── the bot layer (shift 2 only) ──────────────────────────────────────────
+    # Scoped exactly like the sheet rows above. A leader with no resolvable
+    # PROFILE gets no bot rows at all rather than a name-matched guess: bot days
+    # are keyed by profile id, so a name fallback could only ever mis-attribute.
+    bot_rows = []
+    skip_bot = False
+    bot_manager_id = bot_leader_id = None
+    if not sees_all:
+        if role == "supervisor":
+            bot_manager_id = payload.get("role_id")
+        elif role == "leader":
+            bot_leader_id = identity.viewer_leader_profile_id(db, payload)
+            skip_bot = bot_leader_id is None
+    if not skip_bot:
+        bot_rows = leader_bot.dashboard_rows(
+            db,
+            leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_id),
+            sup_display=sup_display,
+        )
+
+    # A closed bot day REPLACES the sheet row for the same person and date —
+    # the leader answered twice through two channels, and the bot is the live
+    # one. Sheet rows the bot never covered stay as history.
+    filed = {(b["leader_id"], b["date"]) for b in bot_rows}
+    data = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
+    data.sort(key=lambda r: str(r["date"]), reverse=True)
+
     return {
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
-        "data": [
-            {
-                # The form's submission id when we have it — unlike the row id it
-                # survives the wipe-and-reload of every sheet refresh.
-                "uid": r.submission_id or f"row-{r.id}",
-                "date": r.date,
-                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
-                "supervisor": _relabel(r.supervisor),
-                "shift": sup_shift.get(_relabel(r.supervisor)),
-                # The PERSON: a stable profile id plus their canonical profile
-                # name, so every spelling of one leader groups as one person.
-                "leader_id": (_leader_of(r) or {}).get("id"),
-                "leader": (_leader_of(r) or {}).get("name") or r.leader,
-                "completion": float(r.completion or 0),
-                "tasks": r.tasks or [],
-            }
-            for r in rows
-        ],
+        "data": data,
     }
