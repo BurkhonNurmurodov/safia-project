@@ -195,11 +195,34 @@ RUXSAT ETILGAN VAQT OYNASI: {lo} dan {hi} gacha.{omit}
 
 Ikkita savolga javob ber:
 
-1) SANA. Har bir rasmda sana-vaqt yozuvi bor (ekran, kamera yoki dastur
-chiqargan). Uni o'qi va image_date ga QANDAY YOZILGAN bo'lsa shundayligicha
-ko'chir (bir nechta rasm bo'lsa vergul bilan). Agar rasmda hech qanday sana
-ko'rinmasa — image_date="" va date_ok=false. Agar biror rasmning vaqti yuqoridagi
-oynadan tashqarida bo'lsa — date_ok=false. Hammasi oyna ichida bo'lsa — date_ok=true.
+1) SANA. Sen rasm QACHON OLINGANINI tekshirasan. Buning uchun FAQAT quyidagi
+uch manbadan biri hisobga olinadi:
+   a) SKRINSHOT — operatsion tizim soati skrinshot ichida ko'rinadi:
+      Windows'da pastki o'ng burchakda (masalasi panelida), macOS'da yuqori
+      o'ng burchakda (menyu satrida);
+   b) MONITOR SURATI — o'sha operatsion tizim soati monitor ekranida ko'rinadi
+      (Windows — pastki o'ng, macOS — yuqori o'ng);
+   c) KAMERA MUHRI — kamera rasmga avtomatik bosgan sana-vaqt yozuvi.
+
+MUHIM: hujjatning O'Z ICHIDAGI sana — masalan jadval katagidagi sana, «Период»
+yoki «Sana» ustuni, blank/shakl sarlavhasidagi sana, qo'lda yozilgan sana —
+rasm qachon olinganini BILDIRMAYDI. Uni sana sifatida ISHLATMA. U to'g'ri
+ko'rinsa ham, yuqoridagi uch manbadan biri bo'lmasa — sana tasdiqlanmagan
+hisoblanadi.
+
+Topgan sana-vaqtni image_date ga QANDAY YOZILGAN bo'lsa shundayligicha ko'chir
+(bir nechta rasm bo'lsa vergul bilan). Mahalliy format KUN.OY.YIL, ya'ni
+04.08.2026 = 2026-yil 4-avgust (4-yanvar emas).
+
+- Uch manbadan hech biri ko'rinmasa (yoki faqat hujjat ichidagi sana bo'lsa) —
+  image_date="" va date_ok=false.
+- Faqat SOAT ko'rinib, sana ko'rinmasa — image_date ga o'sha soatni yoz, lekin
+  date_ok=false: qaysi kun ekanini tasdiqlab bo'lmaydi.
+- Biror rasmning vaqti yuqoridagi oynadan tashqarida bo'lsa — date_ok=false.
+- Hammasi oyna ichida bo'lsa — date_ok=true.
+
+Sababda sanani QAYERDAN o'qiganingni ayt (masalan: «Windows soati», «macOS
+menyu satri», «kamera muhri»).
 
 {done_block}
 
