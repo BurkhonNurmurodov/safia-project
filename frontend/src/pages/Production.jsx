@@ -1174,7 +1174,33 @@ export default function Production() {
           message={t("production.noConfiguredMsg")}
           showUploadLink={false}
         />
+      ) : noCells ? (
+        <EmptyState
+          title={t("production.noCellsTitle")}
+          message={t("production.noCellsMsg")}
+          showUploadLink={false}
+        />
       ) : (<>
+      {/* The page is pinned to the leader's own cells — say so and name them, so
+          a short «Позиции» list reads as scope rather than as missing data. */}
+      {cellScope && (
+        <div className="flex items-center gap-2 flex-wrap rounded-xl px-3 py-2 mb-4 text-xs"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+          <Users size={14} style={{ color: "var(--brand)" }} className="flex-shrink-0" />
+          <span>{t("production.cellScope")}</span>
+          {scopeCodes.map((code) => {
+            const c = wcColor(code);
+            return (
+              <span key={code} className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md"
+                title={wcName(code) || code}
+                style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}` }}>
+                {code}{wcName(code) ? ` · ${wcName(code)}` : ""}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* date navigation */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <DayStepper value={date} onChange={setDate} max={null} />
