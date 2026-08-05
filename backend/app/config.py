@@ -37,8 +37,12 @@ class Settings(BaseSettings):
     # Loaded from backend/.env (gitignored); blank disables the whole feature —
     # nothing is queued, nothing is shown. See services/gemini.py.
     gemini_api_key: str = ""
-    # Free-tier vision model. Switch here when the billed tier is adopted.
-    gemini_model: str = "gemini-2.5-flash"
+    # Free-tier vision model. A "-latest" alias on purpose: gemini-2.5-flash was
+    # already retired for new keys ("no longer available to new users") while
+    # still being listed, and a pinned version 404s the day that happens again.
+    # Lite is the default because the binding constraint is free-tier requests
+    # per DAY while the backfill drains, not per-photo accuracy.
+    gemini_model: str = "gemini-flash-lite-latest"
     # Reviews attempted per drain. The free tier caps requests per minute AND
     # per day, so a full backfill drains in slices rather than failing at once.
     gemini_batch_size: int = 40
