@@ -1064,6 +1064,9 @@ class LeaderTaskLeaderSetting(Base):
     name_uz_cyrl = Column(String, nullable=True)
     name_ru      = Column(String, nullable=True)
     name_en      = Column(String, nullable=True)
+    # Per-leader "definition of done" for the AI reviewer. NULL = inherit the
+    # supervisor's effective criteria.
+    criteria     = Column(Text, nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
