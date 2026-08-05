@@ -2362,30 +2362,49 @@ export default function Leaders({ shiftLock = null }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(detail.tasks || []).map((tk, i) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
+              const media = tk.media || [];
               const id = Number(tk.id);
               const desc = taskDetail(id, lang).n;
               // a question the form did not put to this leader — neither pass nor fail
               const unasked = tk.answered === false;
               const tone = unasked ? "#94a3b8" : tk.done ? C_GOOD : C_BAD;
+              const rev = aiOn ? aiReport?.tasks?.[String(id)] : null;
+              // Several photos side by side rather than stacked: a 3-photo task
+              // used to be a card taller than the modal, which buried the next
+              // task entirely. The AI strip sits below them either way.
+              const nPhotos = photos.length + media.length;
+              const grid = nPhotos > 1 ? "grid grid-cols-2 gap-2 mt-2" : "mt-2";
               return (
-                <div key={i} className="rounded-xl p-3" style={{ background: hexA(tone, 0.08), border: `1px solid ${hexA(tone, 0.25)}` }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
-                    {unasked ? <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>
-                      : tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
+                <div key={i} className="rounded-xl overflow-hidden flex flex-col"
+                  style={{ background: hexA(tone, 0.08), border: `1px solid ${hexA(tone, 0.25)}` }}>
+                  <div className="p-3 flex-1">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
+                      <span className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* The AI's doubt is stated next to the leader's own
+                            answer, not instead of it: a task can be genuinely
+                            done AND have a suspect photo, and the header has to
+                            show both at once. */}
+                        {rev?.status === "flagged" && <Sparkles size={13} color={C_AI} />}
+                        {unasked ? <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>
+                          : tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
+                      </span>
+                    </div>
+                    {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
+                    {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>}
+                    {nPhotos > 0 && (
+                      <div className={grid}>
+                        {photos.map((p, pi) => <ReportPhoto key={pi} src={p} T={T} className="" />)}
+                        {media.map((mid) => <BotPhoto key={`m${mid}`} id={mid} T={T} className="" />)}
+                      </div>
+                    )}
                   </div>
-                  {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
-                  {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>}
-                  {photos.map((p, pi) => (
-                    <ReportPhoto key={pi} src={p} T={T} />
-                  ))}
-                  {(tk.media || []).map((mid) => (
-                    <BotPhoto key={`m${mid}`} id={mid} T={T} />
-                  ))}
+                  <AiReview rev={rev} T={T} lang={lang} />
                 </div>
               );
             })}
           </div>
+          {aiOn && <p className="text-[10px] mt-3" style={{ color: "var(--text-4)" }}>{T.aiNote}</p>}
         </Modal>
       )}
 
