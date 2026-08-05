@@ -1285,6 +1285,13 @@ export default function Leaders({ shiftLock = null }) {
   }), [rows, trendFrom, endDate, fShift, fSup, fLeader]);
 
   const hasData = filtered.length > 0;
+  // Anything in flight that can still put rows on the page counts as loading —
+  // the first fetch, a background refetch, and the on-page re-sync. With nothing
+  // to show yet the page renders skeletons; "Ma'lumot yo'q" is reserved for a
+  // FINISHED fetch that genuinely has no rows, so a slow load never reads as an
+  // empty period. Once rows are on screen a refetch leaves them standing.
+  const isBusy = isLoading || isFetching || refreshMut.isPending;
+  const showLoading = isBusy && !hasData && !isError;
 
   // Headline number: the mean Reyting of everyone in the period, so it reads as
   // "the average row of the leaderboard" — not the old mean of the reports that
