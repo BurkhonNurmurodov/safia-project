@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
-        add_leader_task_setting_names,
+        add_leader_task_setting_names, add_leader_task_criteria,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
     )
@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
     add_pp_product_op()
     add_downtime_ns_columns()
     add_leader_task_setting_names()
+    add_leader_task_criteria()
     add_profile_identity_columns()
     add_activity_profile_key()
     migrate_multi_roles()
