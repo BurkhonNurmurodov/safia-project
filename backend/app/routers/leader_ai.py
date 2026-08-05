@@ -11,6 +11,7 @@ per-report `report` the detail modal fetches when it opens.
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import settings
