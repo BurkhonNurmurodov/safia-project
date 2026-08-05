@@ -718,26 +718,39 @@ function AiChip({ n, T }) {
 // The strip at the foot of a task card. `rev` is one entry of
 // GET /api/leader-ai/report — absent means this task was never queued (no
 // photos, or answered "no"), and absent must render nothing at all.
-function AiReview({ rev, T, lang }) {
+function AiReview({ rev, T, lang, canCheck, checking, onCheck }) {
   const [open, setOpen] = useState(false);
-  if (!rev) return null;
+  const judged = rev && (rev.status === "ok" || rev.status === "flagged");
 
-  const reason = rev.reason?.[lang] || rev.reason?.ru || rev.reason?.en || "";
-  const flagged = rev.status === "flagged";
-  const tone = flagged ? C_AI : rev.status === "ok" ? C_GOOD : "#94a3b8";
-
-  // Queued / unreviewable: one muted line, no tint. There is nothing to read.
-  if (rev.status === "pending" || rev.status === "error") {
+  // Not yet judged — which is a thing the admin can DO something about, so it
+  // renders as an action, not a status. "Queued" on its own was the same dead
+  // label whether the verdict was three seconds or three days away, and it
+  // never changed while anyone watched it. The button turns the wait into one
+  // deliberate ~3s call for THIS task.
+  if (!judged) {
+    if (!canCheck) return null;
     return (
-      <div className="px-3 py-1.5 flex items-center gap-1.5 text-[11px]"
-        style={{ borderTop: "1px solid var(--border)", color: "var(--text-4)" }}>
-        <Sparkles size={11} />
-        <span className="truncate">
-          {rev.status === "pending" ? T.aiQueued : `${T.aiError}${rev.error ? ` — ${rev.error}` : ""}`}
+      <div className="px-3 py-1.5 flex items-center justify-between gap-2"
+        style={{ borderTop: "1px solid var(--border)" }}>
+        <span className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--text-4)" }}>
+          <Sparkles size={11} className="flex-shrink-0" />
+          <span className="truncate">
+            {checking ? T.aiRunning
+              : rev?.status === "error" ? `${T.aiError}${rev.error ? ` — ${rev.error}` : ""}`
+              : rev ? T.aiQueued : T.aiTitle}
+          </span>
         </span>
+        <Button size="sm" variant="secondary" tint loading={checking}
+          className="flex-shrink-0" onClick={onCheck}>
+          {rev?.status === "error" ? T.retry : T.aiCheck}
+        </Button>
       </div>
     );
   }
+
+  const reason = rev.reason?.[lang] || rev.reason?.ru || rev.reason?.en || "";
+  const flagged = rev.status === "flagged";
+  const tone = flagged ? C_AI : C_GOOD;
 
   return (
     <div className="px-3 py-2"
