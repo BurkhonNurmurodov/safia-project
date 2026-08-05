@@ -151,6 +151,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "min_media": r.min_media,
             "weight": r.weight,
             "names": _row_names(r),
+            "criteria": r.criteria or None,
         }
     return out
 
