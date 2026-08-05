@@ -46,7 +46,7 @@ from app.models import (
     RoleProfile,
 )
 from app.services import gemini
-from app.services.name_map import leader_match, supervisor_match
+from app.services.name_map import leader_match, relabel_supervisor, supervisor_match
 
 log = logging.getLogger(__name__)
 
