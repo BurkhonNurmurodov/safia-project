@@ -93,8 +93,14 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const pendingCount = pendingData?.count ?? 0;
 
   const withSearch = (path) => `${path}${location.search}`;
-  const links = ALL_LINKS.filter(l =>
-    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages));
+  // onlyRoles / hideRoles narrow an ordinary page link to (or away from) a role
+  // without inventing a second page-access key — the two shift copies of the
+  // leaders page are the same `leaders` grant, split by who oversees a shift.
+  const links = ALL_LINKS.filter(l => {
+    if (l.onlyRoles && !l.onlyRoles.includes(auth?.role)) return false;
+    if (l.hideRoles && l.hideRoles.includes(auth?.role)) return false;
+    return l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages);
+  });
 
   const { data: range } = useQuery({
     queryKey: ["attendance-range"],
