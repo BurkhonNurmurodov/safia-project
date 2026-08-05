@@ -284,11 +284,7 @@ def discover(db: Session) -> int:
             .filter(LeaderTaskDay.closed_at.isnot(None)).all()}
     if days:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
-        with_media = {
-            m.entry_id for m in db.query(LeaderTaskMedia.entry_id).distinct().all()
-        } if False else {
-            r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()
-        }
+        with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
         entries = (
             db.query(LeaderTaskEntry)
             .filter(LeaderTaskEntry.day_id.in_(days.keys()),
