@@ -1135,20 +1135,31 @@ def get_raw(
     if not up:
         return {"present": False, "columns": [], "rows": [], "file_type": file_type, "date": day.isoformat()}
     rows = up.rows or []
-    if is_global:
+    # A leader's cells narrow the raw file the same way they narrow the computed
+    # dashboard — and unlike the brigadir scoping below, this one applies to the
+    # legacy per-manager slices too, since those are baked to the WHOLE unit.
+    scope = _leader_wc_scope(db, payload)
+    if is_global or scope is not None:
         # Scope the plant-wide file to this brigadir at read time — the same
         # filters legacy slices had baked in at upload time.
         products = db.query(PPProduct).filter(PPProduct.manager_id == mid).all()
+        if scope is not None:
+            products = [p for p in products if _in_scope(scope, p.work_center)]
         if file_type == "faza":
             # faza row: [order, op, wc, sku, name, plan, status, date, conf]
             own_wcs = {w.code for w in db.query(PPWorkCenter).filter(
                 PPWorkCenter.manager_id == mid).all()} | {p.work_center for p in products}
-            if own_wcs:
+            if scope is not None:
+                own_wcs = {c for c in own_wcs if _in_scope(scope, c)}
+            # An empty set means "this caller owns nothing" once a scope is in
+            # play, so it must filter to nothing — only an UNSCOPED empty set
+            # (a brigadir with no configured WCs) leaves the file whole.
+            if own_wcs or scope is not None:
                 rows = [r for r in rows if len(r) > 2 and r[2] in own_wcs]
         else:
             # zaga row: [order, sku, plant, ordqty, deliv, conf, date, name, status]
             catalog_skus = {p.sap_code for p in products}
-            if catalog_skus:
+            if catalog_skus or scope is not None:
                 rows = [r for r in rows if len(r) > 1 and r[1] in catalog_skus]
     return {
         "present": True, "file_type": file_type, "date": day.isoformat(),
