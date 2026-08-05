@@ -214,10 +214,17 @@ Topgan sana-vaqtni image_date ga QANDAY YOZILGAN bo'lsa shundayligicha ko'chir
 (bir nechta rasm bo'lsa vergul bilan). Mahalliy format KUN.OY.YIL, ya'ni
 04.08.2026 = 2026-yil 4-avgust (4-yanvar emas).
 
+YIL haqida: bu manbalar ko'pincha yilni umuman ko'rsatmaydi — macOS menyu satri
+odatda faqat «Sesh 4 Avg 14:22» deb yozadi, Windows va kamera esa to'liq sana
+beradi. Yil ko'rinmasligi KAMCHILIK EMAS: bunday holda faqat KUN va OYni
+solishtir va ular oynaga to'g'ri kelsa date_ok=true qo'y. Yil ko'rsatilmagani
+uchun date_ok=false qilma. Oy nomi qisqartma bo'lishi mumkin (Avg / Авг / Aug —
+avgust).
+
 - Uch manbadan hech biri ko'rinmasa (yoki faqat hujjat ichidagi sana bo'lsa) —
   image_date="" va date_ok=false.
-- Faqat SOAT ko'rinib, sana ko'rinmasa — image_date ga o'sha soatni yoz, lekin
-  date_ok=false: qaysi kun ekanini tasdiqlab bo'lmaydi.
+- Faqat SOAT ko'rinib, kun ham oy ham ko'rinmasa — image_date ga o'sha soatni
+  yoz, lekin date_ok=false: qaysi kun ekanini tasdiqlab bo'lmaydi.
 - Biror rasmning vaqti yuqoridagi oynadan tashqarida bo'lsa — date_ok=false.
 - Hammasi oyna ichida bo'lsa — date_ok=true.
 
