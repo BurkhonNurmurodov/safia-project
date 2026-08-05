@@ -525,13 +525,17 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
         </span>
       </div>
       <div className="flex items-end justify-between gap-2 min-w-0">
-        {fit ? (
+        {loading ? (
+          // While the fetch is in flight the value is unknown, not missing — a
+          // pulsing block says "coming", where a static "—" says "nothing here".
+          <SkeletonBlock className="h-6 w-20" />
+        ) : fit ? (
           <FitText full={fitFull} short={abbrevName(fitFull)} className="flex-1"
             style={{ color: valueColor || "var(--text-1)" }} />
         ) : (
           <span className="text-2xl font-bold tabular-nums leading-none truncate" style={{ color: valueColor || "var(--text-1)" }}>{value}</span>
         )}
-        {badge != null && (
+        {!loading && badge != null && (
           <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded-md flex-shrink-0 leading-none"
             style={{ background: hexA(badgeColor, 0.15), color: badgeColor }}>{badge}</span>
         )}
