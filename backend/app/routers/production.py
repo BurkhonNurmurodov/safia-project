@@ -147,6 +147,9 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     Everyone else is refused. Shift scope is enforced here (not only in the
     picker) so a shift-manager can't reach another shift by forging manager_id.
 
+        leader        → pinned to their own unit as well, and narrowed further to
+                        the cells they own (see _leader_wc_scope).
+
     A personal ``page.view.production`` grant at "all" is the one way out of
     those pins: it makes the caller reach every configured unit, whatever their
     role — with their own unit still the default when no manager_id is sent, so
@@ -154,7 +157,7 @@ def _resolve_manager_id(payload: dict, requested: Optional[int], db: Session) ->
     """
     role = payload.get("role")
     sees_all = page_scope_is_all(db, payload, "production")
-    if role == "supervisor" and not (sees_all and requested):
+    if role in ("supervisor", "leader") and not (sees_all and requested):
         mid = payload.get("role_id")
         if not mid:
             raise HTTPException(status_code=403, detail="No unit assigned to this supervisor")
