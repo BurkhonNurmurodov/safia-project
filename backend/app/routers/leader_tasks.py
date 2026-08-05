@@ -340,18 +340,23 @@ def put_channel(body: ChannelIn, db: Session = Depends(get_db), _: dict = Depend
     return {"ok": True, "chat_id": chat_id}
 
 
-# ── Admin: bot-submission dashboard data ──────────────────────────────────────
-# The admin-only COPY of the leaders monitoring page (/leaders-bot) is driven by
-# this. Deliberately independent of /api/leaders: bot data and the Google-Sheet
-# data never mix — two pages, two sources.
+# ── Admin: bot-submission register + clear tool ───────────────────────────────
+# The dashboard itself reads bot days through /api/leaders (merged with the
+# sheet). These two endpoints exist for the «Tozalash» tab on the Shift 2
+# monitoring page: they list the raw submissions and delete the ones the admin
+# picked — test runs, wrong-day answers, a leader who filed for someone else.
+#
+# CLOSED days only, deliberately: an open day is a leader mid-checklist, and
+# pulling the table out from under a running /tasks flow would strand them. A
+# bygone open day auto-closes on that leader's next /tasks and becomes
+# deletable then.
 
-@router.get("/admin/leaders-bot")
-def leaders_bot(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    days = (
-        db.query(LeaderTaskDay)
-        .filter(LeaderTaskDay.closed_at.isnot(None))
-        .all()
-    )
+@router.get("/admin/leader-tasks/submissions")
+def list_submissions(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """Every closed bot day plus what deleting it would take away (task
+    answers, proof photos), and the units/leaders that actually filed — so the
+    tab's pickers only ever offer values that match something."""
+    days = leader_bot.closed_days(db, shift=None)
     profs = {
         p.id: p
         for p in db.query(RoleProfile)
@@ -360,60 +365,124 @@ def leaders_bot(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     } if days else {}
     mgrs = {m.id: m for m in db.query(Manager).all()}
 
-    day_ids = [d.id for d in days]
-    entries_by_day: dict[int, list] = {}
-    if day_ids:
-        for e in db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(day_ids)).all():
-            entries_by_day.setdefault(e.day_id, []).append(e)
-    entry_ids = [e.id for es in entries_by_day.values() for e in es]
-    media_by_entry: dict[int, list] = {}
-    if entry_ids:
-        for m in (db.query(LeaderTaskMedia)
-                  .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
-                  .order_by(LeaderTaskMedia.pos)
-                  .all()):
-            media_by_entry.setdefault(m.entry_id, []).append(m.id)
+    by_day = leader_bot.entries_of(db, days)
+    entry_ids = [e.id for es in by_day.values() for e in es]
+    media_by_entry = leader_bot.media_of(db, entry_ids)
 
-    data = []
+    rows = []
     for d in days:
         prof = profs.get(d.leader_id)
-        if not prof:
-            continue
         mgr = mgrs.get(d.manager_id)
-        data.append({
-            "uid": f"bot-{d.id}",
+        entries = by_day.get(d.id, [])
+        rows.append({
+            "id": d.id,
             "date": d.date,
-            "submitted_at": d.closed_at.isoformat() if d.closed_at else None,
+            "leader_id": d.leader_id,
+            "leader": prof.name if prof else f"#{d.leader_id}",
+            "manager_id": d.manager_id,
             "supervisor": mgr.name if mgr else "N/A",
             "shift": mgr.shift if mgr else None,
-            "leader": prof.name,
+            "tasks": len(entries),
+            "done": sum(1 for e in entries if e.done),
+            "media": sum(len(media_by_entry.get(e.id, [])) for e in entries),
             "completion": float(d.completion or 0),
-            "tasks": [
-                {
-                    "id": e.task_id,
-                    "done": bool(e.done),
-                    "answered": True,
-                    "photo": "",
-                    "reason": e.reason or "",
-                    "media": media_by_entry.get(e.id, []),
-                }
-                for e in sorted(entries_by_day.get(d.id, []), key=lambda e: e.task_id)
-            ],
+            "closed_at": d.closed_at.isoformat() if d.closed_at else None,
         })
-    data.sort(key=lambda r: str(r["date"]), reverse=True)
-    return {"role": "admin", "last_synced": None, "data": data}
+    rows.sort(key=lambda r: (str(r["date"]), r["leader"]), reverse=True)
+
+    # Pickers, built from what's actually in the register.
+    sup_ids = {r["manager_id"] for r in rows}
+    lead_ids = {r["leader_id"] for r in rows}
+    return {
+        "rows": rows,
+        "supervisors": sorted(
+            ({"id": i, "name": mgrs[i].name if i in mgrs else f"#{i}",
+              "shift": mgrs[i].shift if i in mgrs else None} for i in sup_ids),
+            key=lambda s: s["name"],
+        ),
+        "leaders": sorted(
+            ({"id": i, "name": profs[i].name if i in profs else f"#{i}"} for i in lead_ids),
+            key=lambda l: l["name"],
+        ),
+    }
 
 
-# ── Viewer: proof-photo streaming for the /leaders-bot detail modal ───────────
+class DeleteSubmissions(BaseModel):
+    ids: list[int]
+
+
+@router.post("/admin/leader-tasks/submissions/delete")
+def delete_submissions(
+    body: DeleteSubmissions,
+    db: Session = Depends(get_db),
+    admin: dict = Depends(verify_admin),
+):
+    """Permanently drop the picked bot days — the day rows, their task answers
+    and the media ROWS. The photos themselves stay in the archive channel: that
+    channel is the audit trail, and Telegram refuses deletes past 48h anyway,
+    so a half-succeeding sweep would be worse than none."""
+    ids = [int(i) for i in (body.ids or [])]
+    if not ids:
+        raise HTTPException(status_code=400, detail="Nothing selected")
+
+    days = (
+        db.query(LeaderTaskDay)
+        .filter(LeaderTaskDay.id.in_(ids), LeaderTaskDay.closed_at.isnot(None))
+        .all()
+    )
+    if not days:
+        raise HTTPException(status_code=404, detail="No matching closed days")
+
+    day_ids = [d.id for d in days]
+    entries = db.query(LeaderTaskEntry).filter(LeaderTaskEntry.day_id.in_(day_ids)).all()
+    entry_ids = [e.id for e in entries]
+    n_media = 0
+    if entry_ids:
+        n_media = (
+            db.query(LeaderTaskMedia)
+            .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
+            .delete(synchronize_session=False)
+        )
+    n_entries = (
+        db.query(LeaderTaskEntry)
+        .filter(LeaderTaskEntry.day_id.in_(day_ids))
+        .delete(synchronize_session=False)
+    )
+    n_days = (
+        db.query(LeaderTaskDay)
+        .filter(LeaderTaskDay.id.in_(day_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    log.info(
+        "leader-tasks: %s deleted %d bot day(s), %d entries, %d media rows (ids=%s)",
+        _actor(admin), n_days, n_entries, n_media, day_ids,
+    )
+    return {"days": n_days, "entries": n_entries, "media": n_media}
+
+
+# ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────
+# Was admin-only while bot data lived on its own admin page. Shift-2 rows now
+# merge into /api/leaders for every role, so the photos have to open with them —
+# gated by the page and then re-checked per photo against the row it belongs to,
+# because a media id is a bare integer anyone with the page could enumerate.
 
 @router.get("/api/leader-tasks/media/{media_id}")
 def leader_task_media(
     media_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_admin),
+    payload: dict = Depends(require_page("leaders")),
 ):
     m = db.query(LeaderTaskMedia).filter_by(id=media_id).first()
     if not m:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    entry = db.query(LeaderTaskEntry).filter_by(id=m.entry_id).first()
+    day = db.query(LeaderTaskDay).filter_by(id=entry.day_id).first() if entry else None
+    if not day or not leader_bot.visible_day(
+        db, day, payload, sees_all=page_scope_is_all(db, payload, "leaders")
+    ):
+        # 404, not 403: whether a photo exists is itself somebody else's data.
         raise HTTPException(status_code=404, detail="Media not found")
 
     meta = _tg_file_meta(m.file_id)
