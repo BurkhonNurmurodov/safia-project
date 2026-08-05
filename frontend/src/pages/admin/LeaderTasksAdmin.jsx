@@ -188,6 +188,7 @@ export default function LeaderTasksAdmin() {
       lid: p.id, mid, tid: task.id, hasOv: !!ov, when: "now",
       enabled: eff.enabled, min_media: eff.min_media, weight: eff.weight,
       names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || ""])),
+      criteria: ov?.criteria || "",
     });
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
