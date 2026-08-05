@@ -365,7 +365,7 @@ export default function LeaderTasksAdmin() {
                             <td key={task.id}>
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, when: "now" })}
+                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
                                 {c.weight}%
