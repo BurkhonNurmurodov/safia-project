@@ -148,6 +148,24 @@ def get_leaders(
         managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
     )
 
+    # unit id → the spelling the SHEET rows print for it (the most frequent one
+    # when the form collected several). Bot rows adopt it, because a unit that
+    # answered under two different names splits its own supervisor picker entry
+    # and its own standings row. Built before the scoping pass so the label a
+    # unit carries never depends on who is looking. Units the sheet never named
+    # fall back to Manager.name inside dashboard_rows().
+    _spellings: dict[int, dict[str, int]] = {}
+    for r in rows:
+        mid = (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
+        if mid is not None:
+            seen = _spellings.setdefault(mid, {})
+            name = _relabel(r.supervisor)
+            seen[name] = seen.get(name, 0) + 1
+    sup_display = {
+        mid: max(seen.items(), key=lambda kv: (kv[1], kv[0]))[0]
+        for mid, seen in _spellings.items()
+    }
+
     if role == "supervisor" and not sees_all:
         # Scope by the matched unit id, not name equality: the sheet name never
         # string-equals the JWT/Manager short canonical name (alphabet + patronymic
