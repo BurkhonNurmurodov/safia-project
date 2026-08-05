@@ -1090,14 +1090,15 @@ export default function Leaders({ shiftLock = null }) {
   const isAdmin = auth?.role === "admin";
   // The refresh button is shown to every profile that can open this page — the
   // backend allows the "leaders" sheet re-sync for anyone with page access, and
-  // each still only reads their own scoped rows afterwards. Bot mode has no
-  // sheet to sync, so no refresh at all.
-  const canRefresh = !botMode;
+  // each still only reads their own scoped rows afterwards. The sheet is still
+  // the history behind both shifts, so both locked pages keep it.
+  const canRefresh = true;
+  const pageTitle = shiftLock ? `${T.title} · ${shiftLock === 1 ? T.shift1 : T.shift2}` : T.title;
 
-  // Filters persist across visits, namespaced per route — /leaders and
-  // /leaders-bot are the same component but must not share saved state.
-  // botMode is fixed for the lifetime of a mount, so the keys are stable.
-  const prefix = botMode ? "leadersbot" : "leaders";
+  // Filters persist across visits, namespaced per route — the unlocked page and
+  // the two shift pages are one component but must not share saved state.
+  // shiftLock is fixed for the lifetime of a mount, so the keys are stable.
+  const prefix = shiftLock ? `leaders${shiftLock}` : "leaders";
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
