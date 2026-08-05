@@ -33,10 +33,16 @@ const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
-  { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck },
-  // Admin-only copy of leaders monitoring, fed by the in-bot checklist —
-  // independent of the sheet-driven page above (no page-access key).
-  { to: "/leaders-bot", adminOnly: true, key: "nav.leadersBot", icon: Bot },
+  // Leader monitoring. Admins and top-managers oversee both shifts, so for them
+  // it splits into one entry per shift; everybody else stays inside their own
+  // shift anyway and gets the single unlocked page. Same route component, same
+  // feed — shift 2's days come from the bot once the leader closed one there.
+  { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck,
+    hideRoles: ["admin", "top-manager"] },
+  { to: "/leaders-shift1", page: "leaders", key: "nav.leadersShift1", icon: ClipboardCheck,
+    onlyRoles: ["admin", "top-manager"] },
+  { to: "/leaders-shift2", page: "leaders", key: "nav.leadersShift2", icon: Bot,
+    onlyRoles: ["admin", "top-manager"] },
   { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
