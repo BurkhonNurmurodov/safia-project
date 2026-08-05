@@ -267,7 +267,7 @@ export default function BotDataClear() {
           </>
         )}
         <Button
-          variant="danger" size="lg" icon={Trash2}
+          variant="danger" size="lg" icon={<Trash2 size={14} />}
           disabled={armed.length === 0}
           onClick={() => openConfirm(armed.map((r) => r.id))}
         >
