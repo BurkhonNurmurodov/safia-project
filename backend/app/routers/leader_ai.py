@@ -140,10 +140,16 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
 
     out = {}
     for rev in db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all():
+        lo, hi = leader_ai.date_window(rev.date, rev.shift)
         out[str(refs[rev.ref])] = {
             "status": rev.status,
             "flags": rev.flags or [],
             "imageDate": rev.image_date,
+            # The window the verdict was measured against, from the SAME
+            # function the checker used — a date flag is only actionable if you
+            # can see what the photo was supposed to fall inside, and a second
+            # copy of the shift rule in the client would eventually disagree.
+            "expected": f"{lo} — {hi}",
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
             "photos": rev.photos,
             "error": rev.error,
