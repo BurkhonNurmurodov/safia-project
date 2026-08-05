@@ -104,22 +104,12 @@ def generate_json(
             "responseSchema": schema,
         },
     }
-    # 2.5 models think by default; the reviewer is a short, bounded judgement
-    # and thinking tokens are billed/quota'd like any other.
-    if mdl.startswith("gemini-2.5"):
-        body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
-
     url = f"{_BASE}/{mdl}:generateContent"
     headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
 
     try:
         with httpx.Client(timeout=_TIMEOUT) as client:
             res = client.post(url, headers=headers, json=body)
-            # An older/served-differently model can reject thinkingConfig
-            # outright; retry once without it rather than losing the feature.
-            if res.status_code == 400 and "thinkingConfig" in body["generationConfig"]:
-                body["generationConfig"].pop("thinkingConfig")
-                res = client.post(url, headers=headers, json=body)
     except httpx.HTTPError as exc:
         raise GeminiError(f"Gemini unreachable: {exc}") from exc
 
