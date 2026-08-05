@@ -243,7 +243,16 @@ def _parse_date(s: Optional[str]) -> date:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
 
-def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
+def _build_dashboard(db: Session, manager_id: int, day: date,
+                     wc_scope: Optional[set[str]] = None) -> dict:
+    """The unit's dashboard for one day, optionally narrowed to ``wc_scope`` —
+    the work centers of a leader's own cells.
+
+    The narrowing happens on the INPUTS (catalog, work centers, day snapshot,
+    staffing pins), so every derived number the engine returns — totals, KPIs,
+    Парето, unknown SKUs — is computed over the scoped set instead of being
+    filtered afterwards, and the page adds up on its own terms.
+    """
     products = (
         db.query(PPProduct)
         .filter(PPProduct.manager_id == manager_id, PPProduct.active.is_(True))
@@ -259,6 +268,11 @@ def _build_dashboard(db: Session, manager_id: int, day: date) -> dict:
     daily = db.query(PPDaily).filter(PPDaily.manager_id == manager_id, PPDaily.date == day).all()
     wc_daily = db.query(PPWorkCenterDaily).filter(
         PPWorkCenterDaily.manager_id == manager_id, PPWorkCenterDaily.date == day).all()
+    if wc_scope is not None:
+        products = [p for p in products if _in_scope(wc_scope, p.work_center)]
+        wcs = [w for w in wcs if _in_scope(wc_scope, w.code)]
+        daily = [d for d in daily if _in_scope(wc_scope, d.work_center)]
+        wc_daily = [o for o in wc_daily if _in_scope(wc_scope, o.work_center)]
     wc_overrides = {o.work_center: {"people": o.people, "shtatka": o.shtatka} for o in wc_daily}
 
     quantities: dict[tuple[str, str], dict] = {}
