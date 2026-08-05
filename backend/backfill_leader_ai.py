@@ -311,40 +311,142 @@ def main() -> int:
 
         # ── the run ──────────────────────────────────────────────────────────
         return _run(db, ids, leaders, tasks, args, st,
-                    leader_ai=leader_ai, gemini=gemini)
+                    leader_ai=leader_ai, gemini=gemini, Review=LeaderAiReview)
     finally:
         if holding:
             leader_ai._db_unlock(db)
         db.close()
 
 
-def _run(db, ids, leaders, tasks, args, st, *, leader_ai, gemini) -> int:
+# Flags are reported in the summary by name, so a run tells you WHAT the AI
+# doubted across the whole backfill, not just how much.
+_FLAG_LABEL = {
+    "date_mismatch": "date outside the shift window",
+    "no_date":       "no capture timestamp on the photo",
+    "not_proven":    "photo does not show the work done",
+    "unreadable":    "photo unreadable",
+}
+
+
+def _run(db, ids, leaders, tasks, args, st, *, leader_ai, gemini, Review) -> int:
     prog = Progress(len(ids), st, live=_TTY)
     interval = 60.0 / max(args.rpm, 0.1)
-    quota_hits = 0
+    flag_totals: dict[str, int] = {}
+    errors: dict[str, int] = {}
+    quota_stops = 0
     stopping = {"now": False}
 
     def _sigint(_sig, _frm):
-        # First Ctrl-C finishes the review in flight and exits cleanly; the
-        # second is the operating system's problem. Killing mid-request would
-        # spend a call and record nothing.
+        # The first Ctrl-C finishes the review in flight and exits cleanly; a
+        # second one forces out. Dying mid-request would spend a call from the
+        # daily quota and record nothing for it.
         if stopping["now"]:
             raise KeyboardInterrupt
         stopping["now"] = True
-        prog.log(f"{st.yellow}Stopping after the current item… (Ctrl-C again to force){st.off}")
+        prog.log(f"{st.yellow}Stopping after this item… (Ctrl-C again to force){st.off}")
 
     signal.signal(signal.SIGINT, _sigint)
 
     print()
     prog.draw()
-    started = time.time()
     for rid in ids:
         if stopping["now"]:
             break
-        rev = db.get(LeaderAiReview_of(db), rid) if False else db.get(type(_probe(db)), rid)
-        break
-    return 0
+        rev = db.get(Review, rid)
+        if rev is None or rev.status in ("ok", "flagged"):
+            continue  # reviewed by something else since the list was built
+
+        who = ellipsis(leaders.get(rev.leader_id) or "?", 24)
+        what = ellipsis(tasks.get(rev.task_id, ""), 34)
+        head = (f"{st.dim}{rev.date}{st.off}  {who:24s}  "
+                f"{st.dim}T{rev.task_id:<2d}{st.off} {what:34s}")
+
+        t0 = time.time()
+        try:
+            leader_ai.review_one(db, rev)
+        except gemini.GeminiQuotaError as exc:
+            # Per-minute caps recover on their own, so back off and retry the
+            # same row rather than burning it. A daily cap never recovers today,
+            # which is what the escalating waits and the give-up are for.
+            quota_stops += 1
+            if quota_stops > 3:
+                prog.close()
+                print(f"\n{st.yellow}Quota exhausted — stopping.{st.off} {exc}\n"
+                      f"Nothing is lost: {prog.total - prog.n} item(s) stay queued. "
+                      f"Re-run this command tomorrow to continue.")
+                break
+            wait = 60 * quota_stops
+            prog.log(f"{st.yellow}Rate limited — waiting {wait}s "
+                     f"({quota_stops}/3){st.off}")
+            _sleep(wait, stopping)
+            if stopping["now"]:
+                break
+            try:
+                leader_ai.review_one(db, rev)
+            except gemini.GeminiQuotaError:
+                continue  # still capped; leave it pending and move on
+        except Exception as exc:  # never let one bad row end a long backfill
+            rev.status, rev.error = "error", str(exc)[:500]
+            db.commit()
+
+        took = time.time() - t0
+        if rev.status == "flagged":
+            for f in (rev.flags or []):
+                flag_totals[f] = flag_totals.get(f, 0) + 1
+            tail = (f"{st.yellow}⚑ {', '.join(rev.flags or [])}{st.off}"
+                    f"  {st.dim}{ellipsis(rev.image_date or '—', 22)}{st.off}")
+        elif rev.status == "error":
+            key = ellipsis(rev.error or "unknown", 70)
+            errors[key] = errors.get(key, 0) + 1
+            tail = f"{st.red}✗ {ellipsis(rev.error or '', 46)}{st.off}"
+        else:
+            quota_stops = 0  # a clean call means the window reopened
+            tail = f"{st.green}✓ ok{st.off}  {st.dim}{ellipsis(rev.image_date or '—', 22)}{st.off}"
+
+        prog.tally(rev.status)
+        prog.log(f"{head} {tail} {st.dim}{took:.1f}s{st.off}")
+        prog.heartbeat()
+
+        # Throttle on the gap we actually have left, not a flat sleep: the
+        # review itself already took `took` seconds of the interval.
+        if not stopping["now"]:
+            _sleep(max(0.0, interval - took), stopping)
+
+    prog.close()
+    _summary(prog, flag_totals, errors, st, leader_ai, db)
+    return 130 if stopping["now"] else 0
 
 
-def _probe(db):
-    raise NotImplementedError
+def _sleep(seconds: float, stopping: dict) -> None:
+    """Interruptible sleep — a Ctrl-C during a rate-limit wait should be felt
+    immediately, not after the full minute."""
+    end = time.time() + seconds
+    while time.time() < end and not stopping["now"]:
+        time.sleep(min(0.25, end - time.time()))
+
+
+def _summary(prog, flag_totals, errors, st, leader_ai, db) -> None:
+    el = time.time() - prog.started
+    print(f"\n{st.bold}Done.{st.off}  {prog.n} reviewed in {hms(el)} "
+          f"({prog.rate():.1f}/min)")
+    print(f"  {st.green}clean    {prog.ok}{st.off}")
+    print(f"  {st.yellow}flagged  {prog.flagged}{st.off}")
+    print(f"  {st.red}errors   {prog.err}{st.off}")
+
+    if flag_totals:
+        print(f"\n{st.bold}Why they were flagged{st.off}  "
+              f"{st.dim}(one report-task can carry several){st.off}")
+        for f, n in sorted(flag_totals.items(), key=lambda kv: -kv[1]):
+            print(f"  {n:6d}  {_FLAG_LABEL.get(f, f)}")
+
+    if errors:
+        print(f"\n{st.bold}Errors{st.off}")
+        for msg, n in sorted(errors.items(), key=lambda kv: -kv[1])[:8]:
+            print(f"  {n:6d}  {msg}")
+        print(f"  {st.dim}Re-run with --retry-errors once the cause is fixed "
+              f"(Drive permissions, bot token, model name).{st.off}")
+
+    left = leader_ai.counts(db)
+    if left["pending"] or left["error"]:
+        print(f"\n{left['pending']} pending · {left['error']} failed still queued. "
+              f"Re-run to continue.")
