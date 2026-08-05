@@ -104,7 +104,9 @@ const TXT = {
     photoFailed: "Rasm yuklanmadi", retry: "Qayta urinish",
   },
   uz_cyrl: {
-    title: "Лидер назорати", titleBot: "Лидер назорати · Бот", avgSuccess: "Ўртача муваффақият", timePeriod: "Давр", shift: "Смена",
+    title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
+    tabMonitor: "Мониторинг", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
+    avgSuccess: "Ўртача муваффақият", timePeriod: "Давр", shift: "Смена",
     supervisor: "Бригадир", allSups: "Барча бригадирлар", leader: "Лидер", allLeaders: "Барча лидерлар",
     trend: "Бажарилиш динамикаси", taskTitle: "Вазифалар кесимида муваффақият",
     standing: "Лидерлар рейтинги", supStanding: "Бригадирлар рейтинги",
