@@ -196,7 +196,9 @@ const TXT = {
     photoFailed: "Не удалось загрузить фото", retry: "Повторить",
   },
   en: {
-    title: "Leader Monitoring", titleBot: "Leader Monitoring · Bot", avgSuccess: "Average Success", timePeriod: "Period", shift: "Shift",
+    title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
+    tabMonitor: "Monitoring", tabClear: "Clear data", srcBot: "Filed in bot",
+    avgSuccess: "Average Success", timePeriod: "Period", shift: "Shift",
     supervisor: "Supervisor", allSups: "All Supervisors", leader: "Leader", allLeaders: "All Leaders",
     trend: "Completion Trend", taskTitle: "Success per Task",
     standing: "Leader Standings", supStanding: "Supervisor Standings",
