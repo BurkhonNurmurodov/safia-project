@@ -498,9 +498,11 @@ def drain(db: Session, limit: int | None = None) -> dict:
 def counts(db: Session) -> dict:
     """Queue state for the admin strip."""
     out = {"pending": 0, "ok": 0, "flagged": 0, "error": 0}
-    for status, n in (db.query(LeaderAiReview.status, func_count())
+    for status, n in (db.query(LeaderAiReview.status, func.count(LeaderAiReview.id))
                       .group_by(LeaderAiReview.status).all()):
         out[status] = n
+    # Rows that burned their retries: they will never drain on their own, so
+    # the strip has to say so rather than showing a queue that looks alive.
     out["stuck"] = (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status == "error",
@@ -508,11 +510,6 @@ def counts(db: Session) -> dict:
         .count()
     )
     return out
-
-
-def func_count():
-    from sqlalchemy import func
-    return func.count()
 
 
 # ── background kick ──────────────────────────────────────────────────────────
