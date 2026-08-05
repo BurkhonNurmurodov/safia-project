@@ -472,6 +472,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     rev.error = None
     rev.reviewed_at = datetime.now(timezone.utc)
     db.commit()
+    return "done"
 
 
 def drain(db: Session, limit: int | None = None) -> dict:
