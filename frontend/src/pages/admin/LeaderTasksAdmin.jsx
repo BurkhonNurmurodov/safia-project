@@ -144,7 +144,11 @@ export default function LeaderTasksAdmin() {
   }, [leaders]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {} };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null };
+  // The definition of done actually in force for a cell, walking the same
+  // chain the backend reviewer walks: leader → supervisor → global.
+  const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
+  const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
   const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
   const getOv = (lid, tid) => leaderSettings[String(lid)]?.[String(tid)] ?? null;
   const leadEff = (lid, mid, tid) => {
