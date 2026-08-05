@@ -718,7 +718,7 @@ function AiChip({ n, T }) {
 // The strip at the foot of a task card. `rev` is one entry of
 // GET /api/leader-ai/report — absent means this task was never queued (no
 // photos, or answered "no"), and absent must render nothing at all.
-function AiReview({ rev, T, lang, canCheck, checking, onCheck }) {
+function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
   const [open, setOpen] = useState(false);
   const judged = rev && (rev.status === "ok" || rev.status === "flagged");
 
