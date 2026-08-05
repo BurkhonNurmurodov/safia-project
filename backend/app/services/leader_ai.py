@@ -312,16 +312,22 @@ def discover(db: Session) -> int:
         rows = db.query(LeaderChecklist).order_by(LeaderChecklist.date.desc()).all()
         if rows:
             managers = db.query(Manager).all()
-            sup = supervisor_match(managers, {r.supervisor for r in rows if r.supervisor})
+            # Relabel BEFORE matching, exactly as /api/leaders does: the unit
+            # decides the shift, and the shift decides which timestamps count
+            # as on time. A mismatched unit would judge every night photo of a
+            # relabeled row against the wrong window.
+            sup = supervisor_match(
+                managers, {relabel_supervisor(r.supervisor) for r in rows if r.supervisor}
+            )
             lead = leader_match(
                 db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
-                {(r.leader, (sup.get(r.supervisor) or {}).get("id"))
+                {(r.leader, (sup.get(relabel_supervisor(r.supervisor)) or {}).get("id"))
                  for r in rows if r.leader},
             )
             for r in rows:
                 if added >= DISCOVER_CAP:
                     break
-                info = sup.get(r.supervisor) or {}
+                info = sup.get(relabel_supervisor(r.supervisor)) or {}
                 who = lead.get((r.leader, info.get("id"))) or {}
                 for tk in (r.tasks or []):
                     if not tk.get("done") or not _sheet_photos(tk):
