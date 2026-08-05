@@ -1702,14 +1702,14 @@ export default function Leaders({ shiftLock = null }) {
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
-  return (
-    <Layout title={botMode ? T.titleBot : T.title}>
-      {/* header: title + last-updated + refresh (right side, all profiles) */}
+  // Header + view tabs are shared by both views, so they are built once here
+  // and the clear tab returns early below with the same chrome above it.
+  const headerBar = (
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{botMode ? T.titleBot : T.title}</h2>
+          <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{pageTitle}</h2>
           {/* phones can't spare a whole pill row — updated time rides under the title */}
-          {!botMode && (
+          {tab === "monitor" && (
           <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }} title={lastSynced || T.never}>
             <CalendarClock size={12} style={{ color: "var(--brand-text)" }} />
             {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
@@ -1717,13 +1717,13 @@ export default function Leaders({ shiftLock = null }) {
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {!botMode && (
+          {tab === "monitor" && (
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
             <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
             {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
           </span>
           )}
-          {canRefresh && (
+          {canRefresh && tab === "monitor" && (
             <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
               aria-label={T.refresh} title={T.refresh}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
@@ -1738,6 +1738,29 @@ export default function Leaders({ shiftLock = null }) {
           )}
         </div>
       </div>
+  );
+
+  const tabsBar = showClearTab ? (
+    <div className="mb-3">
+      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
+        options={[["monitor", T.tabMonitor], ["clear", T.tabClear]]} />
+    </div>
+  ) : null;
+
+  if (tab === "clear") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {tabsBar}
+        <BotDataClear />
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout title={pageTitle}>
+      {headerBar}
+      {tabsBar}
 
       {/* Filters */}
       <div className="flex flex-wrap items-start gap-3 mb-3">
