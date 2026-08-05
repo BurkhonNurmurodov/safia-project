@@ -224,12 +224,15 @@ def main() -> int:
     try:
         # ── stats ────────────────────────────────────────────────────────────
         counts = leader_ai.counts(db)
+        # Built as plain strings, not nested f-strings: quoting an f-string's
+        # own quote inside it needs Python 3.12+, and the cPanel Python App may
+        # be older than that.
+        keyless = "" if gemini.available() else st.red + "   (no GEMINI_API_KEY!)" + st.off
+        stuck = f" ({counts['stuck']} out of retries)" if counts.get("stuck") else ""
         print(f"{st.bold}AI proof review — backfill{st.off}")
-        print(f"  model        {settings.gemini_model}"
-              f"{'' if gemini.available() else st.red + '   (no GEMINI_API_KEY!)' + st.off}")
+        print(f"  model        {settings.gemini_model}{keyless}")
         print(f"  queue        {counts['pending']} pending · {counts['ok']} ok · "
-              f"{counts['flagged']} flagged · {counts['error']} errors"
-              f"{f' ({counts['stuck']} out of retries)' if counts.get('stuck') else ''}")
+              f"{counts['flagged']} flagged · {counts['error']} errors{stuck}")
         if args.stats:
             return 0
 
