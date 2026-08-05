@@ -661,7 +661,7 @@ def list_production_managers(
     role = payload.get("role")
     sees_all = page_scope_is_all(db, payload, "production")
     q = db.query(Manager).filter(Manager.archived.is_(False))
-    if role == "supervisor" and not sees_all:
+    if role in ("supervisor", "leader") and not sees_all:
         mgrs = q.filter(Manager.id == payload.get("role_id")).all()
     elif sees_all or role in ("admin", "top-manager", "shift-manager"):
         if role == "shift-manager" and not sees_all:
