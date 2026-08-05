@@ -62,6 +62,10 @@ DISCOVER_CAP = 5000
 # A row that keeps failing (unreachable photo, model refusal) stops being
 # retried, else the queue head never clears and blocks fresh reports behind it.
 MAX_ATTEMPTS = 3
+# Consecutive API-level failures that end a drain. Anything the model itself
+# rejects (retired model id, revoked key) fails identically for every row, so
+# walking the rest of the batch only spends their retries on someone else's bug.
+_ERROR_STREAK_ABORT = 5
 
 _TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 _TG_API = "https://api.telegram.org"
