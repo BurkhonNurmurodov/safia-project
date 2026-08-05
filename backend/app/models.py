@@ -1142,6 +1142,52 @@ class LeaderTaskMedia(Base):
     pos        = Column(Integer, nullable=False, default=0)
 
 
+class LeaderAiReview(Base):
+    """One AI verdict on one task's proof photos, for either collection layer.
+
+    Keyed by `ref`, a stable string built in services/leader_ai.py — the bot
+    entry id, or the form's submission id + task number. It deliberately does
+    NOT key on leader_checklists.id: the leaders sheet syncs by wipe-and-reload,
+    so a row id changes on every Refresh and would re-review the whole history.
+
+    A row exists from the moment the report is discovered (`status="pending"`),
+    so the queue IS this table — a drain looks for pending rows rather than
+    diffing two datasets. Verdicts are never recomputed once written; only
+    `error` rows are retried, bounded by `attempts`.
+    """
+    __tablename__ = "leader_ai_reviews"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    ref        = Column(String, nullable=False, unique=True, index=True)
+    source     = Column(String(8), nullable=False)          # "bot" | "sheet"
+    date       = Column(String(10), nullable=False, index=True)
+    task_id    = Column(Integer, nullable=False)
+    leader_id  = Column(Integer, nullable=True, index=True)  # role_profiles id when resolved
+    manager_id = Column(Integer, nullable=True)
+    shift      = Column(Integer, nullable=True)              # decides the date window
+
+    # pending → ok | flagged | skipped | error
+    status     = Column(String(10), nullable=False, default="pending", index=True)
+    # Machine-readable reasons, rendered as chips: "date_mismatch" | "no_date" |
+    # "not_proven" | "unreadable". Empty on a clean pass.
+    flags      = Column(JSON, nullable=False, default=list)
+    # The timestamp the model actually read off the image, verbatim, so an
+    # admin can judge the judge without opening the photo.
+    image_date = Column(String, nullable=True)
+    # The verdict prose, per language — the page renders it in the viewer's own.
+    reason_uz      = Column(Text, nullable=True)
+    reason_uz_cyrl = Column(Text, nullable=True)
+    reason_ru      = Column(Text, nullable=True)
+    reason_en      = Column(Text, nullable=True)
+
+    photos     = Column(Integer, nullable=False, default=0)  # images actually sent
+    model      = Column(String, nullable=True)
+    attempts   = Column(Integer, nullable=False, default=0)
+    error      = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class LeaderTaskPendingChange(Base):
     """A config edit STAGED to take effect from a future checklist day
     ("apply from next day"). The live config tables (leader_task_settings /
