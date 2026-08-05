@@ -341,18 +341,21 @@ export default function LeaderTasksAdmin() {
             <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3, tableLayout: "fixed", minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th className="text-left pr-2 font-semibold sticky left-0 top-0 z-20" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>{t("admin.ltasks.supervisor")}</th>
+                  <th className="text-left pr-2 pb-1.5 font-semibold align-bottom sticky left-0 top-0 z-20" style={{ color: "var(--text-3)", background: "var(--bg-card)", width: 170 }}>{t("admin.ltasks.supervisor")}</th>
                   {tasks.map((task) => (
                     <th key={task.id} className="align-bottom sticky top-0 z-10" style={{ background: "var(--bg-card)" }}>
+                      {/* block, not inline-block: an inline button aligns on the baseline of its
+                          LAST line, so one- vs two-line names staggered the whole header row. */}
                       <button type="button" title={tname(task)}
                         onClick={() => { const f = getCell(managers[0]?.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, criteria: task.criteria || "", when: "now" }); }}
-                        className="w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
+                        className="block w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
                         <span className="block font-bold leading-none">T{task.id}</span>
-                        {/* The name itself, on screen, in two lines — no hover required. */}
+                        {/* The name itself, on screen, in two lines — no hover required.
+                            minHeight reserves both lines so short names keep the chip the same height. */}
                         <span
                           className="block text-[9px] font-medium leading-tight mt-0.5 overflow-hidden"
-                          style={{ color: "var(--text-3)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
+                          style={{ color: "var(--text-3)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: "2.5em" }}
                         >
                           {tname(task)}
                         </span>
