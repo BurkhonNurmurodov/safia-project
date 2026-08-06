@@ -2514,6 +2514,10 @@ export default function Leaders({ shiftLock = null }) {
             // which collection layer this day came from — the sheet is silent
             // history, the bot is the live one for shift 2
             detail.source === "bot" ? T.srcBot : null,
+            // Why the day scored 0 despite the answers below being filled in.
+            // Spelled out in full here: the register's chip has room for a label,
+            // this is where somebody comes to argue with the number.
+            detail.rejected ? T.voidTitle : null,
           ].filter(Boolean).join(" · ") || null}
           onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
