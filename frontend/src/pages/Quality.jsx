@@ -866,8 +866,47 @@ export default function Quality() {
     const kept = brigSel.filter((b) => supShift[b] === shiftTab);
     if (kept.length !== brigSel.length) setBrigSel(kept);
   }, [shiftTab, isProd]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Leaders present in the rows the active tab can show, most-affected first.
+  const leadOpts = useMemo(() => {
+    const c = {};
+    for (const r of rows) {
+      if (!inView(r)) continue;
+      const k = leaderOf(r);
+      if (k) c[k] = (c[k] || 0) + 1;
+    }
+    return Object.keys(c).sort((a, b) => c[b] - c[a]);
+  }, [rows, view, cellMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cells, narrowed to the picked leader — a leader owns cells, so listing the
+  // other 100 under their name would be noise. Labelled «code · workshop name»
+  // (the same form the «Виновные ячейки» chart uses) so searching by the bare
+  // code the QA sheet carries still finds the cell.
+  const cellOpts = useMemo(() => {
+    const c = {};
+    for (const r of rows) {
+      if (!inView(r)) continue;
+      if (leadSel.length && !leadSel.includes(leaderOf(r))) continue;
+      const k = cellKey(r);
+      if (!k) continue;
+      const nm = cellNameOf(r, cellMap, lang) || r.fc || "";
+      const e = c[k] || (c[k] = { value: k, label: r.fc && r.fc !== nm ? `${r.fc} · ${nm}` : nm, n: 0 });
+      e.n++;
+    }
+    return Object.values(c).sort((a, b) => b.n - a.n);
+  }, [rows, view, leadSel, cellMap, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching leader strands a cell pick from another leader (0 rows, and it
+  // vanishes from the scoped dropdown) — drop it instead of leaving the page blank.
+  useEffect(() => {
+    if (!cellSel.length) return;
+    const ok = new Set(cellOpts.map((o) => o.value));
+    const kept = cellSel.filter((k) => ok.has(k));
+    if (kept.length !== cellSel.length) setCellSel(kept);
+  }, [leadSel, view]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const clearAllFilters = () => {
     setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
+    setLeadSel([]); setCellSel([]);
   };
 
   // ── charts ────────────────────────────────────────────────────────────────
