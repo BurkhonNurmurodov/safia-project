@@ -512,6 +512,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const distinctClockInOut = useMemo(() =>
     [...new Set(allWorkers.map(w => w.clock_in_out || ""))].sort(),
     [allWorkers]);
+  const distinctCells = useMemo(() =>
+    [...new Set(allWorkers.map(w => w._cell?.full).filter(Boolean))].sort(),
+    [allWorkers]);
 
   // Apply all filters
   const workers = useMemo(() => {
