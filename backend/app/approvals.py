@@ -35,7 +35,8 @@ class AlreadyHandled(Exception):
 
 # ── i18n ────────────────────────────────────────────────────────────────────
 
-_KIND_CODE = {"edit_request": "er", "edit_batch": "eb", "hr_document": "hr"}
+_KIND_CODE = {"edit_request": "er", "edit_batch": "eb", "hr_document": "hr",
+              "leader_late": "ll"}
 _CODE_KIND = {v: k for k, v in _KIND_CODE.items()}
 
 _MONTHS = {
