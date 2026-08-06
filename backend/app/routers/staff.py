@@ -2482,14 +2482,18 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 # stripped): once the name has left, the original unit isn't credited
                 # for the worker clocking in before their scheduled start.
                 att.manager_id        = target
+                if "target_cell" in payload:
+                    att.verifix_code  = payload.get("target_cell")
                 # No return → away runs T–O; carve-out → just the [T,R] stint.
                 att.clock_in_out      = plan.get("away_clock") or f'{plan["T"]}-{plan["O"]}'
                 att.hours_worked      = plan["part2"]
                 att.early_arrival_min = 0          # early stays on the original unit
                 att.effective_hours   = plan["part2"]
                 if plan["part1_eff"] > 0:
+                    # The before-T remainder stays credited to the worker's ORIGINAL cell.
                     row = Attendance(manager_id=doc.manager_id, date=doc.date, worker_name=None,
-                                     hours_worked=plan["part1_eff"])
+                                     hours_worked=plan["part1_eff"],
+                                     verifix_code=emp.get("old_verifix_code"))
                     db.add(row); db.flush()
                     leftover_id = row.id
                 emp["applied"] = {"side": "move", "leftover_id": leftover_id}
