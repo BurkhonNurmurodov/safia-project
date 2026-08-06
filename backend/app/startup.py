@@ -1403,6 +1403,34 @@ def repoint_shift_report_sheet() -> None:
         db.close()
 
 
+CELL_PEREN_WIPE_FLAG = "cell_perenaladka_wipe_2026_08_06"
+
+
+def wipe_cell_perenaladka_history() -> None:
+    """One-shot wipe of the hand-entered TEST rows in ``cell_perenaladka``
+    (2026-08-06). The /idle-cell Perenaladka tab now imports its historical
+    minutes from the shift report's per-cell «Переналадка» columns, and the
+    user chose to clear the trial data first so the sheet becomes the baseline
+    (sheet wins on every later conflict). Flag-guarded: runs exactly once, so
+    entries made on the page after the first import are never wiped again."""
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=CELL_PEREN_WIPE_FLAG).first():
+            return
+
+        n = db.query(CellPerenaladka).delete()
+        if n:
+            print(f"[startup] cell_perenaladka: wiped {n} test row(s) before the first sheet import")
+
+        db.add(AppSetting(key=CELL_PEREN_WIPE_FLAG, value="1"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] cell_perenaladka wipe skipped: {exc}")
+    finally:
+        db.close()
+
+
 ROLE_PROFILES_FLAG = "role_profiles_backfilled_v1"
 
 
