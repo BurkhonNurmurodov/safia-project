@@ -1169,6 +1169,9 @@ def escalate_concern(
             # Back to supervisor: the unit's brigadir holds it again.
             c.shift_manager_profile_id = None
             c.shift_manager_name = None
+        # supervisor → leader: the leader the concern was logged against takes
+        # it. The row already names them (leader_profile_id), so there is no
+        # picker and nothing to assign — only the level moves.
     else:
         raise HTTPException(status_code=400, detail="Invalid direction")
 
