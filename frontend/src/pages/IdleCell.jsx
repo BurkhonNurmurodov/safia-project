@@ -536,18 +536,21 @@ function PerenRow({ cell, date, t, tl, lang, onSaved }) {
           >
             {t("idleCell.save")}
           </Button>
-          {snap && (
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(true)}
-              className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 transition-colors hover:bg-white/10"
-              style={{ color: blanked ? "#eab308" : "var(--text-3)", cursor: "pointer" }}
-              title={t("idleCell.clear")}
-              aria-label={t("idleCell.clear")}
-            >
-              <RotateCcw size={15} />
-            </button>
-          )}
+          {/* The ↺ slot is ALWAYS in the flow (invisible until the row has a
+              saved value) so every row's action column lays out identically —
+              a conditionally-mounted button is what skewed the columns. */}
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={!snap}
+            aria-hidden={!snap}
+            className={`flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 transition-colors hover:bg-white/10 ${snap ? "" : "invisible"}`}
+            style={{ color: blanked ? "#eab308" : "var(--text-3)", cursor: snap ? "pointer" : "default" }}
+            title={snap ? t("idleCell.clear") : undefined}
+            aria-label={t("idleCell.clear")}
+          >
+            <RotateCcw size={15} />
+          </button>
         </div>
       </div>
 
