@@ -2568,6 +2568,10 @@ const t = {
     "idleCell.perenNotePlaceholder": "Переналадка сабаби (ихтиёрий)",
     "idleCell.perenClearHint":    "Ўчириш учун ↺",
     "idleCell.perenClearConfirm": "Бу ячейка ва сана учун переналадка ёзуви ўчирилади.",
+    "idleCell.refresh":           "Янгилаш",
+    "idleCell.refreshHint":       "«Смена отчёт» жадвалидан ячейкалар бўйича переналадка тарихини юклаш",
+    "idleCell.refreshDone":       "Жадвалдан юкланди",
+    "idleCell.refreshFail":       "Янгилаб бўлмади",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Ячейка давомати",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
