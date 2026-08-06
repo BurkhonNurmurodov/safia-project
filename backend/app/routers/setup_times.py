@@ -148,6 +148,244 @@ def create_setup_time(
     return {"status": "ok", "id": r.id}
 
 
+# ── «Fakt» tab — daily actual changeover minutes (cell_perenaladka) ──────────
+# Declared BEFORE the /{row_id} handlers: row_id is a typed int path param, so
+# a later "/fact/…" would otherwise be swallowed by it as a 422.
+
+def _valid_date(s: str) -> bool:
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _peren_json(p: Optional[CellPerenaladka]) -> Optional[dict]:
+    if p is None:
+        return None
+    return {
+        "id": p.id,
+        "minutes": float(p.minutes or 0),
+        "note": p.note or "",
+        "entered_by": p.entered_by_profile,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+    }
+
+
+def _standards_by_cell_id(db: Session) -> dict[int, float]:
+    """Registry-resolved standard minutes per cell id — the mean of the
+    SetupTime rows whose free-text code resolves to that cell (rows with no
+    minutes or an unknown code contribute nothing)."""
+    tbl = by_verifix(db)
+    acc: dict[int, list[float]] = defaultdict(list)
+    for r in db.query(SetupTime).filter(SetupTime.minutes.isnot(None)).all():
+        cell = resolve_verifix(tbl, r.cell)
+        if cell:
+            acc[cell["id"]].append(float(r.minutes))
+    return {cid: sum(v) / len(v) for cid, v in acc.items()}
+
+
+def _fact_cell_meta(c: Cell, mgr: Optional[Manager], leader: Optional[str],
+                    standard: Optional[float]) -> dict:
+    return {
+        "cell_id": c.id,
+        "code": c.verifix_code,
+        "name": {"uz": c.name_workshop_uz, "uz_cyrl": c.name_workshop_uz_cyrl,
+                 "ru": c.name_workshop_ru, "en": c.name_workshop_en},
+        "leader": leader,
+        "manager_id": c.manager_id,
+        "supervisor": mgr.name if mgr else None,
+        "shift": mgr.shift if mgr else None,
+        "standard": standard,
+    }
+
+
+@router.get("/fact")
+def list_fact(
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Every cell in the caller's scope with its fact entry for the date (null =
+    not entered) plus its resolved standard — one payload, filtered client-side
+    like the Standart tab's register."""
+    if not _valid_date(date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    cells = _scoped_cells(db, payload, PAGE)
+    if not cells:
+        return {"cells": []}
+    ids = [c.id for c in cells]
+    entries = {p.cell_id: p for p in db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id.in_(ids),
+        CellPerenaladka.date == date,
+    ).all()}
+    managers = {m.id: m for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
+    lids = {c.leader_id for c in cells if c.leader_id}
+    leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(lids),
+    ).all()} if lids else {}
+    standards = _standards_by_cell_id(db)
+    cells.sort(key=lambda c: (c.verifix_code or "").lower())
+    return {"cells": [
+        {**_fact_cell_meta(c, managers.get(c.manager_id), leaders.get(c.leader_id),
+                           standards.get(c.id)),
+         "entry": _peren_json(entries.get(c.id))}
+        for c in cells
+    ]}
+
+
+class FactIn(BaseModel):
+    cell_id: int
+    date: str
+    minutes: float
+    note: Optional[str] = ""
+
+
+@router.post("/fact")
+def save_fact(
+    body: FactIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Create or update (upsert by cell+date) one cell's actual changeover
+    minutes. The note is OPTIONAL; the minutes must be > 0 — a blank/0 value
+    means "not entered", which the UI expresses by DELETEing the row instead."""
+    if not _valid_date(body.date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    allowed = {c.id for c in _scoped_cells(db, payload, PAGE)}
+    if body.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    minutes = max(0.0, float(body.minutes or 0))
+    if minutes <= 0:
+        raise HTTPException(status_code=400, detail="Enter the changeover minutes")
+    note = (body.note or "").strip()
+
+    who = identity.viewer_profile_key(db, payload)
+    p = db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id == body.cell_id,
+        CellPerenaladka.date == body.date,
+    ).first()
+    old = None if p is None else {"minutes": float(p.minutes or 0), "note": p.note or ""}
+    if p is None:
+        p = CellPerenaladka(cell_id=body.cell_id, date=body.date)
+        db.add(p)
+    p.minutes = minutes
+    p.note = note
+    p.entered_by_profile = who
+    db.commit()
+    db.refresh(p)
+    if page_grant_used(db, payload, PAGE):
+        diff = [(k, old[k] if old else None, v) for k, v in
+                (("minutes", minutes), ("note", note))
+                if old is None or old[k] != v]
+        if diff:
+            cell = db.query(Cell).filter_by(id=body.cell_id).first()
+            alert_grant_use(
+                db, payload, page_cap(PAGE), "idle_cell.peren_saved",
+                details=[("cell", cell.verifix_code if cell else f"#{body.cell_id}"),
+                         ("date", body.date)],
+                changes=diff, native=False,
+            )
+    return _peren_json(p)
+
+
+@router.post("/fact/refresh")
+def refresh_fact(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Pull the shift report's per-cell «Переналадка» minutes into the Fakt tab
+    — the same «Смена отчёт» workbook the Ojidaniya sync reads, on demand from
+    the page. Shown to every profile that can open the page (the refresh-button
+    rule); the import itself is global history, not scoped to the caller's
+    cells — it writes only what the owning brigadir answered on the form."""
+    from app.services.sheets_sync import sync_cell_perenaladka
+
+    src = db.query(SheetSource).filter(SheetSource.name == "shift_report").first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Shift report sheet is not configured")
+    try:
+        result = sync_cell_perenaladka(src.sheet_id, db)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"Sheet import failed: {exc}")
+    if page_grant_used(db, payload, PAGE):
+        alert_grant_use(
+            db, payload, page_cap(PAGE), "idle_cell.peren_refreshed",
+            details=[("l.count", f"+{result.get('saved', 0)} / −{result.get('cleared', 0)}")],
+        )
+    return {"status": "ok", **result}
+
+
+@router.delete("/fact/{entry_id}", status_code=204)
+def delete_fact(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Clear one cell's fact entry (scope-checked)."""
+    p = db.query(CellPerenaladka).filter(CellPerenaladka.id == entry_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    allowed = {c.id for c in _scoped_cells(db, payload, PAGE)}
+    if p.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    # Snapshot before the delete — the row is unreadable after commit.
+    via_grant = page_grant_used(db, payload, PAGE)
+    if via_grant:
+        cell = db.query(Cell).filter_by(id=p.cell_id).first()
+        del_details = [("cell", cell.verifix_code if cell else f"#{p.cell_id}"),
+                       ("date", str(p.date))]
+        del_changes = [("minutes", float(p.minutes or 0), None),
+                       ("note", p.note or "", None)]
+    db.delete(p)
+    db.commit()
+    if via_grant:
+        alert_grant_use(db, payload, page_cap(PAGE), "idle_cell.peren_deleted",
+                        details=del_details, changes=del_changes, native=False)
+
+
+# ── «Tahlil» tab — standard vs fact over a range ─────────────────────────────
+
+@router.get("/analysis")
+def setup_analysis(
+    start: str = Query(...),
+    end: str = Query(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Per scoped cell: its standard + every dated fact entry in [start..end].
+    Aggregation (averages, deltas, daily trend) happens client-side so the
+    page's shift/supervisor filters recompute instantly without refetching."""
+    if not _valid_date(start) or not _valid_date(end):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if start > end:
+        start, end = end, start
+    span = (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days
+    if span > 400:
+        raise HTTPException(status_code=422, detail="Range too long (max 400 days)")
+    cells = _scoped_cells(db, payload, PAGE)
+    if not cells:
+        return {"cells": []}
+    ids = [c.id for c in cells]
+    by_cell: dict[int, list[dict]] = defaultdict(list)
+    rows = db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id.in_(ids),
+        CellPerenaladka.date >= start,
+        CellPerenaladka.date <= end,
+    ).order_by(CellPerenaladka.date).all()
+    for p in rows:
+        by_cell[p.cell_id].append({"date": p.date, "minutes": float(p.minutes or 0)})
+    managers = {m.id: m for m in db.query(Manager).filter(Manager.archived.is_(False)).all()}
+    standards = _standards_by_cell_id(db)
+    cells.sort(key=lambda c: (c.verifix_code or "").lower())
+    return {"cells": [
+        {**_fact_cell_meta(c, managers.get(c.manager_id), None, standards.get(c.id)),
+         "entries": by_cell.get(c.id, [])}
+        for c in cells
+    ]}
+
+
 @router.patch("/{row_id}")
 def update_setup_time(
     row_id: int,
