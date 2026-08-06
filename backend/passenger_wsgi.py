@@ -69,6 +69,7 @@ try:
         add_leader_task_setting_names, add_leader_task_criteria,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
+        wipe_cell_perenaladka_history,
     )
     from app.telegram_bot import setup_webhook
 
