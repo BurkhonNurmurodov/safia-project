@@ -7504,18 +7504,6 @@ const t = {
     "idleCell.noCells":           "No cells for this supervisor.",
     "idleCell.saved":             "Saved",
     "idleCell.incompleteHint":    "Fill in minutes and a reason",
-    "idleCell.tabOjidaniya":      "Idle time",
-    "idleCell.tabPerenaladka":    "Changeover",
-    "idleCell.minutes":           "Minutes",
-    "idleCell.minShort":          "min",
-    "idleCell.noteOptional":      "Note (optional)",
-    "idleCell.perenNotePlaceholder": "Reason for the changeover (optional)",
-    "idleCell.perenClearHint":    "Use ↺ to remove",
-    "idleCell.perenClearConfirm": "This removes the changeover entry for this cell and date.",
-    "idleCell.refresh":           "Refresh",
-    "idleCell.refreshHint":       "Load the per-cell changeover history from the «Смена отчёт» sheet",
-    "idleCell.refreshDone":       "Loaded from the sheet",
-    "idleCell.refreshFail":       "Refresh failed",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Attendance / cell",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
