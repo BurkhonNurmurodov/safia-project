@@ -1,24 +1,44 @@
 """
-Setup-times register API (среднее время переналадки по ячейкам).
+Setup-times page API — three tabs, one router:
 
-A small hand-maintained reference table: one row per production cell with the
-supervisor who reported it, the average changeover time in minutes, the reason
-for longer setups, and the SKU (filled in from the UI — the source workbook
-has no SKU column). Rows seeded once at startup (see startup.seed_setup_times);
-admins edit them from the page afterwards.
+* «Standart» — the hand-maintained reference register (среднее время
+  переналадки по ячейкам): one row per production cell with the supervisor who
+  reported it, the average changeover time in minutes, the reason for longer
+  setups, and the SKU (filled in from the UI — the source workbook has no SKU
+  column). Rows seeded once at startup (see startup.seed_setup_times); admins
+  edit them from the page afterwards.
+* «Fakt» — the daily ACTUAL changeover minutes per cell (``cell_perenaladka``,
+  one row per cell+date, optional note), moved here from the Idle-cell page's
+  former «Perenaladka» tab. Manual upsert/delete plus the on-demand import of
+  the shift report's per-cell «Переналадка» history.
+* «Tahlil» — the raw material for the standard-vs-fact comparison: per cell,
+  its standard and its dated fact entries over a range (the page aggregates).
+
+Reads/writes of fact data are scoped to the caller's cells exactly like the
+Idle-cell page (admins/top-managers all, "all"-scope grants all, supervisors
+their unit, leaders their own) — via idle_cell._scoped_cells(page="setup").
 """
+from collections import defaultdict
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import identity
+from app.capabilities import page_cap
+from app.capability_alerts import alert_grant_use, page_grant_used
 from app.database import get_db
-from app.models import Cell, Manager, SetupTime
+from app.models import Cell, CellPerenaladka, Manager, RoleProfile, SetupTime, SheetSource
 from app.permissions import require_page
+from app.routers.idle_cell import _scoped_cells
 from app.services.cell_lookup import by_verifix, resolve_verifix
 
 router = APIRouter(prefix="/api/setup-times", tags=["setup-times"])
+
+PAGE = "setup"
 
 
 class SetupTimeIn(BaseModel):
