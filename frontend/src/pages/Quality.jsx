@@ -198,6 +198,7 @@ const TXT = {
     mFault: "Sex/do‘kon aybi", mCell: "Aybdor yacheyka", mReturn: "Qaytarish keldi", mNo: "Nomuvofiqlik №",
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
     fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", allBrig: "Barcha brigadirlar", mSheetName: "Jadvaldagi ism",
+    fLead: "Lider", fCell: "Yacheyka", allLead: "Barcha liderlar", allCell: "Barcha yacheykalar",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
   },
