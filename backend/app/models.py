@@ -1332,12 +1332,13 @@ class LeaderConcern(Base):
     # day-grained.
     done_at             = Column(DateTime(timezone=True), nullable=True)
     solution            = Column(Text, nullable=True)             # Решение
-    # Escalation level — who currently holds the concern. Every concern starts
-    # at "supervisor" (the leader level was removed 2026-07; legacy 'leader'
-    # rows were migrated up); each level uplifts one step when they can't solve
-    # it: supervisor → shift-manager → top-manager. The handler at the current
-    # level AND everyone above it in the chain keep edit rights; levels below
-    # turn read-only (see _assert_can_edit in routers/concerns.py).
+    # Escalation level — who currently holds the concern. Every concern OPENS at
+    # "supervisor" and each level uplifts one step when they can't solve it:
+    # leader → supervisor → shift-manager → top-manager. "leader" is the bottom
+    # step and a downgrade destination only — a supervisor hands a concern down
+    # to the leader it was logged against, who then holds it (status + send-back).
+    # The handler at the current level AND everyone above it in the chain keep
+    # edit rights; levels below turn read-only (see routers/concerns.py).
     level               = Column(String, nullable=False, server_default="supervisor")
     # Top-management is person-specific: the shift-manager picks ONE top-manager
     # profile on the last uplift step; only that person (plus admin) may act.
