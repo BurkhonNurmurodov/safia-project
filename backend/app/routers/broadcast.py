@@ -461,7 +461,9 @@ def _profile_holders(db: Session) -> list[dict]:
             if r.telegram_id
         ])
 
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
+    mgr_rows = db.query(Manager).all()
+    mgr_names = {m.id: m.name for m in mgr_rows}
+    mgr_shifts = {m.id: m.shift for m in mgr_rows}
     blocks: list[dict] = []
     for role in ("top-manager", "shift-manager", "supervisor", "leader", "admin", "guest"):
         profiles: list[dict] = []
