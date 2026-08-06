@@ -130,6 +130,43 @@ class LeaderChecklist(Base):
     submitted_at = Column(DateTime, nullable=True)
 
 
+class LeaderLateRequest(Base):
+    """A supervisor's request to count one leader-day that the shift-1 submission
+    window voided (see routers/leaders.py), and the admin decision on it.
+
+    Keyed by (leader, day), NOT by submission row: leader_checklists is wiped and
+    reloaded on every sheet refresh, so anything keyed to a row id would lose its
+    decision on the next sync. The leader is held BOTH ways — the profile id when
+    the name resolved to one (the person, immune to the sheet's spelling) and the
+    raw sheet spelling as the fallback for a leader who never resolved, so a day
+    can still be opened for them.
+
+    One live row per (leader, day): a rejected request may be re-filed, and the
+    re-file replaces it. `status` is pending → approved | rejected; an approved
+    row makes the day count at its full checklist score while still flagging it
+    as late, which is the whole point of the flow (the day is opened, not
+    laundered)."""
+    __tablename__ = "leader_late_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False, index=True)   # the REPORTED day
+    leader_profile_id = Column(Integer, nullable=True, index=True)  # role_profiles.id
+    leader_name = Column(String, nullable=False)            # raw sheet spelling
+    manager_id = Column(Integer, nullable=True, index=True)  # the unit that owns the day
+    status = Column(String, nullable=False, default="pending", index=True)
+
+    # Why the day should count. Required — an opened day has to explain itself.
+    reason = Column(Text, nullable=False)
+    requested_by_profile = Column(String, nullable=True)     # "supervisor:12"
+    requested_by_name = Column(String, nullable=True)
+    requested_by_telegram = Column(BigInteger, nullable=True)
+    requested_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    decided_by_name = Column(String, nullable=True)
+    decided_by_telegram = Column(BigInteger, nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
