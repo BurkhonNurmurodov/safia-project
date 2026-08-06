@@ -452,8 +452,14 @@ def _can_edit(ctx: dict, c: LeaderConcern) -> bool:
 
 def _can_set_status(ctx: dict, c: LeaderConcern) -> bool:
     """Only the responsible holder at the current level (plus admin) may move
-    the status between To do / Doing / Done."""
-    return ctx["role"] == "admin" or _is_responsible(ctx, c)
+    the status between To do / Doing / Done. A leader's hold ends the moment
+    they mark it done — same rule as _can_edit, so the dropdown never offers a
+    reopen the PUT would then reject; reopening is the supervisor's call."""
+    if ctx["role"] == "admin":
+        return True
+    if not _is_responsible(ctx, c):
+        return False
+    return ctx["role"] != "leader" or c.status != "done"
 
 
 def _assert_can_edit(payload: dict, c: LeaderConcern, db: Session):
