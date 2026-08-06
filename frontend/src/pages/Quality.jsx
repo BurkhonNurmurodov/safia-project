@@ -1248,7 +1248,7 @@ export default function Quality() {
               options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
           )}
         </div>
-        {/* row 4 — supervisor + filters */}
+        {/* row 4 — the responsible people: supervisor, then the cell's owning leader */}
         <div className="flex items-center gap-2 sm:contents">
           {isProd && !lockOwn && (
             <StyledSelect value={brigSel[0] || ""}
@@ -1256,6 +1256,23 @@ export default function Quality() {
               options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
               searchable searchPlaceholder={T.fBrig}
               className="flex-1 min-w-0 sm:w-56 sm:flex-none" />
+          )}
+          {!lockOwn && (
+            <StyledSelect value={leadSel[0] || ""}
+              onChange={(v) => setLeadSel(v ? [v] : [])}
+              options={[{ value: "", label: T.allLead }, ...leadOpts.map((s) => ({ value: s, label: tl(s) }))]}
+              searchable searchPlaceholder={T.fLead}
+              className="flex-1 min-w-0 sm:w-52 sm:flex-none" />
+          )}
+        </div>
+        {/* row 5 — the cell at fault + filters */}
+        <div className="flex items-center gap-2 sm:contents">
+          {!lockOwn && (
+            <StyledSelect value={cellSel[0] || ""}
+              onChange={(v) => setCellSel(v ? [v] : [])}
+              options={[{ value: "", label: T.allCell }, ...cellOpts.map((o) => ({ value: o.value, label: o.label }))]}
+              searchable searchPlaceholder={T.fCell}
+              className="flex-1 min-w-0 sm:w-52 sm:flex-none" />
           )}
           {/* all remaining filters live in one grouped button, parked on the right */}
           <div className="hidden sm:block sm:ml-auto" />
