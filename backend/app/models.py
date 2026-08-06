@@ -1501,6 +1501,17 @@ class Broadcast(Base):
     status             = Column(String, nullable=False, default="sending")  # sending | done
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     finished_at        = Column(DateTime(timezone=True), nullable=True)
+    # Resumable fan-out state. Passenger recycles app processes within seconds,
+    # so the send loop cannot rely on its thread surviving: the resolved
+    # recipient list [[telegram_id, name], …] and a cursor into it live on the
+    # row, committed after every recipient. Any later process claims a row
+    # whose worker heartbeat (claimed_at) went stale and continues from the
+    # cursor (see routers/broadcast.py resume_stuck_broadcasts).
+    recipients         = Column(JSONB, nullable=True)
+    send_cursor        = Column(Integer, nullable=False, default=0, server_default="0")
+    attachment_file_id = Column(String, nullable=True)   # harvested after the 1st successful media send
+    media_specs        = Column(JSONB, nullable=True)    # rich mode: reusable media specs, ditto
+    claimed_at         = Column(DateTime(timezone=True), nullable=True)
 
 
 class BroadcastDraft(Base):
