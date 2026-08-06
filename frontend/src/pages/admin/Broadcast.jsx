@@ -409,8 +409,21 @@ export default function Broadcast() {
                       <Loader2 size={12} className="animate-spin" /> {t("admin.broadcast.statusSending")}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5" style={{ color: "#22c55e" }}>
-                      <CheckCircle size={12} /> {t("admin.broadcast.statusDone")}
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5" style={{ color: "#22c55e" }}>
+                        <CheckCircle size={12} /> {t("admin.broadcast.statusDone")}
+                      </span>
+                      {r.can_retry && (
+                        <Button
+                          variant="primary"
+                          tint
+                          size="sm"
+                          icon={<RotateCcw size={12} />}
+                          onClick={(e) => { e.stopPropagation(); setRetryError(""); setRetryTarget(r); }}
+                        >
+                          {t("admin.broadcast.retry")}
+                        </Button>
+                      )}
                     </span>
                   )}
                 </td>
