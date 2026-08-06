@@ -1150,8 +1150,10 @@ def escalate_concern(
             c.top_manager_name = top.name
     elif body.direction == "down":
         if idx <= 0:
-            raise HTTPException(status_code=400, detail="Already at the supervisor level")
+            raise HTTPException(status_code=400, detail="Already at the leader level")
         new_level = LEVELS[idx - 1]
+        if new_level == "leader" and not _has_leader(c):
+            raise HTTPException(status_code=400, detail="This concern has no leader to send it down to")
         if cur == "top-manager":
             c.top_manager_profile_id = None
             c.top_manager_name = None
