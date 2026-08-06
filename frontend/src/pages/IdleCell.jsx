@@ -438,8 +438,13 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
 // not-stopped split. Blank means "not entered" — the backend never stores a 0,
 // so removing a value goes through the explicit ↺ clear (confirmed), which is
 // why a blanked saved row shows a hint instead of silently doing nothing.
+// Header and rows are SEPARATE grids sharing this template, so every track must
+// resolve to the same width in all of them — the actions column is therefore a
+// fixed 11rem (fits the widest save label + the always-reserved ↺ slot), never
+// `auto`: auto sizes per-grid, which let saved rows (with ↺) drift out of line
+// with unsaved ones and with the header.
 const P_GRID_COLS =
-  "grid-cols-[minmax(0,1fr)_6.5rem] md:grid-cols-[minmax(150px,1.5fr)_7rem_minmax(180px,1.7fr)_auto]";
+  "grid-cols-[minmax(0,1fr)_6.5rem] md:grid-cols-[minmax(150px,1.5fr)_7rem_minmax(180px,1.7fr)_11rem]";
 
 function PerenRow({ cell, date, t, tl, lang, onSaved }) {
   const seed = cell.perenaladka;
