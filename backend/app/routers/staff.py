@@ -3104,6 +3104,8 @@ class DocCreateBody(BaseModel):
     target_type:       Optional[str] = None   # "supervisor" | "task"
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
+    target_cell:       Optional[str] = None   # destination cell (verifix_code) — required
+                                              # when the receiving unit's day has cells
     transfer_time:     Optional[str] = None   # "HH:MM" — split (→ supervisor or task)
     return_time:       Optional[str] = None   # "HH:MM" — carve-out end (the away stint is [T,R])
 
