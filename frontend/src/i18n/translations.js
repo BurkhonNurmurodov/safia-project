@@ -2506,7 +2506,6 @@ const t = {
     "idleCell.testNote":          "Тест — жадвал импортини алмаштирмайди",
     "idleCell.cellsWord":         "ячейка",
     "idleCell.searchPlaceholder": "Ячейка қидириш…",
-    "idleCell.colCell":           "Ячейка",
     "idleCell.colStatus":         "Ҳолат",
     "idleCell.colStopped":        "Тўхтаганда, мин",
     "idleCell.colNotStopped":     "Тўхтамаганда, мин",
