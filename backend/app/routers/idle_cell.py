@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Cell, CellOjidaniya, CellPerenaladka, Manager, RoleProfile, SheetSource
+from app.models import Cell, CellOjidaniya, Manager, RoleProfile
 from app.capabilities import page_cap, page_scope_is_all, profile_unit_ids
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
