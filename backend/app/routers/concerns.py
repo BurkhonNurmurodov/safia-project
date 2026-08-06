@@ -521,12 +521,15 @@ def _creator_identity(db: Session, payload: dict):
 
 
 def _owner_names(db: Session, rows) -> dict:
-    """(owner_role, owner_profile_id) → CURRENT profile name, batch-resolved
-    for a page of rows (canonical renames stay live). Supervisor profiles live
-    in managers; every other role in role_profiles."""
+    """(role, profile_id) → CURRENT profile name, batch-resolved for a page of
+    rows (canonical renames stay live). Supervisor profiles live in managers;
+    every other role in role_profiles. Covers the row's owner (the Owner column)
+    and its leader, who is the responsible holder at the bottom level."""
     keys = {
         (r.owner_role, r.owner_profile_id)
         for r in rows if r.owner_role and r.owner_profile_id
+    } | {
+        ("leader", r.leader_profile_id) for r in rows if r.leader_profile_id
     }
     if not keys:
         return {}
