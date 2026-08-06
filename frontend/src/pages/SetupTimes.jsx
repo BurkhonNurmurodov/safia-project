@@ -792,8 +792,15 @@ function FactTab({ T, lang, tl }) {
             </>
           }
         >
+          {/* text + inputMode=decimal: the uz/ru iOS keypad types a comma, which
+              type=number silently rejects; submit normalizes it to a dot. */}
           <FormField label={T.fFactMinutes} required>
-            <ModalInput value={modal.minutes} onChange={(v) => setModal((m) => ({ ...m, minutes: v }))} type="number" />
+            <ModalInput
+              value={modal.minutes}
+              onChange={(v) => setModal((m) => ({ ...m, minutes: v }))}
+              inputMode="decimal"
+              className="tabular-nums"
+            />
           </FormField>
           {modal.cell.standard != null && (
             <div className="text-xs" style={{ color: "var(--text-3)" }}>
