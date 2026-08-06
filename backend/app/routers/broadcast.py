@@ -969,16 +969,24 @@ async def send_broadcast(
 def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     rows = db.query(Broadcast).order_by(Broadcast.id.desc()).limit(50).all()
     # Finalize rows orphaned by a mid-send process restart so the UI never
-    # shows an eternal spinner.
-    cutoff = datetime.now(timezone.utc) - STALE_SENDING
+    # shows an eternal spinner. Rows with a persisted recipient list are
+    # RESUMABLE — resume_stuck_broadcasts() in the next process boot continues
+    # them, so declaring those "done" here would abandon undelivered
+    # recipients; only legacy rows (no list) finalize at 15 min, with a 6-hour
+    # hard cap catching anything truly wedged.
+    now = datetime.now(timezone.utc)
+    cutoff = now - STALE_SENDING
+    hard_cutoff = now - timedelta(hours=6)
     dirty = False
     for r in rows:
         created = r.created_at
         if created is not None and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
-        if r.status == "sending" and created is not None and created < cutoff:
+        if r.status != "sending" or created is None:
+            continue
+        if (r.recipients is None and created < cutoff) or created < hard_cutoff:
             r.status = "done"
-            r.finished_at = datetime.now(timezone.utc)
+            r.finished_at = now
             dirty = True
     if dirty:
         db.commit()

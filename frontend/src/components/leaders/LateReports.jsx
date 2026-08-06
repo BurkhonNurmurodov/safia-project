@@ -427,7 +427,7 @@ export default function LateReports({ canDecide = false }) {
                     {(it.can_request || it.can_decide) && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {it.state === "void" && it.can_request && (
-                          <Button size="md" tint variant="primary" icon={Send}
+                          <Button size="md" tint variant="primary" icon={<Send size={13} />}
                             onClick={() => openAsk(it)}>
                             {it.can_decide ? T.openNow : T.askOpen}
                           </Button>
@@ -441,15 +441,15 @@ export default function LateReports({ canDecide = false }) {
                           </>
                         )}
                         {it.state === "pending" && !it.can_decide && it.can_request && (
-                          <Button size="md" tint variant="secondary" icon={Undo2}
+                          <Button size="md" tint variant="secondary" icon={<Undo2 size={13} />}
                             onClick={() => setConfirm({ kind: "withdraw", item: it })}>{T.withdraw}</Button>
                         )}
                         {it.state === "rejected" && it.can_request && (
-                          <Button size="md" tint variant="primary" icon={Send}
+                          <Button size="md" tint variant="primary" icon={<Send size={13} />}
                             onClick={() => openAsk(it)}>{T.askAgain}</Button>
                         )}
                         {it.state === "approved" && it.can_decide && (
-                          <Button size="md" tint variant="secondary" icon={Undo2}
+                          <Button size="md" tint variant="secondary" icon={<Undo2 size={13} />}
                             onClick={() => setConfirm({ kind: "revoke", item: it })}>{T.revoke}</Button>
                         )}
                       </div>
@@ -467,14 +467,14 @@ export default function LateReports({ canDecide = false }) {
         <Modal
           title={ask.can_decide ? T.modalAdmin : T.modalReq}
           subtitle={`${tl(ask.leader)} · ${fmtDate(ask.date, lang)} · ${Math.round(ask.completion)}%`}
-          icon={Clock}
+          icon={<Clock size={16} />}
           onClose={() => { setAsk(null); askMut.reset(); }}
           footer={
             <>
               <Button variant="secondary" onClick={() => { setAsk(null); askMut.reset(); }}>
                 {T.cancel || "Cancel"}
               </Button>
-              <Button variant="primary" icon={Send} loading={askMut.isPending}
+              <Button variant="primary" icon={<Send size={13} />} loading={askMut.isPending}
                 disabled={reason.trim().length < 3} onClick={submitAsk}>
                 {ask.can_decide ? T.open : T.send}
               </Button>
