@@ -78,6 +78,52 @@ def _rejected(date_iso: str, shift: int | None, submitted_at: datetime | None) -
     return not _in_window(date_iso, submitted_at)
 
 
+# ── Opening a voided day (supervisor requests → admin approves) ───────────────
+# A voided day is not final: the unit's own brigadir can ask for it to count, an
+# admin decides, and an approved day counts at its FULL checklist score while
+# staying flagged as late for good. The decision is keyed by (leader, day) —
+# never by checklist row — because leader_checklists is wiped and reloaded on
+# every sheet refresh; see the LeaderLateRequest docstring.
+
+LATE_STATES = ("pending", "approved", "rejected")
+
+
+def _late_key(leader_id: int | None, leader_name: str | None, date_iso: str) -> str:
+    """Identity of one leader-day. The profile id when the sheet name resolved to
+    a person (so a re-spelled name keeps its decision), else the folded raw name."""
+    who = f"p{leader_id}" if leader_id else f"n{(leader_name or '').strip().lower()}"
+    return f"{who}|{str(date_iso)[:10]}"
+
+
+def _late_map(db: Session) -> dict[str, LeaderLateRequest]:
+    """Every live request by leader-day. Newest wins, so a re-filed request after
+    a rejection is the one that counts."""
+    out: dict[str, LeaderLateRequest] = {}
+    for r in db.query(LeaderLateRequest).order_by(LeaderLateRequest.id).all():
+        out[_late_key(r.leader_profile_id, r.leader_name, r.date)] = r
+    return out
+
+
+def _may_decide(payload: dict) -> bool:
+    """Only an admin opens a day. Deliberately NOT a page grant or a capability:
+    the whole point of the flow is that the brigadir who wants the day open is
+    not the one who opens it."""
+    return payload.get("role") == "admin"
+
+
+def _may_request_for(payload: dict, manager_id: int | None) -> bool:
+    """Who may ask for a day to be opened: the unit's own supervisor, or an admin
+    (who then does not need to ask at all — see _open_day). A "see all" page grant
+    deliberately does NOT widen this; it widens reading, never authority."""
+    if payload.get("role") == "admin":
+        return True
+    return (
+        payload.get("role") == "supervisor"
+        and manager_id is not None
+        and payload.get("role_id") == manager_id
+    )
+
+
 # ── Daraja tier cutoffs ───────────────────────────────────────────────────────
 # The standings grade (Chempion / A'lo / O'rta / Past) cuts on the metric the
 # list is ranked by. Stored GLOBALLY, not per viewer: a grade has to mean the
