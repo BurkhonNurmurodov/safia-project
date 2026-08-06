@@ -24,6 +24,8 @@ from app.services.name_map import (
 
 router = APIRouter(prefix="/api", tags=["leaders"])
 
+logger = logging.getLogger(__name__)
+
 
 # Leaders-form supervisor relabels: the checklist form tags some rows with a
 # person's name that doesn't match the supervisor unit those rows belong to,
