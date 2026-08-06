@@ -3,11 +3,11 @@
 Two questions per task, both asked of the image itself:
 
 1. **Is the photo from the right day?** Every proof photo carries a drawn-on
-   date-time. The expected window is the checklist day as the LEADER's shift
-   defines it — shift 1 is the plain calendar day, shift 2 runs 17:00 → 16:59
-   next morning, so a 02:00 photo carries tomorrow's calendar date and is still
-   on time. Judging shift 2 against a bare calendar date would flag a correct
-   photo every single night.
+   date-time. The expected window is the LEADER's shift submission window —
+   shift 1 is the plain calendar day, shift 2 runs 21:00 → 09:00 next morning,
+   so a 02:00 photo carries tomorrow's calendar date and is still on time.
+   Judging shift 2 against a bare calendar date would flag a correct photo
+   every single night.
 2. **Does the photo actually show the task done?** Measured against the written
    criteria an admin sets per task (global → supervisor → leader, the same
    chain as name/weight/min_media). With no criteria written yet, only question
