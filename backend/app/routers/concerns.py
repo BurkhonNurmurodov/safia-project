@@ -1107,14 +1107,18 @@ def escalate_concern(
     payload: dict = Depends(require_page("concerns")),
 ):
     """Move a concern one step up ("I can't solve this") or back down the
-    supervisor → shift-manager → top-manager chain. Gated by the same rights
-    as editing (leaders never escalate); a reason is mandatory and the move
-    lands in the concern_escalations trail + the receiving handler's bell/DM."""
+    leader → supervisor → shift-manager → top-manager chain. Gated by the same
+    rights as editing; a reason is mandatory and the move lands in the
+    concern_escalations trail + the receiving handler's bell/DM."""
     c = db.query(LeaderConcern).filter(LeaderConcern.id == concern_id).first()
     if not c:
         raise HTTPException(status_code=404, detail="Concern not found")
-    if payload.get("role") == "leader":
-        raise HTTPException(status_code=403, detail="Leaders cannot escalate concerns")
+    cur = _level(c)
+    # A leader holds only the bottom step, and only upwards: they hand a concern
+    # that was sent down to them back to the supervisor. They never move one that
+    # sits above them, and never push anything further down (nothing is below).
+    if payload.get("role") == "leader" and not (cur == "leader" and body.direction == "up"):
+        raise HTTPException(status_code=403, detail="Leaders can only send back a concern held at their level")
     _assert_can_edit(payload, c, db)
 
     reason = (body.reason or "").strip()
@@ -1123,7 +1127,6 @@ def escalate_concern(
     if c.status == "done":
         raise HTTPException(status_code=400, detail="A resolved concern cannot be escalated")
 
-    cur = _level(c)
     idx = LEVEL_IDX.get(cur, 0)
     if body.direction == "up":
         if idx >= LEVEL_IDX["top-manager"]:
