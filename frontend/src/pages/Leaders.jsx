@@ -2426,12 +2426,14 @@ export default function Leaders({ shiftLock = null }) {
                     <tr key={r.uid}>
                       <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-4)" }}>
-                        {r.submitted_at ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="tabular-nums">{hhmm(r.submitted_at)}</span>
-                            {r._late > 0 && <LateChip days={r._late} T={T} />}
-                          </span>
-                        ) : "—"}
+                        <span className="inline-flex items-center gap-1.5">
+                          {/* a voided row still prints its time — including the
+                              em-dash of a row that never carried one, which is
+                              itself the reason it was voided */}
+                          <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
+                          {r._late > 0 && <LateChip days={r._late} T={T} />}
+                          {r.rejected && <VoidChip T={T} />}
+                        </span>
                       </td>
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
                         <span className="inline-flex items-center gap-1.5">
