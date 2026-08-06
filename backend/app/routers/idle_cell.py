@@ -144,7 +144,7 @@ def list_cells(
     ).all()} if lids else {}
     cells.sort(key=lambda c: (c.verifix_code or "").lower())
     return {"cells": [
-        _cell_json(c, by_cell.get(c.id, []), peren.get(c.id), leaders.get(c.leader_id))
+        _cell_json(c, by_cell.get(c.id, []), leaders.get(c.leader_id))
         for c in cells
     ]}
 
