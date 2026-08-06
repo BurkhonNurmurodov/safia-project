@@ -1438,12 +1438,16 @@ export default function Leaders({ shiftLock = null }) {
   const lateTodo = lateData?.todo ?? 0;
 
   // The admin's Telegram card links here with ?tab=late — a decision is one tap
-  // from the DM. Runs once per mount, and only for a tab this viewer really has.
+  // from the DM. Deliberately once per mount: the deep link opens the tab, and
+  // whatever the operator switches to afterwards is theirs to keep.
+  const deepLinked = useRef(false);
   useEffect(() => {
+    if (deepLinked.current) return;
+    deepLinked.current = true;
     const want = new URLSearchParams(window.location.search).get("tab");
     if (want && tabOk[want]) setTab(want);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLateTab, showClearTab]);
+  }, []);
 
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");
