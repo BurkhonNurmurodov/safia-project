@@ -339,6 +339,7 @@ const TXT = {
     mFault: "Shop/store at fault", mCell: "Cell at fault", mReturn: "Return received", mNo: "Non-conformance no.",
     close: "Close", detail: "Non-conformance", otherWord: "Other",
     fShift: "Shift", shift: "Shift", shiftAll: "All", allBrig: "All brigadirs", mSheetName: "Name in the sheet",
+    fLead: "Leader", fCell: "Cell", allLead: "All leaders", allCell: "All cells",
     loadFailed: "Could not load the register", retry: "Retry",
     textFailed: "Could not load the text fields",
   },
