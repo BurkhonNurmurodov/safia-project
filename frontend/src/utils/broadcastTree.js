@@ -62,9 +62,13 @@ function bucketProfiles(prefix, nodes, metaOf, looseLabel, icon) {
 }
 
 /**
- * Insert the org-chart level between a role section and its profiles, so the
+ * Insert the org-chart levels between a role section and its profiles, so the
  * picker mirrors who reports to whom: shift-managers and supervisors bucket by
- * SHIFT, leaders by their SUPERVISOR. Every other role stays flat.
+ * SHIFT, leaders by SHIFT ▸ their SUPERVISOR. Every other role stays flat.
+ *
+ * A leader inherits the shift from its supervisor's unit, so shift sits ABOVE
+ * the supervisor level — nesting it below would wrap every supervisor in a
+ * single pointless shift branch.
  *
  * Shared by the Broadcast recipient tree (admin tab + /broadcast mini-app) and
  * the Permissions profile picker — both feed the same CheckboxTree, so the two
@@ -72,23 +76,20 @@ function bucketProfiles(prefix, nodes, metaOf, looseLabel, icon) {
  * metadata straight off the API row; the labels are localised here.
  */
 export function groupProfileNodes(role, nodes, t, tl) {
-  if (SHIFT_ROLES.has(role)) {
-    return bucketProfiles(
-      role,
-      nodes,
-      (n) => (n.shift == null ? null : {
-        id: `shift-${n.shift}`,
-        label: t("admin.cleanup.shiftN").replace("{n}", n.shift),
-        sort: Number(n.shift),
-      }),
-      t("admin.profiles.noShift"),
-      Clock,
-    );
-  }
+  const shiftMeta = (n) => (n.shift == null ? null : {
+    id: `shift-${n.shift}`,
+    label: t("admin.cleanup.shiftN").replace("{n}", n.shift),
+    sort: Number(n.shift),
+  });
+  const byShift = (prefix, list) =>
+    bucketProfiles(prefix, list, shiftMeta, t("admin.profiles.noShift"), Clock);
+
+  if (SHIFT_ROLES.has(role)) return byShift(role, nodes);
+
   if (role === "leader") {
-    return bucketProfiles(
-      role,
-      nodes,
+    const bySupervisor = (prefix, list) => bucketProfiles(
+      prefix,
+      list,
       (n) => (n.unit ? {
         id: `unit-${n.unitId ?? n.unit}`,
         label: tl(n.unit),
@@ -97,6 +98,10 @@ export function groupProfileNodes(role, nodes, t, tl) {
       t("admin.profiles.noSupervisor"),
       Users,
     );
+    const shifts = byShift(role, nodes);
+    // No unit has a shift on file → keep the plain supervisor level.
+    if (shifts === nodes) return bySupervisor(role, nodes);
+    return shifts.map((b) => ({ ...b, children: bySupervisor(b.key, b.children) }));
   }
   return nodes;
 }
