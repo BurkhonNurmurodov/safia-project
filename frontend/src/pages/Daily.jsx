@@ -22,6 +22,7 @@ import CategoryLegendModal from "../components/ui/CategoryLegendModal";
 import DayStepper from "../components/ui/DayStepper";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import api from "../utils/api";
+import { exchangeCellSuffix } from "../utils/cellName";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 import {
   AttendanceTable,
