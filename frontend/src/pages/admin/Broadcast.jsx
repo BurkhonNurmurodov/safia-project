@@ -475,7 +475,19 @@ export default function Broadcast() {
           title={t("admin.broadcast.detailTitle")}
           subtitle={`${fmtDT(detail.created_at)}${detail.sender_name ? ` · ${detail.sender_name}` : ""}`}
           icon={<Megaphone size={16} style={{ color: "var(--brand-text)" }} />}
-          footer={<Button variant="secondary" onClick={() => setDetail(null)}>{t("admin.broadcast.close")}</Button>}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setDetail(null)}>{t("admin.broadcast.close")}</Button>
+              {detail.can_retry && (
+                <Button
+                  icon={<RotateCcw size={14} />}
+                  onClick={() => { setDetail(null); setRetryError(""); setRetryTarget(detail); }}
+                >
+                  {t("admin.broadcast.retry")}
+                </Button>
+              )}
+            </>
+          }
         >
           <div
             className={`tg-msg text-sm rounded-xl px-3 py-2.5${detail.mode === "rich" ? " tg-msg-rich" : ""}`}
