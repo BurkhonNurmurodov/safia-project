@@ -332,6 +332,27 @@ def add_broadcast_rich_columns() -> None:
         db.close()
 
 
+def add_broadcast_resume_columns() -> None:
+    """Resumable-broadcast columns (idempotent). Passenger recycles app
+    processes within seconds, killing the broadcast fan-out thread mid-run, so
+    the sender persists the resolved recipient list plus a cursor and a worker
+    heartbeat (claimed_at); any later process claims a stale 'sending' row and
+    continues from the cursor (routers/broadcast.py resume_stuck_broadcasts)."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS recipients JSONB"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS send_cursor INTEGER NOT NULL DEFAULT 0"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS attachment_file_id VARCHAR"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS media_specs JSONB"))
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] broadcasts resume columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_admin_language_column() -> None:
     """Add a language column to admins (idempotent). Seeded admins have no
     telegram_users row, so this is where their bot-DM language is stored, kept in
