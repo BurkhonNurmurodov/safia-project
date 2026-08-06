@@ -245,6 +245,9 @@ def get_leaders(
 
     sup_shift = {name: info["shift"] for name, info in sup_match.items()}
 
+    def _shift_of(r):
+        return sup_shift.get(_relabel(r.supervisor))
+
     meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
 
     sheet_data = [
