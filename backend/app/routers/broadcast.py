@@ -480,6 +480,7 @@ def _profile_holders(db: Session) -> list[dict]:
                     if r.telegram_id and r.full_name == p.name
                 ])
                 profiles.append({"key": f"leader:{p.id}", "name": p.name,
+                                 "shift": mgr_shifts.get(p.manager_id),
                                  "unit_id": p.manager_id,
                                  "unit": mgr_names.get(p.manager_id),
                                  "user_ids": ids})
