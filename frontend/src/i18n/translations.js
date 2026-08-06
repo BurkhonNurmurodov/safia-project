@@ -2546,18 +2546,6 @@ const t = {
     "idleCell.noCells":           "Бу бригадирда ячейка йўқ.",
     "idleCell.saved":             "Сақланди",
     "idleCell.incompleteHint":    "Дақиқа ва сабабни тўлдиринг",
-    "idleCell.tabOjidaniya":      "Кутиш",
-    "idleCell.tabPerenaladka":    "Переналадка",
-    "idleCell.minutes":           "Дақиқа",
-    "idleCell.minShort":          "мин",
-    "idleCell.noteOptional":      "Изоҳ (ихтиёрий)",
-    "idleCell.perenNotePlaceholder": "Переналадка сабаби (ихтиёрий)",
-    "idleCell.perenClearHint":    "Ўчириш учун ↺",
-    "idleCell.perenClearConfirm": "Бу ячейка ва сана учун переналадка ёзуви ўчирилади.",
-    "idleCell.refresh":           "Янгилаш",
-    "idleCell.refreshHint":       "«Смена отчёт» жадвалидан ячейкалар бўйича переналадка тарихини юклаш",
-    "idleCell.refreshDone":       "Жадвалдан юкланди",
-    "idleCell.refreshFail":       "Янгилаб бўлмади",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Ячейка давомати",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
