@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_setting_names, add_leader_task_criteria,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
+        wipe_cell_perenaladka_history,
     )
     add_last_seen_column()
     add_tg_name_column()
