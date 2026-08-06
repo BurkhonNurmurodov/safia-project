@@ -530,10 +530,13 @@ export default function Quality() {
       if (brigSel.length && !brigSel.includes(who(r))) return false;
       if (shiftSel.length && !shiftSel.includes(String(r.sh || ""))) return false;
       if (mgrSel.length && !mgrSel.includes(r.m)) return false;
+      if (leadSel.length && !leadSel.includes(leaderOf(r))) return false;
+      if (cellSel.length && !cellSel.includes(cellKey(r))) return false;
       if (hairMode === "without" && r.c === "hair") return false;
       return true;
     };
-  }, [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, hairMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, leadSel, cellSel, cellMap, hairMode]);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.d >= dateFrom && r.d <= dateTo && inView(r) && matchesFilters(r)),
@@ -559,7 +562,7 @@ export default function Quality() {
   useEffect(() => {
     if (!pageResetMounted.current) { pageResetMounted.current = true; return; }
     setPage(1);
-  }, [view, dateFrom, dateTo, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, hairMode]);
+  }, [view, dateFrom, dateTo, srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel, leadSel, cellSel, hairMode]);
   // The Production tab hides the Source filter; drop any leftover source selection
   // so a "guest"-only pick carried over from Overall doesn't zero the whole page.
   useEffect(() => { if (isProd) setSrcSel([]); }, [isProd]);
