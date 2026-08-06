@@ -490,17 +490,27 @@ def get_late_queue(
     }
 
 
-def _day_score(db: Session, req: LeaderLateRequest) -> int:
-    """The score the opened day settles at — the mean of its checklist rows,
-    exactly what the dashboard will show once it counts."""
-    vals = [
-        float(r.completion or 0)
-        for r in db.query(LeaderChecklist)
+def _day_facts(db: Session, req: LeaderLateRequest) -> dict:
+    """What the day actually holds: the score it settles at (the mean of its
+    checklist rows, exactly what the dashboard shows once it counts) and the
+    clock time it was filed — the fact the whole decision turns on, so the admin
+    reads it in the DM instead of taking "it was late" on trust."""
+    rows = (
+        db.query(LeaderChecklist)
         .filter(LeaderChecklist.date == req.date,
                 LeaderChecklist.leader == req.leader_name)
         .all()
-    ]
-    return round(sum(vals) / len(vals)) if vals else 0
+    )
+    vals = [float(r.completion or 0) for r in rows]
+    filed = max((r.submitted_at for r in rows if r.submitted_at), default=None)
+    return {
+        "score": round(sum(vals) / len(vals)) if vals else 0,
+        "filed_at": filed.strftime("%H:%M") if filed else None,
+    }
+
+
+def _day_score(db: Session, req: LeaderLateRequest) -> int:
+    return _day_facts(db, req)["score"]
 
 
 def _notify_leader_opened(db: Session, req: LeaderLateRequest) -> None:
