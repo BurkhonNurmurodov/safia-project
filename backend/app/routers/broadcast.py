@@ -367,25 +367,188 @@ def _harvest_file_ids(result: dict, media_items: list[dict]) -> list[dict] | Non
     return specs
 
 
-def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
-                        media_items: list[dict]):
-    """Rich-mode delivery: sendRichMessage per recipient. The first successful
-    send uploads the embedded media via attach://; its response is mined for
-    file_ids so the rest of the fan-out reuses them."""
-    from app.telegram_bot import strip_custom_emoji
-    db = SessionLocal()
-    reusable: list[dict] | None = None
-    stripped_html = strip_custom_emoji(html)
-    cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
+# ── Resumable sender infrastructure ──────────────────────────────────────────
+# Passenger recycles app processes within SECONDS on the shared host (see the
+# constant per-request "Running startup migrations..." churn in its log), so a
+# daemon thread never survives a full fan-out. All progress therefore lives on
+# the Broadcast row — recipients / send_cursor / harvested media ids — and is
+# committed after every recipient. resume_stuck_broadcasts() (called from both
+# startup entrypoints, i.e. from every fresh process) claims any 'sending' row
+# whose worker heartbeat went stale and continues it from the cursor.
+
+# A worker that hasn't flushed progress for this long is presumed dead and its
+# row can be claimed by another process. Must exceed the worst single-recipient
+# stall: one send (~45s of telebot connect+read timeouts) + one flood-wait
+# retry (≤46s) + a second send ≈ 140s.
+_CLAIM_STALE = "180 seconds"
+
+_RETRY_AFTER_RE = re.compile(r"retry after (\d+)", re.IGNORECASE)
+
+
+def _flood_wait_seconds(exc: Exception) -> int | None:
+    """Seconds Telegram asked us to back off (429), else None. Covers both
+    telebot's typed exception (normal mode) and the raw RuntimeError carrying
+    the API description that _tg_api raises (rich mode)."""
+    if isinstance(exc, ApiTelegramException):
+        if exc.error_code != 429:
+            return None
+        params = (exc.result_json or {}).get("parameters") or {}
+        ra = params.get("retry_after")
+        if isinstance(ra, int):
+            return ra
+        m = _RETRY_AFTER_RE.search(str(exc.description or ""))
+        return int(m.group(1)) if m else 30
+    m = _RETRY_AFTER_RE.search(str(exc))
+    return int(m.group(1)) if m else None
+
+
+def _send_once(send):
+    """Run one Telegram send, waiting out a single flood-wait pause. Without
+    this, one 429 makes every following recipient fail instantly inside the
+    same flood window and the whole tail of the list burns as 'failed'. Any
+    other error propagates — the caller counts the recipient and moves on."""
     try:
-        row = db.query(Broadcast).filter_by(id=bid).first()
-        for tid, name in recipients:
+        return send()
+    except Exception as e:
+        wait = _flood_wait_seconds(e)
+        if wait is None:
+            raise
+        time.sleep(min(wait, 45) + 1)
+        return send()
+
+
+class _BroadcastIO:
+    """DB side of one sender run. Every flush writes ABSOLUTE values, so a
+    failed commit loses nothing: the session is rebuilt and the next flush
+    lands the same state. If the DB stays unreachable the runner exits and a
+    later process resumes from the last committed cursor — a DB hiccup must
+    never kill the fan-out (that is exactly what stranded a run at 20/55)."""
+
+    def __init__(self, bid: int):
+        self.bid = bid
+        self.db = SessionLocal()
+        self.row: Broadcast | None = None
+
+    def claim(self, pre_claimed: bool = False) -> bool:
+        """Atomically take ownership of the row. The launching request
+        pre-claims (claimed_at set at INSERT) so a concurrently booting
+        process's resume sweep cannot steal a brand-new broadcast away from
+        the only process holding its in-memory attachment bytes."""
+        try:
+            if not pre_claimed:
+                res = self.db.execute(sa_text(
+                    "UPDATE broadcasts SET claimed_at = NOW() "
+                    "WHERE id = :bid AND status = 'sending' "
+                    "AND (claimed_at IS NULL OR claimed_at < NOW() - CAST(:stale AS interval)) "
+                    "RETURNING id"
+                ), {"bid": self.bid, "stale": _CLAIM_STALE})
+                got = res.first() is not None
+                self.db.commit()
+                if not got:
+                    return False
+            self.row = self.db.query(Broadcast).filter_by(id=self.bid).first()
+            return self.row is not None and self.row.status == "sending"
+        except Exception:
+            logger.exception("Broadcast %s: claim failed", self.bid)
+            return False
+
+    def _reopen(self):
+        try:
+            self.db.close()
+        except Exception:
+            pass
+        try:
+            self.db = SessionLocal()
+            self.row = self.db.query(Broadcast).filter_by(id=self.bid).first()
+        except Exception:
+            logger.exception("Broadcast %s: could not reopen a DB session", self.bid)
+            self.row = None
+
+    def flush(self, fields: dict, final: bool = False) -> bool:
+        """Persist progress (and the heartbeat). Retries once on a rebuilt
+        session; False means the DB is unreachable and the caller should bail
+        out, leaving the row for a later process."""
+        for _ in range(2):
+            if self.row is None:
+                return False
+            for k, v in fields.items():
+                setattr(self.row, k, v)
+            self.row.claimed_at = None if final else datetime.now(timezone.utc)
+            if final:
+                self.row.status = "done"
+                self.row.finished_at = datetime.now(timezone.utc)
+            try:
+                self.db.commit()
+                return True
+            except Exception:
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+                logger.warning("Broadcast %s: progress flush failed", self.bid, exc_info=True)
+                self._reopen()
+        return False
+
+    def close(self):
+        try:
+            self.db.close()
+        except Exception:
+            pass
+
+
+def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
+                        claimed: bool = False):
+    """Rich-mode delivery: sendRichMessage per recipient, resumable. The first
+    successful send uploads the embedded media via attach://; its response is
+    mined for file_ids which are PERSISTED (media_specs) so any process — not
+    just this one — can finish the fan-out reusing them."""
+    from app.telegram_bot import strip_custom_emoji
+    io = _BroadcastIO(bid)
+    try:
+        if not io.claim(pre_claimed=claimed):
+            return
+        row = io.row
+        recipients = row.recipients or []
+        html = row.text_html
+        reusable: list[dict] | None = row.media_specs
+        needs_media = bool(row.media_names)
+        stripped_html = strip_custom_emoji(html)
+        cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
+        sent = row.sent_count or 0
+        failed = row.failed_count or 0
+        failed_names = list(row.failed_names or [])
+        i = row.send_cursor or 0
+        total = len(recipients)
+
+        def _fields():
+            f = {"sent_count": sent, "failed_count": failed,
+                 "failed_names": list(failed_names), "send_cursor": i}
+            if reusable:
+                f["media_specs"] = reusable
+            return f
+
+        if needs_media and reusable is None and media_items is None and i < total:
+            # The media bytes lived only in the process that died before the
+            # first successful send harvested reusable file_ids. Nothing to
+            # resume from — record the loss honestly instead of spinning.
+            skipped = [name for _, name in recipients[i:]]
+            failed += len(skipped)
+            failed_names.extend(skipped)
+            i = total
+            logger.warning("Rich broadcast %s: media lost with its original process "
+                           "before any send succeeded — %s recipient(s) marked failed",
+                           bid, len(skipped))
+            io.flush(_fields(), final=True)
+            return
+
+        while i < total and io.row is not None:
+            tid, name = recipients[i]
             try:
                 files = None
                 if media_items and reusable is None:
-                    specs = [{"id": m["id"], "media": {"type": m["kind"], "media": f"attach://f{i}"}}
-                             for i, m in enumerate(media_items)]
-                    files = {f"f{i}": (m["filename"], m["data"]) for i, m in enumerate(media_items)}
+                    specs = [{"id": m["id"], "media": {"type": m["kind"], "media": f"attach://f{n}"}}
+                             for n, m in enumerate(media_items)]
+                    files = {f"f{n}": (m["filename"], m["data"]) for n, m in enumerate(media_items)}
                 else:
                     specs = reusable or []
 
@@ -399,30 +562,30 @@ def _run_broadcast_rich(bid: int, recipients: list[tuple[int, str]], html: str,
                                    {"chat_id": tid, "rich_message": json.dumps(rich)}, files)
 
                 try:
-                    result = _send(cur_html)
+                    result = _send_once(lambda: _send(cur_html))
                 except Exception:
                     # Premium emoji rejected (bot lacks a Fragment username) →
                     # retry degraded to fallback chars and latch it for the rest.
                     if cur_html == stripped_html:
                         raise
-                    result = _send(stripped_html)
+                    result = _send_once(lambda: _send(stripped_html))
                     cur_html = stripped_html
                 if media_items and reusable is None:
                     reusable = _harvest_file_ids(result, media_items)
-                row.sent_count += 1
+                sent += 1
             except Exception as e:
-                row.failed_count += 1
-                row.failed_names = (row.failed_names or []) + [name]
+                failed += 1
+                failed_names.append(name)
                 logger.warning("Rich broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
-            db.commit()
+            i += 1
+            if not io.flush(_fields()):
+                return  # DB unreachable — a later process resumes from the cursor
             time.sleep(0.05)
-        row.status = "done"
-        row.finished_at = datetime.now(timezone.utc)
-        db.commit()
+        io.flush(_fields(), final=True)
     except Exception:
         logger.exception("Rich broadcast %s thread crashed", bid)
     finally:
-        db.close()
+        io.close()
 
 
 # ── Recipient resolution ──────────────────────────────────────────────────────
