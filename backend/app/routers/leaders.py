@@ -375,4 +375,114 @@ def get_leaders(
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": data,
+        # Whether this viewer can act in the open-a-day flow at all. The client
+        # shows the «Late reports» tab off these, so authority is never a guess
+        # made from the role string on the client.
+        "can_request_late": role in ("admin", "supervisor"),
+        "can_decide_late": _may_decide(payload),
+    }
+
+
+# ── «Late reports» — the review queue ────────────────────────────────────────
+
+def _late_queue_items(db: Session, payload: dict) -> list[dict]:
+    """Every voided leader-day this viewer has business with, one item per DAY
+    (the unit the whole flow is keyed on), newest first.
+
+    Scoped by authority, not by the page's read scope: a supervisor sees their
+    own unit's days, an admin sees every unit's. A viewer who can neither ask nor
+    decide gets nothing — the queue is a work surface, not a second dashboard.
+    """
+    role = payload.get("role")
+    if role not in ("admin", "supervisor"):
+        return []
+
+    rows = db.query(LeaderChecklist).order_by(LeaderChecklist.date.desc()).all()
+    managers = db.query(Manager).all()
+    sup_match = supervisor_match(
+        managers, {_relabel(r.supervisor) for r in rows if r.supervisor}
+    )
+    lead_match = leader_match(
+        db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+        {(r.leader, (sup_match.get(_relabel(r.supervisor)) or {}).get("id"))
+         for r in rows if r.leader},
+    )
+    late = _late_map(db)
+    mgr_name = {m.id: m.name for m in managers}
+
+    # Collapse the day's rows into one item: the window voids a submission, but
+    # the DAY is what gets opened, so a leader who filed twice out of hours is
+    # one decision, not two.
+    items: dict[str, dict] = {}
+    for r in rows:
+        info = sup_match.get(_relabel(r.supervisor)) or {}
+        mid, shift = info.get("id"), info.get("shift")
+        if not _rejected(r.date, shift, r.submitted_at):
+            continue
+        if role == "supervisor" and mid != payload.get("role_id"):
+            continue
+        prof = lead_match.get((r.leader, mid)) or {}
+        key = _late_key(prof.get("id"), r.leader, r.date)
+        req = late.get(key)
+        it = items.get(key)
+        if it is None:
+            it = items[key] = {
+                "key": key,
+                "date": str(r.date)[:10],
+                "leader_id": prof.get("id"),
+                "leader": prof.get("name") or r.leader,
+                "leader_raw": r.leader,
+                "supervisor": _relabel(r.supervisor),
+                "manager_id": mid,
+                "unit": mgr_name.get(mid),
+                "shift": shift,
+                "completion": 0.0,
+                "submitted_at": None,
+                "rows": 0,
+                "state": req.status if req else "void",
+                "request": None,
+                "can_request": _may_request_for(payload, mid),
+                "can_decide": _may_decide(payload),
+            }
+            if req:
+                it["request"] = {
+                    "id": req.id,
+                    "reason": req.reason,
+                    "by": req.requested_by_name,
+                    "at": req.requested_at.isoformat() if req.requested_at else None,
+                    "decided_by": req.decided_by_name,
+                    "decided_at": req.decided_at.isoformat() if req.decided_at else None,
+                }
+        it["rows"] += 1
+        # The day's own figure: the mean of its rows, exactly what it would score
+        # on the dashboard once opened.
+        it["completion"] += (float(r.completion or 0) - it["completion"]) / it["rows"]
+        ts = r.submitted_at.isoformat() if r.submitted_at else None
+        if ts and (it["submitted_at"] is None or ts > it["submitted_at"]):
+            it["submitted_at"] = ts
+
+    return sorted(items.values(), key=lambda i: (i["date"], i["leader"]), reverse=True)
+
+
+@router.get("/leaders/late")
+def get_late_queue(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """The «Late reports» tab. Returns the whole queue regardless of the
+    dashboard's date filter — a decision waiting on you must not be hidden by a
+    period someone happened to pick."""
+    items = _late_queue_items(db, payload)
+    return {
+        "items": items,
+        "can_decide": _may_decide(payload),
+        # What the tab badge counts: what THIS viewer still has to do. An admin
+        # is waiting on nothing but pending requests; a supervisor's own work is
+        # the days nobody has asked about yet.
+        "todo": sum(
+            1 for i in items
+            if (i["state"] == "pending" and i["can_decide"])
+            or (i["state"] == "void" and i["can_request"])
+        ),
+        "window": {"from": WINDOW_FROM, "open": "08:00", "close": "20:00"},
     }
