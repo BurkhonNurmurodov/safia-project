@@ -159,6 +159,19 @@ export default function Broadcast() {
     onError: (e) => setSendError(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
   });
 
+  // Re-send to the recipients whose DM failed; the row flips back to
+  // 'sending' and the history poll shows delivered climbing toward the total.
+  const retryMut = useMutation({
+    mutationFn: (id) => api.post(`/api/broadcast/${id}/retry`),
+    onSuccess: () => {
+      setRetryTarget(null);
+      setRetryError("");
+      toastCtl.success(t("admin.broadcast.retryQueued"));
+      qc.invalidateQueries({ queryKey: ["broadcast-history"] });
+    },
+    onError: (e) => setRetryError(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
+  });
+
   const pickFile = (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
