@@ -99,6 +99,7 @@ try:
     add_task_comment_author_ref()
     add_leader_submission_columns()
     add_broadcast_rich_columns()
+    add_broadcast_resume_columns()
     add_pp_product_op()
     add_downtime_ns_columns()
     add_leader_task_setting_names()
