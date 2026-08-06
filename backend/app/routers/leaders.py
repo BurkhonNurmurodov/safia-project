@@ -476,13 +476,15 @@ def get_late_queue(
     return {
         "items": items,
         "can_decide": _may_decide(payload),
-        # What the tab badge counts: what THIS viewer still has to do. An admin
-        # is waiting on nothing but pending requests; a supervisor's own work is
-        # the days nobody has asked about yet.
+        # What the tab badge counts: whose TURN it is, not what they are allowed
+        # to touch. An admin owes decisions on pending requests; a brigadir owes
+        # a request on days nobody has raised yet. An admin may open any of those
+        # days directly, but it is the unit's turn to ask first — counting them
+        # would put every voided day in the factory on the admin's badge.
         "todo": sum(
             1 for i in items
             if (i["state"] == "pending" and i["can_decide"])
-            or (i["state"] == "void" and i["can_request"])
+            or (i["state"] == "void" and i["can_request"] and not i["can_decide"])
         ),
         "window": {"from": WINDOW_FROM, "open": "08:00", "close": "20:00"},
     }
