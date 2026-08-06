@@ -189,6 +189,15 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Новый документ смены должности от {actor_name}", "{count} сотр. → {new_role} | Дата: {date}"),
         "en": ("New Role Change document from {actor_name}", "{count} employee(s) → {new_role} | Date: {date}"),
     },
+    # A leader's late checklist day was opened by an admin: it counts again, at
+    # its own score. The day stays flagged as late on the dashboard, so the text
+    # says "counted", never "on time".
+    "leader_late_approved": {
+        "uz": ("Kechikkan hisobot qabul qilindi", "Sana: {date} | Ochdi: {decided_by} | Bu kun endi {score}% bilan hisoblanadi (kechikkan deb belgilangan)"),
+        "uz_cyrl": ("Кечиккан ҳисобот қабул қилинди", "Сана: {date} | Очди: {decided_by} | Бу кун энди {score}% билан ҳисобланади (кечиккан деб белгиланган)"),
+        "ru": ("Опоздавший отчёт засчитан", "Дата: {date} | Открыл(а): {decided_by} | День теперь считается с результатом {score}% (отмечен как опоздавший)"),
+        "en": ("Late report accepted", "Date: {date} | Opened by: {decided_by} | The day now counts at {score}% (still flagged as late)"),
+    },
     "new_edit_request": {
         "uz": ("{supervisor_name} tahrirlash so'rovi yubordi", "Xodim: {worker_name} | Sana: {date}"),
         "uz_cyrl": ("{supervisor_name} таҳрирлаш сўрови юборди", "Ходим: {worker_name} | Сана: {date}"),
