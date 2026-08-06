@@ -2526,6 +2526,8 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
                 row.hours_worked      = snap.get("hours_worked")
                 row.early_arrival_min = snap.get("early_arrival_min")
                 row.effective_hours   = snap.get("effective_hours")
+                if "old_verifix_code" in emp:
+                    row.verifix_code  = emp.get("old_verifix_code")
             # A below-min → supervisor move also parked the after-T hours as a nameless
             # leftover on the receiving unit — drop it as the full row is restored.
             recv_lid = applied.get("recv_leftover_id")
