@@ -522,6 +522,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     return allWorkers.filter(w => {
       if (f.worker     && !w.worker_name?.toLowerCase().includes(f.worker.toLowerCase())) return false;
       if (f.job_titles.length && !f.job_titles.includes(w.job_title || ""))              return false;
+      if (f.cells.length      && !f.cells.includes(w._cell?.full   || ""))               return false;
       if (f.schedules.length  && !f.schedules.includes(w.schedule   || ""))              return false;
       if (f.clock.length && !f.clock.includes(w.clock_in_out || "")) return false;
       if (f.hours_min !== "" && (w.hours_worked      == null || w.hours_worked      < parseFloat(f.hours_min))) return false;
