@@ -793,6 +793,167 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 }
 
 
+// ── Cell day view (Workers tab) ───────────────────────────────────────────────
+// Read-only roster of ONE cell out of the by-cell attendance import — shown when
+// the unit picker's «Yacheykalar» section is used on a day that has such an
+// upload. Mirrors the AttendanceTable header (KPI cards → search → table) but
+// edits nothing: the data lives in the isolated cell_attendance table, not the
+// verifix flow, so there are no documents, requests or exports here.
+
+export function CellDayView({ date, cellSel, hasCellData }) {
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  const [search, setSearch] = useState("");
+
+  // Same query key + params as the /cell-attendance page and the parent's
+  // picker feed — one fetch serves all three.
+  const { data, isLoading } = useQuery({
+    queryKey: ["cell-attendance", date],
+    queryFn: () => api.get("/api/cell-attendance", { params: { date } }).then(r => r.data),
+    enabled: !!date && hasCellData,
+  });
+
+  if (!date) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm" style={{ color: "var(--text-4)" }}>
+        {t("staff.selectDateToView")}
+      </div>
+    );
+  }
+  if (!hasCellData) {
+    return (
+      <div className="py-12 text-center text-sm" style={{ color: "var(--text-4)" }}>
+        {t("staff.cellNoData")}
+      </div>
+    );
+  }
+  if (isLoading || !data) {
+    return <SkeletonTable rows={8} cols={6} />;
+  }
+
+  const cellInfo = (data.cells || []).find(c => cellKey(c) === cellSel.key);
+  const allRows  = (data.rows  || []).filter(r => cellKey(r) === cellSel.key);
+
+  const worked    = allRows.filter(r => r.status === "worked");
+  const cameRatio = allRows.length ? worked.length / allRows.length : null;
+  // The load slice by the by-cell rule: the cell must be ticked on the
+  // /cell-attendance «Sozlash» tab AND the row must hold a load role.
+  const zagRows = cellInfo?.in_load === true
+    ? allRows.filter(r => LOAD_ROLE_RE.test(r.job_title || ""))
+    : [];
+  const totalH = zagRows.reduce((s, r) => s + (r.hours_worked || 0), 0);
+  const avgH   = zagRows.length ? totalH / zagRows.length : null;
+
+  const q = search.trim().toLowerCase();
+  const rows = allRows
+    .filter(r => !q ||
+      `${r.worker_name || ""} ${tl(r.worker_name) || ""} ${r.job_title || ""} ${tl(r.job_title) || ""}`
+        .toLowerCase().includes(q))
+    .sort((a, b) => (tl(a.worker_name) || "").localeCompare(tl(b.worker_name) || ""));
+
+  const thCls = "text-left px-3 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider";
+
+  return (
+    <div>
+      {/* KPI header — same cards as the verifix table, computed by the cell rules */}
+      <div className="px-3 pt-3 pb-3">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wider truncate"
+            style={{ color: "var(--text-4)" }}>
+            {(cellSel.code || "—") + (cellSel.name ? " · " + cellSel.name : "")}
+          </span>
+          <span className="flex items-center gap-1.5 text-[11px] flex-shrink-0" style={{ color: "var(--text-4)" }}>
+            <FlaskConical size={12} /> {t("staff.cellViewNote")}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KPICard
+            label={t("staff.kpiCame")}
+            value={worked.length}
+            sub={`${t("staff.of")} ${allRows.length} ${t("staff.total")} · ${fmtPct(cameRatio)}`}
+          />
+          <KPICard
+            label={t("staff.kpiCountedZagruzka")}
+            value={zagRows.length}
+            sub={`${t("staff.of")} ${allRows.length} ${t("staff.total")}`}
+          />
+          <KPICard
+            label={t("staff.kpiTotalHours")}
+            value={zagRows.length ? `${fmtNum(totalH, 1)} ${t("daily.hrs")}` : "—"}
+            sub={t("staff.kpiCountedZagruzka")}
+          />
+          <KPICard
+            label={t("staff.kpiAvgTime")}
+            value={avgH !== null ? `${fmtNum(avgH, 2)} ${t("daily.hrs")}` : "—"}
+            sub={t("staff.kpiCountedZagruzka")}
+          />
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: "var(--border)" }}>
+        <div className="flex-1">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={t("staff.searchByName")}
+            inputClassName="text-xs pl-8 pr-7 py-1.5"
+          />
+        </div>
+        <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: "var(--text-3)" }}>
+          {rows.length} / {allRows.length}
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="py-8 text-center text-sm" style={{ color: "var(--text-4)" }}>
+          {allRows.length === 0 ? t("staff.cellNoData") : t("staff.noMatch")}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: "var(--bg-inner)", borderColor: "var(--border)" }}>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colWorker")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colRole")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colSchedule")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colClock")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colHours")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEarly")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEffHours")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("cellAtt.colStatus")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-b hover:bg-white/5" style={{ borderColor: "var(--border)" }}>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.worker_name)}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.job_title) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(r.schedule) || "—"}</td>
+                  <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
+                    {r.clock_in && r.clock_out ? `${r.clock_in} - ${r.clock_out}` : (r.day_raw || "—")}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {r.hours_worked != null ? fmtNum(r.hours_worked, 2) : "—"}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {r.early_arrival_min != null ? fmtNum(r.early_arrival_min, 0) : "—"}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
+                    {r.effective_hours != null ? fmtNum(r.effective_hours, 2) : "—"}
+                  </td>
+                  <td className="px-3 py-2"><CellStatusChip status={r.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ════════════════════════════════════════════════════════════════════════════
 // HR Documents — document-driven change workflow
 // ════════════════════════════════════════════════════════════════════════════
