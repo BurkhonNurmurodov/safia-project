@@ -43,12 +43,14 @@ _VALID = set(IDLE_CATEGORIES)
 _NO_NS = {"Cat H"}
 
 
-def _scoped_cells(db: Session, payload: dict) -> list[Cell]:
+def _scoped_cells(db: Session, payload: dict, page: str = PAGE) -> list[Cell]:
     """Every cell the caller may see/enter, admins = all. Built generically so a
-    future ``page.view.idle-cell`` grant to a supervisor/leader Just Works."""
+    future ``page.view.idle-cell`` grant to a supervisor/leader Just Works.
+    `page` = which page's "all"-scope grant widens the view — the Setup-times
+    router shares this helper for its «Fakt» endpoints with page="setup"."""
     role = payload.get("role")
     q = db.query(Cell)
-    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
+    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, page):
         return q.all()
     if role == "leader":
         lpid = identity.viewer_leader_profile_id(db, payload)
