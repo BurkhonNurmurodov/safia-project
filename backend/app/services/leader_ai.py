@@ -172,9 +172,9 @@ def _prompt(*, task: str, criteria: str, date: str, shift: int | None,
             n_images: int, omitted: int) -> str:
     lo, hi = date_window(date, shift)
     shift_note = (
-        "Bu 2-smena: ish kuni soat 17:00 da boshlanib, ertasi kuni 16:59 da "
-        "tugaydi. Shuning uchun rasmdagi sana ERTANGI kalendar sanasi bo'lishi "
-        "mumkin va bu TO'G'RI — muhimi vaqt oynadan chiqib ketmasligi."
+        "Bu 2-smena: hisobot soat 21:00 dan ertasi kuni 09:00 gacha "
+        "topshiriladi. Shuning uchun rasmdagi sana ERTANGI kalendar sanasi "
+        "bo'lishi mumkin va bu TO'G'RI — muhimi vaqt oynadan chiqib ketmasligi."
         if shift == 2 else
         "Bu 1-smena: ish kuni oddiy kalendar kuni."
     )
