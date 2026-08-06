@@ -108,7 +108,7 @@ export function groupProfileNodes(role, nodes, t, tl) {
 
 /**
  * Turn the /api/broadcast/recipients tree into CheckboxTree `groups`:
- * role ▸ [shift | supervisor] ▸ profile ▸ Telegram user. A user leaf is keyed
+ * role ▸ [shift [▸ supervisor]] ▸ profile ▸ Telegram user. A user leaf is keyed
  * by its telegram_id (as a string) so the same person held across profiles is
  * mirrored automatically. A profile with no registered users becomes a
  * disabled leaf with a hint.
