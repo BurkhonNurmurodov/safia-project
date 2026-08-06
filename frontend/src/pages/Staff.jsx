@@ -20,7 +20,7 @@ import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
-import { useTranslit } from "../utils/transliterate";
+import { useTranslit, transliterate } from "../utils/transliterate";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragSelect } from "../hooks/useDragSelect";
