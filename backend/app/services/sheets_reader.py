@@ -142,6 +142,17 @@ def _fetch_sheet_rows(sheet_id: str, tab: str, unformatted: bool = False) -> lis
         raise
 
 
+# A brigadir block on the «Минут» / «Одам сони» tabs ends at a run of empty name
+# cells — those tabs carry a second block further down, so the scan has to stop
+# somewhere. But a SINGLE cleared row inside a block must not end it: admins add
+# a new supervisor by typing under the list, and if the row above happens to be
+# blank (a removed unit, a spacer) the old rule dropped that supervisor and
+# everyone below with no error anywhere — the register just came up short. The
+# real gap between blocks is ~20 rows, so tolerating a few blanks stays well
+# clear of the next block while surviving an appended row after a gap.
+_BLOCK_GAP_TOLERANCE = 5
+
+
 def read_production_data(sheet_id: str, min_date: Optional[datetime] = None):
     """Read plan and actual production minutes from the Минут sheet."""
     rows = _fetch_sheet_rows(sheet_id, "Минут", unformatted=True)
