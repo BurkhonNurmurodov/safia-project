@@ -5000,7 +5000,6 @@ const t = {
     "idleCell.stopped":           "Стоп",
     "idleCell.notStopped":        "Без стопа",
     "idleCell.noNsHint":          "У этой категории нет значения «без стопа»",
-    "idleCell.total":             "Итого",
     "idleCell.note":              "Примечание",
     "idleCell.notePlaceholder":   "Причина простоя (обязательно)",
     "idleCell.noteRequired":      "Примечание обязательно",
