@@ -755,6 +755,13 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     <OptsFilter opts={distinctJobTitles} sel={filters.job_titles} onChange={v => setF("job_titles", v)} render={o => tl(o) || o} />
                   </ColFilter>
                 </th>
+                {showCellCol && (
+                  <th className={thCls} style={{ borderColor: "var(--border)" }}>
+                    <ColFilter label={t("cellAtt.colCell")} active={filters.cells.length > 0}>
+                      <OptsFilter searchable opts={distinctCells} sel={filters.cells} onChange={v => setF("cells", v)} />
+                    </ColFilter>
+                  </th>
+                )}
                 <th className={thCls} style={{ borderColor: "var(--border)" }}>
                   <ColFilter label={t("staff.colSchedule")} active={filters.schedules.length > 0}>
                     <OptsFilter opts={distinctSchedules} sel={filters.schedules} onChange={v => setF("schedules", v)} />
