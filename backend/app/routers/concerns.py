@@ -103,16 +103,20 @@ def _sm_names(db: Session) -> dict:
 
 
 def _cell_leaders(db: Session) -> dict:
-    """cell code → owning leader's name. Cells are first-class rows
-    (cells.verifix_code UNIQUE + leader_id → role_profiles.id); the Concerns
-    table shows the leader who owns a concern's cell, resolved live so
-    re-assignments stay current."""
+    """cell code → (owning leader's name, that leader's supervisor's name).
+    Cells are first-class rows (cells.verifix_code UNIQUE + leader_id →
+    role_profiles.id); the Concerns table shows the leader who owns a concern's
+    cell, resolved live so re-assignments stay current. The supervisor is the
+    leader's unit brigadir (role_profiles.manager_id → managers), falling back
+    to the cell's own owning unit for leaderless cells."""
     return {
-        code: name
-        for code, name in (
-            db.query(Cell.verifix_code, RoleProfile.name)
-            .join(RoleProfile, RoleProfile.id == Cell.leader_id)
-            .filter(RoleProfile.role == "leader")
+        code: (leader, sup)
+        for code, leader, sup in (
+            db.query(Cell.verifix_code, RoleProfile.name, Manager.name)
+            .outerjoin(RoleProfile, and_(RoleProfile.id == Cell.leader_id,
+                                         RoleProfile.role == "leader"))
+            .outerjoin(Manager, Manager.id == func.coalesce(RoleProfile.manager_id,
+                                                            Cell.manager_id))
         )
     }
 
