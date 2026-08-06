@@ -59,11 +59,12 @@ const CATEGORY_ICON = {
   plan: CalendarRange, hr: Users, technologist: FlaskConical, raw_material: Wheat,
 };
 
-// Escalation chain, bottom → top. A concern starts at "supervisor" and is
-// uplifted one step at a time by whoever can't solve it (see the uplift/
-// send-back actions); the level column shows who currently holds it. Leaders
-// sit below the chain: they create and edit but never hold a level.
-const LEVELS = ["supervisor", "shift-manager", "top-manager"];
+// Escalation chain, bottom → top. A concern OPENS at "supervisor" and moves one
+// step at a time by whoever can't solve it (see the uplift/send-back actions);
+// the level column shows who currently holds it. "leader" is the bottom step and
+// a send-back destination only — nothing is created there, but a supervisor can
+// hand a concern down to its leader, who then holds it like any other level.
+const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
 
 // responsible_name names ONE picked person per row — every path that lands a
 // concern on a step (create, uplift, send-back, admin retarget) requires the
