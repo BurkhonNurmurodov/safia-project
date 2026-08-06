@@ -27,13 +27,15 @@ export function padChartParams(params, minDays = MIN_CHART_DAYS) {
   return from === params.date_from ? params : { ...params, date_from: from };
 }
 
-// Every ISO day in [fromISO .. toISO] inclusive — for client-computed trends
-// that must show empty days across the padded window.
-export function listChartDays(fromISO, toISO) {
-  if (!fromISO || !toISO) return [];
+// Every ISO day in [fromISO .. endISO] inclusive — for client-computed trends
+// that must show empty days across the padded window. (The end param must NOT
+// be named "toISO" — it would shadow the formatter above and make the loop
+// call the ISO string as a function.)
+export function listChartDays(fromISO, endISO) {
+  if (!fromISO || !endISO) return [];
   const out = [];
   const d = new Date(fromISO + "T00:00:00");
-  const end = new Date(toISO + "T00:00:00");
+  const end = new Date(endISO + "T00:00:00");
   while (d <= end && out.length < 1000) {
     out.push(toISO(d));
     d.setDate(d.getDate() + 1);
