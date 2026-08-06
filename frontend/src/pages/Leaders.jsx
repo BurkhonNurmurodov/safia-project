@@ -243,6 +243,7 @@ const TXT = {
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
+    missedDeadline: "Лидер не отправил эту задачу до {time}.",
     task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
     taskDesc: "Описание задачи", taskWeight: "Вес", taskNote: "Примечания / Требования",
     lowTask: "Худшая задача", lowSup: "Худший бригадир", lowLeader: "Худший лидер",
