@@ -5061,6 +5061,10 @@ const t = {
     "idleCell.perenNotePlaceholder": "Причина переналадки (необязательно)",
     "idleCell.perenClearHint":    "Для удаления — ↺",
     "idleCell.perenClearConfirm": "Запись переналадки для этой ячейки и даты будет удалена.",
+    "idleCell.refresh":           "Обновить",
+    "idleCell.refreshHint":       "Загрузить историю переналадок по ячейкам из «Смена отчёт»",
+    "idleCell.refreshDone":       "Загружено из таблицы",
+    "idleCell.refreshFail":       "Не удалось обновить",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Посещаемость / ячейка",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
