@@ -468,6 +468,19 @@ export default function Broadcast() {
         loading={sendMut.isPending}
       />
 
+      {/* ── Confirm retry of failed recipients ──────────────────────────────── */}
+      <ConfirmDialog
+        open={!!retryTarget}
+        error={retryError}
+        onCancel={() => { if (!retryMut.isPending) { setRetryTarget(null); setRetryError(""); } }}
+        onConfirm={() => { setRetryError(""); retryMut.mutate(retryTarget.id); }}
+        title={t("admin.broadcast.retryTitle")}
+        message={t("admin.broadcast.retryMsg").replace("{n}", retryTarget?.failed_count ?? 0)}
+        confirmLabel={t("admin.broadcast.retry")}
+        icon={<RotateCcw size={20} />}
+        loading={retryMut.isPending}
+      />
+
       {/* ── Detail modal ────────────────────────────────────────────────────── */}
       {detail && (
         <Modal
