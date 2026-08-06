@@ -31,7 +31,7 @@ import { useAdminDirty } from "./AdminPanel";
  * and without a co-holder of the same profile getting the power too.
  *
  * The picker is the shared CheckboxTree, same tree the Broadcast recipient
- * picker builds: role ▸ [shift | supervisor] ▸ profile ▸ Telegram user. A grant
+ * picker builds: role ▸ [shift [▸ supervisor]] ▸ profile ▸ Telegram user. A grant
  * belongs to the USER leaf, so the tree descends all the way to the individual
  * logins. Multi-select is the point: granting five people the same power is one
  * pass, and saving sends a DIFF so each keeps whatever else they already held.
