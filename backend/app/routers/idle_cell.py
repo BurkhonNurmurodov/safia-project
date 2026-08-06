@@ -125,8 +125,7 @@ def list_cells(
     payload: dict = Depends(require_page(PAGE)),
 ):
     """Cells under one supervisor (must be in the caller's scope) plus each
-    cell's saved entries for the date — the accordions. Both tabs' saved data
-    ships in this one payload, so the view toggle never refetches."""
+    cell's saved entries for the date — the accordions."""
     if not _valid_date(date):
         raise HTTPException(status_code=400, detail="Invalid date")
     cells = [c for c in _scoped_cells(db, payload) if c.manager_id == supervisor_id]
