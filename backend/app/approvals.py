@@ -328,15 +328,17 @@ def _leader_late_data(db, req) -> dict:
     """Facts of a request to open a voided leader-day. The score is the mean of
     the day's checklist rows — what the day will actually count for if opened,
     so the admin decides against the number, not a description of it."""
-    from app.routers.leaders import _day_score
+    from app.routers.leaders import _day_facts
     mgr = db.query(Manager).filter_by(id=req.manager_id).first() if req.manager_id else None
+    facts = _day_facts(db, req)
     return {
         "unit":       mgr.name if mgr else "—",
         "date":       req.date,
         "leader":     req.leader_name,
         "supervisor": req.requested_by_name,
-        "filed_at":   req.requested_at.strftime("%H:%M") if req.requested_at else None,
-        "score":      _day_score(db, req),
+        # when the LEADER filed the checklist — not when the request was sent
+        "filed_at":   facts["filed_at"],
+        "score":      facts["score"],
         "reason":     req.reason,
     }
 
