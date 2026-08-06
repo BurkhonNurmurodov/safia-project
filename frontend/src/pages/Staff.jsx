@@ -3746,6 +3746,62 @@ export default function Staff() {
     staleTime: 120_000,
   });
 
+  // ── Cells from the by-cell attendance import ───────────────────────────────
+  // On a date that has a by-cell upload, the unit picker also lists the cells
+  // carrying rows that day; picking one swaps the verifix table for a read-only
+  // cell roster. Both queries share keys with the /cell-attendance page, so
+  // neither costs a second fetch there. A viewer without the cell-attendance
+  // page simply gets a 403 → no dates → the section never appears (no retry:
+  // the answer won't change).
+  const { data: cellDates = [] } = useQuery({
+    queryKey: ["cell-attendance-dates"],
+    queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
+    enabled: isManagerView,
+    staleTime: 120_000,
+    retry: false,
+  });
+  const hasCellData = !!selectedDate && cellDates.some(d => d.date === selectedDate);
+
+  const { data: cellDay } = useQuery({
+    queryKey: ["cell-attendance", selectedDate],
+    queryFn: () => api.get("/api/cell-attendance", { params: { date: selectedDate } }).then(r => r.data),
+    enabled: isManagerView && hasCellData,
+  });
+
+  const cellOptions = useMemo(() => {
+    if (!hasCellData || !cellDay) return [];
+    const counts = new Map();
+    for (const r of cellDay.rows || []) {
+      const k = cellKey(r);
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    return (cellDay.cells || []).map(c => ({
+      key:       cellKey(c),
+      code:      c.verifix_code || null,
+      name:      pickCellName(c, lang, "name_") || null,
+      unmatched: !!c.unmatched,
+      count:     counts.get(cellKey(c)) || 0,
+    }));
+  }, [cellDay, hasCellData, lang]);
+
+  // The pick survives navigation like the supervisor + date do. Code and name
+  // are stored alongside the key so the trigger can label the cell even on a
+  // date whose payload doesn't carry it (the body then explains, not the label).
+  const [rawSelCell, setSelCell] = usePersistentState("staff_selected_cell", null);
+  const selCell = isManagerView && rawSelCell && typeof rawSelCell === "object" && rawSelCell.key
+    ? rawSelCell
+    : null;
+
+  // A cell and a unit are never both selected — each pick clears the other.
+  function pickSupervisorId(id) {
+    setSelectedManagerId(id);
+    setSelCell(null);
+  }
+  function pickCell(c) {
+    setSelCell(c ? { key: c.key, code: c.code, name: c.name } : null);
+    if (c) setSelectedManagerId(null);
+  }
+
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ["staff-documents"],
     queryFn: () => api.get("/api/staff/documents").then(r => r.data),
