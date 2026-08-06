@@ -63,6 +63,8 @@ export default function Broadcast() {
   const [detail, setDetail] = useState(null);
   const [toast, setToast] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [retryTarget, setRetryTarget] = useState(null);
+  const [retryError, setRetryError] = useState("");
   const toastCtl = useToast();
 
   const { data: recip, isLoading: listLoading } = useQuery({
