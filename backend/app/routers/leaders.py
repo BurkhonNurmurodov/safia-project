@@ -259,7 +259,11 @@ def get_leaders(
             "date": r.date,
             "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
             "supervisor": _relabel(r.supervisor),
-            "shift": sup_shift.get(_relabel(r.supervisor)),
+            "shift": _shift_of(r),
+            # Voided by the shift-1 submission window: the client still lists the
+            # row (flagged) but scores the day as missed. Computed here, not on
+            # the client, so every consumer of this feed reads one verdict.
+            "rejected": _rejected(r.date, _shift_of(r), r.submitted_at),
             # The PERSON: a stable profile id plus their canonical profile
             # name, so every spelling of one leader groups as one person.
             "leader_id": (_leader_of(r) or {}).get("id"),
