@@ -1507,6 +1507,26 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   const targetIsSup  = target.startsWith("sup:");
   const targetIsTask = target.startsWith("task:") || target === "__new__";
   const canUseTime   = targetIsSup || targetIsTask;
+
+  // Destination cells of the chosen receiving supervisor (that day's upload).
+  // A → supervisor move must land in one of them; an empty list = legacy
+  // no-cell day, where the move stays unit-level like before.
+  const targetCells = useMemo(() => {
+    if (!targetIsSup) return [];
+    const s = supTargets.find(x => `sup:${x.manager_id}` === target);
+    return s?.cells || [];
+  }, [targetIsSup, target, supTargets]);
+  const cellOptions = useMemo(
+    () => targetCells.map(c => ({ value: c.verifix_code, label: cellDisplay(c, lang).full })),
+    [targetCells, lang]
+  );
+  // Drop a picked cell that the (newly chosen) target doesn't have. Only once
+  // the target's cells are known — an edit-mode hydrated cell must survive the
+  // exchange-targets fetch.
+  useEffect(() => {
+    if (targetCell && targetCells.length && !targetCells.some(c => c.verifix_code === targetCell))
+      setTargetCell("");
+  }, [targetCells, targetCell]);
   // Valid transfer-time window (minutes from midnight) = earliest start →
   // latest clock-out across the selected workers. Overnight shifts whose clock-out
   // lands past midnight (out < start) are carried into the next day (+1440) so the
