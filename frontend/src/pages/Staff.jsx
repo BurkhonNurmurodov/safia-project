@@ -1415,7 +1415,7 @@ export function RoleChangeCreate({ role, managerId, selectedDate, editDoc, onClo
 
 export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, onClose, onSaved }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const qc = useQueryClient();
   const isEdit  = !!editDoc;
   const date    = isEdit ? editDoc.date       : selectedDate;
