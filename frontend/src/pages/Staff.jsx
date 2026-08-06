@@ -3266,14 +3266,14 @@ export function SupervisorSelect({ value, onChange, supervisors, cells = [], cel
           }}
         >
           <button
-            onClick={() => { onChange(null); setOpen(false); }}
+            onClick={() => { onChange(null); onCellChange?.(null); setOpen(false); }}
             className="w-full text-left px-3 py-2.5 text-xs flex items-center gap-2 border-b"
             style={{ color: "var(--text-4)", borderColor: "var(--border)" }}
           >
             <X size={11} /> {t("staff.clearSelection")}
           </button>
           {supervisors.map(s => {
-            const active = s.manager_id === value;
+            const active = !cellValue && s.manager_id === value;
             return (
               <button
                 key={s.manager_id}
