@@ -1682,15 +1682,16 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     // stint's end), and only when its own toggle is on with a valid pick.
     const tt = (canUseTime && useTime && transferTime) ? transferTime : "";
     const rt = (tt && useReturn && returnTime) ? returnTime : "";
+    const tc = tgt.target_type === "supervisor" ? { target_cell: targetCell || "" } : {};
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, employees: [...selected], transfer_time: tt, return_time: rt });
+        await api.put(`/api/staff/documents/${editDoc.id}`, { ...tgt, ...tc, employees: [...selected], transfer_time: tt, return_time: rt });
       } else {
         await api.post("/api/staff/documents", {
           doc_type: "people_exchange", attend_date: date,
           ...(isAdmin ? { manager_id: mgrId } : {}),
-          ...tgt, employees: [...selected], transfer_time: tt, return_time: rt,
+          ...tgt, ...tc, employees: [...selected], transfer_time: tt, return_time: rt,
         });
       }
       qc.invalidateQueries({ queryKey: ["staff-documents"] });
