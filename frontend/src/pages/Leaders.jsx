@@ -309,6 +309,7 @@ const TXT = {
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
+    missedDeadline: "The leader didn't submit this task before {time}.",
     task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
     taskDesc: "Task Description", taskWeight: "Weight", taskNote: "Notes / Requirements",
     lowTask: "Lowest Task", lowSup: "Lowest Supervisor", lowLeader: "Lowest Leader",
