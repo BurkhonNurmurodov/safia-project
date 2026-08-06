@@ -3299,6 +3299,53 @@ export function SupervisorSelect({ value, onChange, supervisors, cells = [], cel
               </button>
             );
           })}
+
+          {/* Cells with rows in the by-cell import on the open date */}
+          {cells.length > 0 && onCellChange && (
+            <>
+              <div
+                className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider border-t"
+                style={{ color: "var(--text-4)", borderColor: "var(--border)" }}
+              >
+                {t("staff.cellsSection")}
+              </div>
+              {cells.map(c => {
+                const active = cellValue?.key === c.key;
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => { onCellChange(c); setOpen(false); }}
+                    className="w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 transition-colors"
+                    style={{
+                      background: active ? "var(--brand-bg)" : "transparent",
+                      color: active ? "var(--brand-text)" : "var(--text-2)",
+                    }}
+                    onMouseEnter={e => { if (!active) e.currentTarget.style.background = "var(--bg-inner)"; }}
+                    onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span className="truncate">
+                      <span className="font-mono">{c.code || "—"}</span>
+                      {c.name && (
+                        <span className="ml-1.5" style={{ color: active ? "var(--brand-text)" : "var(--text-4)" }}>
+                          {c.name}
+                        </span>
+                      )}
+                      {c.unmatched ? " ⚠" : ""}
+                    </span>
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-medium tabular-nums flex-shrink-0"
+                      style={{
+                        background: active ? "rgba(255,255,255,0.2)" : "var(--bg-inner)",
+                        color: active ? "var(--brand-text)" : "var(--text-4)",
+                      }}
+                    >
+                      {c.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>
