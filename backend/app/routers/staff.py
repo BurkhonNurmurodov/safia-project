@@ -2721,11 +2721,24 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
                 "effective_hours":   float(att.effective_hours)   if att.effective_hours   is not None else None,
             }
         emp_rows.append(row)
+    # Snapshot the destination cell's display names so documents/notifications
+    # keep rendering it even if the cell register changes later.
+    cell_names = None
+    if target_cell:
+        c = db.query(Cell).filter(Cell.verifix_code == target_cell).first()
+        cell_names = {
+            "uz":      c.name_workshop_uz      if c else None,
+            "uz_cyrl": c.name_workshop_uz_cyrl if c else None,
+            "ru":      c.name_workshop_ru      if c else None,
+            "en":      c.name_workshop_en      if c else None,
+        }
     return {
         "target_type":         target_type,
         "target_manager_id":   target_manager_id,
         "target_manager_name": target_manager_name,
         "task_name":           task_name,
+        "target_cell":         target_cell,
+        "target_cell_names":   cell_names,
         "transfer_time":       transfer_time,
         "return_time":         return_time,
         "employees":           emp_rows,
@@ -2734,7 +2747,11 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
 
 def _exchange_target_label(payload: dict) -> str:
     if (payload or {}).get("target_type") == "supervisor":
-        return payload.get("target_manager_name") or "—"
+        label = payload.get("target_manager_name") or "—"
+        if payload.get("target_cell"):
+            names = payload.get("target_cell_names") or {}
+            label += f" · {names.get('ru') or names.get('uz') or payload['target_cell']}"
+        return label
     return (payload or {}).get("task_name") or "—"
 
 
