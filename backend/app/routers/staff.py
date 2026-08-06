@@ -1042,11 +1042,29 @@ def get_attendance(
             continue
         workers.append(_serialize(r))
 
+    # Name catalog for the codes present today, so the page can label the cell
+    # column in the viewer's language. Codes with no Cell record (e.g. a brand
+    # new «Код подразделения») still render — as the bare code.
+    codes = sorted({r.verifix_code for r in rows if r.verifix_code})
+    cells = []
+    if codes:
+        by_code = {c.verifix_code: c for c in db.query(Cell).filter(Cell.verifix_code.in_(codes)).all()}
+        for code in codes:
+            c = by_code.get(code)
+            cells.append({
+                "verifix_code": code,
+                "name_uz":      c.name_workshop_uz      if c else None,
+                "name_uz_cyrl": c.name_workshop_uz_cyrl if c else None,
+                "name_ru":      c.name_workshop_ru      if c else None,
+                "name_en":      c.name_workshop_en      if c else None,
+            })
+
     return {
         "manager_id":   manager_id,
         "manager_name": mgr.name if mgr else None,
         "date":         attend_date,
         "workers":      workers,
+        "cells":        cells,
         "extra_hours":  round(float(extra_hours), 2),
     }
 

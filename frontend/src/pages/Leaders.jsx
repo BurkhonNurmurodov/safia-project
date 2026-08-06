@@ -612,6 +612,21 @@ function LateChip({ days, T }) {
   );
 }
 
+// Filed outside the shift-1 window (08:00–20:00 of the day it reports on), so
+// the day scores as missed. The chip is red because that is what it costs, and
+// the row's own score chip greys out beside it because that number no longer
+// counts — two readings of one fact, neither of which a vanished row could give.
+function VoidChip({ T }) {
+  return (
+    <span
+      title={T.voidTitle}
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
+      style={{ background: hexA(C_BAD, 0.12), border: `1px solid ${hexA(C_BAD, 0.3)}`, color: C_BAD }}>
+      <Ban size={10} />{T.voidChip}
+    </span>
+  );
+}
+
 function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor, accent, fit, loading }) {
   // `fit` cards hold a person's name: soften the casing, then auto-shrink it to
   // the card width (abbreviating to "Surname G." only if it still won't fit).
