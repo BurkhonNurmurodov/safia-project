@@ -939,6 +939,12 @@ async def send_broadcast(
         media_names=[m["filename"] for m in media_items],
         target_keys=keys, recipient_total=len(recipients),
         sent_count=0, failed_count=0, failed_names=[], status="sending",
+        # Resumable fan-out state: the resolved list + cursor live on the row.
+        # claimed_at is set NOW so a concurrently booting process's resume
+        # sweep can't steal the row from the only process holding the
+        # in-memory attachment bytes.
+        recipients=[[tid, name] for tid, name in sorted(recipients.items())],
+        send_cursor=0, claimed_at=datetime.now(timezone.utc),
     )
     db.add(row)
     db.commit()
@@ -947,13 +953,13 @@ async def send_broadcast(
     if mode == "rich":
         threading.Thread(
             target=_run_broadcast_rich,
-            args=(row.id, sorted(recipients.items()), html, media_items),
+            args=(row.id, media_items), kwargs={"claimed": True},
             daemon=True,
         ).start()
     else:
         threading.Thread(
             target=_run_broadcast,
-            args=(row.id, sorted(recipients.items()), html, kind, data, filename),
+            args=(row.id, data, filename), kwargs={"claimed": True},
             daemon=True,
         ).start()
     return {"id": row.id, "recipients": len(recipients)}
