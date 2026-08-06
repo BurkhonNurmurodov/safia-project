@@ -132,10 +132,26 @@ function isZagruzkaCalcWorker(worker) {
 // ── Column-filter primitives ──────────────────────────────────────────────────
 
 const INIT_FILTERS = {
-  worker: "", job_titles: [], schedules: [], clock: [],
+  worker: "", job_titles: [], schedules: [], clock: [], cells: [],
   hours_min: "", hours_max: "",
   early_min: "", early_max: "",
   eff_min:   "", eff_max:   "",
+};
+
+// Canonical form for matching ONE person across the two Verifix exports (the
+// per-manager file and the by-cell file): same script (Cyrillic → English
+// Latin), spacing and case — so «АБДАКИМОВ …» and "ABDAKIMOV …" collide.
+const normName = (s) =>
+  s ? transliterate(String(s), "en").replace(/\s+/g, " ").trim().toUpperCase() : "";
+
+// What the Yacheyka column shows for one cell, in the viewer's language.
+const cellDisplay = (c, lang) => {
+  const nm = pickCellName(c, lang, "name_");
+  return {
+    code: c.verifix_code || "—",
+    name: nm || "",
+    full: `${c.verifix_code || "—"}${nm ? " · " + nm : ""}`,
+  };
 };
 
 function isFilterActive(f) {
