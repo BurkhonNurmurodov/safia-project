@@ -193,6 +193,10 @@ def _serialize(
     # name (renames stay live); the concern_owner snapshot / legacy typed text
     # is the fallback, without a position.
     owner_name = (owner_names or {}).get((c.owner_role, c.owner_profile_id))
+    # Live cell lookup: (current leader, that leader's supervisor).
+    cell_leader, cell_sup = (cell_leaders or {}).get(
+        (c.cell_code or "").strip(), (None, None)
+    )
     out = {
         "id": c.id,
         "leader_profile_id": c.leader_profile_id,
