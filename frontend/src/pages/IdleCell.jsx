@@ -794,7 +794,7 @@ export default function IdleCell() {
       {/* View tabs sit UNDER the filter card — date / shift / supervisor / cells
           all scope both views, and both views' saved data ships in the one
           /cells payload, so switching never refetches. */}
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-2">
         <SegmentedToggle
           value={view}
           onChange={setView}
@@ -803,6 +803,22 @@ export default function IdleCell() {
             ["perenaladka", t("idleCell.tabPerenaladka")],
           ]}
         />
+        {/* Perenaladka only: pull the shift report's per-cell changeover history.
+            Shown to every profile that can open the page (refresh-button rule);
+            the server re-gates by page access anyway. */}
+        {view === "perenaladka" && (
+          <Button
+            size="lg"
+            variant="secondary"
+            className="ml-auto"
+            loading={refreshMut.isPending}
+            icon={!refreshMut.isPending ? <RefreshCw size={14} /> : null}
+            title={t("idleCell.refreshHint")}
+            onClick={() => refreshMut.mutate()}
+          >
+            <span className="hidden sm:inline">{t("idleCell.refresh")}</span>
+          </Button>
+        )}
       </div>
 
       {supervisorId == null ? (
