@@ -2449,10 +2449,12 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             att.effective_hours = plan["part1_eff"]
             # early_arrival_min unchanged — early belongs to the original unit
             if not is_task and plan["part2"] > 0:
-                # → supervisor: the after-T hours land on the receiving unit.
+                # → supervisor: the after-T hours land on the receiving unit,
+                # credited to the destination cell.
                 # → task: dropped (no row).
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part2"])
+                                 hours_worked=plan["part2"],
+                                 verifix_code=payload.get("target_cell"))
                 db.add(row); db.flush()
                 leftover_id = row.id
             emp["applied"] = {"side": "stay", "leftover_id": leftover_id}
