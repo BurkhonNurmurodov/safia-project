@@ -70,7 +70,7 @@ _MANAGER_ID_REFS = [
     ("pp_reconciliation", "manager_id"),
     ("pp_uploads", "manager_id"),
     ("leader_concerns", "brigadir_manager_id"),
-    ("leader_checklists", "supervisor_manager_id"),
+    ("leader_tasks", "supervisor_manager_id"),
     ("role_profiles", "manager_id"),
 ]
 
