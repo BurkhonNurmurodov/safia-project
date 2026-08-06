@@ -3202,7 +3202,12 @@ function DropdownStatus({ value, onChange }) {
 
 // ── Custom Supervisor Select ──────────────────────────────────────────────────
 
-export function SupervisorSelect({ value, onChange, supervisors }) {
+// `cells` (optional) appends a «Yacheykalar» section under the supervisors —
+// the cells that carry rows in the by-cell attendance import on the open date.
+// Picking one calls onCellChange with the option; cellValue marks the current
+// pick and takes over the trigger label (a cell and a unit are never both
+// selected — the parent clears one when the other is chosen).
+export function SupervisorSelect({ value, onChange, supervisors, cells = [], cellValue = null, onCellChange }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const [open, setOpen] = useState(false);
@@ -3216,7 +3221,7 @@ export function SupervisorSelect({ value, onChange, supervisors }) {
     return () => document.removeEventListener("mousedown", onOutside);
   }, []);
 
-  const selected = supervisors.find(s => s.manager_id === value);
+  const selected = cellValue ? null : supervisors.find(s => s.manager_id === value);
 
   return (
     <div ref={ref} className="relative">
@@ -3226,13 +3231,17 @@ export function SupervisorSelect({ value, onChange, supervisors }) {
         style={{
           background: "var(--bg-card)",
           border: `1px solid ${open ? "var(--brand)" : "var(--border-md)"}`,
-          color: selected ? "var(--text-1)" : "var(--text-3)",
+          color: selected || cellValue ? "var(--text-1)" : "var(--text-3)",
           minWidth: 210,
         }}
       >
-        <Users size={13} style={{ color: "var(--text-4)", flexShrink: 0 }} />
+        {cellValue
+          ? <LayoutGrid size={13} style={{ color: "var(--text-4)", flexShrink: 0 }} />
+          : <Users size={13} style={{ color: "var(--text-4)", flexShrink: 0 }} />}
         <span className="flex-1 text-left truncate text-sm">
-          {selected ? `${tl(selected.full_name)} (S${selected.shift})` : t("staff.selectSupervisor")}
+          {cellValue
+            ? (cellValue.code || "—") + (cellValue.name ? ` · ${cellValue.name}` : "")
+            : selected ? `${tl(selected.full_name)} (S${selected.shift})` : t("staff.selectSupervisor")}
         </span>
         <ChevronDown
           size={13}
