@@ -324,6 +324,37 @@ def _render_hr_document(data, lang) -> str:
     return "\n".join(lines)
 
 
+def _leader_late_data(db, req) -> dict:
+    """Facts of a request to open a voided leader-day. The score is the mean of
+    the day's checklist rows — what the day will actually count for if opened,
+    so the admin decides against the number, not a description of it."""
+    from app.routers.leaders import _day_score
+    mgr = db.query(Manager).filter_by(id=req.manager_id).first() if req.manager_id else None
+    return {
+        "unit":       mgr.name if mgr else "—",
+        "date":       req.date,
+        "leader":     req.leader_name,
+        "supervisor": req.requested_by_name,
+        "filed_at":   req.requested_at.strftime("%H:%M") if req.requested_at else None,
+        "score":      _day_score(db, req),
+        "reason":     req.reason,
+    }
+
+
+def _render_leader_late(data, lang) -> str:
+    lines = [_L(lang, "hdr_late"), ""]
+    lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
+    lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
+    lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
+    lines.append(f"📊 {_L(lang, 'score')}: {data['score']}%")
+    lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data['supervisor'])}")
+    lines.append("")
+    lines.append(f"💬 {_L(lang, 'reason')}: {_v(data['reason'])}")
+    lines.append("")
+    lines.append(_L(lang, "late_note"))
+    return "\n".join(lines)
+
+
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 
 def _approve_reject_kb(code: str, ref, lang: str):
