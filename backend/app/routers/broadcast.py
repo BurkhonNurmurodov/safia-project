@@ -966,6 +966,68 @@ async def send_broadcast(
     return {"id": row.id, "recipients": len(recipients)}
 
 
+def _retryable(r: Broadcast) -> bool:
+    """A finished row whose failed recipients can actually be re-sent. Needs
+    the resolved recipient list (copy-mode and legacy rows have none) and, if
+    media was attached, a persisted file_id / media_specs — without those the
+    runner would instantly re-fail everyone through its media-lost path."""
+    if r.status != "done" or not (r.failed_count or 0) or not r.recipients:
+        return False
+    if r.mode == "rich":
+        return not r.media_names or bool(r.media_specs)
+    if r.mode == "copy":
+        return False
+    return not r.attachment_kind or bool(r.attachment_file_id)
+
+
+@router.post("/{bid}/retry")
+def retry_broadcast(bid: int, db: Session = Depends(get_db),
+                    _: dict = Depends(verify_admin)):
+    """Re-send only to the recipients whose DM failed. The failed subset is
+    rebuilt by matching failed_names back against the resolved recipient list
+    (names are counted, so duplicate names claim one recipient each); the row
+    is then reset to 'sending' over that subset and re-enters the normal
+    resumable fan-out. sent_count keeps accumulating toward recipient_total,
+    and the persisted attachment file_id / media_specs are reused, so nothing
+    is re-uploaded and a mid-retry process death resumes like any broadcast."""
+    row = db.query(Broadcast).filter_by(id=bid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    if row.status == "sending":
+        raise HTTPException(status_code=409, detail="Broadcast is still sending")
+    if not _retryable(row):
+        raise HTTPException(status_code=409, detail="Nothing to retry for this broadcast")
+
+    remaining = Counter(row.failed_names or [])
+    failed_subset = []
+    for tid, name in row.recipients:
+        if remaining.get(name):
+            remaining[name] -= 1
+            failed_subset.append([tid, name])
+    if not failed_subset:
+        raise HTTPException(status_code=409, detail="Failed recipients could not be resolved")
+
+    # Atomic flip guarded on status so two admins clicking Retry at once can't
+    # both spawn a runner for the same row; claimed_at pre-claims as /send does.
+    updated = db.query(Broadcast).filter_by(id=bid, status="done").update({
+        "recipients": failed_subset,
+        "send_cursor": 0,
+        "failed_count": 0,
+        "failed_names": [],
+        "status": "sending",
+        "finished_at": None,
+        "claimed_at": datetime.now(timezone.utc),
+    })
+    db.commit()
+    if not updated:
+        raise HTTPException(status_code=409, detail="Broadcast is still sending")
+
+    runner = _run_broadcast_rich if row.mode == "rich" else _run_broadcast
+    threading.Thread(target=runner, args=(bid,), kwargs={"claimed": True},
+                     daemon=True).start()
+    return {"id": bid, "retrying": len(failed_subset)}
+
+
 @router.get("/history")
 def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     rows = db.query(Broadcast).order_by(Broadcast.id.desc()).limit(50).all()
