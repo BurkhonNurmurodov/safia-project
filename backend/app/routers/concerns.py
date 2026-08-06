@@ -403,10 +403,15 @@ def _is_owner(ctx: dict, c: LeaderConcern) -> bool:
 def _is_responsible(ctx: dict, c: LeaderConcern) -> bool:
     """The caller is the person who currently HOLDS the concern at its level —
     the only one (besides admin) allowed to change its STATUS. Each level names
-    its holder on the row: supervisor → the brigadir, shift-manager → the picked
-    shift-manager, top-manager → the picked top-manager."""
+    its holder on the row: leader → the leader it was logged against, supervisor
+    → the brigadir, shift-manager → the picked shift-manager, top-manager → the
+    picked top-manager."""
     role = ctx["role"]
     level = _level(c)
+    if level == "leader":
+        # A concern sent down to the leader is theirs to answer for — the same
+        # identity match that makes it "their own row" (_is_owner).
+        return role == "leader" and _is_owner(ctx, c)
     if level == "supervisor":
         return role == "supervisor" and c.brigadir_manager_id == ctx["role_id"]
     if level == "shift-manager":
