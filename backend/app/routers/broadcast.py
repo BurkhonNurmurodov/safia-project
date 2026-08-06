@@ -1069,6 +1069,7 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
         "failed_count": r.failed_count,
         "failed_names": r.failed_names or [],
         "status": r.status,
+        "can_retry": _retryable(r),
     } for r in rows]
 
 
