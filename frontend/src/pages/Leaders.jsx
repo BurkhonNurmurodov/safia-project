@@ -20,6 +20,7 @@ import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import BotDataClear from "../components/leaders/BotDataClear";
+import LateReports from "../components/leaders/LateReports";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
