@@ -3194,13 +3194,15 @@ def _create_people_exchange(db: Session, caller: dict, body: "DocCreateBody",
                             d: date, manager_id: int, mgr_name: Optional[str]):
     # The sending unit's day must still be open
     _assert_day_open(db, manager_id, d)
-    ttype, tgt_id, tgt_name, task_name = _resolve_exchange_target(
+    ttype, tgt_id, tgt_name, task_name, tcell = _resolve_exchange_target(
         db, manager_id, d, body.target_type, body.target_manager_id, body.task_name,
+        body.target_cell,
     )
     ttime = _normalize_transfer_time(caller, ttype, body.transfer_time)
     rtime = _normalize_return_time(ttype, ttime, body.return_time)
     payload = _build_exchange_payload(db, manager_id, d, ttype, tgt_id, tgt_name, task_name,
-                                      body.employees, transfer_time=ttime, return_time=rtime)
+                                      body.employees, transfer_time=ttime, return_time=rtime,
+                                      target_cell=tcell)
     if not payload["employees"]:
         raise HTTPException(status_code=400, detail="None of the selected workers have a record on this date")
     if ttype == "task":
