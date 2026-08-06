@@ -2863,7 +2863,10 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
     """Supervisors a worker exchange may move INTO for a date — every unit except
     the sender, excluding any unit that has already closed that day or has no
     attendance data uploaded for it yet (rows moved into a data-less unit would
-    be destroyed by that unit's eventual verifix upload)."""
+    be destroyed by that unit's eventual verifix upload). Each target carries its
+    `cells` — the codes present in that unit's upload for the date — because a
+    → supervisor move must pick the destination cell; an empty list means a
+    legacy no-cell day (plain unit-level move)."""
     if caller.get("role") not in ("admin", "supervisor"):
         raise HTTPException(status_code=403, detail="Admin or supervisor only")
     d = date.fromisoformat(attend_date)
@@ -2878,11 +2881,35 @@ def exchange_targets(attend_date: str, manager_id: Optional[int] = None,
             Attendance.worker_name.notin_(["", "nan", "NaN"]),
         ).distinct().all()
     }
+    # Cell codes per unit for the date (named rows only) + their display names.
+    unit_codes: dict = {}
+    for mid, code in db.query(Attendance.manager_id, Attendance.verifix_code).filter(
+        Attendance.date == d,
+        Attendance.verifix_code.isnot(None),
+        Attendance.verifix_code != "",
+        Attendance.worker_name.isnot(None),
+        Attendance.worker_name.notin_(["", "nan", "NaN"]),
+    ).distinct().all():
+        unit_codes.setdefault(mid, set()).add(code)
+    all_codes = {c for codes in unit_codes.values() for c in codes}
+    by_code = {}
+    if all_codes:
+        by_code = {c.verifix_code: c for c in db.query(Cell).filter(Cell.verifix_code.in_(all_codes)).all()}
     out = []
     for m in db.query(Manager).filter(Manager.archived.is_(False)).order_by(Manager.shift, Manager.name).all():
         if m.id == sender_id or m.id in closed or m.id not in has_data:
             continue
-        out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift})
+        cells = []
+        for code in sorted(unit_codes.get(m.id) or ()):
+            c = by_code.get(code)
+            cells.append({
+                "verifix_code": code,
+                "name_uz":      c.name_workshop_uz      if c else None,
+                "name_uz_cyrl": c.name_workshop_uz_cyrl if c else None,
+                "name_ru":      c.name_workshop_ru      if c else None,
+                "name_en":      c.name_workshop_en      if c else None,
+            })
+        out.append({"manager_id": m.id, "full_name": m.name, "shift": m.shift, "cells": cells})
     return out
 
 
