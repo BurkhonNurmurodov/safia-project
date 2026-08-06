@@ -2579,6 +2579,10 @@ def _apply_people_exchange(db: Session, doc: HrDocument):
             continue
         if ttype == "supervisor" and target:
             att.manager_id = target
+            # Land the worker in the chosen destination cell (key-guarded so a
+            # pre-cell document approved after this deploy stays untouched).
+            if "target_cell" in payload:
+                att.verifix_code = payload.get("target_cell")
         else:
             att.clock_in_out      = "X"
             att.hours_worked      = 0
