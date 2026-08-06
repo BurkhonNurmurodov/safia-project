@@ -630,6 +630,8 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
                 _decide_edit_batch(ref, status, caller)
         elif code == "hr":
             _decide_hr_document(int(ref), status, call)
+        elif code == "ll":
+            _decide_leader_late(int(ref), status, call)
         else:
             bot.answer_callback_query(call.id)
             return
