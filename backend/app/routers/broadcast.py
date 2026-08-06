@@ -726,19 +726,56 @@ def _tg_copy(chat_id: int, from_chat_id: int, message_ids: list[int]):
 
 # ── Background sender ─────────────────────────────────────────────────────────
 
-def _run_broadcast(bid: int, recipients: list[tuple[int, str]], html: str,
-                   kind: str | None, data: bytes | None, filename: str | None):
-    """Deliver sequentially, updating the history row as it goes. After the
-    first successful media upload the returned file_id is reused so the file
-    is uploaded to Telegram exactly once."""
+def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = None,
+                   claimed: bool = False):
+    """Deliver sequentially, resumable. Recipients, cursor and counters are
+    read from and committed back to the row after every send. After the first
+    successful media upload the returned file_id is PERSISTED so the file is
+    uploaded to Telegram exactly once and any later process can finish the
+    fan-out without the original bytes."""
     from app.telegram_bot import bot, strip_custom_emoji
-    db = SessionLocal()
-    file_id: str | None = None
-    stripped_html = strip_custom_emoji(html)
-    cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
+    io = _BroadcastIO(bid)
     try:
-        row = db.query(Broadcast).filter_by(id=bid).first()
-        for tid, name in recipients:
+        if not io.claim(pre_claimed=claimed):
+            return
+        row = io.row
+        recipients = row.recipients or []
+        html = row.text_html
+        kind = row.attachment_kind
+        filename = filename or row.attachment_name
+        file_id: str | None = row.attachment_file_id
+        stripped_html = strip_custom_emoji(html)
+        cur_html = html  # downgrades to stripped_html on the first premium-emoji rejection
+        sent = row.sent_count or 0
+        failed = row.failed_count or 0
+        failed_names = list(row.failed_names or [])
+        i = row.send_cursor or 0
+        total = len(recipients)
+
+        def _fields():
+            f = {"sent_count": sent, "failed_count": failed,
+                 "failed_names": list(failed_names), "send_cursor": i}
+            if file_id:
+                f["attachment_file_id"] = file_id
+            return f
+
+        if kind and data is None and not file_id and i < total:
+            # The attachment bytes lived only in the process that died before
+            # the first successful send harvested a file_id. Nothing to resume
+            # from — record the loss honestly instead of spinning.
+            skipped = [name for _, name in recipients[i:]]
+            failed += len(skipped)
+            failed_names.extend(skipped)
+            i = total
+            logger.warning("Broadcast %s: attachment lost with its original process "
+                           "before any send succeeded — %s recipient(s) marked failed",
+                           bid, len(skipped))
+            io.flush(_fields(), final=True)
+            return
+
+        while i < total and io.row is not None:
+            tid, name = recipients[i]
+
             def _send(h):
                 nonlocal file_id
                 if kind == "photo":
@@ -753,30 +790,57 @@ def _run_broadcast(bid: int, recipients: list[tuple[int, str]], html: str,
                     file_id = file_id or msg.document.file_id
                 else:
                     bot.send_message(tid, h, parse_mode="HTML")
+
             try:
                 try:
-                    _send(cur_html)
+                    _send_once(lambda: _send(cur_html))
                 except Exception:
                     # Premium emoji rejected (bot lacks a Fragment username) →
                     # retry degraded to fallback chars and latch it for the rest.
                     if cur_html == stripped_html:
                         raise
-                    _send(stripped_html)
+                    _send_once(lambda: _send(stripped_html))
                     cur_html = stripped_html
-                row.sent_count += 1
+                sent += 1
             except Exception as e:
-                row.failed_count += 1
-                row.failed_names = (row.failed_names or []) + [name]
+                failed += 1
+                failed_names.append(name)
                 logger.warning("Broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
-            db.commit()
+            i += 1
+            if not io.flush(_fields()):
+                return  # DB unreachable — a later process resumes from the cursor
             time.sleep(0.05)  # stay well under Telegram's ~30 msg/s ceiling
-        row.status = "done"
-        row.finished_at = datetime.now(timezone.utc)
-        db.commit()
+        io.flush(_fields(), final=True)
     except Exception:
         logger.exception("Broadcast %s thread crashed", bid)
     finally:
-        db.close()
+        io.close()
+
+
+def resume_stuck_broadcasts() -> None:
+    """Re-attach a sender to every broadcast orphaned by a process restart.
+
+    Called from BOTH startup entrypoints (FastAPI lifespan and
+    passenger_wsgi), i.e. from every fresh Passenger process — which on this
+    host means every few seconds, so an interrupted fan-out picks back up
+    almost immediately. The atomic claim in _BroadcastIO keeps concurrently
+    booting processes off the same row; rows whose worker is still alive
+    (fresh claimed_at heartbeat) are skipped."""
+    def _worker():
+        try:
+            with SessionLocal() as db:
+                rows = db.query(Broadcast.id, Broadcast.mode).filter(
+                    Broadcast.status == "sending",
+                    Broadcast.recipients.isnot(None),
+                ).all()
+            for bid, mode in rows:
+                if mode == "rich":
+                    _run_broadcast_rich(bid)
+                else:
+                    _run_broadcast(bid)
+        except Exception:
+            logger.exception("Broadcast resume sweep failed")
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
