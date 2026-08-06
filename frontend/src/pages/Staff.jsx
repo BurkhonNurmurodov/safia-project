@@ -1630,7 +1630,12 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     if (target === "__new__")        return newTask.trim() || "…";
     if (target.startsWith("sup:")) {
       const s = supTargets.find(x => `sup:${x.manager_id}` === target);
-      return s ? tl(s.full_name) : "…";
+      let label = s ? tl(s.full_name) : "…";
+      if (targetCells.length) {
+        const c = targetCells.find(x => x.verifix_code === targetCell);
+        label += ` · ${c ? cellDisplay(c, lang).full : "…"}`;
+      }
+      return label;
     }
     if (target.startsWith("task:"))  return target.slice(5);
     return "…";
