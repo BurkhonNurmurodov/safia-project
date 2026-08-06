@@ -1672,6 +1672,9 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
     setError("");
     const tgt = resolveTarget();
     if (!tgt)                { setError(t("staff.chooseTarget")); return; }
+    if (tgt.target_type === "supervisor" && targetCells.length > 0 && !targetCell) {
+      setError(t("staff.chooseCell")); return;
+    }
     if (selected.size === 0) { setError(t("staff.selectAtLeastOne")); return; }
     // Transfer-time is only meaningful for a → supervisor/task move with the
     // toggle on and a time chosen. Always send the field (empty clears it). The
