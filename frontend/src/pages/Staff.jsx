@@ -1463,9 +1463,10 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
   });
   useEffect(() => {
     if (isEdit && detail && !initialised.current) {
-      if (detail.target_type === "supervisor" && detail.target_manager_id)
+      if (detail.target_type === "supervisor" && detail.target_manager_id) {
         setTarget(`sup:${detail.target_manager_id}`);
-      else if (detail.target_type === "task" && detail.task_name)
+        if (detail.target_cell) setTargetCell(detail.target_cell);
+      } else if (detail.target_type === "task" && detail.task_name)
         setTarget(`task:${detail.task_name}`);
       setSelected(new Set((detail.employees || []).map(e => e.worker_name)));
       if (detail.transfer_time) { setUseTime(true); setTransferTime(detail.transfer_time); }
