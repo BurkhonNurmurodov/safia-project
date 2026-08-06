@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Users, History, Send, Paperclip, X, Image as ImageIcon, Video,
-  FileText, CheckCircle, Loader2, Type, Sparkles,
+  FileText, CheckCircle, Loader2, Type, Sparkles, RotateCcw,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
