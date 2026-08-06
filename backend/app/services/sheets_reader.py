@@ -43,6 +43,11 @@ _SHIFT_HDR_BRIGADIR = "бригадир фио"
 # «Категория D2 (Ячейка тўхтаганда)(Складдан …)» → letter token "d2".
 _SHIFT_CAT_RE = re.compile(r"^категория\s+([a-zа-яё0-9]+)\s*\(")
 
+# Per-cell changeover question «Ячейка 7111 ?(Переналадка)» → verifix code
+# "7111" (kept as a string — codes like "0811" carry their leading zero). The
+# spelling wobbles between «Переналадка» and «Перенеладка», hence the class.
+_SHIFT_PEREN_RE = re.compile(r"^ячейка\s+(\d+)\b.*перен[ае]ладк")
+
 # Uzbek-Cyrillic letters that get typed inconsistently, folded onto their bare
 # forms so «тўхтаганда» and «тухтаганда» hit the same marker.
 _SHIFT_FOLD = str.maketrans({"ў": "у", "ғ": "г", "қ": "к", "ҳ": "х", "ё": "е", "ъ": "", "’": "'", "‘": "'"})
