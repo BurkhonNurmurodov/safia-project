@@ -156,6 +156,7 @@ const cellDisplay = (c, lang) => {
 
 function isFilterActive(f) {
   return !!(f.worker || f.job_titles.length || f.schedules.length || f.clock.length ||
+    f.cells.length ||
     f.hours_min || f.hours_max || f.early_min || f.early_max || f.eff_min || f.eff_max);
 }
 
