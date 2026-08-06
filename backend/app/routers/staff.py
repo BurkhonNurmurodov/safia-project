@@ -2608,6 +2608,8 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
             ).first()
             if att:
                 att.manager_id = emp.get("old_manager_id") or doc.manager_id
+                if "old_verifix_code" in emp:
+                    att.verifix_code = emp.get("old_verifix_code")
         else:
             # Restore the worker's original came-state from the snapshot.
             snap = emp.get("snapshot") or {}
