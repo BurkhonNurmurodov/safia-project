@@ -720,8 +720,14 @@ def add_concern_owner_columns() -> None:
     """Owner-column rollout: the Owner is the concern's CREATOR, keyed by their
     profile identity (owner_role + owner_profile_id — role_profiles.id, or
     managers.id for supervisors) and resolved to the current profile name at
-    view time. Also removes the leader step from the escalation chain: the
-    chain now starts at "supervisor", so existing leader-level rows move up."""
+    view time. Also pins "supervisor" as the level a concern OPENS at.
+
+    The one-shot ``UPDATE … SET level='supervisor' WHERE level='leader'`` that
+    shipped with this migration is gone: it ran on every boot, and the leader
+    step is a live chain level again (a supervisor sends a concern down to their
+    leader), so re-running it would silently pull every handed-down concern back
+    up on the next restart. The 2026-07 rows it was written for were migrated
+    long ago."""
     db = SessionLocal()
     try:
         db.execute(text(
