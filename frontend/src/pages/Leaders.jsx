@@ -2105,10 +2105,28 @@ export default function Leaders({ shiftLock = null }) {
       </div>
   );
 
-  const tabsBar = showClearTab ? (
+  const tabsBar = (showClearTab || showLateTab) ? (
     <div className="mb-3">
-      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
-        options={[["monitor", T.tabMonitor], ["clear", T.tabClear]]} />
+      <SegmentedToggle asTabs scrollable ariaLabel={pageTitle} value={tab} onChange={setTab}
+        options={[
+          ["monitor", T.tabMonitor],
+          // The badge is what this viewer still owes — an admin's pending
+          // decisions, a brigadir's un-asked days — so the tab is a to-do
+          // count, not a total that never goes down.
+          ...(showLateTab ? [{
+            value: "late",
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {T.tabLate}
+                {lateTodo > 0 && (
+                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "#eab308", color: "#1a1a1a" }}>{lateTodo}</span>
+                )}
+              </span>
+            ),
+          }] : []),
+          ...(showClearTab ? [["clear", T.tabClear]] : []),
+        ]} />
     </div>
   ) : null;
 
@@ -2118,6 +2136,16 @@ export default function Leaders({ shiftLock = null }) {
         {headerBar}
         {tabsBar}
         <BotDataClear />
+      </Layout>
+    );
+  }
+
+  if (tab === "late") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {tabsBar}
+        <LateReports canDecide={!!lateData?.can_decide} />
       </Layout>
     );
   }
