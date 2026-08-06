@@ -230,7 +230,7 @@ const fmtDMY = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.sli
 const fmtDM = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "");
 
 // The standard full-width modal text input (matches the Production/Concerns forms).
-function ModalInput({ value, onChange, type = "text", className = "" }) {
+function ModalInput({ value, onChange, type = "text", className = "", ...rest }) {
   return (
     <input
       value={value}
@@ -238,6 +238,7 @@ function ModalInput({ value, onChange, type = "text", className = "" }) {
       onChange={(e) => onChange(e.target.value)}
       className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${className}`}
       style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+      {...rest}
     />
   );
 }
