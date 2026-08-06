@@ -16,18 +16,24 @@ export const ROLE_SECTIONS = {
 const SHIFT_ROLES = new Set(["shift-manager", "supervisor"]);
 
 /**
- * Bucket a role's flat profile list into intermediate branches.
+ * Bucket a flat profile list into intermediate branches.
  *
+ *   prefix       – key namespace of the level being bucketed (the role at the
+ *                  top level, the parent bucket's key one level down) so nested
+ *                  buckets never share a key — CheckboxTree tracks expansion by
+ *                  key, and two "no supervisor" buckets under different shifts
+ *                  would otherwise open and close together
  *   metaOf(node) → { id, label, sort } for a node that belongs to a bucket,
  *                  or null for one that has no position yet
  *   looseLabel   – label of the trailing bucket collecting the nulls
  *
  * Buckets keep the profile order they arrived in and are sorted among
  * themselves by `sort` (numbers numerically, anything else as text), with the
- * loose bucket last. A role where NOTHING has a position stays flat, so an
- * unfilled org chart never adds a pointless single wrapper.
+ * loose bucket last. A level where NOTHING has a position stays flat (the
+ * original array, by identity), so an unfilled org chart never adds a pointless
+ * single wrapper.
  */
-function bucketProfiles(role, nodes, metaOf, looseLabel, icon) {
+function bucketProfiles(prefix, nodes, metaOf, looseLabel, icon) {
   const buckets = new Map();
   const loose = [];
   for (const n of nodes) {
