@@ -2476,7 +2476,8 @@ export default function Leaders({ shiftLock = null }) {
                       {nm(r.leader)}
                       {aiOn && aiFlags[r.uid] ? <> <AiChip n={aiFlags[r.uid]} T={T} /></> : null}
                     </span>
-                    <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0" style={{ background: scoreColor(r.completion) }}>
+                    <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
+                      style={{ background: r.rejected ? C_FLAT : scoreColor(r.completion) }}>
                       {Math.round(r.completion)}%
                     </span>
                   </div>
