@@ -259,6 +259,46 @@ def effective_date(shift: int | None = None, now: datetime | None = None) -> str
     return now.strftime("%Y-%m-%d")
 
 
+# ── the submission deadline ──────────────────────────────────────────────────
+#
+# A day stops accepting entries BEFORE effective_date rolls over to the next
+# one. Shift 2 files 21:00 → 09:00 next morning, so its checklist dies at 09:00
+# while the attribution boundary above only turns at 17:00 — eight hours later.
+# Anything keyed to that boundary leaves a missed night editable all morning.
+
+def deadline_hhmm(shift: int | None) -> str:
+    """The clock time a day's checklist stops accepting entries. 24-hour, and
+    it stays 24-hour in every language the reason is rendered in."""
+    return "09:00" if shift == 2 else "23:59"
+
+
+def expired_through(shift: int | None = None, now: datetime | None = None) -> str:
+    """ISO date of the LATEST checklist day whose submission window has already
+    shut. Everything on or before it is final and can only be auto-closed.
+
+    Shift 2's day D is filed until D+1 09:00, so shifting the clock back nine
+    hours puts "still open" and "expired" on either side of a plain date
+    compare. Shift 1's day D is filed until the end of D itself.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(_TASHKENT)
+    if shift == 2:
+        now -= timedelta(hours=9)
+    return (now.date() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+MISSED_PREFIX = "__missed__|"
+
+
+def missed_reason(shift: int | None) -> str:
+    """Sentinel reason for a task the leader never answered before the window
+    shut. Deliberately NOT a sentence: a leader-typed reason is free text in
+    that leader's own language, so the column cannot also carry one fixed
+    message for every viewer. The register expands `__missed__|HH:MM` per
+    VIEWER instead, which is also what keeps the time out of AM/PM.
+    """
+    return f"{MISSED_PREFIX}{deadline_hhmm(shift)}"
+
+
 def compute_completion(settings: dict[int, dict], entries: list[LeaderTaskEntry]) -> float:
     """Weighted score over the ENABLED tasks: done earns its weight, not-done
     and unanswered earn 0."""
