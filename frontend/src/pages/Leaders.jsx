@@ -324,6 +324,20 @@ const TXT = {
   },
 };
 
+/* A day the leader never closed is auto-closed once its submission window
+   shuts, and every unanswered task is stored not-done against a SENTINEL
+   reason — `__missed__|HH:MM` — rather than a sentence. The column otherwise
+   holds free text the leader typed in their own language, so it cannot also
+   carry one fixed message that reads correctly for every viewer. Expanding it
+   here renders it in the VIEWER's language, and keeps the deadline in 24-hour
+   time: ru/uz never print AM/PM. Anything else is a real typed reason and
+   passes through untouched. */
+const MISSED_REASON = /^__missed__\|(\d{2}:\d{2})$/;
+const showReason = (raw, T) => {
+  const m = MISSED_REASON.exec(raw || "");
+  return m ? T.missedDeadline.replace("{time}", m[1]) : raw;
+};
+
 // The 13 checklist questions, in the sheet's question order (index + 1 = the
 // "N)" in its column headers). The first 12 carry over from
 // apps-script/JavaScript.html; T13 was added to the form later, which is why the
