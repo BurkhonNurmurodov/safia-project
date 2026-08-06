@@ -75,6 +75,10 @@ const t = {
     "idleCell.perenNotePlaceholder": "Perenaladka sababi (ixtiyoriy)",
     "idleCell.perenClearHint":    "O'chirish uchun ↺",
     "idleCell.perenClearConfirm": "Bu yacheyka va sana uchun perenaladka yozuvi o'chiriladi.",
+    "idleCell.refresh":           "Yangilash",
+    "idleCell.refreshHint":       "«Смена отчёт» jadvalidan yacheykalar bo'yicha perenaladka tarixini yuklash",
+    "idleCell.refreshDone":       "Jadvaldan yuklandi",
+    "idleCell.refreshFail":       "Yangilab bo'lmadi",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Yacheyka davomati",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
