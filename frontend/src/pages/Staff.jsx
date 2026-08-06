@@ -427,7 +427,57 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     enabled: !!selectedDate && !!managerId,
   });
 
-  const allWorkers = data?.workers ?? [];
+  // ── Yacheyka column ────────────────────────────────────────────────────────
+  // On a date that has a by-cell attendance upload, every worker also shows the
+  // cell that import put them in. Query keys are shared with the
+  // /cell-attendance page, so this costs nothing extra there; a viewer without
+  // that page gets one 403 → no dates → the column simply never renders.
+  const { data: cellDates = [] } = useQuery({
+    queryKey: ["cell-attendance-dates"],
+    queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
+    enabled: !!selectedDate,
+    staleTime: 120_000,
+    retry: false,
+  });
+  const hasCellData = !!selectedDate && cellDates.some(d => d.date === selectedDate);
+
+  const { data: cellDay } = useQuery({
+    queryKey: ["cell-attendance", selectedDate],
+    queryFn: () => api.get("/api/cell-attendance", { params: { date: selectedDate } }).then(r => r.data),
+    enabled: hasCellData,
+  });
+
+  // Normalized worker name → cell. When one name sits in several cells, a cell
+  // of THIS unit wins over someone else's — the by-cell payload is factory-wide
+  // for admins, and namesakes across units must not steal the label.
+  const cellOfWorker = useMemo(() => {
+    if (!hasCellData || !cellDay) return null;
+    const byId = new Map();
+    for (const c of cellDay.cells || []) byId.set(cellKey(c), c);
+    const m = new Map();
+    for (const r of cellDay.rows || []) {
+      const c = byId.get(cellKey(r));
+      if (!c) continue;
+      const k = normName(r.worker_name);
+      if (!k) continue;
+      const own = c.manager_id === managerId;
+      const prev = m.get(k);
+      if (!prev || (own && !prev.own)) m.set(k, { c, own });
+    }
+    return m;
+  }, [cellDay, hasCellData, managerId]);
+
+  const allWorkersRaw = data?.workers ?? [];
+  const allWorkers = useMemo(() => {
+    if (!cellOfWorker || cellOfWorker.size === 0) return allWorkersRaw;
+    return allWorkersRaw.map(w => {
+      const hit = cellOfWorker.get(normName(w.worker_name));
+      return hit ? { ...w, _cell: cellDisplay(hit.c, lang) } : w;
+    });
+  }, [allWorkersRaw, cellOfWorker, lang]);
+  // Only claim the column when at least one row actually matched — a day whose
+  // two uploads don't overlap would otherwise render a full column of dashes.
+  const showCellCol = useMemo(() => allWorkers.some(w => w._cell), [allWorkers]);
   const totalWorkers = allWorkers.length;
   const cameWorkers = useMemo(() => allWorkers.filter(hasWorked), [allWorkers]);
   const cameToWorkCount = cameWorkers.length;
