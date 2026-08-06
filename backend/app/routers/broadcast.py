@@ -26,7 +26,9 @@ import jwt
 import requests
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from jwt import PyJWTError as JWTError
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
+from telebot.apihelper import ApiTelegramException
 
 from app.config import settings
 from app.database import SessionLocal, get_db
