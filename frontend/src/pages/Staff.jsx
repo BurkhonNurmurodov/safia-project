@@ -3116,7 +3116,7 @@ function DocumentsPanel({ role, myManagerId, myTelegramId, documents = [], isLoa
                         {isDeletion
                           ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")}</span>
                           : isExchange
-                          ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · → {doc.target_type === "supervisor" ? tl(doc.target_manager_name) : doc.task_name}</span>
+                          ? <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · → {doc.target_type === "supervisor" ? `${tl(doc.target_manager_name)}${exchangeCellSuffix(doc, lang)}` : doc.task_name}</span>
                           : <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>· {doc.employee_count} {t("daily.emp")} · {tl(doc.new_role)}</span>}
                       </td>
                       <td className="px-3 py-3 text-center">
