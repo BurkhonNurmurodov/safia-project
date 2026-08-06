@@ -78,6 +78,77 @@ def sync_shift_report_sheet(sheet_id: str, db: Session) -> dict:
     return {"managers_synced": len(dt_total), "downtime_rows": count, "categories": cat_names}
 
 
+def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
+    """Import the shift report's per-cell «Переналадка» minutes into
+    ``cell_perenaladka`` — the /idle-cell Perenaladka tab's historical data.
+
+    Decisions (user, 2026-08-06): the sheet values ARE minutes; only the row of
+    the brigadir who OWNS the cell counts (``Cell.manager_id``), a cell answered
+    on someone else's row is ignored; and the sheet wins over anything entered
+    on the page. NOT wipe-and-reload: a value > 0 upserts the (cell, date) row,
+    an explicit 0 deletes it (0 is never stored in this table), a blank changes
+    nothing — days/cells the sheet never answered keep their manual entries.
+    An existing note survives an overwrite (the sheet has no note column)."""
+    managers = db.query(Manager).all()
+    alias = sheet_alias_map(db, (m.name for m in managers))
+    by_canon = {m.name: m for m in managers}
+
+    data = read_cell_perenaladka(sheet_id, set(alias.keys()))
+
+    by_code = {c.verifix_code: c for c in db.query(Cell).all() if c.verifix_code}
+
+    # Resolve one final value per (cell_id, date) under the owning-brigadir rule.
+    final: dict[tuple[int, str], float] = {}
+    unknown_codes: set[str] = set()
+    foreign = 0
+    for (iso, name), vals in data.items():
+        mgr = by_canon.get(alias.get(name, ""))
+        if mgr is None:
+            continue
+        for code, minutes in vals.items():
+            c = by_code.get(code)
+            if c is None:
+                unknown_codes.add(code)
+                continue
+            if c.manager_id != mgr.id:
+                foreign += 1
+                continue
+            final[(c.id, iso)] = minutes
+
+    existing = {(p.cell_id, p.date): p for p in db.query(CellPerenaladka).all()}
+    saved = cleared = 0
+    for (cell_id, iso), minutes in final.items():
+        p = existing.get((cell_id, iso))
+        if minutes > 0:
+            if p is not None and float(p.minutes or 0) == minutes:
+                continue   # already this value — nothing to win
+            if p is None:
+                p = CellPerenaladka(cell_id=cell_id, date=iso)
+                db.add(p)
+            p.minutes = minutes
+            p.entered_by_profile = "sheet-import"
+            saved += 1
+        elif p is not None:   # explicit 0 in the sheet clears the entry
+            db.delete(p)
+            cleared += 1
+    db.commit()
+
+    if unknown_codes:
+        print(f"[sheets] shift report perenaladka: cell code(s) {sorted(unknown_codes)} "
+              f"match no cells.verifix_code — their values are NOT imported")
+    if foreign:
+        print(f"[sheets] shift report perenaladka: {foreign} value(s) answered on a "
+              f"non-owning brigadir's row — skipped (owning-brigadir rule)")
+
+    return {
+        "dates": len({iso for (_cid, iso) in final}),
+        "cells": len({cid for (cid, _iso) in final}),
+        "saved": saved,
+        "cleared": cleared,
+        "unknown_cells": sorted(unknown_codes),
+    }
+
+
 def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
     """Fetch leader checklist submissions from the leaders sheet and persist.
     Wipe-and-reload, mirroring the other source syncs."""
