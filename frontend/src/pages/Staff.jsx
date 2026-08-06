@@ -1424,6 +1424,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
   const [query, setQuery]       = useState("");
   const [target, setTarget]     = useState("");     // "sup:<id>" | "task:<name>" | "__new__"
+  const [targetCell, setTargetCell] = useState(""); // destination cell (verifix_code) for → supervisor
   const [newTask, setNewTask]   = useState("");
   const [selected, setSelected] = useState(new Set());
   const [useTime, setUseTime]   = useState(false);  // transfer-time split (admin + supervisor)
