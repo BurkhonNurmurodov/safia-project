@@ -1901,17 +1901,23 @@ def _lt_entries(db, day: LeaderTaskDay | None) -> dict[int, LeaderTaskEntry]:
 
 
 def _lt_autoclose(db, prof, shift: int) -> None:
-    """Finalize the leader's PAST open days so nothing is silently lost. Any
-    enabled task left unanswered on a bygone day is recorded as not-done with
-    reason "-", then the day is closed and scored. The current day (per the
-    shift boundary) is never touched — the leader still closes that one."""
+    """Finalize the leader's expired open days so nothing is silently lost. Any
+    enabled task left unanswered once the submission window shut is recorded as
+    not-done, carrying the missed-deadline reason, then the day is closed and
+    scored. A day still inside its window is never touched — the leader closes
+    that one themselves.
+
+    The cutoff is the WINDOW, not the shift boundary. Shift 2 files until 09:00
+    while effective_date only rolls at 17:00, so the old `date < today` test
+    left a missed night open — and editable — for the eight hours in between,
+    which is exactly the stretch nobody is at the factory to file it."""
     today = effective_date(shift)
     promote_due(db, shift, today)  # apply staged config due at this boundary
     stale = (
         db.query(LeaderTaskDay)
         .filter(
             LeaderTaskDay.leader_id == prof.id,
-            LeaderTaskDay.date < today,
+            LeaderTaskDay.date <= expired_through(shift),
             LeaderTaskDay.closed_at.is_(None),
         )
         .all()
@@ -1920,11 +1926,12 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         return
     cfg = effective_leader_config(db, prof)
     now = datetime.now(timezone.utc)
+    reason = missed_reason(shift)
     for day in stale:
         entries = _lt_entries(db, day)
         for tid_, s in cfg.items():
             if s["enabled"] and tid_ not in entries:
-                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid_, done=False, reason="-"))
+                db.add(LeaderTaskEntry(day_id=day.id, task_id=tid_, done=False, reason=reason))
         db.flush()
         day.closed_at = now
         day.completion = compute_completion(cfg, list(_lt_entries(db, day).values()))
