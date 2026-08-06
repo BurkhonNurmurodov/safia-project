@@ -133,6 +133,11 @@ try:
 
     print("Setting up Telegram webhook...", flush=True)
     setup_webhook()
+
+    # Continue any broadcast fan-out orphaned by Passenger recycling its
+    # process mid-send (mirrored in the FastAPI lifespan).
+    from app.routers.broadcast import resume_stuck_broadcasts
+    resume_stuck_broadcasts()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
