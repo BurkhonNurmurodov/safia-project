@@ -204,9 +204,12 @@ def _serialize(
         # The leader currently assigned to this concern's cell, resolved live
         # (falls back to the leader-name snapshot for legacy leader-logged rows).
         "cell_leader_name": (
-            (cell_leaders or {}).get((c.cell_code or "").strip())
+            cell_leader
             or (c.leader_name or None)
         ) if (c.cell_code or c.leader_name) else None,
+        # That leader's supervisor (their unit brigadir), resolved live; the
+        # creation-time brigadir snapshot covers rows whose cell no longer maps.
+        "cell_supervisor_name": cell_sup or c.brigadir_name or None,
         "category": c.category,
         "concern_owner": c.concern_owner,
         "owner_name": owner_name or c.concern_owner,
