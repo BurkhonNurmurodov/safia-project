@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Clock, ShieldCheck, Hourglass, Ban, Undo2, Send, Info, Search,
+  Clock, ShieldCheck, Hourglass, Ban, Undo2, Send, Info,
 } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
@@ -76,7 +76,7 @@ const TXT = {
     modalReq: "Kechikkan kunni ochishni so'rash", modalAdmin: "Kechikkan kunni ochish",
     whatSup: "So'rov barcha adminlarga Telegramda yuboriladi. Kun faqat admin tasdiqlagandan keyin hisoblanadi.",
     whatAdmin: "Siz admin sifatida bu kunni darhol ochasiz. Lider xabardor qilinadi.",
-    send: "Yuborish", open: "Ochish",
+    send: "Yuborish", open: "Ochish", cancel: "Bekor qilish",
     cApproveT: "Kunni ochish",
     cApproveM: "{leader} — {date}. Bu kun {score}% bilan hisoblanadi va kechikkan deb belgilangan holda qoladi. Lider xabardor qilinadi.",
     cRejectT: "So'rovni rad etish", cRejectM: "{leader} — {date}. Kun 0% bilan qoladi.",
@@ -108,7 +108,7 @@ const TXT = {
     modalReq: "Кечиккан кунни очишни сўраш", modalAdmin: "Кечиккан кунни очиш",
     whatSup: "Сўров барча админларга Телеграмда юборилади. Кун фақат админ тасдиқлагандан кейин ҳисобланади.",
     whatAdmin: "Сиз админ сифатида бу кунни дарҳол очасиз. Лидер хабардор қилинади.",
-    send: "Юбориш", open: "Очиш",
+    send: "Юбориш", open: "Очиш", cancel: "Бекор қилиш",
     cApproveT: "Кунни очиш",
     cApproveM: "{leader} — {date}. Бу кун {score}% билан ҳисобланади ва кечиккан деб белгиланган ҳолда қолади. Лидер хабардор қилинади.",
     cRejectT: "Сўровни рад этиш", cRejectM: "{leader} — {date}. Кун 0% билан қолади.",
@@ -140,7 +140,7 @@ const TXT = {
     modalReq: "Запрос на открытие опоздавшего дня", modalAdmin: "Открытие опоздавшего дня",
     whatSup: "Запрос уйдёт всем администраторам в Telegram. День засчитается только после одобрения.",
     whatAdmin: "Как администратор, вы открываете этот день сразу. Лидер получит уведомление.",
-    send: "Отправить", open: "Открыть",
+    send: "Отправить", open: "Открыть", cancel: "Отмена",
     cApproveT: "Открыть день",
     cApproveM: "{leader} — {date}. День будет засчитан с результатом {score}% и останется отмеченным как опоздавший. Лидер получит уведомление.",
     cRejectT: "Отклонить запрос", cRejectM: "{leader} — {date}. День останется с 0%.",
@@ -172,7 +172,7 @@ const TXT = {
     modalReq: "Request to open a late day", modalAdmin: "Open a late day",
     whatSup: "The request goes to every admin on Telegram. The day counts only once an admin approves it.",
     whatAdmin: "As an admin you open this day immediately. The leader is notified.",
-    send: "Send", open: "Open",
+    send: "Send", open: "Open", cancel: "Cancel",
     cApproveT: "Open the day",
     cApproveM: "{leader} — {date}. The day will count at {score}% and stays flagged as late. The leader is notified.",
     cRejectT: "Reject the request", cRejectM: "{leader} — {date}. The day stays at 0%.",
@@ -472,7 +472,7 @@ export default function LateReports({ canDecide = false }) {
           footer={
             <>
               <Button variant="secondary" onClick={() => { setAsk(null); askMut.reset(); }}>
-                {T.cancel || "Cancel"}
+                {T.cancel}
               </Button>
               <Button variant="primary" icon={<Send size={13} />} loading={askMut.isPending}
                 disabled={reason.trim().length < 3} onClick={submitAsk}>
