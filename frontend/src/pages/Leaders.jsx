@@ -177,6 +177,7 @@ const TXT = {
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
+    missedDeadline: "Лидер бу вазифани соат {time} гача топширмади.",
     task: "Вазифа", noData: "Маълумот йўқ", taskInfoTitle: "Вазифалар мазмуни ва талаблари",
     taskDesc: "Вазифа тавсифи", taskWeight: "Вазни", taskNote: "Эслатма / Талаблар",
     lowTask: "Энг паст вазифа", lowSup: "Энг паст бригадир", lowLeader: "Энг паст лидер",
