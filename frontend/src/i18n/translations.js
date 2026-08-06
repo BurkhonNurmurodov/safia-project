@@ -7554,6 +7554,10 @@ const t = {
     "idleCell.perenNotePlaceholder": "Reason for the changeover (optional)",
     "idleCell.perenClearHint":    "Use ↺ to remove",
     "idleCell.perenClearConfirm": "This removes the changeover entry for this cell and date.",
+    "idleCell.refresh":           "Refresh",
+    "idleCell.refreshHint":       "Load the per-cell changeover history from the «Смена отчёт» sheet",
+    "idleCell.refreshDone":       "Loaded from the sheet",
+    "idleCell.refreshFail":       "Refresh failed",
     // ── Per-cell attendance viewer (verifix «Отчёт по посещениям» import) ──
     "nav.cellAttendance":      "Attendance / cell",
     // ── Per-cell загрузка — TEST twin of /zagruzka, one supervisor only ──
