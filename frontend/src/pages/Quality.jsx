@@ -418,6 +418,12 @@ export default function Quality() {
   const [brigSel, setBrigSel] = usePersistentState("quality_brig_sel", []);
   const [shiftSel, setShiftSel] = usePersistentState("quality_shift_sel", []);
   const [mgrSel, setMgrSel] = usePersistentState("quality_mgr_sel", []);
+  // The «виновная ячейка» dimension: the cell itself and the leader who owns it.
+  // Both ride the cells registry the backend resolved every fault code against
+  // (payload `cells`), so they're independent of the supervisor matching and work
+  // on BOTH tabs. Single-pick toolbar dropdowns, stored as arrays like the rest.
+  const [leadSel, setLeadSel] = usePersistentState("quality_lead_sel", []);
+  const [cellSel, setCellSel] = usePersistentState("quality_cell_sel", []);
 
   // Page-level view switch: "overall" = the whole register; "production" (the
   // «Brigadirs» tab) narrows every KPI/chart/table row to the ones the QA team
