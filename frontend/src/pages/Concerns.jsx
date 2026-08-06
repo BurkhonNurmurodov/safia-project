@@ -484,16 +484,18 @@ export default function Concerns() {
     return parts.join(" ");
   };
 
-  // Compact owner label: "Abbos Mustafakulov" → "M. Abbos" (surname initial +
-  // first name). Single-word names are left as-is. The full name still drives
-  // search, sort and the filter list — this only shrinks the table display.
+  // Compact owner label. Names are stored "Lastname Firstname Patronymic
+  // [O'g'li/Qizi]", so the initial comes from the SECOND word (the first
+  // name) — never the last, which is a patronymic or the o'g'li/qizi suffix:
+  // "Abduganiyev Izzatillo Gaybullo O'g'li" → "I. Abduganiyev". Single-word
+  // names are left as-is. The full name still drives search, sort and the
+  // filter list — this only shrinks the table display.
   const shortOwner = (name) => {
     const full = tl(name || "").trim();
     if (!full) return "—";
     const parts = full.split(/\s+/);
     if (parts.length < 2) return full;
-    const last = parts[parts.length - 1];
-    return `${last[0].toUpperCase()}. ${parts[0]}`;
+    return `${parts[1][0].toUpperCase()}. ${parts[0]}`;
   };
 
   // Top filter bar (mirrors the Leaders page): period + brigadir + leader.
