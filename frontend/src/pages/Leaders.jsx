@@ -6,6 +6,7 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
+  ShieldCheck, Hourglass,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -2522,7 +2523,7 @@ export default function Leaders({ shiftLock = null }) {
                               itself the reason it was voided */}
                           <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
                           {r._late > 0 && <LateChip days={r._late} T={T} />}
-                          {r.rejected && <VoidChip T={T} />}
+                          <DayFlag row={r} T={T} />
                         </span>
                       </td>
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
@@ -2575,12 +2576,12 @@ export default function Leaders({ shiftLock = null }) {
                     <span className="text-xs" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</span>
                     <span className="text-xs" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
                   </div>
-                  {(r.submitted_at || r.rejected) && (
+                  {(r.submitted_at || r.late_state) && (
                     <div className="flex items-center flex-wrap gap-1.5 text-xs" style={{ color: "var(--text-4)" }}>
                       <Clock size={11} />
                       <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
                       {r._late > 0 && <LateChip days={r._late} T={T} />}
-                      {r.rejected && <VoidChip T={T} />}
+                      <DayFlag row={r} T={T} />
                     </div>
                   )}
                   <button onClick={() => setDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
@@ -2604,10 +2605,16 @@ export default function Leaders({ shiftLock = null }) {
             // which collection layer this day came from — the sheet is silent
             // history, the bot is the live one for shift 2
             detail.source === "bot" ? T.srcBot : null,
-            // Why the day scored 0 despite the answers below being filled in.
-            // Spelled out in full here: the register's chip has room for a label,
-            // this is where somebody comes to argue with the number.
-            detail.rejected ? T.voidTitle : null,
+            // Why the day scored 0 despite the answers below being filled in —
+            // or, once it was opened, why it counts anyway. Spelled out in full
+            // here: the register's chip has room for a label, this is where
+            // somebody comes to argue with the number.
+            detail.late_state === "approved" ? T.lateOkTitle.replace("{by}", detail.late_by || "—")
+              : detail.late_state === "pending" ? T.pendTitle
+              : detail.late_state ? T.voidTitle
+              : null,
+            // the case the decision was made on, kept next to the day it opened
+            detail.late_reason ? `${T.reasonLbl}: “${detail.late_reason}”` : null,
           ].filter(Boolean).join(" · ") || null}
           onClose={() => setDetail(null)}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
