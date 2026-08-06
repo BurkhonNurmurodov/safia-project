@@ -1235,8 +1235,9 @@ export default function Quality() {
       )}
 
       {/* one filter zone for the whole page — charts and table read the same state.
-          On phones it breaks into two tidy rows (date + shift · supervisor + filters);
-          sm:contents dissolves the row wrappers so desktop keeps one aligned line. */}
+          On phones it breaks into three tidy rows (date + shift · brigadir + leader ·
+          cell + filters); sm:contents dissolves the row wrappers so desktop keeps one
+          aligned line. */}
       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
         {/* row 3 — date + shift */}
         <div className="flex items-center gap-2 sm:contents">
