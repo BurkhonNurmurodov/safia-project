@@ -486,3 +486,186 @@ def get_late_queue(
         ),
         "window": {"from": WINDOW_FROM, "open": "08:00", "close": "20:00"},
     }
+
+
+def _day_score(db: Session, req: LeaderLateRequest) -> int:
+    """The score the opened day settles at — the mean of its checklist rows,
+    exactly what the dashboard will show once it counts."""
+    vals = [
+        float(r.completion or 0)
+        for r in db.query(LeaderChecklist)
+        .filter(LeaderChecklist.date == req.date,
+                LeaderChecklist.leader == req.leader_name)
+        .all()
+    ]
+    return round(sum(vals) / len(vals)) if vals else 0
+
+
+def _notify_leader_opened(db: Session, req: LeaderLateRequest) -> None:
+    """Tell the leader their day counts again — bell row + Telegram DM to every
+    account holding the profile, each in its own language. A leader whose sheet
+    name never resolved to a profile has nobody to tell; the day still counts."""
+    if not req.leader_profile_id:
+        return
+    try:
+        from app.routers.staff import notify_profile
+        notify_profile(
+            db, f"leader:{req.leader_profile_id}", nkey="leader_late_approved",
+            params={
+                "date": req.date,
+                "decided_by": req.decided_by_name or "—",
+                "score": _day_score(db, req),
+            },
+        )
+    except Exception:   # a failed DM must never roll back the decision
+        logger.exception("late-open: could not notify leader profile %s", req.leader_profile_id)
+
+
+def decide_late_request(db: Session, req: LeaderLateRequest, status: str,
+                        by_name: str | None, by_telegram: int | None) -> bool:
+    """Record an admin decision. THE decision core — the web-app endpoint below
+    and the Telegram inline tap both come through here, so a day opened from a
+    DM and one opened in the panel are the same event. Returns False when the
+    request already sat in that state (a second tap, or a race between admins)."""
+    if req.status == status:
+        return False
+    req.status = status
+    req.decided_by_name = by_name
+    req.decided_by_telegram = by_telegram
+    req.decided_at = datetime.now(timezone.utc)
+    db.commit()
+    if status == "approved":
+        _notify_leader_opened(db, req)
+    return True
+
+
+@router.post("/leaders/late")
+def request_late_open(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """Ask for a voided day to count. The supervisor of the unit files it with a
+    reason and every admin gets it as an inline card in their Telegram DM; an
+    admin filing the same thing IS the approval, so they are not made to send a
+    request to themselves.
+
+    The day is re-derived from the caller's own queue rather than trusted from
+    the body: a key that is not in your queue is not yours to open, which makes
+    the scope check and the "is it really voided" check the same check."""
+    reason = str(body.get("reason") or "").strip()
+    key = str(body.get("key") or "")
+    if len(reason) < 3:
+        raise HTTPException(status_code=400, detail="A reason is required")
+    if len(reason) > 1000:
+        raise HTTPException(status_code=400, detail="Reason is too long")
+
+    it = {i["key"]: i for i in _late_queue_items(db, payload)}.get(key)
+    if it is None:
+        raise HTTPException(status_code=404, detail="No such late day in your scope")
+    if not it["can_request"]:
+        raise HTTPException(status_code=403, detail="Not your unit")
+    if it["state"] == "pending":
+        raise HTTPException(status_code=409, detail="Already awaiting a decision")
+    if it["state"] == "approved":
+        raise HTTPException(status_code=409, detail="This day is already open")
+
+    # A rejected request may be re-filed with a better reason; the new one
+    # replaces it, so a leader-day never carries two live rows.
+    old = _late_map(db).get(key)
+    if old is not None:
+        db.delete(old)
+        db.flush()
+
+    is_admin = payload.get("role") == "admin"
+    who = payload.get("full_name") or ""
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    req = LeaderLateRequest(
+        date=it["date"],
+        leader_profile_id=it["leader_id"],
+        leader_name=it["leader_raw"],
+        manager_id=it["manager_id"],
+        status="approved" if is_admin else "pending",
+        reason=reason,
+        requested_by_profile=identity.viewer_profile_key(db, payload),
+        requested_by_name=who,
+        requested_by_telegram=tid,
+    )
+    if is_admin:
+        req.decided_by_name = who
+        req.decided_by_telegram = tid
+        req.decided_at = datetime.now(timezone.utc)
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+
+    if is_admin:
+        _notify_leader_opened(db, req)
+    else:
+        try:
+            from app.approvals import send_leader_late_to_admins
+            send_leader_late_to_admins(db, req)
+        except Exception:   # the request stands even if Telegram is unreachable
+            logger.exception("late-open: could not send request %s to admins", req.id)
+    return {"id": req.id, "status": req.status}
+
+
+@router.post("/leaders/late/{req_id}/decide")
+def decide_late_open(
+    req_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """Approve or reject a request — admins only. Approving an already-approved
+    day (or rejecting a rejected one) is a no-op, not an error, so two admins
+    tapping at once never produces a contradiction."""
+    if not _may_decide(payload):
+        raise HTTPException(status_code=403, detail="Admins only")
+    status = str(body.get("status") or "")
+    if status not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="status must be approved|rejected")
+
+    req = db.query(LeaderLateRequest).filter_by(id=req_id).first()
+    if req is None:
+        raise HTTPException(status_code=404, detail="No such request")
+
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    changed = decide_late_request(db, req, status, payload.get("full_name"), tid)
+    if changed:
+        # Every admin's DM card gets the outcome and loses its buttons, whichever
+        # surface the decision came from.
+        try:
+            from app.approvals import edit_admin_notices
+            edit_admin_notices("leader_late", req.id, status, payload.get("full_name"))
+        except Exception:
+            logger.exception("late-open: could not edit admin notices for %s", req.id)
+    return {"id": req.id, "status": req.status, "changed": changed}
+
+
+@router.delete("/leaders/late/{req_id}")
+def cancel_late_open(
+    req_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """Withdraw a request that has not been decided yet. The requester can take
+    back their own; an admin can clear any. A decided one stays on the record —
+    it is the audit trail for a day that counts (or pointedly does not)."""
+    req = db.query(LeaderLateRequest).filter_by(id=req_id).first()
+    if req is None:
+        raise HTTPException(status_code=404, detail="No such request")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail="Already decided")
+    mine = req.requested_by_profile and req.requested_by_profile == identity.viewer_profile_key(db, payload)
+    if not (_may_decide(payload) or mine):
+        raise HTTPException(status_code=403, detail="Not your request")
+
+    db.delete(req)
+    db.commit()
+    try:
+        from app.approvals import edit_admin_notices
+        edit_admin_notices("leader_late", req_id, "cancelled", payload.get("full_name"))
+    except Exception:
+        logger.exception("late-open: could not clear admin notices for %s", req_id)
+    return {"ok": True}
