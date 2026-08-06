@@ -2521,7 +2521,6 @@ const t = {
     "idleCell.stopped":           "Тўхтаганда",
     "idleCell.notStopped":        "Тўхтамаганда",
     "idleCell.noNsHint":          "Бу категорияда «тўхтамаганда» қиймати йўқ",
-    "idleCell.total":             "Жами",
     "idleCell.note":              "Изоҳ",
     "idleCell.notePlaceholder":   "Кутиш сабаби (мажбурий)",
     "idleCell.noteRequired":      "Изоҳ мажбурий",
