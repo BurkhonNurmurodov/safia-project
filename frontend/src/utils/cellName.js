@@ -27,4 +27,13 @@ export function cellName(cell, lang = "ru", prefix = "name_workshop_") {
   return "";
 }
 
+// People-exchange documents: the destination-cell suffix (" · <cell name>") for
+// a → supervisor move. Empty for task targets and for documents that predate
+// destination cells, so every existing render keeps working unchanged.
+export function exchangeCellSuffix(doc, lang = "ru") {
+  if (!doc || doc.target_type !== "supervisor" || !doc.target_cell) return "";
+  const nm = cellName(doc.target_cell_names || {}, lang, "");
+  return ` · ${nm || doc.target_cell}`;
+}
+
 export default cellName;
