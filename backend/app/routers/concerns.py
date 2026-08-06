@@ -174,11 +174,14 @@ def _serialize(
         resolution_minutes = max(0, int((c.done_at - c.created_at).total_seconds() // 60))
     level = _level(c)
     # Who answers for the concern right now — the level names a step in the
-    # chain, this names the person on that step: supervisor → the brigadir,
-    # shift-manager → that unit's shift's manager(s), top-manager → the
-    # specifically assigned one.
+    # chain, this names the person on that step: leader → the leader the concern
+    # was logged against (the same identity the send-down hands it to, resolved
+    # live so renames stay current), supervisor → the brigadir, shift-manager →
+    # that unit's shift's manager(s), top-manager → the specifically assigned one.
     responsible = (
-        c.brigadir_name if level == "supervisor"
+        ((owner_names or {}).get(("leader", c.leader_profile_id)) or c.leader_name)
+        if level == "leader"
+        else c.brigadir_name if level == "supervisor"
         else (c.shift_manager_name or (sm_names or {}).get(c.brigadir_manager_id)) if level == "shift-manager"
         else c.top_manager_name
     )
