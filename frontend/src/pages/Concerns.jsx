@@ -453,8 +453,8 @@ export default function Concerns() {
   const roleLabel = (r) => (r === "admin" ? t("concerns.roleAdmin") : t(`concerns.level.${r}`));
 
   // Chain roles get the "my level only" toggle; admin is outside the chain and
-  // slices by level via the Filtrlar multi-select instead. Leaders no longer
-  // hold a level, so they get neither.
+  // slices by level via the Filtrlar multi-select instead. Leaders are a chain
+  // role again — theirs narrows to the concerns handed down to them.
   const myLevel = LEVELS.includes(role) ? role : null;
 
   // Elapsed time for the "time since created" column. Done concerns show the
