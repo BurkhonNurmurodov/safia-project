@@ -512,7 +512,7 @@ def _shift_layout(header: list) -> ShiftLayout:
     if absent:
         print(f"[sheets] shift report: categor(ies) {absent} absent from the sheet — read as 0")
 
-    return ShiftLayout(date, brigadir, stopped, not_stopped)
+    return ShiftLayout(date, brigadir, stopped, not_stopped, peren)
 
 
 def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optional[datetime] = None):
