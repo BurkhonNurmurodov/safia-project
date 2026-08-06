@@ -2140,7 +2140,10 @@ export default function Leaders({ shiftLock = null }) {
 
   const tabsBar = (showClearTab || showLateTab) ? (
     <div className="mb-3">
-      <SegmentedToggle asTabs scrollable ariaLabel={pageTitle} value={tab} onChange={setTab}
+      {/* No `scrollable` here: it makes the track w-full, and inside a block
+          div that stretches the bar across the page. Two or three short tabs
+          never overflow, so the toggle shrink-wraps to its labels instead. */}
+      <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
           ["monitor", T.tabMonitor],
           // The badge is what this viewer still owes — an admin's pending
