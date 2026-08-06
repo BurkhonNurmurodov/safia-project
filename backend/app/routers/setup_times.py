@@ -19,7 +19,7 @@ Idle-cell page (admins/top-managers all, "all"-scope grants all, supervisors
 their unit, leaders their own) — via idle_cell._scoped_cells(page="setup").
 """
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
