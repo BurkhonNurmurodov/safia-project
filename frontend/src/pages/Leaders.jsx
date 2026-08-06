@@ -1631,6 +1631,10 @@ export default function Leaders({ shiftLock = null }) {
       const i = spanDays(from, d) - 1;
       if (i < 0 || i >= winDays) continue;
       leaders.add(L);
+      // Voided by the submission window: no slot, so every question counts this
+      // day as owed-and-undone — the same thing a day with no report at all
+      // means here. The leader stays in `leaders`, so the denominator is intact.
+      if (r.rejected) continue;
       const k = `${L}|${d}`;
       let s = slots.get(k);
       if (!s) { slots.set(k, (s = { i, tasks: new Map() })); filedPerDay[i]++; }

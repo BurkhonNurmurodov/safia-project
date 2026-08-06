@@ -1010,6 +1010,9 @@ def get_attendance(
             "hours_worked":      float(row.hours_worked)      if row.hours_worked      is not None else None,
             "early_arrival_min": float(row.early_arrival_min) if row.early_arrival_min is not None else None,
             "effective_hours":   float(row.effective_hours)   if row.effective_hours   is not None else None,
+            # Which cell the single-file «Davomat» upload filed the row under.
+            # NULL on days that came in through the older per-supervisor files.
+            "verifix_code":      row.verifix_code,
             "on_task":           task_map.get(row.worker_name),
             "pending_request":   {"id": pr.id, "changes": pr.changes, "original": pr.original} if pr else None,
         }
