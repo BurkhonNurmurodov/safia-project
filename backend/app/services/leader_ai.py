@@ -171,12 +171,27 @@ def date_window(date: str, shift: int | None) -> tuple[str, str]:
 def _prompt(*, task: str, criteria: str, date: str, shift: int | None,
             n_images: int, omitted: int) -> str:
     lo, hi = date_window(date, shift)
+    # Shift 2's window crosses midnight, so it is spelled out as two concrete
+    # dated halves rather than left as a range. Given only "21:00 → 09:00 next
+    # day" the model has to reason across midnight while HISOBOT SANASI sits
+    # directly above it — it anchors on the report date, reads the next
+    # calendar date as a mismatch, and flags a correct 02:00 photo every night.
+    # Both permitted dates are named, with in-window and out-of-window examples.
+    nxt = hi.split(" ")[0]
+    lo_t, hi_t = lo.split(" ")[1], hi.split(" ")[1]
     shift_note = (
-        "Bu 2-smena: hisobot soat 21:00 dan ertasi kuni 09:00 gacha "
-        "topshiriladi. Shuning uchun rasmdagi sana ERTANGI kalendar sanasi "
-        "bo'lishi mumkin va bu TO'G'RI — muhimi vaqt oynadan chiqib ketmasligi."
+        f"Bu 2-smena: hisobot soat {lo_t} dan ertasi kuni {hi_t} gacha "
+        f"topshiriladi. Shuning uchun RUXSAT ETILGAN IKKITA SANA bor:\n"
+        f"   a) {date} — vaqti {lo_t} yoki undan KEYIN bo'lsa TO'G'RI;\n"
+        f"   b) {nxt} (ertasi kun) — vaqti {hi_t} yoki undan OLDIN bo'lsa TO'G'RI.\n"
+        f"Rasmdagi sana {nxt} bo'lishi, ya'ni HISOBOT SANASIDAN boshqa bo'lishi, "
+        f"KAMCHILIK EMAS. {nxt} 00:30, {nxt} 02:00, {nxt} 07:30 — bularning "
+        f"hammasi oyna ICHIDA: date_ok=true qo'y, sana nomuvofiqligi deb BELGILAMA. "
+        f"date_ok=false faqat shu ikki oraliqdan TASHQARIDA bo'lganda "
+        f"(masalan {date} 14:00 yoki {nxt} 11:00)."
         if shift == 2 else
-        "Bu 1-smena: ish kuni oddiy kalendar kuni."
+        f"Bu 1-smena: ish kuni oddiy kalendar kuni — rasmdagi sana {date} "
+        f"bo'lishi kerak."
     )
     done_block = (
         "2) ISBOT. Quyida vazifa qanday bajarilgan hisoblanishi yozilgan. "
