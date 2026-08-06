@@ -592,6 +592,57 @@ def read_downtime_data(sheet_id: str, manager_names: set[str], min_date: Optiona
     return downtime_total, downtime_by_cat, downtime_total_ns, downtime_by_cat_ns, cat_names
 
 
+def read_cell_perenaladka(sheet_id: str, manager_names: set[str]):
+    """Read the per-cell «Ячейка NNNN ?(Переналадка)» minutes from the shift
+    report — the same Sheet1 rows read_downtime_data walks, but the ~150-cell
+    question block instead of the category pairs.
+
+    Returns ``{(iso_date, brigadir_name): {code: minutes}}``. Within one
+    (date, brigadir) a LATER row overwrites an earlier one — a resubmitted form
+    replaces the first answer rather than doubling it. Blank cells are simply
+    absent; an explicit 0 is kept, because downstream it means "reported zero"
+    (the sync deletes the row — 0 is never stored in cell_perenaladka).
+    """
+    rows = _fetch_sheet_rows(sheet_id, "Sheet1", unformatted=False)
+    if not rows:
+        return {}
+    lay = _shift_layout(rows[0])
+    if not lay.peren:
+        raise ValueError("Shift report: no «Ячейка NNNN ?(Переналадка)» "
+                         "columns in the header")
+
+    def cell(row, i) -> str:
+        return row[i].strip() if i < len(row) else ""
+
+    unmatched: dict[str, int] = {}
+    out: dict[tuple, dict] = {}
+    for row in rows[1:]:
+        if not row:
+            continue
+        name = cell(row, lay.brigadir)
+        if not name:
+            continue
+        if name not in manager_names:
+            unmatched[name] = unmatched.get(name, 0) + 1
+            continue
+        iso = _leader_parse_date(cell(row, lay.date))
+        if not iso:
+            continue
+        vals = out.setdefault((iso, name), {})
+        for code, col in lay.peren.items():
+            v = _shift_num(cell(row, col))
+            if v is not None:
+                vals[code] = v
+
+    if unmatched:
+        worst = sorted(unmatched.items(), key=lambda kv: -kv[1])
+        print("[sheets] shift report perenaladka: no supervisor matches "
+              + ", ".join(f"{n!r} ({c} rows)" for n, c in worst)
+              + " — their changeover minutes are NOT imported")
+
+    return out
+
+
 # ─── Quality register («для свода» tab of the QA workbook) ────────────────────
 #
 # The register is a flat log: one row per non-conformance / complaint. Its
