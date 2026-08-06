@@ -3929,12 +3929,17 @@ export default function Staff() {
             {isManagerView && (
               <SupervisorSelect
                 value={selectedManagerId}
-                onChange={setSelectedManagerId}
+                onChange={pickSupervisorId}
                 supervisors={supervisors}
+                cells={cellOptions}
+                cellValue={selCell}
+                onCellChange={pickCell}
               />
             )}
             <DatePicker value={selectedDate} onChange={setSelectedDate} />
-            {canCreateHere && (
+            {/* The cell view is read-only import data — no documents, no
+                day-close state; both controls belong to the verifix flow. */}
+            {canCreateHere && !selCell && (
               <CreateMenu
                 onSelect={(type) => startCreate(type)}
                 disabled={createDisabled}
@@ -3943,7 +3948,7 @@ export default function Staff() {
                 role={role}
               />
             )}
-            {dayClosed && (
+            {dayClosed && !selCell && (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#22c55e22", color: "#16a34a", border: "1px solid #22c55e55" }}>
                 <Lock size={12} /> {t("staff.dayClosedBadge")}
@@ -3955,11 +3960,19 @@ export default function Staff() {
             className="rounded-xl"
             style={{ background: "var(--bg-card)", border: "1px solid var(--border)", overflow: "visible" }}
           >
-            <AttendanceTable
-              managerId={supervisorManagerId}
-              selectedDate={selectedDate}
-              pickSupervisor={isManagerView}
-            />
+            {selCell ? (
+              <CellDayView
+                date={selectedDate}
+                cellSel={selCell}
+                hasCellData={hasCellData}
+              />
+            ) : (
+              <AttendanceTable
+                managerId={supervisorManagerId}
+                selectedDate={selectedDate}
+                pickSupervisor={isManagerView}
+              />
+            )}
           </div>
 
           <div className="pb-16" />
