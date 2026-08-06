@@ -2690,7 +2690,8 @@ def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Option
 def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: str,
                             target_manager_id: Optional[int], target_manager_name: Optional[str],
                             task_name: Optional[str], employees: List[str],
-                            transfer_time: Optional[str] = None, return_time: Optional[str] = None):
+                            transfer_time: Optional[str] = None, return_time: Optional[str] = None,
+                            target_cell: Optional[str] = None):
     emp_rows = []
     for wname in employees:
         att = db.query(Attendance).filter(
@@ -2704,6 +2705,8 @@ def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: 
             "worker_name":    wname,
             "old_manager_id": manager_id,
             "old_role":       att.job_title or "",
+            # The worker's cell BEFORE the move — restored on cancel/revert.
+            "old_verifix_code": att.verifix_code,
         }
         # A full snapshot lets a later cancel restore the original row. Needed for
         # task moves (which blank the row) and for transfer-time splits (which
