@@ -293,6 +293,10 @@ def get_leaders(
             leader_bot.closed_days(db, manager_id=bot_manager_id, leader_id=bot_leader_id),
             sup_display=sup_display,
         )
+        # The bot layer is shift 2 only, which the window rule does not judge —
+        # but the key is set anyway so both layers hand the client one shape.
+        for b in bot_rows:
+            b["rejected"] = _rejected(b["date"], b["shift"], None) if False else False
 
     # A closed bot day REPLACES the sheet row for the same person and date —
     # the leader answered twice through two channels, and the bot is the live
