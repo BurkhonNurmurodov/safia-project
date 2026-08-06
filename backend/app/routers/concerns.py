@@ -144,10 +144,16 @@ def _cell_leader_recipient(db: Session, cell_code: str):
 
 
 def _level(c: LeaderConcern) -> str:
-    """Normalized escalation level — pre-migration 'leader' rows read as the
-    new base of the chain."""
-    level = c.level or "supervisor"
-    return "supervisor" if level == "leader" else level
+    """Escalation level, defaulting to the base a concern opens at."""
+    return c.level or "supervisor"
+
+
+def _has_leader(c: LeaderConcern) -> bool:
+    """There is a leader identity to hand this concern down to — the profile
+    first (the canonical owner, claimed or not), the legacy role row as the
+    fallback. False for rows logged without a leader: nothing to receive the
+    step, so the send-down action never offers itself."""
+    return c.leader_profile_id is not None or c.leader_role_ref is not None
 
 
 def _serialize(
