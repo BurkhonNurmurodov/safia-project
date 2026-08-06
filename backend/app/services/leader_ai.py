@@ -238,7 +238,8 @@ Topgan sana-vaqtni image_date ga QANDAY YOZILGAN bo'lsa shundayligicha ko'chir
 YIL haqida: bu manbalar ko'pincha yilni umuman ko'rsatmaydi — macOS menyu satri
 odatda faqat «Sesh 4 Avg 14:22» deb yozadi, Windows va kamera esa to'liq sana
 beradi. Yil ko'rinmasligi KAMCHILIK EMAS: bunday holda faqat KUN va OYni
-solishtir va ular oynaga to'g'ri kelsa date_ok=true qo'y. Yil ko'rsatilmagani
+solishtir va ular yuqorida RUXSAT ETILGAN sanalardan biriga to'g'ri kelsa
+date_ok=true qo'y (hisobot sanasining o'ziga emas). Yil ko'rsatilmagani
 uchun date_ok=false qilma. Oy nomi qisqartma bo'lishi mumkin (Avg / Авг / Aug —
 avgust).
 
