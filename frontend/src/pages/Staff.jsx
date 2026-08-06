@@ -3710,7 +3710,7 @@ function ApprovalsCalendar({ role, supervisors }) {
 
 export default function Staff() {
   const { auth } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const qc = useQueryClient();
   const role = auth?.role;
   // Deleting rows outright rather than filing a delete request: admins always,
