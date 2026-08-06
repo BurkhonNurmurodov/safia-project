@@ -2823,6 +2823,8 @@ def _serialize_doc(doc: HrDocument, mgr_name: str | None = None, detailed: bool 
         "target_manager_id":    payload.get("target_manager_id"),
         "target_manager_name":  payload.get("target_manager_name"),
         "task_name":            payload.get("task_name"),
+        "target_cell":          payload.get("target_cell"),
+        "target_cell_names":    payload.get("target_cell_names"),
         "transfer_time":        payload.get("transfer_time"),
         "return_time":          payload.get("return_time"),
         "employee_count":   len(employees),
