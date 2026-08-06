@@ -2512,7 +2512,7 @@ export default function Leaders({ shiftLock = null }) {
                       </span>
                     </div>
                     {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
-                    {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{tk.reason || (tk.done ? T.noIssues : T.noReason)}</p>}
+                    {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{showReason(tk.reason, T) || (tk.done ? T.noIssues : T.noReason)}</p>}
                     {nPhotos > 0 && (
                       <div className={grid}>
                         {photos.map((p, pi) => <ReportPhoto key={pi} src={p} T={T} className="" />)}
