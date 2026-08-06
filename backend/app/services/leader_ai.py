@@ -247,8 +247,10 @@ avgust).
   image_date="" va date_ok=false.
 - Faqat SOAT ko'rinib, kun ham oy ham ko'rinmasa — image_date ga o'sha soatni
   yoz, lekin date_ok=false: qaysi kun ekanini tasdiqlab bo'lmaydi.
-- Biror rasmning vaqti yuqoridagi oynadan tashqarida bo'lsa — date_ok=false.
-- Hammasi oyna ichida bo'lsa — date_ok=true.
+- Biror rasmning sana-vaqti yuqorida ruxsat etilgan oraliqlardan tashqarida
+  bo'lsa — date_ok=false.
+- Hammasi ruxsat etilgan oraliqlar ichida bo'lsa — date_ok=true, sanasi hisobot
+  sanasidan farq qilgan taqdirda ham.
 
 Sababda sanani QAYERDAN o'qiganingni ayt (masalan: «Windows soati», «macOS
 menyu satri», «kamera muhri»).
