@@ -2410,6 +2410,8 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
                 att.early_arrival_min = None
             else:
                 att.manager_id = target
+                if "target_cell" in payload:
+                    att.verifix_code = payload.get("target_cell")
             emp["applied"] = {"side": "move", "leftover_id": None, "plain": True}
             continue
 
