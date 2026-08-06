@@ -7479,7 +7479,6 @@ const t = {
     "idleCell.stopped":           "Stopped",
     "idleCell.notStopped":        "Not stopped",
     "idleCell.noNsHint":          "This category has no “not stopped” value",
-    "idleCell.total":             "Total",
     "idleCell.note":              "Note",
     "idleCell.notePlaceholder":   "Reason for the idle time (required)",
     "idleCell.noteRequired":      "A note is required",
