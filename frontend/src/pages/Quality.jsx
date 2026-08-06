@@ -477,6 +477,14 @@ export default function Quality() {
   // name — they are genuinely not supervisors, not a failed match.
   const who = (r) => r.sup || r.b || "";
 
+  // Stable identity of a row's cell: the registry id when the fault code resolved,
+  // else the raw code — never the display name, which changes with the viewer's
+  // language and would strand a saved pick the moment they switch it.
+  const cellKey = (r) => (r.ci != null ? `c${r.ci}` : (r.fc ? `x${String(r.fc).trim().toUpperCase()}` : ""));
+  // The leader who owns that cell; empty for a code that isn't a registered cell
+  // (store / warehouse codes) or a cell nobody holds yet.
+  const leaderOf = (r) => (r.ci != null ? (cellMap[r.ci]?.leader || "") : "");
+
   // Surname + initials — full passport names ("SULTONOV ABROR ALISHEROVICH")
   // overflow chart axes and legends, so responsible people collapse to this.
   const shortName = (n) => {
