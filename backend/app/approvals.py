@@ -396,7 +396,8 @@ def _broadcast(db, kind: str, ref, data: dict, render_fn,
         lang = _get_lang(recipient_id)
         text = render_fn(data, lang)
         try:
-            sent = bot.send_message(recipient_id, text, reply_markup=_approve_reject_kb(code, ref, lang))
+            sent = bot.send_message(recipient_id, text,
+                                    reply_markup=_approve_reject_kb(code, ref, lang, panel))
         except Exception:
             logger.exception("Failed to send %s notice to %s (ref=%s)", kind, recipient_id, ref)
             continue
