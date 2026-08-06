@@ -451,6 +451,7 @@ class ShiftLayout(NamedTuple):
     brigadir: int
     stopped: dict          # "Cat A" → column index of «Ячейка тўхтаганда»
     not_stopped: dict      # "Cat A" → column index of «Ячейка тўхтамаганда»
+    peren: dict            # verifix code "7111" → column index of «Ячейка 7111 ?(Переналадка)»
 
 
 def _shift_layout(header: list) -> ShiftLayout:
