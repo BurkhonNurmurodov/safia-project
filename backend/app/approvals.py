@@ -219,6 +219,11 @@ def _hr_document_data(db, doc) -> dict:
     target = (payload.get("target_manager_name")
               if payload.get("target_type") == "supervisor"
               else payload.get("task_name"))
+    # → supervisor moves carry a destination cell — show it beside the receiver.
+    if payload.get("target_type") == "supervisor" and payload.get("target_cell"):
+        names = payload.get("target_cell_names") or {}
+        cell_label = names.get("ru") or names.get("uz") or payload["target_cell"]
+        target = f"{target or '—'} · {cell_label}"
     return {
         "doc_type":  doc.doc_type,
         "unit":      doc.supervisor_name or (mgr.name if mgr else f"#{doc.manager_id}"),
