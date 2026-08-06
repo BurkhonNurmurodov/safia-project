@@ -396,7 +396,7 @@ export function DeleteWorkersModal({ managerId, managerName, date, isAdmin, preS
 
 export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const [rawFilters, setFilters]        = usePersistentState("staff_workers_filters", INIT_FILTERS);
   const [showExport, setShowExport]     = useState(false);
   const [exporting, setExporting]       = useState(false);
