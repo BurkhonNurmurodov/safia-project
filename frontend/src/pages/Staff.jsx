@@ -1731,13 +1731,25 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
           <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.moveTo")}</span>
           <StyledSelect
             value={target}
-            onChange={setTarget}
+            onChange={(v) => { setTarget(v); setTargetCell(""); }}
             options={targetOptions}
             placeholder={t("staff.selectTargetOpt")}
             className="flex-1 min-w-[220px] text-xs"
             onRemove={isAdmin ? (opt) => { setRemoveError(""); setTaskToRemove(opt.taskName); } : undefined}
             removeTitle={t("staff.removeTaskTooltip")}
           />
+          {targetIsSup && targetCells.length > 0 && (
+            <>
+              <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{t("staff.toCell")}</span>
+              <StyledSelect
+                value={targetCell}
+                onChange={setTargetCell}
+                options={cellOptions}
+                placeholder={t("staff.selectCellOpt")}
+                className="flex-1 min-w-[200px] text-xs"
+              />
+            </>
+          )}
           {target === "__new__" && (
             <input
               value={newTask}
