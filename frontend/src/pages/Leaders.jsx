@@ -454,6 +454,14 @@ const slotsBy = (rows, keyFn) => {
     if (!key || key === "N/A") continue;
     let e = map.get(key);
     if (!e) map.set(key, (e = new Map()));
+    // A row the backend voided on the shift-1 submission window is not a report.
+    // The person is registered above BEFORE this bails, so they stay on the
+    // roster — they keep their standings row, they keep counting in every
+    // denominator — but the day itself gets no slot: it scores the same real 0%
+    // a missing day scores, and Barqarorlik does not count it as filed. Filing
+    // twice on one day and hitting the window once still settles the day at the
+    // valid row's score, because only the voided one drops out here.
+    if (r.rejected) continue;
     const d = rowDate(r);
     const day = e.get(d) || { sum: 0, n: 0 };
     day.sum += r.completion; day.n++;
