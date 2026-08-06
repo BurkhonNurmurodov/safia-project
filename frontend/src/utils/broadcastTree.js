@@ -44,7 +44,7 @@ function bucketProfiles(prefix, nodes, metaOf, looseLabel, icon) {
     }
     if (!buckets.has(m.id)) {
       buckets.set(m.id, {
-        key: `${role}::${m.id}`, label: m.label, sort: m.sort, icon, children: [],
+        key: `${prefix}::${m.id}`, label: m.label, sort: m.sort, icon, children: [],
       });
     }
     buckets.get(m.id).children.push(n);
