@@ -1954,7 +1954,7 @@ export function PeopleExchangeCreate({ role, managerId, selectedDate, editDoc, o
 
 export function DocumentViewModal({ docId, onClose }) {
   const { t } = useLang();
-  const { tl } = useTranslit();
+  const { tl, lang } = useTranslit();
   const { data: doc, isLoading } = useQuery({
     queryKey: ["staff-document", docId],
     queryFn: () => api.get(`/api/staff/documents/${docId}`).then(r => r.data),
