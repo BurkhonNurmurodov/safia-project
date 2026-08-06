@@ -214,7 +214,7 @@ function StateChip({ state, T }) {
 
 export default function LateReports({ canDecide = false }) {
   const { lang } = useLang();
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
   const qc = useQueryClient();
   const toast = useToast();
