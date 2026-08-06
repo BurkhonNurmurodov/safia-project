@@ -98,8 +98,6 @@ def _cell_json(c: Cell, entries: list, leader: Optional[str] = None) -> dict:
         "leader_id": c.leader_id,
         "leader": leader,
         "entries": entries,
-        # null = nothing entered for the Perenaladka tab (0 is never stored).
-        "perenaladka": _peren_json(peren),
     }
 
 
