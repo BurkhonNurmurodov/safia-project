@@ -7,10 +7,9 @@ One row per (cell, date, category): To'xtaganda (stopped) + To'xtamaganda
 its own. The shift is a property of the cell (its supervisor's shift), so the UI
 filters supervisors by shift and never stores it here.
 
-The page's second tab, «Perenaladka», writes ``cell_perenaladka`` through the
-same prefix: ONE changeover-minutes row per (cell, date) with an OPTIONAL note,
-no categories. Its entry rides along on ``GET /cells`` so switching tabs never
-refetches. Equally isolated TEST data — nothing downstream reads either table.
+The daily-actual «Perenaladka» entry that used to be this page's second tab
+lives on the Setup-times page now (routers/setup_times.py «Fakt» endpoints);
+this router is Ojidaniya-only.
 
 Gated by the ``idle-cell`` page (admin-only by default, grantable later).
 Reads/writes are scoped to the caller's cells — admins/top-managers see all, a
