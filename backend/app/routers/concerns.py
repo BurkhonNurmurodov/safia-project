@@ -225,20 +225,30 @@ def _serialize(
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
     # Per-row rights, computed for the requesting viewer (see _can_edit):
-    # escalation is one step at a time, blocked on resolved concerns. Leaders
-    # sit below the chain — they may edit their own open base-level concerns
-    # but never resolve, delete or escalate them.
+    # escalation is one step at a time, blocked on resolved concerns. A leader
+    # holds only the bottom step — they may edit their own open rows anywhere in
+    # the chain, but only act on the level when the concern has been sent down.
     if ctx is not None:
         manage = _can_edit(ctx, c)
         set_status = _can_set_status(ctx, c)
-        not_leader = ctx["role"] != "leader"
+        is_leader = ctx["role"] == "leader"
         lvl = LEVEL_IDX.get(level, 0)
         out["can_edit"] = manage
         out["can_set_status"] = set_status
         out["can_resolve"] = set_status                       # kept for the status dropdown
-        out["can_delete"] = ctx["role"] == "admin" or (_is_owner(ctx, c) and not_leader)
-        out["can_escalate"] = manage and not_leader and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
-        out["can_deescalate"] = manage and not_leader and c.status != "done" and lvl > 0
+        out["can_delete"] = ctx["role"] == "admin" or (_is_owner(ctx, c) and not is_leader)
+        # Up: whoever manages the row — a leader only while they hold it, never
+        # on a concern that already sits above them.
+        out["can_escalate"] = (
+            manage and c.status != "done" and lvl < LEVEL_IDX["top-manager"]
+            and (not is_leader or level == "leader")
+        )
+        # Down: never a leader (nothing sits below them), and the last step
+        # needs a leader on the row to hand the concern to.
+        out["can_deescalate"] = (
+            manage and not is_leader and c.status != "done" and lvl > 0
+            and (LEVELS[lvl - 1] != "leader" or _has_leader(c))
+        )
     return out
 
 
