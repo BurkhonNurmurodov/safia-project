@@ -840,6 +840,7 @@ export default function IdleCell() {
           ))}
         </div>
       )}
+      {toast.node}
     </Layout>
   );
 }
