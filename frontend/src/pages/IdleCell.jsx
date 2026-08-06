@@ -597,8 +597,11 @@ function PerenaladkaCard({ cells, date, t, tl, lang, seed = 0 }) {
             <div className={HEAD_CELL}>{t("idleCell.noteOptional")}</div>
             <div className={HEAD_CELL} />
           </div>
+          {/* seed in the key: a successful sheet refresh remounts the rows so
+              they re-seed from the fresh server values (row drafts otherwise
+              only initialise on mount). */}
           {cells.map((c) => (
-            <PerenRow key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} onSaved={onSaved} />
+            <PerenRow key={`${c.cell_id}-${date}-${seed}`} cell={c} date={date} t={t} tl={tl} lang={lang} onSaved={onSaved} />
           ))}
         </div>
       </div>
