@@ -2634,11 +2634,30 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                 ))
 
 
+def _unit_cell_codes(db: Session, manager_id: int, d: date) -> set:
+    """Cells actually present in a unit's uploaded attendance for a date (named
+    rows only — a nameless split-leftover row doesn't make its cell a real
+    destination). Empty on legacy days whose upload carried no cell codes."""
+    return {
+        code for (code,) in db.query(Attendance.verifix_code).filter(
+            Attendance.manager_id == manager_id,
+            Attendance.date == d,
+            Attendance.verifix_code.isnot(None),
+            Attendance.verifix_code != "",
+            Attendance.worker_name.isnot(None),
+            Attendance.worker_name.notin_(["", "nan", "NaN"]),
+        ).distinct().all()
+    }
+
+
 def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Optional[str],
-                             target_manager_id_in: Optional[int], task_name_in: Optional[str]):
+                             target_manager_id_in: Optional[int], task_name_in: Optional[str],
+                             target_cell_in: Optional[str] = None):
     """Validate the move target; returns (ttype, target_manager_id, target_manager_name,
-    task_name). Enforces: real target unit, not the sender, and the receiving
-    unit's day must still be open."""
+    task_name, target_cell). Enforces: real target unit, not the sender, the receiving
+    unit's day must still be open, and — whenever that unit's day carries cell codes
+    at all — the destination cell must be one of them. Legacy no-cell days resolve
+    to target_cell=None (plain unit-level move, exactly the old behaviour)."""
     if ttype not in ("supervisor", "task"):
         raise HTTPException(status_code=400, detail="target_type must be 'supervisor' or 'task'")
     if ttype == "supervisor":
@@ -2652,11 +2671,20 @@ def _resolve_exchange_target(db: Session, sender_id: int, d: date, ttype: Option
         _assert_day_open(db, target.id, d)   # can't move into a closed unit
         if not _unit_has_attendance(db, target.id, d):
             raise ExchangeTargetNoData()     # can't move into a unit with no data yet
-        return ttype, target.id, target.name, None
+        codes = _unit_cell_codes(db, target.id, d)
+        cell  = (target_cell_in or "").strip() or None
+        if codes:
+            if not cell:
+                raise HTTPException(status_code=400, detail="Select the receiving supervisor's cell")
+            if cell not in codes:
+                raise HTTPException(status_code=404, detail="Target cell not found in the receiving unit's attendance for this date")
+        else:
+            cell = None
+        return ttype, target.id, target.name, None, cell
     name = (task_name_in or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="task_name is required")
-    return ttype, None, None, name
+    return ttype, None, None, name, None
 
 
 def _build_exchange_payload(db: Session, manager_id: int, d: date, target_type: str,
