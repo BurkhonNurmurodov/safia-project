@@ -2445,7 +2445,12 @@ export default function Leaders({ shiftLock = null }) {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums" style={{ background: scoreColor(r.completion) }}>
+                        {/* Grey, not traffic-light, once the window voided the row:
+                            the sheet's own figure still shows, but it no longer
+                            says anything about the day's score. */}
+                        <span title={r.rejected ? T.voidTitle : undefined}
+                          className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums"
+                          style={{ background: r.rejected ? C_FLAT : scoreColor(r.completion) }}>
                           {Math.round(r.completion)}%
                         </span>
                       </td>
