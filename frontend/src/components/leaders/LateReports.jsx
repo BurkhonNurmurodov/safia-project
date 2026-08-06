@@ -410,7 +410,10 @@ export default function LateReports({ canDecide = false }) {
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <StateChip state={it.state} T={T} />
-                      {it.state === "void" && !it.can_request && (
+                      {/* Whose turn it is. An admin sees this on a day nobody
+                          has raised — they may still open it themselves, but the
+                          badge does not count it as theirs, and this says why. */}
+                      {it.state === "void" && (it.can_decide || !it.can_request) && (
                         <span className="text-xs" style={{ color: "var(--text-4)" }}>{T.waitingSup}</span>
                       )}
                     </div>
