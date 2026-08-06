@@ -2553,6 +2553,8 @@ def _revert_split_exchange(db: Session, doc: HrDocument):
             att.hours_worked      = snap.get("hours_worked")
             att.early_arrival_min = snap.get("early_arrival_min")
             att.effective_hours   = snap.get("effective_hours")
+            if "old_verifix_code" in emp:
+                att.verifix_code  = emp.get("old_verifix_code")
         lid = applied.get("leftover_id")
         if lid:
             row = db.query(Attendance).filter(Attendance.id == lid).first()
