@@ -26,6 +26,8 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragSelect } from "../hooks/useDragSelect";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
+import { cellName as pickCellName } from "../utils/cellName";
+import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
