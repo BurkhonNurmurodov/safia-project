@@ -253,10 +253,13 @@ export default function LateReports({ canDecide = false }) {
     onSuccess: () => { setConfirm(null); settle(T.okWithdraw); },
   });
 
-  // What still needs THIS viewer: an admin owes a decision on pending requests,
-  // a supervisor owes a request on days nobody has asked about.
+  // Whose TURN it is — the same rule the tab badge counts (see routers/leaders.py).
+  // An admin owes a decision on pending requests; a brigadir owes a request on
+  // days nobody has raised. An admin CAN open an un-raised day directly, but it
+  // is not their turn, so it does not sit in their «needs you».
   const needsMe = (it) =>
-    (it.state === "pending" && it.can_decide) || (it.state === "void" && it.can_request);
+    (it.state === "pending" && it.can_decide)
+    || (it.state === "void" && it.can_request && !it.can_decide);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
