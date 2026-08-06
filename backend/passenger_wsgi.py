@@ -110,6 +110,7 @@ try:
     seed_languages()
     seed_managers_and_sources()
     repoint_shift_report_sheet()
+    wipe_cell_perenaladka_history()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()
