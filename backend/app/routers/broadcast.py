@@ -449,8 +449,10 @@ def _profile_holders(db: Session) -> list[dict]:
 
     Each profile also carries the org-chart position the picker groups by —
     ``shift`` for shift-managers and supervisors, ``unit``/``unit_id`` (their
-    supervisor) for leaders. They stay structured, never a pre-joined caption,
-    so the frontend renders them through t()/tl() in the viewer's language."""
+    supervisor) for leaders. A leader has no shift of its own, so it INHERITS
+    the shift of its supervisor's unit and the picker can nest shift ▸
+    supervisor. They stay structured, never a pre-joined caption, so the
+    frontend renders them through t()/tl() in the viewer's language."""
 
     def approved(role: str, role_id: int) -> list[int]:
         return _uniq([

@@ -3245,6 +3245,7 @@ class DocUpdateBody(BaseModel):
     target_type:       Optional[str] = None   # people_exchange
     target_manager_id: Optional[int] = None
     task_name:         Optional[str] = None
+    target_cell:       Optional[str] = None
     transfer_time:     Optional[str] = None
     return_time:       Optional[str] = None
 
