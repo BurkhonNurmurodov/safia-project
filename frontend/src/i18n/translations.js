@@ -42,7 +42,6 @@ const t = {
     "idleCell.stopped":           "To'xtaganda",
     "idleCell.notStopped":        "To'xtamaganda",
     "idleCell.noNsHint":          "Bu kategoriyada «to'xtamaganda» qiymati yo'q",
-    "idleCell.total":             "Jami",
     "idleCell.note":              "Izoh",
     "idleCell.notePlaceholder":   "Kutish sababi (majburiy)",
     "idleCell.noteRequired":      "Izoh majburiy",
