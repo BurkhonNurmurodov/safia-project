@@ -7464,7 +7464,6 @@ const t = {
     "idleCell.testNote":          "Test — does not replace the sheet import",
     "idleCell.cellsWord":         "cells",
     "idleCell.searchPlaceholder": "Search cell…",
-    "idleCell.colCell":           "Cell",
     "idleCell.colStatus":         "Status",
     "idleCell.colStopped":        "Stopped, min",
     "idleCell.colNotStopped":     "Not stopped, min",
