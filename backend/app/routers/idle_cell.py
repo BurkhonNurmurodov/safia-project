@@ -83,20 +83,7 @@ def _entry_json(e: CellOjidaniya) -> dict:
     }
 
 
-def _peren_json(p: Optional[CellPerenaladka]) -> Optional[dict]:
-    if p is None:
-        return None
-    return {
-        "id": p.id,
-        "minutes": float(p.minutes or 0),
-        "note": p.note or "",
-        "entered_by": p.entered_by_profile,
-        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-    }
-
-
-def _cell_json(c: Cell, entries: list, peren: Optional[CellPerenaladka] = None,
-               leader: Optional[str] = None) -> dict:
+def _cell_json(c: Cell, entries: list, leader: Optional[str] = None) -> dict:
     return {
         "cell_id": c.id,
         "verifix_code": c.verifix_code,
