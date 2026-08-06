@@ -63,7 +63,7 @@ const TXT = {
   uz: {
     title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
     tabMonitor: "Monitoring", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
-    tabLate: "Kechikkanlar",
+    tabLate: "Kechikkanlar", reasonLbl: "Sabab",
     pendChip: "So'rov yuborilgan", pendTitle: "Kunni ochish so'ralgan — admin qarori kutilmoqda",
     lateOkChip: "Kechikkan — qabul qilingan", lateOkTitle: "Kechikkan hisobot: {by} ochgan, kun o'z natijasi bilan hisoblanadi",
     avgSuccess: "O'rtacha muvaffaqiyat", timePeriod: "Davr", shift: "Smena",
@@ -134,7 +134,7 @@ const TXT = {
   uz_cyrl: {
     title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
     tabMonitor: "Мониторинг", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
-    tabLate: "Кечикканлар",
+    tabLate: "Кечикканлар", reasonLbl: "Сабаб",
     pendChip: "Сўров юборилган", pendTitle: "Кунни очиш сўралган — админ қарори кутилмоқда",
     lateOkChip: "Кечиккан — қабул қилинган", lateOkTitle: "Кечиккан ҳисобот: {by} очган, кун ўз натижаси билан ҳисобланади",
     avgSuccess: "Ўртача муваффақият", timePeriod: "Давр", shift: "Смена",
@@ -205,7 +205,7 @@ const TXT = {
   ru: {
     title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
     tabMonitor: "Мониторинг", tabClear: "Очистка данных", srcBot: "Из бота",
-    tabLate: "Опоздавшие",
+    tabLate: "Опоздавшие", reasonLbl: "Причина",
     pendChip: "Запрос отправлен", pendTitle: "Запрошено открытие дня — ждём решения администратора",
     lateOkChip: "Опоздал — засчитан", lateOkTitle: "Опоздавший отчёт: открыл(а) {by}, день засчитан со своим результатом",
     avgSuccess: "Средний успех", timePeriod: "Период", shift: "Смена",
@@ -276,7 +276,7 @@ const TXT = {
   en: {
     title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
     tabMonitor: "Monitoring", tabClear: "Clear data", srcBot: "Filed in bot",
-    tabLate: "Late reports",
+    tabLate: "Late reports", reasonLbl: "Reason",
     pendChip: "Request sent", pendTitle: "Opening this day was requested — awaiting an admin decision",
     lateOkChip: "Late — accepted", lateOkTitle: "Late report: opened by {by}; the day counts at its own score",
     avgSuccess: "Average Success", timePeriod: "Period", shift: "Shift",
