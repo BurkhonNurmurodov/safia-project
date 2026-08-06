@@ -138,10 +138,6 @@ def list_cells(
         CellOjidaniya.date == date,
     ).all():
         by_cell[e.cell_id].append(_entry_json(e))
-    peren = {p.cell_id: p for p in db.query(CellPerenaladka).filter(
-        CellPerenaladka.cell_id.in_(ids),
-        CellPerenaladka.date == date,
-    ).all()}
     lids = {c.leader_id for c in cells if c.leader_id}
     leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
         RoleProfile.id.in_(lids),
