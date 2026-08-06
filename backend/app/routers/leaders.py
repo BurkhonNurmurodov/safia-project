@@ -31,6 +31,48 @@ router = APIRouter(prefix="/api", tags=["leaders"])
 _relabel = relabel_supervisor
 
 
+# ── Shift-1 submission window ─────────────────────────────────────────────────
+# Policy (user, 2026-08-06): a shift-1 leader files the day's checklist DURING
+# that day, between 08:00 and 20:00. A row that arrives outside those hours — or
+# on a different date than the day it reports on, or with no readable timestamp
+# at all — is not a submission. It still travels to the page and still shows in
+# the register, flagged, but it scores as the missed day it is.
+#
+# Deliberately narrow, so the rule can only ever bite where it was meant to:
+#   * only days from WINDOW_FROM onwards — every earlier day keeps the score it
+#     has always had, whenever its row happens to have been filed;
+#   * only shift 1 — shift 2 files against a 17:00 → 16:59 day and has no window
+#     of its own yet;
+#   * only rows whose supervisor RESOLVED to a shift-1 unit. An unmatched name
+#     carries a null shift (see sup_shift below), and a name-matching miss must
+#     never cost a leader a day's score.
+# The timestamp is the sheet's own wall clock — Tashkent, no DST — which is what
+# the leader who filed it and the brigadir reading it both see on the form.
+WINDOW_FROM = "2026-08-06"      # first REPORTED day the rule judges
+WINDOW_SHIFT = 1
+WINDOW_OPEN = time(8, 0)
+WINDOW_CLOSE = time(20, 0)      # both ends inclusive: 20:00:00 still counts
+
+
+def _in_window(date_iso: str, submitted_at: datetime | None) -> bool:
+    """Did this row arrive on the day it reports on, inside 08:00–20:00?"""
+    if submitted_at is None:
+        return False
+    return (
+        submitted_at.strftime("%Y-%m-%d") == str(date_iso)[:10]
+        and WINDOW_OPEN <= submitted_at.time() <= WINDOW_CLOSE
+    )
+
+
+def _rejected(date_iso: str, shift: int | None, submitted_at: datetime | None) -> bool:
+    """Whether the window rule voids this row. False for every day, shift and
+    unresolved unit the rule does not cover — so it can only ever subtract from
+    what the page already scored, never rewrite history."""
+    if str(date_iso)[:10] < WINDOW_FROM or shift != WINDOW_SHIFT:
+        return False
+    return not _in_window(date_iso, submitted_at)
+
+
 # ── Daraja tier cutoffs ───────────────────────────────────────────────────────
 # The standings grade (Chempion / A'lo / O'rta / Past) cuts on the metric the
 # list is ranked by. Stored GLOBALLY, not per viewer: a grade has to mean the
