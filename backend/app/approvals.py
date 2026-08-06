@@ -348,6 +348,7 @@ def _render_leader_late(data, lang) -> str:
     lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
     lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
     lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
+    lines.append(f"🕐 {_L(lang, 'filed_at')}: {_v(data['filed_at'])}")
     lines.append(f"📊 {_L(lang, 'score')}: {data['score']}%")
     lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data['supervisor'])}")
     lines.append("")
