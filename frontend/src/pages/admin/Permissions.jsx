@@ -137,7 +137,7 @@ export default function Permissions() {
   const capabilities = data?.capabilities ?? [];
   const groups = data?.groups ?? [];
 
-  // role ▸ [shift | supervisor] ▸ profile ▸ user, straight off the shared
+  // role ▸ [shift [▸ supervisor]] ▸ profile ▸ user, straight off the shared
   // Broadcast-picker builder so this reads identically. Each USER leaf carries
   // a chip with the count of grants that account already holds. `byId` is the
   // flat telegram-id → { name, caps, posts } lookup the capability matrix reads.
