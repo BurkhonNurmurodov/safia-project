@@ -57,7 +57,7 @@ function bucketProfiles(prefix, nodes, metaOf, looseLabel, icon) {
         ? a.sort - b.sort
         : String(a.sort).localeCompare(String(b.sort)))
     .map(({ sort, ...b }) => b);   // eslint-disable-line no-unused-vars
-  if (loose.length) out.push({ key: `${role}::none`, label: looseLabel, icon, children: loose });
+  if (loose.length) out.push({ key: `${prefix}::none`, label: looseLabel, icon, children: loose });
   return out;
 }
 
