@@ -73,8 +73,8 @@ const LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"];
 const splitResponsible = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 // Level → identity hue in the shared generic-first order (red → green → blue
-// as the concern climbs the chain — identity, not traffic-light). "leader"
-// stays only so pre-migration escalation-history entries keep rendering.
+// as the concern climbs the chain — identity, not traffic-light). "leader" is
+// the step below the chain's opening level, so it stays neutral grey.
 const LEVEL_COLOR = {
   leader: "#94a3b8",
   supervisor: "#ef4444",
