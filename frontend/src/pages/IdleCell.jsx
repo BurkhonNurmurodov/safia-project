@@ -600,8 +600,6 @@ export default function IdleCell() {
         </div>
       ) : shownCells.length === 0 ? (
         emptyBox(t("idleCell.noCells"))
-      ) : view === "perenaladka" ? (
-        <PerenaladkaCard cells={shownCells} date={date} t={t} tl={tl} lang={lang} seed={seedTick} />
       ) : (
         <div className="space-y-2">
           {shownCells.map((c) => (
@@ -609,7 +607,6 @@ export default function IdleCell() {
           ))}
         </div>
       )}
-      {toast.node}
     </Layout>
   );
 }
