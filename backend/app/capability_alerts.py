@@ -267,6 +267,10 @@ _T = {
                                     "Ячейка бўйича переналадка ёзуви ўчирилди",
                                     "Удалена запись переналадки по ячейке",
                                     "Per-cell changeover entry deleted"),
+    "act.idle_cell.peren_refreshed": ("Perenaladka jadvaldan yangilandi",
+                                      "Переналадка жадвалдан янгиланди",
+                                      "Переналадка обновлена из таблицы",
+                                      "Per-cell changeover refreshed from the sheet"),
     "act.concern.created": ("Xavotir yaratildi", "Хавотир яратилди",
                             "Создано замечание (Xavotir)", "Concern created"),
 
