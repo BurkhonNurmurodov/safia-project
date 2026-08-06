@@ -1983,7 +1983,7 @@ export function DocumentViewModal({ docId, onClose }) {
                   {t("staff.moveTo")}{" "}
                   <span style={{ color: "var(--brand-text)" }}>
                     {doc.target_type === "supervisor"
-                      ? `👤 ${tl(doc.target_manager_name) || "—"}`
+                      ? `👤 ${tl(doc.target_manager_name) || "—"}${exchangeCellSuffix(doc, lang)}`
                       : `🗂 ${doc.task_name || "—"}`}
                   </span>
                 </div>

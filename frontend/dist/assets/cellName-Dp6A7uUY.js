@@ -1,0 +1,1 @@
+var a=["ru","uz","uz_cyrl","en"];function l(r,e="ru",n="name_workshop_"){if(!r)return"";for(const u of[e,...a]){const t=r["".concat(n).concat(u)];if(t)return String(t)}return""}function _(r,e="ru"){return!r||r.target_type!=="supervisor"||!r.target_cell?"":" · ".concat(l(r.target_cell_names||{},e,"")||r.target_cell)}export{_ as n,l as t};
