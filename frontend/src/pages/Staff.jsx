@@ -809,6 +809,20 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     </div>
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.job_title) || "—"}</td>
+                  {showCellCol && (
+                    <td className="px-3 py-2" title={w._cell?.full || ""}>
+                      {w._cell ? (
+                        <div className="max-w-[220px] truncate">
+                          <span className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</span>
+                          {w._cell.name && (
+                            <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{w._cell.name}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--text-4)" }}>—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.schedule) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.clock_in_out) || "—"}</td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>
