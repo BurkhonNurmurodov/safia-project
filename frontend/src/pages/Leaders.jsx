@@ -1387,8 +1387,34 @@ export default function Leaders({ shiftLock = null }) {
   // the shift-2 page — that is the shift whose days the bot files, so it is the
   // only page where deleting one changes what anybody sees.
   const showClearTab = isAdmin && shiftLock === 2;
+  // «Kechikkan hisobotlar» — the review queue for days the shift-1 submission
+  // window voided. Shown to the two roles that can act in that flow (a brigadir
+  // asks, an admin decides), and never on the shift-2 page, where the rule does
+  // not apply and the tab could only ever be empty.
+  const showLateTab = (isAdmin || auth?.role === "supervisor") && shiftLock !== 2;
   const [tabSaved, setTab] = usePersistentState(`${prefix}_tab`, "monitor");
-  const tab = showClearTab ? tabSaved : "monitor";
+  // A saved tab the viewer can no longer open (role changed, or a shift page
+  // that has no such view) falls back to the dashboard rather than a blank one.
+  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab };
+  const tab = tabOk[tabSaved] ? tabSaved : "monitor";
+
+  // The queue's own feed: the tab badge needs the count before the tab is ever
+  // opened, and LateReports reads the SAME query key, so the two share one
+  // request and can never disagree about how much work is waiting.
+  const { data: lateData } = useQuery({
+    queryKey: ["leaders-late"],
+    queryFn: () => api.get("/api/leaders/late").then((r) => r.data),
+    enabled: showLateTab,
+  });
+  const lateTodo = lateData?.todo ?? 0;
+
+  // The admin's Telegram card links here with ?tab=late — a decision is one tap
+  // from the DM. Runs once per mount, and only for a tab this viewer really has.
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get("tab");
+    if (want && tabOk[want]) setTab(want);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLateTab, showClearTab]);
 
   // table-level filters (independent of the page filters above)
   const [tSearch, setTSearch] = usePersistentState(`${prefix}_table_search`, "");

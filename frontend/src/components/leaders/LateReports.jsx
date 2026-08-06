@@ -65,7 +65,7 @@ const TXT = {
     searchPh: "Lider ismi…",
     stVoid: "Hisobga olinmayapti", stPending: "Admin qarorini kutmoqda",
     stApproved: "Ochildi — hisobga olinadi", stRejected: "Ochilmadi",
-    filed: "Yuborilgan", score: "Natija", waitingSup: "Brigadirning so'rovi kutilmoqda",
+    waitingSup: "Brigadirning so'rovi kutilmoqda",
     reqBy: "So'radi", decidedBy: "Qaror qildi", nRows: "{n} ta hisobot",
     askOpen: "Ochishni so'rash", openNow: "Kunni ochish", approve: "Tasdiqlash",
     reject: "Rad etish", withdraw: "Qaytarib olish", askAgain: "Qayta so'rash",
@@ -97,7 +97,7 @@ const TXT = {
     searchPh: "Лидер исми…",
     stVoid: "Ҳисобга олинмаяпти", stPending: "Админ қарорини кутмоқда",
     stApproved: "Очилди — ҳисобга олинади", stRejected: "Очилмади",
-    filed: "Юборилган", score: "Натижа", waitingSup: "Бригадирнинг сўрови кутилмоқда",
+    waitingSup: "Бригадирнинг сўрови кутилмоқда",
     reqBy: "Сўради", decidedBy: "Қарор қилди", nRows: "{n} та ҳисобот",
     askOpen: "Очишни сўраш", openNow: "Кунни очиш", approve: "Тасдиқлаш",
     reject: "Рад этиш", withdraw: "Қайтариб олиш", askAgain: "Қайта сўраш",
@@ -129,7 +129,7 @@ const TXT = {
     searchPh: "Имя лидера…",
     stVoid: "Не засчитан", stPending: "Ждёт решения администратора",
     stApproved: "Открыт — засчитывается", stRejected: "Не открыт",
-    filed: "Отправлено", score: "Результат", waitingSup: "Ожидается запрос бригадира",
+    waitingSup: "Ожидается запрос бригадира",
     reqBy: "Запросил(а)", decidedBy: "Решение", nRows: "{n} отчёт(ов)",
     askOpen: "Запросить открытие", openNow: "Открыть день", approve: "Одобрить",
     reject: "Отклонить", withdraw: "Отозвать", askAgain: "Запросить снова",
@@ -161,7 +161,7 @@ const TXT = {
     searchPh: "Leader name…",
     stVoid: "Not counted", stPending: "Awaiting an admin decision",
     stApproved: "Opened — counts", stRejected: "Not opened",
-    filed: "Filed", score: "Score", waitingSup: "Waiting for the supervisor to ask",
+    waitingSup: "Waiting for the supervisor to ask",
     reqBy: "Requested by", decidedBy: "Decided by", nRows: "{n} report(s)",
     askOpen: "Request to open", openNow: "Open the day", approve: "Approve",
     reject: "Reject", withdraw: "Withdraw", askAgain: "Ask again",
@@ -486,7 +486,8 @@ export default function LateReports({ canDecide = false }) {
             <span>{ask.can_decide ? T.whatAdmin : T.whatSup}</span>
           </div>
           <FormField label={T.reason} required hint={T.reasonHint}
-            error={askMut.isError ? failMsg(askMut.error) : null}>
+            error={askMut.isError ? failMsg(askMut.error)
+              : reason.length > 0 && reason.trim().length < 3 ? T.reasonShort : null}>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
