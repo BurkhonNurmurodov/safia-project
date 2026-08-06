@@ -10,14 +10,17 @@ inherits it on registration. Every role works within its scope:
 - shift-manager — their shift's units, full manage, picks supervisor → leader
 - supervisor    — their own unit's leaders, full manage, picks a leader
 - leader        — their own rows only (no picker — always writes on themselves);
-                  may create and edit open base-level concerns but never resolve
-                  (mark done), delete or escalate them — that responsibility
-                  sits with the supervisor and above
+                  may create and edit open concerns, and once a supervisor sends
+                  one DOWN to them they hold it: they set its status (including
+                  done) and may send it back up. A concern they don't hold stays
+                  theirs to edit but never to resolve, delete or escalate
 
-Escalation ("uplift"): every concern starts at the "supervisor" level (the
-leader level was removed 2026-07; legacy rows were migrated up) and moves one
-step at a time along supervisor → shift-manager → top-manager, each step
-requiring a reason (POST /{id}/escalate, direction up|down). The handler at
+Escalation ("uplift"): every concern starts at the "supervisor" level and moves
+one step at a time along leader → supervisor → shift-manager → top-manager, each
+step requiring a reason (POST /{id}/escalate, direction up|down). "leader" is
+the bottom step and a DOWNGRADE destination only — nothing is created there; a
+supervisor hands a concern down to the leader it was logged against (no picker,
+the row already names them), and either side can move it back up. The handler at
 the concern's CURRENT level and everyone above it in the chain (within their
 scope) keep edit rights; levels below turn read-only. Top-management is
 person-specific — the shift-manager picks one top-manager profile, and only
