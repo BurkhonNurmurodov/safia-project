@@ -2426,7 +2426,8 @@ def _apply_split_exchange(db: Session, doc: HrDocument):
             recv_leftover_id = None
             if not is_task and target and plan["part2"] > 0:
                 row = Attendance(manager_id=target, date=doc.date, worker_name=None,
-                                 hours_worked=plan["part2"])
+                                 hours_worked=plan["part2"],
+                                 verifix_code=payload.get("target_cell"))
                 db.add(row); db.flush()
                 recv_leftover_id = row.id
             att.worker_name       = None
