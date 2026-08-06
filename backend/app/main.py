@@ -122,6 +122,10 @@ async def lifespan(app: FastAPI):
     backfill_deletion_batch_ids()
     from app.telegram_bot import setup_webhook
     setup_webhook()
+    # Continue any broadcast fan-out orphaned by a process restart mid-send
+    # (mirrored in passenger_wsgi.py — prod boots through that entrypoint).
+    from app.routers.broadcast import resume_stuck_broadcasts
+    resume_stuck_broadcasts()
     yield
 
 
