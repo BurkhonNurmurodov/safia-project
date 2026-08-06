@@ -178,13 +178,15 @@ def read_production_data(sheet_id: str, min_date: Optional[datetime] = None):
     plan_data: dict[str, dict[str, float]] = {}
     actual_data: dict[str, dict[str, float]] = {}
 
-    started = False
+    started, gap = False, 0
     for row in data_rows:
         if not row or not str(row[0]).strip():
             if started:
-                break
+                gap += 1
+                if gap > _BLOCK_GAP_TOLERANCE:
+                    break
             continue
-        started = True
+        started, gap = True, 0
         name = str(row[0]).strip()
         plan_data[name] = {}
         actual_data[name] = {}
