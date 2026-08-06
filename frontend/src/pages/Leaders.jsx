@@ -293,6 +293,8 @@ const TXT = {
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
+    voidChip: "Out of window",
+    voidTitle: "Shift 1: a checklist must be filed on its own day between 08:00 and 20:00 — this one was not accepted, so the day scores 0%",
     aiTitle: "AI review",
     aiCheck: "Check now",
     aiOk: "Confirmed",
