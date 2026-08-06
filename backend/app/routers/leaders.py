@@ -300,9 +300,18 @@ def get_leaders(
         return sup_shift.get(_relabel(r.supervisor))
 
     meta = db.query(LeaderSyncMeta).filter_by(id=1).first()
+    late = _late_map(db)
 
-    sheet_data = [
-        {
+    sheet_data = []
+    for r in rows:
+        prof = _leader_of(r) or {}
+        voided = _rejected(r.date, _shift_of(r), r.submitted_at)
+        # An APPROVED request un-voids the day — it counts at its own score again
+        # — but `late_state` survives on the row for good, so the dashboard can
+        # keep flagging it as a late day. Opened, not laundered.
+        req = late.get(_late_key(prof.get("id"), r.leader, r.date)) if voided else None
+        opened = bool(req and req.status == "approved")
+        sheet_data.append({
             # The form's submission id when we have it — unlike the row id it
             # survives the wipe-and-reload of every sheet refresh.
             "uid": r.submission_id or f"row-{r.id}",
@@ -314,16 +323,21 @@ def get_leaders(
             # Voided by the shift-1 submission window: the client still lists the
             # row (flagged) but scores the day as missed. Computed here, not on
             # the client, so every consumer of this feed reads one verdict.
-            "rejected": _rejected(r.date, _shift_of(r), r.submitted_at),
+            "rejected": voided and not opened,
+            # Where the day sits in the open-it flow: null when the window never
+            # touched it, else pending | approved | rejected. Distinct from the
+            # `rejected` boolean above, which is only ever "does this day count".
+            "late_state": req.status if req else ("void" if voided else None),
+            "late_by": req.decided_by_name if opened else None,
+            "late_at": req.decided_at.isoformat() if opened and req.decided_at else None,
+            "late_reason": req.reason if req else None,
             # The PERSON: a stable profile id plus their canonical profile
             # name, so every spelling of one leader groups as one person.
-            "leader_id": (_leader_of(r) or {}).get("id"),
-            "leader": (_leader_of(r) or {}).get("name") or r.leader,
+            "leader_id": prof.get("id"),
+            "leader": prof.get("name") or r.leader,
             "completion": float(r.completion or 0),
             "tasks": r.tasks or [],
-        }
-        for r in rows
-    ]
+        })
 
     # ── the bot layer (shift 2 only) ──────────────────────────────────────────
     # Scoped exactly like the sheet rows above. A leader with no resolvable
