@@ -89,6 +89,8 @@ const TXT = {
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun",
+    voidChip: "Vaqtdan tashqari",
+    voidTitle: "1-smena: hisobot o'z kunida 08:00–20:00 oralig'ida yuborilishi kerak — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
     aiTitle: "AI tekshiruvi",
     aiCheck: "Tekshirish",
     aiOk: "Tasdiqlandi",
