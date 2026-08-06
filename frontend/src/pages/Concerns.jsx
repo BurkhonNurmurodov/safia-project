@@ -2495,6 +2495,10 @@ export default function Concerns() {
                   <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(viewRow.cell_leader_name)}</div>
                 )}
               </MobField>
+              {/* The cell's leader's supervisor (unit brigadir), resolved live. */}
+              <MobField label={t("concerns.level.supervisor")}>
+                {viewRow.cell_supervisor_name ? shortOwner(viewRow.cell_supervisor_name) : "—"}
+              </MobField>
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: "var(--text-4)" }}>
                   {t("concerns.colCategory")}
