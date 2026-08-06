@@ -465,6 +465,7 @@ def _shift_layout(header: list) -> ShiftLayout:
     date = brigadir = None
     stopped: dict[str, int] = {}
     not_stopped: dict[str, int] = {}
+    peren: dict[str, int] = {}
     unknown: set[str] = set()
 
     for i, raw in enumerate(header):
@@ -476,6 +477,10 @@ def _shift_layout(header: list) -> ShiftLayout:
             continue
         if h == _SHIFT_HDR_BRIGADIR:
             brigadir = i
+            continue
+        pm = _SHIFT_PEREN_RE.match(h)
+        if pm:
+            peren.setdefault(pm.group(1), i)   # first column wins on duplicates
             continue
         m = _SHIFT_CAT_RE.match(h)
         if not m:
