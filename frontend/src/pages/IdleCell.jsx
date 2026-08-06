@@ -640,12 +640,28 @@ export default function IdleCell() {
     [supervisors, shiftTab],
   );
 
-  const { data: cellsData, isFetching } = useQuery({
+  const { data: cellsData, isFetching, refetch } = useQuery({
     queryKey: ["idle-cells", supervisorId, date],
     queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
     enabled: supervisorId != null,
   });
   const cells = cellsData?.cells ?? [];
+
+  // Sheet refresh: pulls the shift report's per-cell «Переналадка» minutes as
+  // the tab's historical data (global — every brigadir and date the workbook
+  // holds, not just the current filter). seedTick bumps AFTER the refetch so
+  // the rows remount and re-seed from what the import actually wrote.
+  const toast = useToast();
+  const [seedTick, setSeedTick] = useState(0);
+  const refreshMut = useMutation({
+    mutationFn: () => api.post("/api/idle-cell/perenaladka/refresh").then((r) => r.data),
+    onSuccess: async (d) => {
+      if (supervisorId != null) await refetch();
+      setSeedTick((n) => n + 1);
+      toast.success(`${t("idleCell.refreshDone")} (+${d.saved ?? 0})`);
+    },
+    onError: (e) => toast.error(e?.response?.data?.detail || t("idleCell.refreshFail")),
+  });
 
   // Leader narrows the supervisor's cells, and the cell picker below it only
   // offers what the leader filter left — the toolbar reads as one chain,
