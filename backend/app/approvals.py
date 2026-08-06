@@ -357,17 +357,19 @@ def _render_leader_late(data, lang) -> str:
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 
-def _approve_reject_kb(code: str, ref, lang: str):
+def _approve_reject_kb(code: str, ref, lang: str, panel: str = "/staff"):
     from telebot import types
     kb = types.InlineKeyboardMarkup()
     kb.row(
         types.InlineKeyboardButton(_L(lang, "approve"), callback_data=f"ap:{code}:a:{ref}"),
         types.InlineKeyboardButton(_L(lang, "reject"),  callback_data=f"ap:{code}:r:{ref}"),
     )
-    # "Keep both" — the panel escape hatch alongside the inline actions.
+    # "Keep both" — the panel escape hatch alongside the inline actions. It lands
+    # on the page the request belongs to, so an admin who would rather see the
+    # full picture before deciding is one tap from it.
     kb.add(types.InlineKeyboardButton(
         _L(lang, "open_panel"),
-        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}/staff"),
+        web_app=types.WebAppInfo(url=f"{settings.webapp_url.rstrip('/')}{panel}"),
     ))
     return kb
 
