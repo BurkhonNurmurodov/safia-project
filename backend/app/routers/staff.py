@@ -37,7 +37,7 @@ from app.notify_ctx import notifications_suppressed
 from app.permissions import get_page_access, role_can_access, require_page
 from app.translit import transliterate
 from app.models import (
-    Admin, Attendance, DayApproval, EditRequest, ExchangeTask, HrDocument,
+    Admin, Attendance, Cell, DayApproval, EditRequest, ExchangeTask, HrDocument,
     HrDocumentHistory, Manager, Notification, RoleProfile, TelegramUser,
     TelegramUserRole,
 )
