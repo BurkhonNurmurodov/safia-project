@@ -72,9 +72,9 @@ CATEGORIES = {
     "it", "washing", "plan", "hr", "technologist", "raw_material",
 }
 
-# Escalation chain, bottom → top. leader_concerns.level always holds one of
-# these ("leader" only survives in old concern_escalations history rows).
-LEVELS = ["supervisor", "shift-manager", "top-manager"]
+# Escalation chain, bottom → top. New concerns still open at "supervisor" (the
+# column default); "leader" is reached only by a supervisor sending one down.
+LEVELS = ["leader", "supervisor", "shift-manager", "top-manager"]
 LEVEL_IDX = {l: i for i, l in enumerate(LEVELS)}
 
 # Roles that pick a leader when creating (everyone but the leader themself).
