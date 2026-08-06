@@ -294,6 +294,34 @@ def save_perenaladka(
     return _peren_json(p)
 
 
+@router.post("/perenaladka/refresh")
+def refresh_perenaladka(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Pull the shift report's per-cell «Переналадка» minutes into the tab —
+    the same «Смена отчёт» workbook the Ojidaniya sync reads, on demand from
+    the page. Shown to every profile that can open the page (the refresh-button
+    rule); the import itself is global history, not scoped to the caller's
+    cells — it writes only what the owning brigadir answered on the form."""
+    from app.services.sheets_sync import sync_cell_perenaladka
+
+    src = db.query(SheetSource).filter(SheetSource.name == "shift_report").first()
+    if not src:
+        raise HTTPException(status_code=404, detail="Shift report sheet is not configured")
+    try:
+        result = sync_cell_perenaladka(src.sheet_id, db)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"Sheet import failed: {exc}")
+    if page_grant_used(db, payload, PAGE):
+        alert_grant_use(
+            db, payload, page_cap(PAGE), "idle_cell.peren_refreshed",
+            details=[("l.count", f"+{result.get('saved', 0)} / −{result.get('cleared', 0)}")],
+        )
+    return {"status": "ok", **result}
+
+
 @router.delete("/perenaladka/{entry_id}", status_code=204)
 def delete_perenaladka(
     entry_id: int,
