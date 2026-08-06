@@ -739,9 +739,6 @@ def add_concern_owner_columns() -> None:
         db.execute(text(
             "ALTER TABLE leader_concerns ALTER COLUMN level SET DEFAULT 'supervisor'"
         ))
-        db.execute(text(
-            "UPDATE leader_concerns SET level = 'supervisor' WHERE level = 'leader'"
-        ))
         db.commit()
     except Exception as exc:
         db.rollback()
