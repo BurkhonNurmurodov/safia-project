@@ -474,10 +474,19 @@ def send_hr_document_to_admins(db, doc) -> None:
                    skip_telegram_id=doc.created_by_telegram_id))
 
 
+def send_leader_late_to_admins(db, req) -> None:
+    """A supervisor's request to open a voided leader-day. Admins only — the flow
+    exists so that the person who wants the day open is not the person who opens
+    it, which a capability grant would quietly undo."""
+    _broadcast(db, "leader_late", req.id, _leader_late_data(db, req),
+               _render_leader_late, panel="/leaders?tab=late")
+
+
 # ── Cross-edit primitive — the single source of "decision happened" ───────────
 
 def _outcome_line(lang: str, status: str, decided_by: str | None) -> str:
-    label = _L(lang, "approved_by") if status == "approved" else _L(lang, "rejected_by")
+    key = {"approved": "approved_by", "rejected": "rejected_by"}.get(status, "cancelled_by")
+    label = _L(lang, key)
     return f"{label} — {decided_by}" if decided_by else label
 
 
