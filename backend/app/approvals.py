@@ -676,6 +676,27 @@ def _decide_edit_batch(batch_token: str, status: str, caller: dict) -> None:
             raise
 
 
+def _decide_leader_late(req_id: int, status: str, call) -> None:
+    """Open (or refuse) a voided leader-day from the inline card. Admin-only and
+    re-checked here: notices for this kind are only ever sent to admins, but the
+    check is cheap and the alternative is a day opened by whoever holds a
+    forwarded message. Runs the SAME core as the web app, so an approval from a
+    DM notifies the leader exactly like one from the panel."""
+    from app.models import LeaderLateRequest
+    from app.routers.leaders import decide_late_request
+    from app.telegram_bot import _admin_ids
+
+    if call.from_user.id not in _admin_ids():
+        raise AlreadyHandled()
+    with SessionLocal() as db:
+        req = db.query(LeaderLateRequest).filter_by(id=req_id).first()
+        if req is None or req.status != "pending":
+            raise AlreadyHandled()   # withdrawn, or another admin got there first
+        decided_by = _display_name(call.from_user)
+        decide_late_request(db, req, status, decided_by, call.from_user.id)
+    edit_admin_notices("leader_late", req_id, status, decided_by)
+
+
 def _decide_hr_document(doc_id: int, status: str, call) -> None:
     from fastapi import HTTPException
     from app.models import HrDocument
