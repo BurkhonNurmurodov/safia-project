@@ -633,17 +633,32 @@ function LateChip({ days, T }) {
   );
 }
 
-// Filed outside the shift-1 window (08:00–20:00 of the day it reports on), so
-// the day scores as missed. The chip is red because that is what it costs, and
-// the row's own score chip greys out beside it because that number no longer
-// counts — two readings of one fact, neither of which a vanished row could give.
-function VoidChip({ T }) {
+// Where a row stands with the shift-1 submission window — one chip, four states,
+// so the register never has to be read together with the «Kechikkanlar» tab to
+// know whether a day counts.
+//
+//   void / rejected — filed outside the window and not opened: the day scores 0.
+//                     Red, because that is what it costs, and the row's own score
+//                     chip greys out beside it since that number no longer counts.
+//   pending         — someone asked for it to be opened; nothing has changed yet.
+//   approved        — opened: the day counts at its own score, and this chip is
+//                     the permanent late flag it carries from then on. Amber, not
+//                     green: accepted is not the same as on time.
+const FLAG_TONE = { void: C_BAD, rejected: C_BAD, pending: "#eab308", approved: "#eab308" };
+function DayFlag({ row, T }) {
+  const st = row?.late_state;
+  if (!st) return null;
+  const color = FLAG_TONE[st];
+  const [Icon, label, title] =
+    st === "approved" ? [ShieldCheck, T.lateOkChip, T.lateOkTitle.replace("{by}", row.late_by || "—")]
+    : st === "pending" ? [Hourglass, T.pendChip, T.pendTitle]
+    : [Ban, T.voidChip, T.voidTitle];
   return (
     <span
-      title={T.voidTitle}
+      title={title}
       className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
-      style={{ background: hexA(C_BAD, 0.12), border: `1px solid ${hexA(C_BAD, 0.3)}`, color: C_BAD }}>
-      <Ban size={10} />{T.voidChip}
+      style={{ background: hexA(color, 0.12), border: `1px solid ${hexA(color, 0.3)}`, color }}>
+      <Icon size={10} />{label}
     </span>
   );
 }
