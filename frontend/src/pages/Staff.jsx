@@ -468,13 +468,25 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
   }, [cellDay, hasCellData, managerId]);
 
   const allWorkersRaw = data?.workers ?? [];
+  const dayCellNames  = data?.cells;
   const allWorkers = useMemo(() => {
+    // Primary source: the row's OWN cell code, stamped onto `attendance` by the
+    // single-file «Davomat» upload, labelled through the day's cell catalog the
+    // same endpoint ships. This is what the admin Attendance tab groups by.
+    if (allWorkersRaw.some(w => w.verifix_code)) {
+      const byCode = new Map((dayCellNames || []).map(c => [c.verifix_code, c]));
+      return allWorkersRaw.map(w => w.verifix_code
+        ? { ...w, _cell: cellDisplay(byCode.get(w.verifix_code) || { verifix_code: w.verifix_code }, lang) }
+        : w);
+    }
+    // Fallback for days ingested through the older per-supervisor files: match
+    // by name against the by-cell TEST import, when that day carries one.
     if (!cellOfWorker || cellOfWorker.size === 0) return allWorkersRaw;
     return allWorkersRaw.map(w => {
       const hit = cellOfWorker.get(normName(w.worker_name));
       return hit ? { ...w, _cell: cellDisplay(hit.c, lang) } : w;
     });
-  }, [allWorkersRaw, cellOfWorker, lang]);
+  }, [allWorkersRaw, dayCellNames, cellOfWorker, lang]);
   // Only claim the column when at least one row actually matched — a day whose
   // two uploads don't overlap would otherwise render a full column of dashes.
   const showCellCol = useMemo(() => allWorkers.some(w => w._cell), [allWorkers]);
