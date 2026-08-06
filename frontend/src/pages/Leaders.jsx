@@ -2485,11 +2485,12 @@ export default function Leaders({ shiftLock = null }) {
                     <span className="text-xs" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</span>
                     <span className="text-xs" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
                   </div>
-                  {r.submitted_at && (
-                    <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-4)" }}>
+                  {(r.submitted_at || r.rejected) && (
+                    <div className="flex items-center flex-wrap gap-1.5 text-xs" style={{ color: "var(--text-4)" }}>
                       <Clock size={11} />
-                      <span className="tabular-nums">{hhmm(r.submitted_at)}</span>
+                      <span className="tabular-nums">{r.submitted_at ? hhmm(r.submitted_at) : "—"}</span>
                       {r._late > 0 && <LateChip days={r._late} T={T} />}
+                      {r.rejected && <VoidChip T={T} />}
                     </div>
                   )}
                   <button onClick={() => setDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
