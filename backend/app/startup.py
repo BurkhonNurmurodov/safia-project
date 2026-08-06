@@ -7,8 +7,8 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import SessionLocal
 from app.models import (
-    Admin, AppSetting, Attendance, Comment, DayApproval, EditRequest,
-    ExchangeTask, HrDocument, Language, LeaderConcern, LeaderTask,
+    Admin, AppSetting, Attendance, CellPerenaladka, Comment, DayApproval,
+    EditRequest, ExchangeTask, HrDocument, Language, LeaderConcern, LeaderTask,
     LeaderTaskComment, Manager, RoleProfile, SheetSource,
     TelegramUser, TelegramUserRole,
 )
