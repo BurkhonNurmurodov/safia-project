@@ -2637,6 +2637,7 @@ def _revert_people_exchange(db: Session, doc: HrDocument):
                     hours_worked      = snap.get("hours_worked"),
                     early_arrival_min = snap.get("early_arrival_min"),
                     effective_hours   = snap.get("effective_hours"),
+                    verifix_code      = emp.get("old_verifix_code"),
                 ))
 
 
