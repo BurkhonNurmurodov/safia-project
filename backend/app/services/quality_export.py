@@ -180,6 +180,9 @@ def _kpi_cards(ws: Worksheet, row: int, c1: int, kpis: list[dict]) -> int:
         ws.cell(row, a).value = k.get("value")
         ws.cell(row, a).font = Font(name=FONT, size=16, bold=True, color=INK)
         ws.cell(row, a).alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        # counts stay real numbers (thousands separator); a rate carries its own
+        # 0"%" mask — so the strip reads like the page and still sorts as numbers
+        ws.cell(row, a).number_format = k.get("fmt") or NUM
         txt, dcolor = _delta_text(k)
         ws.cell(row, b).value = txt or None
         ws.cell(row, b).font = Font(name=FONT, size=9, bold=True, color=dcolor)
