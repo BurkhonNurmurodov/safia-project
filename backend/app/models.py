@@ -4,6 +4,39 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+class Factory(Base):
+    """A physical plant. The company now runs more than one, so every page that
+    reports production reality needs to say WHICH plant it is reporting on.
+
+    The factory dimension is deliberately attached in exactly ONE place — a
+    supervisor unit's ``managers.factory_id`` — and everything else derives from
+    there: a cell follows its supervisor, a leader follows their unit, a
+    downtime/quality row follows the supervisor its name resolves to. Storing it
+    twice would let a cell claim factory A while the supervisor running it sits
+    in factory B, and there is no correct way to render that.
+
+    Names are per-language like every other DB-held name (Russian is what the
+    plant actually fills in and is the display fallback — see
+    ``utils/cellName.js``). ``sort_order`` fixes the tab order on the six
+    factory-aware pages, so it never depends on insertion order or on an id.
+    """
+    __tablename__ = "factories"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    # Short human code shown in dense places (tabs on a 390px phone, exports).
+    code       = Column(String, nullable=False, unique=True)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+    sort_order = Column(Integer, nullable=False, server_default="0", default=0)
+    # Archived factories keep their supervisors (and therefore their history)
+    # but stop appearing as a tab — same "archive, never delete, once it holds
+    # data" rule the supervisor units follow.
+    archived   = Column(Boolean, nullable=False, server_default="false", default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Manager(Base):
     """A supervisor unit. Doubles as the supervisor *profile* in the admin
     Profiles tab: id IS the Verifix file id attendance uploads are keyed by.
@@ -15,6 +48,11 @@ class Manager(Base):
     name = Column(String, nullable=False)
     shift = Column(Integer)  # 1 or 2
     archived = Column(Boolean, default=False, nullable=False)
+    # THE factory dimension (see Factory). Nullable so a newly seeded unit is
+    # never silently attributed to the wrong plant: an unassigned supervisor is
+    # visible only on the «All factories» tab, where an admin can see it needs
+    # assigning, rather than padding some factory's numbers.
+    factory_id = Column(Integer, ForeignKey("factories.id"), nullable=True, index=True)
 
     attendance = relationship("Attendance", back_populates="manager")
     comments = relationship("Comment", back_populates="manager")
