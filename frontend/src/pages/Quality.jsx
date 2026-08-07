@@ -906,6 +906,14 @@ export default function Quality() {
     const kept = brigSel.filter((b) => supShift[b] === shiftTab);
     if (kept.length !== brigSel.length) setBrigSel(kept);
   }, [shiftTab, isProd]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Same for the plant: a supervisor picked in factory A works nowhere in
+  // factory B, so the pick is dropped instead of silently zeroing the page.
+  useEffect(() => {
+    if (factory == null || !brigSel.length) return;
+    const live = new Set(rows.map((r) => who(r)));
+    const kept = brigSel.filter((b) => live.has(b));
+    if (kept.length !== brigSel.length) setBrigSel(kept);
+  }, [factory]); // eslint-disable-line react-hooks/exhaustive-deps
   // Leaders present in the rows the active tab can show, most-affected first.
   const leadOpts = useMemo(() => {
     const c = {};
