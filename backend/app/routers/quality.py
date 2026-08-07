@@ -17,9 +17,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Manager, QualityComplaint, QualitySyncMeta, SheetSource
+from app.models import Cell, Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
 from app.services.cell_lookup import by_verifix, resolve_verifix
+from app.services.factory_scope import factory_of_managers, viewer_factory_id
 from app.services.name_map import supervisor_match
 from app.services.quality_export import build_quality_workbook
 from app.services.sheets_sync import sync_quality_sheet
