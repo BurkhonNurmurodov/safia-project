@@ -167,15 +167,22 @@ def list_brigadirs(
     date_to: date = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    # Which plant. Omitted / null = «All factories». A supervisor or leader is
+    # pinned to their own regardless of what they send (factory_scope).
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("overview", "zagruzka", "leaderboard")),
+    payload: dict = Depends(require_page("overview", "zagruzka", "leaderboard")),
 ):
     if not date_to:
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=1)
 
-    metrics = build_metrics_list(db, date_from, date_to, shift, manager_id or None)
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    if empty_scope(scoped):
+        return []
+
+    metrics = build_metrics_list(db, date_from, date_to, shift, scoped)
 
     agg: dict = {}
     for m in metrics:
