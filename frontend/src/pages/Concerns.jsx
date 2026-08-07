@@ -433,6 +433,7 @@ export default function Concerns() {
   const { tl } = useTranslit();
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
+  const { factory } = useFactory();
 
   // Role-scoped access (the backend enforces the same scopes). Each role raises
   // a concern to the step above it: leader → supervisor, supervisor →
