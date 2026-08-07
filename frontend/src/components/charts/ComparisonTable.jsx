@@ -625,16 +625,17 @@ export default function ComparisonTable({
 
                     const isLast = i === dates.length - 1;
 
-                    // Pending = Verifix data uploaded but the day isn't confirmed
+                    // Pending = Verifix data uploaded but the value can't show
                     // yet. The backend marks the cell with the blocking reason:
-                    // "not_closed" | "requests" (unprocessed edit requests).
+                    // "not_closed" | "requests" (unprocessed edit requests) |
+                    // "no_headcount" (day confirmed, «Odam soni» not loaded).
                     const pendingReason =
                       cell?.pending ?? ((pv !== null || av !== null) && !isApproved(name, d) ? "not_closed" : null);
                     if (pendingReason !== null) {
                       return (
                         <td
                           key={`${name}-${d}`} colSpan={2}
-                          title={t(pendingReason === "requests" ? "zagruzka.pendingRequests" : "zagruzka.pendingNotClosed")}
+                          title={t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")}
                           onClick={e => {
                             e.stopPropagation();
                             if (selection) clearSel();
