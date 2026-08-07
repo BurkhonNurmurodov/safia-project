@@ -307,6 +307,12 @@ const TXT = {
     fLead: "Лидер", fCell: "Ячейка", allLead: "Все лидеры", allCell: "Все ячейки",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     textFailed: "Не удалось загрузить текстовые поля",
+    xBtn: "Excel", xFailed: "Не удалось выгрузить",
+    xShOverview: "Обзор", xShTrend: "Динамика", xShAnalytics: "Аналитика",
+    xShSeason: "Сезонность", xShRegister: "Реестр",
+    xKpi: "Ключевые показатели", xShare: "Доля", xPeriod: "Период",
+    xGenerated: "Сформирован", xView: "Вид", xHair: "Волосы",
+    xFilters: "Фильтры", xNone: "не заданы", xAge: "Возраст", xRecords: "Записей",
   },
   en: {
     title: "Quality & complaints", sub: "Non-conformance register analytics",
