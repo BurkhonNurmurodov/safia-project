@@ -136,10 +136,47 @@ export const useFactory = () => useContext(FactoryContext) || {
 };
 
 /**
- * The `factory` query parameter for an API call. Omitted (undefined) on the
- * combined tab so the backend's "no narrowing" path is taken — utils/api.js
- * drops undefined params, so this composes straight into a params object.
+ * Merge the current factory into a page's request params.
+ *
+ * On «All factories» the key is left OFF entirely rather than sent as null —
+ * that is the backend's "no narrowing" path, and it also keeps the react-query
+ * key identical to what it was before this feature, so a single-plant install
+ * reuses its existing cache instead of refetching everything once.
  */
-export function factoryParam(factory) {
-  return factory == null ? undefined : factory;
+export function useFactoryParams(params) {
+  const { factory } = useFactory();
+  return useMemo(
+    () => (factory == null ? params : { ...params, factory }),
+    [params, factory]
+  );
+}
+
+/**
+ * Keep a supervisor picker honest about the factory tab it is sitting on.
+ *
+ * Returns the supervisors that belong to the current plant, and — the part that
+ * actually matters — clears a selected supervisor who does NOT. Without this,
+ * switching plants while a supervisor is picked leaves a valid-looking toolbar
+ * over an empty page, and every user reads that as "no data" rather than "that
+ * person works somewhere else".
+ *
+ * `supervisors` is any array of objects carrying `factory_id` and an id under
+ * `idKey` (/api/managers/all says `manager_id`, /api/quality says `id`).
+ */
+export function useFactorySupervisors(supervisors, selectedIds, onClear, idKey = "manager_id") {
+  const { factory } = useFactory();
+
+  const scoped = useMemo(() => {
+    if (factory == null) return supervisors || [];
+    return (supervisors || []).filter((s) => s.factory_id === factory);
+  }, [supervisors, factory]);
+
+  useEffect(() => {
+    if (factory == null || !supervisors?.length || !selectedIds?.length) return;
+    const live = new Set(scoped.map((s) => s[idKey]));
+    const kept = selectedIds.filter((id) => live.has(id));
+    if (kept.length !== selectedIds.length) onClear(kept);
+  }, [factory, supervisors, scoped, selectedIds, onClear, idKey]);
+
+  return scoped;
 }
