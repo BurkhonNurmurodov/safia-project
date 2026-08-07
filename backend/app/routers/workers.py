@@ -8,6 +8,7 @@ from app.database import get_db
 from app.permissions import require_page
 from app.models import Attendance, HeadcountData, HrDocument, Manager
 from app.services.day_state import confirmed_pairs
+from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import sheet_alias_map
 
 router = APIRouter(prefix="/api", tags=["workers"])
