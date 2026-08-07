@@ -545,6 +545,8 @@ export default function Cells() {
         tone="danger"
         loading={deleteMut.isPending}
       />
+
+      {toast.node}
     </Layout>
   );
 }
