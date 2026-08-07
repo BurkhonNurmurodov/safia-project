@@ -8374,6 +8374,8 @@ const t = {
     "zagruzka.pendingTitle":     "Awaiting confirmation",
     "zagruzka.pendingNotClosed": "Verifix data is uploaded, but the supervisor hasn't closed the day yet. Metrics will appear once the day is closed.",
     "zagruzka.pendingRequests":  "The day is closed, but there are unprocessed edit requests. Metrics will appear once the admin processes all requests.",
+    "zagruzka.pendingNoHcTitle":    "Waiting for headcount",
+    "zagruzka.pendingNoHeadcount":  "The day is closed, but the «Odam soni» (headcount) data has not been loaded yet. Metrics will be calculated once it is loaded.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
     "workers.title":           "Workers · Headcount Analysis",
