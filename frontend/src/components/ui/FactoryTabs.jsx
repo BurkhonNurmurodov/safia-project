@@ -101,7 +101,12 @@ export default function FactoryTabs({ className = "" }) {
             scrollable
             asTabs
             ariaLabel={t("factory.label")}
-            className="min-w-0"
+            // Phone: take the rest of the row and let the track scroll inside
+            // it. sm+: shrink-wrap to the labels (a half-empty full-width track
+            // reads as a broken control), but still allowed to shrink — hence
+            // flex-initial rather than flex-none — so a long list of plants
+            // scrolls instead of pushing the row wider than the page.
+            className="flex-1 min-w-0 sm:flex-initial"
           />
         )}
       </div>
