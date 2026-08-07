@@ -423,12 +423,15 @@ def _trend(wb: Workbook, p: dict) -> None:
 
 
 def _bar_table(ws: Worksheet, row: int, c1: int, block: dict, lbl: dict, *,
-               color: str = BRAND, chart_at: Optional[str] = None, top_n: int = 0) -> int:
+               color: str = BRAND, chart_at: Optional[str] = None) -> tuple[int, int, int]:
     """One breakdown card: label · count · share, with in-cell data bars. `chart_at`
-    anchors a native bar chart beside it when the block deserves a picture."""
+    anchors a native bar chart beside it when the block deserves a picture.
+
+    Returns (next free row, first data row, last data row) — a caller that wants
+    to hang its own chart off the table must never re-derive those offsets."""
     rows = block.get("rows") or []
     if not rows:
-        return row
+        return row, 0, 0
     row = _section(ws, row, c1, c1 + 3, block.get("title", ""), block.get("subtitle", ""))
     _head_row(ws, row, c1, [block.get("colLabel", ""), lbl.get("count", "Count"),
                             lbl.get("share", "Share")], height=20)
