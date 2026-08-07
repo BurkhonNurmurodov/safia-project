@@ -118,8 +118,8 @@ export default function Workers() {
 
   // ── data ─────────────────────────────────────────────────────────────────────
   const { data: headcount = [], isLoading } = useQuery({
-    queryKey: ["headcount", params],
-    queryFn: () => api.get("/api/workers/headcount", { params }).then((r) => r.data),
+    queryKey: ["headcount", fparams],
+    queryFn: () => api.get("/api/workers/headcount", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
   const chartParams = useMemo(() => padChartParams(params), [params]);
