@@ -21,7 +21,7 @@ import { brigadirFilterSections, brigadirActiveCount } from "../components/ui/br
 import { SkeletonCard, SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
-import FactoryTabs from "../components/ui/FactoryTabs";
+import FactorySelect from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -376,13 +376,12 @@ export default function Overview() {
 
   return (
     <Layout title={t("overview.title")}>
-      {/* WHICH plant — above the filter row, because it is the subject of the
-          page, not another way of slicing it. Renders nothing on a
-          single-factory install. */}
-      <FactoryTabs />
-      {/* Inline period + shift + supervisor selectors — always visible, wired to the
+      {/* Inline plant + period + shift + supervisor selectors — always visible, wired to the
           global filters so they stay in sync with the header Filters drawer. */}
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+        {/* WHICH plant — first on the row, the broadest narrowing there is.
+            Renders nothing on a single-factory install. */}
+        <FactorySelect />
         <div className="sm:w-72">
           <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
           <DateRangePicker
