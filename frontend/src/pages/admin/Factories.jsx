@@ -496,7 +496,10 @@ export default function Factories() {
         <Modal
           open
           onClose={() => setForm(null)}
-          icon={Factory}
+          // Modal and ConfirmDialog render `icon` as a NODE ({icon}), unlike
+          // SectionHead/TableCard which take the component and render it
+          // themselves. Pass an ELEMENT here, never the component itself.
+          icon={<Factory size={16} style={{ color: "var(--brand-text)" }} />}
           title={form.id ? t("factories.editTitle") : t("factories.addTitle")}
           subtitle={t("factories.formSub")}
           footer={
@@ -537,7 +540,7 @@ export default function Factories() {
           loading={confirmBusy}
           error={confirmError}
           tone={confirm.kind === "delete" ? "danger" : "warning"}
-          icon={confirm.kind === "delete" ? Trash2 : Archive}
+          icon={confirm.kind === "delete" ? <Trash2 size={18} /> : <Archive size={18} />}
           title={
             confirm.kind === "delete" ? t("factories.confirmDeleteTitle")
               : confirm.kind === "archive" ? t("factories.confirmArchiveTitle")
