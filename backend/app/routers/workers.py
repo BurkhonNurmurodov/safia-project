@@ -288,6 +288,8 @@ def get_requests_analysis(
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+
     q = (
         db.query(HrDocument, Manager.name, Manager.shift)
         .join(Manager, Manager.id == HrDocument.manager_id)
