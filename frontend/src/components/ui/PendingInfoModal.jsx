@@ -60,7 +60,7 @@ export default function PendingInfoModal({ managerName, date, reason, onClose })
               {tl(managerName)} · {date}
             </div>
             <div className="font-bold text-sm" style={{ color: "var(--text-1)" }}>
-              ⏳ {t("zagruzka.pendingTitle")}
+              {PENDING_ICONS[reason] || "⏳"} {t(PENDING_TITLE_KEYS[reason] || "zagruzka.pendingTitle")}
             </div>
           </div>
           <button
