@@ -1449,6 +1449,10 @@ export default function Quality() {
 
   return (
     <Layout title={T.title}>
+      {/* WHICH plant — above the filter row, because it is the subject of the
+          page, not another way of slicing it. Renders nothing on a
+          single-factory install. */}
+      <FactoryTabs />
       {/* header: title + last-synced + refresh */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
