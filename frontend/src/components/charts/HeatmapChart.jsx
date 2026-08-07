@@ -374,7 +374,7 @@ function SingleGrid({
                         else if (!color.noData) onCellClick(name, d, v, cell);
                       }}
                       title={pending
-                        ? t(pendingReason === "requests" ? "zagruzka.pendingRequests" : "zagruzka.pendingNotClosed")
+                        ? t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")
                         : undefined}
                       style={{
                         ...buildCellStyle({
