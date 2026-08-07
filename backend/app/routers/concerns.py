@@ -653,6 +653,10 @@ def list_concerns(
     leader_ref: Optional[int] = Query(default=None),
     status: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    # Which plant. Omitted / null = «All factories». A concern belongs to the
+    # factory of the UNIT it was logged against (brigadir_manager_id) — not of
+    # whoever currently holds it, which changes with every escalation step.
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page("concerns")),
 ):
@@ -663,6 +667,14 @@ def list_concerns(
     query = _scope_query(db.query(LeaderConcern), payload, db)
     if role == "admin" and leader_ref:
         query = query.filter(LeaderConcern.leader_role_ref == leader_ref)
+
+    # Factory narrowing rides ON TOP of the caller's own scope, never instead of
+    # it: this only ever removes rows. Rows with no unit (legacy, or logged
+    # against nothing) are reachable only from «All factories» — the same rule
+    # unassigned supervisors follow, so nothing silently vanishes from the app.
+    fac_units = factory_manager_ids(db, resolve_factory(db, payload, factory))
+    if fac_units is not None:
+        query = query.filter(LeaderConcern.brigadir_manager_id.in_(fac_units))
 
     if status in VALID_STATUSES:
         query = query.filter(LeaderConcern.status == status)
