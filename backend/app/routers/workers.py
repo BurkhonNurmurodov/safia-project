@@ -275,8 +275,9 @@ def get_requests_analysis(
     date_to: date = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("workers")),
+    payload: dict = Depends(require_page("workers")),
 ):
     """Aggregated view of Verifix-edit requests (HrDocuments): who files them and
     on which days, where exchanged workers go (units vs tasks), and which roles
