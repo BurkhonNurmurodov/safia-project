@@ -51,6 +51,7 @@ from app.models import Admin, Cell, ConcernEscalation, LeaderConcern, Manager, R
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
+from app.services.factory_scope import factory_manager_ids, resolve_factory
 # Reuse the shared notification helpers: _find_supervisor resolves the brigadir
 # for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
 from app import identity
