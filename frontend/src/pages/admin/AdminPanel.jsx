@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
   ListChecks, KeyRound, LayoutGrid, History, DatabaseBackup, ClipboardCheck,
-  Sliders, ChevronDown, X, AlertTriangle,
+  Sliders, ChevronDown, X, AlertTriangle, Building2,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
 import { useLang } from "../../context/LangContext";
