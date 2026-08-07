@@ -86,6 +86,7 @@ CAP_CLEANUP           = "admin.cleanup"
 CAP_USERS_MANAGE      = "admin.users.manage"
 CAP_PROFILES_MANAGE   = "admin.profiles.manage"
 CAP_CELLS_MANAGE      = "admin.cells.manage"
+CAP_FACTORIES_MANAGE  = "admin.factories.manage"
 
 # Page-view grants: one per page key, ids built from the page so the catalog
 # never drifts from permissions.PAGE_KEYS.
