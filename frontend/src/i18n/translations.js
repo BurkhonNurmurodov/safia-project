@@ -910,6 +910,8 @@ const t = {
     "zagruzka.pendingTitle":     "Tasdiqlanishi kutilmoqda",
     "zagruzka.pendingNotClosed": "Verifix ma'lumotlari yuklangan, lekin brigadir kunni hali yopmagan. Kun yopilgach ko'rsatkichlar paydo bo'ladi.",
     "zagruzka.pendingRequests":  "Kun yopilgan, lekin admin hali ko'rib chiqmagan so'rovlar bor. Barcha so'rovlar ko'rib chiqilgach ko'rsatkichlar paydo bo'ladi.",
+    "zagruzka.pendingNoHcTitle":    "Odam soni kutilmoqda",
+    "zagruzka.pendingNoHeadcount":  "Kun yopilgan, lekin «Odam soni» (shtat) ma'lumotlari hali yuklanmagan. Ular yuklangach ko'rsatkichlar hisoblanadi.",
 
     // ── Workers ───────────────────────────────────────────────────────────────
     "workers.title":           "Odam Soni · Xodimlar Tahlili",
