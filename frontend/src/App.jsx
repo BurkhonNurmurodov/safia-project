@@ -364,6 +364,10 @@ function AppWithLang() {
     <LangProvider defaultLang={defaultLang}>
       <BrowserRouter>
         <FilterProvider>
+         {/* Which PLANT the factory-aware pages report on. Above the routes on
+             purpose: the selection is shared by all six of them, so navigating
+             between them must never reset or contradict it. */}
+         <FactoryProvider>
           <LogoutOverlay />
           <FindInPage />
           <Suspense fallback={<PageLoader />}>
@@ -414,6 +418,7 @@ function AppWithLang() {
             <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
           </Routes>
           </Suspense>
+         </FactoryProvider>
         </FilterProvider>
       </BrowserRouter>
     </LangProvider>
