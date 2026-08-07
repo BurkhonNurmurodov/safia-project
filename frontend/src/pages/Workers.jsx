@@ -568,6 +568,10 @@ export default function Workers() {
   // ── render ─────────────────────────────────────────────────────────────────────
   return (
     <Layout title={t("workers.title")}>
+      {/* WHICH plant — above the filter row, because it is the subject of the
+          page, not another way of slicing it. Renders nothing on a
+          single-factory install. */}
+      <FactoryTabs />
       {/* Inline period + shift + supervisor selectors — always visible, wired to
           the global filters so they stay in sync with the header Filters drawer. */}
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
