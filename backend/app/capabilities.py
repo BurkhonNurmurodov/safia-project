@@ -130,6 +130,11 @@ CAPABILITIES = [
     {"key": CAP_USERS_MANAGE,      "group": "identity",   "pages": [],                 "tab": "users",     "scoped": False, "page": None},
     {"key": CAP_PROFILES_MANAGE,   "group": "identity",   "pages": [],                 "tab": "profiles",  "scoped": False, "page": None},
     {"key": CAP_CELLS_MANAGE,      "group": "identity",   "pages": ["cells"],          "tab": None,        "scoped": False, "page": None},
+    # Factories are a plant-wide register with no unit dimension of their own —
+    # unscoped for the same reason profiles and cells are. The grant carries
+    # real weight: reassigning a supervisor's factory moves that unit's numbers
+    # between tabs on all six factory-aware pages at once.
+    {"key": CAP_FACTORIES_MANAGE,  "group": "identity",   "pages": [],                 "tab": "factories", "scoped": False, "page": None},
 ] + [
     # Generated, in PAGE_KEYS order — the same order the nav and the "first
     # accessible page" fallback use, so the Permissions tab reads like the menu.
