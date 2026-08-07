@@ -438,10 +438,10 @@ export default function Factories() {
                 aria-label={t("common.selectAll")}
                 style={{ accentColor: "var(--brand)" }}
               />
-            } className="w-9" />
+            } cls="w-9" />
             <Th label={t("tasks.colSupervisor")} />
-            <Th label={t("filter.shift")} className="w-20" />
-            <Th label={t("factory.label")} className="w-56" />
+            <Th label={t("filter.shift")} cls="w-20" />
+            <Th label={t("factory.label")} cls="w-56" />
           </tr>
         </thead>
         <tbody>
