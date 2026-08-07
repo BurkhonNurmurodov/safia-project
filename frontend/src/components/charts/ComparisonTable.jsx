@@ -8,7 +8,7 @@ import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import FormulaModal from "../ui/FormulaModal";
 import CommentModal from "../ui/CommentModal";
-import PendingInfoModal from "../ui/PendingInfoModal";
+import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/PendingInfoModal";
 import ColorGuideModal from "../ui/ColorGuideModal";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import Modal from "../ui/Modal";
