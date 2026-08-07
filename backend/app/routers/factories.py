@@ -183,10 +183,12 @@ def delete_factory(factory_id: int, db: Session = Depends(get_db), _: dict = Dep
             status_code=409,
             detail=f"{held} supervisor(s) still belong to this factory — move them first, or archive it.",
         )
-    if default_factory_id(db) == factory_id:
-        row = db.query(AppSetting).filter_by(key=DEFAULT_FACTORY_SETTING).first()
-        if row:
-            db.delete(row)
+    # Drop a default that pointed HERE — compared against the stored raw value,
+    # not default_factory_id(), which already reconciles away a dead id and so
+    # would never report the factory being deleted.
+    row = db.query(AppSetting).filter_by(key=DEFAULT_FACTORY_SETTING).first()
+    if row and (row.value or "").strip() == str(factory_id):
+        db.delete(row)
     db.delete(f)
     db.commit()
     return None
