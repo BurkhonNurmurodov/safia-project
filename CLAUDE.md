@@ -102,6 +102,8 @@ no correct way to render that.
 - Rows that resolve to no supervisor (unmatched Quality names, unassigned units,
   legacy concerns) appear ONLY under «All factories» — visible, never silently
   dropped, never padded onto a plant they may not belong to.
+- The switcher is `components/ui/FactorySelect.jsx` — a dropdown inside each
+  page's filter row, first control on the line. See the UI-template table.
 - Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   supervisor assignment.
