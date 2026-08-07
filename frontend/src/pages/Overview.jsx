@@ -21,6 +21,8 @@ import { brigadirFilterSections, brigadirActiveCount } from "../components/ui/br
 import { SkeletonCard, SkeletonTable, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
+import FactoryTabs from "../components/ui/FactoryTabs";
+import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtPct, fmtTime } from "../utils/formatters";
