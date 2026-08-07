@@ -93,8 +93,8 @@ def get_headcount(
     )
     if shift:
         q = q.filter(Manager.shift == shift)
-    if manager_id:
-        q = q.filter(Manager.id.in_(manager_id))
+    if scoped is not None:
+        q = q.filter(Manager.id.in_(scoped))
 
     q = q.group_by(Manager.id, Manager.name, Manager.shift, Attendance.job_title)
     rows = q.all()
