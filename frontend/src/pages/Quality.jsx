@@ -427,7 +427,21 @@ export default function Quality() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quality"] }),
   });
 
-  const rows = data?.rows || [];
+  // The register is one payload the page charts client-side, so the factory tab
+  // narrows it HERE — at the source, before any KPI, chart, filter-option list,
+  // table or export is derived. Filtering downstream instead would leave some
+  // card somewhere still totalling the whole company, and there is no way to
+  // spot that by looking at it.
+  //
+  // `fi` is the row's factory, resolved on the server from the responsible
+  // supervisor (falling back to the faulting cell's owner). Rows that resolve to
+  // NEITHER keep fi=null and appear only on «All factories» — visible, never
+  // silently discarded, and never added to a plant they may not belong to.
+  const allRows = data?.rows || [];
+  const rows = useMemo(
+    () => (factory == null ? allRows : allRows.filter((r) => r.fi === factory)),
+    [allRows, factory]
+  );
   // id → cell name-set for every fault code that resolved to a known cell.
   const cellMap = data?.cells || {};
 
