@@ -1,0 +1,506 @@
+import { useState, useRef, useEffect } from "react";
+import Sidebar from "./Sidebar";
+import { useTheme } from "../../context/ThemeContext";
+import { useLang } from "../../context/LangContext";
+import { useAuth } from "../../context/AuthContext";
+import { useGhost } from "../../context/GhostContext";
+import { Sun, Moon, Menu, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
+import SegmentedToggle from "../ui/SegmentedToggle";
+import useActivityPing from "../../hooks/useActivityPing";
+import { useTranslit } from "../../utils/transliterate";
+import { ROLE_LABEL_KEYS } from "../../config/pages";
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function nameInitials(name = "") {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+function nameToColor(name = "") {
+  let hash = 0;
+  for (const c of name) hash = c.charCodeAt(0) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 50%, 42%)`;
+}
+
+const LANG_FLAGS = { uz: "🇺🇿", uz_cyrl: "🇺🇿", ru: "🇷🇺", en: "🇬🇧" };
+const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
+
+// ─── UserProfile ──────────────────────────────────────────────────────────────
+// Avatar in the header that opens a popover for role-switch / sign-out.
+
+function UserProfile() {
+  const { auth, switchRole, botUsername } = useAuth();
+  const { t } = useLang();
+  const { tl } = useTranslit();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  if (!auth || auth.status !== "approved") return null;
+
+  const name     = tl(auth.full_name || "");
+  const tkey     = ROLE_LABEL_KEYS[auth.role];
+  const role     = tkey ? t(tkey) : (auth.role ?? "");
+  const initials = nameInitials(name);
+  // Colour is keyed to the raw canonical name so the avatar hue stays stable
+  // across language switches.
+  const color    = nameToColor(auth.full_name || "");
+  const others   = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-2">
+        <div className="hidden md:block leading-tight text-right">
+          <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{name}</div>
+          <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{role}</div>
+        </div>
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
+          style={{ background: color }}
+        >
+          {initials}
+        </div>
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 8px 24px rgba(0,0,0,.15)",
+            minWidth: 220,
+          }}
+        >
+          {/* Active profile at top */}
+          <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
+              style={{ background: color }}
+            >
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
+              <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
+            </div>
+            <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
+          </div>
+
+          {/* Other profiles */}
+          {others.map(r => {
+        const rName     = tl(r.full_name || "");
+        const rTkey     = ROLE_LABEL_KEYS[r.role];
+        const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
+        const isPending = r.status === "pending";
+        return (
+          <button
+            key={r.id}
+            disabled={isPending}
+            onClick={() => { switchRole(r.id); setOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left"
+            style={{
+              borderBottom: "1px solid var(--border)",
+              opacity: isPending ? 0.55 : 1,
+              cursor: isPending ? "default" : "pointer",
+            }}
+            onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = ""; }}
+          >
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
+              style={{ background: nameToColor(r.full_name || "") }}
+            >
+              {nameInitials(rName)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
+              <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+                {rRole}
+                {isPending && (
+                  <span
+                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
+                  >
+                    {t("roles.pending")}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+
+          {/* Add new profile — runs the bot's register flow (language →
+              web form → phone number). Navigating to /login in-app would skip
+              the bot's contact request, so open the bot deep link instead. */}
+          <button
+            onClick={() => {
+              setOpen(false);
+              const tg = window.Telegram?.WebApp;
+              if (tg?.openTelegramLink && botUsername) {
+                tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
+              } else {
+                navigate("/login");
+              }
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-2)" }}
+            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+            onMouseLeave={e => e.currentTarget.style.background = ""}
+          >
+            <UserPlus size={14} />
+            <span>{t("menu.addProfile") || "Add new profile"}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SettingsButton ───────────────────────────────────────────────────────────
+// Header gear shown on every page — language, name, theme, ghost, sign out.
+
+function SettingsButton() {
+  const { auth, leaveRole } = useAuth();
+  const { lang, setLang, t, languages } = useLang();
+  const { theme, toggle } = useTheme();
+  const { ghost, toggleGhost } = useGhost();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  if (!auth || auth.status !== "approved") return null;
+
+  return (
+    <div className="flex-shrink-0">
+      <button
+        onClick={() => setSettingsOpen(true)}
+        className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+        style={{
+          background: settingsOpen ? "var(--brand)" : "var(--bg-inner)",
+          border: `1px solid ${settingsOpen ? "var(--brand)" : "var(--border)"}`,
+          color: settingsOpen ? "#fff" : "var(--text-2)",
+        }}
+        title={t("menu.settings") || "Settings"}
+        aria-label={t("menu.settings") || "Settings"}
+      >
+        <Settings size={15} />
+      </button>
+
+      {settingsOpen && (
+        <div
+          className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="modal-card rounded-2xl flex flex-col"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 12px 40px rgba(0,0,0,.25)",
+              minWidth: 300,
+              maxWidth: 360,
+              width: "100%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div
+              className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
+              style={{ borderBottom: "1px solid var(--border)" }}
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-1)" }}>
+                <Settings size={15} />
+                {t("menu.settings") || "Settings"}
+              </span>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="p-0.5 rounded transition-colors hover:bg-white/10"
+                style={{ color: "var(--text-3)" }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Language */}
+            <div className="px-5 py-4">
+              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+                {t("filter.language") || "Language"}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {languages.map(({ code }) => (
+                  <button
+                    key={code}
+                    onClick={() => setLang(code)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors"
+                    style={lang === code
+                      ? { background: "var(--brand)", color: "#fff", fontWeight: 600, border: "1px solid var(--brand)" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                  >
+                    {LANG_FLAGS[code] || "🌐"} {langLabel(code)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Appearance — theme + ghost (admin) */}
+            <div className="px-5 py-4" style={{ borderTop: "1px solid var(--border)" }}>
+              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
+                {t("menu.appearance") || "Appearance"}
+              </span>
+
+              {/* Theme switch */}
+              <div className="flex items-center justify-between py-1">
+                <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
+                <SegmentedToggle
+                  value={theme}
+                  onChange={(v) => { if (v !== theme) toggle(); }}
+                  options={[
+                    { value: "light", label: <Sun size={15} />, title: t("theme.light") },
+                    { value: "dark",  label: <Moon size={15} />, title: t("theme.dark") },
+                  ]}
+                />
+              </div>
+
+              {/* Ghost mode — admin only */}
+              {auth?.role === "admin" && (
+                <div className="flex items-center justify-between py-1 mt-1">
+                  <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
+                    <Ghost size={13} /> {t("ghost.label")}
+                  </span>
+                  <button
+                    onClick={toggleGhost}
+                    className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                    style={ghost
+                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
+                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                    title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
+                  >
+                    {ghost ? "ON" : "OFF"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Sign out from current profile */}
+            <button
+              onClick={() => { setSettingsOpen(false); setConfirmLogout(true); }}
+              className="w-full flex items-center gap-3 px-5 py-3.5 text-xs"
+              style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
+              onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
+            >
+              <LogOut size={14} />
+              <span>{t("nav.signOut")}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmLogout && (
+        <div
+          className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setConfirmLogout(false)}
+        >
+          <div
+            className="modal-card rounded-2xl p-6 flex flex-col gap-4"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 12px 40px rgba(0,0,0,.25)",
+              minWidth: 280,
+              maxWidth: 340,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold" style={{ color: "var(--text-1)" }}>
+                {t("nav.signOutConfirmTitle")}
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-3)" }}>
+                {t("nav.signOutConfirmText")}
+              </span>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmLogout(false)}
+                className="px-4 py-2 rounded-lg text-xs font-medium"
+                style={{
+                  background: "var(--bg-inner)",
+                  color: "var(--text-2)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {t("nav.signOutCancel")}
+              </button>
+              <button
+                onClick={() => { leaveRole(auth.active_role_ref); setConfirmLogout(false); }}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-white"
+                style={{ background: "#ef4444" }}
+              >
+                {t("nav.signOutConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Telegram Desktop on Windows/Linux floats its window-control buttons (−□×)
+// over the top-right corner of the WebApp. Detect and compensate.
+const TG_PLATFORM = window.Telegram?.WebApp?.platform ?? "";
+const IS_TDESKTOP = TG_PLATFORM === "tdesktop"; // Windows / Linux
+
+// ─── Scroll memory ────────────────────────────────────────────────────────────
+// The <main> viewport below is THE scroll container for every page, and Layout
+// remounts on each route change (resetting scrollTop to 0). Remember the last
+// position per pathname so returning to a page lands where the user left off.
+// Mirrored to sessionStorage so it also survives the stale-version reload.
+const scrollMemory = new Map(); // pathname -> scrollTop
+const SCROLL_MEM_KEY = "page_scroll_mem";
+try {
+  const saved = JSON.parse(sessionStorage.getItem(SCROLL_MEM_KEY) || "{}");
+  for (const [k, v] of Object.entries(saved)) scrollMemory.set(k, v);
+} catch { /* corrupt/unavailable storage — start empty */ }
+let scrollFlush = 0;
+function rememberScroll(pathname, top) {
+  scrollMemory.set(pathname, top);
+  cancelAnimationFrame(scrollFlush);
+  scrollFlush = requestAnimationFrame(() => {
+    try {
+      sessionStorage.setItem(SCROLL_MEM_KEY, JSON.stringify(Object.fromEntries(scrollMemory)));
+    } catch { /* quota/blocked — in-memory map still works for this session */ }
+  });
+}
+
+export default function Layout({ children, title }) {
+  const notif = useNotifications();
+  useActivityPing(); // heartbeat for the Users-Activity dashboard
+  const { pathname } = useLocation();
+  const mainRef = useRef(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Restore the remembered position. Page data arrives async (skeletons are
+  // shorter than the real content), so retry each frame until the container
+  // is tall enough to hold the target offset — giving up if the user scrolls
+  // first, or clamping best-effort after 4s (content may have gotten shorter).
+  useEffect(() => {
+    const el = mainRef.current;
+    const target = scrollMemory.get(pathname) || 0;
+    if (!el || target <= 0) return undefined;
+    let raf = 0;
+    let done = false;
+    const deadline = performance.now() + 4000;
+    const stop = () => { done = true; cancelAnimationFrame(raf); };
+    const attempt = () => {
+      if (done) return;
+      if (el.scrollHeight - el.clientHeight >= target || performance.now() > deadline) {
+        el.scrollTop = target; // browser clamps if the page ended up shorter
+        stop();
+        return;
+      }
+      raf = requestAnimationFrame(attempt);
+    };
+    el.addEventListener("wheel", stop, { passive: true });
+    el.addEventListener("touchstart", stop, { passive: true });
+    attempt();
+    return () => {
+      stop();
+      el.removeEventListener("wheel", stop);
+      el.removeEventListener("touchstart", stop);
+    };
+  }, [pathname]);
+  const [sidebarPinned, setSidebarPinned] = useState(
+    () => localStorage.getItem("sidebar_pinned") === "true"
+  );
+
+  function toggleSidebarPin() {
+    setSidebarPinned(v => {
+      const next = !v;
+      localStorage.setItem("sidebar_pinned", String(next));
+      return next;
+    });
+  }
+
+  return (
+    <div className="flex h-screen" style={{ background: "var(--bg-base)", color: "var(--text-1)", overflow: "clip" }}>
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        pinned={sidebarPinned}
+        onTogglePin={toggleSidebarPin}
+      />
+
+      {/* Offset matches sidebar width: 60px collapsed, 256px pinned */}
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}>
+        {/* Header */}
+        <header
+          className="flex-shrink-0"
+          style={{ background: "var(--bg-base)", borderBottom: "1px solid var(--border)", paddingTop: "var(--tg-safe-top, 0px)" }}
+        >
+          <div
+            className="flex items-center justify-between px-4 md:px-6 py-3 gap-3"
+            style={IS_TDESKTOP ? { paddingRight: "150px" } : undefined}
+          >
+            {/* Left: hamburger + title */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden p-1.5 rounded-lg flex-shrink-0"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+              >
+                <Menu size={16} />
+              </button>
+              <h1 className="text-sm md:text-base font-semibold truncate" style={{ color: "var(--text-1)" }}>
+                {title}
+              </h1>
+            </div>
+
+            {/* Right: notifications bell + settings + account */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Notifications — standalone bell in the header */}
+              <NotificationsBell {...notif} />
+
+              {/* Settings — shown on every page */}
+              <SettingsButton />
+
+              {/* User profile */}
+              <UserProfile />
+            </div>
+          </div>
+        </header>
+
+        {/* Content viewport. Layout remounts on every route change, so the
+            .page-enter wrapper replays its fade-up once per navigation — a
+            light, instant-feeling swap in place of the old logo overlay. */}
+        <div className="relative flex-1 min-h-0">
+          <main
+            ref={mainRef}
+            onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
+            className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"
+          >
+            <div className="page-enter">
+              {children}
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}

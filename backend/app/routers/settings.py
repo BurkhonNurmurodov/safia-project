@@ -1,0 +1,82 @@
+import json
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.capabilities import caller_caps, capability_pages, capability_tabs, page_scopes
+from app.database import get_db
+from app.models import AppSetting
+from app.permissions import get_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
+from app.security import require_auth
+
+router = APIRouter(prefix="/api", tags=["settings"])
+
+DEFAULT_HEATMAP_SEGMENTS = [
+    {"from": 0,   "color": "#ef4444"},
+    {"from": 85,  "color": "#22c55e"},
+    {"from": 101, "color": "#3b82f6"},
+]
+
+DEFAULT_P_SEGMENTS = [
+    {"from": 0,  "color": "#ef4444"},
+    {"from": 80, "color": "#eab308"},
+    {"from": 85, "color": "#22c55e"},
+]
+
+DEFAULT_DIFF_SEGMENTS = [
+    {"from": -9999, "color": "#3b82f6"},
+    {"from": -20,   "color": "#22c55e"},
+    {"from": 1,     "color": "#eab308"},
+    {"from": 6,     "color": "#ef4444"},
+]
+
+
+@router.get("/heatmap-thresholds")
+def get_heatmap_thresholds(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+    row = db.query(AppSetting).filter(AppSetting.key == "heatmap_segments").first()
+    segments = json.loads(row.value) if row else DEFAULT_HEATMAP_SEGMENTS
+    return {"segments": segments}
+
+
+@router.get("/comparison-thresholds")
+def get_comparison_thresholds(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+    p_row = db.query(AppSetting).filter(AppSetting.key == "comparison_p_segments").first()
+    d_row = db.query(AppSetting).filter(AppSetting.key == "comparison_diff_segments").first()
+    return {
+        "p_segments":    json.loads(p_row.value) if p_row else DEFAULT_P_SEGMENTS,
+        "diff_segments": json.loads(d_row.value) if d_row else DEFAULT_DIFF_SEGMENTS,
+    }
+
+
+@router.get("/page-access")
+def get_page_access_matrix(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
+    """Public read of the page-access matrix so every role can render its own
+    navigation. Admin always has full access (not represented in the matrix)."""
+    return {
+        "pages":            get_page_access(db),
+        "page_keys":        PAGE_KEYS,
+        "toggleable_roles": TOGGLEABLE_ROLES,
+    }
+
+
+@router.get("/my-capabilities")
+def my_capabilities(db: Session = Depends(get_db), caller: dict = Depends(require_auth)):
+    """The caller's OWN capability grants, so the UI can show the buttons and
+    admin tabs they were given.
+
+    Read live rather than baked into the JWT: a grant — and, more importantly, a
+    revoke — must take effect on the next page load, not at the next login.
+    Admins get the whole catalog at "all", which is the baseline grants imitate.
+
+    `pages` are the page keys these grants unlock on their own, so navigation
+    can show a page the role × page matrix alone would hide; `tabs` are the
+    admin-panel tabs a non-admin grantee may open; `page_scopes` says, per
+    page-view grant, whether the person sees only their own rows ("own") or the
+    whole factory ("all") — the flag a page reads before pinning a supervisor
+    to their unit.
+    """
+    return {
+        "caps":        caller_caps(db, caller),
+        "pages":       capability_pages(db, caller),
+        "tabs":        capability_tabs(db, caller),
+        "page_scopes": page_scopes(db, caller),
+    }

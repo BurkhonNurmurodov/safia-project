@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# mypy / pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Uploads / local data files
+uploads/
+*.xlsx
+*.csv
+
+# Service account / credentials
+*.json
+# ...but every seed file under app/data must ship to prod — startup.py reads
+# them at boot (pp_seed_manager5.json, setup_times_seed.json, and any future
+# sibling). A missing seed file is a SILENT skip, not a crash.
+!app/data/*.json
+
+# Dumps / stray env copies
+*.sql
+*.sql.gz
+*.uu
+
+# Alembic
+alembic/versions/*.pyc

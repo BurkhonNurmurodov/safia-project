@@ -1,0 +1,352 @@
+"""Manual per-cell idle-time (ojidaniya) entry — a TEST input toward computing
+загрузка per cell. Separate from and additive to the sheets-import
+``downtime_data`` table; it does NOT replace it.
+
+One row per (cell, date, category): To'xtaganda (stopped) + To'xtamaganda
+(not-stopped) minutes and a REQUIRED per-category note. Each category saves on
+its own. The shift is a property of the cell (its supervisor's shift), so the UI
+filters supervisors by shift and never stores it here.
+
+The page's second tab, «Perenaladka», writes ``cell_perenaladka`` through the
+same prefix: ONE changeover-minutes row per (cell, date) with an OPTIONAL note,
+no categories. Its entry rides along on ``GET /cells`` so switching tabs never
+refetches. Equally isolated TEST data — nothing downstream reads either table.
+
+Gated by the ``idle-cell`` page (admin-only by default, grantable later).
+Reads/writes are scoped to the caller's cells — admins/top-managers see all, a
+``page.view.idle-cell`` "all" grant sees all, supervisors/shift-managers their
+unit's cells, leaders their own."""
+from collections import defaultdict
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import Cell, CellOjidaniya, CellPerenaladka, Manager, RoleProfile
+from app.capabilities import page_cap, page_scope_is_all, profile_unit_ids
+from app.capability_alerts import alert_grant_use, page_grant_used
+from app.permissions import require_page
+from app import identity
+
+router = APIRouter(prefix="/api/idle-cell", tags=["idle-cell"])
+
+PAGE = "idle-cell"
+
+# Canonical Ojidaniya categories — mirrors backend/app/services/sheets_reader.py
+# SHIFT_CATEGORY_ORDER. Cat H has no not-stopped half (its 2nd source column is
+# a people-count), so To'xtamaganda is forced to 0 for it.
+IDLE_CATEGORIES = ["Cat A", "Cat B", "Cat C", "Cat D", "Cat D2", "Cat D3",
+                   "Cat E", "Cat F", "Cat G", "Cat H", "Cat I"]
+_VALID = set(IDLE_CATEGORIES)
+_NO_NS = {"Cat H"}
+
+
+def _scoped_cells(db: Session, payload: dict) -> list[Cell]:
+    """Every cell the caller may see/enter, admins = all. Built generically so a
+    future ``page.view.idle-cell`` grant to a supervisor/leader Just Works."""
+    role = payload.get("role")
+    q = db.query(Cell)
+    if role in ("admin", "top-manager") or page_scope_is_all(db, payload, PAGE):
+        return q.all()
+    if role == "leader":
+        lpid = identity.viewer_leader_profile_id(db, payload)
+        return q.filter(Cell.leader_id == lpid).all() if lpid else []
+    units = profile_unit_ids(db, identity.viewer_profile_key(db, payload))
+    if units is None:      # unrestricted-by-unit fallback (safety)
+        return q.all()
+    if not units:
+        return []
+    return q.filter(Cell.manager_id.in_(units)).all()
+
+
+def _valid_date(s: str) -> bool:
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _entry_json(e: CellOjidaniya) -> dict:
+    return {
+        "id": e.id,
+        "category": e.category,
+        "stopped": float(e.stopped or 0),
+        "not_stopped": float(e.not_stopped or 0),
+        "note": e.note or "",
+        "entered_by": e.entered_by_profile,
+        "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+    }
+
+
+def _peren_json(p: Optional[CellPerenaladka]) -> Optional[dict]:
+    if p is None:
+        return None
+    return {
+        "id": p.id,
+        "minutes": float(p.minutes or 0),
+        "note": p.note or "",
+        "entered_by": p.entered_by_profile,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+    }
+
+
+def _cell_json(c: Cell, entries: list, peren: Optional[CellPerenaladka] = None,
+               leader: Optional[str] = None) -> dict:
+    return {
+        "cell_id": c.id,
+        "verifix_code": c.verifix_code,
+        "sap_code": c.sap_code,
+        "name_uz": c.name_workshop_uz,
+        "name_uz_cyrl": c.name_workshop_uz_cyrl,
+        "name_ru": c.name_workshop_ru,
+        "name_en": c.name_workshop_en,
+        # The cell's owning leader (role_profiles) — canonical uz-Latin name, the
+        # UI transliterates it. Nearly 1:1 with cells, so the page shows it per
+        # row and filters by it rather than grouping. NULL = unassigned.
+        "leader_id": c.leader_id,
+        "leader": leader,
+        "entries": entries,
+        # null = nothing entered for the Perenaladka tab (0 is never stored).
+        "perenaladka": _peren_json(peren),
+    }
+
+
+@router.get("/supervisors")
+def list_supervisors(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Supervisors (units) that own cells in the caller's scope, with their shift
+    — the toolbar's supervisor picker (the All/1/2 shift tabs filter it)."""
+    cells = _scoped_cells(db, payload)
+    ids = {c.manager_id for c in cells if c.manager_id}
+    if not ids:
+        return []
+    mgrs = db.query(Manager).filter(Manager.id.in_(ids), Manager.archived == False).all()  # noqa: E712
+    mgrs.sort(key=lambda m: (m.shift or 0, (m.name or "").lower()))
+    return [{"id": m.id, "name": m.name, "shift": m.shift} for m in mgrs]
+
+
+@router.get("/cells")
+def list_cells(
+    supervisor_id: int = Query(...),
+    date: str = Query(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Cells under one supervisor (must be in the caller's scope) plus each
+    cell's saved entries for the date — the accordions. Both tabs' saved data
+    ships in this one payload, so the view toggle never refetches."""
+    if not _valid_date(date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    cells = [c for c in _scoped_cells(db, payload) if c.manager_id == supervisor_id]
+    if not cells:
+        return {"cells": []}
+    ids = [c.id for c in cells]
+    by_cell: dict = defaultdict(list)
+    for e in db.query(CellOjidaniya).filter(
+        CellOjidaniya.cell_id.in_(ids),
+        CellOjidaniya.date == date,
+    ).all():
+        by_cell[e.cell_id].append(_entry_json(e))
+    peren = {p.cell_id: p for p in db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id.in_(ids),
+        CellPerenaladka.date == date,
+    ).all()}
+    lids = {c.leader_id for c in cells if c.leader_id}
+    leaders = {p.id: p.name for p in db.query(RoleProfile).filter(
+        RoleProfile.id.in_(lids),
+    ).all()} if lids else {}
+    cells.sort(key=lambda c: (c.verifix_code or "").lower())
+    return {"cells": [
+        _cell_json(c, by_cell.get(c.id, []), peren.get(c.id), leaders.get(c.leader_id))
+        for c in cells
+    ]}
+
+
+class IdleIn(BaseModel):
+    cell_id: int
+    date: str
+    category: str
+    stopped: Optional[float] = 0
+    not_stopped: Optional[float] = 0
+    note: str
+
+
+@router.post("")
+def save_idle(
+    body: IdleIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Create or update (upsert by cell+date+category) one category's idle-time.
+    The note is required and the row must carry at least one minute value."""
+    if not _valid_date(body.date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if body.category not in _VALID:
+        raise HTTPException(status_code=400, detail="Invalid category")
+    note = (body.note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="A note is required")
+    allowed = {c.id for c in _scoped_cells(db, payload)}
+    if body.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+
+    stopped = max(0.0, float(body.stopped or 0))
+    not_stopped = 0.0 if body.category in _NO_NS else max(0.0, float(body.not_stopped or 0))
+    if stopped <= 0 and not_stopped <= 0:
+        raise HTTPException(status_code=400, detail="Enter at least one minute value")
+
+    who = identity.viewer_profile_key(db, payload)
+    e = db.query(CellOjidaniya).filter(
+        CellOjidaniya.cell_id == body.cell_id,
+        CellOjidaniya.date == body.date,
+        CellOjidaniya.category == body.category,
+    ).first()
+    old = None if e is None else {
+        "stopped": float(e.stopped or 0),
+        "not_stopped": float(e.not_stopped or 0),
+        "note": e.note or "",
+    }
+    if e is None:
+        e = CellOjidaniya(cell_id=body.cell_id, date=body.date, category=body.category)
+        db.add(e)
+    e.stopped = stopped
+    e.not_stopped = not_stopped
+    e.note = note
+    e.entered_by_profile = who
+    db.commit()
+    db.refresh(e)
+    # This page opens for non-admins only through role×page ticks or a personal
+    # page grant — the latter is a delegated power, so its use warns the admins.
+    if page_grant_used(db, payload, PAGE):
+        diff = [(k, old[k] if old else None, v) for k, v in
+                (("stopped", stopped), ("not_stopped", not_stopped), ("note", note))
+                if old is None or old[k] != v]
+        if diff:
+            cell = db.query(Cell).filter_by(id=body.cell_id).first()
+            alert_grant_use(
+                db, payload, page_cap(PAGE), "idle_cell.saved",
+                details=[("cell", cell.verifix_code if cell else f"#{body.cell_id}"),
+                         ("date", body.date),
+                         ("category", body.category)],
+                changes=diff, native=False,
+            )
+    return _entry_json(e)
+
+
+class PerenIn(BaseModel):
+    cell_id: int
+    date: str
+    minutes: float
+    note: Optional[str] = ""
+
+
+@router.post("/perenaladka")
+def save_perenaladka(
+    body: PerenIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Create or update (upsert by cell+date) one cell's changeover minutes.
+    The note is OPTIONAL; the minutes must be > 0 — a blank/0 field means "not
+    entered", which the UI expresses by DELETEing the row instead."""
+    if not _valid_date(body.date):
+        raise HTTPException(status_code=400, detail="Invalid date")
+    allowed = {c.id for c in _scoped_cells(db, payload)}
+    if body.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    minutes = max(0.0, float(body.minutes or 0))
+    if minutes <= 0:
+        raise HTTPException(status_code=400, detail="Enter the changeover minutes")
+    note = (body.note or "").strip()
+
+    who = identity.viewer_profile_key(db, payload)
+    p = db.query(CellPerenaladka).filter(
+        CellPerenaladka.cell_id == body.cell_id,
+        CellPerenaladka.date == body.date,
+    ).first()
+    old = None if p is None else {"minutes": float(p.minutes or 0), "note": p.note or ""}
+    if p is None:
+        p = CellPerenaladka(cell_id=body.cell_id, date=body.date)
+        db.add(p)
+    p.minutes = minutes
+    p.note = note
+    p.entered_by_profile = who
+    db.commit()
+    db.refresh(p)
+    if page_grant_used(db, payload, PAGE):
+        diff = [(k, old[k] if old else None, v) for k, v in
+                (("minutes", minutes), ("note", note))
+                if old is None or old[k] != v]
+        if diff:
+            cell = db.query(Cell).filter_by(id=body.cell_id).first()
+            alert_grant_use(
+                db, payload, page_cap(PAGE), "idle_cell.peren_saved",
+                details=[("cell", cell.verifix_code if cell else f"#{body.cell_id}"),
+                         ("date", body.date)],
+                changes=diff, native=False,
+            )
+    return _peren_json(p)
+
+
+@router.delete("/perenaladka/{entry_id}", status_code=204)
+def delete_perenaladka(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Clear one cell's changeover entry (scope-checked)."""
+    p = db.query(CellPerenaladka).filter(CellPerenaladka.id == entry_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    allowed = {c.id for c in _scoped_cells(db, payload)}
+    if p.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    # Snapshot before the delete — the row is unreadable after commit.
+    via_grant = page_grant_used(db, payload, PAGE)
+    if via_grant:
+        cell = db.query(Cell).filter_by(id=p.cell_id).first()
+        del_details = [("cell", cell.verifix_code if cell else f"#{p.cell_id}"),
+                       ("date", str(p.date))]
+        del_changes = [("minutes", float(p.minutes or 0), None),
+                       ("note", p.note or "", None)]
+    db.delete(p)
+    db.commit()
+    if via_grant:
+        alert_grant_use(db, payload, page_cap(PAGE), "idle_cell.peren_deleted",
+                        details=del_details, changes=del_changes, native=False)
+
+
+@router.delete("/{entry_id}", status_code=204)
+def delete_idle(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Clear one category's idle-time entry (scope-checked)."""
+    e = db.query(CellOjidaniya).filter(CellOjidaniya.id == entry_id).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    allowed = {c.id for c in _scoped_cells(db, payload)}
+    if e.cell_id not in allowed:
+        raise HTTPException(status_code=403, detail="This cell is not in your scope")
+    # Snapshot before the delete — the row is unreadable after commit.
+    via_grant = page_grant_used(db, payload, PAGE)
+    if via_grant:
+        cell = db.query(Cell).filter_by(id=e.cell_id).first()
+        del_details = [("cell", cell.verifix_code if cell else f"#{e.cell_id}"),
+                       ("date", str(e.date)),
+                       ("category", e.category)]
+        del_changes = [("stopped", float(e.stopped or 0), None),
+                       ("not_stopped", float(e.not_stopped or 0), None),
+                       ("note", e.note or "", None)]
+    db.delete(e)
+    db.commit()
+    if via_grant:
+        alert_grant_use(db, payload, page_cap(PAGE), "idle_cell.deleted",
+                        details=del_details, changes=del_changes, native=False)

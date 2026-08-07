@@ -1,0 +1,760 @@
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import ReactApexChart from "react-apexcharts";
+import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import DateRangePicker from "../components/ui/DateRangePicker";
+import StyledSelect from "../components/ui/StyledSelect";
+import DowntimeToggleChart from "../components/charts/DowntimeToggleChart";
+import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
+import KPICard from "../components/ui/KPICard";
+import CategoryLegendModal from "../components/ui/CategoryLegendModal";
+import EmptyState from "../components/ui/EmptyState";
+import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
+import { useFilters } from "../context/FilterContext";
+import { usePersistentState } from "../hooks/usePersistentState";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { fmtTime, fmtDuration } from "../utils/formatters";
+import { useChartTheme } from "../hooks/useChartTheme";
+import api from "../utils/api";
+import { padChartParams } from "../utils/chartRange";
+import { Info } from "lucide-react";
+
+// Downtime-category identity colors — the shared generic-first order, one hue
+// per category index, shared by the merged bar chart, the doughnut and the chips.
+import { CATEGORY_COLORS as CAT_COLORS } from "../utils/chartPalette";
+
+// ── date helpers for the seasonality card's weekly axis ──────────────────────
+// Local-calendar ISO stamps (never toISOString — that shifts UTC+5 back a day).
+const isoLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (s, n) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + n); return isoLocal(d); };
+// Monday of the ISO week the date falls in — the weekly column key.
+const weekStart = (s) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoLocal(d); };
+const ddmm = (s) => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
+// The shift report speaks "DD.MM.YYYY"; the pickers and week keys speak ISO.
+const isoOfDmy = (s) => { const [d, m, y] = (s || "").split("."); return `${y}-${m}-${d}`; };
+
+// Category × column minutes → the heatmap's percent matrix. Rows are the
+// categories that actually occur, biggest share first (as in the reference
+// grid); each cell is that category's share of ITS OWN column, so a column
+// always adds up to 100%.
+const seasonMatrix = (labels, colTotals, catCol) => {
+  const n = labels.length;
+  const sum = (a) => (a || []).reduce((s, v) => s + (v || 0), 0);
+  const cats = Object.keys(catCol)
+    .filter((c) => sum(catCol[c]) > 0)
+    .sort((a, b) => sum(catCol[b]) - sum(catCol[a]));
+  const matrix = cats.map((c) => ({
+    k: c,
+    data: Array.from({ length: n }, (_, i) =>
+      colTotals[i] ? Math.round(((catCol[c][i] || 0) / colTotals[i]) * 1000) / 10 : 0),
+  }));
+  return { labels, colTotals, matrix };
+};
+
+export default function Downtime() {
+  const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
+  const { t } = useLang();
+  const { tl, lang } = useTranslit();
+  const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
+  // Page tabs: every shift-report category is a column PAIR — the wait stopped the
+  // cell («тўхтаганда») or it did not («тўхтамаганда»). One fetch carries both
+  // halves, so the tab only swaps which fields the whole page reads; filters, the
+  // 50-min threshold and the doughnut selection are shared across both.
+  const [tab, setTab] = usePersistentState("downtime_tab", "stopped"); // "stopped" | "notStopped"
+  const ns = tab === "notStopped";
+  // Second axis, orthogonal to the halves above: WHICH categories count.
+  // «загрузкада» (default) = only the categories the загрузка KPIs count, i.e.
+  // the endpoint's kpi_only view; «hammasi» = every category the shift report
+  // has, including the Ojidaniya-only ones (Cat H / Cat I). Server-side so the
+  // totals, flags and shares below stay consistent with the picked scope.
+  const [scope, setScope] = usePersistentState("downtime_scope", "zagruzka"); // "zagruzka" | "all"
+  const kpiOnly = scope === "zagruzka";
+  const totalKey   = ns ? "total_ns" : "total";
+  const catKey     = ns ? "by_category_ns" : "by_category";
+  const flaggedKey = ns ? "flagged_days_ns" : "flagged_days";
+  const [chartView, setChartView] = usePersistentState("downtime_chart_view", "total"); // "total" | "category"
+  const [selectedCats, setSelectedCats] = usePersistentState("downtime_selected_cats", []); // categories chosen via doughnut clicks → filter the left chart
+  const [showCatGuide, setShowCatGuide] = useState(false); // doughnut info icon → category meanings modal
+  const minLabel = t("general.min");
+  const hrsLabel = t("general.hrs");
+  // Waiting times here are routinely single-digit minutes, where fractional
+  // hours collapse: at one decimal every 0.1 is a 6-minute bucket, so 3 min and
+  // 8 min both render "0.1 soat" and two very different slices read identical.
+  // The hrs unit therefore renders a compound span ("8 daq", "1 soat 35 daq").
+  // Minutes mode is unchanged — it never had the collision.
+  const durLabels = { day: t("general.unitDay"), hour: t("general.unitHour"), min: t("general.unitMin") };
+  const fmtHrs = (v) => fmtDuration(v, durLabels);
+  const fmt = (v, d = 1) => (unit === "hrs" ? fmtHrs(v) : fmtTime(v, unit, d, minLabel, hrsLabel));
+
+  // The scope toggle rides in the query params, so each scope is its own cache
+  // entry and flipping back is instant.
+  const scopedParams = useMemo(
+    () => (kpiOnly ? { ...params, kpi_only: 1 } : params),
+    [params, kpiOnly]);
+  const { data, isLoading } = useQuery({
+    queryKey: ["downtime", scopedParams],
+    queryFn: () => api.get("/api/downtime", { params: scopedParams }).then((r) => r.data),
+    enabled: ready,
+  });
+
+  // Trend chart never spans fewer than 7 days: a short selection fetches a
+  // window padded back to end-6d (same key = same request when no padding).
+  const chartParams = useMemo(() => padChartParams(scopedParams), [scopedParams]);
+  const { data: chartData, isLoading: chartLoading } = useQuery({
+    queryKey: ["downtime", chartParams],
+    queryFn: () => api.get("/api/downtime", { params: chartParams }).then((r) => r.data),
+    enabled: ready,
+  });
+
+  // Full (period-independent) supervisor list for the inline picker — shares the
+  // cache with the header Filters drawer so it's effectively free.
+  const { data: allSupervisors = [] } = useQuery({
+    queryKey: ["brigadirs-list"],
+    queryFn: () => api.get("/api/managers/all").then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const supOptions = useMemo(
+    () => [...allSupervisors]
+      .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
+      .map((b) => ({ value: String(b.manager_id), label: tl(b.name) })),
+    [allSupervisors, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The inline dropdown mirrors the global brigadir filter: a single pick maps to
+  // one id, "All" clears it. A multi-select made in the drawer shows as "All".
+  const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
+
+  // The active tab's numbers are normalised onto `total` / `flagged_days` and
+  // re-sorted, so every consumer below (KPIs, bars, chart component) stays
+  // tab-agnostic and the biggest brigadir still leads the bar chart on both tabs.
+  const catNames    = data?.cat_names || [];
+  // Narrowing the scope can drop a category the doughnut filter still holds
+  // (picking Cat H, then switching to «загрузкада») — that would filter every
+  // chart down to nothing. Prune the selection to the categories the loaded
+  // scope actually has; never while the response is still in flight.
+  const catKeyList = catNames.join("|");
+  useEffect(() => {
+    if (!catNames.length) return;
+    setSelectedCats((prev) =>
+      prev.every((c) => catNames.includes(c)) ? prev : prev.filter((c) => catNames.includes(c)));
+  }, [catKeyList]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const summary = useMemo(
+    () => (data?.summary || [])
+      .map((s) => ({ ...s, total: s[totalKey] || 0, flagged_days: s[flaggedKey] || 0 }))
+      .sort((a, b) => b.total - a.total),
+    [data, totalKey, flaggedKey],
+  );
+  const flaggedCount  = summary.filter((s) => s.flagged_days > 0).length;
+  const totalDowntime = summary.reduce((s, m) => s + m.total, 0);
+  const mostAffectedCat = (() => {
+    if (!data?.rows?.length || !catNames.length) return "—";
+    const totals = {};
+    catNames.forEach((c) => { totals[c] = 0; });
+    data.rows.forEach((r) => {
+      catNames.forEach((c) => { totals[c] = (totals[c] || 0) + (r[catKey]?.[c] || 0); });
+    });
+    // An all-zero half (e.g. before the first sync fills «тўхтамаганда») has no
+    // "most affected" category — don't crown Cat A on a tie of zeros.
+    const [topCat, topVal] = Object.entries(totals).sort((a, b) => b[1] - a[1])[0] || [];
+    return topVal > 0 ? topCat : "—";
+  })();
+  // Worst-category KPI tooltip: the generic explanation + what THIS category means.
+  const worstCatTip = (() => {
+    if (mostAffectedCat === "—") return t("downtime.tip.worst");
+    const code = mostAffectedCat.replace(/^Cat\s*/i, "");
+    return `${t("downtime.tip.worst")}\n\n${mostAffectedCat} — ${t(`downtime.cat.${code}.label`)}\n${t(`downtime.cat.${code}.note`)}`;
+  })();
+
+  // ── Merged bar chart: one persistent stacked instance that MORPHS between states ──
+  // The "Total" view is modelled as two zero-or-value series (above / below the 50-min
+  // threshold) so each total bar keeps its threshold colour (red / indigo) while living
+  // in the same stacked chart as the category segments. The series array keeps a fixed
+  // shape ([over, under, ...categories]); only the *values* change, so ApexCharts tweens
+  // smoothly between every state (total ⇄ categories ⇄ filtered-to-selected-categories).
+  const catSeries = catNames.map((cat) => ({
+    name: cat,
+    data: summary.map((s) => {
+      const rows = data?.rows?.filter((r) => r.manager_name === s.manager_name) || [];
+      return rows.reduce((acc, r) => acc + (r[catKey]?.[cat] || 0), 0);
+    }),
+  }));
+  const zeros = summary.map(() => 0);
+  const totalLabel = t("downtime.viewTotal");
+
+  // Doughnut-driven category filter (additive). While active, the left chart shows ONLY
+  // the selected categories per brigadir and the Total/Categories toggle is hidden.
+  const filterActive = selectedCats.length > 0;
+  const toggleCat = (cat) =>
+    setSelectedCats((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
+  const clearCats = () => setSelectedCats([]);
+
+  // Toolbar multi-select mirror of that filter — same identity hue as the
+  // doughnut slice, plus the category's meaning so the codes aren't a riddle.
+  const catOptions = catNames.map((cat, i) => {
+    const code = cat.replace(/^Cat\s*/i, "");
+    const meaning = t(`downtime.cat.${code}.label`);
+    const full = cat + (meaning && !meaning.startsWith("downtime.cat.") ? ` — ${meaning}` : "");
+    return {
+      value: cat,
+      // Long meanings ellipsise inside the panel — `title` keeps the full text
+      // reachable on hover.
+      title: full,
+      label: (
+        <span className="flex items-center gap-2 min-w-0">
+          <span
+            className="shrink-0 rounded-full"
+            style={{ width: 8, height: 8, background: CAT_COLORS[i % CAT_COLORS.length] }}
+          />
+          <span className="truncate">{full}</span>
+        </span>
+      ),
+    };
+  });
+
+  const mergedSeries = filterActive
+    ? [
+        { name: totalLabel, data: zeros },
+        { name: totalLabel, data: zeros },
+        ...catSeries.map((s) => ({ name: s.name, data: selectedCats.includes(s.name) ? s.data : zeros })),
+      ]
+    : chartView === "total"
+      ? [
+          { name: totalLabel, data: summary.map((s) => (s.total > 50 ? s.total : 0)) },
+          { name: totalLabel, data: summary.map((s) => (s.total > 50 ? 0 : s.total)) },
+          ...catNames.map((cat) => ({ name: cat, data: zeros })),
+        ]
+      : [
+          { name: totalLabel, data: zeros },
+          { name: totalLabel, data: zeros },
+          ...catSeries,
+        ];
+
+  // Doughnut: fleet-wide downtime share per category (click a slice → filter left chart)
+  const catTotals = catNames.map((cat) =>
+    Math.round((data?.rows || []).reduce((s, r) => s + (r[catKey]?.[cat] || 0), 0))
+  );
+  // Emphasise the selected slices by dimming the rest while a filter is active.
+  const donutColors = filterActive
+    ? CAT_COLORS.map((c, i) => (selectedCats.includes(catNames[i]) ? c : `${c}33`))
+    : CAT_COLORS;
+  const donutOptions = {
+    chart: {
+      type: "donut",
+      background: "transparent",
+      animations: { enabled: false },
+      events: {
+        dataPointSelection: (_e, _ctx, cfg) => {
+          const cat = catNames[cfg.dataPointIndex];
+          if (cat) toggleCat(cat);
+        },
+      },
+    },
+    labels: catNames,
+    colors: donutColors,
+    stroke: { width: 0 },
+    legend: { position: "bottom", labels: { colors: "#9ca3af" }, fontSize: "11px", itemMargin: { horizontal: 6, vertical: 2 } },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => val >= 4 ? `${val.toFixed(0)}%` : "",
+      style: { fontSize: "10px", fontWeight: 600 },
+      dropShadow: { enabled: false },
+    },
+    plotOptions: {
+      pie: {
+        expandOnClick: false,
+        donut: {
+          size: "66%",
+          labels: {
+            show: true,
+            name: { color: "var(--text-2, #6b7280)", fontSize: "11px" },
+            value: { color: "var(--text-1, #1f2937)", fontSize: "16px", fontWeight: 700, formatter: (val) => fmt(Number(val)) },
+            total: { show: true, label: t("downtime.donutCenter"), color: "var(--text-2, #6b7280)", fontSize: "11px", formatter: () => fmt(totalDowntime) },
+          },
+        },
+      },
+    },
+    states: { active: { filter: { type: "none" } } },
+    tooltip: { theme: "dark", y: { formatter: (v) => fmt(v) } },
+    theme: { mode: "dark" },
+  };
+
+  // Trend: fleet total downtime per day (padded ≥7-day window).
+  // Dates arrive as "DD.MM.YYYY" strings, so a plain string sort mis-orders months
+  // (01.07 before 27.06). Sort on a "YYYY-MM-DD" key to get true chronological order.
+  const dmyKey = (s) => {
+    const [d, m, y] = (s || "").split(".");
+    return `${y || ""}-${m || ""}-${d || ""}`;
+  };
+  // The doughnut category filter drives this chart too: while active, each day
+  // sums only the selected categories; otherwise the fleet total as usual.
+  const trendMap = {};
+  (chartData?.rows || []).forEach((r) => {
+    if (!trendMap[r.date]) trendMap[r.date] = 0;
+    trendMap[r.date] += filterActive
+      ? selectedCats.reduce((s, c) => s + (r[catKey]?.[c] || 0), 0)
+      : (r[totalKey] || 0);
+  });
+  const trendDates  = Object.keys(trendMap).sort((a, b) => dmyKey(a).localeCompare(dmyKey(b)));
+  const trendValues = trendDates.map((d) => Math.round(trendMap[d]));
+  const trendSeries = [{ name: filterActive ? selectedCats.join(" + ") : t("downtime.totalDowntime"), data: trendValues }];
+  // Single selected category paints the line in its doughnut colour.
+  const trendColor = selectedCats.length === 1
+    ? (CAT_COLORS[catNames.indexOf(selectedCats[0])] || "#ef4444")
+    : "#ef4444";
+  // Headroom above the tallest point, snapped to a clean 50-min step so labels never clip.
+  const trendMax = Math.ceil((Math.max(50, ...(trendValues.length ? trendValues : [0])) * 1.15) / 50) * 50;
+  // Per-point label bubbles overlap into an unreadable smear on long ranges —
+  // only draw them when every point has room (≤ 2 weeks); tooltips cover the rest.
+  const showTrendLabels = trendDates.length <= 14;
+  const trendOptions = {
+    chart: {
+      type: "area", background: "transparent", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, redrawOnParentResize: false, redrawOnWindowResize: false, parentHeightOffset: 0,
+      dropShadow: { enabled: true, top: 8, left: 0, blur: 8, color: trendColor, opacity: 0.18 },
+    },
+    stroke: { curve: "smooth", width: 3, lineCap: "round" },
+    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 100] } },
+    colors: [trendColor],
+    markers: {
+      size: showTrendLabels ? 4 : 0,
+      colors: [trendColor],
+      strokeColors: gridColor,
+      strokeWidth: 2,
+      hover: { size: 6 },
+      // long ranges hide per-point dots; keep a single endpoint dot on the latest day
+      discrete: !showTrendLabels && trendValues.length > 0
+        ? [{ seriesIndex: 0, dataPointIndex: trendValues.length - 1, size: 5, fillColor: trendColor, strokeColor: "#fff", strokeWidth: 2 }]
+        : [],
+    },
+    dataLabels: {
+      enabled: showTrendLabels,
+      formatter: (v) => unit === "hrs" ? fmtHrs(v) : `${Math.round(v)}${minLabel}`,
+      style: { fontSize: "10px", fontWeight: 700 },
+      background: { enabled: true, foreColor: "#fff", borderRadius: 4, padding: 4, borderWidth: 0, dropShadow: { enabled: false } },
+      offsetY: -6,
+    },
+    xaxis: {
+      categories: trendDates,
+      axisBorder: { show: false },
+      axisTicks: { color: gridColor },
+      labels: { style: { colors: labelColor, fontSize: "10px" }, rotate: -45, hideOverlappingLabels: true },
+      tickAmount: Math.min(trendDates.length, 12),
+      tooltip: { enabled: false },
+    },
+    yaxis: {
+      labels: {
+        style: { colors: labelColor, fontSize: "10px" },
+        formatter: (v) => unit === "hrs" ? fmtHrs(v) : `${Math.round(v)}${minLabel}`,
+      },
+      min: 0,
+      max: trendMax,
+      forceNiceScale: true,
+    },
+    annotations: {
+      yaxis: [{
+        y: 50,
+        borderColor: "#ef4444",
+        strokeDashArray: 4,
+        // offsetY drops the label below the dashed line: most days sit above the
+        // 50-min threshold, so above-line placement covers the newest points.
+        label: { text: t("downtime.threshold"), borderColor: "#ef4444", offsetY: 18, style: { color: "#fff", background: "#ef4444", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } },
+      }],
+    },
+    grid: { borderColor: gridColor, strokeDashArray: 3, padding: { top: 8, right: 14, bottom: 0, left: 6 } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => fmt(v) } },
+    theme: chartTheme,
+  };
+
+  // ── Seasonality: category × period share of the waiting minutes ────────────
+  // Three resolutions on one grid. Monthly owns its own time axis, independent
+  // of the page date range (which there only contributes the shift / supervisor
+  // scope): the 12 calendar months of a chosen year, served pre-aggregated by
+  // /api/downtime/seasonality so a whole year costs one small response instead
+  // of ~11k daily rows. Daily and weekly bucket the page range itself — one
+  // column per day / per ISO week — computed from the rows the page already
+  // holds, so they cost nothing. The page tab decides which half
+  // («тўхтаганда» / «тўхтамаганда») the shares are taken from.
+  const [seasonMode, setSeasonMode] = usePersistentState("downtime_season_mode", "month"); // "day" | "week" | "month"
+  const [seasonYear, setSeasonYear] = usePersistentState("downtime_season_year", null);
+
+  const seasonParams = useMemo(() => ({
+    ...(shift ? { shift } : {}),
+    ...(brigadirIds.length ? { manager_id: brigadirIds } : {}),
+    ...(seasonYear ? { year: seasonYear } : {}),
+    ...(kpiOnly ? { kpi_only: 1 } : {}),
+  }), [shift, brigadirIds, seasonYear, kpiOnly]);
+  const { data: seasonData, isLoading: seasonLoading } = useQuery({
+    queryKey: ["downtime-season", seasonParams],
+    queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
+    enabled: ready && seasonMode === "month",
+    staleTime: 300_000,
+  });
+  // Until the user picks, the year is the backend's own choice (this year when it
+  // has reports, else the newest one that does) — shown, but never written back
+  // into the params, so the first load stays a single request.
+  const seasonYears = seasonData?.years || [];
+  const seasonYearShown = seasonYear || (seasonData?.year != null ? String(seasonData.year) : "");
+
+  const MONTHS = useMemo(() => {
+    const f = new Intl.DateTimeFormat(lang === "en" ? "en" : "ru", { month: "short" });
+    return Array.from({ length: 12 }, (_, m) => f.format(new Date(2025, m, 1)).replace(".", ""));
+  }, [lang]);
+
+  const season = useMemo(() => {
+    if (seasonMode === "month") {
+      return seasonMatrix(
+        MONTHS,
+        (ns ? seasonData?.col_totals_ns : seasonData?.col_totals) || Array(12).fill(0),
+        (ns ? seasonData?.by_category_ns : seasonData?.by_category) || {},
+      );
+    }
+    // Daily / weekly: every day (resp. every Mon-start ISO week) in the page
+    // range gets a column, including silent ones, so the axis reads as a
+    // continuous timeline rather than a list of the days that reported.
+    const step = seasonMode === "day" ? 1 : 7;
+    const keys = [];
+    const start = seasonMode === "day" ? dateFrom : weekStart(dateFrom);
+    const end = seasonMode === "day" ? dateTo : weekStart(dateTo);
+    for (let k = start; k <= end; k = addDays(k, step)) keys.push(k);
+    const pos = new Map(keys.map((k, i) => [k, i]));
+    const labels = keys.map((k) => (seasonMode === "day" ? ddmm(k) : `${ddmm(k)}–${ddmm(addDays(k, 6))}`));
+    const bucket = (d) => (seasonMode === "day" ? d : weekStart(d));
+    const colTotals = Array(labels.length).fill(0);
+    const catCol = {};
+    for (const r of data?.rows || []) {
+      const c = pos.get(bucket(isoOfDmy(r.date)));
+      if (c == null) continue;
+      for (const [cat, val] of Object.entries(r[catKey] || {})) {
+        const v = Number(val) || 0;
+        (catCol[cat] || (catCol[cat] = Array(labels.length).fill(0)))[c] += v;
+        colTotals[c] += v;
+      }
+    }
+    return seasonMatrix(labels, colTotals, catCol);
+  }, [seasonMode, seasonData, ns, catKey, data, dateFrom, dateTo, MONTHS]);
+
+  // Identity hue per category — the page's own order (donut, chips, bars), with
+  // the year's own category list as a fallback for a code the picked range lacks.
+  const catHue = (cat) => {
+    const i = catNames.indexOf(cat);
+    const j = i >= 0 ? i : (seasonData?.cat_names || []).indexOf(cat);
+    return CAT_COLORS[(j >= 0 ? j : 0) % CAT_COLORS.length];
+  };
+  // "Cat A — Xoladilnikdan mahsulot kutish" (plain code when untranslated).
+  const catFull = (cat) => {
+    const meaning = t(`downtime.cat.${cat.replace(/^Cat\s*/i, "")}.label`);
+    return meaning && !meaning.startsWith("downtime.cat.") ? `${cat} — ${meaning}` : cat;
+  };
+  const seasonRows = season.matrix.map((s) => ({
+    key: s.k,
+    title: catFull(s.k),
+    data: s.data,
+    label: (
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: catHue(s.k) }} />
+        <span className="truncate">{catFull(s.k)}</span>
+      </span>
+    ),
+  }));
+
+  const chartH = Math.max(300, summary.length * 28 + 60);
+
+  // Selected-category chips (doughnut filter) — shared by the bar-chart and trend headers.
+  const catChips = filterActive ? (
+    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+      {selectedCats.map((cat) => {
+        const c = CAT_COLORS[catNames.indexOf(cat)] || "#888";
+        return (
+          <span
+            key={cat}
+            className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
+            style={{ background: `${c}22`, color: c, border: `1px solid ${c}55` }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: c, flexShrink: 0 }} />
+            {cat}
+            <button
+              onClick={() => toggleCat(cat)}
+              className="ml-0.5 opacity-70 hover:opacity-100"
+              style={{ fontSize: 12, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          </span>
+        );
+      })}
+      <button
+        onClick={clearCats}
+        className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors"
+        style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+      >
+        {t("filter.clear")}
+      </button>
+    </div>
+  ) : null;
+
+  // toggle segmented control
+  const toggle = (
+    <SegmentedToggle
+      className="shrink-0"
+      value={chartView}
+      onChange={setChartView}
+      options={[["total", t("downtime.viewTotal")], ["category", t("downtime.viewCategory")]]}
+    />
+  );
+
+  return (
+    <Layout title={t("downtime.title")}>
+      {/* Inline period + shift + supervisor selectors — always visible, wired to
+          the global filters so they stay in sync with the header Filters drawer. */}
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
+        <div className="sm:w-72">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
+          <SegmentedToggle
+            value={shift}
+            onChange={setShift}
+            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+          />
+        </div>
+        <div className="sm:w-64 min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
+          <StyledSelect
+            value={supValue}
+            onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
+            options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+            searchable
+            searchPlaceholder={t("filter.searchBrigadirs")}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="sm:w-64 min-w-0">
+          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("downtime.filterCat")}</label>
+          {/* Same selection the doughnut drives — tick several at once here. */}
+          <StyledSelect
+            multiple
+            value={selectedCats}
+            onChange={setSelectedCats}
+            options={catOptions}
+            allLabel={t("downtime.allCats")}
+            triggerClassName="w-full px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.
+          Sits under the filters (which apply to both) and above everything it drives. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4">
+        <div className="overflow-x-auto">
+          <SegmentedToggle
+            value={tab}
+            onChange={setTab}
+            options={[["stopped", t("downtime.tabStopped")], ["notStopped", t("downtime.tabNotStopped")]]}
+          />
+        </div>
+        {/* Which categories count — the загрузка KPI set (default) or every
+            category the shift report carries. */}
+        <div className="overflow-x-auto">
+          <SegmentedToggle
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "zagruzka", label: t("downtime.scopeZagruzka"), title: t("downtime.scopeZagruzkaSub") },
+              { value: "all", label: t("downtime.scopeAll"), title: t("downtime.scopeAllSub") },
+            ]}
+          />
+        </div>
+        <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
+          {ns ? t("downtime.tabNotStoppedSub") : t("downtime.tabStoppedSub")}
+          {" · "}
+          {kpiOnly ? t("downtime.scopeZagruzkaSub") : t("downtime.scopeAllSub")}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:gap-4 mb-6">
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
+        ) : (
+          <>
+            <KPICard
+              label={t("downtime.totalDowntime")}
+              value={fmt(totalDowntime)}
+              tooltip={t("downtime.tip.total")}
+            />
+            <KPICard
+              label={t("downtime.flaggedDays")}
+              value={flaggedCount}
+              danger={flaggedCount > 0}
+              tooltip={t("downtime.tip.flagged")}
+            />
+            <KPICard
+              label={t("downtime.worstCategory")}
+              value={mostAffectedCat}
+              tooltip={worstCatTip}
+            />
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6">
+        {/* Merged bar chart with Total / Categories toggle */}
+        <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+              {!filterActive && chartView === "category" ? t("downtime.breakdown") : t("downtime.byBrigadir")}
+            </div>
+            {filterActive ? catChips : toggle}
+          </div>
+          <div className="text-[10px] mb-3 min-h-[14px]" style={{ color: "var(--text-4)" }}>
+            {!filterActive && chartView === "total" ? t("downtime.redSub") : ""}
+          </div>
+          {isLoading ? (
+            <SkeletonChart className="h-64" />
+          ) : summary.length ? (
+            <DowntimeToggleChart
+              key="downtime-merged"
+              series={mergedSeries}
+              height={chartH}
+              summary={summary}
+              lang={lang}
+              tl={tl}
+              unit={unit}
+              minLabel={minLabel}
+              hrsLabel={hrsLabel}
+              unitDayLabel={durLabels.day}
+              unitHourLabel={durLabels.hour}
+              unitMinLabel={durLabels.min}
+              thresholdText={t("downtime.threshold")}
+              catColors={CAT_COLORS}
+              chartTheme={chartTheme}
+              gridColor={gridColor}
+              labelColor={labelColor}
+              tooltipTheme={tooltipTheme}
+            />
+          ) : (
+            <EmptyState title={t("downtime.noData")} message={t("downtime.noDataMsg")} />
+          )}
+        </div>
+
+        {/* Doughnut: fleet category share (click slices → filter the left chart) */}
+        <div className="lg:col-span-1 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+              {t("downtime.catShare")}
+            </div>
+            <button
+              onClick={() => setShowCatGuide(true)}
+              aria-label={t("downtime.catGuide")}
+              title={t("downtime.catGuide")}
+              className="flex-shrink-0 p-1 rounded-full transition-colors hover:bg-white/10"
+              style={{ color: "var(--text-2)", border: "1px solid var(--border-md)" }}
+            >
+              <Info size={16} />
+            </button>
+          </div>
+          <div className="text-[10px] mb-3 min-h-[14px]" style={{ color: "var(--text-4)" }}>
+            {t("downtime.catShareSub")}
+          </div>
+          {isLoading ? (
+            <SkeletonChart className="h-64" />
+          ) : catTotals.some((v) => v > 0) ? (
+            <ReactApexChart type="donut" series={catTotals} options={donutOptions} height={360} />
+          ) : (
+            <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} />
+          )}
+        </div>
+      </div>
+
+      {/* Downtime trend over time */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+            {t("downtime.trend")}
+          </div>
+          {catChips}
+        </div>
+        <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+          {t("downtime.trendSub")}
+        </div>
+        {isLoading || chartLoading ? (
+          <SkeletonChart className="h-80" />
+        ) : trendDates.length > 0 ? (
+          <ReactApexChart type="area" series={trendSeries} options={trendOptions} height={340} />
+        ) : (
+          <EmptyState title={t("downtime.noTrendData")} message={t("downtime.noDataMsg")} height="h-32" />
+        )}
+      </div>
+
+      {/* Seasonality — category × day / ISO week / month share of the waiting
+          minutes, on the shared SeasonalityHeatmap grid. */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="text-xs font-semibold text-[var(--text-2)] uppercase tracking-wider">
+            {t("downtime.season")}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {seasonMode === "month" && seasonYears.length > 0 && (
+              <StyledSelect
+                value={seasonYearShown}
+                onChange={setSeasonYear}
+                options={seasonYears.map((y) => ({ value: String(y), label: String(y) }))}
+                triggerClassName="px-2.5 py-1.5 text-xs"
+              />
+            )}
+            <SegmentedToggle
+              size="sm"
+              value={seasonMode}
+              onChange={setSeasonMode}
+              options={[
+                ["day", t("downtime.seasonDay")],
+                ["week", t("downtime.seasonWeek")],
+                ["month", t("downtime.seasonMonth")],
+              ]}
+            />
+          </div>
+        </div>
+        <div className="text-[10px] mb-3" style={{ color: "var(--text-4)" }}>
+          {seasonMode === "day" ? t("downtime.seasonSubDay")
+            : seasonMode === "week" ? t("downtime.seasonSubWeek")
+              : t("downtime.seasonSub")}
+        </div>
+        {(seasonMode === "month" ? seasonLoading : isLoading) ? (
+          <SkeletonChart className="h-64" />
+        ) : seasonRows.length ? (
+          <SeasonalityHeatmap
+            labels={season.labels}
+            colTotals={season.colTotals}
+            rows={seasonRows}
+            firstColLabel={t("downtime.filterCat")}
+            firstColWidth={190}
+            // 12 VISIBLE data columns: a longer axis (a month of days) starts its
+            // 13th column off-screen and scrolls, a shorter one pads with blanks,
+            // so the card never resizes between modes.
+            cols={12}
+            colWidth={seasonMode === "week" ? 104 : seasonMode === "day" ? 74 : 96}
+            scrollToEnd={seasonMode !== "month"}
+          />
+        ) : (
+          <EmptyState title={t("downtime.noCatData")} message={t("downtime.noDataMsg")} height="h-32" />
+        )}
+      </div>
+
+      {showCatGuide && (
+        <CategoryLegendModal
+          catNames={catNames}
+          catColors={CAT_COLORS}
+          onClose={() => setShowCatGuide(false)}
+        />
+      )}
+    </Layout>
+  );
+}

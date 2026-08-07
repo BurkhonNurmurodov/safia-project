@@ -1,0 +1,809 @@
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Info, Save, ChevronDown, RotateCcw, Repeat2, Flag,
+  Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
+  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
+} from "lucide-react";
+import Layout from "../components/layout/Layout";
+import SegmentedToggle from "../components/ui/SegmentedToggle";
+import StyledSelect from "../components/ui/StyledSelect";
+import DayStepper from "../components/ui/DayStepper";
+import Button from "../components/ui/Button";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { SkeletonBlock } from "../components/ui/Skeleton";
+import api from "../utils/api";
+import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { cellName as pickCellName } from "../utils/cellName";
+import { useLang } from "../context/LangContext";
+import { useTranslit } from "../utils/transliterate";
+import { usePersistentState } from "../hooks/usePersistentState";
+
+// Themed icon per category — mirrors CategoryLegendModal.jsx CAT_ICON.
+const CAT_ICON = {
+  A: Snowflake, B: Wrench, C: Container, D: Warehouse, D2: PackagePlus,
+  D3: Building2, E: Truck, F: FlaskConical, G: ClipboardList, H: Sparkles, I: Hourglass,
+};
+
+// Ojidaniya categories, A→Z order. MUST mirror backend IDLE_CATEGORIES. `code` is
+// the "downtime.cat.<code>.label"/".note" i18n suffix; `name` is what the backend
+// stores. Cat H has no "not stopped" half (its 2nd source column is a headcount).
+const CATS = [
+  { code: "A",  name: "Cat A" },
+  { code: "B",  name: "Cat B" },
+  { code: "C",  name: "Cat C" },
+  { code: "D",  name: "Cat D" },
+  { code: "D2", name: "Cat D2" },
+  { code: "D3", name: "Cat D3" },
+  { code: "E",  name: "Cat E" },
+  { code: "F",  name: "Cat F" },
+  { code: "G",  name: "Cat G" },
+  { code: "H",  name: "Cat H", noNs: true },
+  { code: "I",  name: "Cat I" },
+];
+
+// md+ keeps the 4-column grid; below md each category stacks (name row / labeled
+// number pair / full-width note) so the required note and Save stay on-screen.
+// The number columns are sized to fit the longest header word ("To'xtamaganda"),
+// which overflowed into the note column at 5rem.
+const GRID_COLS = "md:grid-cols-[minmax(150px,1.5fr)_7rem_7rem_minmax(180px,1.7fr)]";
+// Table chrome, mirroring DataTable.jsx: padded cells with a vertical rule between
+// columns. md+ only — below md the four cells stack into rows, where a left border
+// would cut across the stack.
+const COL_SEP = "md:[&>*:not(:first-child)]:border-l md:[&>*]:border-[var(--border)]";
+const HEAD_CELL = "px-3 py-2";
+const CELL = "px-3 py-1.5 min-w-0";
+// Inputs are 16px below md — iOS WebViews zoom the whole page when focusing
+// anything smaller.
+const INPUT_NUM = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs text-right outline-none tabular-nums";
+const INPUT_TXT = "w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs outline-none";
+const INPUT_STYLE = { background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
+const MOBILE_LABEL = "md:hidden block text-[10px] font-semibold uppercase tracking-wide mb-0.5";
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const localTodayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const fmtMin = (v) => {
+  const n = Number(v) || 0;
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+};
+const num = (v) => {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
+// Telegram's on-screen keyboard shrinks the viewport after focus; recentre the
+// field once that resize settles (phones only — desktop clicks shouldn't jump).
+const focusIntoView = (e) => {
+  if (window.innerWidth >= 768) return;
+  const el = e.currentTarget;
+  setTimeout(() => el.scrollIntoView({ block: "center" }), 250);
+};
+// Viewer language first, then Russian — the shared registry fallback.
+const cellName = (c, lang) => pickCellName(c, lang, "name_");
+// Stable per-cell hue so each verifix badge is visually distinct (identity, not
+// status) — solid mid-tone with white text reads in both themes.
+function hueFromString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+// Cell identity block: verifix badge + workshop name on line 1, the cell's
+// OWNING LEADER (role_profiles) muted underneath. Shared by both views so the
+// leader always sits in exactly the same spot, and it lives on the row rather
+// than as a grouping level because leaders are ~1:1 with cells (93 leaders /
+// 108 cells) — grouping would put a heading over almost every single row.
+function CellIdent({ cell, t, tl, lang, nameCls = "text-xs", extra }) {
+  const hue = hueFromString(cell.verifix_code || "");
+  const name = cellName(cell, lang);
+  return (
+    <span className="min-w-0 flex-1 flex flex-col gap-0.5">
+      <span className="flex items-center gap-2 min-w-0">
+        <span
+          className="text-xs font-bold px-2 py-1 rounded-md flex-shrink-0"
+          style={{ background: `hsl(${hue},55%,42%)`, color: "#fff" }}
+        >
+          {cell.verifix_code}
+        </span>
+        <span className={`truncate ${nameCls}`} style={{ color: "var(--text-1)" }}>{name || "—"}</span>
+        {extra}
+      </span>
+      <span className="flex items-center gap-1.5 min-w-0 text-[11px] leading-tight" title={t("idleCell.leader")}>
+        <Flag size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+        <span className="truncate" style={{ color: cell.leader ? "var(--text-3)" : "var(--text-4)" }}>
+          {cell.leader ? tl(cell.leader) : t("idleCell.noLeader")}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+// One production cell = one collapsible accordion. Owns its per-category draft
+// inputs + last-saved snapshot; each category row saves independently.
+function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
+  const [open, setOpen] = useState(autoOpen);
+  const [infoOpen, setInfoOpen] = useState(null); // code of the category whose description is expanded
+  const [confirmCode, setConfirmCode] = useState(null); // code of the category pending a reset-to-0 confirm
+  const [rows, setRows] = useState(() => {
+    const init = {};
+    for (const cat of CATS) {
+      const e = (cell.entries || []).find((x) => x.category === cat.name);
+      init[cat.code] = {
+        stopped: e && Number(e.stopped) ? String(e.stopped) : "",
+        not_stopped: e && Number(e.not_stopped) ? String(e.not_stopped) : "",
+        note: e?.note || "",
+        id: e?.id ?? null,
+        saved: e ? { stopped: Number(e.stopped) || 0, not_stopped: Number(e.not_stopped) || 0, note: e.note || "" } : null,
+      };
+    }
+    return init;
+  });
+
+  // Only ever opens (never forces closed, so a manual collapse sticks); also
+  // catches already-mounted cells when the cell filter narrows the list.
+  useEffect(() => {
+    if (autoOpen) setOpen(true);
+  }, [autoOpen]);
+
+  const setField = (code, field, val) =>
+    setRows((r) => ({ ...r, [code]: { ...r[code], [field]: val } }));
+
+  // One button per cell: POST every dirty, filled-in category in parallel and
+  // fold each success back into its row's saved snapshot (allSettled so a single
+  // failing row doesn't discard the others' saves).
+  const saveMut = useMutation({
+    mutationFn: async (cats) => {
+      const settled = await Promise.allSettled(
+        cats.map((cat) =>
+          api
+            .post("/api/idle-cell", {
+              cell_id: cell.cell_id,
+              date,
+              category: cat.name,
+              stopped: num(rows[cat.code].stopped),
+              not_stopped: cat.noNs ? 0 : num(rows[cat.code].not_stopped),
+              note: rows[cat.code].note.trim(),
+            })
+            .then((r) => ({ code: cat.code, data: r.data })),
+        ),
+      );
+      const ok = settled.filter((s) => s.status === "fulfilled").map((s) => s.value);
+      if (!ok.length) throw new Error("save failed");
+      return ok;
+    },
+    onSuccess: (ok) =>
+      setRows((r) => {
+        const next = { ...r };
+        for (const { code, data } of ok) {
+          next[code] = {
+            stopped: data.stopped ? String(data.stopped) : "",
+            not_stopped: data.not_stopped ? String(data.not_stopped) : "",
+            note: data.note || "",
+            id: data.id,
+            saved: { stopped: data.stopped || 0, not_stopped: data.not_stopped || 0, note: data.note || "" },
+          };
+        }
+        return next;
+      }),
+  });
+
+  // Reset one saved category back to 0 — deletes its persisted entry (the backend
+  // rejects a 0/0 save, so clearing = removing the row) and blanks the inputs.
+  const delMut = useMutation({
+    mutationFn: ({ id }) => api.delete(`/api/idle-cell/${id}`),
+    onSuccess: (_d, { code }) => {
+      setRows((r) => ({ ...r, [code]: { stopped: "", not_stopped: "", note: "", id: null, saved: null } }));
+      setConfirmCode(null);
+    },
+  });
+
+  // Per-category state: which rows are edited (dirty), fully filled (valid → saveable),
+  // or half-filled (incomplete → blocked, needs both minutes and a reason).
+  const rowStatus = useMemo(
+    () =>
+      CATS.map((cat) => {
+        const r = rows[cat.code];
+        const hasNote = r.note.trim().length > 0;
+        const hasMin = num(r.stopped) > 0 || (!cat.noNs && num(r.not_stopped) > 0);
+        const dirty =
+          !r.saved ||
+          num(r.stopped) !== r.saved.stopped ||
+          (!cat.noNs && num(r.not_stopped) !== r.saved.not_stopped) ||
+          r.note.trim() !== r.saved.note;
+        const valid = hasNote && hasMin;
+        return { cat, hasNote, hasMin, dirty, valid, incomplete: dirty && !valid && (hasNote || hasMin) };
+      }),
+    [rows],
+  );
+  const pendingCats = rowStatus.filter((s) => s.dirty && s.valid).map((s) => s.cat);
+  const incompleteCount = rowStatus.filter((s) => s.incomplete).length;
+  const hasDraft = pendingCats.length > 0 || incompleteCount > 0;
+
+  const sumStopped = CATS.reduce((a, c) => a + (rows[c.code].saved?.stopped || 0), 0);
+  const sumNs = CATS.reduce((a, c) => a + (rows[c.code].saved?.not_stopped || 0), 0);
+
+  return (
+    // overflow-clip (not hidden) — clip doesn't create a scroll container, so the
+    // sticky save footer below can track the page scrollport.
+    <div className="rounded-xl overflow-clip" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2 min-h-[44px] text-left">
+        <ChevronDown
+          size={16}
+          style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+        />
+        {/* flex-1 inside CellIdent replaces the old ml-auto on the sums. */}
+        <CellIdent
+          cell={cell}
+          t={t}
+          tl={tl}
+          lang={lang}
+          nameCls="text-sm"
+          extra={hasDraft && (
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: "#eab308" }}
+              title={t("idleCell.incompleteHint")}
+            />
+          )}
+        />
+        <span className="flex items-center gap-2 sm:gap-3 flex-shrink-0 text-xs tabular-nums">
+          {sumStopped + sumNs === 0 ? (
+            // Backend rejects 0/0 saves, so zero sums reliably mean "no entries
+            // yet" — a muted dash makes cells with real data pop out of the list.
+            <span style={{ color: "var(--text-4)" }}>—</span>
+          ) : (
+            <>
+              <span className="flex items-center gap-1" title={t("idleCell.stopped")}>
+                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#ef4444" }} />
+                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.stopped")}</span>
+                <span style={{ color: sumStopped ? "#ef4444" : "var(--text-3)", fontWeight: 600 }}>{fmtMin(sumStopped)}</span>
+              </span>
+              <span className="flex items-center gap-1" title={t("idleCell.notStopped")}>
+                <span className="sm:hidden w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#94a3b8" }} />
+                <span className="hidden sm:inline" style={{ color: "var(--text-4)" }}>{t("idleCell.notStopped")}</span>
+                <span style={{ color: "var(--text-2)", fontWeight: 600 }}>{fmtMin(sumNs)}</span>
+              </span>
+            </>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <>
+          <div className="overflow-x-auto" style={{ borderTop: "1px solid var(--border)" }}>
+            <div className="md:min-w-[640px]">
+              <div
+                className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${GRID_COLS}`}
+                style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}
+              >
+                <div className={HEAD_CELL}>{t("idleCell.category")}</div>
+                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.stopped")}</div>
+                <div className={`${HEAD_CELL} text-right`}>{t("idleCell.notStopped")}</div>
+                <div className={HEAD_CELL}>{t("idleCell.note")}</div>
+              </div>
+              {rowStatus.map(({ cat, incomplete, hasNote, hasMin }, i) => {
+                const Icon = CAT_ICON[cat.code] || Layers;
+                const catColor = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+                const r = rows[cat.code];
+                const showInfo = infoOpen === cat.code;
+                const minErr = incomplete && !hasMin;
+                const noteErr = incomplete && !hasNote;
+                const minStyle = minErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE;
+                return (
+                  <div key={cat.code} style={{ borderTop: "1px solid var(--border)" }}>
+                    <div className={`grid grid-cols-2 ${COL_SEP} ${GRID_COLS}`}>
+                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
+                        <Icon size={14} style={{ color: catColor, flexShrink: 0 }} />
+                        <span className="text-xs truncate" style={{ color: "var(--text-1)" }}>
+                          {t("idleCell.category")} {cat.code}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setInfoOpen((c) => (c === cat.code ? null : cat.code))}
+                          className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1.5"
+                          style={{ color: showInfo ? "var(--brand-text)" : "var(--text-3)", cursor: "pointer" }}
+                          aria-label={t(`downtime.cat.${cat.code}.label`)}
+                          aria-expanded={showInfo}
+                        >
+                          <Info size={17} />
+                        </button>
+                      </div>
+                      {/* type=text + inputMode=decimal: the uz/ru iOS keypad types a
+                          comma, which type=number silently rejects; num() normalizes
+                          it. Also stops wheel/gesture scrolls from mutating values.
+                          The label IS the table cell (never md:contents — a
+                          display:contents box can't draw the column separator);
+                          below md the caption labels the input. */}
+                      <label className={`${CELL} flex flex-col justify-center`}>
+                        <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.stopped")}</span>
+                        <input
+                          type="text" inputMode="decimal"
+                          value={r.stopped}
+                          onChange={(e) => setField(cat.code, "stopped", e.target.value)}
+                          onFocus={focusIntoView}
+                          className={INPUT_NUM} style={minStyle}
+                        />
+                      </label>
+                      {cat.noNs ? (
+                        <div className={`${CELL} flex flex-col justify-center`}>
+                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
+                          <div className="text-center text-xs py-1" style={{ color: "var(--text-4)" }} title={t("idleCell.noNsHint")}>—</div>
+                        </div>
+                      ) : (
+                        <label className={`${CELL} flex flex-col justify-center`}>
+                          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.notStopped")}</span>
+                          <input
+                            type="text" inputMode="decimal"
+                            value={r.not_stopped}
+                            onChange={(e) => setField(cat.code, "not_stopped", e.target.value)}
+                            onFocus={focusIntoView}
+                            className={INPUT_NUM} style={minStyle}
+                          />
+                        </label>
+                      )}
+                      <div className={`${CELL} col-span-2 md:col-span-1 flex items-center gap-1.5`}>
+                        <input
+                          type="text"
+                          value={r.note}
+                          onChange={(e) => setField(cat.code, "note", e.target.value)}
+                          onFocus={focusIntoView}
+                          placeholder={t("idleCell.notePlaceholder")}
+                          className={`${INPUT_TXT} flex-1 min-w-0`}
+                          style={noteErr ? { ...INPUT_STYLE, border: "1px solid #ef4444" } : INPUT_STYLE}
+                        />
+                        {r.saved && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmCode(cat.code)}
+                            className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 -m-1 transition-colors hover:bg-white/10"
+                            style={{ color: "var(--text-3)", cursor: "pointer" }}
+                            title={t("idleCell.clear")}
+                            aria-label={t("idleCell.clear")}
+                          >
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {showInfo && (
+                      <div className="px-3 pb-2.5 pt-1 text-xs" style={{ background: "var(--bg-inner)" }}>
+                        <div className="font-semibold mb-0.5" style={{ color: "var(--text-1)" }}>
+                          {t(`downtime.cat.${cat.code}.label`)}
+                        </div>
+                        <div style={{ color: "var(--text-3)", lineHeight: 1.5 }}>
+                          {t(`downtime.cat.${cat.code}.note`)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Outside the h-scroller so it can't scroll away sideways; sticky so
+              Save + the incomplete hint stay visible while editing any of the
+              11 rows. Opaque bg — rows scroll underneath.
+              Negative bottom = Layout's <main> padding (p-4 / md:p-6): sticky
+              pins to the scrollport's CONTENT box, so bottom-0 left that padding
+              strip open under the bar (rows showing through it). Pulling the bar
+              down by exactly that much parks it flush with the screen edge. */}
+          <div
+            className="sticky -bottom-4 md:-bottom-6 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-3 pt-2 pb-3 md:pb-2"
+            style={{ borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}
+          >
+            {incompleteCount > 0 && (
+              <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
+            )}
+            {/* Full-width 44px thumb target on phones; compact toolbar button on md+. */}
+            <Button
+              size="lg"
+              variant="primary"
+              className="w-full md:w-auto min-h-[44px] md:min-h-0 text-base md:text-sm"
+              disabled={!pendingCats.length}
+              loading={saveMut.isPending}
+              icon={<Save size={16} />}
+              onClick={() => saveMut.mutate(pendingCats)}
+            >
+              {pendingCats.length ? `${t("idleCell.save")} (${pendingCats.length})` : t("idleCell.save")}
+            </Button>
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirmCode != null}
+        tone="danger"
+        title={t("idleCell.clearTitle")}
+        message={t("idleCell.clearConfirm")}
+        confirmLabel={t("idleCell.delete")}
+        cancelLabel={t("idleCell.cancel")}
+        loading={delMut.isPending}
+        onCancel={() => setConfirmCode(null)}
+        onConfirm={() => {
+          const id = rows[confirmCode]?.id;
+          if (id) delMut.mutate({ code: confirmCode, id });
+          else setConfirmCode(null);
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── Perenaladka (changeover) view ──────────────────────────────────────────
+// The flat twin of the accordion above: ONE minutes input per cell (+ an
+// OPTIONAL note), each row saving on its own. No categories, no stopped /
+// not-stopped split. Blank means "not entered" — the backend never stores a 0,
+// so removing a value goes through the explicit ↺ clear (confirmed), which is
+// why a blanked saved row shows a hint instead of silently doing nothing.
+const P_GRID_COLS =
+  "grid-cols-[minmax(0,1fr)_6.5rem] md:grid-cols-[minmax(150px,1.5fr)_7rem_minmax(180px,1.7fr)_auto]";
+
+function PerenRow({ cell, date, t, tl, lang, onSaved }) {
+  const seed = cell.perenaladka;
+  const [minutes, setMinutes] = useState(seed && Number(seed.minutes) ? String(seed.minutes) : "");
+  const [note, setNote] = useState(seed?.note || "");
+  const [id, setId] = useState(seed?.id ?? null);
+  const [snap, setSnap] = useState(seed ? { minutes: Number(seed.minutes) || 0, note: seed.note || "" } : null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      api
+        .post("/api/idle-cell/perenaladka", {
+          cell_id: cell.cell_id,
+          date,
+          minutes: num(minutes),
+          note: note.trim(),
+        })
+        .then((r) => r.data),
+    onSuccess: (d) => {
+      setId(d.id);
+      setMinutes(d.minutes ? String(d.minutes) : "");
+      setNote(d.note || "");
+      setSnap({ minutes: d.minutes || 0, note: d.note || "" });
+      onSaved(cell.cell_id, d.minutes || 0);
+    },
+  });
+
+  const delMut = useMutation({
+    mutationFn: () => api.delete(`/api/idle-cell/perenaladka/${id}`),
+    onSuccess: () => {
+      setMinutes(""); setNote(""); setId(null); setSnap(null); setConfirmOpen(false);
+      onSaved(cell.cell_id, 0);
+    },
+  });
+
+  const mins = num(minutes);
+  const dirty = !snap || mins !== snap.minutes || note.trim() !== snap.note;
+  const canSave = dirty && mins > 0;
+  // A saved row whose minutes were emptied: Save can't commit a 0, so point at ↺
+  // rather than leaving a disabled button and no explanation.
+  const blanked = !!snap && mins <= 0;
+
+  return (
+    // Below md every cell is its OWN card (the list gaps come from
+    // PerenaladkaCard) — a stack of hairline-separated rows reads as one wall of
+    // inputs on a phone. At md+ the box collapses back to the table row rule.
+    <div className="rounded-xl overflow-clip border border-[var(--border)] bg-[var(--bg-card)] md:rounded-none md:border-x-0 md:border-b-0">
+      <div className={`grid ${COL_SEP} ${P_GRID_COLS}`}>
+        <div className={`${CELL} flex items-center py-2 md:py-1.5`}>
+          <CellIdent cell={cell} t={t} tl={tl} lang={lang} />
+        </div>
+        <label className={`${CELL} flex flex-col justify-center`}>
+          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.minutes")}</span>
+          <input
+            type="text" inputMode="decimal"
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            onFocus={focusIntoView}
+            className={INPUT_NUM}
+            style={blanked ? { ...INPUT_STYLE, border: "1px solid #eab308" } : INPUT_STYLE}
+          />
+        </label>
+        <label className={`${CELL} col-span-2 md:col-span-1 flex flex-col justify-center`}>
+          <span className={MOBILE_LABEL} style={{ color: "var(--text-3)" }}>{t("idleCell.note")}</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onFocus={focusIntoView}
+            placeholder={t("idleCell.perenNotePlaceholder")}
+            className={INPUT_TXT}
+            style={INPUT_STYLE}
+          />
+        </label>
+        <div className={`${CELL} col-span-2 md:col-span-1 flex items-center justify-end gap-2 pb-3 md:pb-1.5`}>
+          {blanked && (
+            <span className="text-[11px] md:hidden" style={{ color: "#eab308" }}>{t("idleCell.perenClearHint")}</span>
+          )}
+          <Button
+            size="sm"
+            variant="primary"
+            className="flex-1 md:flex-none min-h-[44px] md:min-h-0 text-sm md:text-xs"
+            disabled={!canSave}
+            loading={saveMut.isPending}
+            icon={<Save size={14} />}
+            title={blanked ? t("idleCell.perenClearHint") : undefined}
+            onClick={() => saveMut.mutate()}
+          >
+            {t("idleCell.save")}
+          </Button>
+          {snap && (
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="flex-shrink-0 inline-flex items-center justify-center rounded-md p-2 transition-colors hover:bg-white/10"
+              style={{ color: blanked ? "#eab308" : "var(--text-3)", cursor: "pointer" }}
+              title={t("idleCell.clear")}
+              aria-label={t("idleCell.clear")}
+            >
+              <RotateCcw size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        tone="danger"
+        title={t("idleCell.clearTitle")}
+        message={t("idleCell.perenClearConfirm")}
+        confirmLabel={t("idleCell.delete")}
+        cancelLabel={t("idleCell.cancel")}
+        loading={delMut.isPending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => (id ? delMut.mutate() : setConfirmOpen(false))}
+      />
+    </div>
+  );
+}
+
+function PerenaladkaCard({ cells, date, t, tl, lang }) {
+  // Saved-minutes mirror for the footer total. Rows own their drafts; this is
+  // server truth, re-seeded whenever the query returns (incl. a date change).
+  const [sums, setSums] = useState({});
+  useEffect(() => {
+    setSums(Object.fromEntries(cells.map((c) => [c.cell_id, Number(c.perenaladka?.minutes) || 0])));
+  }, [cells]);
+  const onSaved = (cellId, m) => setSums((s) => ({ ...s, [cellId]: m }));
+
+  const total = cells.reduce((a, c) => a + (sums[c.cell_id] || 0), 0);
+  const filled = cells.filter((c) => (sums[c.cell_id] || 0) > 0).length;
+
+  return (
+    // Phones: a plain section head over a stack of per-cell cards (mirrors the
+    // Ojidaniya tab's accordion list). md+: the one table card it has always been.
+    <div className="space-y-2 md:space-y-0 md:rounded-xl md:overflow-clip md:bg-[var(--bg-card)] md:border md:border-[var(--border)]">
+      <div className="flex items-center gap-2 px-1 md:px-3 md:py-2.5" style={{ color: "var(--text-2)" }}>
+        <Repeat2 size={15} style={{ color: "var(--brand)" }} />
+        <span className="text-xs font-semibold uppercase tracking-wide">{t("idleCell.tabPerenaladka")}</span>
+        <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
+          {filled}/{cells.length}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="md:min-w-[640px] space-y-2 md:space-y-0">
+          <div
+            className={`hidden md:grid text-[10px] font-semibold uppercase tracking-wide ${COL_SEP} ${P_GRID_COLS}`}
+            style={{ background: "var(--bg-inner)", color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
+          >
+            {/* One header for the cell column — the leader rides under the cell
+                name inside it, so the grid keeps its four columns. */}
+            <div className={HEAD_CELL}>{t("idleCell.colCell")}</div>
+            <div className={`${HEAD_CELL} text-right`}>{t("idleCell.minutes")}</div>
+            <div className={HEAD_CELL}>{t("idleCell.noteOptional")}</div>
+            <div className={HEAD_CELL} />
+          </div>
+          {cells.map((c) => (
+            <PerenRow key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} onSaved={onSaved} />
+          ))}
+        </div>
+      </div>
+      <div
+        className="flex items-center justify-end gap-2 px-3 py-2 text-xs rounded-xl border border-[var(--border)] md:rounded-none md:border-x-0 md:border-b-0"
+        style={{ background: "var(--bg-inner)" }}
+      >
+        <span style={{ color: "var(--text-4)" }}>{t("idleCell.total")}</span>
+        <span className="tabular-nums font-semibold" style={{ color: total ? "var(--text-1)" : "var(--text-4)" }}>
+          {fmtMin(total)} {t("idleCell.minShort")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function IdleCell() {
+  const { t, lang } = useLang();
+  const { tl } = useTranslit();
+  // date deliberately NOT persisted: this is a data-entry page — a silently
+  // restored stale day could direct entries to the wrong date.
+  const [date, setDate] = useState(localTodayIso());
+  const [view, setView] = usePersistentState("idle_cell_view", "ojidaniya"); // "ojidaniya" | "perenaladka"
+  const [shiftTab, setShiftTab] = usePersistentState("idle_cell_shift", "all"); // "all" | 1 | 2
+  const [supervisorId, setSupervisorId] = usePersistentState("idle_cell_supervisor_id", null);
+  const [leaderId, setLeaderId] = usePersistentState("idle_cell_leader_id", ""); // "" all · "none" leaderless · leader_id
+  const [selectedCellIds, setSelectedCellIds] = usePersistentState("idle_cell_selected_cell_ids", []); // [] = show all of the supervisor's cells
+
+  const { data: supData } = useQuery({
+    queryKey: ["idle-supervisors"],
+    queryFn: () => api.get("/api/idle-cell/supervisors").then((r) => r.data),
+  });
+  const supervisors = supData ?? [];
+  const shiftSupervisors = useMemo(
+    () => supervisors.filter((s) => shiftTab === "all" || s.shift === shiftTab),
+    [supervisors, shiftTab],
+  );
+
+  const { data: cellsData, isFetching } = useQuery({
+    queryKey: ["idle-cells", supervisorId, date],
+    queryFn: () => api.get(`/api/idle-cell/cells?supervisor_id=${supervisorId}&date=${date}`).then((r) => r.data),
+    enabled: supervisorId != null,
+  });
+  const cells = cellsData?.cells ?? [];
+
+  // Leader narrows the supervisor's cells, and the cell picker below it only
+  // offers what the leader filter left — the toolbar reads as one chain,
+  // day → shift → brigadir → lider → yacheyka.
+  const leaderCells = useMemo(() => {
+    if (!leaderId) return cells;
+    return cells.filter((c) => (leaderId === "none" ? !c.leader_id : String(c.leader_id) === leaderId));
+  }, [cells, leaderId]);
+
+  const shownCells = useMemo(() => {
+    if (!selectedCellIds.length) return leaderCells;
+    const set = new Set(selectedCellIds);
+    return leaderCells.filter((c) => set.has(String(c.cell_id)));
+  }, [leaderCells, selectedCellIds]);
+
+  // Distinct leaders owning the supervisor's cells, name-sorted, "all" first and
+  // the leaderless bucket only when there IS one.
+  const leaderOptions = useMemo(() => {
+    const byId = new Map();
+    let anyNone = false;
+    for (const c of cells) {
+      if (c.leader_id) byId.set(String(c.leader_id), tl(c.leader) || String(c.leader_id));
+      else anyNone = true;
+    }
+    return [
+      { value: "", label: t("idleCell.allLeaders") },
+      ...(anyNone ? [{ value: "none", label: t("idleCell.noLeader") }] : []),
+      ...[...byId.entries()]
+        .map(([value, label]) => ({ value, label, title: label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells, lang]);
+
+  // A persisted leader survives a supervisor switch — drop it when nobody in the
+  // new list matches, so the page never shows an unexplained empty list.
+  useEffect(() => {
+    if (!leaderId || !cells.length) return;
+    if (!leaderOptions.some((o) => o.value === leaderId)) setLeaderId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaderOptions]);
+
+  // A new shift may exclude the picked supervisor — drop it if so.
+  function onShift(v) {
+    setShiftTab(v);
+    setSupervisorId((prev) =>
+      prev != null && supervisors.some((s) => s.id === prev && (v === "all" || s.shift === v)) ? prev : null,
+    );
+    setLeaderId("");
+    setSelectedCellIds([]);
+  }
+
+  const cellOptions = leaderCells.map((c) => ({
+    value: String(c.cell_id),
+    label: `${c.verifix_code}${cellName(c, lang) ? " · " + cellName(c, lang) : ""}`,
+    title: `${c.verifix_code} ${cellName(c, lang)}`,
+  }));
+
+  // Auto-open when there is exactly one visible cell, or the user explicitly
+  // narrowed to a few — a large selection stays collapsed to keep the list
+  // scannable. Picking a leader counts as narrowing (they own ~1 cell each).
+  const narrowed = selectedCellIds.length > 0 || !!leaderId;
+  const autoOpen = shownCells.length === 1 || (narrowed && shownCells.length <= 3);
+
+  const emptyBox = (msg) => (
+    <div
+      className="rounded-2xl py-12 text-center text-sm"
+      style={{ background: "var(--bg-card)", border: "1px dashed var(--border-md)", color: "var(--text-3)" }}
+    >
+      {msg}
+    </div>
+  );
+
+  return (
+    <Layout title={t("idleCell.title")}>
+      <div
+        className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+      >
+        {/* Date + shift share a row on phones (flex-wrap splits them in langs with
+            long shift labels); the selects go full-width below md. */}
+        <div className="w-full md:w-auto flex flex-wrap items-center gap-2">
+          <DayStepper value={date} onChange={setDate} />
+          <SegmentedToggle
+            value={shiftTab}
+            onChange={onShift}
+            options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
+          />
+        </div>
+        <StyledSelect
+          value={supervisorId != null ? String(supervisorId) : ""}
+          onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
+          options={shiftSupervisors.map((s) => ({ value: String(s.id), label: s.name, title: s.name }))}
+          placeholder={t("idleCell.pickSupervisor")}
+          searchable
+          searchPlaceholder={t("idleCell.searchSupervisor")}
+          triggerClassName="px-3 py-2 text-sm"
+          className="w-full md:w-auto md:min-w-[180px]"
+        />
+        {/* The brigadir's leaders, between brigadir and cells: each select
+            narrows the next. Hidden when the unit has a single leader (or the
+            cells aren't loaded) — a one-option filter is just noise. */}
+        {supervisorId != null && leaderOptions.length > 2 && (
+          <StyledSelect
+            value={leaderId}
+            onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }}
+            options={leaderOptions}
+            searchable
+            searchPlaceholder={t("idleCell.searchLeader")}
+            triggerClassName="px-3 py-2 text-sm"
+            className="w-full md:w-auto md:min-w-[170px]"
+          />
+        )}
+        {supervisorId != null && cells.length > 0 && (
+          <StyledSelect
+            multiple searchable
+            value={selectedCellIds}
+            onChange={setSelectedCellIds}
+            options={cellOptions}
+            allLabel={t("idleCell.allCells")}
+            countLabel={(n) => `${n} ${t("idleCell.cellsWord")}`}
+            searchPlaceholder={t("idleCell.searchCell")}
+            triggerClassName="px-3 py-2 text-sm"
+            className="w-full md:w-auto md:min-w-[160px]"
+          />
+        )}
+        <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
+      </div>
+
+      {/* View tabs sit UNDER the filter card — date / shift / supervisor / cells
+          all scope both views, and both views' saved data ships in the one
+          /cells payload, so switching never refetches. */}
+      <div className="mb-4">
+        <SegmentedToggle
+          value={view}
+          onChange={setView}
+          options={[
+            ["ojidaniya", t("idleCell.tabOjidaniya")],
+            ["perenaladka", t("idleCell.tabPerenaladka")],
+          ]}
+        />
+      </div>
+
+      {supervisorId == null ? (
+        emptyBox(t("idleCell.pickSupervisorHint"))
+      ) : isFetching ? (
+        <div className="space-y-2">
+          {/* h-14 = the collapsed row's real height now that the leader line
+              sits under the cell name — the skeleton must not jump on load. */}
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-14 w-full rounded-xl" />)}
+        </div>
+      ) : shownCells.length === 0 ? (
+        emptyBox(t("idleCell.noCells"))
+      ) : view === "perenaladka" ? (
+        <PerenaladkaCard cells={shownCells} date={date} t={t} tl={tl} lang={lang} />
+      ) : (
+        <div className="space-y-2">
+          {shownCells.map((c) => (
+            <CellAccordion key={`${c.cell_id}-${date}`} cell={c} date={date} t={t} tl={tl} lang={lang} autoOpen={autoOpen} />
+          ))}
+        </div>
+      )}
+    </Layout>
+  );
+}

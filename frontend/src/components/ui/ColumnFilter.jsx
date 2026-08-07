@@ -1,0 +1,617 @@
+// Shared per-column table-filter primitives.
+// Used by the Staff "Requests"/Workers tables and the Overview supervisor table.
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
+import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
+import { useLang } from "../../context/LangContext";
+import { useDragSelect } from "../../hooks/useDragSelect";
+
+// A column header with a popover filter. Pass `label` to render it next to the
+// trigger, or omit it when the header already renders its own (sortable) label.
+export function ColFilter({ label, active, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const popRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    function h(e) {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    function update() {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const minWidth = 180;
+      let left = rect.left;
+      const maxLeft = window.innerWidth - minWidth - 8;
+      if (left > maxLeft) left = Math.max(8, maxLeft);
+      setPos({ top: rect.bottom + 6, left, minWidth });
+    }
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative inline-flex items-center gap-1 select-none">
+      {label && <span style={{ color: "var(--text-3)" }}>{label}</span>}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="p-0.5 rounded transition-colors"
+        style={{
+          color: active ? "var(--brand-text)" : "var(--text-4)",
+          background: active ? "var(--brand-bg)" : "transparent",
+        }}
+      >
+        <SlidersHorizontal size={10} />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          className="rounded-xl p-3"
+          style={{
+            position: "fixed",
+            top: pos.top,
+            left: pos.left,
+            zIndex: 1000,
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-md)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+            minWidth: pos.minWidth,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {children}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+export function TxtFilter({ value, onChange, placeholder }) {
+  const { t } = useLang();
+  return (
+    <div className="relative">
+      <input
+        value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder || t("staff.filter")} autoFocus
+        className="w-full text-xs pl-2.5 py-1.5 pr-6 rounded-lg outline-none"
+        style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+      />
+      {value && (
+        <button onClick={() => onChange("")} className="absolute right-1.5 top-1/2 -translate-y-1/2"
+          style={{ color: "var(--text-4)" }}>
+          <X size={10} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// `searchable` adds a filter box above the checkboxes — needed once a column's
+// distinct values run into the hundreds (worker names, clock strings), where
+// scrolling a raw list is useless. Typing narrows the visible checkboxes only;
+// "select all" still means every option, not just the matching ones.
+// `groupBy` (optional) buckets the rows under small caption headers — pass a
+// fn returning an option's group label. Groups keep the order they first
+// appear in `opts`, so the caller controls both the group and the row order.
+export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null }) {
+  const { t } = useLang();
+  const [q, setQ] = useState("");
+  // `render` may return a node (chips, icons) — fall back to the raw option so
+  // search and the row tooltip stay meaningful instead of "[object Object]".
+  const label = (o) => {
+    const r = render ? render(o) : o;
+    return typeof r === "string" || typeof r === "number" ? String(r) : String(o ?? "");
+  };
+  const shown = searchable && q.trim()
+    ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
+    : opts;
+  // [groupLabel, opts[]] in first-appearance order; null when ungrouped.
+  const groups = groupBy
+    ? [...shown.reduce((m, o) => {
+        const g = groupBy(o) ?? "";
+        (m.get(g) || m.set(g, []).get(g)).push(o);
+        return m;
+      }, new Map())]
+    : null;
+  // `onChange` replaces the whole array and can't compose functional updates, so
+  // keep a working Set snapshotted for the duration of a drag.
+  const selRef = useRef(sel);
+  useEffect(() => { selRef.current = sel; });
+  const workRef = useRef(null);
+  const dragRow = useDragSelect(
+    o => selRef.current.includes(o),
+    (o, value) => {
+      const work = workRef.current || new Set(selRef.current);
+      workRef.current = work;
+      if (work.has(o) === value) return;
+      value ? work.add(o) : work.delete(o);
+      onChange([...work]);
+    },
+    {
+      onStart: () => { workRef.current = new Set(selRef.current); },
+      onEnd:   () => { workRef.current = null; },
+    },
+  );
+  const optRow = (o) => (
+    <label key={o}
+      {...dragRow(o)}
+      title={label(o)}
+      className="flex items-center gap-2 px-1.5 py-1 rounded-lg cursor-pointer text-xs"
+      style={{ color: "var(--text-2)" }}
+      onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >
+      <input type="checkbox" checked={sel.includes(o)}
+        onChange={() => onChange(sel.includes(o) ? sel.filter(v => v !== o) : [...sel, o])}
+        style={{ accentColor: "var(--brand)" }} />
+      <span className="truncate">{render ? render(o) : (o || "—")}</span>
+    </label>
+  );
+  return (
+    <div>
+      {searchable && (
+        <input
+          value={q} onChange={e => setQ(e.target.value)}
+          placeholder={t("common.search")} autoFocus
+          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+        />
+      )}
+      <div className="max-h-44 overflow-y-auto space-y-0.5 mb-1">
+        {shown.length === 0 && (
+          <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
+        )}
+        {groups
+          ? groups.map(([g, items]) => (
+              <div key={g}>
+                <div className="px-1.5 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--text-4)" }}>{g}</div>
+                <div className="space-y-0.5">{items.map(optRow)}</div>
+              </div>
+            ))
+          : shown.map(optRow)}
+      </div>
+      {searchable && shown.length < opts.length && (
+        <p className="text-[10px] text-center pb-1" style={{ color: "var(--text-4)" }}>
+          {shown.length} / {opts.length}
+        </p>
+      )}
+      {opts.length > 0 && sel.length < opts.length && (
+        <button onClick={() => onChange([...opts])} className="text-[10px] w-full text-center pt-1 border-t"
+          style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
+          {t("staff.selectAll")}
+        </button>
+      )}
+      {sel.length > 0 && (
+        <button onClick={() => onChange([])} className="text-[10px] w-full text-center pt-1 border-t"
+          style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
+          {t("staff.clearAll")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function RngFilter({ minV, maxV, onMin, onMax }) {
+  const { t } = useLang();
+  const s = {
+    background: "var(--bg-inner)", border: "1px solid var(--border-md)",
+    color: "var(--text-1)", borderRadius: 6, padding: "4px 8px",
+    fontSize: 12, width: "100%", outline: "none",
+  };
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="text-[10px] block mb-0.5" style={{ color: "var(--text-4)" }}>{t("staff.min")}</label>
+        <input type="number" step="any" value={minV} onChange={e => onMin(e.target.value)} style={s} />
+      </div>
+      <div>
+        <label className="text-[10px] block mb-0.5" style={{ color: "var(--text-4)" }}>{t("staff.max")}</label>
+        <input type="number" step="any" value={maxV} onChange={e => onMax(e.target.value)} style={s} />
+      </div>
+      {(minV || maxV) && (
+        <button onClick={() => { onMin(""); onMax(""); }}
+          className="text-[10px] w-full text-center pt-1 border-t"
+          style={{ color: "var(--text-4)", borderColor: "var(--border)" }}>
+          {t("staff.clearAll")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Consolidated filter button ───────────────────────────────────────────────
+// Table-toolbar filters, driven by a declarative `sections` list so the same
+// filter content renders in every surface:
+//   { key, icon, label, active, display, render: () => <control/> }
+// Three surfaces by available space:
+//   · wide screens where the whole toolbar row fits on ONE line — each filter
+//     unfolds into its own dropdown control;
+//   · md+ where the row would wrap (tablet, many filters) — the single grouped
+//     "Filtrlar" dropdown;
+//   · below md — the grouped trigger opening a slide-up bottom sheet.
+// The fit check measures the real toolbar row, so FilterPanel must be a DIRECT
+// child of that flex row (no intermediate wrapper).
+
+function CountBadge({ n }) {
+  return (
+    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
+      style={{ background: "var(--brand)", color: "#fff", lineHeight: 1.2 }}>
+      {n}
+    </span>
+  );
+}
+
+// One collapsible filter row inside the desktop dropdown. Expands INLINE (not as
+// an absolute overlay) so a long filter list scrolls within the height-capped
+// panel instead of a bottom row's sub-menu spilling off the viewport.
+function PanelField({ icon: Icon, label, active, display, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors"
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${open || active ? "var(--brand)" : "var(--border-md)"}`,
+          color: active ? "var(--text-1)" : "var(--text-3)",
+        }}
+      >
+        {Icon && <Icon size={13} style={{ color: "var(--text-4)", flexShrink: 0 }} />}
+        <span className="flex-1 text-left truncate">{active && display ? display : label}</span>
+        <ChevronDown size={13}
+          style={{ color: "var(--text-4)", flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-xl p-3"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Mobile slide-up sheet listing every filter expanded.
+function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
+  const { t } = useLang();
+  useEffect(() => {
+    function onKey(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      <div onClick={onClose}
+        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }} />
+      <div style={{
+        position: "relative", background: "var(--bg-card)", borderRadius: "20px 20px 0 0",
+        maxHeight: "82vh", display: "flex", flexDirection: "column",
+        animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
+        paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+      }}>
+        <div className="flex justify-center pt-3 pb-1">
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-md)" }} />
+        </div>
+        <div className="flex items-center justify-between px-4 pb-3 pt-1" style={{ borderBottom: "1px solid var(--border)" }}>
+          <span className="text-base font-semibold" style={{ color: "var(--text-1)" }}>{t("filter.filters")}</span>
+          <div className="flex items-center gap-2">
+            {anyActive && (
+              <button onClick={onClearAll} className="text-xs px-3 py-1.5 rounded-lg"
+                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+                {t("staff.clearAll")}
+              </button>
+            )}
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full"
+              style={{ background: "var(--bg-inner)", color: "var(--text-3)" }}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {sections.map(s => (
+            <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-4)" }}>{s.label}</p>
+              {s.render()}
+            </div>
+          ))}
+        </div>
+      </div>
+      <style>{`@keyframes slideUpSheet { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+    </div>,
+    document.body
+  );
+}
+
+const PANEL_WIDTH = 300;
+const INLINE_POP_WIDTH = 240;
+// Single canonical trigger size — SearchInput and md Button match its height (38px).
+const TRIGGER_CLS = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
+
+// One filter as its own toolbar dropdown — the unfolded form of a FilterPanel
+// section on wide screens. Trigger matches the canonical toolbar-control size.
+function InlineFilterField({ icon: Icon, label, active, display, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const popRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e) {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+  // Portaled like the grouped panel — the table card is `overflow-hidden`.
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    function update() {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - INLINE_POP_WIDTH - 8));
+      setPos({ top: rect.bottom + 6, left });
+    }
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="flex-shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`flex ${TRIGGER_CLS} transition-colors`}
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${open || active ? "var(--brand)" : "var(--border-md)"}`,
+          color: active ? "var(--text-1)" : "var(--text-3)",
+        }}
+      >
+        {Icon && <Icon size={14} style={{ color: active ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />}
+        {/* Cap the label so a long active `display` doesn't reflow the row. */}
+        <span className="whitespace-nowrap max-w-[150px] truncate">{active && display ? display : label}</span>
+        <ChevronDown size={13}
+          style={{ color: "var(--text-4)", flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          className="rounded-xl p-3"
+          style={{
+            position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
+            width: INLINE_POP_WIDTH,
+            maxHeight: `calc(100vh - ${pos.top + 12}px)`, overflowY: "auto",
+            background: "var(--bg-card)", border: "1px solid var(--border-md)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+          }}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-4)" }}>{label}</p>
+          {children}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// Square clear-all control closing the inline row; height = canonical trigger.
+function ClearAllBtn({ onClick, title }) {
+  return (
+    <button onClick={onClick} title={title}
+      className="flex items-center justify-center rounded-xl flex-shrink-0 transition-colors"
+      style={{ width: 38, height: 38, background: "var(--bg-card)",
+        border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+      <X size={14} />
+    </button>
+  );
+}
+
+export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forceGroup = false }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);        // grouped dropdown
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  // md+: grouped button (true) vs one dropdown per filter (false).
+  const [collapsed, setCollapsed] = useState(true);
+  const ref = useRef(null);        // grouped trigger wrapper
+  const popRef = useRef(null);     // portaled grouped panel
+  const wrapRef = useRef(null);    // md+ container — a direct toolbar-row child
+  const measureRef = useRef(null); // invisible natural-width copy of the inline row
+
+  // Close on click outside either the trigger or the portaled panel.
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e) {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+
+  // The table card is `overflow-hidden`, so the dropdown is rendered in a portal
+  // with fixed positioning anchored to the trigger — otherwise it gets clipped.
+  useEffect(() => {
+    if (!open) return;
+    function update() {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const left = Math.max(8, Math.min(rect.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - 8));
+      setPos({ top: rect.bottom + 6, left });
+    }
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+
+  // Unfolding removes the grouped trigger — drop its orphaned dropdown with it.
+  useEffect(() => { if (!collapsed) setOpen(false); }, [collapsed]);
+
+  // Fit check: the filters unfold only while the WHOLE toolbar row still fits on
+  // one line — natural inline-row width (hidden measurer) + every sibling
+  // control (flex-grow spacers contribute 0) vs the row's content width.
+  // No deps: re-measures on every render so label/sibling changes are picked up;
+  // the setState bail-out keeps it loop-free.
+  useLayoutEffect(() => {
+    // Callers can pin the grouped button (e.g. filters parked on the right of a
+    // toolbar whose left side already carries its own controls) — skip the unfold.
+    if (forceGroup) { if (!collapsed) setCollapsed(true); return; }
+    const wrap = wrapRef.current;
+    const parent = wrap?.parentElement;
+    if (!parent) return;
+    function update() {
+      const meas = measureRef.current;
+      if (!meas) return;
+      const cs = getComputedStyle(parent);
+      const avail = parent.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      const gap = parseFloat(cs.columnGap) || 0;
+      let total = meas.offsetWidth;
+      let n = 1;
+      for (const el of parent.children) {
+        if (el === wrap || el.offsetWidth === 0) continue;
+        if (parseFloat(getComputedStyle(el).flexGrow) > 0) continue;
+        total += el.offsetWidth;
+        n += 1;
+      }
+      setCollapsed(total + gap * (n - 1) > avail);
+    }
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(parent);
+    if (measureRef.current) ro.observe(measureRef.current);
+    return () => ro.disconnect();
+  });
+
+  return (
+    <>
+      {/* Mobile: bottom sheet */}
+      <button
+        onClick={() => setSheetOpen(true)}
+        className={`flex md:hidden ${TRIGGER_CLS} transition-colors flex-shrink-0`}
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${anyActive ? "var(--brand)" : "var(--border-md)"}`,
+          color: anyActive ? "var(--text-1)" : "var(--text-3)",
+        }}
+      >
+        <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+        <span>{t("filter.filters")}</span>
+        {activeCount > 0 && <CountBadge n={activeCount} />}
+      </button>
+
+      {/* md+: separate per-filter dropdowns while the row fits, grouped otherwise */}
+      <div ref={wrapRef} className="relative hidden md:flex items-center gap-2 flex-shrink-0">
+        {/* 0×0 clip box so the measurer's natural width never leaks scrollable
+            overflow (phantom scrollbars) into ancestors. */}
+        <div aria-hidden style={{ position: "absolute", top: 0, left: 0, width: 0, height: 0, overflow: "hidden" }}>
+          <div
+            ref={measureRef}
+            className="flex items-center gap-2"
+            style={{ width: "max-content", visibility: "hidden", pointerEvents: "none" }}
+          >
+            {sections.map(s => (
+              <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display} />
+            ))}
+            {anyActive && <ClearAllBtn />}
+          </div>
+        </div>
+
+        {!collapsed && sections.map(s => (
+          <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
+            {s.render()}
+          </InlineFilterField>
+        ))}
+        {!collapsed && anyActive && <ClearAllBtn onClick={onClearAll} title={t("staff.clearAll")} />}
+
+        {collapsed && (
+          <div ref={ref} className="relative">
+            <button
+              onClick={() => setOpen(o => !o)}
+              className={`flex ${TRIGGER_CLS} transition-colors`}
+              style={{
+                background: "var(--bg-card)",
+                border: `1px solid ${open || anyActive ? "var(--brand)" : "var(--border-md)"}`,
+                color: anyActive ? "var(--text-1)" : "var(--text-3)",
+              }}
+            >
+              <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+              <span className="whitespace-nowrap">{t("filter.filters")}</span>
+              {activeCount > 0 && <CountBadge n={activeCount} />}
+              <ChevronDown size={13}
+                style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 2,
+                  transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+            </button>
+            {open && pos && createPortal(
+              <div
+                ref={popRef}
+                className="rounded-xl p-3"
+                style={{
+                  position: "fixed", top: pos.top, left: pos.left, zIndex: 1000,
+                  width: PANEL_WIDTH,
+                  maxHeight: `calc(100vh - ${pos.top + 12}px)`, overflowY: "auto",
+                  background: "var(--bg-card)", border: "1px solid var(--border-md)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                }}
+              >
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+                    {t("filter.filters")}
+                  </span>
+                  {anyActive && (
+                    <button onClick={onClearAll} className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
+                      <X size={11} /> {t("staff.clearAll")}
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {sections.map(s => (
+                    <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
+                      {s.render()}
+                    </PanelField>
+                  ))}
+                </div>
+              </div>,
+              document.body
+            )}
+          </div>
+        )}
+      </div>
+
+      {sheetOpen && (
+        <FilterSheet sections={sections} anyActive={anyActive} onClearAll={onClearAll} onClose={() => setSheetOpen(false)} />
+      )}
+    </>
+  );
+}

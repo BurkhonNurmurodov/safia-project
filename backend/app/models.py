@@ -1,0 +1,1669 @@
+from sqlalchemy import Column, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, Text, ForeignKey, func, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+from app.database import Base
+
+
+class Manager(Base):
+    """A supervisor unit. Doubles as the supervisor *profile* in the admin
+    Profiles tab: id IS the Verifix file id attendance uploads are keyed by.
+    Archived units keep their history but disappear from registration pickers
+    and dashboards (units with data are archived instead of deleted)."""
+    __tablename__ = "managers"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    shift = Column(Integer)  # 1 or 2
+    archived = Column(Boolean, default=False, nullable=False)
+
+    attendance = relationship("Attendance", back_populates="manager")
+    comments = relationship("Comment", back_populates="manager")
+
+
+class Attendance(Base):
+    __tablename__ = "attendance"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    worker_name = Column(String)
+    job_title = Column(String)
+    schedule = Column(String)
+    clock_in_out = Column(String)
+    hours_worked = Column(Numeric(10, 4))
+    early_arrival_min = Column(Numeric(10, 2))
+    effective_hours = Column(Numeric(10, 4))
+    # 2026-08-01: which production cell («Код подразделения») the row came from,
+    # set by the single-file «Davomat» upload. NULL on rows from the older
+    # per-supervisor verifix files — those days simply group under "no cell".
+    verifix_code = Column(String, nullable=True, index=True)
+
+    manager = relationship("Manager", back_populates="attendance")
+
+
+class SheetSource(Base):
+    __tablename__ = "sheet_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True, nullable=False)  # 'source' | 'shift_report'
+    sheet_id = Column(String, nullable=False)
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    text = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    author_telegram_id = Column(BigInteger, nullable=True)
+    # Author PROFILE key ("role:id"). The profile owns the comment: any account
+    # holding it — including a successor after handover — may edit/delete, while
+    # the same account switched into a DIFFERENT profile may not. NULL rows
+    # predate the column and fall back to author_telegram_id.
+    author_profile = Column(String, nullable=True, index=True)
+    author_name = Column(String, nullable=True)
+
+    manager = relationship("Manager", back_populates="comments")
+
+
+class ProductionData(Base):
+    __tablename__ = "production_data"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_name = Column(String, nullable=False, index=True)
+    date = Column(String(10), nullable=False)   # "DD.MM.YYYY"
+    prod_plan = Column(Numeric(14, 4), default=0.0)
+    prod_actual = Column(Numeric(14, 4), default=0.0)
+
+    __table_args__ = (UniqueConstraint("manager_name", "date", name="uq_production_manager_date"),)
+
+
+class HeadcountData(Base):
+    __tablename__ = "headcount_data"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_name = Column(String, nullable=False, index=True)
+    date = Column(String(10), nullable=False)
+    official_hc = Column(Numeric(10, 2), default=0.0)
+
+    __table_args__ = (UniqueConstraint("manager_name", "date", name="uq_headcount_manager_date"),)
+
+
+class DowntimeData(Base):
+    __tablename__ = "downtime_data"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_name = Column(String, nullable=False, index=True)
+    date = Column(String(10), nullable=False)
+    # Every shift-report category is a column PAIR: the wait stopped the cell
+    # («тўхтаганда» → total_minutes / by_category) or it did not («тўхтамаганда»
+    # → the _ns pair below). One row carries both halves for a (brigadir, date);
+    # the Ojidaniya page shows one half per tab.
+    total_minutes = Column(Numeric(10, 4), default=0.0)
+    by_category = Column(JSONB, default=dict)
+    total_minutes_ns = Column(Numeric(10, 4), default=0.0)
+    by_category_ns = Column(JSONB, default=dict)
+
+    __table_args__ = (UniqueConstraint("manager_name", "date", name="uq_downtime_manager_date"),)
+
+
+class LeaderChecklist(Base):
+    """One leader's daily checklist submission, parsed from the leaders Google
+    Sheet ("Data" tab); columns are resolved by header in sheets_reader, because
+    the form gains questions and shifts everything to their right. The whole
+    table is wiped and reloaded on each admin refresh, so no unique constraint —
+    a leader may legitimately submit twice for the same day, and both rows count."""
+    __tablename__ = "leader_checklists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(String(10), nullable=False, index=True)   # ISO "YYYY-MM-DD" — the day reported on
+    supervisor = Column(String, nullable=False, index=True)  # brigadir («Бригадир ФИО»)
+    leader = Column(String, nullable=False, index=True)      # («Name», else the brigadir's branch column)
+    completion = Column(Numeric(6, 2), default=0.0)          # 0–100, weighted score straight from the sheet
+    tasks = Column(JSONB, default=list)                      # [{id, done, answered, photo, reason}]
+    # The form's own submission identity. submitted_at is the wall-clock moment the
+    # leader filed the checklist — compared against `date`, it exposes the ones
+    # backfilled a day or more after the shift they describe.
+    submission_id = Column(String, nullable=True, index=True)
+    submitted_at = Column(DateTime, nullable=True)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+
+
+class UiPref(Base):
+    """Per-profile UI preferences (table column visibility/order, …). Keyed by
+    the viewer's ACTIVE profile key ("role:id"); accounts without a bound
+    profile degrade to "acct:<telegram id>" so persistence still works."""
+    __tablename__ = "ui_prefs"
+
+    profile_key = Column(String, primary_key=True)
+    pref_key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)  # JSON blob
+
+
+class Admin(Base):
+    """Telegram IDs with admin rights. Seeded once from ADMIN_TELEGRAM_ID in
+    .env (comma-separated); after that the table is the source of truth and
+    .env changes are ignored. An empty table re-seeds on next startup, so a
+    lockout is always recoverable from .env."""
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    # Seeded admins have no telegram_users row, so their bot-DM language lives here
+    # (kept in sync with the dashboard via POST /api/auth/language). See _get_user_lang.
+    language = Column(String, default="uz")  # uz | uz_cyrl | ru | en
+    # The admin RoleProfile this account claimed (via /adminreg or backfill).
+    # One admin profile — one account; NULL only transiently for legacy rows
+    # until backfill_role_profiles links them.
+    profile_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RegistrationNotice(Base):
+    """One row per admin notification message sent for a pending registration.
+    The stored text + message_id let the panel edit every admin's message with
+    the outcome once a decision is made; rows are deleted after that."""
+    __tablename__ = "registration_notices"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    target_telegram_id = Column(BigInteger, nullable=False, index=True)  # the registrant
+    role_ref           = Column(Integer, nullable=True, index=True)      # telegram_user_roles.id the notice is about
+    admin_telegram_id  = Column(BigInteger, nullable=False)
+    message_id         = Column(BigInteger, nullable=False)
+    text               = Column(Text, nullable=False)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApprovalNotice(Base):
+    """One row per admin notification message sent for a pending staff/HR request
+    (edit/delete request, bulk-delete batch, or HR document). Mirrors
+    RegistrationNotice but generalised across request kinds: the stored text +
+    message_id let any decision path edit every admin's message with the outcome
+    and drop its buttons; rows are deleted once the decision is recorded.
+
+    Registrations keep their own RegistrationNotice table — this one covers the
+    kinds that previously had no Telegram message tracking at all."""
+    __tablename__ = "approval_notices"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    kind              = Column(String, nullable=False)      # edit_request | edit_batch | hr_document
+    ref               = Column(String, nullable=False, index=True)  # request id / batch token / doc id
+    admin_telegram_id = Column(BigInteger, nullable=False)
+    message_id        = Column(BigInteger, nullable=False)
+    text              = Column(Text, nullable=False)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TelegramUser(Base):
+    """One row per Telegram account (the person). The roles the person holds
+    live in telegram_user_roles — a user may hold several (e.g. supervisor of
+    two units). The legacy role/role_id/status columns mirror the most recent
+    registration only; all reads go through telegram_user_roles."""
+    __tablename__ = "telegram_users"
+
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    username = Column(String, nullable=True)
+    full_name = Column(String, nullable=False)
+    tg_name = Column(String, nullable=True)  # Telegram account name (first+last), refreshed on login
+    role    = Column(String, nullable=False)   # LEGACY mirror — see class docstring
+    role_id = Column(Integer, nullable=True)   # LEGACY mirror — see class docstring
+    phone   = Column(String, nullable=True)
+    language = Column(String, default="uz")  # uz | ru | en
+    status = Column(String, default="pending")  # LEGACY mirror — see class docstring
+    active_role_ref = Column(Integer, nullable=True)  # telegram_user_roles.id last used in the web app
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    last_seen = Column(DateTime(timezone=True), nullable=True)
+
+
+class TelegramUserRole(Base):
+    """One role instance held (or requested) by a Telegram user. A user may
+    hold any mix, including several instances of the same role pointing at
+    different units/slots. full_name is the role-scoped display name: the
+    unit (manager) name for supervisors, the slot name for shift-managers,
+    the person's own name for top-managers."""
+    __tablename__ = "telegram_user_roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    role    = Column(String, nullable=False)   # top-manager | shift-manager | supervisor
+    role_id = Column(Integer, nullable=True)   # supervisor→managers.id | shift-manager→slot 1-4 | top-manager→null
+    full_name = Column(String, nullable=False)
+    # Canonical key of the PROFILE this registration claimed ("role:id" — see
+    # app/identity.py). A profile is a person: several accounts may hold the
+    # same one and they are all that person, so every people-list, assignment
+    # and row-level permission keys off this, never off the row's own id.
+    # Derivable for supervisor/shift-manager/top-manager/guest (role_id IS the
+    # profile), but NOT for leaders — their role_id is the unit and the profile
+    # was matched by name string, which silently broke on any rename. Stamped
+    # at claim time; NULL only for rows a backfill could not resolve.
+    profile_key = Column(String, nullable=True, index=True)
+    status = Column(String, default="pending")  # pending | approved | rejected
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("telegram_id", "role", "role_id", name="uq_user_role_instance"),
+    )
+
+
+class RoleProfile(Base):
+    """An admin-pre-created profile a Telegram user claims at registration.
+    Registration never creates identities anymore — users only bind one of
+    these to their account. Supervisor profiles are NOT here: they are the
+    `managers` rows themselves (managers.id = Verifix file id). role_id
+    semantics per role: top-manager/shift-manager role rows point at this
+    table's id; leader role rows keep pointing at the supervisor's manager id
+    (JWT/Concerns compatibility) and bind to a profile via (manager_id, name).
+    Admin profiles are bound via admins.profile_id."""
+    __tablename__ = "role_profiles"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    role       = Column(String, nullable=False, index=True)  # top-manager | shift-manager | leader | admin
+    name       = Column(String, nullable=False)              # canonical (Uzbek Latin) display name
+    # Per-language display names (uz Latin stays in `name`). Nullable — filled
+    # in as values become known; migrate_cells_leaders_columns backfills them
+    # from any existing name.{canonical} translation overrides.
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+    shift      = Column(Integer, nullable=True)              # shift-managers only: 1 | 2
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True)  # leaders only: their supervisor's unit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Cell(Base):
+    """A production cell, first-class entity: Verifix code (unique), optional
+    SAP code and per-language workshop names, owned by a supervisor unit and,
+    optionally, by one leader profile (a leader can own several; leader_id NULL
+    = no leader — releasing a cell keeps the row so its metadata survives
+    reassignment). manager_id is the primary owner link: a cell always belongs
+    to a supervisor, with or without a leader. When a leader owns the cell its
+    supervisor follows that leader's unit (kept in sync in profiles.py)."""
+    __tablename__ = "cells"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    verifix_code = Column(String, nullable=False, unique=True)
+    sap_code     = Column(String, nullable=True)
+    # Workshop name per language — all nullable until the values are known.
+    name_workshop_uz      = Column(String, nullable=True)
+    name_workshop_uz_cyrl = Column(String, nullable=True)
+    name_workshop_ru      = Column(String, nullable=True)
+    name_workshop_en      = Column(String, nullable=True)
+    # Owning supervisor unit — a cell may belong to a supervisor with no leader.
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    # 2026-07-31: does this cell count toward the production load (загрузка)?
+    # Until now that was DERIVED from "the cell has a supervisor"; it is now an
+    # explicit admin decision, ticked on the /cell-attendance «Sozlash» tab.
+    # Default off — a newly registered cell counts only once an admin says so.
+    in_load      = Column(Boolean, nullable=False, server_default="false", default=False)
+    # 2026-08-01: permanent answer to "do this cell's people count toward its
+    # supervisor's attendance?" on the «Davomat» tab. NULL = derive it (a cell
+    # with a supervisor counts, an orphan cell does not), TRUE/FALSE = an admin
+    # made it permanent. Each upload day may still override it for that day
+    # alone; this is only the starting state a new day inherits.
+    att_included = Column(Boolean, nullable=True)
+
+
+class CellOjidaniya(Base):
+    """Manual per-cell idle-time (ojidaniya) TEST entry — one row per
+    (cell, date, category): To'xtaganda (cell stopped) + To'xtamaganda (cell
+    kept running) minutes with a REQUIRED per-category note. Kept SEPARATE from
+    and additive to the sheets-import ``downtime_data`` table; a TEST input
+    toward per-cell загрузка, never in the production pipeline. The shift is a
+    property of the cell (its supervisor's shift), so it is derived on read, not
+    stored. Cat H has no To'xtamaganda value (its real 2nd source column is a
+    people-count). ``entered_by_profile`` = "role:id" of the last writer."""
+    __tablename__ = "cell_ojidaniya"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id            = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    date               = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    category           = Column(String, nullable=False)                  # "Cat A" … "Cat I"
+    stopped            = Column(Numeric(10, 4), default=0.0)             # To'xtaganda minutes
+    not_stopped        = Column(Numeric(10, 4), default=0.0)             # To'xtamaganda minutes (0 for Cat H)
+    note               = Column(Text, nullable=False)                    # REQUIRED per-category reason
+    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("cell_id", "date", "category", name="uq_cellojid_cell_date_cat"),)
+
+
+class CellPerenaladka(Base):
+    """Manual per-cell CHANGEOVER (перenaладка) minutes — the second tab of the
+    same TEST page as :class:`CellOjidaniya`. ONE row per (cell, date): how many
+    minutes that cell spent changing over that day, with an OPTIONAL note. No
+    categories, no stopped/not-stopped split.
+
+    Distinct from :class:`SetupTime`, which is a hand-maintained REFERENCE of the
+    *average* changeover time per cell with no date — this table is the daily
+    actual. Like ``cell_ojidaniya`` it is isolated TEST data: nothing else reads
+    it, and it is neither additive to nor a replacement for the sheets import.
+
+    Blank means "not entered" — a 0 is never stored (clearing deletes the row),
+    so a row's existence always means a real reported value. The shift is a
+    property of the cell (its supervisor's shift), so it is derived on read.
+    ``entered_by_profile`` = "role:id" of the last writer."""
+    __tablename__ = "cell_perenaladka"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id            = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    date               = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    minutes            = Column(Numeric(10, 4), default=0.0)             # changeover minutes (> 0)
+    note               = Column(Text, nullable=True)                     # OPTIONAL reason
+    entered_by_profile = Column(String, nullable=True)                   # "role:id" of the last writer
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("cell_id", "date", name="uq_cellperen_cell_date"),)
+
+
+class CellAttendance(Base):
+    """Per-CELL attendance ingested from the «Отчёт по посещениям сотрудников»
+    export — one row per (worker, cell, day). This is a TEST-MODE, fully isolated
+    table: it feeds the future per-cell zagruzka (load) calculation and does NOT
+    touch the existing per-manager `attendance` flow.
+
+    The source sheet tags every worker with «Код подразделения» = the cell's
+    `verifix_code`, and can span multiple days (each day is its own column whose
+    cell holds either a clock string "07:55 - 17:02 (8.4)" or a status marker
+    like "X" / "О"). We fan those out to one row per day. `cell_id` resolves the
+    code to a `cells` row when known, but a row is kept even if the code has no
+    matching cell (raw `verifix_code` is always stored)."""
+    __tablename__ = "cell_attendance"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    date         = Column(Date, nullable=False, index=True)     # the specific day
+    verifix_code = Column(String, nullable=True, index=True)    # raw «Код подразделения»
+    cell_id      = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+    worker_name  = Column(String)
+    job_title    = Column(String)                               # Должность
+    schedule     = Column(String)                               # График работы
+    day_raw      = Column(String)                               # raw day-cell text
+    clock_in     = Column(String, nullable=True)
+    clock_out    = Column(String, nullable=True)
+    hours_worked = Column(Numeric(10, 4), nullable=True)        # parsed from "(h.hh)"
+    early_arrival_min = Column(Numeric(10, 2), nullable=True)
+    effective_hours   = Column(Numeric(10, 4), nullable=True)
+    status       = Column(String, nullable=True)                # 'worked' | marker (X/О/…)
+    # Provenance — the period date is authoritative; the filename only carries the
+    # export timestamp, kept for audit.
+    source_filename = Column(String, nullable=True)
+    export_ts       = Column(DateTime(timezone=True), nullable=True)
+    uploaded_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+    cell = relationship("Cell")
+
+
+class AttendanceBatch(Base):
+    """One DAY of «Отчёт по посещениям сотрудников» data, staged for review.
+
+    The single-file attendance flow is deliberately two-phase: the admin uploads,
+    ADJUSTS (ticks cells in/out, drags cells between supervisors, edits worker
+    rows), and only then presses Save — which is the moment anything reaches the
+    `attendance` table and the supervisors get their Telegram notification.
+    Nothing here is visible to a supervisor before that.
+
+    One batch per DATE (unique), but a date is fed by MANY files: the export is
+    taken per «Орг. единица» group, so a day arrives as several workbooks each
+    covering different cells. An upload therefore MERGES into the day's batch —
+    it never replaces it. Cells a file doesn't mention are left completely alone,
+    with their routing, ticks and row edits intact. `AttendanceUploadFile` records
+    each contributing file so one can be pulled back out on its own.
+
+    After Save the batch is KEPT: it stays the editable source of truth for that
+    day, which is what lets an unticked cell be re-ticked later — its worker rows
+    are still here, so the attendance is simply re-projected, never re-uploaded.
+    """
+    __tablename__ = "attendance_batches"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    date            = Column(Date, nullable=False, unique=True, index=True)
+    status          = Column(String, nullable=False, default="draft")  # draft | saved
+    # First file's name — kept for continuity; the authoritative per-file list
+    # lives in `uploads`.
+    source_filename = Column(String, nullable=True)
+    export_ts       = Column(DateTime(timezone=True), nullable=True)
+    uploaded_by     = Column(BigInteger, nullable=True)   # telegram id, audit
+    uploaded_by_name = Column(String, nullable=True)
+    uploaded_at     = Column(DateTime(timezone=True), server_default=func.now())
+    saved_at        = Column(DateTime(timezone=True), nullable=True)
+    saved_by_name   = Column(String, nullable=True)
+
+    cells   = relationship("AttendanceBatchCell", back_populates="batch",
+                           cascade="all, delete-orphan")
+    rows    = relationship("AttendanceBatchRow", back_populates="batch",
+                           cascade="all, delete-orphan")
+    uploads = relationship("AttendanceUploadFile", back_populates="batch",
+                           cascade="all, delete-orphan")
+
+
+class AttendanceUploadFile(Base):
+    """One workbook contributed to a day. Cells and rows point back at the file
+    that last supplied them, which is what makes «remove this upload» able to
+    take out exactly its cells and leave every other file's alone."""
+    __tablename__ = "attendance_upload_files"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id      = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    filename      = Column(String, nullable=True)
+    export_ts     = Column(DateTime(timezone=True), nullable=True)
+    uploaded_by   = Column(BigInteger, nullable=True)
+    uploaded_by_name = Column(String, nullable=True)
+    uploaded_at   = Column(DateTime(timezone=True), server_default=func.now())
+    cells_added   = Column(Integer, nullable=False, default=0)
+    cells_replaced = Column(Integer, nullable=False, default=0)
+    rows_added    = Column(Integer, nullable=False, default=0)
+
+    batch = relationship("AttendanceBatch", back_populates="uploads")
+
+
+class AttendanceBatchCell(Base):
+    """Per-day routing decision for ONE «Код подразделения» in a batch.
+
+    `manager_id` is the supervisor this cell's people count for ON THIS DAY —
+    seeded from the cell registry and changed by dragging the row into another
+    supervisor's section. `included` is the row's checkbox. Both start from the
+    registry (`Cell.manager_id` / `Cell.att_included`) and override it for this
+    date only; making a change permanent writes back to `cells` as well.
+    """
+    __tablename__ = "attendance_batch_cells"
+    __table_args__ = (UniqueConstraint("batch_id", "verifix_code", name="uq_batch_cell_code"),)
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id     = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    verifix_code = Column(String, nullable=False, index=True)
+    cell_id      = Column(Integer, ForeignKey("cells.id"), nullable=True, index=True)
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    included     = Column(Boolean, nullable=False, default=False)
+    # Label to fall back on when the cell record carries no workshop name —
+    # taken from the file's «Орг. единица» header line.
+    source_name  = Column(String, nullable=True)
+    # The file that last supplied this cell (NULL once that file is removed but
+    # hand-added rows keep the cell alive). Drives per-upload undo.
+    upload_id    = Column(Integer, ForeignKey("attendance_upload_files.id", ondelete="SET NULL"),
+                          nullable=True, index=True)
+    # Has this cell changed since it was last projected into `attendance`?
+    # Save only touches supervisors that own (or just lost) a pending cell, so a
+    # second upload can't rewrite a supervisor whose data did not change — and
+    # only those supervisors get notified.
+    pending          = Column(Boolean, nullable=False, server_default="true", default=True)
+    # The supervisor this cell was last SAVED under. When a cell is dragged, both
+    # the old and the new owner must be re-projected; this is how the old one is
+    # found after `manager_id` has already moved on.
+    prev_manager_id  = Column(Integer, nullable=True)
+
+    batch = relationship("AttendanceBatch", back_populates="cells")
+
+
+class AttendanceBatchRow(Base):
+    """One worker's day inside a batch — same shape as an `attendance` row plus
+    the cell code it belongs to. These stay editable (and addable/deletable) on
+    the «Davomat» tab; every Save re-projects them into `attendance` for the
+    supervisors whose cells are ticked and whose day is still open."""
+    __tablename__ = "attendance_batch_rows"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id          = Column(Integer, ForeignKey("attendance_batches.id", ondelete="CASCADE"),
+                               nullable=False, index=True)
+    verifix_code      = Column(String, nullable=True, index=True)
+    worker_name       = Column(String)
+    job_title         = Column(String)
+    schedule          = Column(String)
+    clock_in_out      = Column(String)
+    hours_worked      = Column(Numeric(10, 4), nullable=True)
+    early_arrival_min = Column(Numeric(10, 2), nullable=True)
+    effective_hours   = Column(Numeric(10, 4), nullable=True)
+    status            = Column(String, nullable=True)   # 'worked' | marker (X/О/…)
+    # Set once an admin edits or hand-adds the row. An edited row SURVIVES a
+    # re-upload of its cell — the admin's correction outranks the file's value.
+    edited            = Column(Boolean, nullable=False, default=False)
+    manual            = Column(Boolean, nullable=False, default=False)
+    # The file that supplied this row; NULL for hand-added rows, which is what
+    # keeps them alive when that upload is removed.
+    upload_id         = Column(Integer, ForeignKey("attendance_upload_files.id", ondelete="SET NULL"),
+                               nullable=True, index=True)
+    # What a LATER file said about this worker while an admin edit was winning.
+    # Without it the newer export's value would be lost silently; with it the tab
+    # can flag the row and offer a one-click revert.
+    file_values       = Column(JSONB, nullable=True)
+
+    batch = relationship("AttendanceBatch", back_populates="rows")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    recipient_telegram_id = Column(BigInteger, nullable=True)   # null = broadcast; set = user-specific
+    # Canonical key of the addressee PROFILE ("role:id" — role_profiles.id for
+    # admin/top-manager/shift-manager/leader/guest, managers.id for supervisor).
+    # One account can hold several profiles via role switching, so delivery is
+    # per-profile: a keyed row shows only under that profile and follows the
+    # profile if it is re-claimed. NULL = legacy account-keyed row (delivered by
+    # recipient_telegram_id) or broadcast — no backfill, both models coexist.
+    recipient_profile     = Column(String, nullable=True, index=True)
+    # Template-based, view-time-localizable text: nkey + params let the bell render
+    # each row in the *viewer's* current language (and re-render on switch). title/
+    # body still hold the text rendered in the recipient's language at creation —
+    # used for the Telegram DM and as a fallback for legacy/free-form rows (nkey null).
+    nkey                  = Column(String, nullable=True)        # template key (see _NOTIF_STRINGS); null = free-form
+    params                = Column(JSONB, nullable=True)         # JSON params for the template
+    title                 = Column(String, nullable=False)
+    body                  = Column(Text, nullable=False)
+    type                  = Column(String, default="info")      # info | success | warning | error
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ForecastCallNotice(Base):
+    """One "invite N workers tomorrow" notification sent to a supervisor for a
+    specific shift date (Trudoyomkost call-tomorrow modal). Powers the resend
+    guard: the modal shows the latest notice per (manager, date) and asks for
+    confirmation before notifying the same brigadir twice."""
+    __tablename__ = "forecast_call_notices"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    for_date   = Column(Date, nullable=False, index=True)   # the shift date the count is for
+    workers    = Column(Integer, nullable=False)             # the (possibly hand-edited) number sent
+    sent_by    = Column(BigInteger, nullable=False)          # actor's telegram id
+    sent_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class EditRequest(Base):
+    __tablename__ = "edit_requests"
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id               = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    supervisor_telegram_id   = Column(BigInteger, nullable=False)
+    supervisor_name          = Column(String, nullable=False)
+    date                     = Column(Date, nullable=False)
+    worker_name              = Column(String, nullable=False)
+    changes                  = Column(JSONB, nullable=False)   # {field: new_value}
+    original                 = Column(JSONB, nullable=False)   # {field: old_value}
+    status                   = Column(String, default="pending")  # pending | approved | rejected
+    processed_by_telegram_id = Column(BigInteger, nullable=True)
+    processed_by_name        = Column(String, nullable=True)
+    created_at               = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at             = Column(DateTime(timezone=True), nullable=True)
+    batch_id                 = Column(String, nullable=True, index=True)
+
+
+class HrDocument(Base):
+    """
+    Document-driven HR change (1C/Datalab style).
+
+    doc_type:
+      role_change     → batch reassignment of job_title for N employees
+      people_exchange → (placeholder)
+      graphic_change  → (placeholder)
+
+    status:
+      draft     → "Нет" (not posted, no effect on attendance)
+      approved  → "Да"  (posted, effects applied to attendance)
+      rejected  → declined while draft (bot ❌ / webapp reject); kept as a
+                  visible record, never applied, cannot be posted afterwards
+
+    payload (role_change):
+      { "new_role": str,
+        "employees": [ { "worker_name": str, "old_role": str }, ... ] }
+    """
+    __tablename__ = "hr_documents"
+
+    id                      = Column(Integer, primary_key=True, autoincrement=True)
+    doc_type                = Column(String, nullable=False, default="role_change")
+    manager_id              = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    supervisor_name         = Column(String, nullable=True)   # display name of the unit / supervisor
+    date                    = Column(Date, nullable=False)     # effective / selected date
+    payload                 = Column(JSONB, nullable=False, default=dict)
+    status                  = Column(String, nullable=False, default="draft")  # draft | approved | rejected
+    created_by_telegram_id  = Column(BigInteger, nullable=True)
+    created_by_name         = Column(String, nullable=True)
+    created_by_role         = Column(String, nullable=True)
+    approved_by_telegram_id = Column(BigInteger, nullable=True)
+    approved_by_name        = Column(String, nullable=True)
+    approved_at             = Column(DateTime(timezone=True), nullable=True)
+    created_at              = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at              = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    history = relationship(
+        "HrDocumentHistory",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="HrDocumentHistory.created_at",
+    )
+
+
+class HrDocumentHistory(Base):
+    """Audit trail for an HrDocument — drives the 'История изменений' view."""
+    __tablename__ = "hr_document_history"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    document_id       = Column(Integer, ForeignKey("hr_documents.id", ondelete="CASCADE"), nullable=False)
+    action            = Column(String, nullable=False)   # created | edited | approved | cancelled | rejected
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    actor_name        = Column(String, nullable=True)
+    detail            = Column(JSONB, nullable=True)      # snapshot / note
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+
+    document = relationship("HrDocument", back_populates="history")
+
+
+class Language(Base):
+    """Available UI languages. uz/ru/en are seeded as built-ins; admins may
+    add more from the translation editor."""
+    __tablename__ = "languages"
+
+    code       = Column(String, primary_key=True)   # "uz" | "ru" | "en" | ...
+    name       = Column(String, nullable=False)      # display name e.g. "O'zbekcha"
+    is_builtin = Column(Boolean, default=False)
+    sort_order = Column(Integer, default=100)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Translation(Base):
+    """A single translated string override (lang, key) → value.
+
+    The built-in defaults live in the frontend's translations.js. The DB only
+    stores admin overrides and brand-new keys/languages; the runtime merges
+    these on top of the static defaults.
+    """
+    __tablename__ = "translations"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    lang       = Column(String, nullable=False)
+    key        = Column(String, nullable=False)
+    value      = Column(Text, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("lang", "key", name="uq_translation_lang_key"),)
+
+
+class DayApproval(Base):
+    """
+    Per-(manager, date) day-close marker.
+
+    The mere existence of a row means the supervisor CLOSED the day — final,
+    no admin/shift-manager approval required (they are only notified). After
+    closing, the supervisor can no longer submit edit/delete requests or
+    role-change documents for that date. Only an admin can re-open a closed
+    day (deletes the row, returning the day to 'open').
+
+    Gating: a manager's data for a date is calculated/shown anywhere only when
+    the day is CONFIRMED — closed AND every EditRequest / HrDocument for that
+    (manager, date) is processed (approved or rejected). See
+    app/services/day_state.py. Historical data is backfilled as closed on
+    rollout (see backfill_day_closures).
+    """
+    __tablename__ = "day_approvals"
+
+    id                      = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id              = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    date                    = Column(Date, nullable=False)
+    approved_by_telegram_id = Column(BigInteger, nullable=True)
+    approved_by_name        = Column(String, nullable=True)
+    approved_at             = Column(DateTime(timezone=True), server_default=func.now())
+    created_at              = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_day_approval_manager_date"),)
+
+
+class DailySubmission(Base):
+    """
+    LEGACY — the old 'submit for admin review' step, replaced by the
+    supervisor day-close flow (DayApproval row = closed, no admin approval).
+    Kept only so historical rows remain readable; nothing writes to it.
+    """
+    __tablename__ = "daily_submissions"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id   = Column(Integer, ForeignKey("managers.id"), nullable=False)
+    date         = Column(Date, nullable=False)
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_daily_submission_manager_date"),)
+
+
+class ExchangeTask(Base):
+    """
+    Permanent, shared list of worker-exchange task names (the "🗂 vazifa"
+    options). Unlike the old per-date derivation from documents, a task created
+    here is offered on every date until an admin removes it. Removal is a soft
+    delete (active=False): the name stays so existing exchange documents that
+    reference it keep resolving, it just disappears from the picker.
+    """
+    __tablename__ = "exchange_tasks"
+
+    id                     = Column(Integer, primary_key=True, autoincrement=True)
+    name                   = Column(String, nullable=False, unique=True)
+    active                 = Column(Boolean, nullable=False, server_default="true")
+    created_at             = Column(DateTime(timezone=True), server_default=func.now())
+    created_by_telegram_id = Column(BigInteger, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Production planning (ABC form) — replicates the SAP-driven Excel dashboard
+# ("Sheet1 ..." per brigadir). All pp_* tables key on managers.id, since a
+# brigadir is the supervisor of a Manager (unit). New tables only — created by
+# Base.metadata.create_all, no ALTERs needed.
+# ---------------------------------------------------------------------------
+
+class PPProduct(Base):
+    """Catalog line. One row per (brigadir, SAP code, work center, operation):
+    the same SAP code at one work center may appear several times, each a
+    distinct operation with its own labor_time (seconds per unit)."""
+    __tablename__ = "pp_products"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    sap_code    = Column(String, nullable=False, index=True)
+    name        = Column(String, nullable=False, default="")
+    work_center = Column(String, nullable=False, index=True)
+    op          = Column(String, nullable=True)           # «Опер.» / фаза step, hand-pinned; wins over the фаза upload
+    labor_time  = Column(Numeric(12, 4), nullable=True)   # seconds/unit; NULL → warn
+    sort_order  = Column(Integer, default=0)
+    active      = Column(Boolean, nullable=False, server_default="true")
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PPWorkCenter(Base):
+    """Per-brigadir work-center config.
+
+    shtatka (W)  — establishment headcount for the work center.
+    capacity (S) — planned productive minutes the roster can deliver ("Для 85%
+                   труд", ≈ W × 0.85 × 480). Hand-tuned per work center; when
+                   NULL the engine falls back to W × productive_min (default 408).
+    People needed (N) = ROUND(W × Σlabor / S); see services/pp_calc.py."""
+    __tablename__ = "pp_work_centers"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    code       = Column(String, nullable=False)
+    shtatka    = Column(Integer, nullable=False, default=0)
+    capacity   = Column(Numeric(12, 2), nullable=True)
+    sort_order = Column(Integer, default=0)
+    active     = Column(Boolean, nullable=False, server_default="true")
+
+    __table_args__ = (UniqueConstraint("manager_id", "code", name="uq_pp_wc_manager_code"),)
+
+
+class PPWorkCenterDaily(Base):
+    """Per-day manual overrides for the staffing panel of one work center.
+
+    O. SONI (N) is normally derived — ROUND(W × Σlabor / S) — and штатка (W) is
+    global config on pp_work_centers. From the Production staffing cards an admin
+    may pin either for a SINGLE date; NULL means "use the computed / configured
+    value". Same semantics as pp_daily.*_override, so a day can always be reset
+    back to the formula and neither past days nor the master config are touched."""
+    __tablename__ = "pp_work_center_daily"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    work_center = Column(String, nullable=False)
+    people      = Column(Integer, nullable=True)   # N override (O. SONI)
+    shtatka     = Column(Integer, nullable=True)   # W override (штатка)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "work_center", name="uq_pp_wc_daily_key"),
+    )
+
+
+class PPDaySetting(Base):
+    """Per-(brigadir, date) planning constants for the staffing math.
+
+    Holds the day's efficiency: `productive_min` = productive minutes ONE person
+    contributes in the shift (the «Для 85% труд» figure), which is the S per head
+    behind N = ROUND(W × Σlabor / S). Set from the Production «Odamlar soni» tab;
+    no row (or NULL) = fall back to the global pp_productive_min app-setting, so
+    untouched days keep the platform default."""
+    __tablename__ = "pp_day_settings"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id     = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date           = Column(Date, nullable=False, index=True)
+    productive_min = Column(Numeric(8, 2), nullable=True)
+    updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_pp_day_setting_key"),)
+
+
+class PPDaily(Base):
+    """Daily snapshot of plan/actual quantities per (brigadir, date, SAP code,
+    work center). Grain matches the фаза SUMIFS (SKU + work center + date), so
+    all operations of one SKU+WC share the same quantity. *_override holds a
+    brigadir's manual value and is cleared on the next SAP upload of that field."""
+    __tablename__ = "pp_daily"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id      = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date            = Column(Date, nullable=False, index=True)
+    sap_code        = Column(String, nullable=False)
+    work_center     = Column(String, nullable=False)
+    plan_qty        = Column(Numeric(14, 4), default=0)   # фаза «Кол-во операции» (Excel col F)
+    actual_qty      = Column(Numeric(14, 4), default=0)   # заголовок «Поставлено» (Excel «План пост», col M)
+    plan_override   = Column(Numeric(14, 4), nullable=True)
+    actual_override = Column(Numeric(14, 4), nullable=True)
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "sap_code", "work_center", name="uq_pp_daily_key"),
+    )
+
+
+class PPReconciliation(Base):
+    """Manual reconciliation block per (brigadir, date): По штатке / Бригадир /
+    Лидер / Мицу / Отдихает and people-present figures. Stored as a JSONB blob
+    while the block stabilises (attendance auto-wiring is a later phase)."""
+    __tablename__ = "pp_reconciliation"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    date       = Column(Date, nullable=False, index=True)
+    data       = Column(JSONB, nullable=False, default=dict)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("manager_id", "date", name="uq_pp_recon_manager_date"),)
+
+
+class PPUpload(Base):
+    """Raw slice of an uploaded SAP file, kept so the dashboard's view switcher
+    can show the source rows behind the numbers.
+
+    file_type: 'faza' (План … фаза — operations detail, drives the dashboard)
+               'zaga' (План заголовок — order headers, reference only).
+    manager_id NULL = the GLOBAL plant-wide file for that date (the SAP export
+    is one file for everyone; brigadir views filter it at read time). Non-NULL
+    rows are legacy per-brigadir slices from before global storage."""
+    __tablename__ = "pp_uploads"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id  = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    file_type   = Column(String, nullable=False)   # 'faza' | 'zaga'
+    filename    = Column(String, nullable=True)
+    columns     = Column(JSONB, nullable=False, default=list)  # [header, ...]
+    rows        = Column(JSONB, nullable=False, default=list)  # [[cell, ...], ...]
+    row_count   = Column(Integer, default=0)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "date", "file_type", name="uq_pp_upload_key"),
+    )
+
+
+class KaizenTask(Base):
+    """One row (task) from any of the eight Kaizen-session Notion databases.
+
+    Stored as a flat, source-agnostic snapshot (see services/notion_kaizen.py).
+    The whole table is replaced on each refresh, so there is no incremental
+    diffing — ``notion_id`` is kept only for stable per-row React keys / links."""
+    __tablename__ = "kaizen_tasks"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    project      = Column(String, index=True)   # Notion heading, e.g. "Хансей"
+    project_key  = Column(String, index=True)   # stable slug, e.g. "hansei"
+    notion_id    = Column(String, unique=True)
+    url          = Column(String, nullable=True)
+    title        = Column(Text)
+    status       = Column(String, index=True)   # Done | In progress | Not started
+    task_type    = Column(String, nullable=True)
+    responsible  = Column(JSONB, default=list)   # [name, ...]
+    customer     = Column(JSONB, default=list)   # [name, ...]
+    deadline     = Column(String, nullable=True)  # ISO date 'YYYY-MM-DD'
+    created_time = Column(String, nullable=True)  # ISO datetime from Notion
+    synced_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class KaizenSyncMeta(Base):
+    """Singleton row (id=1) tracking the last Kaizen → Notion sync."""
+    __tablename__ = "kaizen_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    task_count  = Column(Integer, default=0)
+
+
+class QualityComplaint(Base):
+    """One non-conformance / complaint from the quality register (tab «для
+    свода» of the QA workbook). Wipe-and-reload on every admin refresh, like
+    the leader checklists — the sheet stays the source of truth.
+
+    The sheet's Russian labels are normalized to stable slugs at sync time
+    (source/ctype/category/status) so the frontend can translate them into all
+    four platform languages; a value the map doesn't know is stored verbatim
+    and falls back to transliteration in the UI.
+    """
+    __tablename__ = "quality_complaints"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    date        = Column(String(10), index=True)      # ISO "YYYY-MM-DD"
+    source      = Column(String, index=True)          # production | guest | store
+    place       = Column(String)                      # store / workshop the complaint came from
+    product     = Column(String)                      # Наименование изделия
+    ctype       = Column(String, index=True)          # risk | foreign | storage | sanitation | …
+    category    = Column(String, index=True)          # hair | metal | plastic | … (foreign-object kind)
+    description = Column(Text)                        # Описание жалобы
+    fault       = Column(Boolean)                     # Есть ли вина цеха/магазина
+    fault_code  = Column(String)                      # Номер виновного цеха/магазина
+    cell_name   = Column(String)                      # code → name, from the «код производ.» tab
+    brigadir    = Column(String, index=True)          # Отв. бригадир / ТМ
+    manager     = Column(String, index=True)          # Отв. руководитель
+    returned    = Column(Boolean)                     # Поступил возврат?
+    status      = Column(String, index=True)          # done | open | not_required | repeat | waiting
+    comment     = Column(Text)                        # комментарии
+    action      = Column(Text)                        # Корректирующие действия
+    ref_no      = Column(String)                      # № не соответствия
+
+
+class QualitySyncMeta(Base):
+    """Singleton row (id=1) tracking the last quality-register sheet sync."""
+    __tablename__ = "quality_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    row_count   = Column(Integer, default=0)
+
+
+class LeaderSyncMeta(Base):
+    """Singleton row (id=1) tracking the last leaders-checklist sheet sync — the
+    "last updated" time shown on the Leaders page header."""
+    __tablename__ = "leader_sync_meta"
+
+    id          = Column(Integer, primary_key=True)
+    last_synced = Column(DateTime(timezone=True), nullable=True)
+    ok          = Column(Boolean, default=True)
+    message     = Column(Text, nullable=True)
+    row_count   = Column(Integer, default=0)
+
+
+class LeaderTaskDef(Base):
+    """Global catalog of the daily leader-checklist tasks, collected in-bot.
+    id = the historic sheet question number (1..13) so bot submissions and
+    Google-Form rows share task ids on the /leaders dashboard. Seeded lazily
+    from the dashboard's task list (services/leader_tasks.py); names are
+    editable via the admin column modal, per-language."""
+    __tablename__ = "leader_task_defs"
+
+    id           = Column(Integer, primary_key=True)  # question number, 1-based
+    name_uz      = Column(String, nullable=False)
+    name_uz_cyrl = Column(String, nullable=False)
+    name_ru      = Column(String, nullable=False)
+    name_en      = Column(String, nullable=False)
+    note_uz      = Column(String, nullable=True)
+    note_uz_cyrl = Column(String, nullable=True)
+    note_ru      = Column(String, nullable=True)
+    note_en      = Column(String, nullable=True)
+    # Virtual-default weight: a supervisor with no leader_task_settings row for
+    # this task uses this (the seeded weights sum to 100, so untouched
+    # supervisors never trip the ≠100 warning).
+    default_weight = Column(Integer, nullable=False, default=0)
+
+
+class LeaderTaskSetting(Base):
+    """Per-supervisor override of one task's config. Absent row = the virtual
+    default (enabled, min_media 1, LeaderTaskDef.default_weight). The name_*
+    columns rename the task for this supervisor's whole team; NULL = the
+    global LeaderTaskDef name."""
+    __tablename__ = "leader_task_settings"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=False, index=True)
+    task_id    = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False)
+    enabled    = Column(Boolean, nullable=False, default=True)
+    min_media  = Column(Integer, nullable=False, default=1)
+    weight     = Column(Integer, nullable=False, default=0)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+
+    __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
+
+
+class LeaderTaskLeaderSetting(Base):
+    """Per-LEADER override of one task's config — the third level of the
+    global → supervisor → leader chain. Every field is nullable: NULL means
+    "inherit from the supervisor's effective value"; the whole row absent
+    means full inherit. Supervisor/column edits never touch these rows."""
+    __tablename__ = "leader_task_leader_settings"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
+    task_id   = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False)
+    enabled   = Column(Boolean, nullable=True)
+    min_media = Column(Integer, nullable=True)
+    weight    = Column(Integer, nullable=True)
+    name_uz      = Column(String, nullable=True)
+    name_uz_cyrl = Column(String, nullable=True)
+    name_ru      = Column(String, nullable=True)
+    name_en      = Column(String, nullable=True)
+
+    __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
+
+
+class LeaderTaskDay(Base):
+    """One leader's in-bot checklist day. Created lazily on the first saved
+    task; closed_at set by «KUNNI YOPISH», or auto-set when a bygone open day
+    is finalized on the leader's next /tasks (its unanswered tasks recorded as
+    not-done, reason "-"). Once closed, entries are immutable and the day
+    surfaces on the /leaders dashboard — where a Google-Sheet row for the same
+    (leader, date) still wins over this one. The `date` follows the leader's
+    shift boundary (services/leader_tasks.effective_date): shift 1 is the plain
+    calendar day, shift 2 runs 17:00 → 16:59 next morning."""
+    __tablename__ = "leader_task_days"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    leader_id  = Column(Integer, ForeignKey("role_profiles.id"), nullable=False, index=True)
+    manager_id = Column(Integer, nullable=False, index=True)  # supervisor unit at save time
+    date       = Column(String(10), nullable=False, index=True)  # ISO "YYYY-MM-DD"
+    closed_at  = Column(DateTime(timezone=True), nullable=True)
+    completion = Column(Numeric(6, 2), nullable=True)  # weighted %, stamped at close
+
+    __table_args__ = (UniqueConstraint("leader_id", "date", name="uq_ltask_day"),)
+
+
+class LeaderTaskEntry(Base):
+    """One task's answer within a LeaderTaskDay: done (Ha) with proof media, or
+    not done (Yo'q) with a reason. Deleted wholesale when the leader resets the
+    task before closing the day (channel posts stay as the audit trail)."""
+    __tablename__ = "leader_task_entries"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    day_id   = Column(Integer, ForeignKey("leader_task_days.id"), nullable=False, index=True)
+    task_id  = Column(Integer, nullable=False)
+    done     = Column(Boolean, nullable=False)
+    reason   = Column(Text, nullable=True)
+    saved_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("day_id", "task_id", name="uq_ltask_entry"),)
+
+
+class LeaderTaskCapture(Base):
+    """In-flight /tasks capture state — the leader is mid-answer, sending proof
+    photos or a failure reason. DB-backed, NOT in-memory: Passenger runs several
+    worker processes and consecutive webhook updates land on different workers,
+    so process memory loses the flow between the button tap and the next message
+    (the same reason broadcast_drafts exists). One row per Telegram account;
+    stale rows expire via updated_at."""
+    __tablename__ = "leader_task_captures"
+
+    telegram_id = Column(BigInteger, primary_key=True)
+    stage       = Column(String, nullable=False)  # photos | reason | confirm_reason
+    leader_id   = Column(Integer, nullable=False)  # role_profiles.id
+    task_id     = Column(Integer, nullable=False)
+    chat_id     = Column(BigInteger, nullable=False)
+    message_id  = Column(BigInteger, nullable=True)   # counter / prompt message
+    min_media   = Column(Integer, nullable=False, default=1)
+    media       = Column(JSONB, default=list)         # [[channel file_id, channel msg id], …]
+    reason      = Column(Text, nullable=True)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LeaderTaskMedia(Base):
+    """A proof photo re-uploaded (as bytes) to the archive channel. file_id /
+    message_id are the CHANNEL copy's — the private-chat original is never
+    stored, per spec."""
+    __tablename__ = "leader_task_media"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id   = Column(Integer, ForeignKey("leader_task_entries.id"), nullable=False, index=True)
+    file_id    = Column(String, nullable=False)
+    message_id = Column(BigInteger, nullable=True)
+    pos        = Column(Integer, nullable=False, default=0)
+
+
+class LeaderTaskPendingChange(Base):
+    """A config edit STAGED to take effect from a future checklist day
+    ("apply from next day"). The live config tables (leader_task_settings /
+    _leader_settings / _defs) always mean "in effect right now" — the bot and
+    scoring never learn about staging — so a staged edit sits here until the
+    day boundary, when the first bot request that observes the new date
+    promotes it (services.leader_tasks.promote_due, lazy: there is no
+    scheduler). `shift` tags which day boundary applies — a supervisor/leader
+    change carries its unit's shift (1 = midnight, 2 = 17:00) so it flips
+    exactly at that shift's rollover; a global_task change (names / default
+    weight, cosmetic or rarely-governing) is shift-agnostic (NULL) and promotes
+    at the first crossing. One pending change per target — re-staging the same
+    target replaces it (handled in stage_change)."""
+    __tablename__ = "leader_task_pending_changes"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    kind           = Column(String, nullable=False)   # supervisor | leader | global_task
+    task_id        = Column(Integer, nullable=True)   # NULL for a supervisor batch
+    manager_id     = Column(Integer, nullable=True, index=True)
+    leader_id      = Column(Integer, nullable=True, index=True)
+    shift          = Column(Integer, nullable=True)   # 1 | 2, NULL = shift-agnostic
+    effective_date = Column(String(10), nullable=False, index=True)  # ISO, ≥ tomorrow
+    payload        = Column(JSONB, nullable=False)    # exact apply-function args
+    created_by     = Column(String, nullable=True)    # admin profile key / name
+    created_at     = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LeaderTaskConfigAudit(Base):
+    """Append-only history of every leader-task CONFIG change (not submissions).
+    This config sets people's KPI scores, so edits need receipts: who changed
+    what, when, and the before→after so the History drawer can show it and
+    Revert can restore it. `action` covers the staged lifecycle too."""
+    __tablename__ = "leader_task_config_audit"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    ts         = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    actor      = Column(String, nullable=True)   # admin profile key / name
+    # scheduled | applied | cancelled | superseded | reverted | failed
+    action     = Column(String, nullable=False)
+    kind       = Column(String, nullable=False)  # supervisor | leader | global_task
+    task_id    = Column(Integer, nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)
+    leader_id  = Column(Integer, nullable=True, index=True)
+    effective_date = Column(String(10), nullable=True)   # set for scheduled/applied
+    before     = Column(JSONB, nullable=True)    # payload-shaped prior state
+    after      = Column(JSONB, nullable=True)    # payload-shaped new state
+
+
+class UserActivity(Base):
+    """One row per (Telegram account, calendar day) — a rolling daily usage
+    aggregate that powers the Users-Activity dashboard (active users, average
+    time-in-app, GitHub-style contribution grid).
+
+    Filled by the heartbeat endpoint (POST /api/activity/ping): while the web app
+    is open and visible it pings every ~60 s. Each ping folds into that person's
+    row for the current UTC day:
+
+      • ``active_seconds`` accumulates the gap since the previous ping *only* when
+        that gap is short enough to count as continuous engagement (≤ PING_MAX_GAP
+        in services-less router logic) — long gaps start a fresh segment and add
+        nothing, so idle/backgrounded time is never counted.
+      • ``event_count`` counts pings (a rough interaction volume).
+      • ``full_name`` / ``role`` snapshot the active JWT identity so the dashboard
+        can name the account even for seeded admins (who have no telegram_users
+        row).
+
+    A per-day grain keeps the table tiny (≈ users × days) while giving exact
+    daily/monthly rollups and a natural contribution calendar. Data only exists
+    from the day tracking ships forward — there is no historical backfill."""
+    __tablename__ = "user_activity"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id    = Column(BigInteger, nullable=False, index=True)
+    # The PROFILE that was active for these pings ("role:id"). The dashboard
+    # reports PEOPLE, so rows aggregate by profile: two accounts working as one
+    # profile are one person with one combined time-in-app, while one account
+    # switching profiles mid-day splits into a row per profile instead of having
+    # the whole day relabelled by whichever profile pinged last.
+    # NULL for identities that cannot be resolved (seeded admins) — those still
+    # aggregate by account.
+    profile_key    = Column(String, nullable=True, index=True)
+    day            = Column(Date, nullable=False, index=True)   # UTC calendar day
+    full_name      = Column(String, nullable=True)              # snapshot from JWT
+    role           = Column(String, nullable=True)              # snapshot from JWT
+    first_seen     = Column(DateTime(timezone=True), nullable=True)
+    last_seen      = Column(DateTime(timezone=True), nullable=True)
+    active_seconds = Column(Integer, nullable=False, default=0)
+    event_count    = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        # Uniqueness now spans the profile too. Enforced in the DB by a unique
+        # INDEX over COALESCE(profile_key, '') — a plain constraint would treat
+        # NULL profiles as distinct and let duplicate rows accumulate.
+        UniqueConstraint("telegram_id", "profile_key", "day",
+                         name="uq_user_activity_tid_profile_day"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Leader concerns ("Xavotirlar") — replicates the per-brigadir concern log
+# (Sanjar.xlsx). A leader logs concerns raised on the floor; each row is owned
+# by the leader's pre-created profile (role_profiles), so admins, shift
+# managers, and supervisors can log a concern for a leader who hasn't claimed
+# their profile yet — the leader inherits it on registration. Each row carries
+# a snapshot of the leader + their brigadir (the supervisor of the leader's
+# unit). Visibility is role-scoped in routers/concerns.py: admin/top-manager
+# everything, shift-manager their shift's units, supervisor their unit,
+# leader their own rows.
+# ---------------------------------------------------------------------------
+
+class LeaderConcern(Base):
+    __tablename__ = "leader_concerns"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    # Ownership key: the owning leader's role_profiles.id. Profiles exist for
+    # every leader (claimed or not), so this is the stable canonical owner.
+    leader_profile_id   = Column(Integer, nullable=True, index=True)
+    # The owning leader's telegram_user_roles.id when the profile was already
+    # claimed at creation — NULL for concerns logged for unregistered leaders,
+    # kept as a scope fallback for legacy rows without a profile match.
+    leader_role_ref     = Column(Integer, nullable=True, index=True)
+    leader_name         = Column(String, nullable=False)          # snapshot of the leader's name
+    brigadir_manager_id = Column(Integer, nullable=True)          # managers.id (leader's unit/brigadir)
+    brigadir_name       = Column(String, nullable=True)           # snapshot of the brigadir's name
+    cell_code           = Column(String, nullable=True)           # Ячейка (the leader's production cell the concern is about)
+    # Department category the concern falls under (fixed whitelist in
+    # routers/concerns.py CATEGORIES). Required on new rows; NULL on legacy rows
+    # created before categories existed.
+    category            = Column(String, nullable=True)
+    # Creator-name snapshot. New rows stamp the creator's name here as a
+    # fallback; the Owner column resolves the CURRENT profile name from
+    # owner_role/owner_profile_id at view time. Pre-owner-rollout rows keep
+    # whatever free text was typed ("worker who raised it").
+    concern_owner       = Column(String, nullable=False)
+    concern_text        = Column(Text, nullable=False)            # Хавотир
+    status              = Column(String, nullable=False, server_default="todo")  # todo | doing | done
+    deadline_days       = Column(Integer, nullable=True)          # Срок (days)
+    entry_date          = Column(Date, nullable=False)            # Дата заполнения
+    completion_date     = Column(Date, nullable=True)             # Дата завершения (set when done)
+    # Exact moment the status flipped to done (cleared on reopen) — powers the
+    # created→done "время выполнения" minutes column; completion_date is only
+    # day-grained.
+    done_at             = Column(DateTime(timezone=True), nullable=True)
+    solution            = Column(Text, nullable=True)             # Решение
+    # Escalation level — who currently holds the concern. Every concern starts
+    # at "supervisor" (the leader level was removed 2026-07; legacy 'leader'
+    # rows were migrated up); each level uplifts one step when they can't solve
+    # it: supervisor → shift-manager → top-manager. The handler at the current
+    # level AND everyone above it in the chain keep edit rights; levels below
+    # turn read-only (see _assert_can_edit in routers/concerns.py).
+    level               = Column(String, nullable=False, server_default="supervisor")
+    # Top-management is person-specific: the shift-manager picks ONE top-manager
+    # profile on the last uplift step; only that person (plus admin) may act.
+    # Cleared when the concern is sent back down.
+    top_manager_profile_id = Column(Integer, nullable=True)
+    top_manager_name       = Column(String, nullable=True)        # snapshot of the chosen top-manager
+    # Shift-management is person-specific too (parallel to top_manager_*): the
+    # shift-manager who holds the concern at the shift-manager level — picked on
+    # the supervisor → shift-manager uplift and when a supervisor/admin seeds a
+    # concern straight at that level. Cleared when sent back down to supervisor.
+    shift_manager_profile_id = Column(Integer, nullable=True)
+    shift_manager_name       = Column(String, nullable=True)      # snapshot of the chosen shift-manager
+    created_by          = Column(BigInteger, nullable=True)       # telegram_id of author (leader or admin)
+    # The creator's PROFILE identity — the Owner column resolves the current
+    # profile name from these at view time (renames stay live). owner_role:
+    # leader|supervisor|shift-manager|admin; owner_profile_id: role_profiles.id
+    # (managers.id for supervisors). NULL pair = legacy row → the typed
+    # concern_owner text renders without a position.
+    owner_role          = Column(String, nullable=True)
+    owner_profile_id    = Column(Integer, nullable=True)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ConcernEscalation(Base):
+    """One uplift / send-back event on a concern — the escalation trail shown in
+    the history modal. ``reason`` is mandatory ("why I can't solve this");
+    ``target_name`` carries the chosen top-manager on shift-manager → top steps."""
+    __tablename__ = "concern_escalations"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    concern_id  = Column(Integer, nullable=False, index=True)     # leader_concerns.id
+    from_level  = Column(String, nullable=False)
+    to_level    = Column(String, nullable=False)
+    reason      = Column(Text, nullable=False)
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    actor_name  = Column(String, nullable=True)                   # snapshot of the escalator's name
+    actor_role  = Column(String, nullable=True)
+    target_name = Column(String, nullable=True)                   # chosen top-manager (top step only)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class LeaderTask(Base):
+    """A supervisor→leader assignment (the "DAILY протокол" board that used to
+    live in Google Sheets). ``priority`` is the per-leader queue position over
+    the ACTIVE (todo/doing) tasks only — always a dense 1..N; a done task leaves
+    the queue (priority NULL) and the rest close ranks. The queue invariant is
+    maintained by routers/tasks.py."""
+    __tablename__ = "leader_tasks"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    # OWNERSHIP KEY: the assigned leader PROFILE (role_profiles.id). The profile
+    # is the person — every account holding it sees and works the same queue,
+    # and the task survives an unassign→re-claim (role rows churn, profiles do
+    # not). ``leader_role_ref`` below is the legacy registration key, kept only
+    # as a read fallback for rows the backfill could not resolve.
+    leader_profile_id     = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
+    leader_role_ref       = Column(Integer, nullable=True, index=True)
+    leader_name           = Column(String, nullable=False)         # snapshot of the leader's name
+    supervisor_manager_id = Column(Integer, nullable=True)         # managers.id (leader's unit)
+    supervisor_name       = Column(String, nullable=True)          # snapshot of the unit/brigadir name
+    task_text             = Column(Text, nullable=False)           # Задача
+    priority              = Column(Integer, nullable=True)         # Приоритет: 1..N among active tasks; NULL once done
+    status                = Column(String, nullable=False, server_default="todo")  # todo | doing | done
+    due_date              = Column(Date, nullable=False)           # Срок выполнения
+    completed_at          = Column(DateTime(timezone=True), nullable=True)  # set when flipped to done
+    created_by            = Column(BigInteger, nullable=True)      # telegram_id of creator (supervisor or admin)
+    # Creator PROFILE key ("role:id"). Creator rights (edit/delete, "your task
+    # was completed" notices) belong to the profile, so a co-holder of the same
+    # brigadir profile can act on it and a role switch does not carry the rights
+    # into an unrelated profile. NULL rows fall back to ``created_by``.
+    created_by_profile    = Column(String, nullable=True, index=True)
+    created_by_name       = Column(String, nullable=True)          # snapshot of the creator's display name
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at            = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LeaderTaskComment(Base):
+    """Chat-style comment thread on a leader task. Editable/deletable only by
+    the authoring profile (enforced in routers/tasks.py)."""
+    __tablename__ = "leader_task_comments"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    task_id            = Column(Integer, nullable=False, index=True)   # leader_tasks.id
+    author_telegram_id = Column(BigInteger, nullable=False)
+    # telegram_user_roles.id of the authoring PROFILE (0 = admin sentinel). One
+    # account can hold several profiles, so ownership is per-profile; NULL rows
+    # predate the column and fall back to account-scoped ownership.
+    author_role_ref    = Column(Integer, nullable=True)
+    # Author PROFILE key ("role:id") — THE ownership key: any account holding
+    # the authoring profile may edit/delete, and rights survive a re-claim.
+    # ``author_role_ref`` above stays as the legacy fallback for NULL rows.
+    author_profile     = Column(String, nullable=True, index=True)
+    author_name        = Column(String, nullable=True)                 # snapshot of the author's display name
+    text               = Column(Text, nullable=False)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
+
+
+class Broadcast(Base):
+    """One admin broadcast delivered to selected profiles as Telegram DMs.
+    The row is created up-front with status 'sending'; a background thread
+    performs the sends (routers/broadcast.py) and bumps sent/failed counts as
+    it goes, flipping status to 'done' at the end — the admin history table
+    polls this row to show live progress."""
+    __tablename__ = "broadcasts"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    sender_telegram_id = Column(BigInteger, nullable=False)
+    sender_name        = Column(String, nullable=True)      # admin profile name snapshot
+    # normal → sendMessage/HTML parse mode; rich → sendRichMessage (Bot API 10.1+)
+    mode               = Column(String, nullable=False, server_default="normal")
+    text_html          = Column(Text, nullable=False)       # sanitized Telegram HTML
+    text_plain         = Column(Text, nullable=False)       # entity-stripped text (snippets/length)
+    attachment_kind    = Column(String, nullable=True)      # normal mode: photo | video | document
+    attachment_name    = Column(String, nullable=True)
+    media_names        = Column(JSONB, nullable=False, server_default="[]")  # rich mode: embedded media file names
+    target_keys        = Column(JSONB, nullable=False, default=list)  # ["role:id", …] as selected
+    recipient_total    = Column(Integer, nullable=False, default=0)   # deduped Telegram accounts
+    sent_count         = Column(Integer, nullable=False, default=0)
+    failed_count       = Column(Integer, nullable=False, default=0)
+    failed_names       = Column(JSONB, nullable=False, default=list)  # profile names whose DM failed
+    status             = Column(String, nullable=False, default="sending")  # sending | done
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at        = Column(DateTime(timezone=True), nullable=True)
+
+
+class BroadcastDraft(Base):
+    """A /broadcast in progress, keyed to the admin composing it (one active
+    draft per admin — a new /broadcast replaces the old one). The admin's own
+    message(s) stay in their private chat; we only remember their message_ids
+    and copy them to each recipient at send time (copyMessage/copyMessages),
+    so any Telegram content — rich text, media, an album — is preserved
+    exactly, and in-place edits are picked up automatically.
+
+    Flow / status: awaiting_message → awaiting_continue (message captured, the
+    "review & continue" warning is up) → awaiting_recipients (the mini-app
+    picker button is shown) → sent. `warn_message_id` is the bot message that
+    is edited across those steps (warning → picker → final "sent X/Y")."""
+    __tablename__ = "broadcast_drafts"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    admin_telegram_id = Column(BigInteger, nullable=False, unique=True, index=True)
+    token             = Column(String, nullable=False, unique=True, index=True)  # opaque, → mini-app URL
+    from_chat_id      = Column(BigInteger, nullable=False)                        # where the message(s) live (the admin's chat)
+    message_ids       = Column(JSONB, nullable=False, default=list)              # captured message id(s), in order
+    media_group_id    = Column(String, nullable=True)                            # set when the draft is an album
+    preview_text      = Column(Text, nullable=True)                             # first text/caption, for the history row
+    warn_message_id   = Column(BigInteger, nullable=True)                        # bot message edited through the flow
+    status            = Column(String, nullable=False, default="awaiting_message")
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CustomEmoji(Base):
+    """A saved premium (custom) Telegram emoji for the Broadcast composer's
+    palette. Telegram identifies a premium emoji by a numeric custom_emoji_id,
+    not an image; the composer inserts it as
+    ``<tg-emoji emoji-id="…">fallback</tg-emoji>`` — rendered animated for
+    Premium recipients, the plain fallback char for everyone else. Admins add
+    each one once; the id is obtained by forwarding the emoji to the bot, which
+    echoes it back (see telegram_bot._custom_emoji_echo)."""
+    __tablename__ = "custom_emojis"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    emoji_id   = Column(String, nullable=False, unique=True)   # Telegram custom_emoji_id (numeric string)
+    fallback   = Column(String, nullable=False)                # plain emoji shown to non-Premium users
+    label      = Column(String, nullable=True)                 # admin's note, e.g. "sun"
+    created_by = Column(BigInteger, nullable=True)             # admin telegram id who added it
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SetupTime(Base):
+    """Average changeover («переналадка») time of one production cell, as
+    reported by its supervisor. Seeded once from the «периналадка» workbook
+    (data/setup_times_seed.json), maintained from the Setup times page after
+    that. manager_id links the row to a supervisor unit (display name/shift
+    come from the live managers row); `supervisor` is the fallback display
+    name for rows whose sheet doesn't match a platform unit. The workbook has
+    no SKU column, so `sku` starts empty and is filled in from the UI."""
+    __tablename__ = "setup_times"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)
+    supervisor = Column(String, nullable=False, default="")
+    cell       = Column(String, nullable=False)
+    minutes    = Column(Numeric(6, 2), nullable=True)
+    reason     = Column(Text, nullable=False, default="")
+    sku        = Column(String, nullable=False, default="")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProfileCapability(Base):
+    """One admin capability granted to ONE profile.
+
+    Capabilities are the per-person half of the permission system: the
+    page-access matrix (app/permissions.py) decides which PAGES a ROLE may
+    open, this decides which admin-only ACTIONS a single PROFILE may perform.
+    Grants are additive — every hardcoded rule (admin, shift-manager, the
+    receiving supervisor of a transfer…) keeps working untouched; a grant only
+    widens the set of people who may act.
+
+    Keyed by ``profile_key`` ("supervisor:42" — see app/identity.py), never by
+    telegram_user_roles.id: a profile is a person, so every holder of that
+    profile wields the grant and it survives an unassign→re-claim. A person
+    switched into a DIFFERENT profile does not carry it over.
+
+    ``scope`` decides how much data the action reaches:
+      own → the profile's normal row scoping (supervisor→their unit,
+            shift-manager→their shift); the grant only adds the action.
+      all → admin reach: every unit, shift and date.
+
+    The ``page.view.<page>`` family stores PAGE access in the same rows: one
+    person may be given a page their role was never ticked for on the Access
+    matrix, and — on the pages whose data narrows to the viewer — ``scope``
+    says whether they read only their own rows or the whole factory.
+
+    LEGACY as of the per-account rollout: capabilities are now granted to a
+    Telegram ACCOUNT (see :class:`UserCapability`), so two accounts holding one
+    profile can differ. These rows are read only once, by the one-time
+    ``migrate_user_capabilities`` startup fan-out that seeds UserCapability from
+    them; nothing writes here anymore. Kept so that migration is re-runnable and
+    the history is not destroyed.
+    """
+    __tablename__ = "profile_capabilities"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=False, index=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=False, default="own")   # own | all
+    granted_by  = Column(String, nullable=True)                   # admin's display name
+    granted_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("profile_key", "capability", name="uq_profile_capability"),
+    )
+
+
+class UserCapability(Base):
+    """One admin capability granted to ONE Telegram account.
+
+    The per-person half of the permission system, keyed by the ACCOUNT
+    (``telegram_id``) rather than the profile. This is the deliberate exception
+    to the "a profile is the person" rule (app/identity.py): everywhere else one
+    person's several logins are one identity, but permissions are handed out per
+    login — so a supervisor profile held by two accounts can grant the transfer
+    power to just one of them. Every guard resolves the JWT's ``sub`` (the
+    telegram id) straight to these rows via ``capabilities.caller_caps``.
+
+    Still ADDITIVE and read LIVE: a grant only ever widens who may act, and a
+    revoke takes effect on the holder's next request with no re-login.
+
+    ``scope`` decides how much data the action reaches:
+      own → the account's normal row scoping (derived at request time from the
+            profile it is acting as: supervisor→their unit, shift-manager→their
+            shift); the grant only adds the action.
+      all → admin reach: every unit, shift and date.
+
+    The ``page.view.<page>`` family stores PAGE access in the same rows: one
+    account may be given a page its role was never ticked for on the Access
+    matrix, and — on the pages whose data narrows to the viewer — ``scope`` says
+    whether it reads only its own rows or the whole factory.
+    """
+    __tablename__ = "user_capabilities"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=False, default="own")   # own | all
+    granted_by  = Column(String, nullable=True)                   # admin's display name
+    granted_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("telegram_id", "capability", name="uq_user_capability"),
+    )
+
+
+class CapabilityAudit(Base):
+    """Append-only log of every capability grant / revoke / scope change.
+
+    Grants hand out admin-level powers, so who widened whose access — and when
+    — must stay answerable long after the grant itself was revoked and its
+    UserCapability row deleted.
+
+    Per-account rollout: new rows record the ``telegram_id`` the change targeted.
+    ``profile_key`` is the legacy target column — nullable now, still populated on
+    the pre-rollout history rows so nothing in the trail is lost."""
+    __tablename__ = "capability_audit"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=True, index=True)         # legacy target
+    telegram_id = Column(BigInteger, nullable=True, index=True)     # per-account target
+    capability  = Column(String, nullable=False)
+    action      = Column(String, nullable=False)   # granted | revoked | rescoped
+    scope       = Column(String, nullable=True)    # the scope after the change
+    actor_name  = Column(String, nullable=True)
+    actor_telegram_id = Column(BigInteger, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CapabilityUse(Base):
+    """Append-only log of every EXERCISE of a granted capability.
+
+    The persistent half of the grant-use warning DMs (app/capability_alerts):
+    the DM pings the admins in the moment, this row keeps who/what/old→new
+    answerable later on the admin «Action history» tab. Rows exist only for
+    grant-authorized actions — native admin/role authority never logs here.
+
+    ``details`` ([label_key, value] pairs) and ``changes`` ([field, old, new]
+    triples) hold the language-NEUTRAL alert payload; values may be
+    ["__t__", key] markers. Rendering translates per viewer language through
+    the same 4-lang table the DMs use (capability_alerts.render_use)."""
+    __tablename__ = "capability_uses"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(BigInteger, nullable=False, index=True)
+    actor_name  = Column(String, nullable=True)
+    actor_role  = Column(String, nullable=True)
+    capability  = Column(String, nullable=False)
+    scope       = Column(String, nullable=True)    # grant scope at use time
+    granted_by  = Column(String, nullable=True)    # who handed out the grant
+    action      = Column(String, nullable=False)   # capability_alerts action key
+    details     = Column(JSONB, nullable=True)
+    changes     = Column(JSONB, nullable=True)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class HanseyProblem(Base):
+    """A production problem logged on the «Hansey» page — one incident that cost
+    a cell time, with the department that caused it and the reflection on it
+    (hansei: what happened, what we answered, what we changed).
+
+    Always about a CELL: the cell names its supervisor unit (``manager_id``) and,
+    when one is assigned, its leader — which is exactly what the page's scoping
+    is built on (a leader works their own cells, a supervisor their unit). Cells
+    with a supervisor and no leader are first-class here: the supervisor logs on
+    them directly, so ``leader_profile_id`` is nullable.
+
+    ``manager_id``/``leader_profile_id`` are snapshots taken at write time so a
+    later cell re-assignment can't silently move historical rows between units;
+    the cell's CURRENT leader is resolved live for display.
+
+    ``duration_minutes`` is NEVER accepted from the client — it is recomputed
+    from started_at/closed_at on every write (mirroring the source project's
+    model-level `saving` hook), so a reported downtime can't be forged by the
+    request. NULL while the problem is still open.
+
+    ``date`` is derived from ``started_at`` (factory-local), not from the moment
+    the row was typed: a problem that started at 23:40 and was logged after
+    midnight still belongs to the day it happened, which is what every period
+    filter and trend chart on the page counts on."""
+    __tablename__ = "hansey_problems"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    cell_id          = Column(Integer, ForeignKey("cells.id", ondelete="CASCADE"), nullable=False, index=True)
+    cell_code        = Column(String, nullable=True)      # verifix_code snapshot (display + export)
+    manager_id       = Column(Integer, ForeignKey("managers.id"), nullable=True, index=True)  # owning unit — the supervisor scope key
+    leader_profile_id = Column(Integer, nullable=True, index=True)   # role_profiles.id at write time; NULL on leaderless cells
+    # Department at fault — the shared 12-department whitelist (CATEGORIES in
+    # routers/hansey.py), the same vocabulary the Concerns page uses so a chip
+    # means the same thing on both pages.
+    department       = Column(String, nullable=False, index=True)
+    problem          = Column(Text, nullable=False)       # what happened
+    comment          = Column(Text, nullable=False)       # изох / комментарий
+    answers          = Column(Text, nullable=False)       # ответы — what the department answered
+    countermeasure   = Column(Text, nullable=False)       # контрмера — what was changed so it doesn't recur
+    # Factory WALL-CLOCK time as typed by a human, stored naive on purpose: the
+    # value means "14:30 on the shop floor" and must never be shifted by a
+    # session timezone. `date` and `duration_minutes` are both derived from these
+    # two, so all three stay consistent with each other.
+    started_at       = Column(DateTime, nullable=False, index=True)
+    closed_at        = Column(DateTime, nullable=True, index=True)   # NULL = still open
+    duration_minutes = Column(Integer, nullable=True, index=True)  # server-computed; NULL while open
+    date             = Column(Date, nullable=False, index=True)    # derived from started_at — the period key
+    # Creator identity, same convention as leader_concerns: role_profiles.id for
+    # leader/shift-manager/admin, managers.id for a supervisor. Resolved to the
+    # CURRENT profile name at view time so renames stay live.
+    owner_role       = Column(String, nullable=True)
+    owner_profile_id = Column(Integer, nullable=True)
+    owner_name       = Column(String, nullable=True)      # name snapshot, fallback for display
+    created_by       = Column(BigInteger, nullable=True)  # telegram_id of the author
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (Index("ix_hansey_unit_date", "manager_id", "date"),)
