@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force_restart:
+        description: "Restart even when the checkout is already up to date (use after editing backend/.env or the unit on the server)"
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -25,10 +30,21 @@ jobs:
 
     steps:
       - name: Deploy
+        env:
+          # Resolved in bash rather than in a `${{ … && … || … }}` expression so
+          # it does not depend on how completely this runner implements GitHub's
+          # expression syntax.
+          FORCE_RESTART_INPUT: ${{ github.event.inputs.force_restart }}
         run: |
           set -euo pipefail
           cd /var/www/production
           git fetch --prune origin main
+
+          export FORCE_RESTART=0
+          if [ "${FORCE_RESTART_INPUT:-false}" = "true" ]; then
+            export FORCE_RESTART=1
+            echo "force_restart requested — the service will be restarted"
+          fi
 
           # Run the deploy script from /tmp, extracted at exactly the commit
           # being deployed. It must NOT execute from inside the checkout it is
