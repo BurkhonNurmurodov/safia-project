@@ -99,6 +99,7 @@ const VIEWS = {
   cellatt:      CellAttendanceUpload,
   users:        UsersManagement,
   profiles:     ProfilesManagement,
+  factories:    FactoriesAdmin,
   access:       PageAccess,
   permissions:  Permissions,
   actions:      ActionHistory,
