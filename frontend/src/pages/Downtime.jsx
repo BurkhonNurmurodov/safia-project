@@ -91,9 +91,13 @@ export default function Downtime() {
 
   // The scope toggle rides in the query params, so each scope is its own cache
   // entry and flipping back is instant.
+  // Every request on this page carries the active plant (see FactoryContext);
+  // on «All factories» the key is absent and the calls are byte-identical to
+  // what they were before factories existed.
+  const fparams = useFactoryParams(params);
   const scopedParams = useMemo(
-    () => (kpiOnly ? { ...params, kpi_only: 1 } : params),
-    [params, kpiOnly]);
+    () => (kpiOnly ? { ...fparams, kpi_only: 1 } : fparams),
+    [fparams, kpiOnly]);
   const { data, isLoading } = useQuery({
     queryKey: ["downtime", scopedParams],
     queryFn: () => api.get("/api/downtime", { params: scopedParams }).then((r) => r.data),
