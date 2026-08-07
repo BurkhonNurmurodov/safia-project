@@ -26,7 +26,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
-import FactoryTabs from "../components/ui/FactoryTabs";
+import FactorySelect from "../components/ui/FactorySelect";
 import { useFactory, factoryName } from "../context/FactoryContext";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 
@@ -1517,7 +1517,11 @@ export default function Quality() {
           cell + filters); sm:contents dissolves the row wrappers so desktop keeps one
           aligned line. */}
       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
-        {/* row 3 — date + shift */}
+        {/* row 3 — plant + date + shift. The plant leads: it is the broadest
+            narrowing on the row. This toolbar carries no field labels, so the
+            select names itself with the Factory icon. Renders nothing on a
+            single-factory install. */}
+        <FactorySelect label={false} className="w-full sm:w-44" />
         <div className="flex items-center gap-2 sm:contents">
           <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
             max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
