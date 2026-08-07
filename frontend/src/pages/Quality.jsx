@@ -5,6 +5,7 @@ import {
   RefreshCw, CalendarClock, AlertTriangle, MessageSquareWarning, ShieldCheck,
   Undo2, Siren, Factory, UserRound, Store, CircleDot, Tag, Layers, Boxes,
   MapPin, Wrench, UserCog, TrendingUp, TrendingDown, ClipboardList, Bug, Hourglass,
+  FileSpreadsheet,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
