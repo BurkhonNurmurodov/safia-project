@@ -1435,6 +1435,13 @@ export default function Quality() {
             <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
             {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
           </span>
+          {/* the dashboard as it stands → the caller's private Telegram chat */}
+          <Button size="lg" variant="secondary" loading={exporting}
+            disabled={isLoading || rows.length === 0}
+            icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+            onClick={exportExcel}>
+            <span className="hidden sm:inline">{T.xBtn}</span>
+          </Button>
           {refreshBtn}
         </div>
       </div>
