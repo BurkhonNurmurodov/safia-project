@@ -1696,6 +1696,10 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")}>
+      {/* WHICH plant — above the filter row, because it is the subject of the
+          page, not another way of slicing it. Renders nothing on a
+          single-factory install. */}
+      <FactoryTabs />
       {/* Top filter bar — the standard inline period + shift + supervisor row
           (shift/supervisor only for multi-unit viewers); status / owner / level
           live behind the Filtrlar button. */}
