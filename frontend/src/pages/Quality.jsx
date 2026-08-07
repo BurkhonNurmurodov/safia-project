@@ -26,6 +26,8 @@ import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
+import FactoryTabs from "../components/ui/FactoryTabs";
+import { useFactory, factoryName } from "../context/FactoryContext";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
 
 // ── palettes ────────────────────────────────────────────────────────────────
