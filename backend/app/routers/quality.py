@@ -10,7 +10,10 @@ The list payload deliberately omits the three long free-text columns
 triple the response for text that is only ever read one row at a time. The row
 modal pulls them from /api/quality/{id}.
 """
+from typing import Any, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -18,6 +21,7 @@ from app.models import Manager, QualityComplaint, QualitySyncMeta, SheetSource
 from app.permissions import require_page
 from app.services.cell_lookup import by_verifix, resolve_verifix
 from app.services.name_map import supervisor_match
+from app.services.quality_export import build_quality_workbook
 from app.services.sheets_sync import sync_quality_sheet
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
