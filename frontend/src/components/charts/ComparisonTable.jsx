@@ -654,7 +654,7 @@ export default function ComparisonTable({
                             cursor: "pointer",
                           }}
                         >
-                          <span style={{ opacity: 0.55, fontSize: 11 }}>⏳</span>
+                          <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
                         </td>
                       );
                     }
