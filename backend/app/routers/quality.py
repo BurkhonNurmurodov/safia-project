@@ -63,20 +63,42 @@ def get_quality(
     # Each matched cell's name set rides ONE top-level `cells` map keyed by id;
     # rows carry only `ci` so the ~12k-row array stays compact.
     cells_tbl = by_verifix(db, with_leader=True)
+
+    # ── factory attribution ───────────────────────────────────────────────────
+    # The register has no factory column and never will — it is a sheet. So each
+    # row inherits the factory of the supervisor unit it resolves to, in this
+    # order of preference:
+    #   1. the RESPONSIBLE supervisor («Отв. бригадир», already fuzzy-matched
+    #      above) — this is the column the page groups and filters by, so it is
+    #      the attribution a reader would predict;
+    #   2. failing that, the supervisor who owns the FAULTING cell, which
+    #      rescues rows blamed on a technologist or a store but traceable to a
+    #      workshop.
+    # A row that resolves to neither keeps fi=null and is reachable only from
+    # «All factories» — never silently dropped, and never padded onto a plant it
+    # may not belong to.
+    fac_of_manager = factory_of_managers(db)
+    cell_owner = {c.id: c.manager_id for c in db.query(Cell.id, Cell.manager_id).all()}
+
     matched: dict[int, dict] = {}
     out_rows = []
     for r in rows:
         cell = resolve_verifix(cells_tbl, r.fault_code)
         if cell:
             matched[cell["id"]] = cell
+        sup_row = sup.get(r.brigadir) or {}
+        fi = fac_of_manager.get(sup_row.get("id"))
+        if fi is None and cell:
+            fi = fac_of_manager.get(cell_owner.get(cell["id"]))
         out_rows.append({
             "id": r.id, "d": r.date, "s": r.source, "pl": r.place, "pr": r.product,
             "t": r.ctype, "c": r.category, "f": r.fault, "fc": r.fault_code,
             "cn": r.cell_name, "ci": (cell["id"] if cell else None),
             "b": r.brigadir, "m": r.manager, "r": r.returned,
             "st": r.status, "no": r.ref_no,
-            "sup": (sup.get(r.brigadir) or {}).get("name", ""),
-            "sh": (sup.get(r.brigadir) or {}).get("shift"),
+            "sup": sup_row.get("name", ""),
+            "sh": sup_row.get("shift"),
+            "fi": fi,
         })
 
     return {
