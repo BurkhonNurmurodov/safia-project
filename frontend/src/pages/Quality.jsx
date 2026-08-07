@@ -402,6 +402,7 @@ export default function Quality() {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
+  const { factory, current: currentFactory, enabled: factoryEnabled } = useFactory();
   const T = TXT[lang] || TXT.ru;
   // The detail modal describes a Russian-language register, so its field labels
   // stay Russian in every UI language — the translated/transliterated variants
