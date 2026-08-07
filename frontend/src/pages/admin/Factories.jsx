@@ -49,7 +49,7 @@ import { useToast } from "../../components/ui/Toast";
 const ALL = "all";
 
 export default function Factories() {
-  const { t, lang, languages } = useLang();
+  const { t, lang } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
