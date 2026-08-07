@@ -733,7 +733,7 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
         ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
     ws.freeze_panes = f"A{HEAD_ROW + 1}"
     ws.print_title_rows = f"{HEAD_ROW}:{HEAD_ROW}"
-    finish(ws, ncols, landscape=True)
+    finish(ws, landscape=True)
 
     # ── Sheet 2: coverage per brigadir ───────────────────────────────────────
     agg: dict[str, list[int]] = {}
@@ -797,7 +797,7 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
     for col, width in zip("ABCDE", (34, 12, 14, 14, 12)):
         ws2.column_dimensions[col].width = width
     ws2.freeze_panes = "A5"
-    finish(ws2, 5, landscape=False)
+    finish(ws2, landscape=False)
 
     buf = BytesIO()
     wb.save(buf)
