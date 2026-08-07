@@ -25,20 +25,25 @@ def get_downtime(
     # pass it, so those categories exist nowhere outside /downtime and the
     # totals shown match the equip_downtime used by the загрузка KPIs.
     kpi_only: bool = Query(default=False),
+    # Which plant. Omitted / null = «All factories». Ojidaniya rows key off the
+    # supervisor NAME, so the factory narrows the manager set first and the
+    # alias map then resolves only those names (services/factory_scope).
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("downtime", "daily")),
+    payload: dict = Depends(require_page("downtime", "daily")),
 ):
     if not date_to:
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
-    if manager_id:
-        managers = managers.filter(Manager.id.in_(manager_id))
-    managers = managers.all()
+    if scoped is not None:
+        managers = managers.filter(Manager.id.in_(scoped))
+    managers = [] if empty_scope(scoped) else managers.all()
     # DowntimeData spells brigadirs in either alphabet; accept every known
     # spelling and resolve each row back to the canonical Manager.name.
     alias = sheet_alias_map(db, (m.name for m in managers))
