@@ -255,6 +255,29 @@ export default function Cells() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, sort, tl, lang]);
 
+  // Excel export — ships what the page is SHOWING (filtered + sorted, names
+  // already resolved to the viewer's language and transliterated), so the
+  // workbook mirrors the screen instead of re-deriving a second register.
+  // Unassigned slots go out as "" and the backend applies the placeholder
+  // label, keeping "no brigadir" visually distinct from a real name in Excel.
+  // Read-only, so it stays available to a view-only grantee (no canEdit gate).
+  const exportMut = useMutation({
+    mutationFn: () =>
+      api.post("/api/profiles/admin/cells/export.xlsx", {
+        lang,
+        total: cells.length,
+        rows: sorted.map((c) => ({
+          verifix_code: c.verifix_code || "",
+          sap_code: c.sap_code || "",
+          workshop: wname(c) || "",
+          supervisor: c.supervisor ? tl(c.supervisor) : "",
+          leader: c.leader ? tl(c.leader) : "",
+        })),
+      }),
+    onSuccess: () => toast.success(t("staff.exportToast")),
+    onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
+  });
+
   const colSpan = canEdit ? 6 : 5;
 
   const brigadirOpts = [
