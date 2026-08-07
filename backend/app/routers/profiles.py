@@ -803,7 +803,7 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
     wb.save(buf)
     buf.seek(0)
     fname = f"cells_register_{now.strftime('%Y-%m-%d')}.xlsx"
-    caption = (f"📋 {L['title'].title()} — {now.strftime('%d.%m.%Y %H:%M')}  •  "
+    caption = (f"📋 {L['sheet']} — {now.strftime('%d.%m.%Y %H:%M')}  •  "
                f"{L['records']}: {len(rows)}")
     try:
         bot.send_document(chat_id=int(caller["sub"]), document=(fname, buf.read()),
