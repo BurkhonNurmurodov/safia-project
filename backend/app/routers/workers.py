@@ -203,18 +203,24 @@ def get_role_trend(
     date_to: date = Query(default=None),
     shift: Optional[int] = Query(default=None),
     manager_id: List[int] = Query(default=[]),
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("workers")),
+    payload: dict = Depends(require_page("workers")),
 ):
     if not date_to:
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    empty = {"dates": [], "series": {role: [] for role in ["Konditer", "Fasovshik", "Zagatovitel", "Other"]}}
+    if empty_scope(scoped):
+        return empty
+
     # Day-close gate: only confirmed (manager, date) days count anywhere.
-    confirmed = confirmed_pairs(db, date_from, date_to, manager_id or None)
+    confirmed = confirmed_pairs(db, date_from, date_to, scoped)
     if not confirmed:
-        return {"dates": [], "series": {role: [] for role in ["Konditer", "Fasovshik", "Zagatovitel", "Other"]}}
+        return empty
 
     q = (
         db.query(
