@@ -663,7 +663,7 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
         c.alignment = align or Alignment(horizontal="left", vertical="center", indent=1)
         ws.row_dimensions[c.row].height = height
 
-    def finish(ws, ncols: int, *, landscape: bool):
+    def finish(ws, *, landscape: bool):
         """Report finish: no gridlines, gold tab, fit-to-width printing."""
         ws.sheet_view.showGridLines = False
         ws.sheet_properties.tabColor = _XLSX_GOLD
