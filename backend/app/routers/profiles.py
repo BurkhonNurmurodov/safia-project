@@ -26,7 +26,8 @@ Multilingual names: one canonical (Uzbek Latin) name per profile; per-language
 display variants are `name.<canonical>` override keys in `translations`
 (rendered by the frontend tl() helper, auto-transliterated when absent).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
