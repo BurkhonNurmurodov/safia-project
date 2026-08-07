@@ -126,15 +126,15 @@ export default function Workers() {
     queryFn: () => api.get("/api/workers/headcount", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
-  const chartParams = useMemo(() => padChartParams(params), [params]);
+  const chartParams = useMemo(() => padChartParams(fparams), [fparams]);
   const { data: trend } = useQuery({
     queryKey: ["worker-trend", chartParams],
     queryFn: () => api.get("/api/workers/trend", { params: chartParams }).then((r) => r.data),
     enabled: ready,
   });
   const { data: req } = useQuery({
-    queryKey: ["worker-requests-analysis", params],
-    queryFn: () => api.get("/api/workers/requests-analysis", { params }).then((r) => r.data),
+    queryKey: ["worker-requests-analysis", fparams],
+    queryFn: () => api.get("/api/workers/requests-analysis", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
 
