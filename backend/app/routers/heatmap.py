@@ -62,11 +62,13 @@ def get_heatmap(
     # but the source sheet's «Odam soni» headcount hasn't been loaded yet
     # ("no_headcount"). Draft HR documents also block confirmation but don't
     # get a marker — those cells stay empty.
+    # Same scope as the metrics above — `scoped`, not the raw manager_id filter,
+    # or a factory tab would grow pending markers for units it doesn't contain.
     mgr_q = db.query(Manager.id, Manager.name).filter(Manager.archived.is_(False))
     if shift:
         mgr_q = mgr_q.filter(Manager.shift == shift)
-    if manager_id:
-        mgr_q = mgr_q.filter(Manager.id.in_(manager_id))
+    if scoped is not None:
+        mgr_q = mgr_q.filter(Manager.id.in_(scoped))
     mgr_name = {mid: name for mid, name in mgr_q.all()}
 
     if mgr_name:
