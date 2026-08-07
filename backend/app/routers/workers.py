@@ -297,9 +297,9 @@ def get_requests_analysis(
     )
     if shift:
         q = q.filter(Manager.shift == shift)
-    if manager_id:
-        q = q.filter(HrDocument.manager_id.in_(manager_id))
-    rows = q.all()
+    if scoped is not None:
+        q = q.filter(HrDocument.manager_id.in_(scoped))
+    rows = [] if empty_scope(scoped) else q.all()
 
     kpi = {"total": 0, "posted": 0, "pending": 0,
            "exchanges": 0, "role_changes": 0,
