@@ -239,8 +239,8 @@ def get_role_trend(
     )
     if shift:
         q = q.filter(Manager.shift == shift)
-    if manager_id:
-        q = q.filter(Attendance.manager_id.in_(manager_id))
+    if scoped is not None:
+        q = q.filter(Attendance.manager_id.in_(scoped))
 
     q = q.group_by(Attendance.date, Attendance.job_title).order_by(Attendance.date)
     rows = q.all()
