@@ -164,12 +164,13 @@ def get_downtime_seasonality(
     `total_minutes`: it is the denominator the grid's percentages divide by, so
     a column always adds up to 100%.
     """
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
     managers = db.query(Manager).filter(Manager.archived.is_(False))
     if shift:
         managers = managers.filter(Manager.shift == shift)
-    if manager_id:
-        managers = managers.filter(Manager.id.in_(manager_id))
-    managers = managers.all()
+    if scoped is not None:
+        managers = managers.filter(Manager.id.in_(scoped))
+    managers = [] if empty_scope(scoped) else managers.all()
     alias = sheet_alias_map(db, (m.name for m in managers))
     manager_names = set(alias.keys())
 
