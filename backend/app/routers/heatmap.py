@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import Manager, Attendance, DayApproval, EditRequest
 from app.permissions import require_page
 from app.routers.brigadirs import build_metrics_list
+from app.services.factory_scope import empty_scope, scoped_manager_ids
 
 router = APIRouter(prefix="/api", tags=["heatmap"])
 
