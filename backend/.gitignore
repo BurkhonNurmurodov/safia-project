@@ -67,8 +67,15 @@ uploads/
 
 # Service account / credentials
 *.json
-# ...but the production-planning seed data must ship to prod
-!app/data/pp_seed_manager5.json
+# ...but every seed file under app/data must ship to prod — startup.py reads
+# them at boot (pp_seed_manager5.json, setup_times_seed.json, and any future
+# sibling). A missing seed file is a SILENT skip, not a crash.
+!app/data/*.json
+
+# Dumps / stray env copies
+*.sql
+*.sql.gz
+*.uu
 
 # Alembic
 alembic/versions/*.pyc
