@@ -72,9 +72,7 @@ export default function PendingInfoModal({ managerName, date, reason, onClose })
           </button>
         </div>
         <div className="px-5 py-4 text-[12px] leading-relaxed" style={{ color: "var(--text-2)" }}>
-          {reason === "requests"
-            ? t("zagruzka.pendingRequests")
-            : t("zagruzka.pendingNotClosed")}
+          {t(PENDING_MSG_KEYS[reason] || "zagruzka.pendingNotClosed")}
         </div>
       </div>
     </div>,
