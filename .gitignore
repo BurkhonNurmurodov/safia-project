@@ -21,11 +21,16 @@ frontend/build/
 
 # ── Environment / Secrets ───────────────────────────────
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 bot/.env
+# cPanel's File Manager downloads .env copies under names like
+# "cPanel File Manager.uu" — a verbatim copy of the PRODUCTION env
+# (live DB password, bot token, Notion token). Never let one in.
+*.uu
+cPanel*
 
 # ── JSON: ignored wholesale, with a short allow-list ────
 # The Google service-account key must NEVER be re-included here.
@@ -35,6 +40,18 @@ bot/.env
 !tsconfig.json
 !jsconfig.json
 !eslint.config.json
+# Defence in depth: these stay ignored even if *.json is ever relaxed.
+safia-project-*.json
+*service-account*.json
+*credentials*.json
+
+# ── Keys / certificates ─────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
 
 # ── Logs ────────────────────────────────────────────────
 *.log
@@ -49,8 +66,23 @@ Thumbs.db
 *.suo
 *.sw?
 
-# ── Backups ─────────────────────────────────────────────
+# ── Database dumps / backups ────────────────────────────
+# The admin panel writes full production dumps here; they carry staff PII
+# and live registration tokens, and git would keep them forever.
+*.sql
+*.sql.gz
+*.dump
 *.bak
+*.sqlite
+*.sqlite3
+*.db
+
+# ── Archives ────────────────────────────────────────────
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
 
 # ── Misc project artifacts ──────────────────────────────
 backend.zip
