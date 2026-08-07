@@ -365,7 +365,9 @@ export default function Cells() {
                 onClick={() => exportMut.mutate()}
                 className="whitespace-nowrap"
               >
-                {exportMut.isPending ? t("staff.sending") : t("staff.export")}
+                {/* Label stays put — Button overlays the spinner so the
+                    toolbar doesn't reflow mid-send. */}
+                {t("staff.export")}
               </Button>
               <Button
                 size="lg"
