@@ -201,6 +201,12 @@ const TXT = {
     fLead: "Lider", fCell: "Yacheyka", allLead: "Barcha liderlar", allCell: "Barcha yacheykalar",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
+    xBtn: "Excel", xFailed: "Eksport qilib bo‘lmadi",
+    xShOverview: "Umumiy", xShTrend: "Dinamika", xShAnalytics: "Tahlil",
+    xShSeason: "Mavsumiylik", xShRegister: "Reyestr",
+    xKpi: "Asosiy ko‘rsatkichlar", xShare: "Ulush", xPeriod: "Davr",
+    xGenerated: "Shakllantirildi", xView: "Ko‘rinish", xHair: "Soch",
+    xFilters: "Filtrlar", xNone: "berilmagan", xAge: "Yosh", xRecords: "Yozuvlar",
   },
   uz_cyrl: {
     title: "Сифат ва шикоятлар", sub: "Номувофиқликлар реестри таҳлили",
