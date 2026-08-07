@@ -387,12 +387,16 @@ export default function Downtime() {
   const [seasonMode, setSeasonMode] = usePersistentState("downtime_season_mode", "month"); // "day" | "week" | "month"
   const [seasonYear, setSeasonYear] = usePersistentState("downtime_season_year", null);
 
+  // The seasonality grid keeps its own time axis but must obey the SAME plant
+  // as everything above it — a year matrix from another factory under a factory
+  // tab would be the worst kind of wrong: plausible.
   const seasonParams = useMemo(() => ({
     ...(shift ? { shift } : {}),
     ...(brigadirIds.length ? { manager_id: brigadirIds } : {}),
     ...(seasonYear ? { year: seasonYear } : {}),
     ...(kpiOnly ? { kpi_only: 1 } : {}),
-  }), [shift, brigadirIds, seasonYear, kpiOnly]);
+    ...(factory == null ? {} : { factory }),
+  }), [shift, brigadirIds, seasonYear, kpiOnly, factory]);
   const { data: seasonData, isLoading: seasonLoading } = useQuery({
     queryKey: ["downtime-season", seasonParams],
     queryFn: () => api.get("/api/downtime/seasonality", { params: seasonParams }).then((r) => r.data),
