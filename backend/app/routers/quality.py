@@ -121,6 +121,58 @@ def get_quality_row(
     }
 
 
+class QualityExportBody(BaseModel):
+    """Everything the page is currently showing, already labelled in the viewer's
+    language. The page owns the maths (it computes every KPI, bucket and matrix
+    client-side and the filters live only in the browser), so re-deriving any of
+    it here would mean a second implementation that drifts — the export would
+    stop matching the screen the first time a filter changed. The backend's job
+    is the workbook: layout, colour, charts, delivery."""
+    filename: Optional[str] = None
+    title: str = "Quality"
+    subtitle: Optional[str] = None
+    caption: Optional[str] = None
+    sheets: dict[str, str] = {}          # tab names
+    labels: dict[str, str] = {}          # shared words (Total / Count / Share …)
+    meta: list[dict[str, Any]] = []      # the scope: period, view, filters, sync time
+    kpis: list[dict[str, Any]] = []
+    sup_status: Optional[dict[str, Any]] = None
+    closure: Optional[dict[str, Any]] = None
+    aging: Optional[dict[str, Any]] = None
+    trend: Optional[dict[str, Any]] = None
+    types: Optional[dict[str, Any]] = None
+    cats: Optional[dict[str, Any]] = None
+    hotspots: Optional[dict[str, Any]] = None
+    cells: Optional[dict[str, Any]] = None
+    acc: Optional[dict[str, Any]] = None
+    season: Optional[dict[str, Any]] = None
+    register: Optional[dict[str, Any]] = None
+
+
+@router.post("/export.xlsx")
+def export_quality(
+    body: QualityExportBody,
+    payload: dict = Depends(require_page("quality")),
+):
+    """Excel export of the dashboard as it currently stands → the caller's private
+    Telegram chat (the platform never hands back a browser download). A section
+    the page isn't showing — the supervisor matrix on the Overall tab, the closure
+    ribbon for anyone but a brigadir — simply isn't in the body, and its sheet is
+    skipped."""
+    from app.telegram_bot import bot
+
+    bio = build_quality_workbook(body.model_dump())
+    fname = (body.filename or "quality").strip() or "quality"
+    if not fname.endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 {body.title}"
+    try:
+        bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    return {"ok": True}
+
+
 @router.post("/refresh")
 def refresh_quality(
     db: Session = Depends(get_db),
