@@ -13,6 +13,8 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
+import FactoryTabs from "../components/ui/FactoryTabs";
+import { useFactory, useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { fmtTime, fmtDuration } from "../utils/formatters";
