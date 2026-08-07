@@ -1970,6 +1970,8 @@ export default function Quality() {
           </>
         </Modal>
       )}
+
+      {toast.node}
     </Layout>
   );
 }
