@@ -170,7 +170,12 @@ for i in $(seq 1 "$HEALTH_TIMEOUT"); do
   if curl -sf -m 3 "$HEALTH_URL" >/dev/null 2>&1; then
     info "healthy after ${i}s"; healthy=1; break
   fi
-  if [ "$NEED_RESTART" = "1" ] && ! sudo -n systemctl is-active --quiet "$SVC"; then
+  # No sudo here: querying unit state needs no privilege, and the sudoers rule
+  # matches argv EXACTLY — `sudo systemctl is-active --quiet safia-production`
+  # is a different vector from the `… is-active safia-production` it grants, so
+  # sudo would deny it and the denial would read as "the service is dead",
+  # rolling back a perfectly healthy deploy.
+  if [ "$NEED_RESTART" = "1" ] && ! systemctl is-active --quiet "$SVC"; then
     info "service is not active — aborting the wait"; break
   fi
   sleep 1
