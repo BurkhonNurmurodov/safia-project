@@ -120,11 +120,16 @@ export default function Downtime() {
     queryFn: () => api.get("/api/managers/all").then((r) => r.data),
     staleTime: 300_000,
   });
+  // Only the supervisors of the plant this tab is on — and if the currently
+  // picked one isn't among them, the pick is dropped rather than left standing
+  // over an empty page.
+  const scopedSupervisors = useFactorySupervisors(
+    allSupervisors, brigadirIds, setBrigadirIds);
   const supOptions = useMemo(
-    () => [...allSupervisors]
+    () => [...scopedSupervisors]
       .sort((a, b) => tl(a.name).localeCompare(tl(b.name)))
       .map((b) => ({ value: String(b.manager_id), label: tl(b.name) })),
-    [allSupervisors, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+    [scopedSupervisors, lang]); // eslint-disable-line react-hooks/exhaustive-deps
   // The inline dropdown mirrors the global brigadir filter: a single pick maps to
   // one id, "All" clears it. A multi-select made in the drawer shows as "All".
   const supValue = brigadirIds.length === 1 ? String(brigadirIds[0]) : "All";
