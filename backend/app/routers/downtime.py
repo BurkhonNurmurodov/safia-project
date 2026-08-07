@@ -151,8 +151,9 @@ def get_downtime_seasonality(
     # Same meaning as on /downtime: drop the Ojidaniya-only categories so the
     # grid shows only the waiting that the загрузка KPIs count.
     kpi_only: bool = Query(default=False),
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("downtime", "daily")),
+    payload: dict = Depends(require_page("downtime", "daily")),
 ):
     """Category × calendar-month waiting minutes for one year (the Ojidaniya
     seasonality grid). Its own time axis — deliberately independent of the page
