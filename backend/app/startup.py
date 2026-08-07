@@ -524,6 +524,59 @@ def migrate_cell_in_load_column() -> None:
         db.close()
 
 
+DEFAULT_FACTORY_SETTING = "default_factory_id"
+FACTORY_ALL_TAB_SETTING = "factory_all_tab_enabled"
+
+
+def migrate_factories() -> None:
+    """2026-08-07: the plant dimension. ``factories`` itself comes from
+    Base.metadata.create_all; this adds the supervisor→factory link and seeds
+    the first plant.
+
+    Every existing supervisor is put in ONE seeded factory rather than left
+    NULL. That is the only migration that preserves today's numbers: an
+    unassigned unit shows up solely on the «All factories» tab, so leaving the
+    existing units NULL would empty every real factory tab on the day this
+    ships. New units created afterwards start NULL on purpose — see Manager.
+
+    The seeded factory also becomes the global default tab. Idempotent."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE managers ADD COLUMN IF NOT EXISTS factory_id INTEGER "
+            "REFERENCES factories(id)"))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_managers_factory_id ON managers (factory_id)"))
+        db.commit()
+
+        row = db.execute(text("SELECT id FROM factories ORDER BY id LIMIT 1")).first()
+        if row is None:
+            db.execute(text(
+                "INSERT INTO factories (code, name_uz, name_uz_cyrl, name_ru, name_en, "
+                "sort_order, archived) VALUES "
+                "('SAFIA', 'Safia', 'Сафия', 'Сафия', 'Safia', 0, FALSE)"))
+            db.commit()
+            row = db.execute(text("SELECT id FROM factories ORDER BY id LIMIT 1")).first()
+        first_id = row[0] if row else None
+        if first_id is None:
+            return
+
+        # Attach every supervisor that has never been assigned. Runs once in
+        # practice; on later boots the UPDATE matches nothing.
+        db.execute(text("UPDATE managers SET factory_id = :fid WHERE factory_id IS NULL"),
+                   {"fid": first_id})
+        db.commit()
+
+        if not db.query(AppSetting).filter_by(key=DEFAULT_FACTORY_SETTING).first():
+            db.add(AppSetting(key=DEFAULT_FACTORY_SETTING, value=str(first_id)))
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] factories migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_task_criteria() -> None:
     """2026-08-05: the AI proof reviewer needs a written "what makes this task
     truly done" to judge a photo against. It rides the SAME global → supervisor
