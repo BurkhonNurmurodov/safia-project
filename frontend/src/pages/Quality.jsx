@@ -254,6 +254,12 @@ const TXT = {
     fLead: "Лидер", fCell: "Ячейка", allLead: "Барча лидерлар", allCell: "Барча ячейкалар",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
     textFailed: "Матнли майдонларни юклаб бўлмади",
+    xBtn: "Excel", xFailed: "Экспорт қилиб бўлмади",
+    xShOverview: "Умумий", xShTrend: "Динамика", xShAnalytics: "Таҳлил",
+    xShSeason: "Мавсумийлик", xShRegister: "Реестр",
+    xKpi: "Асосий кўрсаткичлар", xShare: "Улуш", xPeriod: "Давр",
+    xGenerated: "Шакллантирилди", xView: "Кўриниш", xHair: "Соч",
+    xFilters: "Филтрлар", xNone: "берилмаган", xAge: "Ёш", xRecords: "Ёзувлар",
   },
   ru: {
     title: "Качество и жалобы", sub: "Аналитика реестра несоответствий",
