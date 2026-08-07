@@ -109,9 +109,17 @@ def get_quality(
         "ok": meta.ok if meta else None,
         "message": meta.message if meta else None,
         "supervisors": sorted(
-            ({"name": m.name, "id": m.id, "shift": m.shift} for m in managers),
+            ({"name": m.name, "id": m.id, "shift": m.shift,
+              "factory_id": m.factory_id} for m in managers),
             key=lambda m: m["name"],
         ),
+        # Non-null when the viewer is pinned to one plant: the page filters to it
+        # and renders a static context chip instead of the tab strip. The whole
+        # register still ships (it is one payload the page charts client-side),
+        # so this is a VIEW pin, not a security boundary — the register is
+        # already gated to admin / top- / shift-manager by the page-access
+        # matrix, none of whom are ever locked.
+        "locked_factory_id": viewer_factory_id(db, payload),
         # id → {verifix_code, sap_code, per-language workshop names, leader} for
         # every cell any row resolved to; the frontend renders the name in the
         # viewer's language and falls back to the sheet cell_name / raw code.
