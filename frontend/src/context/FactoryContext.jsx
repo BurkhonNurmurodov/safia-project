@@ -177,7 +177,9 @@ export function useFactorySupervisors(supervisors, selectedIds, onClear, idKey =
     const live = new Set(scoped.map((s) => s[idKey]));
     const kept = selectedIds.filter((id) => live.has(id));
     if (kept.length !== selectedIds.length) onClear(kept);
-  }, [factory, supervisors, scoped, selectedIds, onClear, idKey]);
+    // `onClear` is re-created every render by FilterContext, so it stays out of
+    // the deps; the real triggers are the plant, the loaded list and the pick.
+  }, [factory, scoped, selectedIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return scoped;
 }
