@@ -390,7 +390,7 @@ function SingleGrid({
                     >
                       <div style={{ position: "relative", display: "inline-block", lineHeight: 1 }}>
                         {pending
-                          ? <span style={{ opacity: 0.55, fontSize: 11 }}>⏳</span>
+                          ? <span style={{ opacity: 0.55, fontSize: 11 }}>{PENDING_ICONS[pendingReason] || "⏳"}</span>
                           : v < 0 ? <span style={{ opacity: 0.25 }}>—</span> : `${v}%`}
                       </div>
                     </td>
