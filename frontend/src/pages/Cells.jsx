@@ -359,6 +359,17 @@ export default function Cells() {
               <Button
                 size="lg"
                 variant="secondary"
+                icon={<FileSpreadsheet size={14} />}
+                loading={exportMut.isPending}
+                disabled={isLoading || sorted.length === 0}
+                onClick={() => exportMut.mutate()}
+                className="whitespace-nowrap"
+              >
+                {exportMut.isPending ? t("staff.sending") : t("staff.export")}
+              </Button>
+              <Button
+                size="lg"
+                variant="secondary"
                 icon={<RefreshCw size={14} />}
                 loading={isFetching}
                 onClick={() => refetch()}
