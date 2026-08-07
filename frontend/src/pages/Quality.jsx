@@ -1169,6 +1169,217 @@ export default function Quality() {
     </div>
   );
 
+  // ── Excel export ──────────────────────────────────────────────────────────
+  // A snapshot of the dashboard exactly as it stands: the same six KPI cards,
+  // the same tables and charts, the same register rows in the same sort order —
+  // with every section the current tab/profile does NOT render simply absent, so
+  // the workbook can never show a figure the operator wasn't looking at. Labels
+  // are resolved here, in the viewer's language; the backend only lays out and
+  // styles what it is handed (see services/quality_export.py).
+  const regCols = [
+    { label: T.colNo, get: (r) => r.no || "" },
+    { label: T.colDate, get: (r) => r.d, date: true },
+    ...(!isProd ? [{ label: T.colSrc, get: (r) => L("src", r.s) }] : []),
+    { label: T.colPlace, get: (r) => r.pl || "" },
+    { label: T.colProduct, get: (r) => r.pr || "" },
+    { label: T.colType, get: (r) => L("type", r.t) },
+    { label: T.colCat, get: (r) => (r.c ? L("cat", r.c) : "") },
+    { label: T.colCell, get: (r) => cellNameOf(r, cellMap, lang) },
+    ...(!lockOwn ? [{ label: T.colBrig, get: (r) => tl(who(r)) }] : []),
+    { label: T.colRet, get: (r) => (r.r ? T.yes : ""), ret: true },
+    { label: T.colStatus, get: (r) => L("st", r.st), status: true },
+  ];
+
+  const buildExportPayload = () => {
+    const period = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`;
+    const pick = (sel, render) => (sel.length ? sel.map(render).join(", ") : null);
+    // Everything narrowing the numbers, spelled out — a report nobody can date
+    // or scope is a report nobody can trust.
+    const meta = [
+      { label: T.xPeriod, value: period },
+      { label: T.xView, value: lockOwn ? tl(myName) : isProd ? T.vSup : T.vOverall },
+      { label: T.xHair, value: hairMode === "without" ? T.hairWithout : T.hairWith },
+      ...(isProd && !lockOwn
+        ? [{ label: T.fShift, value: shiftTab === "all" ? T.shiftAll : `${T.shift} ${shiftTab}` }]
+        : []),
+      ...(!lockOwn ? [{ label: T.fBrig, value: pick(brigSel, tl) || T.allBrig }] : []),
+      ...(!lockOwn ? [{ label: T.fLead, value: pick(leadSel, tl) || T.allLead }] : []),
+      ...(!lockOwn
+        ? [{
+            label: T.fCell,
+            value: pick(cellSel, (k) => cellOpts.find((o) => o.value === k)?.label || k) || T.allCell,
+          }]
+        : []),
+      {
+        label: T.xFilters,
+        value: [
+          pick(srcSel, (k) => L("src", k)),
+          pick(typeSel, (k) => L("type", k)),
+          pick(catSel, (k) => L("cat", k)),
+          pick(statusSel, (k) => L("st", k)),
+          pick(retSel, (k) => `${T.fRet}: ${k === "yes" ? T.yes : T.no}`),
+          pick(mgrSel, tl),
+        ].filter(Boolean).join(" · ") || T.xNone,
+      },
+      { label: T.xRecords, value: sorted.length.toLocaleString("ru-RU") },
+      { label: T.lastSynced, value: lastSynced || T.never },
+      { label: T.xGenerated, value: fmtDateTime(new Date().toISOString()) },
+    ];
+
+    // Deltas carry their own direction: only «resolved» is good when it grows.
+    const good = (v, invert = true) => (v == null || v === 0 ? null : invert ? v < 0 : v > 0);
+    const kpis = [
+      { label: T.kTotal, value: kpi.total, color: BRAND, delta: kpi.dTotal, deltaGood: good(kpi.dTotal) },
+      isProd
+        ? { label: T.kForeign, value: kpi.foreign, hint: `${kpi.foreignPct}% ${T.kTotal.toLowerCase()}`,
+            color: TYPE_COLORS.foreign, delta: kpi.dForeign, deltaGood: good(kpi.dForeign) }
+        : { label: T.kGuest, value: kpi.guest, hint: `${kpi.guestPct}% ${T.kTotal.toLowerCase()}`,
+            color: SRC_COLORS.guest, delta: kpi.dGuest, deltaGood: good(kpi.dGuest) },
+      { label: T.kResolved, value: kpi.resolved, fmt: '0"%"', hint: T.kResolvedHint, color: C_DONE,
+        delta: kpi.dResolved, deltaSuffix: lang === "en" ? " pp" : " п.п.", deltaGood: good(kpi.dResolved, false) },
+      { label: T.kOpen, value: kpi.open, hint: T.kOpenHint, color: C_OPEN, delta: kpi.dOpen, deltaGood: good(kpi.dOpen) },
+      { label: T.kReturn, value: kpi.returns, hint: `${kpi.returnPct}% ${T.kTotal.toLowerCase()}`,
+        color: C_WAIT, delta: kpi.dReturns, deltaGood: good(kpi.dReturns) },
+      { label: T.kCritical, value: kpi.critical, hint: isProd ? T.kCriticalHintProd : T.kCriticalHint,
+        color: "#dc2626", delta: kpi.dCritical, deltaGood: good(kpi.dCritical) },
+    ];
+
+    // The status matrix honours the card's Кол-во/% toggle, exactly as displayed.
+    const asPct = supStatMode === "pct";
+    const share = (v, tot) => (tot ? Math.round((v / tot) * 10000) / 100 : 0);
+    const grand = supStatus.reduce(
+      (a, s) => ({
+        resolved: a.resolved + s.resolved, notSolved: a.notSolved + s.notSolved,
+        recurring: a.recurring + s.recurring, waiting: a.waiting + s.waiting, total: a.total + s.total,
+      }),
+      { resolved: 0, notSolved: 0, recurring: 0, waiting: 0, total: 0 }
+    );
+    const statRow = (s) => (asPct
+      ? [share(s.resolved, s.total), share(s.notSolved, s.total), share(s.recurring, s.total), share(s.waiting, s.total), s.total]
+      : [s.resolved, s.notSolved, s.recurring, s.waiting, s.total]);
+
+    return {
+      filename: `${T.title} ${fmtDate(dateFrom)}-${fmtDate(dateTo)}`,
+      title: T.title,
+      subtitle: `${T.sub} · ${period}`,
+      caption: `📊 ${T.title} · ${period} · ${sorted.length.toLocaleString("ru-RU")} ${T.rows}`,
+      sheets: {
+        overview: T.xShOverview, trend: T.xShTrend, analytics: T.xShAnalytics,
+        season: T.xShSeason, register: T.xShRegister,
+      },
+      labels: { total: T.stTotal, count: T.tglCount, share: T.xShare, kpi: T.xKpi, vsPrev: T.vsPrev },
+      meta,
+      kpis,
+
+      sup_status: isProd && !lockOwn && supStatus.length ? {
+        title: T.secSupStatus, subtitle: T.supStatusSub, mode: supStatMode,
+        columns: [T.colBrig, T.stResolved, T.stNotSolved, T.stRecurring, T.stWaiting, T.stTotal],
+        rows: supStatus.map((s) => ({ name: tl(s.name), values: statRow(s) })),
+        total: { name: T.stTotal, values: statRow(grand) },
+      } : null,
+
+      closure: lockOwn && myClosure ? {
+        title: T.secMyClosure, subtitle: T.myClosureSub,
+        rate: Math.round(myClosure.rate * 10) / 10, rateLabel: T.stResolved,
+        total: myClosure.total, totalLabel: T.stTotal,
+        legs: closureLegs.map((x) => ({
+          label: x.label, value: x.v, color: x.c,
+          share: myClosure.total ? Math.round((x.v / myClosure.total) * 1000) / 10 : 0,
+          delta: x.d, deltaGood: good(x.d, x.invert),
+        })),
+      } : null,
+
+      aging: lockOwn && aging ? {
+        title: T.secAging, subtitle: T.agingSub, colBucket: T.xAge, colCount: T.tglCount,
+        buckets: aging.buckets.map((b, i) => ({ label: T[`agB${i + 1}`], n: b.n, color: b.c })),
+        oldest: aging.oldest ? fmtDate(aging.oldest) : null, oldestLabel: T.agOldest,
+      } : null,
+
+      trend: A.trend.length ? {
+        title: T.secTrend,
+        subtitle: lockOwn ? T.trendSubOwn : isProd ? T.trendSubProd : T.trendSub,
+        granLabel: gran === "month" ? T.byMonth : T.byWeek,
+        colPeriod: gran === "month" ? T.byMonth : T.byWeek,
+        labels: trendLabels,
+        series: trendOrder.map((x, i) => ({
+          name: trendName(x.k), color: trendColorAt(x.k, i), data: A.trend.map((b) => b[x.k] || 0),
+        })),
+      } : null,
+
+      // the donut's own slices — top 8 plus the folded «Прочие», not all types
+      types: A.types.length ? {
+        title: T.secTypes, colLabel: T.colType,
+        rows: [
+          ...topTypes.map((x) => ({ label: L("type", x.k), n: x.n, color: TYPE_COLORS[x.k] || C_NA })),
+          ...(otherTypes ? [{ label: T.otherWord, n: otherTypes, color: C_NA }] : []),
+        ],
+      } : null,
+
+      cats: A.cats.length ? {
+        title: T.secForeign, subtitle: T.foreignSub, colLabel: T.colCat,
+        rows: A.cats.map((x) => ({ label: L("cat", x.k), n: x.n, color: CAT_COLORS[x.k] || C_NA })),
+      } : null,
+
+      hotspots: topData.length ? {
+        title: isProd ? T.secProducts : T.secTop,
+        subtitle: isProd ? T.prodSub : T.topSub,
+        colLabel: isProd || topMode === "product" ? T.topProducts : T.topPlaces,
+        rows: topData.map((x) => ({ label: x.k, n: x.n })),
+      } : null,
+
+      cells: A.topCells.length ? {
+        title: T.secCells, subtitle: T.cellsSub, colLabel: T.colCell,
+        rows: A.topCells.map((x) => ({ label: x.code && x.code !== x.k ? `${x.code} · ${x.k}` : x.k, n: x.n })),
+      } : null,
+
+      acc: !lockOwn && A.acc.length ? {
+        title: T.secAcc, subtitle: T.accSub,
+        colName: accMode === "brig" ? T.accBrig : T.accMgr, colRate: T.tglPct,
+        statuses: ACTIONABLE.map((st) => L("st", st)),
+        rows: A.acc.map((x) => ({
+          name: shortName(x.name), values: ACTIONABLE.map((st) => x[st]),
+          rate: x.total ? Math.round((x.done / x.total) * 100) : 0,
+        })),
+      } : null,
+
+      season: season.matrix.length ? {
+        title: T.secSeason,
+        subtitle: seasonMode === "week" ? T.seasonSubWeek : T.seasonSub,
+        scopeLabel: seasonMode === "year" ? String(seasonYear || "") : period,
+        firstColLabel: T.colType,
+        labels: season.labels, colTotals: season.colTotals,
+        rows: season.matrix.map((s) => ({ label: L("type", s.k), data: s.data })),
+      } : null,
+
+      // the whole filtered register in the on-screen sort order — paging is a
+      // screen affordance, not a narrowing of what the operator is looking at
+      register: {
+        title: T.secTable,
+        subtitle: `${T.sub} · ${period}`,
+        countLabel: `${sorted.length.toLocaleString("ru-RU")} ${T.rows}`,
+        columns: regCols.map((c) => c.label),
+        dateIdx: regCols.findIndex((c) => c.date),
+        statusIdx: regCols.findIndex((c) => c.status),
+        returnIdx: regCols.findIndex((c) => c.ret),
+        rows: sorted.map((r) => ({ c: regCols.map((c) => c.get(r)), st: r.st })),
+      },
+    };
+  };
+
+  const [exporting, setExporting] = useState(false);
+  const toast = useToast();
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      await api.post("/api/quality/export.xlsx", buildExportPayload());
+      toast.success(t("staff.exportToast"));
+    } catch (e) {
+      toast.error(`${T.xFailed}: ${e?.response?.data?.detail || e?.message || ""}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const lastSynced = fmtDateTime(data?.last_synced);
   // Refresh is shown to every profile that can open this page. Fall back to
   // showing it when the GET fails (no payload) so nobody is stranded on a broken
