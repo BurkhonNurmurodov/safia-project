@@ -9,6 +9,7 @@ from app.security import require_auth
 from app.models import Manager, Attendance, ProductionData, HeadcountData, DowntimeData, DayApproval
 from app.services.day_state import confirmed_pairs
 from app.services.kpi_calculator import compute_metrics
+from app.services.factory_scope import empty_scope, scoped_manager_ids
 from app.services.name_map import sheet_alias_map
 from app.services.sheets_reader import OJIDANIYA_ONLY_CATS
 
