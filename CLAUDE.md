@@ -74,6 +74,38 @@ never moves the frame.
 - A destination added by splitting an existing one carries `capKey` pointing at
   the original id, so the split cannot narrow any grantee's access.
 
+## Factory (plant) dimension
+
+The company runs more than one plant. The dimension is attached in **exactly one
+place** — `managers.factory_id` — and everything else derives from it: a cell
+follows its supervisor, a leader follows their unit, a downtime/quality row
+follows the supervisor its name resolves to, a concern follows the unit it was
+logged against. Never add a second `factory_id` column; two sources let a cell
+claim factory A while the supervisor running it sits in factory B, and there is
+no correct way to render that.
+
+- `app/services/factory_scope.py` is THE definition. Endpoints take
+  `factory: Optional[int]` and call `scoped_manager_ids(db, payload, factory,
+  manager_id)`, which intersects the factory with the caller's existing
+  supervisor filter AND enforces the viewer lock. `None` = no narrowing;
+  an EMPTY list is a real answer ("no supervisor matches") — always test it with
+  `empty_scope()` or the empty factory reads as the whole plant.
+- **Supervisors and leaders are locked** to their own plant server-side
+  (`resolve_factory` overrides whatever `?factory=` says). Hiding the tab is not
+  the mechanism — the query parameter is typeable.
+- Factory-aware pages: Overview, Zagruzka, Ojidaniya (`Downtime`), Workers,
+  Quality, Concerns. Frontend state is ONE shared value in
+  `context/FactoryContext.jsx` (`useFactoryParams` merges it into request
+  params, `useFactorySupervisors` scopes a supervisor picker and drops a pick
+  that fell out of the plant). Deliberately NOT per-page `usePersistentState`:
+  six pages remembering different plants is a contradiction nobody can see.
+- Rows that resolve to no supervisor (unmatched Quality names, unassigned units,
+  legacy concerns) appear ONLY under «All factories» — visible, never silently
+  dropped, never padded onto a plant they may not belong to.
+- Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
+  the register, tab order, the ONE global default tab, the «All» tab switch, and
+  supervisor assignment.
+
 ## Workflow
 
 - Before any change: `git fetch` and pull if behind `origin/main`.
