@@ -628,9 +628,14 @@ export default function Concerns() {
   // The backend returns only the caller's scope (admin/top-manager: all,
   // shift-manager: their shift, supervisor: their unit, leader: own rows);
   // every filter below slices those rows locally.
+  // …and, on top of that scope, only the plant the factory tab is on. Sent as a
+  // query param rather than filtered here: a concern's factory comes from the
+  // UNIT it was logged against, which the row does not carry.
   const { data: listResp, isLoading } = useQuery({
-    queryKey: ["concerns", role],
-    queryFn: () => api.get("/api/concerns").then((r) => r.data),
+    queryKey: ["concerns", role, factory],
+    queryFn: () => api.get("/api/concerns", {
+      params: factory == null ? {} : { factory },
+    }).then((r) => r.data),
   });
   const rows = listResp?.data || [];
 
