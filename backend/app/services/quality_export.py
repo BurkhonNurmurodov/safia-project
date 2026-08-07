@@ -490,15 +490,15 @@ def _analytics(wb: Workbook, p: dict) -> None:
     types = p.get("types")
     if types and types.get("rows"):
         start = row
-        row = _bar_table(ws, row, C1, types, lbl, color=RED)
-        # the page's donut, as a real chart parked beside the table
-        n = len(types["rows"])
+        row, first, last = _bar_table(ws, row, C1, types, lbl, color=RED)
+        # the page's donut, as a real chart parked beside the table — one data
+        # point per slice so it keeps the platform's type colours
         chart = DoughnutChart(holeSize=62)
         chart.height, chart.width = 8.4, 11.5
         chart.legend.position = "r"
-        chart.add_data(Reference(ws, min_col=C1 + 1, min_row=start + 2, max_row=start + 1 + n),
+        chart.add_data(Reference(ws, min_col=C1 + 1, min_row=first, max_row=last),
                        titles_from_data=False)
-        chart.set_categories(Reference(ws, min_col=C1, min_row=start + 2, max_row=start + 1 + n))
+        chart.set_categories(Reference(ws, min_col=C1, min_row=first, max_row=last))
         pts = []
         for i, r in enumerate(types["rows"]):
             dp = DataPoint(idx=i)
@@ -511,14 +511,13 @@ def _analytics(wb: Workbook, p: dict) -> None:
     for key, color in (("cats", GREEN), ("hotspots", BRAND_DEEP)):
         b = p.get(key)
         if b and b.get("rows"):
-            row = _bar_table(ws, row, C1, b, lbl, color=color)
+            row, _, _ = _bar_table(ws, row, C1, b, lbl, color=color)
 
     cells = p.get("cells")
     if cells and cells.get("rows"):
         start = row
-        row = _bar_table(ws, row, C1, cells, lbl, color=RED,
-                         chart_at=f"{get_column_letter(C1 + 4)}{start + 1}",
-                         top_n=len(cells["rows"]))
+        row, _, _ = _bar_table(ws, row, C1, cells, lbl, color=RED,
+                               chart_at=f"{get_column_letter(C1 + 4)}{start + 1}")
 
     if acc and acc.get("rows"):
         row = _section(ws, row, C1, 11, acc.get("title", ""), acc.get("subtitle", ""))
