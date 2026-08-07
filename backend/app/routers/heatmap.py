@@ -50,11 +50,13 @@ def get_heatmap(
             "avg_early_arrival": m.avg_early_arrival,
         }
 
-    # ── Pending (⏳) cells ────────────────────────────────────────────────
+    # ── Pending (⏳ / 👥) cells ───────────────────────────────────────────
     # Verifix attendance exists but the day can't be shown yet: either the
     # supervisor hasn't closed it ("not_closed"), or it's closed with edit
-    # requests still awaiting the admin ("requests"). Draft HR documents also
-    # block confirmation but don't get a marker — those cells stay empty.
+    # requests still awaiting the admin ("requests"), or it's fully confirmed
+    # but the source sheet's «Odam soni» headcount hasn't been loaded yet
+    # ("no_headcount"). Draft HR documents also block confirmation but don't
+    # get a marker — those cells stay empty.
     mgr_q = db.query(Manager.id, Manager.name).filter(Manager.archived.is_(False))
     if shift:
         mgr_q = mgr_q.filter(Manager.shift == shift)
