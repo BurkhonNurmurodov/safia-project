@@ -110,9 +110,10 @@ no correct way to render that.
 
 ## Workflow
 
-- Remote is `git.safiabakery.uz/Safia-Outsource/production` (private). Before any change: `git fetch` and pull if behind `origin/main`.
-- **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below. There is no auto-commit hook: commit and push deliberately.
-- `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source (`cd frontend && npx vite build`) — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
+- Remote is `git.safiabakery.uz/Safia-Outsource/production` (private); GitHub is kept as a mirror. Before any change: `git fetch` and pull if behind.
+- **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
+- **The Edit/Write hook in `.claude/settings.local.json` auto-builds, auto-commits and auto-pushes.** Together with the line above that means *every single edit ships straight to production* — there is no staging step and no review window. Either drop the `git push` from the hook and push deliberately, or accept that. A failed build silently aborts the commit, so verify with `cd frontend && npx vite build` when in doubt.
+- `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
 - Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.
 
@@ -126,11 +127,11 @@ manual step, no SSH.
   front. The Gitea act_runner runs ON that same host as the same user, so the
   job needs no SSH hop and carries no secrets; the checkout reads the repo with
   a read-only deploy key.
-- **What it does**, decided from the commit diff (`deploy/deploy.sh`):
-  `backend/**`, `bot/**`, the unit file → restart · `requirements.txt` → pip
-  install + restart · frontend sources with no rebuilt `frontend/dist` in the
-  same commit → `npm ci` + Vite build · `frontend/dist` alone → nothing but the
-  checkout, and the new UI is live immediately.
+- **What it does** (`deploy/deploy.sh`): `backend/**`, `bot/**`, the unit file
+  → restart · `requirements.txt` → pip install + restart · frontend sources
+  with no rebuilt `frontend/dist` in the same commit → `npm ci` + Vite build ·
+  `frontend/dist` alone → nothing but the checkout, and the new UI is live
+  immediately.
 - **If it goes wrong**: an unhealthy `/health` after restart rolls the checkout
   back to the previous commit, restarts, and fails the job. Watch a deploy in
   the repo's Actions tab, or `journalctl -u safia-production -f` on the box.
@@ -141,10 +142,10 @@ manual step, no SSH.
   force a restart with `FORCE_RESTART=1 bash …` (also available as
   "Run workflow" in the Actions tab).
 - Secrets never belong in the repo. `backend/.env` is provisioned on the server
-  and `.gitignore` is deliberately aggressive: `*.sql`, `*.uu`, `cPanel*`,
-  `*.json` (with `!app/data/*.json` re-including the boot seeds). If you add a
-  file the app must read at runtime, check `git check-ignore -v <path>` before
-  assuming it shipped.
+  and stays untracked. `.gitignore` ignores `*.json` wholesale behind a short
+  allow-list (`package.json`, the lockfile, tsconfig/jsconfig/eslint config), so
+  if you add a file the app must read at runtime, check
+  `git check-ignore -v <path>` before assuming it shipped.
 
 ## Context discipline
 
