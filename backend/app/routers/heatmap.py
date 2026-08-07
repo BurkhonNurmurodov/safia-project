@@ -22,16 +22,20 @@ def get_heatmap(
     # trend line has no permanent holes. The Zagruzka grid (default) still
     # shows pending days as value-less ⏳ cells.
     include_pending: bool = Query(default=False),
+    # Which plant. Omitted / null = «All factories»; supervisors and leaders are
+    # pinned to their own by the server (services/factory_scope).
+    factory: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_page("overview", "zagruzka")),
+    payload: dict = Depends(require_page("overview", "zagruzka")),
 ):
     if not date_to:
         date_to = date.today()
     if not date_from:
         date_from = date_to - timedelta(days=13)
 
-    metrics = build_metrics_list(db, date_from, date_to, shift, manager_id or None,
-                                 require_closed=not include_pending)
+    scoped = scoped_manager_ids(db, payload, factory, manager_id)
+    metrics = [] if empty_scope(scoped) else build_metrics_list(
+        db, date_from, date_to, shift, scoped, require_closed=not include_pending)
 
     # Group by manager, then by date
     data: dict[str, dict[str, dict]] = {}
