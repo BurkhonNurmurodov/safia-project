@@ -86,12 +86,22 @@ def get_heatmap(
             ).distinct().all()
         )
         for mid, d in att_pairs:
-            if (mid, d) in closed and (mid, d) not in pending_req:
-                continue  # confirmed (or held only by draft docs) → no marker
-            reason = "requests" if (mid, d) in closed else "not_closed"
             key = d.strftime("%d.%m.%Y")
             cell = data.get(mgr_name[mid], {}).get(key)
-            if include_pending and cell is not None:
+            confirmed = (mid, d) in closed and (mid, d) not in pending_req
+            # «Odam soni» (official headcount) is the precondition for every
+            # metric — without it nothing may be calculated, so the cell never
+            # shows numbers, only a waiting marker. Ojidaniya (downtime) is
+            # deliberately NOT required: a day whose downtime sheet isn't
+            # loaded just computes with 0 downtime minutes.
+            no_hc = cell is None or not (cell.get("official_hc") or 0)
+            if confirmed and not no_hc:
+                continue  # confirmed (or held only by draft docs) → no marker
+            if not confirmed:
+                reason = "requests" if (mid, d) in closed else "not_closed"
+            else:
+                reason = "no_headcount"
+            if include_pending and cell is not None and not no_hc:
                 cell["pending"] = reason   # keep the unconfirmed numbers
             else:
                 data.setdefault(mgr_name[mid], {})[key] = {
