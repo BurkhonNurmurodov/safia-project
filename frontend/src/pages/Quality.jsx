@@ -1169,6 +1169,8 @@ export default function Quality() {
     </div>
   );
 
+  const lastSynced = fmtDateTime(data?.last_synced);
+
   // ── Excel export ──────────────────────────────────────────────────────────
   // A snapshot of the dashboard exactly as it stands: the same six KPI cards,
   // the same tables and charts, the same register rows in the same sort order —
@@ -1380,7 +1382,6 @@ export default function Quality() {
     }
   };
 
-  const lastSynced = fmtDateTime(data?.last_synced);
   // Refresh is shown to every profile that can open this page. Fall back to
   // showing it when the GET fails (no payload) so nobody is stranded on a broken
   // page with no way to re-sync; the server gates /refresh by page access anyway.
