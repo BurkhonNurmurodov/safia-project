@@ -29,7 +29,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
-import FactoryTabs from "../components/ui/FactoryTabs";
+import FactorySelect from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
 
@@ -1699,14 +1699,13 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")}>
-      {/* WHICH plant — above the filter row, because it is the subject of the
-          page, not another way of slicing it. Renders nothing on a
-          single-factory install. */}
-      <FactoryTabs />
-      {/* Top filter bar — the standard inline period + shift + supervisor row
-          (shift/supervisor only for multi-unit viewers); status / owner / level
-          live behind the Filtrlar button. */}
+      {/* Top filter bar — the standard inline plant + period + shift + supervisor
+          row (shift/supervisor only for multi-unit viewers); status / owner /
+          level live behind the Filtrlar button. */}
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3">
+        {/* WHICH plant — first on the row, the broadest narrowing there is.
+            Renders nothing on a single-factory install. */}
+        <FactorySelect labelClassName="hidden sm:block" />
         <div className="sm:w-72">
           <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
           <DateRangePicker
