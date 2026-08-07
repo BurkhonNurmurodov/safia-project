@@ -241,6 +241,30 @@ export default function Factories() {
     );
   }
 
+  // A failed load must not render as "no factories yet": that empty state is
+  // indistinguishable from a healthy install with nothing set up, and it would
+  // invite an admin to create duplicates of factories that already exist.
+  if (loadError) {
+    return (
+      <div
+        className="flex items-start gap-2.5 px-4 py-3 rounded-2xl"
+        style={{
+          background: "color-mix(in srgb, #ef4444 10%, transparent)",
+          border: "1px solid color-mix(in srgb, #ef4444 35%, transparent)",
+        }}
+      >
+        <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+        <div className="text-xs leading-relaxed" style={{ color: "var(--text-2)" }}>
+          <span className="font-semibold" style={{ color: "var(--text-1)" }}>
+            {t("common.loadFailed")}
+          </span>
+          <br />
+          {loadError?.response?.data?.detail || loadError?.message || ""}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* ── 1. Register ─────────────────────────────────────────────────── */}
