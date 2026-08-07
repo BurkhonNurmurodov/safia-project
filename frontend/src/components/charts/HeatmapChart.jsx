@@ -349,9 +349,10 @@ function SingleGrid({
                   const val    = mode === "planned" ? cell?.baseline_util : cell?.net_util;
                   const v      = val != null ? Math.round(val * 100) : -1;
                   const hasData = v >= 0;
-                  // Pending = Verifix data uploaded but the day isn't confirmed
+                  // Pending = Verifix data uploaded but the value can't show
                   // yet. The backend marks the cell with the blocking reason:
-                  // "not_closed" | "requests" (unprocessed edit requests).
+                  // "not_closed" | "requests" (unprocessed edit requests) |
+                  // "no_headcount" (day confirmed, «Odam soni» not loaded).
                   const pendingReason =
                     cell?.pending ?? (hasData && !isApproved(name, d) ? "not_closed" : null);
                   const pending = pendingReason !== null;
