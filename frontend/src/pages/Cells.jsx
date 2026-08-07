@@ -132,6 +132,7 @@ export default function Cells() {
   // never briefly exposes edit controls. Admins hold the whole catalog.
   const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
   const qc = useQueryClient();
+  const toast = useToast();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-cells"],
