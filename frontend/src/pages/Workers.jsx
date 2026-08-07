@@ -117,6 +117,10 @@ export default function Workers() {
   const roleLabel = (r) => (r === "Other" ? t("workers.roleOther") : tl(r));
 
   // ── data ─────────────────────────────────────────────────────────────────────
+  // Every request on this page carries the active plant (see FactoryContext);
+  // on «All factories» the key is absent and the calls are byte-identical to
+  // what they were before factories existed.
+  const fparams = useFactoryParams(params);
   const { data: headcount = [], isLoading } = useQuery({
     queryKey: ["headcount", fparams],
     queryFn: () => api.get("/api/workers/headcount", { params: fparams }).then((r) => r.data),
