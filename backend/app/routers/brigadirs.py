@@ -143,17 +143,22 @@ def build_metrics_list(
 
 @router.get("/managers/all")
 def list_all_managers(db: Session = Depends(get_db), _: dict = Depends(require_auth)):
-    """Returns active managers as {manager_id, name, shift} for filter
-    dropdowns. Archived units are hidden everywhere (their data stays stored).
-    The old public /managers registration picker is gone — registration lists
-    now come from the initData-gated /api/profiles/registration-options."""
+    """Returns active managers as {manager_id, name, shift, factory_id} for
+    filter dropdowns. Archived units are hidden everywhere (their data stays
+    stored). The old public /managers registration picker is gone — registration
+    lists now come from the initData-gated /api/profiles/registration-options.
+
+    ``factory_id`` rides along so a supervisor picker can narrow itself to the
+    factory tab the page is on: offering a supervisor who cannot appear under
+    the current tab is an option that silently produces an empty page."""
     rows = (
-        db.query(Manager.id, Manager.name, Manager.shift)
+        db.query(Manager.id, Manager.name, Manager.shift, Manager.factory_id)
         .filter(Manager.archived.is_(False))
         .order_by(Manager.name)
         .all()
     )
-    return [{"manager_id": r.id, "name": r.name, "shift": r.shift} for r in rows]
+    return [{"manager_id": r.id, "name": r.name, "shift": r.shift,
+             "factory_id": r.factory_id} for r in rows]
 
 
 @router.get("/brigadirs")
