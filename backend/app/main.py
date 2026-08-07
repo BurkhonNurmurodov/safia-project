@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
         backfill_leader_page_access, add_profiles_columns, migrate_cells_table,
         migrate_cells_leaders_columns, migrate_cell_supervisor_column,
         migrate_cell_in_load_column,
+        migrate_factories,
         migrate_cell_ojidaniya_percat,
         migrate_cell_perenaladka,
         migrate_attendance_batches,
