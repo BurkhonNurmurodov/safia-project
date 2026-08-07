@@ -58,6 +58,7 @@ const seasonMatrix = (labels, colTotals, catCol) => {
 
 export default function Downtime() {
   const { params, unit, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
+  const { factory } = useFactory();
   const { t } = useLang();
   const { tl, lang } = useTranslit();
   const { chartTheme, gridColor, labelColor, tooltipTheme } = useChartTheme();
