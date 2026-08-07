@@ -461,7 +461,7 @@ def _bar_table(ws: Worksheet, row: int, c1: int, block: dict, lbl: dict, *,
     if chart_at:
         chart = BarChart()
         chart.type = "bar"
-        chart.height, chart.width = max(6.0, 0.62 * len(rows[:top_n or len(rows)]) + 2), 11.5
+        chart.height, chart.width = max(6.0, 0.62 * len(rows) + 2), 11.5
         chart.legend = None
         chart.y_axis.majorGridlines = None
         chart.add_data(Reference(ws, min_col=c1 + 1, min_row=head_row, max_row=last),
@@ -469,7 +469,7 @@ def _bar_table(ws: Worksheet, row: int, c1: int, block: dict, lbl: dict, *,
         chart.set_categories(Reference(ws, min_col=c1, min_row=first, max_row=last))
         chart.series[0].graphicalProperties.solidFill = color
         ws.add_chart(chart, chart_at)
-    return row + 1
+    return row + 1, first, last
 
 
 def _analytics(wb: Workbook, p: dict) -> None:
