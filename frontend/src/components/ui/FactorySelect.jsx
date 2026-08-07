@@ -1,7 +1,47 @@
 import { Factory } from "lucide-react";
 import StyledSelect from "./StyledSelect";
+import { PickFilter } from "./ColumnFilter";
 import { useLang } from "../../context/LangContext";
 import { useFactory, factoryName } from "../../context/FactoryContext";
+
+/**
+ * useFactorySection — the plant switcher as a <FilterPanel> section, for pages
+ * whose toolbar consolidates every scope control into the one-row filter bar.
+ * Returns null when the platform has fewer than two factories (no chrome at
+ * all), and a `static` chip section for locked viewers (supervisor / leader):
+ * their plant stays readable in the bar, but there is no control to imply a
+ * choice the server would overrule. «All factories» stays the LAST option.
+ */
+export function useFactorySection() {
+  const { t, lang } = useLang();
+  const { factories, factory, setFactory, locked, allTab, enabled, current } = useFactory();
+  if (!enabled) return null;
+  const nameOf = (f) => factoryName(f, lang) || f.code;
+  if (locked) {
+    return {
+      key: "factory", icon: Factory, static: true,
+      label: t("factory.label"), display: current ? nameOf(current) : "—",
+    };
+  }
+  const opts = [
+    ...factories.map((f) => ({ value: f.id, label: nameOf(f) })),
+    ...(allTab ? [{ value: "__all__", label: t("factory.all"), title: t("factory.all") }] : []),
+  ];
+  return {
+    key: "factory", icon: Factory, label: t("factory.label"),
+    active: factory != null,
+    display: current ? nameOf(current) : "",
+    onClear: allTab ? () => setFactory(null) : undefined,
+    render: ({ close } = {}) => (
+      <PickFilter
+        opts={opts}
+        value={factory == null ? "__all__" : factory}
+        onChange={(v) => setFactory(v === "__all__" ? null : v)}
+        close={close}
+      />
+    ),
+  };
+}
 
 /**
  * FactorySelect — the plant switcher for the six factory-aware pages

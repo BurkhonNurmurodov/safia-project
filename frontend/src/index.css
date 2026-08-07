@@ -144,12 +144,19 @@ body.sidebar-open { overflow: hidden; }
 /* Sidebar active-pill: a single indicator that glides between nav items. */
 .sidebar-ind { transition: transform .32s var(--ease-io), height .32s var(--ease-io), opacity .2s ease; }
 
+/* Sidebar nav groups — the items wrapper collapses via the grid 1fr→0fr trick
+   (animatable height:auto). The inner div must stay overflow-hidden/min-h-0. */
+.nav-grp-items { display: grid; transition: grid-template-rows .2s var(--ease-io); }
+.nav-grp-items > div { overflow: hidden; min-height: 0; }
+.nav-grp-chev { transition: transform .2s var(--ease-io); }
+
 /* Honor reduced-motion for every shell animation — same stance as the
    Leaderboard podium halo. Base states are already the visible state, so
    killing the animation is safe. */
 @media (prefers-reduced-motion: reduce) {
   .page-enter, .modal-backdrop, .modal-card, .toast-in, .bell-swing, .badge-pop { animation: none !important; }
   .sidebar-ind { transition: none !important; }
+  .nav-grp-items, .nav-grp-chev { transition: none !important; }
 }
 
 

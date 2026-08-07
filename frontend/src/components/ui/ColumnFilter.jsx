@@ -2,7 +2,7 @@
 // Used by the Staff "Requests"/Workers tables and the Overview supervisor table.
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
+import { SlidersHorizontal, X, ChevronDown, Check } from "lucide-react";
 import { useLang } from "../../context/LangContext";
 import { useDragSelect } from "../../hooks/useDragSelect";
 
@@ -233,10 +233,63 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
   );
 }
 
+// Single-select option list for FilterPanel sections (factory, supervisor,
+// leader, cell, …) — the panel-embedded replacement for a toolbar
+// <StyledSelect>. Radio semantics: picking a row REPLACES the value and closes
+// the hosting dropdown (via `close`, passed by the panel surface — the mobile
+// sheet passes a no-op so multi-filter adjustment stays one gesture).
+// opts: [{ value, label, title? }] — `label` may be a node; `title` (or a
+// string label) feeds search. The empty/default option belongs IN `opts`
+// (e.g. «All supervisors») so the list always shows where "off" is.
+export function PickFilter({ opts, value, onChange, searchable = false, close }) {
+  const { t } = useLang();
+  const [q, setQ] = useState("");
+  const label = (o) => o.title ?? (typeof o.label === "string" ? o.label : String(o.value ?? ""));
+  const shown = searchable && q.trim()
+    ? opts.filter(o => label(o).toLowerCase().includes(q.trim().toLowerCase()))
+    : opts;
+  return (
+    <div>
+      {searchable && (
+        <input
+          value={q} onChange={e => setQ(e.target.value)}
+          placeholder={t("common.search")} autoFocus
+          className="w-full text-xs px-2.5 py-1.5 mb-1.5 rounded-lg outline-none"
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+        />
+      )}
+      <div className="max-h-52 overflow-y-auto space-y-0.5">
+        {shown.length === 0 && (
+          <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
+        )}
+        {shown.map(o => {
+          const sel = o.value === value;
+          return (
+            <button
+              key={String(o.value)} title={label(o)}
+              onClick={() => { onChange(o.value); close && close(); }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-left"
+              style={{
+                background: sel ? "var(--brand-bg)" : "transparent",
+                color: sel ? "var(--brand-text)" : "var(--text-2)",
+                fontWeight: sel ? 600 : 400,
+              }}
+            >
+              <span className="flex-1 truncate min-w-0">{o.label}</span>
+              {sel && <Check size={12} style={{ flexShrink: 0 }} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Consolidated filter button ───────────────────────────────────────────────
 // Table-toolbar filters, driven by a declarative `sections` list so the same
 // filter content renders in every surface:
-//   { key, icon, label, active, display, render: () => <control/> }
+//   { key, icon, label, active, display, render: ({close}) => <control/>,
+//     onClear?, static? }
 // Three surfaces by available space:
 //   · wide screens where the whole toolbar row fits on ONE line — each filter
 //     unfolds into its own dropdown control;
@@ -245,6 +298,13 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
 //   · below md — the grouped trigger opening a slide-up bottom sheet.
 // The fit check measures the real toolbar row, so FilterPanel must be a DIRECT
 // child of that flex row (no intermediate wrapper).
+//
+// Whenever the controls are NOT visible inline (mobile, or md+ grouped), every
+// ACTIVE section renders as a CHIP in a flex-1 strip beside the trigger — the
+// filter state stays readable and each chip's ✕ (`onClear`) resets just that
+// filter without opening anything. Tapping the chip body opens the panel. A
+// `static: true` section (a locked viewer's plant) is an inert chip: always
+// visible, never counted, never clearable, absent from the panel itself.
 
 function CountBadge({ n }) {
   return (
@@ -258,7 +318,9 @@ function CountBadge({ n }) {
 // One collapsible filter row inside the desktop dropdown. Expands INLINE (not as
 // an absolute overlay) so a long filter list scrolls within the height-capped
 // panel instead of a bottom row's sub-menu spilling off the viewport.
-function PanelField({ icon: Icon, label, active, display, children }) {
+// `renderContent({close})` lets single-pick controls collapse the row again
+// after a choice — the pick is the last thing the user wanted here.
+function PanelField({ icon: Icon, label, active, display, renderContent }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -280,10 +342,55 @@ function PanelField({ icon: Icon, label, active, display, children }) {
       {open && (
         <div className="mt-1.5 rounded-xl p-3"
           style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)" }}>
-          {children}
+          {renderContent && renderContent({ close: () => setOpen(false) })}
         </div>
       )}
     </div>
+  );
+}
+
+// Active-filter chip for the collapsed surfaces. The body opens the panel; the
+// ✕ resets just this filter (`onClear`). `static` sections (a locked viewer's
+// plant) render inert: readable scope, no implied choice.
+function FilterChip({ s, onOpen }) {
+  const { t } = useLang();
+  const Icon = s.icon;
+  const inert = !!s.static;
+  const text = s.display || s.label;
+  const clearable = !inert && !!s.onClear;
+  return (
+    <span
+      className="inline-flex items-center rounded-full flex-shrink-0"
+      style={{
+        background: inert ? "var(--bg-inner)" : "var(--brand-bg)",
+        border: `1px solid ${inert ? "var(--border-md)" : "transparent"}`,
+        color: inert ? "var(--text-2)" : "var(--brand-text)",
+        height: 30,
+      }}
+    >
+      <button
+        type="button"
+        onClick={inert ? undefined : onOpen}
+        className="flex items-center gap-1.5 pl-2.5 text-xs font-medium min-w-0"
+        style={{ color: "inherit", paddingRight: clearable ? 2 : 10, cursor: inert ? "default" : "pointer" }}
+        title={typeof text === "string" ? text : undefined}
+        aria-label={typeof s.label === "string" ? s.label : undefined}
+      >
+        {Icon && <Icon size={12} style={{ flexShrink: 0, opacity: 0.85 }} />}
+        <span className="truncate max-w-[130px] whitespace-nowrap">{text}</span>
+      </button>
+      {clearable && (
+        <button
+          type="button"
+          onClick={s.onClear}
+          aria-label={`${typeof s.label === "string" ? s.label : ""} — ${t("staff.clearAll")}`}
+          className="flex items-center justify-center h-full pl-1 pr-2 rounded-r-full"
+          style={{ color: "inherit" }}
+        >
+          <X size={12} />
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -330,8 +437,16 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
         <div style={{ overflowY: "auto", flex: 1 }}>
           {sections.map(s => (
             <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-4)" }}>{s.label}</p>
-              {s.render()}
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{s.label}</p>
+                {s.active && s.onClear && (
+                  <button onClick={s.onClear} className="text-[10px] flex items-center gap-0.5"
+                    style={{ color: "var(--text-4)" }}>
+                    <X size={10} /> {t("staff.clearAll")}
+                  </button>
+                )}
+              </div>
+              {s.render({ close: () => {} })}
             </div>
           ))}
         </div>
@@ -349,7 +464,8 @@ const TRIGGER_CLS = "items-center gap-2 rounded-xl px-3 py-2 text-sm";
 
 // One filter as its own toolbar dropdown — the unfolded form of a FilterPanel
 // section on wide screens. Trigger matches the canonical toolbar-control size.
-function InlineFilterField({ icon: Icon, label, active, display, children }) {
+// `renderContent({close})` so single-pick controls close the dropdown on pick.
+function InlineFilterField({ icon: Icon, label, active, display, renderContent }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const popRef = useRef(null);
@@ -412,7 +528,7 @@ function InlineFilterField({ icon: Icon, label, active, display, children }) {
           }}
         >
           <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-4)" }}>{label}</p>
-          {children}
+          {renderContent && renderContent({ close: () => setOpen(false) })}
         </div>,
         document.body
       )}
@@ -443,6 +559,21 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
   const popRef = useRef(null);     // portaled grouped panel
   const wrapRef = useRef(null);    // md+ container — a direct toolbar-row child
   const measureRef = useRef(null); // invisible natural-width copy of the inline row
+
+  // Interactive vs inert scope sections; count/clear-all fall back to the
+  // section metadata so pages don't have to duplicate the bookkeeping.
+  const real = sections.filter(s => !s.static);
+  const statics = sections.filter(s => s.static);
+  const cnt = activeCount ?? real.filter(s => s.active).length;
+  const any = anyActive ?? cnt > 0;
+  const clearAll = onClearAll ?? (() => real.forEach(s => s.onClear && s.onClear()));
+  const chips = real.filter(s => s.active);
+  const hasChips = statics.length + chips.length > 0;
+  // A chip tap re-opens whichever collapsed surface this viewport uses.
+  const openPanel = () => {
+    if (window.matchMedia("(min-width: 768px)").matches) setOpen(true);
+    else setSheetOpen(true);
+  };
 
   // Close on click outside either the trigger or the portaled panel.
   useEffect(() => {
@@ -515,19 +646,21 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
 
   return (
     <>
-      {/* Mobile: bottom sheet */}
+      {/* Mobile: bottom sheet. Once chips carry the filter state, the trigger
+          drops its text — the chips explain themselves, the row stays short. */}
       <button
         onClick={() => setSheetOpen(true)}
         className={`flex md:hidden ${TRIGGER_CLS} transition-colors flex-shrink-0`}
+        aria-label={t("filter.filters")}
         style={{
           background: "var(--bg-card)",
-          border: `1px solid ${anyActive ? "var(--brand)" : "var(--border-md)"}`,
-          color: anyActive ? "var(--text-1)" : "var(--text-3)",
+          border: `1px solid ${any ? "var(--brand)" : "var(--border-md)"}`,
+          color: any ? "var(--text-1)" : "var(--text-3)",
         }}
       >
-        <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
-        <span>{t("filter.filters")}</span>
-        {activeCount > 0 && <CountBadge n={activeCount} />}
+        <SlidersHorizontal size={14} style={{ color: any ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+        {!hasChips && <span>{t("filter.filters")}</span>}
+        {cnt > 0 && <CountBadge n={cnt} />}
       </button>
 
       {/* md+: separate per-filter dropdowns while the row fits, grouped otherwise */}
@@ -540,19 +673,20 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
             className="flex items-center gap-2"
             style={{ width: "max-content", visibility: "hidden", pointerEvents: "none" }}
           >
-            {sections.map(s => (
+            {statics.map(s => <FilterChip key={s.key} s={s} />)}
+            {real.map(s => (
               <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display} />
             ))}
-            {anyActive && <ClearAllBtn />}
+            {any && <ClearAllBtn />}
           </div>
         </div>
 
-        {!collapsed && sections.map(s => (
-          <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
-            {s.render()}
-          </InlineFilterField>
+        {!collapsed && statics.map(s => <FilterChip key={s.key} s={s} />)}
+        {!collapsed && real.map(s => (
+          <InlineFilterField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}
+            renderContent={({ close }) => s.render({ close })} />
         ))}
-        {!collapsed && anyActive && <ClearAllBtn onClick={onClearAll} title={t("staff.clearAll")} />}
+        {!collapsed && any && <ClearAllBtn onClick={clearAll} title={t("staff.clearAll")} />}
 
         {collapsed && (
           <div ref={ref} className="relative">
@@ -561,13 +695,13 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
               className={`flex ${TRIGGER_CLS} transition-colors`}
               style={{
                 background: "var(--bg-card)",
-                border: `1px solid ${open || anyActive ? "var(--brand)" : "var(--border-md)"}`,
-                color: anyActive ? "var(--text-1)" : "var(--text-3)",
+                border: `1px solid ${open || any ? "var(--brand)" : "var(--border-md)"}`,
+                color: any ? "var(--text-1)" : "var(--text-3)",
               }}
             >
-              <SlidersHorizontal size={14} style={{ color: anyActive ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
+              <SlidersHorizontal size={14} style={{ color: any ? "var(--brand)" : "var(--text-4)", flexShrink: 0 }} />
               <span className="whitespace-nowrap">{t("filter.filters")}</span>
-              {activeCount > 0 && <CountBadge n={activeCount} />}
+              {cnt > 0 && <CountBadge n={cnt} />}
               <ChevronDown size={13}
                 style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 2,
                   transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
@@ -588,18 +722,17 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
                     {t("filter.filters")}
                   </span>
-                  {anyActive && (
-                    <button onClick={onClearAll} className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg"
+                  {any && (
+                    <button onClick={clearAll} className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-lg"
                       style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-3)" }}>
                       <X size={11} /> {t("staff.clearAll")}
                     </button>
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  {sections.map(s => (
-                    <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}>
-                      {s.render()}
-                    </PanelField>
+                  {real.map(s => (
+                    <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}
+                      renderContent={({ close }) => s.render({ close })} />
                   ))}
                 </div>
               </div>,
@@ -609,8 +742,20 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
         )}
       </div>
 
+      {/* Collapsed surfaces: the filter state as chips — always readable, each
+          resettable in place. flex-1 so the strip doubles as the row's spacer;
+          hidden while the md+ row is unfolded (the real controls are visible). */}
+      {hasChips && (
+        <div
+          className={`${collapsed ? "flex" : "flex md:hidden"} items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar self-center`}
+        >
+          {statics.map(s => <FilterChip key={s.key} s={s} />)}
+          {chips.map(s => <FilterChip key={s.key} s={s} onOpen={openPanel} />)}
+        </div>
+      )}
+
       {sheetOpen && (
-        <FilterSheet sections={sections} anyActive={anyActive} onClearAll={onClearAll} onClose={() => setSheetOpen(false)} />
+        <FilterSheet sections={real} anyActive={any} onClearAll={clearAll} onClose={() => setSheetOpen(false)} />
       )}
     </>
   );

@@ -2377,6 +2377,13 @@ const t = {
     "production.file":             "Fayl",
     "production.notLoadedForDate": "bu sana uchun yuklanmagan.",
     "production.rows":             "qator",
+    // ── Sidebar nav group labels (grouped admin sidebar) ──
+    "navgrp.production": "Ishlab chiqarish",
+    "navgrp.people":     "Odamlar",
+    "navgrp.leaders":    "Liderlar",
+    "navgrp.quality":    "Sifat",
+    "navgrp.cells":      "Yacheykalar",
+    "navgrp.lab":        "Laboratoriya",
     // ── Safia Honors — gamification & rewards design preview (admin-only demo) ──
     "nav.gamification":        "Safia Honors",
     "gami.title":              "Safia Honors",
@@ -4920,6 +4927,13 @@ const t = {
     "production.file":             "Файл",
     "production.notLoadedForDate": "бу сана учун юкланмаган.",
     "production.rows":             "қатор",
+    // ── Sidebar nav group labels (grouped admin sidebar) ──
+    "navgrp.production": "Ишлаб чиқариш",
+    "navgrp.people":     "Одамлар",
+    "navgrp.leaders":    "Лидерлар",
+    "navgrp.quality":    "Сифат",
+    "navgrp.cells":      "Ячейкалар",
+    "navgrp.lab":        "Лаборатория",
     // ── Safia Honors — gamification & rewards design preview (admin-only demo) ──
     "nav.gamification":        "Safia Honors",
     "gami.title":              "Safia Honors",
@@ -7463,6 +7477,13 @@ const t = {
     "production.file":             "Файл",
     "production.notLoadedForDate": "не загружен за эту дату.",
     "production.rows":             "строк",
+    // ── Sidebar nav group labels (grouped admin sidebar) ──
+    "navgrp.production": "Производство",
+    "navgrp.people":     "Люди",
+    "navgrp.leaders":    "Лидеры",
+    "navgrp.quality":    "Качество",
+    "navgrp.cells":      "Ячейки",
+    "navgrp.lab":        "Лаборатория",
     // ── Safia Honors — gamification & rewards design preview (admin-only demo) ──
     "nav.gamification":        "Safia Honors",
     "gami.title":              "Safia Honors",
@@ -10006,6 +10027,13 @@ const t = {
     "production.file":             "File",
     "production.notLoadedForDate": "not uploaded for this date.",
     "production.rows":             "rows",
+    // ── Sidebar nav group labels (grouped admin sidebar) ──
+    "navgrp.production": "Production",
+    "navgrp.people":     "People",
+    "navgrp.leaders":    "Leaders",
+    "navgrp.quality":    "Quality",
+    "navgrp.cells":      "Cells",
+    "navgrp.lab":        "Laboratory",
     // ── Safia Honors — gamification & rewards design preview (admin-only demo) ──
     "nav.gamification":        "Safia Honors",
     "gami.title":              "Safia Honors",

@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 // Inlined base64 logo baked into the JS bundle — no network fetch, so it can
 // never get stuck on a poisoned cache entry for the stable /logo.png URL. See
@@ -10,50 +10,72 @@ import {
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, Bot, LayoutGrid, Timer, UserCheck,
-  FlaskConical, Medal,
+  FlaskConical, Medal, ChevronDown,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import { canAccessPage } from "../../config/pages";
 
 const ALL_LINKS = [
-  { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard },
-  { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2 },
-  { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy },
+  { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
+  { to: "/zagruzka", page: "zagruzka", key: "nav.zagruzka",        icon: BarChart2, group: "prod" },
+  { to: "/leaderboard", page: "leaderboard", key: "nav.leaderboard", icon: Trophy, group: "lab" },
   // Admin-only gamification & rewards design preview («Safia Honors») — demo
   // data only, no page-access key (the adminOnly pilot pattern).
-  { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal },
-  { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users },
-  { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target },
-  { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock },
-  { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint },
-  { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck },
-  { to: "/production", page: "production", key: "nav.production",    icon: Factory },
-  { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge },
+  { to: "/gamification", adminOnly: true, key: "nav.gamification", icon: Medal, group: "lab" },
+  { to: "/workers",  page: "workers",  key: "nav.workers",         icon: Users, group: "people" },
+  { to: "/plan",     page: "plan",     key: "nav.planFulfillment", icon: Target, group: "lab" },
+  { to: "/downtime", page: "downtime", key: "nav.idleTime",        icon: Clock, group: "prod" },
+  { to: "/staff",    page: "staff",    key: "nav.staff",           icon: Fingerprint, group: "people" },
+  { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
+  { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
+  { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
   // Leader monitoring. Admins and top-managers oversee both shifts, so for them
   // it splits into one entry per shift; everybody else stays inside their own
   // shift anyway and gets the single unlocked page. Same route component, same
   // feed — shift 2's days come from the bot once the leader closed one there.
   { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck,
-    hideRoles: ["admin", "top-manager"] },
+    hideRoles: ["admin", "top-manager"], group: "leaders" },
   { to: "/leaders-shift1", page: "leaders", key: "nav.leadersShift1", icon: ClipboardCheck,
-    onlyRoles: ["admin", "top-manager"] },
+    onlyRoles: ["admin", "top-manager"], group: "leaders" },
   { to: "/leaders-shift2", page: "leaders", key: "nav.leadersShift2", icon: Bot,
-    onlyRoles: ["admin", "top-manager"] },
-  { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid },
-  { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles },
-  { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning },
-  { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert },
-  { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo },
-  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity },
-  { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench },
-  { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer },
-  { to: "/cell-attendance", page: "cell-attendance", key: "nav.cellAttendance", icon: UserCheck },
-  { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical },
+    onlyRoles: ["admin", "top-manager"], group: "leaders" },
+  { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid, group: "cells" },
+  { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality" },
+  { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
+  { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
+  { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
+  { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
+  { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
+  { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer, group: "lab" },
+  { to: "/cell-attendance", page: "cell-attendance", key: "nav.cellAttendance", icon: UserCheck, group: "lab" },
+  { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
 ];
+
+// Grouped sidebar. ALL_LINKS above stays THE register and order — `group`
+// points each link at a section here. Sections only materialize when the
+// viewer's visible link count passes GROUP_THRESHOLD (admins / top-managers);
+// short lists keep today's flat sidebar untouched. A link with an unknown
+// group id lands in the trailing headerless "system" bucket, so a typo shows
+// up as an ungrouped link — visible, never silently dropped.
+// «Лаборатория» holds pilots and test twins and starts collapsed: visual rank
+// should match real importance, not upload date. Collapse state is remembered
+// per user in localStorage («sidebar.collapsedGroups»).
+const NAV_GROUPS = [
+  { id: "top" },                                   // Обзор — headerless
+  { id: "prod",    labelKey: "navgrp.production" },
+  { id: "people",  labelKey: "navgrp.people" },
+  { id: "leaders", labelKey: "navgrp.leaders" },
+  { id: "quality", labelKey: "navgrp.quality" },
+  { id: "cells",   labelKey: "navgrp.cells" },
+  { id: "lab",     labelKey: "navgrp.lab", defaultCollapsed: true },
+  { id: "system" },                                // Активность + catch-all — headerless
+];
+const GROUP_THRESHOLD = 10;
 
 // Layout (and this sidebar) remounts on every route change, which would reset
 // the nav list's scroll to the top. Keep the last offset at module level and
@@ -102,6 +124,26 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     return l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages);
   });
 
+  // Grouped mode only past the threshold — grouping helps a 20-row register,
+  // it would just add chrome to a supervisor's 6 links.
+  const grouped = links.length > GROUP_THRESHOLD;
+  const byGroup = new Map(NAV_GROUPS.map(g => [g.id, []]));
+  links.forEach(l => (byGroup.get(l.group) ?? byGroup.get("system")).push(l));
+
+  // Collapsed group ids, remembered per user.
+  const [collapsedGroups, setCollapsedGroups] = usePersistentState(
+    "sidebar.collapsedGroups",
+    () => NAV_GROUPS.filter(g => g.defaultCollapsed).map(g => g.id),
+  );
+  const isCollapsed = (id) => grouped && collapsedGroups.includes(id);
+  const toggleGroup = (id) =>
+    setCollapsedGroups(collapsedGroups.includes(id)
+      ? collapsedGroups.filter(x => x !== id)
+      : [...collapsedGroups, id]);
+
+  const isLinkActive = (to) =>
+    to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+
   const { data: range } = useQuery({
     queryKey: ["attendance-range"],
     queryFn: () => api.get("/api/attendance/range").then(r => r.data),
@@ -125,13 +167,81 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   }, [links.length]);
 
   const [ind, setInd] = useState({ top: 0, height: 0, show: false, anim: false });
-  useLayoutEffect(() => {
+  const measureInd = useCallback(() => {
     const el = navRef.current?.querySelector('[aria-current="page"]');
-    if (!el) { setInd(p => (p.show ? { ...p, show: false } : p)); return; }
+    // A link inside a collapsed group has no on-screen position — hide the
+    // pill instead of parking it on a 0-height row.
+    if (!el || el.closest('[data-collapsed="true"]')) {
+      setInd(p => (p.show ? { ...p, show: false } : p));
+      return;
+    }
     // anim: only glide when the pill was already showing (i.e. moving between
     // items). On first appearance it snaps into place with no slide.
     setInd(p => ({ top: el.offsetTop, height: el.offsetHeight, show: true, anim: p.show }));
-  }, [location.pathname, expanded, links.length]);
+  }, []);
+  useLayoutEffect(measureInd, [measureInd, location.pathname, expanded, links.length, collapsedGroups]);
+  // Links below a toggled group only reach their final offset once the .2s
+  // grid collapse finishes — re-measure after it settles.
+  useEffect(() => {
+    const id = setTimeout(measureInd, 230);
+    return () => clearTimeout(id);
+  }, [collapsedGroups, measureInd]);
+
+  // One renderer for both modes (flat / grouped). Rows are slightly denser on
+  // desktop (md:py-2); the phone drawer keeps the full touch height.
+  const renderLink = ({ to, key, icon: Icon }) => {
+    const isStaff = to === "/staff";
+    const badge = isStaff && showBadge && pendingCount > 0;
+    return (
+      <NavLink
+        key={to}
+        to={withSearch(to)}
+        end={to === "/"}
+        onClick={onClose}
+        title={!expanded ? t(key) : undefined}
+        className="flex items-center rounded-lg text-sm transition-colors px-2.5 py-2.5 md:py-2"
+        style={({ isActive }) => ({
+          gap: "12px",
+          position: "relative",
+          zIndex: 1,
+          // Background now comes from the sliding indicator behind it;
+          // the link only carries the active text color + weight.
+          ...(isActive
+            ? { color: "var(--brand-text)", fontWeight: 500 }
+            : { color: "var(--text-3)" }),
+          justifyContent: !expanded ? "center" : undefined,
+        })}
+      >
+        {/* Icon + dot badge when collapsed */}
+        <div className="relative flex-shrink-0">
+          <Icon size={16} />
+          {badge && !expanded && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+          )}
+        </div>
+
+        <span
+          className="truncate whitespace-nowrap transition-all duration-200 flex-1"
+          style={{
+            opacity:  expanded ? 1 : 0,
+            maxWidth: expanded ? 200 : 0,
+            overflow: "hidden",
+            display:  "block",
+          }}
+        >
+          {t(key)}
+        </span>
+
+        {/* Count badge when expanded */}
+        {badge && expanded && (
+          <span className="ml-auto flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
+            {pendingCount}
+          </span>
+        )}
+      </NavLink>
+    );
+  };
 
   return (
     <>
@@ -231,58 +341,68 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           onScroll={(e) => { savedNavScroll = e.currentTarget.scrollTop; }}
           className="relative flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden"
         >
-          {links.map(({ to, key, icon: Icon }) => {
-            const isStaff = to === "/staff";
-            const badge = isStaff && showBadge && pendingCount > 0;
+          {(grouped ? [] : links).map(renderLink)}
+
+          {grouped && NAV_GROUPS.map((g) => {
+            const items = byGroup.get(g.id);
+            if (!items.length) return null;
+            const collapsed = isCollapsed(g.id);
+            const activeInside = items.some(l => isLinkActive(l.to));
+            // Pending Verifix work must stay visible with «Люди» collapsed —
+            // the count bubbles up onto the group header.
+            const groupBadge = collapsed && showBadge && pendingCount > 0 &&
+              items.some(l => l.to === "/staff") ? pendingCount : 0;
+            const showHeader = g.labelKey && expanded;
+
             return (
-              <NavLink
-                key={to}
-                to={withSearch(to)}
-                end={to === "/"}
-                onClick={onClose}
-                title={!expanded ? t(key) : undefined}
-                className="flex items-center rounded-lg text-sm transition-colors"
-                style={({ isActive }) => ({
-                  gap: "12px",
-                  padding: "10px",
-                  position: "relative",
-                  zIndex: 1,
-                  // Background now comes from the sliding indicator behind it;
-                  // the link only carries the active text color + weight.
-                  ...(isActive
-                    ? { color: "var(--brand-text)", fontWeight: 500 }
-                    : { color: "var(--text-3)" }),
-                  justifyContent: !expanded ? "center" : undefined,
-                })}
-              >
-                {/* Icon + dot badge when collapsed */}
-                <div className="relative flex-shrink-0">
-                  <Icon size={16} />
-                  {badge && !expanded && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
-                  )}
-                </div>
-
-                <span
-                  className="truncate whitespace-nowrap transition-all duration-200 flex-1"
-                  style={{
-                    opacity:  expanded ? 1 : 0,
-                    maxWidth: expanded ? 200 : 0,
-                    overflow: "hidden",
-                    display:  "block",
-                  }}
-                >
-                  {t(key)}
-                </span>
-
-                {/* Count badge when expanded */}
-                {badge && expanded && (
-                  <span className="ml-auto flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
-                    {pendingCount}
-                  </span>
+              <div key={g.id}>
+                {showHeader && (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.id)}
+                    aria-expanded={!collapsed}
+                    aria-controls={`nav-grp-${g.id}`}
+                    className="w-full flex items-center gap-1.5 rounded-lg text-[10.5px] font-semibold uppercase tracking-wider"
+                    style={{
+                      padding: "4px 10px",
+                      marginTop: 10,
+                      color: collapsed && activeInside ? "var(--brand-text)" : "var(--text-3)",
+                    }}
+                  >
+                    <ChevronDown
+                      size={13}
+                      className="nav-grp-chev flex-shrink-0"
+                      style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}
+                    />
+                    <span className="flex-1 min-w-0 truncate text-left">{t(g.labelKey)}</span>
+                    {collapsed && activeInside && (
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                        style={{ background: "var(--brand)" }} />
+                    )}
+                    {groupBadge > 0 && (
+                      <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
+                        {groupBadge}
+                      </span>
+                    )}
+                  </button>
                 )}
-              </NavLink>
+                {/* Icon rail (or a headerless section like Активность): a thin
+                    divider is the only landmark there's room for. */}
+                {!showHeader && g.id !== "top" && (
+                  <div className="mx-2 my-2" style={{ borderTop: "1px solid var(--border)" }} />
+                )}
+                {/* Collapse only applies while expanded — the icon rail keeps
+                    every icon reachable regardless of group state. */}
+                <div
+                  id={`nav-grp-${g.id}`}
+                  className="nav-grp-items"
+                  data-collapsed={collapsed && expanded ? "true" : "false"}
+                  style={{ gridTemplateRows: collapsed && expanded ? "0fr" : "1fr" }}
+                >
+                  <div className="space-y-0.5">{items.map(renderLink)}</div>
+                </div>
+              </div>
             );
           })}
 
