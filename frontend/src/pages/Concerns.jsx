@@ -29,6 +29,8 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
+import FactoryTabs from "../components/ui/FactoryTabs";
+import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
 
 const STATUSES = ["todo", "doing", "done"];
