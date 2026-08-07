@@ -16,6 +16,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import TranslationsEditor from "./TranslationsEditor";
 import UsersManagement from "./UsersManagement";
 import ProfilesManagement from "./ProfilesManagement";
+import FactoriesAdmin from "./Factories";
 import PageAccess from "./PageAccess";
 import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
