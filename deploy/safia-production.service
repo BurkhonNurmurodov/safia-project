@@ -1,0 +1,37 @@
+# ============================================================
+# Safia Production dashboard — https://production.safiacorporate.uz
+# FastAPI (serves both the API and the built React SPA) on 127.0.0.1:8030.
+#
+#   sudo cp /var/www/production/deploy/safia-production.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now safia-production
+#   sudo journalctl -u safia-production -f
+#
+# Single worker on purpose: startup runs a long list of idempotent schema
+# migrations/seeds (app.main lifespan) that must not race, and the app keeps
+# in-process state. Matches booking_backend.service (-w 1) on this host.
+# ============================================================
+[Unit]
+Description=Safia Production dashboard (production.safiacorporate.uz, FastAPI + Telegram mini-app)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=user
+Group=www-data
+WorkingDirectory=/var/www/production/backend
+EnvironmentFile=/var/www/production/backend/.env
+# Native BLAS/OpenMP pools capped to 1 — app.main does this too, but setting it
+# here covers anything imported before that runs.
+Environment="OPENBLAS_NUM_THREADS=1" "OMP_NUM_THREADS=1" "MKL_NUM_THREADS=1"
+Environment="NUMEXPR_NUM_THREADS=1" "VECLIB_MAXIMUM_THREADS=1"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/var/www/production/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8030 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+# Startup migrations against a 51 MB restored database can take a while.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

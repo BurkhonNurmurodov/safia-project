@@ -1,0 +1,14 @@
+# Lets the deploy (deploy/deploy.sh, run by the Gitea act_runner as `user`)
+# restart the dashboard without a password — and nothing else. Restricted to
+# three exact argument vectors: no wildcards, no `systemctl *`, no shell.
+#
+# Install once, as root:
+#   sudo install -m 440 -o root -g root \
+#     /var/www/production/deploy/safia-production-deploy.sudoers \
+#     /etc/sudoers.d/safia-production-deploy
+#   sudo visudo -c            # must print "parsed OK"
+#
+# sudoers matches the literal path, and /bin/systemctl is a symlink into
+# /usr/bin on Ubuntu 22.04, so both spellings are listed.
+user ALL=(root) NOPASSWD: /usr/bin/systemctl restart safia-production, /usr/bin/systemctl is-active safia-production, /usr/bin/systemctl status safia-production
+user ALL=(root) NOPASSWD: /bin/systemctl restart safia-production, /bin/systemctl is-active safia-production, /bin/systemctl status safia-production
