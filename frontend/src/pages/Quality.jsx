@@ -360,6 +360,12 @@ const TXT = {
     fLead: "Leader", fCell: "Cell", allLead: "All leaders", allCell: "All cells",
     loadFailed: "Could not load the register", retry: "Retry",
     textFailed: "Could not load the text fields",
+    xBtn: "Excel", xFailed: "Export failed",
+    xShOverview: "Overview", xShTrend: "Trend", xShAnalytics: "Breakdowns",
+    xShSeason: "Seasonality", xShRegister: "Register",
+    xKpi: "Key figures", xShare: "Share", xPeriod: "Period",
+    xGenerated: "Generated", xView: "View", xHair: "Hair",
+    xFilters: "Filters", xNone: "none", xAge: "Age", xRecords: "Records",
   },
 };
 
