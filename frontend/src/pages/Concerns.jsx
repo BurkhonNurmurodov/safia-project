@@ -21,7 +21,7 @@ import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
-import { FilterPanel, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -29,7 +29,7 @@ import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { usePersistentState } from "../hooks/usePersistentState";
-import FactorySelect from "../components/ui/FactorySelect";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory } from "../context/FactoryContext";
 import { padChartFrom } from "../utils/chartRange";
 
@@ -434,6 +434,9 @@ export default function Concerns() {
   const { chartTheme, labelColor, legendColor, gridColor, tooltipTheme } = useChartTheme();
   const qc = useQueryClient();
   const { factory } = useFactory();
+  // Plant switcher as a FilterPanel section (null on single-plant installs,
+  // an inert chip for locked viewers).
+  const factorySection = useFactorySection();
 
   // Role-scoped access (the backend enforces the same scopes). Each role raises
   // a concern to the step above it: leader → supervisor, supervisor →
@@ -1231,6 +1234,7 @@ export default function Concerns() {
       key: "status", icon: CircleDot, label: t("concerns.colStatus"),
       active: statusSel.length > 0,
       display: `${statusSel.length} ${t("filter.selected2")}`,
+      onClear: () => setStatusSel([]),
       render: () => (
         <OptsFilter opts={STATUSES} sel={statusSel} onChange={setStatusSel} render={(s) => statusLabel(s)} />
       ),
@@ -1239,6 +1243,7 @@ export default function Concerns() {
       key: "owner", icon: UserRound, label: t("concerns.colOwner"),
       active: ownerSel.length > 0,
       display: `${ownerSel.length} ${t("filter.selected2")}`,
+      onClear: () => setOwnerSel([]),
       render: () => (
         <OptsFilter opts={ownerOptions} sel={ownerSel} onChange={setOwnerSel} render={(o) => tl(o) || o} />
       ),
@@ -1247,6 +1252,7 @@ export default function Concerns() {
       key: "level", icon: Layers, label: t("concerns.colLevel"),
       active: levelSel.length > 0,
       display: `${levelSel.length} ${t("filter.selected2")}`,
+      onClear: () => setLevelSel([]),
       render: () => (
         <OptsFilter opts={LEVELS} sel={levelSel} onChange={setLevelSel} render={(l) => levelLabel(l)} />
       ),
@@ -1258,6 +1264,7 @@ export default function Concerns() {
       key: "responsible", icon: UserCheck, label: t("concerns.responsible"),
       active: respSel.length > 0,
       display: `${respSel.length} ${t("filter.selected2")}`,
+      onClear: () => setRespSel([]),
       render: () => (
         <OptsFilter
           opts={responsibleOptions.names}
@@ -1275,6 +1282,7 @@ export default function Concerns() {
       key: "category", icon: Tag, label: t("concerns.colCategory"),
       active: categorySel.length > 0,
       display: `${categorySel.length} ${t("filter.selected2")}`,
+      onClear: () => setCategorySel([]),
       render: () => (
         <OptsFilter
           opts={CATEGORIES}
@@ -1293,20 +1301,47 @@ export default function Concerns() {
       key: "deadline", icon: Clock, label: t("concerns.colDeadline"),
       active: deadlineActive,
       display: `${deadlineMin || "0"}–${deadlineMax || "∞"}`,
+      onClear: () => { setDeadlineMin(""); setDeadlineMax(""); },
       render: () => (
         <RngFilter minV={deadlineMin} maxV={deadlineMax} onMin={setDeadlineMin} onMax={setDeadlineMax} />
       ),
     },
   ];
-  const filterActiveCount =
-    (statusSel.length > 0 ? 1 : 0) + (ownerSel.length > 0 ? 1 : 0) +
-    (levelSel.length > 0 ? 1 : 0) + (respSel.length > 0 ? 1 : 0) +
-    (categorySel.length > 0 ? 1 : 0) + (deadlineActive ? 1 : 0);
-  const anyFilterActive = filterActiveCount > 0;
   const clearAllFilters = () => {
     setStatusSel([]); setOwnerSel([]); setLevelSel([]); setRespSel([]); setCategorySel([]);
     setDeadlineMin(""); setDeadlineMax("");
   };
+
+  // ── one consolidated filter zone ───────────────────────────────────────────
+  // Plant / shift / supervisor join the register filters in ONE panel at the
+  // top of the page; every active narrowing surfaces as a chip on the bar.
+  const pageSections = [
+    ...(factorySection ? [factorySection] : []),
+    ...(canFilterShift ? [{
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: fShift != null,
+      display: fShift != null ? `S${fShift}` : "",
+      onClear: () => setFShift(null),
+      render: () => (
+        <SegmentedToggle fill value={fShift} onChange={setFShift}
+          options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]} />
+      ),
+    }] : []),
+    ...(canFilterSup ? [{
+      key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+      active: supSel !== "All",
+      display: supSel !== "All" ? (supFilterOptions.find((o) => o.value === supSel)?.label || "") : "",
+      onClear: () => setFSup(""),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={supFilterOptions}
+          value={supSel}
+          onChange={(v) => setFSup(v === "All" ? "" : v)} />
+      ),
+    }] : []),
+    ...filterSections,
+  ];
+  const clearPage = () => { clearAllFilters(); setFShift(null); setFSup(""); };
 
   // ── charts: daily still-open trend + status donut (Kaizen styling) ──────────
   // Category axis over the pre-built day list (one point per day) keeps the
@@ -1699,46 +1734,19 @@ export default function Concerns() {
 
   return (
     <Layout title={t("concerns.title")}>
-      {/* Top filter bar — the standard inline plant + period + shift + supervisor
-          row (shift/supervisor only for multi-unit viewers); status / owner /
-          level live behind the Filtrlar button. */}
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3">
-        {/* WHICH plant — first on the row, the broadest narrowing there is.
-            Renders nothing on a single-factory install. */}
-        <FactorySelect labelClassName="hidden sm:block" />
-        <div className="sm:w-72">
-          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("concerns.period")}</label>
-          <DateRangePicker
-            dateFrom={startDate}
-            dateTo={endDate}
-            setDateFrom={setStartDate}
-            setDateTo={setEndDate}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        {canFilterShift && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-            <SegmentedToggle
-              value={fShift}
-              onChange={setFShift}
-              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-            />
-          </div>
-        )}
-        {canFilterSup && (
-          <div className="sm:w-64 min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-            <StyledSelect
-              value={supSel}
-              onChange={(v) => setFSup(v === "All" ? "" : v)}
-              options={supFilterOptions}
-              searchable
-              searchPlaceholder={t("filter.searchBrigadirs")}
-              triggerClassName="w-full px-3 py-2 text-sm"
-            />
-          </div>
-        )}
+      {/* ONE-ROW filter bar for the whole page — period inline; plant / shift /
+          supervisor / status / owner / level / … all live in the consolidated
+          panel and surface as chips whenever they narrow the page. */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel sections={pageSections} onClearAll={clearPage} />
       </div>
 
       {/* KPIs — three headline insights (rich, colour-coded cards). Units are
@@ -1782,12 +1790,9 @@ export default function Concerns() {
         </InsightCard>
       </div>
 
-      {/* Page view tabs — register vs chart board. The search / Filtrlar
-          controls follow the view: on the register they live in the TableCard
-          toolbar, on the analytics board they sit here next to the tabs, so the
-          filters that reshape the charts are never hidden state. FilterPanel
-          stays a DIRECT child of this row (its fit check measures the row; the
-          flex-grow spacer counts as 0). */}
+      {/* Page view tabs — register vs chart board. Filtering lives in the ONE
+          page-level bar above; only the text search follows the view (on the
+          register it sits in the TableCard toolbar). */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <SegmentedToggle
           value={view}
@@ -1802,12 +1807,6 @@ export default function Concerns() {
               onChange={setSearch}
               placeholder={t("concerns.search")}
               className="w-full sm:w-44"
-            />
-            <FilterPanel
-              sections={filterSections}
-              activeCount={filterActiveCount}
-              anyActive={anyFilterActive}
-              onClearAll={clearAllFilters}
             />
           </>
         )}
@@ -1981,20 +1980,13 @@ export default function Concerns() {
           <>
             {/* Mobile: search takes its own full row (w-full wraps) while the
                 add button stretches over the rest of the second row (label
-                always on one line). Desktop: inline row. All controls share the
-                FilterPanel-trigger height. FilterPanel stays a DIRECT child of
-                the toolbar row — its fits-on-one-row check measures the row. */}
+                always on one line). Desktop: inline row. Filtering lives in the
+                ONE page-level bar at the top — this toolbar only searches. */}
             <SearchInput
               value={search}
               onChange={setSearch}
               placeholder={t("concerns.search")}
               className="w-full sm:w-44"
-            />
-            <FilterPanel
-              sections={filterSections}
-              activeCount={filterActiveCount}
-              anyActive={anyFilterActive}
-              onClearAll={clearAllFilters}
             />
             {!readOnly && (
               <Button

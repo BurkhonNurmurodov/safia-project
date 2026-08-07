@@ -67,6 +67,7 @@ const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Login = lazyWithReload(() => import("./pages/Login"));
+const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import FindInPage from "./components/FindInPage";
@@ -74,17 +75,30 @@ import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
 import { useTranslit } from "./utils/transliterate";
+import { inTelegram } from "./utils/session";
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
 });
 
 function AuthGate({ children }) {
-  const { auth, loading, botUsername } = useAuth();
+  const { auth, loading, botUsername, webLogin } = useAuth();
   const { t } = useLang();
 
   if (loading) {
     return <PageLoader />;
+  }
+
+  // Opened in an ordinary browser with no live session — the password screen.
+  // It renders in place of the app rather than at a /login route so that a
+  // deep link (a bookmarked page, a bot deep-link followed on a laptop) is
+  // still the URL in the address bar once the person signs in.
+  if (auth?.status === "web_login") {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <WebLogin onSuccess={webLogin} />
+      </Suspense>
+    );
   }
 
   if (auth?.status === "outdated_telegram") {
@@ -373,7 +387,11 @@ function AppWithLang() {
           <FindInPage />
           <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            {/* Registration is a Telegram flow — it needs the bot to sign the
+                profile claim. A browser landing here (a stale bookmark, a
+                deep-link followed on a laptop) gets the password screen at "/"
+                instead of a picker that can only 401. */}
+            <Route path="/login" element={inTelegram() ? <Login /> : <Navigate to="/" replace />} />
             <Route path="/" element={<AuthGate><RequirePage page="overview"><Overview /></RequirePage></AuthGate>} />
             <Route path="/zagruzka" element={<AuthGate><RequirePage page="zagruzka"><Zagruzka /></RequirePage></AuthGate>} />
             <Route path="/leaderboard" element={<AuthGate><RequirePage page="leaderboard"><Leaderboard /></RequirePage></AuthGate>} />

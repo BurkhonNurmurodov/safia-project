@@ -30,7 +30,7 @@ from typing import Annotated, Optional
 
 import jwt
 from jwt import PyJWTError as JWTError
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from openpyxl import Workbook
@@ -55,6 +55,7 @@ from app.services.pp_parser import read_workbook_slices, parse_catalog_workbook,
 from app.services.pp_calc import compute_dashboard, DEFAULT_SHIFT_MIN, DEFAULT_PRODUCTIVE_MIN
 from app.services.cell_lookup import by_sap, resolve_sap, norm_code, sap_codes_for_leader
 from app.services.name_map import sheet_alias_map
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(tags=["production"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
@@ -413,6 +414,7 @@ class PositionsExportBody(BaseModel):
 
 @router.post("/api/production/export.xlsx")
 def export_positions(
+    request: Request,
     body: PositionsExportBody,
     payload: dict = Depends(require_page(PAGE)),
     db: Session = Depends(get_db),
@@ -623,13 +625,13 @@ def export_positions(
     wb.save(bio)
     bio.seek(0)
     fname = f"{day_h} ABC форма {mgr_name}.xlsx" if mgr_name else f"{day_h} ABC форма.xlsx"
-    from app.telegram_bot import bot
     caption = f"📊 {title_word}" + (f" — {mgr_name}" if mgr_name else "") + f"  •  {day_h}"
     try:
-        bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-    return {"ok": True}
 
 
 @router.get("/api/production/dates")
@@ -1551,6 +1553,7 @@ def trudoyomkost_analysis(
 
 @router.get("/api/production/trudoyomkost/export.xlsx")
 def trudoyomkost_export(
+    request: Request,
     date_from: str = Query(...),
     date_to: str = Query(...),
     manager_id: list[int] = Query(default=[]),
@@ -1613,13 +1616,13 @@ def trudoyomkost_export(
     bio.seek(0)
     fname = f"trudoyomkost_{d_from.isoformat()}_{d_to.isoformat()}.xlsx"
     if send:
-        from app.telegram_bot import bot
         caption = f"📊 Trudoyomkost — {summary_label} ({unit_label})  •  {d_from.isoformat()} → {d_to.isoformat()}"
         try:
-            bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+            return deliver_xlsx(request, payload, fname, bio.read(), caption)
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-        return {"ok": True}
     return StreamingResponse(
         bio,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

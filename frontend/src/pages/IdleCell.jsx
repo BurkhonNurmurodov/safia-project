@@ -3,8 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Info, Save, ChevronDown, RotateCcw, Flag,
   Snowflake, Wrench, Container, Warehouse, PackagePlus, Building2, Truck,
-  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers,
+  FlaskConical, ClipboardList, Sparkles, Hourglass, Layers, UserRound, Boxes,
 } from "lucide-react";
+import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -540,16 +541,10 @@ export default function IdleCell() {
         className="rounded-2xl px-3 py-2.5 md:px-4 md:py-3 mb-4 flex flex-wrap items-center gap-2"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
       >
-        {/* Date + shift share a row on phones (flex-wrap splits them in langs with
-            long shift labels); the selects go full-width below md. */}
-        <div className="w-full md:w-auto flex flex-wrap items-center gap-2">
-          <DayStepper value={date} onChange={setDate} />
-          <SegmentedToggle
-            value={shiftTab}
-            onChange={onShift}
-            options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
-          />
-        </div>
+        {/* Date + the REQUIRED supervisor pick stay inline (the page is empty
+            until a supervisor is chosen — that control must never hide);
+            shift / leader / cells narrow the view from the panel as chips. */}
+        <DayStepper value={date} onChange={setDate} />
         <StyledSelect
           value={supervisorId != null ? String(supervisorId) : ""}
           onChange={(v) => { setSupervisorId(v ? Number(v) : null); setLeaderId(""); setSelectedCellIds([]); }}
@@ -560,33 +555,54 @@ export default function IdleCell() {
           triggerClassName="px-3 py-2 text-sm"
           className="w-full md:w-auto md:min-w-[180px]"
         />
-        {/* The brigadir's leaders, between brigadir and cells: each select
-            narrows the next. Hidden when the unit has a single leader (or the
-            cells aren't loaded) — a one-option filter is just noise. */}
-        {supervisorId != null && leaderOptions.length > 2 && (
-          <StyledSelect
-            value={leaderId}
-            onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }}
-            options={leaderOptions}
-            searchable
-            searchPlaceholder={t("idleCell.searchLeader")}
-            triggerClassName="px-3 py-2 text-sm"
-            className="w-full md:w-auto md:min-w-[170px]"
-          />
-        )}
-        {supervisorId != null && cells.length > 0 && (
-          <StyledSelect
-            multiple searchable
-            value={selectedCellIds}
-            onChange={setSelectedCellIds}
-            options={cellOptions}
-            allLabel={t("idleCell.allCells")}
-            countLabel={(n) => `${n} ${t("idleCell.cellsWord")}`}
-            searchPlaceholder={t("idleCell.searchCell")}
-            triggerClassName="px-3 py-2 text-sm"
-            className="w-full md:w-auto md:min-w-[160px]"
-          />
-        )}
+        <FilterPanel
+          sections={[
+            {
+              key: "shift", icon: Layers, label: t("idleCell.shiftAll"),
+              active: shiftTab !== "all",
+              display: shiftTab !== "all" ? (shiftTab === 1 ? t("idleCell.shift1") : t("idleCell.shift2")) : "",
+              onClear: () => onShift("all"),
+              render: () => (
+                <SegmentedToggle
+                  fill
+                  value={shiftTab}
+                  onChange={onShift}
+                  options={[["all", t("idleCell.shiftAll")], [1, t("idleCell.shift1")], [2, t("idleCell.shift2")]]}
+                />
+              ),
+            },
+            // The brigadir's leaders, between shift and cells: each pick narrows
+            // the next. Hidden when the unit has a single leader — a one-option
+            // filter is just noise.
+            ...(supervisorId != null && leaderOptions.length > 2 ? [{
+              key: "leader", icon: UserRound, label: t("idleCell.searchLeader"),
+              active: leaderId !== "",
+              display: leaderId !== "" ? (leaderOptions.find((o) => o.value === leaderId)?.label || "") : "",
+              onClear: () => { setLeaderId(""); setSelectedCellIds([]); },
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close}
+                  opts={leaderOptions}
+                  value={leaderId}
+                  onChange={(v) => { setLeaderId(v); setSelectedCellIds([]); }} />
+              ),
+            }] : []),
+            ...(supervisorId != null && cells.length > 0 ? [{
+              key: "cells", icon: Boxes, label: t("idleCell.allCells"),
+              active: selectedCellIds.length > 0,
+              display: selectedCellIds.length === 1
+                ? (cellOptions.find((o) => o.value === selectedCellIds[0])?.label || "")
+                : `${selectedCellIds.length} ${t("idleCell.cellsWord")}`,
+              onClear: () => setSelectedCellIds([]),
+              render: () => (
+                <OptsFilter searchable
+                  opts={cellOptions.map((o) => o.value)}
+                  sel={selectedCellIds}
+                  onChange={setSelectedCellIds}
+                  render={(v) => cellOptions.find((o) => o.value === v)?.label || v} />
+              ),
+            }] : []),
+          ]}
+        />
         <span className="w-full md:w-auto md:ml-auto text-xs" style={{ color: "var(--text-4)" }}>{t("idleCell.testNote")}</span>
       </div>
 

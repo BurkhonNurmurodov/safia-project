@@ -28,6 +28,7 @@ import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";
 import { cellName as pickCellName, exchangeCellSuffix } from "../utils/cellName";
 import { cellKey, LOAD_ROLE_RE, CellStatusChip } from "../utils/cellAttendance";
+import { exportXlsx } from "../utils/exportXlsx";
 import { ColFilter, TxtFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -563,8 +564,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     : workers;
 
   const exportMutation = useMutation({
-    mutationFn: (rows) => api.post("/api/staff/attendance/export", {
-      manager_id: managerId, attend_date: selectedDate, rows,
+    mutationFn: (rows) => exportXlsx("/api/staff/attendance/export", {
+      body: { manager_id: managerId, attend_date: selectedDate, rows },
+      fallbackName: `attendance_${selectedDate}.xlsx`,
     }),
   });
 

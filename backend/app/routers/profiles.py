@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt import PyJWTError as JWTError
@@ -38,17 +38,20 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import web_auth
 from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
+from app.identity import parse_profile_key, profile_display_name, profile_holders
 from app.permissions import require_page
 from app.models import (
     Admin, Cell, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
-    TelegramUserRole, Translation,
+    TelegramUserRole, Translation, WebCredential,
 )
 from app.reg_token import validate_reg_token
 from app.routers.auth import _validate_init_data
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
@@ -289,12 +292,32 @@ def admin_list_profiles(db: Session = Depends(get_db),
             continue
         by_key.setdefault((r.role, r.role_id), []).append(r)
 
+    # Browser logins, attached to the profile they belong to. `deliverable` is
+    # computed from the bindings already in hand rather than re-querying per
+    # row: a profile with no approved holder has nowhere to receive a password.
+    creds = {c.profile_key: c for c in db.query(WebCredential).all()}
+
+    def web_state(key: str, bindings: list[dict]) -> Optional[dict]:
+        cred = creds.get(key)
+        if not cred:
+            return None
+        return {
+            "username":      cred.username,
+            "enabled":       bool(cred.enabled),
+            "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
+            "locked":        web_auth.lock_seconds_left(cred) > 0,
+            "deliverable":   any(b.get("status") == "approved" for b in bindings),
+        }
+
     supervisors = []
     for m in db.query(Manager).order_by(Manager.id).all():
+        sup_bindings = [binding(r) for r in by_key.get(("supervisor", m.id), [])]
         supervisors.append({
             "id": m.id, "name": m.name, "shift": m.shift, "archived": bool(m.archived),
             "has_data": _manager_has_data(db, m.id),
-            "bindings": [binding(r) for r in by_key.get(("supervisor", m.id), [])],
+            "bindings": sup_bindings,
+            "profile_key": f"supervisor:{m.id}",
+            "web": web_state(f"supervisor:{m.id}", sup_bindings),
         })
 
     profiles = db.query(RoleProfile).order_by(RoleProfile.id).all()
@@ -345,6 +368,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
                 .filter_by(role="admin", role_id=p.id, status="pending").all()
             ]
             out["admins"].append(item)
+
+        item["profile_key"] = f"{p.role}:{p.id}"
+        item["web"] = web_state(item["profile_key"], item.get("bindings", []))
 
     out["assigned_admin_count"] = sum(1 for a in admin_rows)
     # Full cell registry (unassigned rows included) for the admin cells tab.
@@ -625,7 +651,7 @@ class CellsExportBody(BaseModel):
 
 
 @router.post("/admin/cells/export.xlsx")
-def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
+def admin_export_cells(request: Request, body: CellsExportBody, db: Session = Depends(get_db),
                        caller: dict = Depends(require_page("cells"))):
     """Send the cells register to the caller's Telegram chat as a formatted
     workbook. Read-only, so it rides PAGE access like the list endpoint — a
@@ -634,7 +660,6 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.properties import PageSetupProperties
-    from app.telegram_bot import bot
 
     L = _CELLS_XLSX_T.get(body.lang) or _CELLS_XLSX_T["ru"]
     rows = body.rows
@@ -806,10 +831,13 @@ def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
     caption = (f"📋 {L['sheet']} — {now.strftime('%d.%m.%Y %H:%M')}  •  "
                f"{L['records']}: {len(rows)}")
     try:
-        bot.send_document(chat_id=int(caller["sub"]), document=(fname, buf.read()),
-                          caption=caption)
+        delivered = deliver_xlsx(request, caller, fname, buf.read(), caption)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    if not isinstance(delivered, dict):
+        return delivered
     return {"ok": True, "rows": len(rows)}
 
 
@@ -1377,6 +1405,242 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
     db.commit()
     alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.unassigned",
                     details=alert_details)
+    return {"ok": True}
+
+
+# ── Web logins (username + password for the browser) ──────────────────────────
+#
+# A browser login belongs to the PROFILE, so it is managed here, in the row of
+# the person it belongs to — not in a separate register that would drift out of
+# step with the profiles it describes. The generated password is never returned
+# to the caller: it goes to the profile's Telegram holders and nowhere else, so
+# running this tab does not mean learning anyone's password.
+
+class WebLoginPayload(BaseModel):
+    profile_key: str
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class WebLoginBulkPayload(BaseModel):
+    profile_keys: list[str]
+
+
+def _web_guard(caller: dict, key: str) -> tuple[str, int]:
+    """Resolve + authorize one profile key for web-login management.
+
+    Reuses the escalation stop: someone running this tab through a grant may
+    not mint a browser password for an ADMIN profile. Without it, a grantee
+    could hand themselves an admin login by creating one and resetting it to a
+    profile they hold."""
+    role, ref = parse_profile_key(key)
+    if not role or not ref or role not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile")
+    _deny_admin_profile(caller, role)
+    return role, ref
+
+
+def _web_row(db: Session, key: str) -> WebCredential:
+    cred = db.query(WebCredential).filter(WebCredential.profile_key == key).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="No web login for this profile")
+    return cred
+
+
+def _web_state(db: Session, cred: WebCredential, key: str) -> dict:
+    """One profile's web-login state, including whether it can be DELIVERED.
+    A profile with no Telegram holder cannot receive its own password, so the
+    admin sees that instead of a login that would never arrive."""
+    return {
+        "username":      cred.username,
+        "enabled":       bool(cred.enabled),
+        "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
+        "locked":        web_auth.lock_seconds_left(cred) > 0,
+        "deliverable":   bool(profile_holders(db, key)),
+    }
+
+
+@router.post("/admin/web-login")
+def admin_set_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                        caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Create a browser login for a profile, or reset the password of an
+    existing one. Either way the credential is DM'd to every holder."""
+    key = payload.profile_key
+    _web_guard(caller, key)
+
+    name = profile_display_name(db, key)
+    if not name:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if not web_auth.session_identity(db, key):
+        raise HTTPException(status_code=400, detail="no_holder")
+
+    cred = db.query(WebCredential).filter(WebCredential.profile_key == key).first()
+
+    username = web_auth.normalize_username(payload.username or "") or (
+        cred.username if cred else web_auth.suggest_username(db, name)
+    )
+    err = web_auth.username_error(username)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    clash = db.query(WebCredential).filter(WebCredential.username == username).first()
+    if clash and (not cred or clash.id != cred.id):
+        raise HTTPException(status_code=409, detail="username_taken")
+
+    password = (payload.password or "").strip() or web_auth.generate_password()
+    err = web_auth.password_error(password)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+
+    if cred:
+        cred.username = username
+        cred.password_hash = web_auth.hash_password(password)
+        cred.password_set_at = datetime.now(timezone.utc)
+        # A reset ends every browser session that held the old password.
+        cred.token_version = (cred.token_version or 1) + 1
+        cred.enabled = True
+        web_auth.clear_failures(db, cred)
+        action = "weblogin.reset"
+    else:
+        cred = WebCredential(
+            profile_key=key, username=username,
+            password_hash=web_auth.hash_password(password),
+            password_set_at=datetime.now(timezone.utc),
+        )
+        db.add(cred)
+        action = "weblogin.created"
+    db.commit()
+
+    sent = web_auth.dm_credentials(db, key, username, password)
+    web_auth.audit(action.split(".")[1], caller, name, username, f"dm_sent={sent}")
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, action,
+                    details=[("profile", name), ("login", username)])
+    return {"ok": True, "username": username, "sent": sent,
+            "web": _web_state(db, cred, key)}
+
+
+@router.post("/admin/web-login/bulk")
+def admin_bulk_web_login(payload: WebLoginBulkPayload, db: Session = Depends(get_db),
+                         caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Generate logins for everyone who does not have one yet — the rollout
+    path. Profiles that already have a login are left ALONE (a bulk action must
+    never silently reset a password someone is using), and profiles with no
+    Telegram holder are reported back rather than skipped in silence."""
+    created, skipped, no_holder = [], [], []
+    # Names claimed within this batch are not in the DB yet, so collisions
+    # between two new logins have to be tracked here as well.
+    taken: set[str] = set()
+
+    for key in payload.profile_keys:
+        role, ref = parse_profile_key(key)
+        if not role or not ref or role not in PROFILE_TYPES:
+            continue
+        if role == "admin" and caller.get("role") != "admin":
+            continue
+        name = profile_display_name(db, key)
+        if not name:
+            continue
+        if db.query(WebCredential).filter(WebCredential.profile_key == key).first():
+            skipped.append(name)
+            continue
+        if not web_auth.session_identity(db, key):
+            no_holder.append(name)
+            continue
+
+        username = web_auth.suggest_username(db, name, taken)
+        taken.add(username)
+        password = web_auth.generate_password()
+        db.add(WebCredential(
+            profile_key=key, username=username,
+            password_hash=web_auth.hash_password(password),
+            password_set_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+        web_auth.dm_credentials(db, key, username, password)
+        web_auth.audit("created", caller, name, username, "bulk")
+        created.append({"profile": name, "username": username})
+
+    if created:
+        alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.bulk",
+                        details=[("count", len(created))])
+    return {"ok": True, "created": created, "skipped": skipped, "no_holder": no_holder}
+
+
+@router.put("/admin/web-login")
+def admin_rename_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                           caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Change the username without touching the password."""
+    key = payload.profile_key
+    _web_guard(caller, key)
+    cred = _web_row(db, key)
+
+    username = web_auth.normalize_username(payload.username or "")
+    err = web_auth.username_error(username)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    clash = db.query(WebCredential).filter(WebCredential.username == username).first()
+    if clash and clash.id != cred.id:
+        raise HTTPException(status_code=409, detail="username_taken")
+
+    old = cred.username
+    web_auth.audit("renamed", caller, profile_display_name(db, key) or "", old,
+                   f"new_login={username}")
+    cred.username = username
+    # Sessions carry the username as their handle, so a rename must re-key them
+    # — bumping the version signs the old ones out rather than orphaning them.
+    cred.token_version = (cred.token_version or 1) + 1
+    db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.renamed",
+                    changes=[("login", old, username)])
+    return {"ok": True, "web": _web_state(db, cred, key)}
+
+
+@router.post("/admin/web-login/toggle")
+def admin_toggle_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                           caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Enable/disable browser access without destroying the credential — the
+    reversible half of «this person should not be logging in from home»."""
+    key = payload.profile_key
+    _web_guard(caller, key)
+    cred = _web_row(db, key)
+    cred.enabled = not cred.enabled
+    if not cred.enabled:
+        cred.token_version = (cred.token_version or 1) + 1
+    db.commit()
+    web_auth.audit("enabled" if cred.enabled else "disabled", caller,
+                   profile_display_name(db, key) or "", cred.username)
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE,
+                    "weblogin.enabled" if cred.enabled else "weblogin.disabled",
+                    details=[("login", cred.username)])
+    return {"ok": True, "web": _web_state(db, cred, key)}
+
+
+@router.post("/admin/web-login/revoke")
+def admin_revoke_web_sessions(payload: WebLoginPayload, db: Session = Depends(get_db),
+                              caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Sign out every browser holding this login, keeping the password valid —
+    the answer to a laptop left logged in somewhere."""
+    key = payload.profile_key
+    _web_guard(caller, key)
+    cred = _web_row(db, key)
+    cred.token_version = (cred.token_version or 1) + 1
+    db.commit()
+    web_auth.audit("sessions_revoked", caller, profile_display_name(db, key) or "",
+                   cred.username)
+    return {"ok": True, "web": _web_state(db, cred, key)}
+
+
+@router.delete("/admin/web-login")
+def admin_delete_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                           caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    key = payload.profile_key
+    _web_guard(caller, key)
+    cred = _web_row(db, key)
+    username = cred.username
+    web_auth.audit("deleted", caller, profile_display_name(db, key) or "", username)
+    db.delete(cred)
+    db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "weblogin.deleted",
+                    details=[("login", username)])
     return {"ok": True}
 
 

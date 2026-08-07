@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Factory, Settings2,
-  FileSpreadsheet,
+  FileSpreadsheet, ShieldCheck, UserRound,
 } from "lucide-react";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
 import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
@@ -22,6 +23,7 @@ import { useTranslit } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
 import { useCapabilities, CAP } from "../hooks/useCapabilities";
 import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
 
 /**
  * Cells registry — the verifix/SAP-code + workshop-name + brigadir/leader
@@ -263,18 +265,21 @@ export default function Cells() {
   // Read-only, so it stays available to a view-only grantee (no canEdit gate).
   const exportMut = useMutation({
     mutationFn: () =>
-      api.post("/api/profiles/admin/cells/export.xlsx", {
-        lang,
-        total: cells.length,
-        rows: sorted.map((c) => ({
-          verifix_code: c.verifix_code || "",
-          sap_code: c.sap_code || "",
-          workshop: wname(c) || "",
-          supervisor: c.supervisor ? tl(c.supervisor) : "",
-          leader: c.leader ? tl(c.leader) : "",
-        })),
+      exportXlsx("/api/profiles/admin/cells/export.xlsx", {
+        body: {
+          lang,
+          total: cells.length,
+          rows: sorted.map((c) => ({
+            verifix_code: c.verifix_code || "",
+            sap_code: c.sap_code || "",
+            workshop: wname(c) || "",
+            supervisor: c.supervisor ? tl(c.supervisor) : "",
+            leader: c.leader ? tl(c.leader) : "",
+          })),
+        },
+        fallbackName: "cells_register.xlsx",
       }),
-    onSuccess: () => toast.success(t("staff.exportToast")),
+    onSuccess: (via) => toast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast")),
     onError: (e) => toast.error(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
@@ -348,8 +353,28 @@ export default function Cells() {
               placeholder={t("admin.profiles.cellSearchPh")}
               className="w-full sm:w-72"
             />
-            <StyledSelect value={fBrigadir} onChange={setFBrigadir} options={brigadirOpts} searchable className="w-full sm:w-44" />
-            <StyledSelect value={fLeader} onChange={setFLeader} options={leaderFilterOpts} searchable className="w-full sm:w-48" />
+            <FilterPanel
+              sections={[
+                {
+                  key: "brigadir", icon: ShieldCheck, label: t("admin.profiles.cellFilterAllBrigadirs"),
+                  active: fBrigadir !== "",
+                  display: fBrigadir !== "" ? (brigadirOpts.find((o) => o.value === fBrigadir)?.label || "") : "",
+                  onClear: () => setFBrigadir(""),
+                  render: ({ close } = {}) => (
+                    <PickFilter searchable close={close} opts={brigadirOpts} value={fBrigadir} onChange={setFBrigadir} />
+                  ),
+                },
+                {
+                  key: "leader", icon: UserRound, label: t("admin.profiles.cellFilterAllLeaders"),
+                  active: fLeader !== "",
+                  display: fLeader !== "" ? (leaderFilterOpts.find((o) => o.value === fLeader)?.label || "") : "",
+                  onClear: () => setFLeader(""),
+                  render: ({ close } = {}) => (
+                    <PickFilter searchable close={close} opts={leaderFilterOpts} value={fLeader} onChange={setFLeader} />
+                  ),
+                },
+              ]}
+            />
             <div className="ml-auto flex items-center gap-2">
               {canEdit && (
                 <Button size="lg" icon={<Plus size={14} />} onClick={openAdd} className="whitespace-nowrap">

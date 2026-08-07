@@ -15,7 +15,7 @@ from typing import Annotated, List, Optional
 from uuid import uuid4
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
@@ -42,6 +42,7 @@ from app.models import (
     TelegramUserRole,
 )
 from app.services.day_state import confirmed_pairs, day_state
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
 
@@ -1802,10 +1803,9 @@ class ExportBody(BaseModel):
 
 
 @router.post("/attendance/export")
-def export_attendance(body: ExportBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
+def export_attendance(request: Request, body: ExportBody, caller=Depends(_require_staff), db: Session = Depends(get_db)):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
-    from app.telegram_bot import bot
 
     tg_id = int(caller["sub"])
 
@@ -1859,11 +1859,11 @@ def export_attendance(body: ExportBody, caller=Depends(_require_staff), db: Sess
     caption  = f"📊 Attendance — {body.attend_date}  •  {manager_name}  •  {len(body.rows)} workers"
 
     try:
-        bot.send_document(chat_id=tg_id, document=(filename, buf.read()), caption=caption)
+        return deliver_xlsx(request, caller, filename, buf.read(), caption, chat_id=tg_id)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-
-    return {"ok": True}
 
 
 # ── Batch-level request endpoints ─────────────────────────────────────────────

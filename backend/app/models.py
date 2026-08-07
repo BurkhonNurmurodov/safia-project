@@ -356,6 +356,45 @@ class RoleProfile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WebCredential(Base):
+    """A username+password login for the browser, keyed by PROFILE.
+
+    The app's own front door is Telegram: ``initData`` proves the caller sits
+    inside a genuine WebView, and ``security.py`` re-verifies it on every
+    request. Opening the dashboard at production.safiacorporate.uz means that
+    proof does not exist, so a password stands in for it.
+
+    The credential belongs to the PROFILE, not to a Telegram account, because a
+    profile IS the person (see ``app/identity.py``). Several accounts holding
+    one profile share this one login exactly as they already share that
+    profile's work, and a generated password is DM'd to every holder. The key
+    is the canonical ``"role:id"`` string, so supervisors (``managers.id``) and
+    everyone else (``role_profiles.id``) live in one table.
+
+    ``token_version`` is the revocation handle: bumping it invalidates every
+    browser session issued for this profile ("sign out everywhere") while
+    leaving Telegram sessions alone — those carry no version claim and are
+    gated by initData anyway.
+    """
+    __tablename__ = "web_credentials"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key     = Column(String, nullable=False, unique=True, index=True)
+    # Stored lowercase. The login form folds case before comparing, so a phone
+    # keyboard's automatic capital never locks anyone out of their own account.
+    username        = Column(String, nullable=False, unique=True, index=True)
+    password_hash   = Column(String, nullable=False)
+    enabled         = Column(Boolean, nullable=False, default=True)
+    token_version   = Column(Integer, nullable=False, default=1)
+    # Lockout state lives in the DB, not in process memory: an attacker who can
+    # cause a restart must not be able to reset the counter.
+    failed_attempts = Column(Integer, nullable=False, default=0)
+    locked_until    = Column(DateTime(timezone=True), nullable=True)
+    last_login_at   = Column(DateTime(timezone=True), nullable=True)
+    password_set_at = Column(DateTime(timezone=True), nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Cell(Base):
     """A production cell, first-class entity: Verifix code (unique), optional
     SAP code and per-language workshop names, owned by a supervisor unit and,

@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
   ChevronDown, Check, MessageSquare, Send,
   CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
-  TrendingUp, PieChart, XCircle, ArrowLeft,
+  TrendingUp, PieChart, XCircle, ArrowLeft, Layers, UserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -18,7 +18,7 @@ import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th } from "../components/ui/DataTable";
-import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -786,17 +786,57 @@ export default function Tasks() {
   }));
 
   // ── consolidated table filter button ────────────────────────────────────────
+  // ── one consolidated filter zone ───────────────────────────────────────────
+  // Shift / supervisor / leader (role-scoped cascade) join the status filter in
+  // ONE panel on the page bar; active narrowings surface as chips.
   const filterSections = [
+    ...(isAdmin ? [{
+      key: "shift", icon: Layers, label: t("filter.shift"),
+      active: fShift != null,
+      display: fShift != null ? `S${fShift}` : "",
+      onClear: () => { setFShift(null); setFSup("All"); setFLeader("All"); },
+      render: () => (
+        <SegmentedToggle
+          fill
+          value={fShift}
+          onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
+          options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+        />
+      ),
+    }, {
+      key: "supervisor", icon: ShieldCheck, label: t("tasks.colSupervisor"),
+      active: fSup !== "All",
+      display: fSup !== "All" ? (supOptions.find((o) => o.value === fSup)?.label || "") : "",
+      onClear: () => { setFSup("All"); setFLeader("All"); },
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+          value={fSup}
+          onChange={(v) => { setFSup(v); setFLeader("All"); }} />
+      ),
+    }] : []),
+    ...(!isLeader ? [{
+      key: "leader", icon: UserRound, label: t("tasks.colLeader"),
+      active: fLeader !== "All",
+      display: fLeader !== "All" ? (leaderFilterOptions.find((o) => o.value === fLeader)?.label || "") : "",
+      onClear: () => setFLeader("All"),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "All", label: t("tasks.allLeaders") }, ...leaderFilterOptions]}
+          value={fLeader}
+          onChange={setFLeader} />
+      ),
+    }] : []),
     {
       key: "status", icon: CircleDot, label: t("tasks.colStatus"),
       active: statusSel.length > 0,
       display: `${statusSel.length} ${t("filter.selected2")}`,
+      onClear: () => setStatusSel([]),
       render: () => (
         <OptsFilter opts={STATUSES} sel={statusSel} onChange={setStatusSel} render={(s) => statusLabel(s)} />
       ),
     },
   ];
-  const filterActiveCount = statusSel.length > 0 ? 1 : 0;
 
   // ── table columns (role-dependent) ─────────────────────────────────────────
   const COLS = [
@@ -878,56 +918,18 @@ export default function Tasks() {
 
   return (
     <Layout title={t("tasks.title")}>
-      {/* Filters — period + shift + supervisor/leader cascade (role-scoped) */}
-      <div className={`grid grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-2 sm:gap-3 mb-3`}>
-        {/* Period — same range picker as the Leaders page (presets + calendar).
-            Mobile: full row + hidden labels; the two selects pair up below. */}
-        <div className="col-span-2 sm:col-span-1">
-          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-          <DateRangePicker
-            dateFrom={startDate}
-            dateTo={endDate}
-            setDateFrom={setStartDate}
-            setDateTo={setEndDate}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-
-        {/* Shift — narrows the supervisor picker (and all data) to one shift. Admin
-            only, mirroring the supervisor filter (supervisors are pinned to one). */}
-        {isAdmin && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-            <SegmentedToggle
-              fill
-              value={fShift}
-              onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
-              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-            />
-          </div>
-        )}
-
-        {isAdmin && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-            <StyledSelect
-              value={fSup}
-              onChange={(v) => { setFSup(v); setFLeader("All"); }}
-              options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
-            />
-          </div>
-        )}
-
-        {!isLeader && (
-          <div className={`min-w-0 ${isAdmin ? "" : "col-span-2 sm:col-span-1"}`}>
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colLeader")}</label>
-            <StyledSelect
-              value={fLeader}
-              onChange={setFLeader}
-              options={[{ value: "All", label: t("tasks.allLeaders") }, ...leaderFilterOptions]}
-            />
-          </div>
-        )}
+      {/* ONE-ROW filter bar: period inline; shift / supervisor / leader / status
+          live in the consolidated panel and surface as chips when active. */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel sections={filterSections} />
       </div>
 
       {/* Charts — open-task trend + status donut over the fully filtered rows */}
@@ -1012,12 +1014,6 @@ export default function Tasks() {
               onChange={setSearch}
               placeholder={t("tasks.search")}
               className="w-44"
-            />
-            <FilterPanel
-              sections={filterSections}
-              activeCount={filterActiveCount}
-              anyActive={filterActiveCount > 0}
-              onClearAll={() => setStatusSel([])}
             />
             {canCreate && (
               <Button size="lg" icon={<Plus size={14} />} onClick={openCreate}>{t("tasks.add")}</Button>

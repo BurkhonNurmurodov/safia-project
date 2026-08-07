@@ -2,14 +2,13 @@ import { useMemo, useState } from "react";
 import {
   Trophy, Gauge, ClipboardCheck, Lightbulb, ShieldCheck,
   UserCheck, ListOrdered, TrendingUp, Activity, ArrowUp, ArrowDown, Minus,
-  Info, ChevronDown, Download, ArrowRight,
-} from "lucide-react";
+  Info, ChevronDown, Download, ArrowRight, Layers, UserRound} from "lucide-react";
 import Layout from "../components/layout/Layout";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
-import StyledSelect from "../components/ui/StyledSelect";
 import DateRangePicker from "../components/ui/DateRangePicker";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Button from "../components/ui/Button";
 import { useLang } from "../context/LangContext";
 import { useTheme } from "../context/ThemeContext";
@@ -518,39 +517,52 @@ export default function Leaderboard() {
     <Layout title={t("leaderboard.subtitle")}>
       <div className="flex flex-col gap-4 max-w-[1200px] mx-auto">
 
-        {/* ── page toolbar (single filter zone): the standard inline period +
-            shift + supervisor selectors, plus demo badge + export on the right ── */}
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-          <div className="sm:w-72">
-            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-            <DateRangePicker
-              dateFrom={dateFrom}
-              dateTo={dateTo}
-              setDateFrom={setDateFrom}
-              setDateTo={setDateTo}
-              triggerClassName="w-full px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="min-w-0">
-            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-            <SegmentedToggle
-              value={shiftF}
-              onChange={setShiftF}
-              options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-            />
-          </div>
-          <div className="sm:w-64 min-w-0">
-            <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-            <StyledSelect
-              value={supSel}
-              onChange={(v) => setSupF(v === "All" ? null : Number(v))}
-              options={supFilterOptions}
-              searchable
-              searchPlaceholder={t("filter.searchBrigadirs")}
-              triggerClassName="w-full px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-2.5 sm:ml-auto sm:self-end">
+        {/* ── page toolbar (single filter zone): period inline, shift +
+            supervisor in the shared FilterPanel (chips when active), demo
+            badge + export on the right ── */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            setDateFrom={setDateFrom}
+            setDateTo={setDateTo}
+            compactLabel
+            triggerClassName="px-3 py-2 text-sm"
+          />
+          <FilterPanel
+            sections={[
+              {
+                key: "shift", icon: Layers, label: t("filter.shift"),
+                active: shiftF != null,
+                display: shiftF != null ? `S${shiftF}` : "",
+                onClear: () => setShiftF(null),
+                render: () => (
+                  <SegmentedToggle
+                    fill
+                    value={shiftF}
+                    onChange={setShiftF}
+                    options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+                  />
+                ),
+              },
+              {
+                key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+                active: supSel !== "All",
+                display: supSel !== "All" ? (supFilterOptions.find((o) => o.value === supSel)?.label || "") : "",
+                onClear: () => setSupF(null),
+                render: ({ close } = {}) => (
+                  <PickFilter
+                    searchable
+                    close={close}
+                    opts={supFilterOptions}
+                    value={supSel}
+                    onChange={(v) => setSupF(v === "All" ? null : Number(v))}
+                  />
+                ),
+              },
+            ]}
+          />
+          <div className="flex items-center gap-2.5 sm:ml-auto">
             {/* the demo badge is a caveat, not an accent: amber keeps it from
                 reading as a third gold action beside the export, and leaves
                 brand gold to mean one thing on this page — the champion. */}

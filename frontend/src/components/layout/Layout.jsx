@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import Sidebar from "./Sidebar";
+import WebAccountSettings from "./WebAccountSettings";
 import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
@@ -172,7 +173,7 @@ function UserProfile() {
 // Header gear shown on every page — language, name, theme, ghost, sign out.
 
 function SettingsButton() {
-  const { auth, leaveRole } = useAuth();
+  const { auth, leaveRole, logout, webSession } = useAuth();
   const { lang, setLang, t, languages } = useLang();
   const { theme, toggle } = useTheme();
   const { ghost, toggleGhost } = useGhost();
@@ -295,9 +296,21 @@ function SettingsButton() {
               )}
             </div>
 
-            {/* Sign out from current profile */}
+            {/* Website login — browser sessions only */}
+            {webSession && <WebAccountSettings onBeforeOpen={() => setSettingsOpen(false)} />}
+
+            {/* Sign out.
+                In Telegram this is an UNREGISTER: it drops the profile binding
+                and the person has to /start again. In a browser it must only
+                end the session — reading "sign out" on a website as "delete my
+                account" would be indefensible — so the confirm is skipped and
+                logout() just clears the token. */}
             <button
-              onClick={() => { setSettingsOpen(false); setConfirmLogout(true); }}
+              onClick={() => {
+                setSettingsOpen(false);
+                if (webSession) logout();
+                else setConfirmLogout(true);
+              }}
               className="w-full flex items-center gap-3 px-5 py-3.5 text-xs"
               style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
               onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
@@ -426,9 +439,15 @@ export default function Layout({ children, title }) {
       el.removeEventListener("touchstart", stop);
     };
   }, [pathname]);
-  const [sidebarPinned, setSidebarPinned] = useState(
-    () => localStorage.getItem("sidebar_pinned") === "true"
-  );
+  // Pinned by default on a real desktop viewport: the app arrived from a phone,
+  // where a collapsed rail is right, but on a browser a permanently visible nav
+  // is what makes the product legible — there is room for it and hiding it just
+  // costs a click on every navigation. Still a remembered per-device choice.
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    const saved = localStorage.getItem("sidebar_pinned");
+    if (saved !== null) return saved === "true";
+    return window.matchMedia?.("(min-width: 1024px)")?.matches ?? false;
+  });
 
   function toggleSidebarPin() {
     setSidebarPinned(v => {
@@ -495,7 +514,12 @@ export default function Layout({ children, title }) {
             onScroll={(e) => rememberScroll(pathname, e.currentTarget.scrollTop)}
             className="h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"
           >
-            <div className="page-enter">
+            {/* The column is bounded and centred so that on a wide desktop
+                monitor the content does not smear edge to edge — a table whose
+                first and last column sit a head-turn apart is harder to read
+                than the same table with margin either side. On phones and
+                laptops the cap never binds, so nothing changes there. */}
+            <div className="page-enter mx-auto w-full" style={{ maxWidth: "var(--content-max)" }}>
               {children}
             </div>
           </main>

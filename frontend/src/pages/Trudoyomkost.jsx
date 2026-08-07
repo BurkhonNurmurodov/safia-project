@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Gauge, FileSpreadsheet, CalendarDays, Users, Grid3x3,
-  BarChart3, LineChart, TrendingUp, TrendingDown, Activity, Loader2, CheckCircle,
-} from "lucide-react";
+  BarChart3, LineChart, TrendingUp, TrendingDown, Activity, Loader2, CheckCircle, Layers, UserRound} from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import { SectionHead } from "../components/ui/DataTable";
@@ -22,6 +22,7 @@ import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { useDragSelect } from "../hooks/useDragSelect";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { exportXlsx } from "../utils/exportXlsx";
 
 // ── localized copy (kept local — only nav.trudoyomkost lives in translations.js)
 const WD = {
@@ -448,8 +449,10 @@ export default function Trudoyomkost() {
     if (!dateFrom || !dateTo) return;
     setExporting(true);
     try {
-      await api.get("/api/production/trudoyomkost/export.xlsx", {
+      await exportXlsx("/api/production/trudoyomkost/export.xlsx", {
+        method: "get",
         params: { date_from: dateFrom, date_to: dateTo, manager_id: brigadirIds, mode: wdMode, unit, lang, shift, send: 1 },
+        fallbackName: `trudoyomkost_${dateFrom}_${dateTo}.xlsx`,
       });
       setExportDone(true);
       setTimeout(() => setExportDone(false), 4000);
@@ -486,38 +489,50 @@ export default function Trudoyomkost() {
         </div>
       )}
 
-      {/* Inline period + shift + supervisor selectors — always visible, wired to
-          the global filters so they stay in sync with the header Filters drawer. */}
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        <div className="sm:w-72">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-          <DateRangePicker
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            setDateFrom={setDateFrom}
-            setDateTo={setDateTo}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-          <SegmentedToggle
-            value={shift}
-            onChange={setShift}
-            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-          />
-        </div>
-        <div className="sm:w-64 min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-          <StyledSelect
-            value={supValue}
-            onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
-            options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
-            searchable
-            searchPlaceholder={t("filter.searchBrigadirs")}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
+      {/* ONE-ROW filter bar: period inline; shift / supervisor live in the
+          shared FilterPanel and surface as chips when active. */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          setDateFrom={setDateFrom}
+          setDateTo={setDateTo}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel
+          sections={[
+            {
+              key: "shift", icon: Layers, label: t("filter.shift"),
+              active: shift != null,
+              display: shift != null ? `S${shift}` : "",
+              onClear: () => setShift(null),
+              render: () => (
+                <SegmentedToggle
+                  fill
+                  value={shift}
+                  onChange={setShift}
+                  options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+                />
+              ),
+            },
+            {
+              key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+              active: supValue !== "All",
+              display: supValue !== "All" ? (supOptions.find((o) => o.value === supValue)?.label || "") : "",
+              onClear: () => setBrigadirIds([]),
+              render: ({ close } = {}) => (
+                <PickFilter
+                  searchable
+                  close={close}
+                  opts={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+                  value={supValue}
+                  onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
+                />
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* top controls: context chips + unit toggle + export */}

@@ -16,7 +16,7 @@ import Button from "../components/ui/Button";
 import Pagination from "../components/ui/Pagination";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
-import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
+import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import SeasonalityHeatmap from "../components/charts/SeasonalityHeatmap";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -26,9 +26,10 @@ import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit } from "../utils/transliterate";
 import { useChartTheme } from "../hooks/useChartTheme";
-import FactorySelect from "../components/ui/FactorySelect";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory, factoryName } from "../context/FactoryContext";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { exportXlsx } from "../utils/exportXlsx";
 
 // ── palettes ────────────────────────────────────────────────────────────────
 // Status keeps the traffic-light encoding used across the platform; the
@@ -403,6 +404,9 @@ export default function Quality() {
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();
   const { factory, current: currentFactory, enabled: factoryEnabled } = useFactory();
+  // Plant switcher as a FilterPanel section (null on single-plant installs,
+  // an inert chip for locked viewers).
+  const factorySection = useFactorySection();
   const T = TXT[lang] || TXT.ru;
   // The detail modal describes a Russian-language register, so its field labels
   // stay Russian in every UI language — the translated/transliterated variants
@@ -844,6 +848,7 @@ export default function Quality() {
   const optFilter = (o, sel, set, group, icon) => ({
     key: group, icon, label: o.label, active: sel.length > 0,
     display: `${sel.length} ${t("filter.selected2")}`,
+    onClear: () => set([]),
     render: () => (
       <OptsFilter opts={o.opts} sel={sel} onChange={set}
         render={(k) => (
@@ -870,12 +875,6 @@ export default function Quality() {
     ...(!isProd ? [optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers)] : []),
     optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog),
   ];
-  // On Production the shift toggle and supervisor dropdown live outside the panel,
-  // so they don't count toward the panel's active-filter badge.
-  const filterActiveCount = (isProd
-    ? [typeSel, catSel, statusSel, retSel, mgrSel]
-    : [srcSel, typeSel, catSel, statusSel, retSel, brigSel, shiftSel, mgrSel]
-  ).filter((s) => s.length).length;
   // The Production tab's shift control: a 3-way All / Shift 1 / Shift 2 toggle that
   // drives the same shiftSel state the panel filter uses on Overall.
   const shiftTab = shiftSel.length === 1 && ["1", "2"].includes(shiftSel[0]) ? shiftSel[0] : "all";
@@ -959,6 +958,62 @@ export default function Quality() {
     setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
     setLeadSel([]); setCellSel([]);
   };
+
+  // ── one consolidated filter zone ───────────────────────────────────────────
+  // Plant / shift / supervisor / leader / cell join the panel ahead of the
+  // register filters, so the whole page narrows from ONE control and every
+  // active narrowing surfaces as a chip on the bar.
+  const pageSections = [
+    ...(factorySection ? [factorySection] : []),
+    ...(isProd && !lockOwn ? [{
+      key: "shiftTab", icon: Layers, label: T.fShift,
+      active: shiftTab !== "all",
+      display: shiftTab !== "all" ? `${T.shift} ${shiftTab}` : "",
+      onClear: () => setShiftSel([]),
+      render: () => (
+        <SegmentedToggle fill value={shiftTab}
+          onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
+          options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
+      ),
+    }, {
+      key: "brigPick", icon: Wrench, label: T.fBrig,
+      active: brigSel.length > 0,
+      display: brigSel.length === 1 ? tl(brigSel[0]) : (brigSel.length ? `${brigSel.length} ${t("filter.selected2")}` : ""),
+      onClear: () => setBrigSel([]),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s), title: tl(s) }))]}
+          value={brigSel[0] || ""}
+          onChange={(v) => setBrigSel(v ? [v] : [])} />
+      ),
+    }] : []),
+    ...(!lockOwn ? [{
+      key: "leadPick", icon: UserRound, label: T.fLead,
+      active: leadSel.length > 0,
+      display: leadSel.length === 1 ? tl(leadSel[0]) : (leadSel.length ? `${leadSel.length} ${t("filter.selected2")}` : ""),
+      onClear: () => setLeadSel([]),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "", label: T.allLead }, ...leadOpts.map((s) => ({ value: s, label: tl(s), title: tl(s) }))]}
+          value={leadSel[0] || ""}
+          onChange={(v) => setLeadSel(v ? [v] : [])} />
+      ),
+    }, {
+      key: "cellPick", icon: Boxes, label: T.fCell,
+      active: cellSel.length > 0,
+      display: cellSel.length === 1
+        ? (cellOpts.find((o) => o.value === cellSel[0])?.label || cellSel[0])
+        : (cellSel.length ? `${cellSel.length} ${t("filter.selected2")}` : ""),
+      onClear: () => setCellSel([]),
+      render: ({ close } = {}) => (
+        <PickFilter searchable close={close}
+          opts={[{ value: "", label: T.allCell }, ...cellOpts.map((o) => ({ value: o.value, label: o.label, title: o.label }))]}
+          value={cellSel[0] || ""}
+          onChange={(v) => setCellSel(v ? [v] : [])} />
+      ),
+    }] : []),
+    ...filterSections,
+  ];
 
   // ── charts ────────────────────────────────────────────────────────────────
   const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
@@ -1408,8 +1463,11 @@ export default function Quality() {
   const exportExcel = async () => {
     setExporting(true);
     try {
-      await api.post("/api/quality/export.xlsx", buildExportPayload());
-      toast.success(t("staff.exportToast"));
+      const via = await exportXlsx("/api/quality/export.xlsx", {
+        body: buildExportPayload(),
+        fallbackName: "quality.xlsx",
+      });
+      toast.success(t(via === "download" ? "staff.exportDownloaded" : "staff.exportToast"));
     } catch (e) {
       toast.error(`${T.xFailed}: ${e?.response?.data?.detail || e?.message || ""}`);
     } finally {
@@ -1512,56 +1570,14 @@ export default function Quality() {
         </div>
       )}
 
-      {/* one filter zone for the whole page — charts and table read the same state.
-          On phones it breaks into three tidy rows (date + shift · brigadir + leader ·
-          cell + filters); sm:contents dissolves the row wrappers so desktop keeps one
-          aligned line. */}
-      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
-        {/* row 3 — plant + date + shift. The plant leads: it is the broadest
-            narrowing on the row. This toolbar carries no field labels, so the
-            select names itself with the Factory icon. Renders nothing on a
-            single-factory install. */}
-        <FactorySelect label={false} className="w-full sm:w-44" />
-        <div className="flex items-center gap-2 sm:contents">
-          <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
-            max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
-          {isProd && !lockOwn && (
-            <SegmentedToggle value={shiftTab}
-              onChange={(v) => setShiftSel(v === "all" ? [] : [v])}
-              options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
-          )}
-        </div>
-        {/* row 4 — the responsible people: supervisor, then the cell's owning leader */}
-        <div className="flex items-center gap-2 sm:contents">
-          {isProd && !lockOwn && (
-            <StyledSelect value={brigSel[0] || ""}
-              onChange={(v) => setBrigSel(v ? [v] : [])}
-              options={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s) }))]}
-              searchable searchPlaceholder={T.fBrig}
-              className="flex-1 min-w-0 sm:w-56 sm:flex-none" />
-          )}
-          {!lockOwn && (
-            <StyledSelect value={leadSel[0] || ""}
-              onChange={(v) => setLeadSel(v ? [v] : [])}
-              options={[{ value: "", label: T.allLead }, ...leadOpts.map((s) => ({ value: s, label: tl(s) }))]}
-              searchable searchPlaceholder={T.fLead}
-              className="flex-1 min-w-0 sm:w-52 sm:flex-none" />
-          )}
-        </div>
-        {/* row 5 — the cell at fault + filters */}
-        <div className="flex items-center gap-2 sm:contents">
-          {!lockOwn && (
-            <StyledSelect value={cellSel[0] || ""}
-              onChange={(v) => setCellSel(v ? [v] : [])}
-              options={[{ value: "", label: T.allCell }, ...cellOpts.map((o) => ({ value: o.value, label: o.label }))]}
-              searchable searchPlaceholder={T.fCell}
-              className="flex-1 min-w-0 sm:w-52 sm:flex-none" />
-          )}
-          {/* all remaining filters live in one grouped button, parked on the right */}
-          <div className="hidden sm:block sm:ml-auto" />
-          <FilterPanel sections={filterSections} activeCount={filterActiveCount}
-            anyActive={filterActiveCount > 0} onClearAll={clearAllFilters} forceGroup />
-        </div>
+      {/* ONE-ROW filter zone for the whole page — charts and table read the same
+          state. The period stays inline (the control people touch every visit);
+          plant / shift / people / cell and the register filters all live in the
+          consolidated panel and surface as chips whenever they narrow the page. */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}
+          max={today} compactLabel triggerClassName="px-3 py-2 text-sm" />
+        <FilterPanel sections={pageSections} onClearAll={clearAllFilters} />
       </div>
 
       {isLoading ? (

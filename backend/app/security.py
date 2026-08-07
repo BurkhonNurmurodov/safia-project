@@ -1,4 +1,4 @@
-"""Request-level Telegram-origin enforcement.
+"""Request-level origin enforcement.
 
 Every call the web app makes to the backend carries the Telegram WebApp
 ``initData`` string in the ``X-Telegram-Init-Data`` header (see the axios
@@ -6,10 +6,20 @@ interceptor in ``frontend/src/utils/api.js``). This module re-verifies that
 signature on every API request, so no endpoint can be reached from outside a
 genuine Telegram WebView — not just at login.
 
-This sits *in addition to* the per-endpoint JWT/role checks: the initData guard
-proves the caller is inside Telegram; the JWT proves which approved profile they
-are and what pages they may see. ``require_auth`` below is the minimal "any
-approved session" JWT check for endpoints that previously had none.
+There is exactly ONE other accepted proof: a **browser session token**, the JWT
+minted by ``/api/auth/web/login`` against a username and password (see
+``app/web_auth.py``). It is recognised only by its ``web`` claim, so a token
+issued to a Telegram session still cannot be replayed from outside Telegram —
+opening the dashboard on the public web adds one door and widens nothing else.
+Because that token is the whole proof, it is checked against the database on
+every request: a disabled login or a bumped ``token_version`` stops working
+immediately rather than at expiry.
+
+This sits *in addition to* the per-endpoint JWT/role checks: the origin guard
+proves the caller is inside Telegram (or holds a live browser session); the JWT
+proves which approved profile they are and what pages they may see.
+``require_auth`` below is the minimal "any approved session" JWT check for
+endpoints that previously had none.
 
 Wiring (see ``main.py``):
   * ``enforce_telegram_origin_global`` is registered as an app-wide dependency.
@@ -46,6 +56,8 @@ from app.routers.auth import _validate_init_data
 #   * /api/boot-report             — the recovery screen's crash reporter, must work
 #                                    when the app failed to boot / user isn't logged in
 #   * /api/translations            — public UI strings (no user data); fetched at boot
+#   * /api/auth/web/login          — the browser login exchange itself
+#   * /api/auth/web/forgot         — password recovery; answers identically either way
 _EXEMPT_PATHS = frozenset({
     "/api/auth/webapp",
     "/api/auth/bot-info",
@@ -53,26 +65,72 @@ _EXEMPT_PATHS = frozenset({
     "/api/profiles/registration-options",
     "/api/boot-report",
     "/api/translations",
+    "/api/auth/web/login",
+    "/api/auth/web/forgot",
 })
 
 _INIT_DATA_HEADER = "X-Telegram-Init-Data"
 
 
+def _bearer_token(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    return token.strip() if scheme.lower() == "bearer" else ""
+
+
+def _has_live_web_session(request: Request) -> bool:
+    """True when the request carries a valid, unrevoked BROWSER session token.
+
+    Only tokens minted by ``/api/auth/web/login`` qualify — they are the ones
+    that carry ``web``. A Telegram-issued JWT reaching this code path is still
+    rejected, so the initData wall stands exactly where it did for every session
+    that has one.
+    """
+    token = _bearer_token(request)
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        return False
+    if not payload.get("web"):
+        return False
+
+    # Revocation is only meaningful if it is checked here: this token IS the
+    # caller's whole proof of origin.
+    from app.database import SessionLocal
+    from app.web_auth import web_session_is_live
+    db = SessionLocal()
+    try:
+        return web_session_is_live(db, payload)
+    except Exception:
+        return False
+    finally:
+        db.close()
+
+
 def _check_init_data(request: Request) -> None:
-    """Verify the request carries a valid, in-window Telegram initData header.
-    Raises 401 otherwise. The dev bypass ('__dev__') is honored only when
-    DEV_AUTH is on, mirroring /api/auth/webapp."""
+    """Verify the request carries a valid, in-window Telegram initData header —
+    or, failing that, a live browser session token. Raises 401 otherwise. The
+    dev bypass ('__dev__') is honored only when DEV_AUTH is on, mirroring
+    /api/auth/webapp."""
     init_data = request.headers.get(_INIT_DATA_HEADER, "")
 
     if init_data == "__dev__":
         if settings.dev_auth:
             return
+        if _has_live_web_session(request):
+            return
         raise HTTPException(status_code=401, detail="Missing Telegram initData")
 
     if not init_data:
+        if _has_live_web_session(request):
+            return
         raise HTTPException(status_code=401, detail="Missing Telegram initData")
 
     if _validate_init_data(init_data) is None:
+        if _has_live_web_session(request):
+            return
         raise HTTPException(status_code=401, detail="Invalid or expired Telegram initData")
 
 

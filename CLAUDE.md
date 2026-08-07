@@ -27,7 +27,7 @@ or copy-paste its markup into a page.
 | Card/section header | `SectionHead` from `DataTable.jsx` | Icon + uppercase title + right slot; never redefine locally. |
 | Table pager | `Pagination.jsx` | For registers too long to dump into the DOM (thousands of rows). Sits directly under the `TableCard`: "x–y of N" left, windowed page buttons right, built from `Button`. Renders nothing for a single page. |
 | Column show/hide + reorder | `ColumnsPicker.jsx` | 38px `Columns3` icon trigger on the toolbar's RIGHT edge (`className="ml-auto"`, hidden-count badge) + portaled panel listing every column IN TABLE ORDER — hidden ones stay dimmed in place (eye-off), never regrouped to the bottom. Hide all/Show all links; drag-to-reorder only arms via the panel's reorder button. Controlled: `columns [{key,label,locked}]`, `order`, `hidden`, `onChange({order,hidden})`. Persist via `/api/ui-prefs/{key}` (per-profile JSON blobs, `UiPref` model); reconcile saved keys against the current column catalog and keep identity columns `locked`. `t("cols.*")` keys exist in all 4 langs. Excel exports of a picker-equipped table must mirror it exactly — send the visible keys in on-screen order (`columns`) with the row-id `order`, backend formats keyed per column. (Exception: the Позиции export deliberately emits the fixed brigadir «ABC форма» formula workbook instead of a picker mirror — don't revert it. It reproduces the manual form cell-for-cell: totals row 1, headers row 2, positions row 3+, team block M:W, indicators X:Y, staffing Z:AA; only Трудоемкость/Команда/Факт/ПЛАН/Штатка and the reconciliation counts are values, everything else is a live formula so the brigadir's edits recalculate. Superseded the older «загрузка» two-shift layout.) See the Production «Позиции» table for the reference wiring (cells rendered by a per-key switch so hide/reorder is free). |
-| Factory (plant) switcher | `FactorySelect.jsx` | THE plant switcher for the six factory-aware pages — a `StyledSelect` sitting as the FIRST control in the page's normal filter row (plant → period → shift → supervisor), never a band of its own above the toolbar. (It replaced `FactoryTabs`: a pill strip cost a whole horizontal band on six pages on a phone-first platform and grew until it had to scroll, at which point the selected tab can be off-screen.) «All factories» is the LAST option. `label` renders the uppercase field label (default true; `labelClassName="hidden sm:block"` on rows that drop labels on phones) — pass `label={false}` on unlabelled toolbars (Quality) and the options grow a `Factory` icon so the trigger names itself. Renders **nothing** when fewer than two factories exist. A locked viewer (supervisor/leader) gets a static chip with the same footprint in the same cell — never a one-option dropdown. |
+| Factory (plant) switcher | `useFactorySection()` from `FactorySelect.jsx` | THE plant switcher — a `FilterPanel` SECTION, first in every factory-aware page's section list (plant → shift → supervisor → …), never a standalone control on the bar. (The standalone `FactorySelect` dropdown and the `FactoryTabs` strip before it are both retired from page toolbars: each cost a permanent toolbar cell on a phone-first platform for a value most users never change.) «All factories» is the LAST option. Returns `null` when fewer than two factories exist; a locked viewer (supervisor/leader) gets a `static` section — an inert chip naming their plant, never a one-option control. The `FactorySelect` component itself survives only for non-toolbar surfaces (admin forms). |
 | Empty-data placeholder | `EmptyState.jsx` | For page/section level. Table "no match" rows stay plain muted text. |
 | Loading | `Skeleton.jsx` blocks for page/section data loads; `Loader2` spinner inside buttons for actions | Never bare `…` / "Загрузка…" text. |
 
@@ -35,7 +35,7 @@ Other UI conventions:
 
 - Modal stacking: base modals z=50 (`Modal` default), nested modals pass `zIndex={60+}`, `ConfirmDialog` defaults to 100.
 - Table-toolbar controls share ONE height — 38px, the `FilterPanel` trigger (`px-3 py-2 text-sm` + border). `SearchInput` default and `SegmentedToggle` md are also 38px. `Button` is the exception: md/sm are compact (≈30/26px) for modals & inline actions, so a toolbar action button must use **`size="lg"`** (38px) to line up with the filter/search controls next to it. All `Button` variants carry a border (transparent on borderless ones) so heights line up — don't strip it.
-- `FilterPanel` adapts to space: on md+ it unfolds into one dropdown per filter while the WHOLE toolbar row fits on a single line, else it collapses to the grouped «Filtrlar» button (below md: bottom sheet). Keep it a DIRECT child of the toolbar flex row — the fit check measures that row's children (flex-grow spacers count as 0).
+- `FilterPanel` (in `ColumnFilter.jsx`) is THE page/table filter zone. **Every page's scope controls (plant / shift / supervisor / leader / cell / category) live INSIDE it as sections — never as standalone selects stacked above the content.** The page bar is ONE row: the period control (`DateRangePicker compactLabel`, or `DayStepper` on daily pages) inline, then `FilterPanel`, then chips. It adapts to space: on md+ it unfolds into one dropdown per filter while the WHOLE toolbar row fits on a single line, else it collapses to the grouped «Filtrlar» button (below md: bottom sheet). Whenever controls are not visible inline, every ACTIVE section renders as a CHIP beside the trigger — `display` text + per-chip ✕ (`onClear`); chip body re-opens the panel; `static: true` sections are inert chips (locked viewer's plant). Sections: `{ key, icon, label, active, display, render({close}), onClear?, static? }` — `PickFilter` (single-select list, closes on pick), `OptsFilter` (multi), `RngFilter`, or an embedded `SegmentedToggle fill`. Omit `activeCount`/`anyActive`/`onClearAll` unless overriding — the panel computes them from sections. Keep it a DIRECT child of the toolbar flex row — the fit check measures that row's children (flex-grow spacers count as 0). View switches (tabs) stay OUTSIDE the panel; text search stays an inline `SearchInput`.
 - All colors via CSS variables (`var(--bg-card)`, `var(--bg-inner)`, `var(--text-1..4)`, `var(--border)`, `var(--brand)`) — no hardcoded grays/hex for chrome, including on admin pages.
 - No raw emojis — lucide icons in soft tint chips (see `ProjectIcon` in `Kaizen.jsx`).
 - Status colors are traffic-light: red `#ef4444` / yellow `#eab308` / green `#22c55e`; "not started" is grey `#94a3b8`; brand gold `#C8973F` is an accent, never a status.
@@ -102,17 +102,77 @@ no correct way to render that.
 - Rows that resolve to no supervisor (unmatched Quality names, unassigned units,
   legacy concerns) appear ONLY under «All factories» — visible, never silently
   dropped, never padded onto a plant they may not belong to.
-- The switcher is `components/ui/FactorySelect.jsx` — a dropdown inside each
-  page's filter row, first control on the line. See the UI-template table.
+- The switcher is `useFactorySection()` from `components/ui/FactorySelect.jsx` —
+  a `FilterPanel` section, first in each page's section list (chip when
+  narrowed, inert chip for locked viewers). See the UI-template table.
 - Admin: `pages/admin/Factories.jsx` (`admin.factories.manage` capability) owns
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   supervisor assignment.
 
+## Browser login (the second door)
+
+The app has two front doors into the **same** session. Telegram is the first:
+`initData` proves the caller sits in a real WebView and `app/security.py`
+re-verifies it on every request. The second is a username + password at
+`production.safiacorporate.uz`, for people at a desk.
+
+- **The credential belongs to the PROFILE**, keyed by `identity.profile_key`
+  (`web_credentials` table). Several Telegram accounts holding one profile share
+  one login, exactly as they share everything else that profile owns.
+- **A browser session is not a different identity.** `web_auth.session_identity()`
+  resolves the profile to the very same `(telegram_id, role, role_id, role_ref)`
+  tuple a Telegram login produces, so page grants, capabilities, factory locks
+  and ownership behave identically — nothing to keep in sync. The one difference:
+  `roles: []`, because the role-switcher would move the session to a profile the
+  password was never issued for.
+- **`security.py` accepts exactly ONE thing besides initData**: a JWT carrying
+  `web: True`. A Telegram-issued token still cannot be replayed from a browser.
+  Because that token is the whole proof, it is checked against the DB on every
+  request — a disabled login or a bumped `token_version` dies immediately.
+- **`token_version` is the revocation handle.** Bump it to end every browser
+  session for a profile (password change, reset, disable, rename, admin
+  "sign out everywhere"). Telegram sessions never carry it.
+- Passwords are PBKDF2-HMAC-SHA256 from the stdlib (`web_auth.hash_password`) —
+  deliberately no native dependency on a pipeline that deploys straight to prod.
+  5 failed attempts → 15-minute lockout, DB-backed; the per-IP throttle is
+  in-process and deliberately secondary.
+- **The password only ever goes to Telegram.** `web_auth.dm_credentials()` DMs
+  every holder of the profile; it is never returned by an API, so running the
+  Profiles tab never means learning someone's password. A profile with no
+  approved holder therefore gets no login — the admin UI says so rather than
+  offering one that could not be delivered.
+- Admin surface: the **Profiles tab** (`pages/admin/WebLoginModal.jsx`) — a
+  «Sayt logini» column plus one row action for create / reset / rename /
+  disable / sign-out-everywhere / delete, and a bulk «create for everyone
+  without one» scoped to the rows currently visible. Usernames are derived as
+  `surname.initial` (`aripova.m`), widening to `surname.firstname` then a numeric
+  suffix. `_deny_admin_profile` still applies: a capability grantee may never
+  mint a browser password for an ADMIN profile.
+- Self-service: Settings → «Change password» (browser sessions only), and
+  «Forgot password» on the login screen, which DMs a fresh password and always
+  answers identically so it cannot be used as a membership oracle.
+- Registration stays Telegram-only — it needs the bot to sign the profile claim.
+  `/login` redirects to `/` outside Telegram.
+- Audit: every change greps out of `backend/logs/app.log` under `WEB-LOGIN`
+  (sign-in, self-reset, self-change, and each admin action with actor + target).
+  Passwords never appear in it.
+- **Excel exports now branch on the surface**: a browser session downloads the
+  file, Telegram still DMs it. One decision point each side —
+  `app/xlsx_delivery.py` and `utils/exportXlsx.js` — never re-derived per page.
+  This supersedes the older "exports always go to the chat" rule for browsers.
+- Telegram-only chrome (expand, fullscreen, safe-area insets) is gated on
+  `utils/session.js` `inTelegram()`, which tests `WebApp.platform !== "unknown"`
+  — `window.Telegram.WebApp` exists in every browser and proves nothing.
+
 ## Workflow
 
-- Remote is `git.safiabakery.uz/Safia-Outsource/production` (private); GitHub is kept as a mirror. Before any change: `git fetch` and pull if behind.
+- **`gitea` is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks `gitea/main`, so a bare `git pull` / `git push` means gitea. GitHub (`origin`) is a mirror only: it is pushed last, best-effort, and never gated on.
 - **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
-- **The Edit/Write hook in `.claude/settings.local.json` auto-builds, auto-commits and auto-pushes.** Together with the line above that means *every single edit ships straight to production* — there is no staging step and no review window. Either drop the `git push` from the hook and push deliberately, or accept that. A failed build silently aborts the commit, so verify with `cd frontend && npx vite build` when in doubt.
+- **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.**
+  - `SessionStart` → `.claude/hooks/auto-pull.sh` fetches gitea and **fast-forwards `main`** before anything is edited. It never merges or rebases: on a diverged branch, or when uncommitted work blocks the fast-forward, it reports and leaves the tree untouched. Log: `.claude/auto-pull.log`.
+  - `Stop` → `.claude/hooks/auto-commit.sh` runs the Vite build, commits everything with a generated message, then pushes **gitea first** (that is the deploy) and the GitHub mirror after. A failed build aborts the commit; a failed mirror push is cosmetic and says so; a failed *gitea* push says `NOT deployed`. Log: `.claude/auto-commit.log`.
+  - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
+  - The pull only runs at session start. If `main` moves on gitea mid-session the push at turn end is *rejected*, not silently merged — you will see `PUSH FAILED` in the summary; pull and re-run.
 - `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
 - Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.

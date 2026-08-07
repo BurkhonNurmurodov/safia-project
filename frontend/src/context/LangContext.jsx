@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import dict from "../i18n/translations";
 import api from "../utils/api";
 import { useAuth } from "./AuthContext";
+import { getToken } from "../utils/session";
 
 const LangContext = createContext(null);
 
@@ -31,7 +32,7 @@ export function LangProvider({ children, defaultLang = "uz" }) {
   // request). Fire-and-forget; the api interceptor attaches the bearer token.
   const setLang = useCallback((code) => {
     setLangState(code);
-    if (localStorage.getItem("tg_token")) {
+    if (getToken()) {
       api.post("/api/auth/language", { language: code }).catch(() => {});
     }
   }, []);
@@ -44,7 +45,7 @@ export function LangProvider({ children, defaultLang = "uz" }) {
   //    language so the bot DMs the user in the same language. They never diverge.
   useEffect(() => {
     if (auth?.status !== "approved") return;
-    if (!localStorage.getItem("tg_token")) return;
+    if (!getToken()) return;
     if (!hadStoredLang.current) {
       if (auth.language) setLangState(auth.language);
       hadStoredLang.current = true;

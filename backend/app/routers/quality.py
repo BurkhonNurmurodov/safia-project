@@ -12,7 +12,7 @@ modal pulls them from /api/quality/{id}.
 """
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.services.factory_scope import factory_of_managers, viewer_factory_id
 from app.services.name_map import supervisor_match
 from app.services.quality_export import build_quality_workbook
 from app.services.sheets_sync import sync_quality_sheet
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
 
@@ -182,26 +183,27 @@ class QualityExportBody(BaseModel):
 
 @router.post("/export.xlsx")
 def export_quality(
+    request: Request,
     body: QualityExportBody,
     payload: dict = Depends(require_page("quality")),
 ):
-    """Excel export of the dashboard as it currently stands → the caller's private
-    Telegram chat (the platform never hands back a browser download). A section
-    the page isn't showing — the supervisor matrix on the Overall tab, the closure
-    ribbon for anyone but a brigadir — simply isn't in the body, and its sheet is
-    skipped."""
-    from app.telegram_bot import bot
-
+    """Excel export of the dashboard as it currently stands. A browser session
+    downloads the file; inside Telegram it goes to the caller's private chat,
+    where a mini-app WebView can actually keep it (see app/xlsx_delivery.py). A
+    section the page isn't showing — the supervisor matrix on the Overall tab,
+    the closure ribbon for anyone but a brigadir — simply isn't in the body, and
+    its sheet is skipped."""
     bio = build_quality_workbook(body.model_dump())
     fname = (body.filename or "quality").strip() or "quality"
     if not fname.endswith(".xlsx"):
         fname += ".xlsx"
     caption = body.caption or f"📊 {body.title}"
     try:
-        bot.send_document(chat_id=int(payload["sub"]), document=(fname, bio.read()), caption=caption)
+        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
-    return {"ok": True}
 
 
 @router.post("/refresh")

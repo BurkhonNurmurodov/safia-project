@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import api from "../utils/api";
+import { getToken } from "../utils/session";
 
 // Client heartbeat that powers the Users-Activity dashboard. While the app is
 // open and the tab/webview is visible it POSTs /api/activity/ping every
@@ -15,7 +16,10 @@ const PING_INTERVAL = 60_000;
 let lastPing = 0;
 
 function sendPing() {
-  if (!localStorage.getItem("tg_token")) return;      // only when signed in
+  // getToken(), not localStorage: an un-remembered browser session keeps its
+  // token in sessionStorage, and reading only localStorage would read that
+  // signed-in person as signed out and quietly stop counting them.
+  if (!getToken()) return;                             // only when signed in
   if (document.visibilityState === "hidden") return;   // don't count idle tabs
   const now = Date.now();
   if (now - lastPing < PING_INTERVAL - 1_000) return;  // throttle across mounts

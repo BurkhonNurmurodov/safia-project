@@ -3,22 +3,22 @@ import { useQuery } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CheckCircle2,
-  ClipboardList, Grid3x3, LayoutGrid, PieChart, Repeat, TrendingUp,
-  UserCheck, UserMinus, Users,
+  ClipboardList, Grid3x3, LayoutGrid, Layers, PieChart, Repeat, TrendingUp,
+  UserCheck, UserMinus, UserRound, Users,
 } from "lucide-react";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import EmptyState from "../components/ui/EmptyState";
 import Tooltip from "../components/ui/Tooltip";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
-import StyledSelect from "../components/ui/StyledSelect";
 import TableCard, { SectionHead, Th } from "../components/ui/DataTable";
 import HeatmapChart from "../components/charts/HeatmapChart";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
-import FactorySelect from "../components/ui/FactorySelect";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -123,6 +123,9 @@ export default function Workers() {
   // on «All factories» the key is absent and the calls are byte-identical to
   // what they were before factories existed.
   const fparams = useFactoryParams(params);
+  // Plant switcher as a FilterPanel section (null on single-plant installs,
+  // an inert chip for locked viewers).
+  const factorySection = useFactorySection();
   const { data: headcount = [], isLoading } = useQuery({
     queryKey: ["headcount", fparams],
     queryFn: () => api.get("/api/workers/headcount", { params: fparams }).then((r) => r.data),
@@ -570,41 +573,51 @@ export default function Workers() {
   // ── render ─────────────────────────────────────────────────────────────────────
   return (
     <Layout title={t("workers.title")}>
-      {/* Inline plant + period + shift + supervisor selectors — always visible, wired to
-          the global filters so they stay in sync with the header Filters drawer. */}
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        {/* WHICH plant — first on the row, the broadest narrowing there is.
-            Renders nothing on a single-factory install. */}
-        <FactorySelect />
-        <div className="sm:w-72">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-          <DateRangePicker
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            setDateFrom={setDateFrom}
-            setDateTo={setDateTo}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-          <SegmentedToggle
-            value={shift}
-            onChange={setShift}
-            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-          />
-        </div>
-        <div className="sm:w-64 min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-          <StyledSelect
-            value={supValue}
-            onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
-            options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
-            searchable
-            searchPlaceholder={t("filter.searchBrigadirs")}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
+      {/* ONE-ROW filter bar: period inline, plant / shift / supervisor inside the
+          shared FilterPanel — active narrowings surface as chips. */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          setDateFrom={setDateFrom}
+          setDateTo={setDateTo}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel
+          sections={[
+            ...(factorySection ? [factorySection] : []),
+            {
+              key: "shift", icon: Layers, label: t("filter.shift"),
+              active: shift != null,
+              display: shift != null ? `S${shift}` : "",
+              onClear: () => setShift(null),
+              render: () => (
+                <SegmentedToggle
+                  fill
+                  value={shift}
+                  onChange={setShift}
+                  options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+                />
+              ),
+            },
+            {
+              key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+              active: supValue !== "All",
+              display: supValue !== "All" ? (supOptions.find((o) => o.value === supValue)?.label || "") : "",
+              onClear: () => setBrigadirIds([]),
+              render: ({ close } = {}) => (
+                <PickFilter
+                  searchable
+                  close={close}
+                  opts={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+                  value={supValue}
+                  onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
+                />
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* View tabs */}

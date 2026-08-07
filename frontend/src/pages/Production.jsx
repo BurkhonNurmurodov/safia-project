@@ -27,6 +27,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
 import { CATEGORY_COLORS } from "../utils/chartPalette";
+import { exportXlsx } from "../utils/exportXlsx";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 // Timezone-safe: build/shift dates from calendar parts, never via toISOString()
@@ -1023,12 +1024,15 @@ export default function Production() {
   async function exportExcel() {
     setExporting(true);
     try {
-      await api.post("/api/production/export.xlsx", {
-        date,
-        ...managerParam,
-        lang,
-        order: viewRows.map((r) => r.id),
-        columns: visibleCols.map((c) => c.key),
+      await exportXlsx("/api/production/export.xlsx", {
+        body: {
+          date,
+          ...managerParam,
+          lang,
+          order: viewRows.map((r) => r.id),
+          columns: visibleCols.map((c) => c.key),
+        },
+        fallbackName: `ABC ${date}.xlsx`,
       });
       setExportDone(true);
       setTimeout(() => setExportDone(false), 4000);

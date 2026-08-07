@@ -11,10 +11,19 @@ window.__bootStage = 'bundle-start'
 // React from mounting (seen on Windows machines where the script is intercepted).
 try {
   const _tg = window.Telegram?.WebApp
+  // `window.Telegram.WebApp` exists in every browser — the SDK is loaded
+  // unconditionally by index.html — so its presence is not evidence of running
+  // inside Telegram. `platform` is: it stays "unknown" outside a Telegram
+  // client. Without this check a plain browser session would fire expand /
+  // fullscreen / safe-area calls that can only no-op or warn, and would inherit
+  // mobile safe-area padding it has no use for. (Kept inline rather than
+  // imported from utils/session.js: this block runs before the bundle's module
+  // graph is worth pulling in, and it is the first thing to execute.)
+  const _inTelegram = Boolean(_tg?.platform) && _tg.platform !== 'unknown'
   // The /broadcast recipient picker is a small sheet — it must NOT expand or go
   // fullscreen, so it opens compact over the bot chat.
   const _compact = window.location.pathname.startsWith('/broadcast-receivers')
-  if (_tg) {
+  if (_tg && _inTelegram) {
     _tg.ready()
     if (!_compact) _tg.expand()
 

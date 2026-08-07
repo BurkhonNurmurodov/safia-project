@@ -1,15 +1,22 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
+import { clearToken, getToken, inTelegram, isWebSession, setToken } from "../utils/session";
 
 const AuthContext = createContext(null);
 
 const COUNTDOWN_SEC = 3;
+
+// Local development runs outside Telegram and relies on the DEV_AUTH bypass, so
+// the password screen would never be reachable there. ?weblogin=1 forces it.
+const FORCE_WEB_LOGIN =
+  new URLSearchParams(window.location.search).get("weblogin") === "1";
 
 export function AuthProvider({ children }) {
   const [auth, setAuth]               = useState(null);
   const [loading, setLoading]         = useState(true);
   const [botUsername, setBotUsername] = useState("");
   const [countdown, setCountdown]     = useState(null); // null = not logging out
+  const [webSession, setWebSession]   = useState(isWebSession());
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -21,6 +28,28 @@ export function AuthProvider({ children }) {
     }
 
     const initData = tg?.initData || "";
+
+    // ── Browser (not a Telegram client) ──────────────────────────────────────
+    // A stored browser token is re-validated against the server rather than
+    // trusted: /session re-derives the profile, so a rename or a revoked login
+    // lands on the next page load instead of living on in an open tab.
+    if (!inTelegram() || FORCE_WEB_LOGIN) {
+      if (getToken() && isWebSession()) {
+        api.get("/api/auth/web/session")
+          .then((r) => { setAuth(r.data); setWebSession(true); })
+          .catch(() => { clearToken(); setWebSession(false); setAuth({ status: "web_login" }); })
+          .finally(() => setLoading(false));
+        return;
+      }
+      // No browser session yet. In production that always means the login
+      // screen; locally the DEV_AUTH bypass below stays the default so the
+      // existing dev workflow is untouched.
+      if (import.meta.env.PROD || FORCE_WEB_LOGIN) {
+        setAuth({ status: "web_login" });
+        setLoading(false);
+        return;
+      }
+    }
 
     // Launched inside Telegram but the client is older than Bot API 8.0
     // (Nov 2024) — features we rely on are missing or crash there, so ask
@@ -51,7 +80,7 @@ export function AuthProvider({ children }) {
     ])
       .then(([authRes, botRes]) => {
         const data = authRes.data;
-        if (data.token) localStorage.setItem("tg_token", data.token);
+        if (data.token) setToken(data.token, { remember: true, web: false });
         setAuth(data);
         setBotUsername(botRes.data.bot_username || "");
       })
@@ -63,7 +92,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
-      localStorage.removeItem("tg_token");
+      clearToken();
       const tg = window.Telegram?.WebApp;
       if (tg) {
         tg.close();
@@ -89,17 +118,39 @@ export function AuthProvider({ children }) {
   }, [auth?.status]);
 
   async function logout() {
+    // Signing out of a BROWSER session must not delete the account: the
+    // Telegram "sign out" is an unregister (it drops the roles and asks the
+    // person to /start again), which would be a catastrophic reading of
+    // "log out" on a website. Here it only ends the session.
+    if (webSession) {
+      clearToken();
+      window.location.href = "/";
+      return;
+    }
     try {
       await api.delete("/api/auth/me");
     } catch (_) {}
     setCountdown(COUNTDOWN_SEC);
   }
 
+  /** Accept a successful password login and enter the app. */
+  function webLogin(data, remember) {
+    if (data?.token) setToken(data.token, { remember, web: true });
+    setWebSession(true);
+    setAuth(data);
+  }
+
+  /** Swap in a token the server re-issued (e.g. after a password change) so the
+   *  tab the person is typing in does not log itself out. */
+  function replaceWebToken(token) {
+    if (token) setToken(token, { remember: !!localStorage.getItem("tg_token"), web: true });
+  }
+
   // Swap the JWT for another approved role; a full reload re-fetches
   // everything under the new role's scope.
   async function switchRole(roleRef) {
     const r = await api.post("/api/auth/switch-role", { role_ref: roleRef });
-    if (r.data?.token) localStorage.setItem("tg_token", r.data.token);
+    if (r.data?.token) setToken(r.data.token, { remember: true, web: false });
     window.location.reload();
   }
 
@@ -111,12 +162,15 @@ export function AuthProvider({ children }) {
       setCountdown(COUNTDOWN_SEC);
       return;
     }
-    if (r.data?.token) localStorage.setItem("tg_token", r.data.token);
+    if (r.data?.token) setToken(r.data.token, { remember: true, web: false });
     window.location.reload();
   }
 
   return (
-    <AuthContext.Provider value={{ auth, loading, logout, switchRole, leaveRole, botUsername, countdown }}>
+    <AuthContext.Provider value={{
+      auth, loading, logout, switchRole, leaveRole, botUsername, countdown,
+      webSession, webLogin, replaceWebToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

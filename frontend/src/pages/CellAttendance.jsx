@@ -9,11 +9,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, LayoutGrid, AlertTriangle, SlidersHorizontal, CheckCircle } from "lucide-react";
+import { FlaskConical, LayoutGrid, AlertTriangle, SlidersHorizontal, CheckCircle, UserRound, ShieldCheck, Boxes } from "lucide-react";
+import { FilterPanel } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import TableCard, { Th } from "../components/ui/DataTable";
-import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DayStepper from "../components/ui/DayStepper";
@@ -624,41 +624,46 @@ export default function CellAttendance() {
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <DayStepper value={date} onChange={setDate} />
           {scopedCells.length > 0 && (
-            <>
-              <StyledSelect
-                multiple searchable
-                value={leaderIds}
-                onChange={setLeaderIds}
-                options={leaderOptions}
-                allLabel={t("cellAtt.allLeaders")}
-                countLabel={(n) => `${n} ${t("cellAtt.leadersWord")}`}
-                searchPlaceholder={t("cellAtt.searchLeader")}
-                triggerClassName="px-3 py-2 text-sm"
-                className="w-full md:w-auto md:min-w-[170px]"
-              />
-              <StyledSelect
-                multiple searchable
-                value={supIds}
-                onChange={setSupIds}
-                options={supOptions}
-                allLabel={t("cellAtt.allSupervisors")}
-                countLabel={(n) => `${n} ${t("cellAtt.supervisorsWord")}`}
-                searchPlaceholder={t("cellAtt.searchSupervisor")}
-                triggerClassName="px-3 py-2 text-sm"
-                className="w-full md:w-auto md:min-w-[170px]"
-              />
-              <StyledSelect
-                multiple searchable
-                value={cellIds}
-                onChange={setCellIds}
-                options={cellOptions}
-                allLabel={t("cellAtt.allCells")}
-                countLabel={(n) => `${n} ${t("cellAtt.cellsWord")}`}
-                searchPlaceholder={t("cellAtt.searchCell")}
-                triggerClassName="px-3 py-2 text-sm"
-                className="w-full md:w-auto md:min-w-[200px]"
-              />
-            </>
+            <FilterPanel
+              sections={[
+                {
+                  key: "leaders", icon: UserRound, label: t("cellAtt.allLeaders"),
+                  active: leaderIds.length > 0,
+                  display: leaderIds.length === 1
+                    ? (leaderOptions.find((o) => o.value === leaderIds[0])?.label || "")
+                    : `${leaderIds.length} ${t("cellAtt.leadersWord")}`,
+                  onClear: () => setLeaderIds([]),
+                  render: () => (
+                    <OptsFilter searchable opts={leaderKeys} sel={leaderIds} onChange={setLeaderIds}
+                      render={labelOf(leaderOptions)} />
+                  ),
+                },
+                {
+                  key: "sups", icon: ShieldCheck, label: t("cellAtt.allSupervisors"),
+                  active: supIds.length > 0,
+                  display: supIds.length === 1
+                    ? (supOptions.find((o) => o.value === supIds[0])?.label || "")
+                    : `${supIds.length} ${t("cellAtt.supervisorsWord")}`,
+                  onClear: () => setSupIds([]),
+                  render: () => (
+                    <OptsFilter searchable opts={supKeys} sel={supIds} onChange={setSupIds}
+                      render={labelOf(supOptions)} />
+                  ),
+                },
+                {
+                  key: "cells", icon: Boxes, label: t("cellAtt.allCells"),
+                  active: cellIds.length > 0,
+                  display: cellIds.length === 1
+                    ? (cellOptions.find((o) => o.value === cellIds[0])?.label || "")
+                    : `${cellIds.length} ${t("cellAtt.cellsWord")}`,
+                  onClear: () => setCellIds([]),
+                  render: () => (
+                    <OptsFilter searchable opts={cellKeys} sel={cellIds} onChange={setCellIds}
+                      render={labelOf(cellOptions)} />
+                  ),
+                },
+              ]}
+            />
           )}
           <span className="w-full md:w-auto md:ml-auto flex items-center gap-1.5 text-xs"
             style={{ color: "var(--text-4)" }}>

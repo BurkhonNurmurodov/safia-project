@@ -245,32 +245,23 @@ export default function ZagruzkaCell() {
         </div>
       </div>
 
-      {/* ── Period + the locked supervisor (static text, not a picker) ── */}
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        <div className="sm:w-72">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
-            {t("tasks.period")}
-          </label>
-          <DateRangePicker
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            setDateFrom={setDateFrom}
-            setDateTo={setDateTo}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="sm:w-72 min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>
-            {t("zcell.lockedTo")}
-          </label>
-          <div
-            className="w-full px-3 py-2 text-sm rounded-xl truncate"
-            title={t("zcell.lockedHint")}
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)", height: 38 }}
-          >
-            {managerName}
-          </div>
-        </div>
+      {/* ── ONE-ROW bar: period + the locked supervisor as an inert chip ── */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          setDateFrom={setDateFrom}
+          setDateTo={setDateTo}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <span
+          className="inline-flex items-center px-3 text-xs rounded-full truncate max-w-[220px]"
+          title={t("zcell.lockedHint")}
+          style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)", height: 30 }}
+        >
+          {managerName}
+        </span>
       </div>
 
       {isLoading ? (

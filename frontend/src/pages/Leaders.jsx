@@ -6,10 +6,11 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
-  ShieldCheck, Hourglass,
+  ShieldCheck, Hourglass, Layers,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
+import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
 import DateRangePicker from "../components/ui/DateRangePicker";
 import Modal from "../components/ui/Modal";
@@ -2191,55 +2192,61 @@ export default function Leaders({ shiftLock = null }) {
       {headerBar}
       {tabsBar}
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-start gap-3 mb-3">
-      <div className={`grid grid-cols-2 ${isSupervisor ? "lg:grid-cols-2" : isLeader ? "lg:grid-cols-1 sm:max-w-xs" : shiftLock ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-2 sm:gap-3 flex-1 min-w-[260px]`}>
-        {/* Period — same range picker as the global filters (presets + calendar).
-            Mobile: full row, labels hidden (controls are self-describing). */}
-        <div className="col-span-2 sm:col-span-1">
-          <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.timePeriod}</label>
-          <DateRangePicker
-            dateFrom={startDate}
-            dateTo={endDate}
-            setDateFrom={setStartDate}
-            setDateTo={setEndDate}
-            triggerClassName="w-full px-3 py-2 text-sm"
+      {/* ONE-ROW filter bar: period inline; shift / supervisor / leader live in
+          the consolidated panel (role-scoped) and surface as chips when active. */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <DateRangePicker
+          dateFrom={startDate}
+          dateTo={endDate}
+          setDateFrom={setStartDate}
+          setDateTo={setEndDate}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        {(!isLeader) && (
+          <FilterPanel
+            sections={[
+              // Shift — hidden for supervisors (locked to their unit/shift) and
+              // on the two shift-locked pages, where it would be one-value.
+              ...(!isSupervisor && !shiftLock ? [{
+                key: "shift", icon: Layers, label: T.shift,
+                active: fShift != null,
+                display: fShift != null ? `S${fShift}` : "",
+                onClear: () => { setFShift(null); setFSup("All"); setFLeader("All"); },
+                render: () => (
+                  <SegmentedToggle fill value={fShift}
+                    onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
+                    options={[[null, T.bandAll], [1, "S1"], [2, "S2"]]} />
+                ),
+              }] : []),
+              // Supervisor — shift-managers / admins only.
+              ...(!isSupervisor ? [{
+                key: "supervisor", icon: ShieldCheck, label: T.supervisor,
+                active: fSup !== "All",
+                display: fSup !== "All" ? nm(fSup) : "",
+                onClear: () => { setFSup("All"); setFLeader("All"); },
+                render: ({ close } = {}) => (
+                  <PickFilter searchable close={close}
+                    opts={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s), title: nm(s) }))]}
+                    value={fSup}
+                    onChange={(v) => { setFSup(v); setFLeader("All"); }} />
+                ),
+              }] : []),
+              {
+                key: "leader", icon: User, label: T.leader,
+                active: fLeader !== "All",
+                display: fLeader !== "All" ? nm(fLeader) : "",
+                onClear: () => setFLeader("All"),
+                render: ({ close } = {}) => (
+                  <PickFilter searchable close={close}
+                    opts={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l), title: nm(l) }))]}
+                    value={fLeader}
+                    onChange={setFLeader} />
+                ),
+              },
+            ]}
           />
-        </div>
-
-        {/* Shift — narrows the supervisor picker (and all data) to one shift.
-            Hidden for supervisors, who are locked to their own unit/shift, for
-            leaders, who see only their own (single-shift) rows, and on the two
-            shift-locked pages, where it would be a one-value picker. */}
-        {!isSupervisor && !isLeader && !shiftLock && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.shift}</label>
-            <SegmentedToggle fill value={fShift}
-              onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
-              options={[[null, T.bandAll], [1, "S1"], [2, "S2"]]} />
-          </div>
         )}
-
-        {/* Supervisor — shift-managers / admins only; supervisors are locked to
-            their own unit and leaders to their own rows */}
-        {!isSupervisor && !isLeader && (
-          <div className="min-w-0">
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.supervisor}</label>
-            <StyledSelect value={fSup} onChange={(v) => { setFSup(v); setFLeader("All"); }}
-              options={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s) }))]} />
-          </div>
-        )}
-
-        {/* Leader — hidden for leaders, who see only their own monitoring;
-            takes the full row on mobile when it is the only select */}
-        {!isLeader && (
-          <div className={`min-w-0 ${isSupervisor ? "col-span-2 sm:col-span-1" : ""}`}>
-            <label className="hidden sm:block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{T.leader}</label>
-            <StyledSelect value={fLeader} onChange={setFLeader}
-              options={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l) }))]} />
-          </div>
-        )}
-      </div>
       </div>
 
       {refreshMut.isError && (

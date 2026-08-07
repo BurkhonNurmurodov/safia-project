@@ -13,7 +13,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonCard, SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { usePersistentState } from "../hooks/usePersistentState";
-import FactorySelect from "../components/ui/FactorySelect";
+import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactory, useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -21,7 +21,8 @@ import { fmtTime, fmtDuration } from "../utils/formatters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import api from "../utils/api";
 import { padChartParams } from "../utils/chartRange";
-import { Info } from "lucide-react";
+import { Info, Layers, UserRound, Tag } from "lucide-react";
+import { FilterPanel, PickFilter, OptsFilter } from "../components/ui/ColumnFilter";
 
 // Downtime-category identity colors — the shared generic-first order, one hue
 // per category index, shared by the merged bar chart, the doughnut and the chips.
@@ -98,6 +99,9 @@ export default function Downtime() {
   // on «All factories» the key is absent and the calls are byte-identical to
   // what they were before factories existed.
   const fparams = useFactoryParams(params);
+  // Plant switcher as a FilterPanel section (null on single-plant installs,
+  // an inert chip for locked viewers).
+  const factorySection = useFactorySection();
   const scopedParams = useMemo(
     () => (kpiOnly ? { ...fparams, kpi_only: 1 } : fparams),
     [fparams, kpiOnly]);
@@ -521,53 +525,66 @@ export default function Downtime() {
 
   return (
     <Layout title={t("downtime.title")}>
-      {/* Inline plant + period + shift + supervisor selectors — always visible, wired to
-          the global filters so they stay in sync with the header Filters drawer. */}
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        {/* WHICH plant — first on the row, the broadest narrowing there is.
-            Renders nothing on a single-factory install. */}
-        <FactorySelect />
-        <div className="sm:w-72">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.period")}</label>
-          <DateRangePicker
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            setDateFrom={setDateFrom}
-            setDateTo={setDateTo}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("filter.shift")}</label>
-          <SegmentedToggle
-            value={shift}
-            onChange={setShift}
-            options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
-          />
-        </div>
-        <div className="sm:w-64 min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("tasks.colSupervisor")}</label>
-          <StyledSelect
-            value={supValue}
-            onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
-            options={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
-            searchable
-            searchPlaceholder={t("filter.searchBrigadirs")}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
-        <div className="sm:w-64 min-w-0">
-          <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--text-4)" }}>{t("downtime.filterCat")}</label>
-          {/* Same selection the doughnut drives — tick several at once here. */}
-          <StyledSelect
-            multiple
-            value={selectedCats}
-            onChange={setSelectedCats}
-            options={catOptions}
-            allLabel={t("downtime.allCats")}
-            triggerClassName="w-full px-3 py-2 text-sm"
-          />
-        </div>
+      {/* ONE-ROW filter bar: period inline; plant / shift / supervisor / category
+          live inside the shared FilterPanel and surface as chips when active. */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          setDateFrom={setDateFrom}
+          setDateTo={setDateTo}
+          compactLabel
+          triggerClassName="px-3 py-2 text-sm"
+        />
+        <FilterPanel
+          sections={[
+            ...(factorySection ? [factorySection] : []),
+            {
+              key: "shift", icon: Layers, label: t("filter.shift"),
+              active: shift != null,
+              display: shift != null ? `S${shift}` : "",
+              onClear: () => setShift(null),
+              render: () => (
+                <SegmentedToggle
+                  fill
+                  value={shift}
+                  onChange={setShift}
+                  options={[[null, t("filter.all")], [1, "S1"], [2, "S2"]]}
+                />
+              ),
+            },
+            {
+              key: "supervisor", icon: UserRound, label: t("tasks.colSupervisor"),
+              active: supValue !== "All",
+              display: supValue !== "All" ? (supOptions.find((o) => o.value === supValue)?.label || "") : "",
+              onClear: () => setBrigadirIds([]),
+              render: ({ close } = {}) => (
+                <PickFilter
+                  searchable
+                  close={close}
+                  opts={[{ value: "All", label: t("tasks.allSupervisors") }, ...supOptions]}
+                  value={supValue}
+                  onChange={(v) => setBrigadirIds(v === "All" ? [] : [Number(v)])}
+                />
+              ),
+            },
+            {
+              // Same selection the doughnut drives — tick several at once here.
+              key: "cats", icon: Tag, label: t("downtime.filterCat"),
+              active: selectedCats.length > 0,
+              display: selectedCats.length === 1 ? selectedCats[0] : `${selectedCats.length} ${t("filter.selected2")}`,
+              onClear: clearCats,
+              render: () => (
+                <OptsFilter
+                  opts={catOptions.map((o) => o.value)}
+                  sel={selectedCats}
+                  onChange={setSelectedCats}
+                  render={(v) => catOptions.find((o) => o.value === v)?.title || v}
+                />
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* Page view tabs — «тўхтаганда» / «тўхтамаганда» halves of the same report.

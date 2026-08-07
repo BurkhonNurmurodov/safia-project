@@ -28,6 +28,7 @@ from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories
 from app.routers import production as production_router
 from app.routers import auth as auth_router
+from app.routers import web_login as web_login_router
 from app.routers import webhook as webhook_router
 from app.routers import notifications as notifications_router
 from app.routers import staff as staff_router
@@ -221,6 +222,7 @@ app.add_middleware(NoStoreAPIMiddleware)
 _admin_guard = [Depends(enforce_telegram_origin_admin)]
 
 app.include_router(auth_router.router)
+app.include_router(web_login_router.router)
 app.include_router(webhook_router.router)
 app.include_router(admin.router, dependencies=_admin_guard)
 app.include_router(brigadirs.router)

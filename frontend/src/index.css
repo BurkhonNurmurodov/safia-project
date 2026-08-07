@@ -117,6 +117,20 @@ body.sidebar-open { overflow: hidden; }
 :root {
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-io:  cubic-bezier(.65, 0, .35, 1);
+
+  /* Telegram safe-area insets. main.jsx overwrites these on mobile Telegram
+     clients; everywhere else — a desktop browser, Telegram Desktop — the
+     variables must still RESOLVE, or every `calc(var(--tg-safe-top) + …)` that
+     depends on them (modal backdrops, toasts, the sticky header) collapses to
+     an invalid value and the padding silently disappears. */
+  --tg-safe-top: 0px;
+  --tg-safe-bottom: 0px;
+
+  /* Widest the reading column ever gets. The pages were laid out for a phone;
+     stretched across a 27" monitor a table's first and last column end up a
+     head-turn apart, which is a worse experience than a bounded column with
+     margin either side. Wide visualisations opt out per page. */
+  --content-max: 1600px;
 }
 
 /* Page transition — the new page's content rises + fades in on every route
