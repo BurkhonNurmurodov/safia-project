@@ -544,6 +544,274 @@ def admin_list_cells(db: Session = Depends(get_db),
     }
 
 
+# ── /cells register → formatted Excel report ──────────────────────────────────
+# The page ships what it is SHOWING (filtered + sorted, names already resolved
+# to the viewer's language and transliterated by tl()), so the workbook mirrors
+# the screen exactly instead of re-deriving a second, subtly different register.
+# Unassigned slots arrive as "" and the placeholder label is applied here, so
+# "no brigadir" stays visually distinct from a real name in the sheet.
+
+_XLSX_TASHKENT = timezone(timedelta(hours=5))
+
+# Report chrome, per language. Deliberately a small closed set: the workbook is
+# a document, not a UI, so it needs only its own labels.
+_CELLS_XLSX_T = {
+    "uz": {
+        "sheet": "Yacheykalar", "sum_sheet": "Umumiy",
+        "title": "YACHEYKALAR REYESTRI", "sum_title": "BRIGADIRLAR BO'YICHA UMUMIY",
+        "generated": "Shakllantirildi", "records": "Yozuvlar",
+        "shown_of": "{n} ta ko'rsatilgan ({total} tadan)",
+        "num": "№", "verifix": "Verifix kod", "sap": "SAP kod",
+        "workshop": "Sex nomi", "brigadir": "Brigadir", "leader": "Lider",
+        "no_brigadir": "Brigadir yo'q", "unassigned": "Biriktirilmagan",
+        "cells_cnt": "Yacheykalar", "with_leader": "Lider bilan",
+        "without_leader": "Lidersiz", "coverage": "Qamrov", "total": "JAMI",
+    },
+    "uz_cyrl": {
+        "sheet": "Ячейкалар", "sum_sheet": "Умумий",
+        "title": "ЯЧЕЙКАЛАР РЕЕСТРИ", "sum_title": "БРИГАДИРЛАР БЎЙИЧА УМУМИЙ",
+        "generated": "Шакллантирилди", "records": "Ёзувлар",
+        "shown_of": "{n} та кўрсатилган ({total} тадан)",
+        "num": "№", "verifix": "Verifix код", "sap": "SAP код",
+        "workshop": "Сех номи", "brigadir": "Бригадир", "leader": "Лидер",
+        "no_brigadir": "Бригадир йўқ", "unassigned": "Бириктирилмаган",
+        "cells_cnt": "Ячейкалар", "with_leader": "Лидер билан",
+        "without_leader": "Лидерсиз", "coverage": "Қамров", "total": "ЖАМИ",
+    },
+    "ru": {
+        "sheet": "Ячейки", "sum_sheet": "Сводка",
+        "title": "РЕЕСТР ЯЧЕЕК", "sum_title": "СВОДКА ПО БРИГАДИРАМ",
+        "generated": "Сформировано", "records": "Записей",
+        "shown_of": "показано {n} из {total}",
+        "num": "№", "verifix": "Verifix код", "sap": "SAP код",
+        "workshop": "Название цеха", "brigadir": "Бригадир", "leader": "Лидер",
+        "no_brigadir": "Бригадир не назначен", "unassigned": "Не закреплена",
+        "cells_cnt": "Ячеек", "with_leader": "С лидером",
+        "without_leader": "Без лидера", "coverage": "Покрытие", "total": "ИТОГО",
+    },
+    "en": {
+        "sheet": "Cells", "sum_sheet": "Summary",
+        "title": "CELLS REGISTER", "sum_title": "SUMMARY BY BRIGADIR",
+        "generated": "Generated", "records": "Records",
+        "shown_of": "{n} of {total} shown",
+        "num": "#", "verifix": "Verifix code", "sap": "SAP code",
+        "workshop": "Workshop", "brigadir": "Brigadir", "leader": "Leader",
+        "no_brigadir": "No brigadir", "unassigned": "Unassigned",
+        "cells_cnt": "Cells", "with_leader": "With leader",
+        "without_leader": "No leader", "coverage": "Coverage", "total": "TOTAL",
+    },
+}
+
+_XLSX_GOLD    = "C8973F"   # brand — title bands + header rows
+_XLSX_ZEBRA   = "FAF9F7"   # even-row shading
+_XLSX_RULE    = "E5E7EB"   # hairline grid
+_XLSX_SUBBAND = "F5F2EC"   # subtitle strip under the title
+_XLSX_MUTED   = "9CA3AF"   # placeholder text ("—", "not assigned")
+
+
+class CellsExportRow(BaseModel):
+    verifix_code: str = ""
+    sap_code:     str = ""
+    workshop:     str = ""
+    supervisor:   str = ""   # "" = unassigned; the label is applied here
+    leader:       str = ""   # "" = unassigned
+
+
+class CellsExportBody(BaseModel):
+    lang:  str = "ru"
+    rows:  list[CellsExportRow] = []
+    total: Optional[int] = None   # register size BEFORE filtering, for the subtitle
+
+
+@router.post("/admin/cells/export.xlsx")
+def admin_export_cells(body: CellsExportBody, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_page("cells"))):
+    """Send the cells register to the caller's Telegram chat as a formatted
+    workbook. Read-only, so it rides PAGE access like the list endpoint — a
+    view-only grantee may export exactly the register they can already read."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.properties import PageSetupProperties
+    from app.telegram_bot import bot
+
+    L = _CELLS_XLSX_T.get(body.lang) or _CELLS_XLSX_T["ru"]
+    rows = body.rows
+    total = body.total if body.total is not None else len(rows)
+    now = datetime.now(_XLSX_TASHKENT)
+
+    hair = Side(style="thin", color=_XLSX_RULE)
+    grid = Border(left=hair, right=hair, top=hair, bottom=hair)
+    gold_fill = PatternFill("solid", fgColor=_XLSX_GOLD)
+    zebra = PatternFill("solid", fgColor=_XLSX_ZEBRA)
+    head_font = Font(bold=True, color="FFFFFF", size=10)
+    muted = Font(color=_XLSX_MUTED, italic=True, size=10)
+    body_font = Font(size=10, color="1F2937")
+    center = Alignment(horizontal="center", vertical="center")
+    left_wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    left_mid = Alignment(horizontal="left", vertical="center")
+
+    def band(ws, span: str, text: str, *, height: int, fill: str,
+             font: Font, align=None):
+        """Merged full-width strip — the title/subtitle chrome both sheets share."""
+        ws.merge_cells(span)
+        c = ws[span.split(":")[0]]
+        c.value = text
+        c.fill = PatternFill("solid", fgColor=fill)
+        c.font = font
+        c.alignment = align or Alignment(horizontal="left", vertical="center", indent=1)
+        ws.row_dimensions[c.row].height = height
+
+    def finish(ws, ncols: int, *, landscape: bool):
+        """Report finish: no gridlines, gold tab, fit-to-width printing."""
+        ws.sheet_view.showGridLines = False
+        ws.sheet_properties.tabColor = _XLSX_GOLD
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        ws.page_setup.orientation = "landscape" if landscape else "portrait"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.print_options.horizontalCentered = True
+
+    # ── Sheet 1: the register ────────────────────────────────────────────────
+    wb = Workbook()
+    ws = wb.active
+    ws.title = L["sheet"]
+
+    headers = [L["num"], L["verifix"], L["sap"], L["workshop"], L["brigadir"], L["leader"]]
+    ncols = len(headers)
+    last_col = get_column_letter(ncols)
+
+    band(ws, f"A1:{last_col}1", L["title"], height=32, fill=_XLSX_GOLD,
+         font=Font(bold=True, color="FFFFFF", size=14))
+    subtitle = f"{L['generated']}: {now.strftime('%d.%m.%Y %H:%M')}   ·   {L['records']}: {len(rows)}"
+    if len(rows) != total:
+        subtitle += f"   ·   {L['shown_of'].format(n=len(rows), total=total)}"
+    band(ws, f"A2:{last_col}2", subtitle, height=20, fill=_XLSX_SUBBAND,
+         font=Font(size=9, color="6B7280"))
+    ws.row_dimensions[3].height = 6          # breathing room, not an empty row
+
+    HEAD_ROW = 4
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(HEAD_ROW, i, h)
+        c.fill, c.font, c.border = gold_fill, head_font, grid
+        c.alignment = center
+    ws.row_dimensions[HEAD_ROW].height = 26
+
+    for n, r in enumerate(rows, 1):
+        y = HEAD_ROW + n
+        ws.cell(y, 1, n).alignment = center
+        ws.cell(y, 2, r.verifix_code or "—").font = Font(bold=True, size=10, color="111827")
+        ws.cell(y, 2).alignment = center
+        ws.cell(y, 3, r.sap_code or "—").alignment = center
+        ws.cell(y, 4, r.workshop or "—")
+        ws.cell(y, 5, r.supervisor or L["no_brigadir"])
+        ws.cell(y, 6, r.leader or L["unassigned"])
+        for i in range(1, ncols + 1):
+            c = ws.cell(y, i)
+            c.border = grid
+            if i in (1, 3):
+                c.font = Font(size=10, color="6B7280")
+            elif i >= 4:
+                c.alignment = left_wrap if i == 4 else left_mid
+                c.font = body_font
+            if n % 2 == 0:
+                c.fill = zebra
+        # Placeholders read as absent data, never as a value.
+        if not r.sap_code:
+            ws.cell(y, 3).font = muted
+        if not r.workshop:
+            ws.cell(y, 4).font = muted
+        if not r.supervisor:
+            ws.cell(y, 5).font = muted
+        if not r.leader:
+            ws.cell(y, 6).font = muted
+
+    for col, width in zip("ABCDEF", (5, 14, 13, 48, 28, 34)):
+        ws.column_dimensions[col].width = width
+    if rows:
+        ws.auto_filter.ref = f"A{HEAD_ROW}:{last_col}{HEAD_ROW + len(rows)}"
+    ws.freeze_panes = f"A{HEAD_ROW + 1}"
+    ws.print_title_rows = f"{HEAD_ROW}:{HEAD_ROW}"
+    finish(ws, ncols, landscape=True)
+
+    # ── Sheet 2: coverage per brigadir ───────────────────────────────────────
+    agg: dict[str, list[int]] = {}
+    for r in rows:
+        name = r.supervisor or L["no_brigadir"]
+        slot = agg.setdefault(name, [0, 0])
+        slot[0] += 1
+        if r.leader:
+            slot[1] += 1
+    ordered = sorted(agg.items(), key=lambda kv: (-kv[1][0], kv[0]))
+
+    ws2 = wb.create_sheet(L["sum_sheet"])
+    sum_heads = [L["brigadir"], L["cells_cnt"], L["with_leader"], L["without_leader"], L["coverage"]]
+    band(ws2, "A1:E1", L["sum_title"], height=32, fill=_XLSX_GOLD,
+         font=Font(bold=True, color="FFFFFF", size=14))
+    band(ws2, "A2:E2", f"{L['generated']}: {now.strftime('%d.%m.%Y %H:%M')}", height=20,
+         fill=_XLSX_SUBBAND, font=Font(size=9, color="6B7280"))
+    ws2.row_dimensions[3].height = 6
+    for i, h in enumerate(sum_heads, 1):
+        c = ws2.cell(4, i, h)
+        c.fill, c.font, c.border, c.alignment = gold_fill, head_font, grid, center
+    ws2.row_dimensions[4].height = 26
+
+    # Coverage keeps the platform's traffic light: ≥80% green · ≥50% amber · red.
+    tone = ((0.80, "DCFCE7", "166534"), (0.50, "FEF9C3", "854D0E"), (0.0, "FEE2E2", "991B1B"))
+    for n, (name, (cnt, with_l)) in enumerate(ordered, 1):
+        y = 4 + n
+        pct = (with_l / cnt) if cnt else 0
+        ws2.cell(y, 1, name).font = body_font
+        ws2.cell(y, 1).alignment = left_mid
+        for i, v in enumerate((cnt, with_l, cnt - with_l), 2):
+            c = ws2.cell(y, i, v)
+            c.font, c.alignment = body_font, center
+        pc = ws2.cell(y, 5, pct)
+        pc.number_format = "0%"
+        pc.alignment = center
+        bg, fg = next((b, f) for lim, b, f in tone if pct >= lim)
+        pc.fill = PatternFill("solid", fgColor=bg)
+        pc.font = Font(bold=True, size=10, color=fg)
+        for i in range(1, 6):
+            ws2.cell(y, i).border = grid
+            if n % 2 == 0 and i < 5:
+                ws2.cell(y, i).fill = zebra
+
+    if ordered:
+        y = 5 + len(ordered)
+        tot_cells = sum(v[0] for v in agg.values())
+        tot_with = sum(v[1] for v in agg.values())
+        top = Side(style="medium", color=_XLSX_GOLD)
+        vals = [L["total"], tot_cells, tot_with, tot_cells - tot_with,
+                (tot_with / tot_cells) if tot_cells else 0]
+        for i, v in enumerate(vals, 1):
+            c = ws2.cell(y, i, v)
+            c.font = Font(bold=True, size=10, color="111827")
+            c.alignment = left_mid if i == 1 else center
+            c.border = Border(left=hair, right=hair, top=top, bottom=hair)
+            c.fill = PatternFill("solid", fgColor=_XLSX_SUBBAND)
+        ws2.cell(y, 5).number_format = "0%"
+        ws2.row_dimensions[y].height = 22
+
+    for col, width in zip("ABCDE", (34, 12, 14, 14, 12)):
+        ws2.column_dimensions[col].width = width
+    ws2.freeze_panes = "A5"
+    finish(ws2, 5, landscape=False)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"cells_register_{now.strftime('%Y-%m-%d')}.xlsx"
+    caption = (f"📋 {L['title'].title()} — {now.strftime('%d.%m.%Y %H:%M')}  •  "
+               f"{L['records']}: {len(rows)}")
+    try:
+        bot.send_document(chat_id=int(caller["sub"]), document=(fname, buf.read()),
+                          caption=caption)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+    return {"ok": True, "rows": len(rows)}
+
+
 @router.post("/admin/cells")
 def admin_create_cell(payload: CellPayload, db: Session = Depends(get_db),
                       caller: dict = Depends(require_cap(CAP_CELLS_MANAGE))):
