@@ -1223,6 +1223,14 @@ export default function Quality() {
     // or scope is a report nobody can trust.
     const meta = [
       { label: T.xPeriod, value: period },
+      // Which plant these numbers are from — omitted entirely on a
+      // single-factory install so the sheet gains no meaningless row.
+      ...(factoryEnabled
+        ? [{ label: t("factory.label"),
+             value: currentFactory
+               ? (factoryName(currentFactory, lang) || currentFactory.code)
+               : t("factory.all") }]
+        : []),
       { label: T.xView, value: lockOwn ? tl(myName) : isProd ? T.vSup : T.vOverall },
       { label: T.xHair, value: hairMode === "without" ? T.hairWithout : T.hairWith },
       ...(isProd && !lockOwn
