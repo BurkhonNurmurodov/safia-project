@@ -3,7 +3,7 @@ import { useChartTheme } from "../../hooks/useChartTheme";
 import useIsMobile from "../../hooks/useIsMobile";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
-import PendingInfoModal from "../ui/PendingInfoModal";
+import PendingInfoModal, { PENDING_ICONS, PENDING_MSG_KEYS } from "../ui/PendingInfoModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
