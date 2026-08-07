@@ -1,0 +1,93 @@
+# nginx site for production.safiacorporate.uz — Safia Production dashboard.
+#
+# Everything is proxied to the FastAPI app on 127.0.0.1:8030: the backend serves
+# the built React SPA itself (app.main mounts /assets and falls back to
+# index.html), exactly as Passenger did on the old cPanel host. Proxying the lot
+# means no nginx location can accidentally swallow a backend route — this app
+# owns /api, /admin, /bot/webhook, /docs, /assets and bare static files at the
+# document root, and the SPA has its own /admin/* routes on top.
+#
+#   sudo cp /var/www/production/deploy/production.safiacorporate.uz /etc/nginx/sites-available/
+#   sudo ln -sfn /etc/nginx/sites-available/production.safiacorporate.uz \
+#                /etc/nginx/sites-enabled/production.safiacorporate.uz
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Certificate — webroot plugin; certbot --nginx is unusable on this host
+# (another vhost carries a 1024-bit RSA key and it aborts):
+#   sudo certbot certonly --webroot -w /var/www/letsencrypt -d production.safiacorporate.uz
+#
+# Behind Cloudflare in "Full" mode. Port 80 and 443 both answer and both serve
+# the ACME challenge, so renewal works whichever port Cloudflare reaches.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name production.safiacorporate.uz;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    # nginx 1.18 (Ubuntu) uses the http2 listen parameter, not "http2 on;"
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name production.safiacorporate.uz;
+
+    ssl_certificate     /etc/letsencrypt/live/production.safiacorporate.uz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/production.safiacorporate.uz/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # Uploads are large: verifix .xlsx batches, production catalogs, broadcast
+    # media — and /admin/db-restore accepts a multi-part database dump the admin
+    # UI documents as "~400 MB compressed". The nginx default is 1 MB.
+    client_max_body_size 512m;
+    client_body_timeout 300s;
+
+    # gzip_proxied is the important part: without it nginx refuses to compress
+    # upstream responses, and since EVERYTHING here comes from uvicorn (which has
+    # no GZipMiddleware) a cold load would ship ~975 KB uncompressed to a mobile
+    # Telegram WebView.
+    gzip on;
+    gzip_proxied any;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+    gzip_min_length 1024;
+
+    access_log /var/log/nginx/production.safiacorporate.uz.access.log;
+    error_log  /var/log/nginx/production.safiacorporate.uz.error.log;
+
+    # Also on 443, so ACME renewal works even when Cloudflare reaches the origin
+    # over HTTPS (its "Always Use HTTPS" rule rewrites the challenge URL).
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8030;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "";
+        # Excel exports and the heavier analytics endpoints are slow.
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+        # Stream large uploads straight through instead of spooling the whole
+        # body to disk first (matters for the multi-hundred-MB db-restore POST).
+        proxy_request_buffering off;
+        # Leave proxy_intercept_errors at its default (off) on purpose: the SPA's
+        # api.js treats an HTML body on an /api URL as an anti-bot challenge and
+        # force-reloads the page after two retries, so an nginx HTML error page
+        # in front of a JSON endpoint would put clients in a reload loop.
+    }
+}

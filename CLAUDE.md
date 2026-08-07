@@ -110,10 +110,41 @@ no correct way to render that.
 
 ## Workflow
 
-- Before any change: `git fetch` and pull if behind `origin/main`.
-- Never build/commit/push manually — the Edit/Write hook builds `frontend/dist` and auto-commits+pushes. A failed build silently aborts the commit, so verify builds with `cd frontend && npx vite build` when in doubt.
-- Backend changes need a Passenger restart on prod; startup migrations go in BOTH the FastAPI lifespan and `passenger_wsgi.py`.
+- Remote is `git.safiabakery.uz/Safia-Outsource/production` (private). Before any change: `git fetch` and pull if behind `origin/main`.
+- **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below. There is no auto-commit hook: commit and push deliberately.
+- `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source (`cd frontend && npx vite build`) — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
+- Backend changes need a service restart on prod (systemd `safia-production`, uvicorn — the cPanel/Passenger host is gone). The pipeline restarts automatically for `backend/**` and `bot/**`. Startup migrations still go in BOTH the FastAPI lifespan and `passenger_wsgi.py`, even though only the lifespan executes today.
 - i18n: 4 languages (uz / uz_cyrl / ru / en). Static UI text via `t()` keys added to all 4; DB text via `tl()` transliteration.
+
+## Deployment
+
+Push to `main` → `https://production.safiacorporate.uz` updates itself. No
+manual step, no SSH.
+
+- **Where**: `user@185.74.5.198`, code at `/var/www/production` (a checkout of
+  this repo), systemd unit `safia-production` on `127.0.0.1:8030`, nginx in
+  front. The Gitea act_runner runs ON that same host as the same user, so the
+  job needs no SSH hop and carries no secrets; the checkout reads the repo with
+  a read-only deploy key.
+- **What it does**, decided from the commit diff (`deploy/deploy.sh`):
+  `backend/**`, `bot/**`, the unit file → restart · `requirements.txt` → pip
+  install + restart · frontend sources with no rebuilt `frontend/dist` in the
+  same commit → `npm ci` + Vite build · `frontend/dist` alone → nothing but the
+  checkout, and the new UI is live immediately.
+- **If it goes wrong**: an unhealthy `/health` after restart rolls the checkout
+  back to the previous commit, restarts, and fails the job. Watch a deploy in
+  the repo's Actions tab, or `journalctl -u safia-production -f` on the box.
+- **Never edit files directly on the server** — the next deploy hard-resets the
+  checkout. Server-only state (`backend/.env`, the Google service-account key,
+  the venv) is untracked and survives; everything else comes from git.
+- Run a deploy by hand with `bash /var/www/production/deploy/deploy.sh`, or
+  force a restart with `FORCE_RESTART=1 bash …` (also available as
+  "Run workflow" in the Actions tab).
+- Secrets never belong in the repo. `backend/.env` is provisioned on the server
+  and `.gitignore` is deliberately aggressive: `*.sql`, `*.uu`, `cPanel*`,
+  `*.json` (with `!app/data/*.json` re-including the boot seeds). If you add a
+  file the app must read at runtime, check `git check-ignore -v <path>` before
+  assuming it shipped.
 
 ## Context discipline
 

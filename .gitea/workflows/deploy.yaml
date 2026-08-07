@@ -1,0 +1,57 @@
+name: Deploy to production
+
+# Every push to main updates https://production.safiacorporate.uz.
+# `workflow_dispatch` re-runs the same deploy by hand from the Actions tab —
+# use it to force a restart after editing backend/.env on the server.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_restart:
+        description: "Restart even when the checkout is already up to date (use after editing backend/.env or the unit on the server)"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    # The shared act_runner is registered as `ubuntu-latest:host`, so jobs run
+    # directly on 185.74.5.198 as `user` — the account that owns
+    # /var/www/production. That is why this job needs no SSH and no secrets:
+    # the deploy target is the machine the job is already running on, and the
+    # checkout authenticates to Gitea with its own read-only deploy key.
+    runs-on: ubuntu-latest
+
+    # That runner has capacity 1 and is shared with every other repo in the
+    # instance, so a hung deploy blocks the whole company's CI. Cap it hard:
+    # a normal deploy is ~15 s, rising to ~3 min on the rare commit that has
+    # to run `npm ci` plus a Vite build.
+    timeout-minutes: 12
+
+    steps:
+      - name: Deploy
+        env:
+          # Resolved in bash rather than in a `${{ … && … || … }}` expression so
+          # it does not depend on how completely this runner implements GitHub's
+          # expression syntax.
+          FORCE_RESTART_INPUT: ${{ github.event.inputs.force_restart }}
+        run: |
+          set -euo pipefail
+          cd /var/www/production
+          git fetch --prune origin main
+
+          export FORCE_RESTART=0
+          if [ "${FORCE_RESTART_INPUT:-false}" = "true" ]; then
+            export FORCE_RESTART=1
+            echo "force_restart requested — the service will be restarted"
+          fi
+
+          # Run the deploy script from /tmp, extracted at exactly the commit
+          # being deployed. It must NOT execute from inside the checkout it is
+          # about to `git reset --hard`: bash reads a script lazily, so
+          # rewriting the file mid-run makes it execute garbage.
+          SCRIPT=$(mktemp /tmp/safia-deploy-XXXXXX.sh)
+          trap 'rm -f "$SCRIPT"' EXIT
+          git show "${{ github.sha }}:deploy/deploy.sh" > "$SCRIPT"
+
+          bash "$SCRIPT"
