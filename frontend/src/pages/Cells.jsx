@@ -177,7 +177,9 @@ export default function Cells() {
   const deleteMut = useMutation({
     mutationFn: (cid) => api.delete(`/api/profiles/admin/cells/${cid}`),
     onSuccess: () => { done(); setConfirmDelete(null); },
-    onError: (e) => { setConfirmDelete(null); alert(e?.response?.data?.detail || t("admin.profiles.error")); },
+    // Never window.alert here: Telegram's iOS WebView swallows it, so the one
+    // signal that a deletion failed would be invisible on the primary device.
+    onError: (e) => { setConfirmDelete(null); toast.error(e?.response?.data?.detail || t("admin.profiles.error")); },
   });
   const busy = createMut.isPending || updateMut.isPending;
 
