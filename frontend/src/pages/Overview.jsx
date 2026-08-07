@@ -156,15 +156,20 @@ export default function Overview() {
       : s.dir === "asc" ? { key, dir: "desc" }
       : { key: null, dir: "asc" });
 
+  // Every request on this page carries the active plant (see FactoryContext);
+  // on «All factories» the key is absent and the calls are byte-identical to
+  // what they were before factories existed.
+  const fparams = useFactoryParams(params);
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["summary", params],
-    queryFn: () => api.get("/api/summary", { params }).then((r) => r.data),
+    queryKey: ["summary", fparams],
+    queryFn: () => api.get("/api/summary", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
 
   const { data: brigadirs = [], isLoading } = useQuery({
-    queryKey: ["brigadirs", params],
-    queryFn: () => api.get("/api/brigadirs", { params }).then((r) => r.data),
+    queryKey: ["brigadirs", fparams],
+    queryFn: () => api.get("/api/brigadirs", { params: fparams }).then((r) => r.data),
     enabled: ready,
   });
 
