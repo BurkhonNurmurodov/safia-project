@@ -17,6 +17,8 @@ import { SkeletonChart } from "../components/ui/Skeleton";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
+import FactoryTabs from "../components/ui/FactoryTabs";
+import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { useTranslit } from "../utils/transliterate";
 import api from "../utils/api";
 
