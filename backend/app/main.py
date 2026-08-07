@@ -245,6 +245,10 @@ app.include_router(leaderboard.router)
 app.include_router(quality.router)
 app.include_router(boot.router)
 app.include_router(ui_prefs.router)
+# Factories: reading the tab strip is open to any approved session (every
+# factory-aware page needs it); the write endpoints carry their own
+# admin/admin.factories.manage guard.
+app.include_router(factories.router)
 app.include_router(broadcast.router)
 app.include_router(setup_times.router)
 app.include_router(leader_tasks.router, dependencies=_admin_guard)
