@@ -83,9 +83,10 @@ export function FactoryProvider({ children }) {
       return;
     }
     const live = new Set(factories.map((f) => f.id));
-    const fallback = allTab && data.default_factory_id == null
-      ? ALL
-      : (data.default_factory_id ?? (allTab ? ALL : (factories[0]?.id ?? null)));
+    // The admin's configured landing tab (null there means they chose «All»),
+    // then the first factory if the combined tab isn't on offer.
+    const fallback = data.default_factory_id
+      ?? (allTab ? ALL : (factories[0]?.id ?? null));
     if (stored === null || stored === undefined) {
       if (fallback !== null) setStored(fallback);
       return;
