@@ -70,6 +70,10 @@ export const ADMIN_NAV = [
 
   { id: "users",        group: "people", Icon: Users,          labelKey: "admin.tabUsers",        descKey: "admin.desc.users" },
   { id: "profiles",     group: "people", Icon: IdCard,         labelKey: "admin.tabProfiles",     descKey: "admin.desc.profiles" },
+  // Sits with the identity registers, directly after the supervisor profiles it
+  // assigns: factory → supervisor → cell → leader is one chain, and this is its
+  // top link. Not in "daily" — it is configured once and then rarely touched.
+  { id: "factories",    group: "people", Icon: Building2,      labelKey: "admin.tabFactories",    descKey: "admin.desc.factories" },
   { id: "access",       group: "people", Icon: ShieldCheck,    labelKey: "admin.tabAccess",       descKey: "admin.desc.access" },
   { id: "permissions",  group: "people", Icon: KeyRound,       labelKey: "admin.tabPermissions",  descKey: "admin.desc.permissions" },
   { id: "actions",      group: "people", Icon: History,        labelKey: "admin.tabActions",      descKey: "admin.desc.actions" },
