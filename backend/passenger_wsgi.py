@@ -111,6 +111,9 @@ try:
     seed_admins()
     seed_languages()
     seed_managers_and_sources()
+    # After the manager seed, so freshly seeded units land in the first factory
+    # instead of staying unassigned.
+    migrate_factories()
     repoint_shift_report_sheet()
     wipe_cell_perenaladka_history()
     backfill_role_profiles()
