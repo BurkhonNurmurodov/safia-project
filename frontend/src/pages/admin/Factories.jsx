@@ -55,7 +55,7 @@ export default function Factories() {
   const toast = useToast();
   const { reload: reloadFactoryContext } = useFactory();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: loadError } = useQuery({
     queryKey: ["admin-factories"],
     queryFn: () => api.get("/api/factories/admin").then((r) => r.data),
   });
