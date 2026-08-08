@@ -35,6 +35,10 @@ SHIFT_ADMIN_SLOTS = [
 
 
 def _validate_init_data(init_data: str) -> dict | None:
+    # Fail closed with no bot token: the HMAC key would then be derived from an
+    # empty secret, making every initData signature forgeable by anyone.
+    if not (settings.telegram_bot_token or "").strip():
+        return None
     try:
         params = dict(parse_qsl(init_data, strict_parsing=True))
     except Exception:
@@ -298,6 +302,12 @@ def switch_role(body: SwitchRoleBody, token: str = Depends(_oauth2), db: Session
         raise HTTPException(status_code=404, detail="Role not found")
     if target.status != "approved":
         raise HTTPException(status_code=403, detail="Role is not approved")
+    # Defence in depth: a telegram_user_roles row must never mint an admin
+    # session. Admin is reachable only through the ADMIN_ROLE_REF branch above,
+    # which checks the Admin table; a row whose role was somehow set to "admin"
+    # (e.g. via a misused users-manage grant) cannot be switched into.
+    if target.role == "admin":
+        raise HTTPException(status_code=403, detail="Role is not switchable")
 
     user = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
     if user:

@@ -473,6 +473,12 @@ def update_user_role(
 
     # Role / unit reassignment (no status change) is applied directly here.
     if payload.role is not None:
+        # Never let this endpoint set role='admin' (or any non-standard value):
+        # admin is granted only via the Admin table, and switch_role would
+        # otherwise turn a delegated CAP_USERS_MANAGE grant into full admin.
+        # Mirror add_user_role's VALID_ROLES gate.
+        if payload.role not in VALID_ROLES:
+            raise HTTPException(status_code=400, detail="Invalid role")
         role_row.role = payload.role
     if payload.role_id is not None:
         role_row.role_id = payload.role_id

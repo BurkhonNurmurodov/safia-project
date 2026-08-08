@@ -1577,6 +1577,16 @@ def _process_request(req_id: int, action: str, caller: dict, db: Session):
         if units is not None and req.manager_id not in units:
             raise HTTPException(status_code=403, detail="Not authorised")
 
+    # A native shift-manager may act only on their own shift's requests — the
+    # same rule undo_request enforces. Without this, approve/reject was looser
+    # than undo, letting a shift-1 manager edit shift-2 attendance.
+    if caller.get("role") == "shift-manager":
+        sm_slot = caller.get("role_id")
+        if not sm_slot:
+            raise HTTPException(status_code=403, detail="No shift assigned")
+        if _sm_shift(db, sm_slot) != _get_shift_for_manager(db, req.manager_id):
+            raise HTTPException(status_code=403, detail="Not responsible for this shift")
+
     processor_tg_id = int(caller["sub"])
     processor_name  = caller.get("full_name", "")
     now = datetime.now(timezone.utc)

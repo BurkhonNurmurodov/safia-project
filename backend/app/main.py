@@ -15,7 +15,7 @@ from app.logging_setup import setup_logging  # noqa: E402
 
 setup_logging()
 
-import traceback
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -23,6 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+# Aliased: `settings` (unqualified) is the app.routers.settings module below.
+from app.config import assert_secure_config, settings as cfg
 from app.database import engine, Base
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories
@@ -36,6 +38,9 @@ from app.routers import staff as staff_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-closed before anything is served: never run production on the public
+    # placeholder signing key or with the dev auth bypass enabled.
+    assert_secure_config()
     Base.metadata.create_all(bind=engine)
     from app.startup import (
         backfill_day_approvals, backfill_day_closures, backfill_deletion_batch_ids,
@@ -143,17 +148,31 @@ app = FastAPI(title="Zagruzka KPI API", version="1.0.0", lifespan=lifespan,
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """Log every unhandled 500 with a full traceback so it appears in server logs."""
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"{type(exc).__name__}: {exc}"},
+    """Log every unhandled 500 with a full traceback server-side, but return a
+    generic body. The exception text can carry SQL fragments, file paths and
+    other internals an attacker can farm by deliberately triggering errors."""
+    logging.getLogger("app.unhandled").exception(
+        "Unhandled error on %s %s", request.method, request.url.path,
     )
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
+
+# CORS is locked to the app's own origins. In production the SPA and API share
+# one origin, so CORS isn't even exercised there; this allowlist exists for local
+# dev (Vite on :5173 → backend) and to make "*" impossible. A wildcard combined
+# with credentials would let any website drive the API in a victim's browser.
+_CORS_ORIGINS = sorted({
+    o for o in (
+        cfg.webapp_url, cfg.backend_url,
+        "https://production.safiacorporate.uz",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:8000", "http://localhost:8001",
+    ) if o
+})
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -215,6 +234,68 @@ class NoStoreAPIMiddleware:
 # Outermost middleware: it must have the final say on cache headers, after CORS
 # and the route handlers have run.
 app.add_middleware(NoStoreAPIMiddleware)
+
+
+# ── Security headers ──────────────────────────────────────────────────────────
+# A Content-Security-Policy scoped to exactly what this app loads, plus the
+# standard hardening trio. Deliberately permissive where the app needs it
+# ('unsafe-inline'/'unsafe-eval' for the inline boot script and charting libs;
+# the Google-Fonts hosts; data:/blob: for the base64 logo and blob media
+# previews) so it hardens without breaking the SPA, while still blocking the
+# high-value attacks: loading external scripts, embedding the app off Telegram
+# (clickjacking), <base>/object injection, and exfiltrating a stolen token to a
+# foreign host (connect-src is same-origin only).
+_CONNECT_SRC = " ".join(sorted(
+    {"'self'"} | {o for o in (cfg.webapp_url, cfg.backend_url)
+                  if o and o.startswith("http")}
+))
+_CSP = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self' https://telegram.org https://*.telegram.org; "
+    "form-action 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "img-src 'self' data: blob:; "
+    "media-src 'self' data: blob:; "
+    "worker-src 'self' blob:; "
+    f"connect-src {_CONNECT_SRC}"
+)
+
+
+class SecurityHeadersMiddleware:
+    """Attach defense-in-depth response headers to every response. Pure ASGI so
+    it composes with the cache and Ghost-Mode middlewares."""
+
+    _HEADERS = [
+        (b"content-security-policy", _CSP.encode()),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+    ]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {k.lower() for (k, _) in headers}
+                headers += [h for h in self._HEADERS if h[0] not in present]
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Routers exposing /admin/* API routes need the initData guard applied at the
 # router level too — the global dep only covers /api/*. (These same three also
@@ -315,7 +396,11 @@ if STATIC_DIR:
         # Serve any static files in the root of the dist directory (like favicon.ico, etc.)
         clean_path = full_path.lstrip("/")
         file_path = os.path.abspath(os.path.join(STATIC_DIR, clean_path))
-        if clean_path and file_path.startswith(STATIC_DIR) and os.path.isfile(file_path):
+        # Boundary must include the separator: a bare startswith(STATIC_DIR)
+        # would also match a sibling like ".../dist-backup", letting a crafted
+        # "../dist-backup/secret" escape the intended directory.
+        within = file_path == STATIC_DIR or file_path.startswith(STATIC_DIR + os.sep)
+        if clean_path and within and os.path.isfile(file_path):
             return FileResponse(file_path)
         # Otherwise serve index.html for SPA frontend routing
         return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers=NO_STORE)

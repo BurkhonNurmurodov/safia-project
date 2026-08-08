@@ -22,10 +22,13 @@ wipe-and-reload re-sync (see LeaderAiReview).
 There is no scheduler on this host, so a drain is kicked by the two events that
 create work: the leaders-sheet Refresh and a leader closing their bot day.
 """
+import ipaddress
 import logging
 import re
+import socket
 import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy import func, text
@@ -280,10 +283,55 @@ def _looks_like_image(content: bytes, ctype: str) -> bool:
         or content[:4] == b"RIFF" or content[:2] == b"BM"
 
 
+def _host_is_public(host: str) -> bool:
+    """False if the host resolves to any private / loopback / link-local /
+    reserved address — the targets an SSRF would use to reach internal services
+    or a cloud metadata endpoint. Every resolved address must be public."""
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return False
+    return True
+
+
+def _ssrf_safe_get(client: httpx.Client, url: str, max_redirects: int = 5) -> httpx.Response:
+    """GET that follows redirects manually, re-checking at EVERY hop that the
+    scheme is http(s) and the host resolves only to public addresses. httpx's
+    built-in follow_redirects can't gate the intermediate request to an internal
+    host after a redirect; this does. Raises httpx.HTTPError on a blocked hop."""
+    current = url
+    for _ in range(max_redirects + 1):
+        parsed = urlparse(current)
+        if parsed.scheme not in ("http", "https"):
+            raise httpx.HTTPError(f"blocked URL scheme: {parsed.scheme or 'none'}")
+        if not _host_is_public(parsed.hostname or ""):
+            raise httpx.HTTPError("blocked non-public host")
+        res = client.get(current, follow_redirects=False)
+        if res.is_redirect and res.headers.get("location"):
+            current = urljoin(current, res.headers["location"])
+            continue
+        return res
+    raise httpx.HTTPError("too many redirects")
+
+
 def fetch_sheet_image(url: str) -> tuple[bytes, str]:
     """Bytes for one Google-Form photo URL. Drive links are rewritten to a
     direct-content host first — the share URL the form writes returns an HTML
-    viewer page, not the image."""
+    viewer page, not the image.
+
+    The URL comes from a spreadsheet/Form cell, so it is untrusted: every fetch
+    goes through _ssrf_safe_get, which blocks non-http(s) schemes and any host
+    resolving to an internal address at every redirect hop."""
     candidates = [url]
     m = _DRIVE_ID.search(url or "")
     if m and "drive.google.com" in url:
@@ -292,10 +340,10 @@ def fetch_sheet_image(url: str) -> tuple[bytes, str]:
                       f"https://drive.google.com/uc?export=download&id={fid}",
                       url]
     last = ""
-    with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as client:
+    with httpx.Client(timeout=_TIMEOUT) as client:
         for cand in candidates:
             try:
-                res = client.get(cand)
+                res = _ssrf_safe_get(client, cand)
             except httpx.HTTPError as exc:
                 last = str(exc)
                 continue

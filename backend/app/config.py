@@ -1,9 +1,23 @@
+import hashlib
+import logging
 import os
-from pydantic import field_validator
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+log = logging.getLogger(__name__)
 
 # Resolve .env relative to this file (backend/app/config.py → backend/.env)
 _ENV_FILE = os.path.join(os.path.dirname(__file__), "..", ".env")
+
+# The built-in placeholder signing key. It is a PUBLIC constant — it lives in
+# this source file — so any JWT signed with it is forgeable by anyone, which
+# would mean unauthenticated admin access (verify_admin trusts the token's role
+# claim) and a bypass of the browser-session origin wall. It exists only so a
+# local checkout runs without configuration. `_resolve_secret_key` replaces it
+# with a strong per-deployment key when possible, and `assert_secure_config`
+# refuses to serve production if it ever remains in force.
+_DEFAULT_SECRET = "change-this-secret-key"
 
 
 class Settings(BaseSettings):
@@ -74,11 +88,70 @@ class Settings(BaseSettings):
         explicit = (self.telegram_webhook_secret or "").strip()
         if explicit:
             return explicit
-        import hashlib
         return hashlib.sha256(f"tg-webhook:{self.secret_key}".encode()).hexdigest()
+
+    @model_validator(mode="after")
+    def _resolve_secret_key(self):
+        """Never let the signing key stay at the public placeholder.
+
+        When SECRET_KEY is unset (or still the placeholder), derive a strong,
+        deployment-stable key from the bot token — itself a high-entropy secret
+        only this deployment holds, and one that survives restarts, so existing
+        sessions are not invalidated on every boot. If there is no usable bot
+        token either, the placeholder is left in place and assert_secure_config()
+        decides whether that is fatal (production) or a warning (local dev)."""
+        if not self.secret_key or self.secret_key == _DEFAULT_SECRET:
+            token = (self.telegram_bot_token or "").strip()
+            if len(token) >= 20:
+                object.__setattr__(
+                    self, "secret_key",
+                    hashlib.sha256(f"safia-jwt-secret::{token}".encode()).hexdigest(),
+                )
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        """True on the live deployment, False for local dev.
+
+        Keyed on the public app URL: production serves the SPA from an https
+        host, local dev from http://localhost. Deliberately NOT keyed on the
+        database host (the prod DB may be reached over localhost) nor on
+        dev_auth (which we want to be able to forbid independently)."""
+        url = (self.webapp_url or "").lower()
+        return url.startswith("https://") and "localhost" not in url and "127.0.0.1" not in url
 
     class Config:
         env_file = _ENV_FILE
 
 
 settings = Settings()
+
+
+def assert_secure_config() -> None:
+    """Fail-closed startup check, called once from each web-app entrypoint
+    (app/main.py lifespan and passenger_wsgi.py).
+
+    In production it REFUSES to serve on an insecure configuration rather than
+    silently running with a forgeable signing key or an open dev bypass. A failed
+    boot makes the deploy's health check fail, which rolls the release back and
+    leaves the previous version running — far safer than serving an app whose
+    admin tokens anyone can mint. In local dev it only warns, so a fresh checkout
+    still runs."""
+    problems: list[str] = []
+    if settings.secret_key == _DEFAULT_SECRET:
+        msg = ("SECRET_KEY is unset and no bot token was available to derive one, "
+               "so the JWT signing key is a public constant that lets anyone forge "
+               "an admin token.")
+        if settings.is_production:
+            problems.append(msg)
+        else:
+            log.warning("INSECURE CONFIG (dev only): %s Set SECRET_KEY in backend/.env.", msg)
+    if settings.is_production and settings.dev_auth:
+        problems.append("DEV_AUTH is enabled in production — the __dev__ header "
+                        "bypasses authentication entirely.")
+    if problems:
+        raise RuntimeError(
+            "Refusing to start: insecure production configuration.\n  - "
+            + "\n  - ".join(problems)
+            + "\nSet a strong SECRET_KEY (and DEV_AUTH=0) in backend/.env, then redeploy."
+        )

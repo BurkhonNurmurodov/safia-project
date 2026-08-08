@@ -37,6 +37,11 @@ from app.logging_setup import setup_logging  # noqa: E402
 setup_logging()
 logger = logging.getLogger("passenger_wsgi")
 
+# Fail-closed before serving: never run production on the public placeholder
+# signing key or with the dev auth bypass on (mirrors the app/main.py lifespan).
+from app.config import assert_secure_config  # noqa: E402
+assert_secure_config()
+
 # Run database creation, seeding, and Telegram webhook setup on startup.
 # NOTE: the FastAPI lifespan in app/main.py does NOT run under the a2wsgi
 # bridge, so every startup task wired there must also be mirrored here.
