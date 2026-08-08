@@ -71,6 +71,7 @@ const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import FindInPage from "./components/FindInPage";
+import DocumentTitle from "./components/DocumentTitle";
 import { usePageAccess } from "./hooks/usePageAccess";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { canAccessPage, firstAccessibleRoute, ROLE_LABEL_KEYS } from "./config/pages";
@@ -383,6 +384,7 @@ function AppWithLang() {
              purpose: the selection is shared by all six of them, so navigating
              between them must never reset or contradict it. */}
          <FactoryProvider>
+          <DocumentTitle />
           <LogoutOverlay />
           <FindInPage />
           <Suspense fallback={<PageLoader />}>
