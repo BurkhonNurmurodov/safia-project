@@ -17,7 +17,6 @@ import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { usePersistentState } from "../../hooks/usePersistentState";
 import { canAccessPage } from "../../config/pages";
 
 const ALL_LINKS = [
@@ -62,9 +61,11 @@ const ALL_LINKS = [
 // short lists keep today's flat sidebar untouched. A link with an unknown
 // group id lands in the trailing headerless "system" bucket, so a typo shows
 // up as an ungrouped link — visible, never silently dropped.
-// «Лаборатория» holds pilots and test twins and starts collapsed: visual rank
-// should match real importance, not upload date. Collapse state is remembered
-// per user in localStorage («sidebar.collapsedGroups»).
+// Sections behave as an ACCORDION: exactly one is open — the one holding the
+// current page — and every other one is closed. Nothing is remembered across
+// navigations (a stale open section is just noise around the page you are
+// actually on); a header click opens another section for as long as you stay
+// on this page. Headerless sections (no labelKey) never collapse.
 const NAV_GROUPS = [
   { id: "top" },                                   // Обзор — headerless
   { id: "prod",    labelKey: "navgrp.production" },
@@ -72,7 +73,7 @@ const NAV_GROUPS = [
   { id: "leaders", labelKey: "navgrp.leaders" },
   { id: "quality", labelKey: "navgrp.quality" },
   { id: "cells",   labelKey: "navgrp.cells" },
-  { id: "lab",     labelKey: "navgrp.lab", defaultCollapsed: true },
+  { id: "lab",     labelKey: "navgrp.lab" },
   { id: "system" },                                // Активность + catch-all — headerless
 ];
 const GROUP_THRESHOLD = 10;
@@ -130,19 +131,25 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const byGroup = new Map(NAV_GROUPS.map(g => [g.id, []]));
   links.forEach(l => (byGroup.get(l.group) ?? byGroup.get("system")).push(l));
 
-  // Collapsed group ids, remembered per user.
-  const [collapsedGroups, setCollapsedGroups] = usePersistentState(
-    "sidebar.collapsedGroups",
-    () => NAV_GROUPS.filter(g => g.defaultCollapsed).map(g => g.id),
-  );
-  const isCollapsed = (id) => grouped && collapsedGroups.includes(id);
-  const toggleGroup = (id) =>
-    setCollapsedGroups(collapsedGroups.includes(id)
-      ? collapsedGroups.filter(x => x !== id)
-      : [...collapsedGroups, id]);
-
+  // Segment-safe, exactly like NavLink's own matching: /zagruzka-cell is NOT
+  // inside /zagruzka, so it can't light up (or open) the wrong section.
   const isLinkActive = (to) =>
-    to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+    to === "/"
+      ? location.pathname === "/"
+      : location.pathname === to || location.pathname.startsWith(`${to}/`);
+
+  // The section holding the current page. Longest match wins, so a nested
+  // route resolves to its own link rather than to the parent it sits under.
+  const activeGroup = links
+    .filter(l => isLinkActive(l.to))
+    .sort((a, b) => b.to.length - a.to.length)[0]?.group;
+
+  // Accordion: the active section is open, everything else closed. Navigation
+  // re-derives it (the effect re-fires only when the active section changes),
+  // so a section the user opened by hand lives exactly as long as this page.
+  const [openGroup, setOpenGroup] = useState(activeGroup);
+  useEffect(() => { setOpenGroup(activeGroup); }, [activeGroup]);
+  const toggleGroup = (id) => setOpenGroup(cur => (cur === id ? null : id));
 
   const { data: range } = useQuery({
     queryKey: ["attendance-range"],
@@ -179,13 +186,13 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
     // items). On first appearance it snaps into place with no slide.
     setInd(p => ({ top: el.offsetTop, height: el.offsetHeight, show: true, anim: p.show }));
   }, []);
-  useLayoutEffect(measureInd, [measureInd, location.pathname, expanded, links.length, collapsedGroups]);
+  useLayoutEffect(measureInd, [measureInd, location.pathname, expanded, links.length, openGroup]);
   // Links below a toggled group only reach their final offset once the .2s
   // grid collapse finishes — re-measure after it settles.
   useEffect(() => {
     const id = setTimeout(measureInd, 230);
     return () => clearTimeout(id);
-  }, [collapsedGroups, measureInd]);
+  }, [openGroup, measureInd]);
 
   // One renderer for both modes (flat / grouped). Rows are slightly denser on
   // desktop (md:py-2); the phone drawer keeps the full touch height.
@@ -346,13 +353,17 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           {grouped && NAV_GROUPS.map((g) => {
             const items = byGroup.get(g.id);
             if (!items.length) return null;
-            const collapsed = isCollapsed(g.id);
+            const collapsed = Boolean(g.labelKey) && openGroup !== g.id;
             const activeInside = items.some(l => isLinkActive(l.to));
             // Pending Verifix work must stay visible with «Люди» collapsed —
             // the count bubbles up onto the group header.
             const groupBadge = collapsed && showBadge && pendingCount > 0 &&
               items.some(l => l.to === "/staff") ? pendingCount : 0;
             const showHeader = g.labelKey && expanded;
+            // The icon rail collapses with the sidebar, so a closed section has
+            // nothing left to draw there — no header to reopen it from, and a
+            // bare divider would read as a section that lost its icons.
+            if (!showHeader && collapsed && !groupBadge) return null;
 
             return (
               <div key={g.id}>
@@ -392,13 +403,20 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 {!showHeader && g.id !== "top" && (
                   <div className="mx-2 my-2" style={{ borderTop: "1px solid var(--border)" }} />
                 )}
-                {/* Collapse only applies while expanded — the icon rail keeps
-                    every icon reachable regardless of group state. */}
+                {/* Closed on the rail, but its /staff icon was carrying pending
+                    Verifix work — keep the dot rather than hiding the queue. */}
+                {!showHeader && groupBadge > 0 && (
+                  <div className="flex justify-center py-1" title={`${t("nav.staff")}: ${groupBadge}`}>
+                    <span className="w-2 h-2 rounded-full" style={{ background: "#ef4444" }} />
+                  </div>
+                )}
+                {/* The rail collapses with the sidebar: same open section, same
+                    hidden ones, so hovering it open never reshuffles the list. */}
                 <div
                   id={`nav-grp-${g.id}`}
                   className="nav-grp-items"
-                  data-collapsed={collapsed && expanded ? "true" : "false"}
-                  style={{ gridTemplateRows: collapsed && expanded ? "0fr" : "1fr" }}
+                  data-collapsed={collapsed ? "true" : "false"}
+                  style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
                 >
                   <div className="space-y-0.5">{items.map(renderLink)}</div>
                 </div>
