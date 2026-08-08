@@ -36,6 +36,14 @@
         function envInfo() {
           var info = [];
           info.push('stage: ' + (window.__bootStage || 'inline only - bundle never started'));
+          // Whether React actually painted is THE question every one of these
+          // reports has to answer — a stage of 'react-render-called' only says
+          // render() was called, not that it produced anything.
+          try {
+            var _root = document.getElementById('root');
+            info.push('mounted: ' + (!_root ? 'no #root element'
+              : _root.childNodes.length ? 'yes (' + _root.childNodes.length + ' nodes)' : 'NO - #root empty'));
+          } catch (e) { info.push('mounted: probe failed: ' + e.message); }
           info.push('Telegram object: ' + (window.Telegram ? 'present' : 'MISSING'));
           try {
             var wa = window.Telegram && window.Telegram.WebApp;
@@ -281,6 +289,12 @@
           var root = document.getElementById('root');
           return !!(root && root.childNodes.length);
         }
+        // ES5-safe cross-origin test — no URL constructor, which the old WebViews
+        // this whole block exists for do not have.
+        function foreignUrl(url) {
+          var m = /^(?:[a-z][a-z0-9+.\-]*:)?\/\/([^/?#]+)/i.exec(url || '');
+          return !!m && m[1].toLowerCase() !== location.host.toLowerCase();
+        }
         window.addEventListener('error', function (e) {
           if (e.target && e.target.tagName) {
             // A broken <img> (content) or <link> (a blocked font stylesheet /
@@ -292,6 +306,13 @@
               staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
               return;
             }
+            // Only a script from OUR OWN origin can keep this app from booting.
+            // Third-party ones cannot: Cloudflare injects its analytics beacon at
+            // the edge, and any Android browser with a content blocker or a
+            // filtering DNS kills it — that must not put an undismissable "App
+            // failed to start" screen over an app that is running perfectly.
+            if (foreignUrl(url)) return;
+            if (appMounted()) return; // running app — a late resource isn't a boot failure
             errors.push('Failed to load: ' + (url || e.target.tagName));
           } else {
             if (appMounted()) return; // running app — let the error boundary/console handle it
