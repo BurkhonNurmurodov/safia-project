@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
-import { clearToken, getToken, inTelegram, isWebSession, setToken } from "../utils/session";
+import { clearToken, getToken, inTelegram, isRemembered, isWebSession, setToken } from "../utils/session";
 
 const AuthContext = createContext(null);
 
@@ -143,7 +143,7 @@ export function AuthProvider({ children }) {
   /** Swap in a token the server re-issued (e.g. after a password change) so the
    *  tab the person is typing in does not log itself out. */
   function replaceWebToken(token) {
-    if (token) setToken(token, { remember: !!localStorage.getItem("tg_token"), web: true });
+    if (token) setToken(token, { remember: isRemembered(), web: true });
   }
 
   // Swap the JWT for another approved role; a full reload re-fetches
