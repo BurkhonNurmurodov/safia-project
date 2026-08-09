@@ -73,7 +73,6 @@ export default function DowntimeToggleChart({
   unitDayLabel,
   unitHourLabel,
   unitMinLabel,
-  thresholdText,
   catColors,
   chartTheme,
   gridColor,
@@ -196,8 +195,7 @@ export default function DowntimeToggleChart({
         grid: { borderColor: grid, padding: { right: 28 } },
         legend: { show: false },
         annotations: {
-          xaxis: [{ x: 50, borderColor: "#C8973F", strokeDashArray: 4,
-            label: { text: thresholdText, borderColor: "#C8973F", style: { color: "#fff", background: "#C8973F", fontSize: "10px", padding: { top: 2, bottom: 2, left: 4, right: 4 } } } }],
+          xaxis: [{ x: 50, borderColor: "#C8973F", strokeDashArray: 4 }],
         },
         tooltip: {
           theme: tipTheme,
@@ -209,7 +207,7 @@ export default function DowntimeToggleChart({
       };
     },
     [categories, axisMax, unit, minLabel, hrsLabel, unitDayLabel, unitHourLabel, unitMinLabel,
-     thresholdText, catColors, themeMode, grid, axisLabel, tipTheme, outsideLabel],
+     catColors, themeMode, grid, axisLabel, tipTheme, outsideLabel],
   );
 
   return <ReactApexChart type="bar" series={series} options={options} height={height} />;

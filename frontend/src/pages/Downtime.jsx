@@ -669,7 +669,6 @@ export default function Downtime() {
               unitDayLabel={durLabels.day}
               unitHourLabel={durLabels.hour}
               unitMinLabel={durLabels.min}
-              thresholdText={t("downtime.threshold")}
               catColors={CAT_COLORS}
               chartTheme={chartTheme}
               gridColor={gridColor}
