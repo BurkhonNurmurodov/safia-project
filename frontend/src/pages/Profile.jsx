@@ -202,11 +202,11 @@ function useSaveTarget(key, { dirty, busy, save }) {
   useEffect(() => () => bus?.unregister(key), [bus, key]);
 }
 
-function PageSave({ dirty, busy, onSave, hideHint = false }) {
+function PageSave({ dirty, busy, onSave }) {
   const { t } = useLang();
   return (
     <div className="flex items-center gap-2.5">
-      {dirty && !busy && !hideHint && (
+      {dirty && !busy && (
         <span className="inline-flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap"
               style={{ color: "#eab308" }}>
           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />
