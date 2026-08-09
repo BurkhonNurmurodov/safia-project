@@ -129,6 +129,20 @@ re-verifies it on every request. The second is a username + password at
   `web: True`. A Telegram-issued token still cannot be replayed from a browser.
   Because that token is the whole proof, it is checked against the DB on every
   request — a disabled login or a bumped `token_version` dies immediately.
+- **A browser can hold SEVERAL sessions at once** — the profile wallet
+  (`utils/profileWallet.js`). The header menu's «Yangi profil qo'shish» asks for
+  another profile's username + password (Telegram still deep-links the bot's
+  register flow), and that profile joins the menu beside the current one instead
+  of replacing it; tapping a row swaps the active token, no password. Only the
+  JWT is stored, never the password, and each row keeps its OWN «remember me»:
+  ticked → localStorage, unticked → sessionStorage, mirroring `session.js` so a
+  colleague added for one shift is gone when the tab closes. A switch VALIDATES
+  the stored token against `/api/auth/web/session` before committing and puts the
+  old one back if it is dead (expired, `token_version` bumped), then re-asks that
+  profile's password — a row is never silently dropped. «Chiqish» signs out of
+  the ACTIVE profile only and falls back to the next row; the login screen is
+  only for the last one. Switching always does a full page load: per-page
+  filters, scroll and fetched rows belong to the profile being left.
 - **`token_version` is the revocation handle.** Bump it to end every browser
   session for a profile (password change, reset, disable, rename, admin
   "sign out everywhere"). Telegram sessions never carry it.

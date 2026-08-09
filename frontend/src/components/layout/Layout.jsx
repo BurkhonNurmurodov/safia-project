@@ -4,10 +4,11 @@ import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus } from "lucide-react";
+import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus, Loader2 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
+import AddProfileModal from "./AddProfileModal";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
@@ -31,12 +32,16 @@ const iconBtnStyle = (active) => ({
 // bar now — the Settings modal is gone.)
 
 function UserProfile() {
-  const { auth, switchRole, leaveRole, logout, webSession, botUsername } = useAuth();
+  const { auth, switchRole, leaveRole, logout, webSession, botUsername,
+          webProfiles, addWebProfile, switchWebProfile } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  // { username, expired } while the credential dialog is up; null when closed.
+  const [addProfile, setAddProfile] = useState(null);
+  const [switching, setSwitching] = useState("");
   const ref = useRef(null);
   const { data: me } = useMyProfileDetails();
 
@@ -52,6 +57,24 @@ function UserProfile() {
   const tkey   = ROLE_LABEL_KEYS[auth.role];
   const role   = tkey ? t(tkey) : (auth.role ?? "");
   const others = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
+  // Browser only: the other profiles this machine is signed in as. `roles` is
+  // always empty on a web session, so these never appear alongside each other.
+  const activeUsername = auth.web_login?.username || "";
+  const walletOthers = webSession
+    ? (webProfiles ?? []).filter(p => p.username !== activeUsername)
+    : [];
+
+  /** Switch to a wallet profile. A dead stored token reopens the credential
+   *  dialog on that username instead of dropping the row. */
+  async function pickWebProfile(username) {
+    if (switching) return;
+    setSwitching(username);
+    const r = await switchWebProfile(username);
+    if (r?.ok) return;             // the page is reloading — leave the menu as it is
+    setSwitching("");
+    setOpen(false);
+    setAddProfile({ username, expired: true });
+  }
 
   const rowHover = {
     onMouseEnter: (e) => { e.currentTarget.style.background = "var(--bg-inner)"; },
@@ -140,12 +163,54 @@ function UserProfile() {
             );
           })}
 
-          {/* Add new profile — runs the bot's register flow (language →
-              web form → phone number). Navigating to /login in-app would skip
-              the bot's contact request, so open the bot deep link instead. */}
+          {/* Other profiles signed in on this browser. Tapping one swaps the
+              session to the token already held for it — no password, which is
+              the point of the wallet. */}
+          {walletOthers.map(p => {
+            const pName = tl(p.full_name || "");
+            const pTkey = ROLE_LABEL_KEYS[p.role];
+            const pRole = pTkey ? t(pTkey) : (p.role ?? "");
+            const busy  = switching === p.username;
+            return (
+              <button
+                key={p.username}
+                disabled={Boolean(switching)}
+                onClick={() => pickWebProfile(p.username)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                style={{
+                  borderBottom: "1px solid var(--border)",
+                  opacity: switching && !busy ? 0.55 : 1,
+                  cursor: switching ? "default" : "pointer",
+                }}
+                onMouseEnter={e => { if (!switching) e.currentTarget.style.background = "var(--bg-inner)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = ""; }}
+              >
+                <ProfileAvatar name={pName} colorKey={p.full_name || ""} size={32} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{pName}</div>
+                  <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
+                    {pRole} · {p.username}
+                  </div>
+                </div>
+                {busy && <Loader2 size={13} className="animate-spin flex-shrink-0" style={{ color: "var(--text-3)" }} />}
+              </button>
+            );
+          })}
+
+          {/* Add new profile.
+              In Telegram this runs the bot's register flow (language → web form
+              → phone number): navigating to /login in-app would skip the bot's
+              contact request, so open the bot deep link instead.
+              In a BROWSER a profile is proven by its own username + password, so
+              ask for the credential here and keep the current profile signed in
+              beside it. */}
           <button
             onClick={() => {
               setOpen(false);
+              if (webSession) {
+                setAddProfile({ username: "", expired: false });
+                return;
+              }
               const tg = window.Telegram?.WebApp;
               if (tg?.openTelegramLink && botUsername) {
                 tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
@@ -182,6 +247,16 @@ function UserProfile() {
             <span>{t("nav.signOut")}</span>
           </button>
         </div>
+      )}
+
+      {addProfile && (
+        <AddProfileModal
+          open
+          presetUsername={addProfile.username}
+          expired={addProfile.expired}
+          onClose={() => setAddProfile(null)}
+          onAdded={addWebProfile}
+        />
       )}
 
       {confirmLogout && (

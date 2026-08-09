@@ -86,7 +86,7 @@ function InfoRow({ icon: Icon, label, children, top = false }) {
           {label}
         </span>
       </span>
-      <span className="min-w-0 text-right text-xs" style={{ color: "var(--text-1)" }}>{children}</span>
+      <span className="min-w-0 text-right text-[13px]" style={{ color: "var(--text-1)" }}>{children}</span>
     </div>
   );
 }
@@ -141,6 +141,77 @@ function HolderChip({ b, meLabel, onUnassign, disabled }) {
 function factoryLabel(f, lang) {
   if (!f) return null;
   return f[`name_${lang}`] || f.name_ru || f.name_uz || f.code;
+}
+
+// Timestamps follow the UI language, not the browser default — an uz page
+// showing "8/8/2026, 8:05:47 AM" reads as someone else's software.
+const DT_LOCALE = { uz: "uz-Latn-UZ", uz_cyrl: "uz-Cyrl-UZ", ru: "ru-RU", en: "en-GB" };
+function fmtDateTime(iso, lang) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  try {
+    return d.toLocaleString(DT_LOCALE[lang] || "ru-RU", { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return d.toLocaleString();
+  }
+}
+
+// The hero every viewer gets: avatar, name, chips, one context line — plus an
+// `actions` slot (photo controls) and a `right` slot (the page save) at manage
+// access. One component so the two access levels cannot drift apart.
+function ProfileHero({ name, colorKey, profileKey, photoVer, chips, context, actions, right }) {
+  return (
+    <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
+        <ProfileAvatar name={name} colorKey={colorKey} profileKey={profileKey}
+                       photoVer={photoVer} size={84} />
+        <div className="min-w-0 flex-1">
+          <div className="text-xl font-semibold leading-tight break-words" style={{ color: "var(--text-1)" }}>
+            {name}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">{chips}</div>
+          {context && (
+            <div className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>{context}</div>
+          )}
+          {actions && <div className="mt-3">{actions}</div>}
+        </div>
+        {right && <div className="flex-shrink-0 sm:self-start">{right}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Name as colleagues see it, per language — stacked and left-aligned. The old
+// right-aligned key-value row broke exactly here: four ragged lines floating
+// far from their label, at 9px.
+function NamesBlock({ canonical, names }) {
+  const { t } = useLang();
+  return (
+    <div className="py-2">
+      <span className="flex items-center gap-2">
+        <Languages size={13} style={{ color: "var(--text-4)" }} />
+        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+          {t("profile.names")}
+        </span>
+      </span>
+      <div className="mt-2 space-y-1.5">
+        {["uz", ...NAME_LANGS].map((l) => {
+          const v = l === "uz" ? canonical : names?.[l];
+          return (
+            <div key={l} className="flex items-center gap-2.5 min-w-0">
+              <span className="w-14 flex-shrink-0 text-center text-[9px] font-mono uppercase tracking-wide px-1 py-0.5 rounded-md"
+                    style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+                {l}
+              </span>
+              <span className="text-[13px] truncate" style={{ color: v ? "var(--text-1)" : "var(--text-4)" }}>
+                {v || transliterate(canonical, l)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ── page-level save ───────────────────────────────────────────────────────────
@@ -341,13 +412,12 @@ function WebLoginStatus({ web }) {
 }
 
 function LastLogin({ web }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   return (
     <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-3)" }}>
       <Clock size={12} style={{ color: "var(--text-4)" }} />
       <span>
-        {t("weblogin.lastLogin")}:{" "}
-        {web.last_login_at ? new Date(web.last_login_at).toLocaleString() : t("weblogin.never")}
+        {t("weblogin.lastLogin")}: {fmtDateTime(web.last_login_at, lang) || t("weblogin.never")}
       </span>
     </div>
   );
@@ -379,7 +449,7 @@ function MyProfile() {
       <div className="space-y-4">
         <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <div className="flex items-center gap-4">
-            <SkeletonBlock className="w-20 h-20 rounded-full" />
+            <SkeletonBlock className="w-[84px] h-[84px] rounded-full" />
             <div className="flex-1"><SkeletonBlock className="h-5 w-1/2 mb-2" /><SkeletonBlock className="h-4 w-1/3" /></div>
           </div>
         </div>
@@ -391,24 +461,14 @@ function MyProfile() {
 
   return (
     <div className="space-y-4">
-      {/* Identity */}
-      <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-4 min-w-0">
-          <ProfileAvatar name={name} colorKey={canonical} profileKey={me?.profile_key}
-                         photoVer={me?.photo_ver} size={80} />
-          <div className="min-w-0">
-            <div className="text-lg font-semibold leading-tight break-words" style={{ color: "var(--text-1)" }}>
-              {name}
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <RoleChip role={me?.role || auth?.role} />
-            </div>
-            {context && (
-              <div className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>{context}</div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ProfileHero
+        name={name}
+        colorKey={canonical}
+        profileKey={me?.profile_key}
+        photoVer={me?.photo_ver}
+        chips={<RoleChip role={me?.role || auth?.role} />}
+        context={context}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* Details */}
@@ -441,22 +501,7 @@ function MyProfile() {
                 </span>
               </InfoRow>
             )}
-            {/* Name as colleagues see it, per language */}
-            <InfoRow icon={Languages} label={t("profile.names")} top>
-              <span className="inline-flex flex-col items-end gap-0.5">
-                {["uz", ...NAME_LANGS].map((l) => {
-                  const v = l === "uz" ? canonical : me?.names?.[l];
-                  return (
-                    <span key={l} className="inline-flex items-center gap-1.5">
-                      <span className="text-[9px] font-mono uppercase" style={{ color: "var(--text-4)" }}>{l}</span>
-                      <span style={{ color: v ? "var(--text-1)" : "var(--text-4)" }}>
-                        {v || transliterate(canonical, l)}
-                      </span>
-                    </span>
-                  );
-                })}
-              </span>
-            </InfoRow>
+            <NamesBlock canonical={canonical} names={me?.names} />
           </div>
         </Card>
 
@@ -466,14 +511,15 @@ function MyProfile() {
                 right={<WebLoginStatus web={me?.web} />}>
             {me?.web ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="flex items-center gap-2 min-w-0">
                     <KeyRound size={13} style={{ color: "var(--text-4)" }} className="flex-shrink-0" />
                     <span className="text-sm font-mono truncate" style={{ color: "var(--text-1)" }}>
                       {me.web.username}
                     </span>
                   </span>
-                  <Button size="sm" variant="secondary" icon={<Pencil size={12} />}
+                  {/* The one thing a non-admin comes to this page to do. */}
+                  <Button size="sm" icon={<Pencil size={12} />}
                           onClick={() => setPwOpen(true)} disabled={!me.web.enabled}>
                     {t("weblogin.changeTitle")}
                   </Button>
@@ -789,8 +835,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
     updateMut.mutate(body);
   }
 
+  // Same card, same title as the read view — access is what turned it into a
+  // form, so it must not read as a different page.
   return (
-    <Card icon={Pencil} title={t("admin.profiles.editTitle")}>
+    <Card icon={IdCard} title={t("profile.details")}>
       <div className="space-y-3">
         {/* Role — switching moves only the name; other values are asked fresh */}
         <FormField label={t("admin.profiles.roleLabel")}>
@@ -1047,7 +1095,7 @@ function EditCard({ ptype, item, data, notify, onDone }) {
 
 // ── ADMIN: web login management (ported from WebLoginModal) ───────────────────
 
-function WebLoginCard({ item, notify, onDone }) {
+function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
   const { t } = useLang();
   const web = item?.web || null;
 
@@ -1168,9 +1216,16 @@ function WebLoginCard({ item, notify, onDone }) {
           <>
             <LastLogin web={web} />
             {/* Recoverable operations only — deleting the login lives in the
-                page's danger zone, away from these daily controls. */}
+                page's danger zone, away from these daily controls. On the
+                manager's OWN profile the self password change joins them. */}
             <div className="pt-1 flex flex-wrap gap-1.5">
-              <Button size="sm" tint variant="primary" icon={<RotateCcw size={11} />}
+              {own && (
+                <Button size="sm" tint variant="primary" icon={<Pencil size={11} />}
+                        disabled={busy || !web.enabled} onClick={onChangePassword}>
+                  {t("weblogin.changeTitle")}
+                </Button>
+              )}
+              <Button size="sm" tint variant={own ? "secondary" : "primary"} icon={<RotateCcw size={11} />}
                       disabled={busy} onClick={() => setConfirmReset(true)}>
                 {t("weblogin.reset")}
               </Button>
@@ -1396,7 +1451,7 @@ function useOnScreen() {
   return [seen, setNode];
 }
 
-function AdminProfile({ ptype, pid }) {
+function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
   const navigate = useNavigate();
   const { auth } = useAuth();
   const { t, reloadTranslations } = useLang();
@@ -1405,22 +1460,41 @@ function AdminProfile({ ptype, pid }) {
   const toast = useToast();
   const { bus, dirty, busy } = useSaveHub();
   const [saveOnScreen, saveRef] = useOnScreen();
+  const [pwOpen, setPwOpen] = useState(false);
 
+  const { data: me } = useMyProfileDetails();
   const { data, isLoading } = useQuery({
     queryKey: ["admin-profiles"],
     queryFn: () => api.get("/api/profiles/admin/list").then((r) => r.data),
   });
 
-  const meta = TYPE_META[ptype];
-  const item = useMemo(() => {
-    const rows = data?.[meta?.listKey] ?? [];
-    return rows.find((x) => x.id === Number(pid)) || null;
-  }, [data, meta, pid]);
+  // From the register the row is addressed by the URL; from /profile the
+  // viewer's OWN row is resolved out of the same list by profile_key, so a
+  // manager's profile opens already editable.
+  const resolved = useMemo(() => {
+    if (!data) return null;
+    if (fromRegister) {
+      const meta = TYPE_META[routePtype];
+      const row = (data[meta?.listKey] ?? []).find((x) => x.id === Number(pid));
+      return row ? { ptype: routePtype, item: row } : null;
+    }
+    if (!me?.profile_key) return null;
+    for (const [pt, meta] of Object.entries(TYPE_META)) {
+      const row = (data[meta.listKey] ?? []).find((r) => r.profile_key === me.profile_key);
+      if (row) return { ptype: pt, item: row };
+    }
+    return null;
+  }, [data, fromRegister, routePtype, pid, me]);
+  const ptype = resolved?.ptype ?? (fromRegister ? routePtype : null);
+  const item = resolved?.item ?? null;
+  const own = Boolean(me?.profile_key && item && item.profile_key === me.profile_key);
 
   const onDone = () => {
     qc.invalidateQueries({ queryKey: ["admin-profiles"] });
     qc.invalidateQueries({ queryKey: ["admin-cells"] });
     qc.invalidateQueries({ queryKey: ["admin-users"] });
+    // Editing yourself must reach the header and sidebar avatar/name too.
+    qc.invalidateQueries({ queryKey: ["my-profile-details"] });
     reloadTranslations();
   };
   const notify = (msg, tone) => toast.show(msg, tone);
@@ -1433,16 +1507,16 @@ function AdminProfile({ ptype, pid }) {
     ? (ptype === "leader" ? unitById[String(item.manager_id)]?.shift : item.shift) ?? null
     : null;
 
-  const back = (
+  const back = fromRegister ? (
     <Button size="sm" variant="ghost" icon={<ArrowLeft size={13} />}
             onClick={() => navigate("/admin/upload?tab=profiles")}>
       {t("profile.backToList")}
     </Button>
-  );
+  ) : null;
 
   // Capability grantees may run the Profiles tab but never touch ADMIN
   // identities; a typed URL must hit the same wall as the hidden section.
-  if (!meta || (ptype === "admin" && auth?.role !== "admin")) {
+  if (fromRegister && (!TYPE_META[routePtype] || (routePtype === "admin" && auth?.role !== "admin"))) {
     return (
       <div className="rounded-2xl py-10" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState title={t("profile.notFound")} message="" showUploadLink={false} />
@@ -1451,7 +1525,7 @@ function AdminProfile({ ptype, pid }) {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || (!fromRegister && !me)) {
     return (
       <div className="space-y-4">
         <SkeletonBlock className="h-28 w-full rounded-2xl" />
@@ -1461,6 +1535,9 @@ function AdminProfile({ ptype, pid }) {
   }
 
   if (!item) {
+    // A register URL that matches nothing is a dead end; an own view whose
+    // row cannot be resolved falls back to plain read access, never to a wall.
+    if (!fromRegister) return <MyProfile />;
     return (
       <div className="rounded-2xl py-10" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <EmptyState title={t("profile.notFound")} message="" showUploadLink={false} />
@@ -1485,49 +1562,46 @@ function AdminProfile({ ptype, pid }) {
   return (
     <SaveBusCtx.Provider value={bus}>
     <div className="space-y-4">
-      <div>{back}</div>
+      {back && <div>{back}</div>}
 
       {/* Identity + photo. The page's single save action sits top-right of this
           card: the first thing in view, and the only one on the page. */}
-      <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
-          <ProfileAvatar name={tl(item.name)} colorKey={item.name} profileKey={item.profile_key}
-                         photoVer={item.photo_ver} size={80} />
-          <div className="min-w-0 flex-1">
-            <div className="text-lg font-semibold leading-tight break-words" style={{ color: "var(--text-1)" }}>
-              {tl(item.name)}
-              {ptype === "supervisor" && item.archived && (
-                <span className="ml-2 align-middle text-[9px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                      style={{ background: "rgba(148,163,184,0.12)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.22)" }}>
-                  {t("admin.profiles.archived")}
-                </span>
-              )}
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <RoleChip role={ptype} />
-              <StatusTag color={bsMap[bs].color}>{bsMap[bs].label}</StatusTag>
-            </div>
-            {context && (
-              <div className="mt-1.5 text-xs" style={{ color: "var(--text-3)" }}>{context}</div>
+      <ProfileHero
+        name={tl(item.name)}
+        colorKey={item.name}
+        profileKey={item.profile_key}
+        photoVer={item.photo_ver}
+        chips={
+          <>
+            <RoleChip role={ptype} />
+            <StatusTag color={bsMap[bs].color}>{bsMap[bs].label}</StatusTag>
+            {ptype === "supervisor" && item.archived && (
+              <StatusTag color="#94a3b8">{t("admin.profiles.archived")}</StatusTag>
             )}
-            <div className="mt-3">
-              <PhotoActions profileKey={item.profile_key} hasPhoto={Boolean(item.photo_ver)}
-                            notify={notify} onDone={onDone} />
-              <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>
-                {t("profile.photoHint")}
-              </p>
-            </div>
-          </div>
-          <div ref={saveRef} className="flex-shrink-0 sm:self-start">
+          </>
+        }
+        context={context}
+        actions={
+          <>
+            <PhotoActions profileKey={item.profile_key} hasPhoto={Boolean(item.photo_ver)}
+                          notify={notify} onDone={onDone} />
+            <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-4)" }}>
+              {t("profile.photoHint")}
+            </p>
+          </>
+        }
+        right={
+          <div ref={saveRef}>
             <PageSave dirty={dirty} busy={busy} onSave={bus.run} />
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <EditCard ptype={ptype} item={item} data={data} notify={notify} onDone={onDone} />
         <div className="space-y-4">
-          <WebLoginCard item={item} notify={notify} onDone={onDone} />
+          <WebLoginCard item={item} own={own} onChangePassword={() => setPwOpen(true)}
+                        notify={notify} onDone={onDone} />
           <HoldersCard ptype={ptype} item={item} onDone={onDone} />
         </div>
       </div>
@@ -1549,6 +1623,16 @@ function AdminProfile({ ptype, pid }) {
         </div>
       )}
 
+      {/* Managers hold logins too — the self password change works from the
+          same page that manages everyone else's. */}
+      {own && (
+        <ChangePasswordModal
+          open={pwOpen}
+          onClose={() => setPwOpen(false)}
+          onChanged={() => toast.success(t("weblogin.changed"))}
+        />
+      )}
+
       {toast.node}
     </div>
     </SaveBusCtx.Provider>
@@ -1559,12 +1643,25 @@ function AdminProfile({ ptype, pid }) {
 
 export default function Profile() {
   const { ptype, pid } = useParams();
+  const { auth } = useAuth();
+  const { capTabs } = useCapabilities();
   const { t } = useLang();
-  const adminView = Boolean(ptype && pid);
+
+  const fromRegister = Boolean(ptype && pid);
+  // Same audience as the register route: admins plus `admin.profiles.manage`
+  // grantees. While capabilities load a grantee briefly gets the read view and
+  // upgrades in place; admins resolve instantly from the role alone.
+  const canManage = auth?.role === "admin" || capTabs.includes("profiles");
 
   return (
     <Layout title={t("profile.title")}>
-      {adminView ? <AdminProfile ptype={ptype} pid={pid} /> : <MyProfile />}
+      {/* One centered column. Two half-width cards stretched across a desktop
+          left the page reading as mostly void. */}
+      <div className="mx-auto w-full max-w-4xl">
+        {fromRegister
+          ? <AdminProfile ptype={ptype} pid={pid} fromRegister />
+          : canManage ? <AdminProfile /> : <MyProfile />}
+      </div>
     </Layout>
   );
 }
