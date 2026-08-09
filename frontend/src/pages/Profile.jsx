@@ -49,7 +49,7 @@ const TYPE_META = {
 const NAME_LANGS = ["uz_cyrl", "ru", "en"];
 const MIN_PW_LEN = 8;
 
-const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
+const inputCls = "mt-1 w-full rounded-xl px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--brand)]";
 const inputStyle = {
   background: "var(--input-bg)",
   border: "1px solid var(--border-md)",
@@ -507,7 +507,7 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
 
 function EditCard({ ptype, item, data, notify, onDone }) {
   const navigate = useNavigate();
-  const { t, lang, languages, nameOverrides } = useLang();
+  const { t, lang, nameOverrides } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
 
@@ -785,45 +785,33 @@ function EditCard({ ptype, item, data, notify, onDone }) {
           </FormField>
         )}
 
-        {/* Per-language display names */}
+        {/* Per-language display names — the uz canonical name lives in its own
+            field above, so the tabs cover only the three override languages. */}
         {!roleChanged && (
-          <div className="pt-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.langNames")}
-            </div>
-            <p className="mt-0.5 mb-2 text-[10px] leading-snug" style={{ color: "var(--text-3)" }}>
-              {t("admin.profiles.langNamesHint")}
-            </p>
-            <div className="space-y-2">
-              {languages.filter((l) => l.code !== "uz").map((l) => (
-                <label key={l.code} className="flex items-center gap-2">
-                  <span className="w-14 flex-shrink-0 text-[10px] font-mono uppercase"
-                        style={{ color: "var(--text-4)" }}>{l.code}</span>
-                  <input
-                    type="text"
-                    value={form.overrides?.[l.code] || ""}
-                    onChange={(e) => setForm((f) => ({
-                      ...f, overrides: { ...f.overrides, [l.code]: e.target.value },
-                    }))}
-                    placeholder={transliterate((form.name || "").trim(), l.code)}
-                    className={inputCls + " !mt-0"}
-                    style={inputStyle}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setForm((f) => ({
-                      ...f, overrides: { ...f.overrides, [l.code]: convertFromUz((f.name || "").trim(), l.code) },
-                    }))}
-                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-accent)]"
-                    style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                    title={t("settings.translate")}
-                  >
-                    <Languages size={12} />
-                  </button>
-                </label>
-              ))}
-            </div>
-          </div>
+          <FormField label={t("admin.profiles.langNames")} hint={t("admin.profiles.langNamesHint")}>
+            <LangTextInput
+              className="mt-1"
+              langs={NAME_LANGS}
+              value={form.overrides || {}}
+              onChange={(l, v) => setForm((f) => ({
+                ...f, overrides: { ...f.overrides, [l]: v },
+              }))}
+              placeholderFn={(l) => transliterate((form.name || "").trim(), l)}
+              action={(l) => (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({
+                    ...f, overrides: { ...f.overrides, [l]: convertFromUz((f.name || "").trim(), l) },
+                  }))}
+                  className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-accent)]"
+                  style={{ color: "var(--text-3)", border: "1px solid var(--border-md)" }}
+                  title={t("settings.translate")}
+                >
+                  <Languages size={12} />
+                </button>
+              )}
+            />
+          </FormField>
         )}
 
         {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
@@ -943,7 +931,7 @@ function WebLoginCard({ item, notify, onDone }) {
   const [username, setUsername] = useState(web?.username || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [confirm, setConfirm] = useState(null); // "reset" | "delete"
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     setUsername(web?.username || "");
@@ -978,8 +966,8 @@ function WebLoginCard({ item, notify, onDone }) {
   });
   const resetMut = useMutation({
     mutationFn: () => post("/api/profiles/admin/web-login", {}),
-    onSuccess: () => { setConfirm(null); onDone(); notify(t("weblogin.sent"), "success"); },
-    onError: (e) => { setConfirm(null); fail(e); },
+    onSuccess: () => { setConfirmReset(false); onDone(); notify(t("weblogin.sent"), "success"); },
+    onError: (e) => { setConfirmReset(false); fail(e); },
   });
   const toggleMut = useMutation({
     mutationFn: () => post("/api/profiles/admin/web-login/toggle", {}),
@@ -991,15 +979,8 @@ function WebLoginCard({ item, notify, onDone }) {
     onSuccess: () => { onDone(); notify(t("weblogin.revoked"), "success"); },
     onError: fail,
   });
-  const deleteMut = useMutation({
-    mutationFn: () => api.delete("/api/profiles/admin/web-login",
-      { data: { profile_key: item.profile_key } }),
-    onSuccess: () => { setConfirm(null); onDone(); },
-    onError: (e) => { setConfirm(null); fail(e); },
-  });
-
   const busy = createMut.isPending || renameMut.isPending || resetMut.isPending ||
-               toggleMut.isPending || revokeMut.isPending || deleteMut.isPending;
+               toggleMut.isPending || revokeMut.isPending;
   const renamed = web && username.trim() && username.trim() !== web.username;
 
   return (
@@ -1064,10 +1045,11 @@ function WebLoginCard({ item, notify, onDone }) {
         {web && (
           <>
             <LastLogin web={web} />
-            {/* Existing-login operations, ordered least to most destructive. */}
-            <div className="pt-1 grid grid-cols-2 gap-2">
+            {/* Recoverable operations only — deleting the login lives in the
+                page's danger zone, away from these daily controls. */}
+            <div className="pt-1 flex flex-wrap gap-1.5">
               <Button size="sm" tint variant="primary" icon={<RotateCcw size={11} />}
-                      disabled={busy} onClick={() => setConfirm("reset")}>
+                      disabled={busy} onClick={() => setConfirmReset(true)}>
                 {t("weblogin.reset")}
               </Button>
               <Button size="sm" tint variant="secondary" icon={<LogOut size={11} />}
@@ -1081,33 +1063,19 @@ function WebLoginCard({ item, notify, onDone }) {
                       onClick={() => toggleMut.mutate()}>
                 {t(web.enabled ? "weblogin.disable" : "weblogin.enable")}
               </Button>
-              <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
-                      disabled={busy} onClick={() => setConfirm("delete")}>
-                {t("weblogin.delete")}
-              </Button>
             </div>
           </>
         )}
       </div>
 
       <ConfirmDialog
-        open={confirm === "reset"}
+        open={confirmReset}
         title={t("weblogin.resetTitle")}
         message={t("weblogin.resetBody")}
         confirmLabel={t("weblogin.reset")}
         loading={resetMut.isPending}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => setConfirmReset(false)}
         onConfirm={() => resetMut.mutate()}
-      />
-      <ConfirmDialog
-        open={confirm === "delete"}
-        tone="danger"
-        title={t("weblogin.deleteTitle")}
-        message={t("weblogin.deleteBody")}
-        confirmLabel={t("weblogin.delete")}
-        loading={deleteMut.isPending}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => deleteMut.mutate()}
       />
     </Card>
   );
@@ -1148,7 +1116,7 @@ function HoldersCard({ ptype, item, onDone }) {
         <p className="text-xs" style={{ color: "var(--text-4)" }}>{t("admin.profiles.noHolders")}</p>
       )}
       <p className="mt-3 text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
-        {t("admin.profiles.holdersHint")}
+        {t("profile.holdersHint")}
       </p>
 
       <ConfirmDialog
@@ -1173,7 +1141,8 @@ function DangerCard({ ptype, item, onDone }) {
   const navigate = useNavigate();
   const { t } = useLang();
   const { tl } = useTranslit();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const web = item.web || null;
+  const [confirm, setConfirm] = useState(null); // "login" | "profile"
   const [actionError, setActionError] = useState("");
 
   const archivable = ptype === "supervisor" && !item.archived && item.has_data;
@@ -1181,7 +1150,7 @@ function DangerCard({ ptype, item, onDone }) {
   const deleteMut = useMutation({
     mutationFn: () => api.delete(`/api/profiles/admin/${ptype}/${item.id}`),
     onSuccess: () => {
-      setConfirmDelete(false);
+      setConfirm(null);
       onDone();
       navigate("/admin/upload?tab=profiles");
     },
@@ -1190,41 +1159,80 @@ function DangerCard({ ptype, item, onDone }) {
 
   const archiveMut = useMutation({
     mutationFn: (archived) => api.put(`/api/profiles/admin/supervisor/${item.id}`, { archived }),
-    onSuccess: () => { setConfirmDelete(false); onDone(); },
+    onSuccess: () => { setConfirm(null); onDone(); },
     onError: (e) => setActionError(e?.response?.data?.detail || t("admin.profiles.error")),
   });
 
+  const loginDeleteMut = useMutation({
+    mutationFn: () => api.delete("/api/profiles/admin/web-login",
+      { data: { profile_key: item.profile_key } }),
+    onSuccess: () => { setConfirm(null); onDone(); },
+    onError: (e) => setActionError(e?.response?.data?.detail || t("weblogin.saveFailed")),
+  });
+
+  const busy = deleteMut.isPending || archiveMut.isPending || loginDeleteMut.isPending;
+  const rowCls = "flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4";
+
   return (
     <Card icon={Shield} title={t("profile.dangerZone")}>
-      <div className="flex flex-wrap items-center gap-2">
-        {ptype === "supervisor" && item.archived ? (
-          <Button size="sm" tint variant="success" icon={<ArchiveRestore size={11} />}
-                  loading={archiveMut.isPending}
-                  onClick={() => archiveMut.mutate(false)}>
-            {t("admin.profiles.unarchive")}
-          </Button>
-        ) : archivable ? (
-          <Button size="sm" tint variant="secondary" icon={<Archive size={11} />}
-                  disabled={deleteMut.isPending}
-                  onClick={() => { setActionError(""); setConfirmDelete(true); }}>
-            {t("admin.profiles.archive")}
-          </Button>
-        ) : (
-          <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
-                  disabled={deleteMut.isPending}
-                  onClick={() => { setActionError(""); setConfirmDelete(true); }}>
-            {t("admin.profiles.delete")}
-          </Button>
-        )}
+      {/* One row per irreversible action: the consequence on the left, the
+          single button that causes it on the right. */}
+      {web && (
+        <div className={`${rowCls} pb-3 border-b`} style={{ borderColor: "var(--border)" }}>
+          <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+            {t("weblogin.deleteBody")}
+          </p>
+          <div className="flex-shrink-0">
+            <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
+                    disabled={busy}
+                    onClick={() => { setActionError(""); setConfirm("login"); }}>
+              {t("weblogin.delete")}
+            </Button>
+          </div>
+        </div>
+      )}
+      <div className={`${rowCls}${web ? " pt-3" : ""}`}>
+        <p className="text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
+          {t(archivable ? "admin.profiles.archiveMsg" : "profile.dangerHint").replace("{name}", tl(item.name) || "")}
+        </p>
+        <div className="flex-shrink-0">
+          {ptype === "supervisor" && item.archived ? (
+            <Button size="sm" tint variant="success" icon={<ArchiveRestore size={11} />}
+                    loading={archiveMut.isPending} disabled={busy && !archiveMut.isPending}
+                    onClick={() => archiveMut.mutate(false)}>
+              {t("admin.profiles.unarchive")}
+            </Button>
+          ) : archivable ? (
+            <Button size="sm" tint variant="secondary" icon={<Archive size={11} />}
+                    disabled={busy}
+                    onClick={() => { setActionError(""); setConfirm("profile"); }}>
+              {t("admin.profiles.archive")}
+            </Button>
+          ) : (
+            <Button size="sm" tint variant="danger" icon={<Trash2 size={11} />}
+                    disabled={busy}
+                    onClick={() => { setActionError(""); setConfirm("profile"); }}>
+              {t("admin.profiles.delete")}
+            </Button>
+          )}
+        </div>
       </div>
-      <p className="mt-3 text-[11px] leading-snug" style={{ color: "var(--text-4)" }}>
-        {t(archivable ? "admin.profiles.archiveMsg" : "profile.dangerHint").replace("{name}", tl(item.name) || "")}
-      </p>
 
       <ConfirmDialog
-        open={confirmDelete}
+        open={confirm === "login"}
+        tone="danger"
         error={actionError}
-        onCancel={() => { setConfirmDelete(false); setActionError(""); }}
+        onCancel={() => { setConfirm(null); setActionError(""); }}
+        onConfirm={() => { setActionError(""); loginDeleteMut.mutate(); }}
+        title={t("weblogin.deleteTitle")}
+        message={t("weblogin.deleteBody")}
+        confirmLabel={t("weblogin.delete")}
+        loading={loginDeleteMut.isPending}
+      />
+      <ConfirmDialog
+        open={confirm === "profile"}
+        error={actionError}
+        onCancel={() => { setConfirm(null); setActionError(""); }}
         onConfirm={() => {
           setActionError("");
           if (archivable) archiveMut.mutate(true);
@@ -1375,9 +1383,12 @@ function AdminProfile({ ptype, pid }) {
         <div className="space-y-4">
           <WebLoginCard item={item} notify={notify} onDone={onDone} />
           <HoldersCard ptype={ptype} item={item} onDone={onDone} />
-          <DangerCard ptype={ptype} item={item} onDone={onDone} />
         </div>
       </div>
+
+      {/* Every irreversible action for this profile lives in ONE full-width
+          zone at the very end — never beside the daily controls. */}
+      <DangerCard ptype={ptype} item={item} onDone={onDone} />
 
       {toast.node}
     </div>
