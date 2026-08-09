@@ -313,7 +313,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                   className="text-xs font-semibold uppercase tracking-widest mb-0.5 whitespace-nowrap"
                   style={{ color: "var(--brand-text)" }}
                 >
-                  Zagruzka
+                  Safia Dashboard
                 </div>
                 <div className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-3)" }}>
                   {t("nav.appSubtitle")}
