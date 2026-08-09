@@ -1,45 +1,44 @@
 import { useState, useRef, useEffect } from "react";
 import Sidebar from "./Sidebar";
-import WebAccountSettings from "./WebAccountSettings";
 import { useTheme } from "../../context/ThemeContext";
 import { useLang } from "../../context/LangContext";
 import { useAuth } from "../../context/AuthContext";
 import { useGhost } from "../../context/GhostContext";
-import { Sun, Moon, Menu, X, Check, LogOut, Ghost, Settings, UserPlus } from "lucide-react";
+import { Sun, Moon, Menu, Check, LogOut, Ghost, Globe, UserRound, UserPlus } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
-import SegmentedToggle from "../ui/SegmentedToggle";
+import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function nameInitials(name = "") {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
-function nameToColor(name = "") {
-  let hash = 0;
-  for (const c of name) hash = c.charCodeAt(0) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360}, 50%, 42%)`;
-}
-
 const LANG_FLAGS = { uz: "🇺🇿", uz_cyrl: "🇺🇿", ru: "🇷🇺", en: "🇬🇧" };
+const LANG_NAMES = { uz: "O'zbekcha", uz_cyrl: "Ўзбекча", ru: "Русский", en: "English" };
 const langLabel = (code) => (code === "uz_cyrl" ? "ЎЗ" : code.toUpperCase());
 
+// Shared header icon-button look (bell-sized, 15px glyph).
+const iconBtnStyle = (active) => ({
+  background: active ? "var(--brand)" : "var(--bg-inner)",
+  border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+  color: active ? "#fff" : "var(--text-2)",
+});
+
 // ─── UserProfile ──────────────────────────────────────────────────────────────
-// Avatar in the header that opens a popover for role-switch / sign-out.
+// Avatar in the header that opens a popover: my profile, role switch, add
+// profile, sign out. (Language, theme and ghost sit directly on the header
+// bar now — the Settings modal is gone.)
 
 function UserProfile() {
-  const { auth, switchRole, botUsername } = useAuth();
+  const { auth, switchRole, leaveRole, logout, webSession, botUsername } = useAuth();
   const { t } = useLang();
   const { tl } = useTranslit();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const ref = useRef(null);
+  const { data: me } = useMyProfileDetails();
 
   useEffect(() => {
     function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
@@ -49,14 +48,15 @@ function UserProfile() {
 
   if (!auth || auth.status !== "approved") return null;
 
-  const name     = tl(auth.full_name || "");
-  const tkey     = ROLE_LABEL_KEYS[auth.role];
-  const role     = tkey ? t(tkey) : (auth.role ?? "");
-  const initials = nameInitials(name);
-  // Colour is keyed to the raw canonical name so the avatar hue stays stable
-  // across language switches.
-  const color    = nameToColor(auth.full_name || "");
-  const others   = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
+  const name   = tl(auth.full_name || "");
+  const tkey   = ROLE_LABEL_KEYS[auth.role];
+  const role   = tkey ? t(tkey) : (auth.role ?? "");
+  const others = (auth.roles ?? []).filter(r => r.id !== auth.active_role_ref);
+
+  const rowHover = {
+    onMouseEnter: (e) => { e.currentTarget.style.background = "var(--bg-inner)"; },
+    onMouseLeave: (e) => { e.currentTarget.style.background = ""; },
+  };
 
   return (
     <div className="relative flex-shrink-0" ref={ref}>
@@ -65,12 +65,8 @@ function UserProfile() {
           <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{name}</div>
           <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{role}</div>
         </div>
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-          style={{ background: color }}
-        >
-          {initials}
-        </div>
+        <ProfileAvatar name={name} colorKey={auth.full_name || ""}
+                       profileKey={me?.profile_key} photoVer={me?.photo_ver} size={32} />
       </button>
 
       {open && (
@@ -85,12 +81,8 @@ function UserProfile() {
         >
           {/* Active profile at top */}
           <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-              style={{ background: color }}
-            >
-              {initials}
-            </div>
+            <ProfileAvatar name={name} colorKey={auth.full_name || ""}
+                           profileKey={me?.profile_key} photoVer={me?.photo_ver} size={32} />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{name}</div>
               <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>{role}</div>
@@ -98,49 +90,55 @@ function UserProfile() {
             <Check size={14} style={{ color: "var(--brand-text)", flexShrink: 0 }} />
           </div>
 
+          {/* My profile — the page itself */}
+          <button
+            onClick={() => { setOpen(false); navigate("/profile"); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            {...rowHover}
+          >
+            <UserRound size={14} />
+            <span>{t("profile.myProfile")}</span>
+          </button>
+
           {/* Other profiles */}
           {others.map(r => {
-        const rName     = tl(r.full_name || "");
-        const rTkey     = ROLE_LABEL_KEYS[r.role];
-        const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
-        const isPending = r.status === "pending";
-        return (
-          <button
-            key={r.id}
-            disabled={isPending}
-            onClick={() => { switchRole(r.id); setOpen(false); }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-left"
-            style={{
-              borderBottom: "1px solid var(--border)",
-              opacity: isPending ? 0.55 : 1,
-              cursor: isPending ? "default" : "pointer",
-            }}
-            onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = ""; }}
-          >
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 select-none"
-              style={{ background: nameToColor(r.full_name || "") }}
-            >
-              {nameInitials(rName)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
-              <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
-                {rRole}
-                {isPending && (
-                  <span
-                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
-                  >
-                    {t("roles.pending")}
-                  </span>
-                )}
-              </div>
-            </div>
-          </button>
-        );
-      })}
+            const rName     = tl(r.full_name || "");
+            const rTkey     = ROLE_LABEL_KEYS[r.role];
+            const rRole     = rTkey ? t(rTkey) : (r.role ?? "");
+            const isPending = r.status === "pending";
+            return (
+              <button
+                key={r.id}
+                disabled={isPending}
+                onClick={() => { switchRole(r.id); setOpen(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                style={{
+                  borderBottom: "1px solid var(--border)",
+                  opacity: isPending ? 0.55 : 1,
+                  cursor: isPending ? "default" : "pointer",
+                }}
+                onMouseEnter={e => { if (!isPending) e.currentTarget.style.background = "var(--bg-inner)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = ""; }}
+              >
+                <ProfileAvatar name={rName} colorKey={r.full_name || ""} size={32} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>{rName}</div>
+                  <div className="text-[10px] truncate flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
+                    {rRole}
+                    {isPending && (
+                      <span
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                        style={{ background: "rgba(234,179,8,0.15)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}
+                      >
+                        {t("roles.pending")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
 
           {/* Add new profile — runs the bot's register flow (language →
               web form → phone number). Navigating to /login in-app would skip
@@ -156,170 +154,33 @@ function UserProfile() {
               }
             }}
             className="w-full flex items-center gap-3 px-4 py-3 text-xs"
-            style={{ color: "var(--text-2)" }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
-            onMouseLeave={e => e.currentTarget.style.background = ""}
+            style={{ color: "var(--text-2)", borderBottom: "1px solid var(--border)" }}
+            {...rowHover}
           >
             <UserPlus size={14} />
             <span>{t("menu.addProfile") || "Add new profile"}</span>
           </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
-// ─── SettingsButton ───────────────────────────────────────────────────────────
-// Header gear shown on every page — language, name, theme, ghost, sign out.
-
-function SettingsButton() {
-  const { auth, leaveRole, logout, webSession } = useAuth();
-  const { lang, setLang, t, languages } = useLang();
-  const { theme, toggle } = useTheme();
-  const { ghost, toggleGhost } = useGhost();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [confirmLogout, setConfirmLogout] = useState(false);
-
-  if (!auth || auth.status !== "approved") return null;
-
-  return (
-    <div className="flex-shrink-0">
-      <button
-        onClick={() => setSettingsOpen(true)}
-        className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
-        style={{
-          background: settingsOpen ? "var(--brand)" : "var(--bg-inner)",
-          border: `1px solid ${settingsOpen ? "var(--brand)" : "var(--border)"}`,
-          color: settingsOpen ? "#fff" : "var(--text-2)",
-        }}
-        title={t("menu.settings") || "Settings"}
-        aria-label={t("menu.settings") || "Settings"}
-      >
-        <Settings size={15} />
-      </button>
-
-      {settingsOpen && (
-        <div
-          className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={() => setSettingsOpen(false)}
-        >
-          <div
-            className="modal-card rounded-2xl flex flex-col"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 12px 40px rgba(0,0,0,.25)",
-              minWidth: 300,
-              maxWidth: 360,
-              width: "100%",
-              maxHeight: "85vh",
-              overflowY: "auto",
+          {/* Sign out.
+              In Telegram this is an UNREGISTER: it drops the profile binding
+              and the person has to /start again. In a browser it must only
+              end the session — reading "sign out" on a website as "delete my
+              account" would be indefensible — so the confirm is skipped and
+              logout() just clears the token. */}
+          <button
+            onClick={() => {
+              setOpen(false);
+              if (webSession) logout();
+              else setConfirmLogout(true);
             }}
-            onClick={e => e.stopPropagation()}
+            className="w-full flex items-center gap-3 px-4 py-3 text-xs"
+            style={{ color: "var(--text-3)" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
           >
-            {/* Modal header */}
-            <div
-              className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
-              style={{ borderBottom: "1px solid var(--border)" }}
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-1)" }}>
-                <Settings size={15} />
-                {t("menu.settings") || "Settings"}
-              </span>
-              <button
-                onClick={() => setSettingsOpen(false)}
-                className="p-0.5 rounded transition-colors hover:bg-white/10"
-                style={{ color: "var(--text-3)" }}
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            {/* Language */}
-            <div className="px-5 py-4">
-              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
-                {t("filter.language") || "Language"}
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {languages.map(({ code }) => (
-                  <button
-                    key={code}
-                    onClick={() => setLang(code)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors"
-                    style={lang === code
-                      ? { background: "var(--brand)", color: "#fff", fontWeight: 600, border: "1px solid var(--brand)" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                  >
-                    {LANG_FLAGS[code] || "🌐"} {langLabel(code)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Appearance — theme + ghost (admin) */}
-            <div className="px-5 py-4" style={{ borderTop: "1px solid var(--border)" }}>
-              <span className="text-[10px] font-semibold uppercase tracking-wider block mb-2" style={{ color: "var(--text-4)" }}>
-                {t("menu.appearance") || "Appearance"}
-              </span>
-
-              {/* Theme switch */}
-              <div className="flex items-center justify-between py-1">
-                <span className="text-xs" style={{ color: "var(--text-2)" }}>{t("menu.theme") || "Theme"}</span>
-                <SegmentedToggle
-                  value={theme}
-                  onChange={(v) => { if (v !== theme) toggle(); }}
-                  options={[
-                    { value: "light", label: <Sun size={15} />, title: t("theme.light") },
-                    { value: "dark",  label: <Moon size={15} />, title: t("theme.dark") },
-                  ]}
-                />
-              </div>
-
-              {/* Ghost mode — admin only */}
-              {auth?.role === "admin" && (
-                <div className="flex items-center justify-between py-1 mt-1">
-                  <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--text-2)" }}>
-                    <Ghost size={13} /> {t("ghost.label")}
-                  </span>
-                  <button
-                    onClick={toggleGhost}
-                    className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-                    style={ghost
-                      ? { background: "#7c3aed", color: "#fff", border: "1px solid #7c3aed" }
-                      : { background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border-md)" }}
-                    title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
-                  >
-                    {ghost ? "ON" : "OFF"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Website login — browser sessions only */}
-            {webSession && <WebAccountSettings onBeforeOpen={() => setSettingsOpen(false)} />}
-
-            {/* Sign out.
-                In Telegram this is an UNREGISTER: it drops the profile binding
-                and the person has to /start again. In a browser it must only
-                end the session — reading "sign out" on a website as "delete my
-                account" would be indefensible — so the confirm is skipped and
-                logout() just clears the token. */}
-            <button
-              onClick={() => {
-                setSettingsOpen(false);
-                if (webSession) logout();
-                else setConfirmLogout(true);
-              }}
-              className="w-full flex items-center gap-3 px-5 py-3.5 text-xs"
-              style={{ color: "var(--text-3)", borderTop: "1px solid var(--border)" }}
-              onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
-              onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
-            >
-              <LogOut size={14} />
-              <span>{t("nav.signOut")}</span>
-            </button>
-          </div>
+            <LogOut size={14} />
+            <span>{t("nav.signOut")}</span>
+          </button>
         </div>
       )}
 
@@ -333,7 +194,7 @@ function SettingsButton() {
             className="modal-card rounded-2xl p-6 flex flex-col gap-4"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid var(--border)",
+              border: "1px solid var(--border-md)",
               boxShadow: "0 12px 40px rgba(0,0,0,.25)",
               minWidth: 280,
               maxWidth: 340,
@@ -372,6 +233,107 @@ function SettingsButton() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Header controls: language · theme · ghost ────────────────────────────────
+// These lived inside the old Settings modal; they are one-tap toggles, so they
+// earn header cells of their own instead of a modal between the person and a
+// theme switch. Sized to match the notifications bell (p-1.5, 15px glyph).
+
+function LangSwitcher() {
+  const { lang, setLang, t, languages } = useLang();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1 p-1.5 rounded-lg transition-colors"
+        style={iconBtnStyle(open)}
+        title={t("filter.language") || "Language"}
+        aria-label={t("filter.language") || "Language"}
+      >
+        <Globe size={15} />
+        <span className="hidden md:inline text-[10px] font-bold leading-none">{langLabel(lang)}</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 8px 24px rgba(0,0,0,.15)",
+            minWidth: 170,
+          }}
+        >
+          {languages.map(({ code }, i) => (
+            <button
+              key={code}
+              onClick={() => { setLang(code); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs"
+              style={{
+                color: lang === code ? "var(--text-1)" : "var(--text-2)",
+                fontWeight: lang === code ? 600 : 400,
+                borderBottom: i < languages.length - 1 ? "1px solid var(--border)" : "none",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "var(--bg-inner)"}
+              onMouseLeave={e => e.currentTarget.style.background = ""}
+            >
+              <span>{LANG_FLAGS[code] || "🌐"}</span>
+              <span className="flex-1 text-left">{LANG_NAMES[code] || langLabel(code)}</span>
+              {lang === code && <Check size={13} style={{ color: "var(--brand-text)" }} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThemeButton() {
+  const { theme, toggle } = useTheme();
+  const { t } = useLang();
+  const next = theme === "dark" ? t("theme.light") : t("theme.dark");
+  return (
+    <button
+      onClick={toggle}
+      className="flex items-center justify-center p-1.5 rounded-lg transition-colors flex-shrink-0"
+      style={iconBtnStyle(false)}
+      title={next}
+      aria-label={next}
+    >
+      {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+    </button>
+  );
+}
+
+function GhostButton() {
+  const { auth } = useAuth();
+  const { ghost, toggleGhost } = useGhost();
+  const { t } = useLang();
+  if (auth?.role !== "admin") return null;
+  return (
+    <button
+      onClick={toggleGhost}
+      className="flex items-center justify-center p-1.5 rounded-lg transition-colors flex-shrink-0"
+      style={ghost
+        ? { background: "#7c3aed", border: "1px solid #7c3aed", color: "#fff" }
+        : iconBtnStyle(false)}
+      title={ghost ? t("ghost.tooltipOn") : t("ghost.tooltipOff")}
+      aria-label={t("ghost.label")}
+      aria-pressed={ghost}
+    >
+      <Ghost size={15} />
+    </button>
   );
 }
 
@@ -491,13 +453,15 @@ export default function Layout({ children, title }) {
               </h1>
             </div>
 
-            {/* Right: notifications bell + settings + account */}
+            {/* Right: bell · language · theme · ghost(admin) · account */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Notifications — standalone bell in the header */}
               <NotificationsBell {...notif} />
 
-              {/* Settings — shown on every page */}
-              <SettingsButton />
+              {/* Language · theme · ghost — former Settings-modal controls */}
+              <LangSwitcher />
+              <ThemeButton />
+              <GhostButton />
 
               {/* User profile */}
               <UserProfile />

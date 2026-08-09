@@ -68,6 +68,7 @@ const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceive
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
+const Profile = lazyWithReload(() => import("./pages/Profile"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import FindInPage from "./components/FindInPage";
@@ -261,6 +262,22 @@ function RequireAboveShift({ children }) {
 }
 
 /**
+ * Gates the ADMIN view of the profile page (/profile/:ptype/:pid) — the same
+ * audience as the Profiles tab it navigates from: admins, plus grantees of the
+ * `admin.profiles.manage` capability (its panel tab id is "profiles"). The
+ * backend enforces every write regardless; this only spares a denied visitor a
+ * page of buttons that would all 403.
+ */
+function RequireProfilesManage({ children }) {
+  const { auth } = useAuth();
+  const { capTabs, isLoading } = useCapabilities();
+  if (auth?.role === "admin") return children;
+  if (isLoading) return <PageLoader />;
+  if (capTabs.includes("profiles")) return children;
+  return <Navigate to="/profile" replace />;
+}
+
+/**
  * Gates the /admin panel specifically. Admins always pass. A non-admin passes
  * only while holding at least one capability whose tab lives in the panel —
  * and then sees ONLY those tabs (AdminPanel filters by the same list), so
@@ -425,6 +442,12 @@ function AppWithLang() {
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
+            {/* Own profile — every approved role has one, so no page-access
+                gate: it is identity, not a data page. */}
+            <Route path="/profile" element={<AuthGate><Profile /></AuthGate>} />
+            {/* Admin management view of one profile — where the Profiles tab
+                rows navigate instead of opening an edit modal. */}
+            <Route path="/profile/:ptype/:pid" element={<AuthGate><RequireProfilesManage><Profile /></RequireProfilesManage></AuthGate>} />
             <Route
               path="/admin/upload"
               element={<AuthGate><RequireAdminPanel><AdminPanel /></RequireAdminPanel></AuthGate>}

@@ -10,14 +10,17 @@ import {
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, Bot, LayoutGrid, Timer, UserCheck,
-  FlaskConical, Medal, ChevronDown,
+  FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
+  Grid3x3, TestTubes,
 } from "lucide-react";
 import api from "../../utils/api";
+import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
+import { useTranslit } from "../../utils/transliterate";
 import { usePageAccess } from "../../hooks/usePageAccess";
 import { useCapabilities } from "../../hooks/useCapabilities";
-import { canAccessPage } from "../../config/pages";
+import { canAccessPage, ROLE_LABEL_KEYS } from "../../config/pages";
 
 const ALL_LINKS = [
   { to: "/",         page: "overview", key: "nav.overview",       icon: LayoutDashboard, group: "top" },
@@ -66,14 +69,17 @@ const ALL_LINKS = [
 // navigations (a stale open section is just noise around the page you are
 // actually on); a header click opens another section for as long as you stay
 // on this page. Headerless sections (no labelKey) never collapse.
+// Each labeled section carries its own icon — deliberately distinct from every
+// page icon inside it — and that icon is all that remains of the header on the
+// collapsed icon rail, where it still toggles its section.
 const NAV_GROUPS = [
   { id: "top" },                                   // Обзор — headerless
-  { id: "prod",    labelKey: "navgrp.production" },
-  { id: "people",  labelKey: "navgrp.people" },
-  { id: "leaders", labelKey: "navgrp.leaders" },
-  { id: "quality", labelKey: "navgrp.quality" },
-  { id: "cells",   labelKey: "navgrp.cells" },
-  { id: "lab",     labelKey: "navgrp.lab" },
+  { id: "prod",    labelKey: "navgrp.production", icon: Cog },
+  { id: "people",  labelKey: "navgrp.people",     icon: UsersRound },
+  { id: "leaders", labelKey: "navgrp.leaders",    icon: Crown },
+  { id: "quality", labelKey: "navgrp.quality",    icon: BadgeCheck },
+  { id: "cells",   labelKey: "navgrp.cells",      icon: Grid3x3 },
+  { id: "lab",     labelKey: "navgrp.lab",        icon: TestTubes },
   { id: "system" },                                // Активность + catch-all — headerless
 ];
 const GROUP_THRESHOLD = 10;
@@ -95,6 +101,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const location = useLocation();
   const { auth } = useAuth();
   const { t }    = useLang();
+  const { tl }   = useTranslit();
+  const { data: me } = useMyProfileDetails();
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
@@ -363,56 +371,69 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             // the count bubbles up onto the group header.
             const groupBadge = collapsed && showBadge && pendingCount > 0 &&
               items.some(l => l.to === "/staff") ? pendingCount : 0;
-            const showHeader = g.labelKey && expanded;
-            // The icon rail collapses with the sidebar, so a closed section has
-            // nothing left to draw there — no header to reopen it from, and a
-            // bare divider would read as a section that lost its icons.
-            if (!showHeader && collapsed && !groupBadge) return null;
+            const GroupIcon = g.icon;
 
             return (
               <div key={g.id}>
-                {showHeader && (
+                {/* Folder row — same anatomy and height as a page link (leading
+                    16px icon + 20px content line, same paddings), so both row
+                    kinds share one vertical rhythm and one icon column. On the
+                    icon rail it shrinks to its icon and stays clickable, so
+                    every section remains reachable there. */}
+                {g.labelKey && (
                   <button
                     type="button"
                     onClick={() => toggleGroup(g.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-grp-${g.id}`}
-                    className="nav-item w-full flex items-center gap-1.5 rounded-lg text-[10.5px] font-semibold uppercase tracking-wider transition-colors"
+                    title={!expanded ? t(g.labelKey) : undefined}
+                    className="nav-item w-full flex items-center rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors px-2.5 py-2.5 md:py-2"
                     style={{
-                      padding: "4px 10px",
-                      marginTop: 10,
+                      gap: "12px",
+                      marginTop: 8,
                       color: collapsed && activeInside ? "var(--brand-text)" : "var(--text-3)",
+                      justifyContent: !expanded ? "center" : undefined,
                     }}
                   >
-                    <ChevronDown
-                      size={13}
-                      className="nav-grp-chev flex-shrink-0"
-                      style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}
-                    />
-                    <span className="flex-1 min-w-0 truncate text-left">{t(g.labelKey)}</span>
-                    {collapsed && activeInside && (
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: "var(--brand)" }} />
-                    )}
-                    {groupBadge > 0 && (
-                      <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
-                        {groupBadge}
+                    <span className="relative flex-shrink-0">
+                      <GroupIcon size={16} />
+                      {/* Closed on the rail while /staff carries pending Verifix
+                          work — keep the dot rather than hiding the queue. */}
+                      {groupBadge > 0 && !expanded && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+                      )}
+                    </span>
+                    <span
+                      className="flex-1 min-w-0 truncate whitespace-nowrap text-left leading-5 transition-all duration-200"
+                      style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 200 : 0, overflow: "hidden" }}
+                    >
+                      {t(g.labelKey)}
+                    </span>
+                    {expanded && (
+                      <span className="flex items-center gap-1.5 flex-shrink-0">
+                        {collapsed && activeInside && (
+                          <span className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: "var(--brand)" }} />
+                        )}
+                        {groupBadge > 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                            style={{ background: "#ef4444", color: "#fff", minWidth: 18, textAlign: "center" }}>
+                            {groupBadge}
+                          </span>
+                        )}
+                        <ChevronDown
+                          size={14}
+                          className="nav-grp-chev"
+                          style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}
+                        />
                       </span>
                     )}
                   </button>
                 )}
-                {/* Icon rail (or a headerless section like Активность): a thin
-                    divider is the only landmark there's room for. */}
-                {!showHeader && g.id !== "top" && (
+                {/* Headerless section (Активность / catch-all): a thin divider
+                    is its only landmark, at either width. */}
+                {!g.labelKey && g.id !== "top" && (
                   <div className="mx-2 my-2" style={{ borderTop: "1px solid var(--border)" }} />
-                )}
-                {/* Closed on the rail, but its /staff icon was carrying pending
-                    Verifix work — keep the dot rather than hiding the queue. */}
-                {!showHeader && groupBadge > 0 && (
-                  <div className="flex justify-center py-1" title={`${t("nav.staff")}: ${groupBadge}`}>
-                    <span className="w-2 h-2 rounded-full" style={{ background: "#ef4444" }} />
-                  </div>
                 )}
                 {/* The rail collapses with the sidebar: same open section, same
                     hidden ones, so hovering it open never reshuffles the list. */}
@@ -541,6 +562,43 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 <span style={{ color: "var(--text-3)" }}>{fmtDate(range.date_to)}</span>
               </div>
             </div>
+          )}
+
+          {/* The person — bottom-most, the anchor of the rail. Opens /profile. */}
+          {auth?.status === "approved" && (
+            <NavLink
+              to="/profile"
+              onClick={onClose}
+              title={!expanded ? tl(auth.full_name || "") : undefined}
+              className="flex items-center rounded-lg transition-colors mt-1 pt-2"
+              style={({ isActive }) => ({
+                gap: "10px",
+                padding: "8px",
+                borderTop: "1px solid var(--border)",
+                borderRadius: 0,
+                background: isActive ? "var(--bg-inner)" : "transparent",
+                justifyContent: !expanded ? "center" : undefined,
+              })}
+            >
+              <ProfileAvatar
+                name={tl(auth.full_name || "")}
+                colorKey={auth.full_name || ""}
+                profileKey={me?.profile_key}
+                photoVer={me?.photo_ver}
+                size={30}
+              />
+              <div
+                className="leading-tight transition-all duration-200 min-w-0"
+                style={{ opacity: expanded ? 1 : 0, maxWidth: expanded ? 170 : 0, overflow: "hidden" }}
+              >
+                <div className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
+                  {tl(auth.full_name || "")}
+                </div>
+                <div className="text-[10px] truncate" style={{ color: "var(--text-3)" }}>
+                  {ROLE_LABEL_KEYS[auth.role] ? t(ROLE_LABEL_KEYS[auth.role]) : (auth.role ?? "")}
+                </div>
+              </div>
+            </NavLink>
           )}
         </div>
       </aside>

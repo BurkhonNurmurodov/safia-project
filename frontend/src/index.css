@@ -164,15 +164,17 @@ body.sidebar-open { overflow: hidden; }
 .nav-grp-items > div { overflow: hidden; min-height: 0; }
 .nav-grp-chev { transition: transform .2s var(--ease-io); }
 
-/* Sidebar nav rows — hover wash + text lift on every clickable row. The active
-   link is excluded: the gold pill already marks it, and hovering where you
-   already are signals nothing. `color` needs !important because NavLink writes
-   the rest color inline. Hover-capable pointers only — on touch, :hover fires
-   on tap and sticks, so the phone drawer would keep a ghost highlight. */
+/* Sidebar nav rows — hover wash + brand-gold text lift on every clickable row
+   (gold, not white: hover previews the active treatment instead of competing
+   with it). The active link is excluded: the gold pill already marks it, and
+   hovering where you already are signals nothing. `color` needs !important
+   because NavLink writes the rest color inline. Hover-capable pointers only —
+   on touch, :hover fires on tap and sticks, so the phone drawer would keep a
+   ghost highlight. */
 @media (hover: hover) {
   .nav-item:hover:not([aria-current="page"]) {
     background: var(--hover-bg);
-    color: var(--text-1) !important;
+    color: var(--brand-text) !important;
   }
 }
 /* Keyboard focus gets a ring instead — never gated on hover support. Inset so

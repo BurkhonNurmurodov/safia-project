@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "../../utils/api";
+import { useAuth } from "../../context/AuthContext";
 
 /**
  * THE avatar for a profile, everywhere one is drawn (header, sidebar footer,
@@ -14,6 +15,19 @@ import api from "../../utils/api";
  * `photoVer` so react-query caches it forever and a replaced photo busts the
  * cache by key, never by guesswork.
  */
+
+/** The caller's own profile card (profile key + photo version for the avatar,
+ *  web login state, holders). ONE query shared by the header, the sidebar
+ *  footer and the /profile page — same key everywhere, so it fetches once. */
+export function useMyProfileDetails() {
+  const { auth } = useAuth();
+  return useQuery({
+    queryKey: ["my-profile-details"],
+    queryFn: () => api.get("/api/profiles/me/details").then((r) => r.data),
+    enabled: auth?.status === "approved",
+    staleTime: 60_000,
+  });
+}
 
 export function nameInitials(name = "") {
   const parts = name.trim().split(/\s+/);
