@@ -21,10 +21,10 @@
          inspection), which broke the app with a masked "Script error.".
          Re-sync the copy occasionally. -->
     <script src="/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-B70s7MVS.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-CxeZ4Bmq.js">
-    <link rel="modulepreload" crossorigin href="/assets/x-DjHzb9Iq.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-_K2hxw81.css">
+    <script type="module" crossorigin src="/assets/index-DJxYU2Eq.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-B0xOCXaA.js">
+    <link rel="modulepreload" crossorigin href="/assets/x-qVL4WZJu.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-nCj30jeY.css">
   </head>
   <body>
     <div id="root"></div>
@@ -39,6 +39,22 @@
             window.Telegram.WebApp.expand();
           }
         } catch (e) {}
+
+        // Pre-Chromium engines cannot PARSE the bundle at all: the entry is
+        // code-split, and dynamic import() is syntax Vite never down-levels
+        // (App.jsx lazyWithReload). Telegram Desktop falls back to exactly
+        // these engines on Windows machines without the WebView2 runtime —
+        // EdgeHTML ("Edge/18") or MSHTML ("Trident"). For them "Retry" can
+        // never succeed, so report() swaps to an "outdated Windows browser"
+        // notice naming the real ways out. UA first (works under any CSP),
+        // then a syntax probe for other pre-Chrome-63 WebViews; the probe
+        // counts only a SyntaxError, so a CSP that blocks eval (EvalError)
+        // can never flag a modern engine.
+        var engineTooOld = /\bEdge\/1[0-8]\.|\bTrident\//.test(navigator.userAgent);
+        if (!engineTooOld) {
+          try { new Function('return import("x")'); }
+          catch (e) { if (e instanceof SyntaxError) engineTooOld = true; }
+        }
 
         var errors = [];
         function envInfo() {
@@ -93,10 +109,10 @@
         // Plain-language recovery copy in the 4 app languages (no exception
         // strings shown to the user — those live behind "technical details").
         var BOOT_STRINGS = {
-          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot" },
-          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот" },
-          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали" },
-          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details" }
+          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot", oldTitle: "Kompyuter brauzeri juda eski", oldMsg: "Bu kompyuterda Telegram Windows tizimining eskirgan ichki brauzerida ishlayapti — ilova unda ishga tusha olmaydi. Ilovani telefondagi Telegram orqali oching yoki saytga oddiy brauzer orqali kiring:", oldHint: "IT uchun: Microsoft Edge WebView2 o‘rnatilsa, Telegram Desktop ham ishlaydi." },
+          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот", oldTitle: "Компьютер браузери жуда эски", oldMsg: "Бу компьютерда Telegram Windows тизимининг эскирган ички браузерида ишлаяпти — илова унда ишга туша олмайди. Иловани телефондаги Telegram орқали очинг ёки сайтга оддий браузер орқали киринг:", oldHint: "IT учун: Microsoft Edge WebView2 ўрнатилса, Telegram Desktop ҳам ишлайди." },
+          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали", oldTitle: "Устаревший браузер Windows", oldMsg: "Telegram на этом компьютере работает через устаревший встроенный браузер Windows — приложение в нём запуститься не может. Откройте приложение в Telegram на телефоне или зайдите на сайт через обычный браузер:", oldHint: "Для IT: после установки Microsoft Edge WebView2 заработает и Telegram Desktop." },
+          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details", oldTitle: "Outdated Windows browser", oldMsg: "Telegram on this computer runs on Windows’ outdated built-in browser, so the app can’t start here. Open it in Telegram on your phone, or sign in from a regular browser:", oldHint: "For IT: installing Microsoft Edge WebView2 also fixes Telegram Desktop." }
         };
         function bootLang() {
           var l = '';
@@ -221,11 +237,26 @@
             'display:flex;align-items:center;justify-content:center;padding:24px;' +
             'background:' + p.bg + ';color:' + p.text1 + ';' +
             "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
-          box.innerHTML =
-            '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;' +
-            'align-items:center;text-align:center;gap:16px">' +
-              '<img src="/logo.png" alt="Safia" style="width:76px;height:76px;' +
-              'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18)"/>' +
+          // On a too-old engine the generic copy would lie — "usually fixes
+          // itself, try again" is false there, and Retry/Reopen can only
+          // reload straight into the same parse error. Swap the middle of the
+          // card for the honest explanation + the site address, and drop both
+          // reload buttons. Spacing via margins, not the container's gap:
+          // flex gap is exactly what these engines don't have.
+          var midHtml;
+          if (engineTooOld) {
+            midHtml =
+              '<div>' +
+                '<div style="font-size:17px;font-weight:600;color:' + p.text1 + '">' + S.oldTitle + '</div>' +
+                '<div style="margin-top:8px;font-size:14px;line-height:1.6;color:' + p.text3 + '">' +
+                  S.oldMsg + '</div>' +
+              '</div>' +
+              '<div style="margin-top:10px;font-size:15px;font-weight:600;letter-spacing:0.2px;color:' +
+              p.brand + '">' + location.host + '</div>' +
+              '<div style="margin-top:6px;font-size:12px;line-height:1.5;color:' + p.text3 + '">' +
+                S.oldHint + '</div>';
+          } else {
+            midHtml =
               '<div>' +
                 '<div style="font-size:17px;font-weight:600;color:' + p.text1 + '">' + S.title + '</div>' +
                 '<div style="margin-top:8px;font-size:14px;line-height:1.6;color:' + p.text3 + '">' +
@@ -236,8 +267,15 @@
               'font-weight:600;cursor:pointer">' + S.retry + '</button>' +
               '<button id="boot-reopen" type="button" style="width:100%;padding:11px;' +
               'border:1px solid ' + p.border + ';border-radius:12px;background:transparent;color:' +
-              p.text1 + ';font-size:14px;font-weight:500;cursor:pointer">' + S.reopen + '</button>' +
-              '<button id="boot-report" type="button" style="width:100%;padding:8px;border:none;' +
+              p.text1 + ';font-size:14px;font-weight:500;cursor:pointer">' + S.reopen + '</button>';
+          }
+          box.innerHTML =
+            '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;' +
+            'align-items:center;text-align:center;gap:16px">' +
+              '<img src="/logo.png" alt="Safia" style="width:76px;height:76px;' +
+              'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18)"/>' +
+              midHtml +
+              '<button id="boot-report" type="button" style="width:100%;margin-top:8px;padding:8px;border:none;' +
               'background:transparent;color:' + p.text3 + ';font-size:13px;cursor:pointer">' +
                 S.report + '</button>' +
               '<button id="boot-toggle" type="button" style="background:none;border:none;color:' +
@@ -249,8 +287,10 @@
             '</div>';
           document.getElementById('boot-tech').textContent = details;
 
-          document.getElementById('boot-retry').onclick = hardReload;
-          document.getElementById('boot-reopen').onclick = function () {
+          var retryBtn = document.getElementById('boot-retry');
+          if (retryBtn) retryBtn.onclick = hardReload;
+          var reopenBtn = document.getElementById('boot-reopen');
+          if (reopenBtn) reopenBtn.onclick = function () {
             try {
               var wa = window.Telegram && window.Telegram.WebApp;
               if (wa && typeof wa.close === 'function') { wa.close(); return; }
@@ -311,6 +351,14 @@
             if (e.target.tagName === 'IMG' || e.target.tagName === 'LINK') return;
             var url = e.target.src || e.target.href || '';
             if (/\/assets\/[^?#]+\.js(\?|#|$)/.test(url)) {
+              if (engineTooOld) {
+                // Not a stale hash — this engine cannot load module chunks at
+                // all, and staleReload's loop guard would dead-end on the
+                // wrong "close and reopen" screen. Show the real notice.
+                errors.push('Failed to load: ' + url);
+                report();
+                return;
+              }
               staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
               return;
             }

@@ -9,14 +9,17 @@ export default defineConfig({
   ],
   build: {
     minify: 'esbuild',
-    // Telegram Desktop on old Windows can run the legacy EdgeHTML/Chakra WebView
-    // (UA "…Chrome/70… Edge/18…" — Chakra, not real V8). It parses almost all of
-    // ES2019 but NOT optional catch binding (`try{}catch{}` with no `(e)`), so an
-    // es2019 bundle threw "Expected '(' … bundle never started" and never mounted.
-    // Pin the actual engines so esbuild down-levels exactly what they lack
-    // (optional catch binding, object spread, async iteration, ?. / ??) while
-    // keeping native async/await (both engines have it → no regenerator bloat).
-    // Let Lightning CSS emit fallbacks for oklch()/color-mix().
+    // Telegram Desktop on old Windows can fall back to the legacy EdgeHTML/Chakra
+    // WebView (UA "…Chrome/70… Edge/18…" — Chakra, not real V8). These pins once
+    // made the bundle parse there, but route code-splitting (App.jsx
+    // lazyWithReload) put dynamic import() into the entry chunk — syntax
+    // Vite/esbuild deliberately never down-level — so Chakra dies at parse again
+    // and the ES5 boot overlay in index.html now owns that case with an
+    // "outdated Windows browser" notice (phone / site in a real browser / IT
+    // installs WebView2). The pins stay for chrome70-class Android WebViews,
+    // which DO parse dynamic import (Chrome 63+) but still need ?. / ?? /
+    // optional catch binding down-leveled; native async/await is kept (no
+    // regenerator bloat). Let Lightning CSS emit fallbacks for oklch()/color-mix().
     target: ['es2017', 'chrome70', 'edge18'],
     cssTarget: 'chrome87',
   },

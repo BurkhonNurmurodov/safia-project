@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -135,6 +135,90 @@ function HolderChip({ b, meLabel, onUnassign, disabled }) {
 function factoryLabel(f, lang) {
   if (!f) return null;
   return f[`name_${lang}`] || f.name_ru || f.name_uz || f.code;
+}
+
+// ── page-level save ───────────────────────────────────────────────────────────
+/**
+ * The identity header owns the page's ONE save action, and it commits every
+ * DEFERRED edit on the page at once — the profile form AND the web-login
+ * username. Cards no longer carry their own save buttons: two "save" controls
+ * on one screen means the operator has to work out which of them their change
+ * belongs to, and the one inside a card is invisible from anywhere else.
+ *
+ * What it deliberately does NOT touch: the actions that fire on their own click
+ * and confirm themselves — photo upload/remove, password reset, sign-out,
+ * enable/disable, delete/archive, and minting a brand-new browser login (that
+ * one DMs a password, so it stays an explicit, separate decision).
+ *
+ * Each card REGISTERS a target instead of rendering a button, so validation and
+ * error text stay inside the card that owns the offending field.
+ */
+const SaveBusCtx = createContext(null);
+
+function useSaveHub() {
+  const [flags, setFlags] = useState({});   // key -> { dirty, busy }
+  const runners = useRef({});               // key -> () => void
+  const flagsRef = useRef(flags);
+  flagsRef.current = flags;
+
+  // Stable identity: children re-register on every render, so this must never
+  // write state unless dirty/busy actually moved, or the two would loop.
+  const bus = useMemo(() => ({
+    register(key, { dirty, busy, run }) {
+      runners.current[key] = run;
+      setFlags((prev) => (prev[key]?.dirty === dirty && prev[key]?.busy === busy)
+        ? prev
+        : { ...prev, [key]: { dirty, busy } });
+    },
+    unregister(key) {
+      delete runners.current[key];
+      setFlags((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    run() {
+      for (const [key, f] of Object.entries(flagsRef.current)) {
+        if (f.dirty) runners.current[key]?.();
+      }
+    },
+  }), []);
+
+  const list = Object.values(flags);
+  return { bus, dirty: list.some((f) => f.dirty), busy: list.some((f) => f.busy) };
+}
+
+function useSaveTarget(key, { dirty, busy, save }) {
+  const bus = useContext(SaveBusCtx);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
+  useEffect(() => {
+    bus?.register(key, { dirty, busy, run: () => saveRef.current?.() });
+  }, [bus, key, dirty, busy]);
+
+  useEffect(() => () => bus?.unregister(key), [bus, key]);
+}
+
+function PageSave({ dirty, busy, onSave, hideHint = false }) {
+  const { t } = useLang();
+  return (
+    <div className="flex items-center gap-2.5">
+      {dirty && !busy && !hideHint && (
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap"
+              style={{ color: "#eab308" }}>
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#eab308" }} />
+          {t("profile.unsaved")}
+        </span>
+      )}
+      <Button size="lg" icon={<Check size={14} />} loading={busy} disabled={!dirty}
+              title={t("profile.saveAllHint")} onClick={onSave}>
+        {t("admin.profiles.save")}
+      </Button>
+    </div>
+  );
 }
 
 // ── password change (own view; both surfaces) ─────────────────────────────────
@@ -505,6 +589,21 @@ function PhotoActions({ profileKey, hasPhoto, notify, onDone }) {
 
 // ── ADMIN: edit form (ported from the old Profiles-tab modal) ─────────────────
 
+// Field-by-field so a value that only differs by type (12 vs "12") or by cell
+// ORDER does not read as an edit — a save button lit by noise trains the
+// operator to ignore it.
+function sameProfileForm(a, b) {
+  if (!a || !b) return true;
+  if (String(a.role ?? "") !== String(b.role ?? "")) return false;
+  if ((a.name || "").trim() !== (b.name || "").trim()) return false;
+  if (String(a.shift ?? "") !== String(b.shift ?? "")) return false;
+  if (String(a.manager_id ?? "") !== String(b.manager_id ?? "")) return false;
+  if (String(a.verifix_id ?? "") !== String(b.verifix_id ?? "")) return false;
+  const cells = (f) => [...(f.cells || [])].map(String).sort().join("|");
+  if (cells(a) !== cells(b)) return false;
+  return NAME_LANGS.every((l) => (a.overrides?.[l] || "").trim() === (b.overrides?.[l] || "").trim());
+}
+
 function EditCard({ ptype, item, data, notify, onDone }) {
   const navigate = useNavigate();
   const { t, lang, nameOverrides } = useLang();
@@ -512,18 +611,27 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const qc = useQueryClient();
 
   const [form, setForm] = useState({});
+  // The values the form was last seeded/saved with — the page's save button is
+  // enabled only against a real difference, so "unsaved changes" never lies.
+  const [base, setBase] = useState(null);
   const [formError, setFormError] = useState("");
   const [confirmSwitch, setConfirmSwitch] = useState(null);
   const [newCell, setNewCell] = useState(null);
   const [newCellError, setNewCellError] = useState("");
 
   // Re-seed whenever the target profile changes (or after a save refetch).
+  // Keyed on the profile's own VALUES, not the object identity: a background
+  // refetch that returns the same row must not wipe an edit in progress.
+  const itemSig = JSON.stringify([
+    item.id, item.name, item.shift ?? null, item.manager_id ?? null,
+    item.cells ?? null, item.name_uz_cyrl ?? null, item.name_ru ?? null, item.name_en ?? null,
+  ]);
   useEffect(() => {
     const ov = {};
     for (const l of NAME_LANGS) {
       ov[l] = item[`name_${l}`] || nameOverrides?.[l]?.[`name.${item.name}`] || "";
     }
-    setForm({
+    const seeded = {
       role: ptype,
       name: item.name,
       shift: item.shift ?? 1,
@@ -531,10 +639,15 @@ function EditCard({ ptype, item, data, notify, onDone }) {
       cells: item.cells ?? [],
       verifix_id: ptype === "supervisor" ? item.id : "",
       overrides: ov,
-    });
+    };
+    setForm(seeded);
+    setBase(seeded);
     setFormError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ptype, item.id, item.name]);
+  }, [ptype, itemSig]);
+
+  const formRef = useRef(form);
+  formRef.current = form;
 
   const units = (data?.supervisors ?? []).filter((s) => !s.archived);
   const roleChanged = form.role && form.role !== ptype;
@@ -559,6 +672,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   const updateMut = useMutation({
     mutationFn: (body) => api.put(`/api/profiles/admin/${ptype}/${item.id}`, body),
     onSuccess: (r) => {
+      // Baseline the values we just persisted: per-language names for a
+      // supervisor land in the translations table, so the profile row comes
+      // back byte-identical and the re-seed below would never fire.
+      setBase(formRef.current);
       onDone();
       notify(t("profile.saved"), "success");
       const newId = r.data?.id;
@@ -600,6 +717,9 @@ function EditCard({ ptype, item, data, notify, onDone }) {
   });
 
   const busy = updateMut.isPending || switchMut.isPending;
+  const dirty = Boolean(base) && !sameProfileForm(form, base);
+
+  useSaveTarget("profile", { dirty, busy, save: () => submit() });
 
   function openCellCreate(code) {
     setNewCell({
@@ -814,13 +934,10 @@ function EditCard({ ptype, item, data, notify, onDone }) {
           </FormField>
         )}
 
+        {/* No save button here — the page has ONE, in the identity header, and
+            it commits this form together with the web-login username. Failures
+            still surface next to the fields that caused them. */}
         {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
-
-        <div className="flex justify-end pt-1">
-          <Button icon={<Pencil size={12} />} loading={busy} onClick={submit}>
-            {t("admin.profiles.save")}
-          </Button>
-        </div>
       </div>
 
       {/* Inline cell creation (leader flow) */}
@@ -981,7 +1098,16 @@ function WebLoginCard({ item, notify, onDone }) {
   });
   const busy = createMut.isPending || renameMut.isPending || resetMut.isPending ||
                toggleMut.isPending || revokeMut.isPending;
-  const renamed = web && username.trim() && username.trim() !== web.username;
+  const renamed = Boolean(web && username.trim() && username.trim() !== web.username);
+
+  // Renaming an existing login is a deferred edit, so the page's save button
+  // owns it. Creating one is not: it mints a password and DMs it, which stays
+  // its own deliberate button below.
+  useSaveTarget("weblogin", {
+    dirty: renamed,
+    busy: renameMut.isPending,
+    save: () => renameMut.mutate(),
+  });
 
   return (
     <Card icon={Globe} title={t("weblogin.formTitle")} right={<WebLoginStatus web={web} />}>
@@ -994,32 +1120,22 @@ function WebLoginCard({ item, notify, onDone }) {
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          <div className="flex-1 min-w-0">
-            <FormField
-              label={t("weblogin.username")}
-              hint={web ? undefined : t("weblogin.usernameHint")}
-              error={error || undefined}
-            >
-              <input
-                value={username}
-                onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                placeholder={t("weblogin.usernamePh")}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[var(--brand)]"
-                style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-              />
-            </FormField>
-          </div>
-          {web && (
-            <Button onClick={() => renameMut.mutate()} loading={renameMut.isPending}
-                    disabled={!renamed || busy}>
-              {t("weblogin.rename")}
-            </Button>
-          )}
-        </div>
+        <FormField
+          label={t("weblogin.username")}
+          hint={web && renamed ? t("weblogin.renamePending") : web ? undefined : t("weblogin.usernameHint")}
+          error={error || undefined}
+        >
+          <input
+            value={username}
+            onChange={(e) => { setUsername(e.target.value); setError(""); }}
+            placeholder={t("weblogin.usernamePh")}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[var(--brand)]"
+            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+          />
+        </FormField>
 
         {!web && (
           <>
@@ -1257,6 +1373,23 @@ function bindState(item) {
   return bs.length ? "bound" : "none";
 }
 
+// Is the header's save button still on screen? The page is taller than a phone,
+// so the one button has to follow the operator down to the field they are
+// editing — but only ever ONE of the two is visible at a time.
+// Callback ref, not useRef: the node arrives only after the profile has loaded,
+// and an effect keyed on a ref object would never re-run to observe it.
+function useOnScreen() {
+  const [node, setNode] = useState(null);
+  const [seen, setSeen] = useState(true);
+  useEffect(() => {
+    if (!node || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { threshold: 0 });
+    io.observe(node);
+    return () => io.disconnect();
+  }, [node]);
+  return [seen, setNode];
+}
+
 function AdminProfile({ ptype, pid }) {
   const navigate = useNavigate();
   const { auth } = useAuth();
@@ -1264,6 +1397,8 @@ function AdminProfile({ ptype, pid }) {
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
+  const { bus, dirty, busy } = useSaveHub();
+  const [saveOnScreen, saveRef] = useOnScreen();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-profiles"],
@@ -1342,10 +1477,12 @@ function AdminProfile({ ptype, pid }) {
   ].filter(Boolean).join(" · ");
 
   return (
+    <SaveBusCtx.Provider value={bus}>
     <div className="space-y-4">
       <div>{back}</div>
 
-      {/* Identity + photo */}
+      {/* Identity + photo. The page's single save action sits top-right of this
+          card: the first thing in view, and the only one on the page. */}
       <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
           <ProfileAvatar name={tl(item.name)} colorKey={item.name} profileKey={item.profile_key}
@@ -1375,6 +1512,9 @@ function AdminProfile({ ptype, pid }) {
               </p>
             </div>
           </div>
+          <div ref={saveRef} className="flex-shrink-0 sm:self-start">
+            <PageSave dirty={dirty} busy={busy} onSave={bus.run} />
+          </div>
         </div>
       </div>
 
@@ -1390,8 +1530,22 @@ function AdminProfile({ ptype, pid }) {
           zone at the very end — never beside the daily controls. */}
       <DangerCard ptype={ptype} item={item} onDone={onDone} />
 
+      {/* Same action, followed down. Appears only while there ARE unsaved
+          changes and the header button has scrolled away, so the page never
+          shows two save buttons at once. */}
+      {(dirty || busy) && !saveOnScreen && (
+        <div className="sticky z-30 flex justify-end savebar-in"
+             style={{ bottom: "var(--tg-safe-bottom, 0px)" }}>
+          <div className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg"
+               style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <PageSave dirty={dirty} busy={busy} onSave={bus.run} />
+          </div>
+        </div>
+      )}
+
       {toast.node}
     </div>
+    </SaveBusCtx.Provider>
   );
 }
 
