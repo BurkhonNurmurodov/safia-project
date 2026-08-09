@@ -699,41 +699,14 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   );
 }
 
-// A report photo that keeps its own load state: on failure it shows a compact
-// "failed to load + retry" placeholder in the image's place instead of letting
-// the broken <img> bubble up to the boot-diagnostics error overlay in index.html.
-function ReportPhoto({ src, T, className = "mt-2" }) {
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  if (failed) {
-    return (
-      <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
-        style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
-        <ImageOff size={22} color="var(--text-4)" />
-        <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
-        <button type="button" onClick={() => { setFailed(false); setAttempt((a) => a + 1); }}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md"
-          style={{ color: "var(--brand)", background: hexA("#C8973F", 0.12) }}>
-          <RefreshCw size={13} /> {T.retry}
-        </button>
-      </div>
-    );
-  }
-  // Bumping the query string on retry defeats the browser's cached failed response.
-  const url = attempt ? src + (src.includes("?") ? "&" : "?") + "_retry=" + attempt : src;
-  return (
-    <img src={url} alt="" onClick={() => window.open(src, "_blank")} loading="lazy"
-      onError={() => setFailed(true)}
-      className={`${className} w-full rounded-lg border cursor-zoom-in`}
-      style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
-  );
-}
-
-// A bot-submission proof photo. Unlike the sheet's public Google URLs it sits
-// behind the auth-gated backend proxy (the JWT rides the Authorization header),
-// so it's fetched as a BLOB and rendered via an object URL — a bare <img src>
-// can't attach the token.
-function BotPhoto({ id, T, className = "mt-2" }) {
+// A proof photo. BOTH sources go through the backend and are fetched as a BLOB,
+// rendered via an object URL, because neither can be handed to a bare <img src>:
+// the bot's archive photo needs the JWT on the request, and the sheet's photo is
+// a Google Drive SHARE link, which answers an HTML viewer page rather than image
+// bytes (and the app's CSP is img-src 'self' data: blob: anyway). Each keeps its
+// own load state, so one dead photo shows a compact "failed + retry" card in its
+// own place instead of bubbling a broken <img> up to the boot-error overlay.
+function ProxyPhoto({ load, deps = [], href, T, className = "mt-2" }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -742,7 +715,7 @@ function BotPhoto({ id, T, className = "mt-2" }) {
     let alive = true;
     setFailed(false);
     setUrl("");
-    api.get(`/api/leader-tasks/media/${id}`, { responseType: "blob" })
+    load()
       .then((res) => {
         obj = URL.createObjectURL(res.data);
         if (alive) setUrl(obj);
@@ -750,7 +723,8 @@ function BotPhoto({ id, T, className = "mt-2" }) {
       })
       .catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
-  }, [id, attempt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, attempt]);
   if (failed) {
     return (
       <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
@@ -767,11 +741,25 @@ function BotPhoto({ id, T, className = "mt-2" }) {
   }
   if (!url) return <SkeletonBlock className={`${className} h-28 w-full`} />;
   return (
-    <img src={url} alt="" onClick={() => window.open(url, "_blank")} loading="lazy"
+    <img src={url} alt="" onClick={() => window.open(href || url, "_blank")} loading="lazy"
       className={`${className} w-full rounded-lg border cursor-zoom-in`}
       style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
   );
 }
+
+// A sheet (Fillout → Google Drive) proof photo. Zooming opens the ORIGINAL Drive
+// link, which is the full-resolution copy — the proxied one is just what renders
+// in the card.
+const ReportPhoto = ({ src, T, className }) => (
+  <ProxyPhoto T={T} className={className} href={src} deps={[src]}
+    load={() => api.get("/api/leaders/photo", { params: { url: src }, responseType: "blob" })} />
+);
+
+// A bot-submission proof photo, streamed out of the Telegram archive channel.
+const BotPhoto = ({ id, T, className }) => (
+  <ProxyPhoto T={T} className={className} deps={[id]}
+    load={() => api.get(`/api/leader-tasks/media/${id}`, { responseType: "blob" })} />
+);
 
 /* ══ AI proof review (admin-only pilot) ═══════════════════════════════════════
  * Two questions are asked of each proof photo — is its drawn-on timestamp

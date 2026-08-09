@@ -2,10 +2,12 @@ import json
 import logging
 import threading
 from datetime import datetime, time, timezone
+from time import monotonic
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import Text, cast
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -684,3 +686,104 @@ def cancel_late_open(
     except Exception:
         logger.exception("late-open: could not clear admin notices for %s", req_id)
     return {"ok": True}
+
+
+# ── Sheet proof photos ────────────────────────────────────────────────────────
+# The Fillout form uploads a leader's proof photo to Google Drive and writes the
+# SHARE url into the sheet cell. That url is an HTML viewer page, not an image —
+# a spreadsheet renders it because Sheets resolves the file itself, but a browser
+# <img src> pointed at it loads markup and fires onerror. On top of that the app's
+# CSP is img-src 'self' data: blob:, so a foreign image host would be blocked even
+# if the url did serve bytes.
+#
+# So the page fetches proof photos THROUGH here, exactly as bot photos already go
+# through /api/leader-tasks/media/…: one origin, no CSP hole, and the Drive-share
+# → direct-content rewrite lives in one place (services/leader_ai.fetch_sheet_image,
+# which the AI proof reviewer has been reading these same photos with all along).
+
+_PHOTO_HOSTS = {"drive.google.com", "docs.google.com",
+                "drive.usercontent.google.com"}
+
+
+def _photo_allowed(db: Session, url: str) -> bool:
+    """The url arrives from the client, so it has to be vouched for — otherwise
+    the endpoint is a general-purpose fetcher for anyone with page access
+    (fetch_sheet_image blocks internal addresses, not the public web).
+
+    Two ways to vouch. The cheap one is the host: Google's own file hosts, which
+    is what the Drive-backed form writes today. Anything else has to be a string
+    the SHEET itself put in a checklist row — so if the form is ever repointed at
+    another upload host, its photos keep working without a code change here,
+    while an arbitrary url still gets nothing."""
+    host = (urlparse(url).hostname or "").lower()
+    if host in _PHOTO_HOSTS or host.endswith(".googleusercontent.com"):
+        return True
+    if not url.startswith(("http://", "https://")):
+        return False
+    return db.query(LeaderChecklist.id).filter(
+        cast(LeaderChecklist.tasks, Text).contains(url, autoescape=True)
+    ).first() is not None
+
+
+# Every /api response is Cache-Control: no-store (NoStoreAPIMiddleware), so the
+# browser re-asks on each open of the detail modal — and a 20-photo day would be
+# 20 fresh Drive round-trips every time. A small server-side TTL cache absorbs
+# that: reopening a report is instant and Google sees one fetch per photo.
+_PHOTO_TTL = 900.0                    # seconds
+_PHOTO_MAX = 48                       # entries
+_PHOTO_MAX_BYTES = 4 * 1024 * 1024    # don't cache anything oversized
+_photo_cache: dict[str, tuple[float, bytes, str]] = {}
+_photo_lock = threading.Lock()
+
+
+def _photo_cached(url: str) -> tuple[bytes, str] | None:
+    now = monotonic()
+    with _photo_lock:
+        hit = _photo_cache.get(url)
+        if not hit:
+            return None
+        stamp, data, ctype = hit
+        if now - stamp > _PHOTO_TTL:
+            _photo_cache.pop(url, None)
+            return None
+        return data, ctype
+
+
+def _photo_store(url: str, data: bytes, ctype: str) -> None:
+    if len(data) > _PHOTO_MAX_BYTES:
+        return
+    now = monotonic()
+    with _photo_lock:
+        # drop what expired, then the oldest, so the dict can't grow unbounded
+        for k in [k for k, (s, _, _) in _photo_cache.items() if now - s > _PHOTO_TTL]:
+            _photo_cache.pop(k, None)
+        while len(_photo_cache) >= _PHOTO_MAX:
+            _photo_cache.pop(min(_photo_cache, key=lambda k: _photo_cache[k][0]), None)
+        _photo_cache[url] = (now, data, ctype)
+
+
+@router.get("/leaders/photo")
+def get_leader_photo(
+    url: str = Query(..., max_length=2000),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """Stream one sheet proof photo, rewritten from its Drive share url to the
+    direct-content host and served from this origin."""
+    if not _photo_allowed(db, url):
+        raise HTTPException(status_code=400, detail="Unsupported photo host")
+
+    hit = _photo_cached(url)
+    if hit is None:
+        from app.services.leader_ai import fetch_sheet_image
+        try:
+            data, ctype = fetch_sheet_image(url)
+        except Exception as exc:
+            # 502, not 500: the failure is upstream (Drive permissions, a deleted
+            # file), and the page's retry button is the right answer to it.
+            logger.warning("leaders: proof photo unreachable (%s): %s", url, exc)
+            raise HTTPException(status_code=502, detail=f"Photo unreachable: {exc}")
+        _photo_store(url, data, ctype)
+    else:
+        data, ctype = hit
+    return Response(content=data, media_type=ctype)
