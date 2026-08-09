@@ -303,6 +303,13 @@ def admin_list_profiles(db: Session = Depends(get_db),
     # row: a profile with no approved holder has nowhere to receive a password.
     creds = {c.profile_key: c for c in db.query(WebCredential).all()}
 
+    # Avatar versions per profile — the frontend fetches bytes lazily and only
+    # for rows that actually have a photo, so the list stays light.
+    photo_vers = {
+        key: int(ts.timestamp()) if ts else 1
+        for key, ts in db.query(ProfilePhoto.profile_key, ProfilePhoto.updated_at).all()
+    }
+
     def web_state(key: str, bindings: list[dict]) -> Optional[dict]:
         cred = creds.get(key)
         if not cred:
@@ -324,6 +331,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
             "bindings": sup_bindings,
             "profile_key": f"supervisor:{m.id}",
             "web": web_state(f"supervisor:{m.id}", sup_bindings),
+            "photo_ver": photo_vers.get(f"supervisor:{m.id}"),
         })
 
     profiles = db.query(RoleProfile).order_by(RoleProfile.id).all()
@@ -377,6 +385,7 @@ def admin_list_profiles(db: Session = Depends(get_db),
 
         item["profile_key"] = f"{p.role}:{p.id}"
         item["web"] = web_state(item["profile_key"], item.get("bindings", []))
+        item["photo_ver"] = photo_vers.get(item["profile_key"])
 
     out["assigned_admin_count"] = sum(1 for a in admin_rows)
     # Full cell registry (unassigned rows included) for the admin cells tab.
@@ -1650,6 +1659,106 @@ def admin_delete_web_login(payload: WebLoginPayload, db: Session = Depends(get_d
     return {"ok": True}
 
 
+# ── Profile photos ────────────────────────────────────────────────────────────
+
+_AVATAR_MAX_BYTES = 10 * 1024 * 1024
+_AVATAR_SIDE = 512
+
+
+def _photo_version(row: ProfilePhoto) -> int:
+    return int(row.updated_at.timestamp()) if row.updated_at else 1
+
+
+@router.get("/photo/{key}")
+def profile_photo(key: str, db: Session = Depends(get_db),
+                  _: dict = Depends(_caller)):
+    """One profile's avatar bytes. Any approved session may read it — photos
+    are org-internal exactly like the names they sit next to. The frontend
+    fetches this as a blob (the auth headers ride along) and keys its cache by
+    ``photo_ver``, so the long client cache here can never go stale."""
+    row = db.query(ProfilePhoto).filter_by(profile_key=key).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No photo")
+    return Response(
+        content=row.data,
+        media_type=row.mime or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
+@router.post("/admin/photo")
+def admin_set_photo(profile_key: str = Form(...), file: UploadFile = File(...),
+                    db: Session = Depends(get_db),
+                    caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Set (or replace) a profile's photo. Admin surface only — users see their
+    photo on /profile but the upload lives with the identity register.
+
+    The stored bytes are NEVER the upload: the image is decoded, EXIF-rotated,
+    centre-cropped square and re-encoded to a ≤512px JPEG, which both bounds the
+    row size and strips anything a crafted file might carry."""
+    role, ref = parse_profile_key(profile_key)
+    if not role or not ref or role not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile")
+    _deny_admin_profile(caller, role)
+    name = profile_display_name(db, profile_key)
+    if not name:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    content = file.file.read(_AVATAR_MAX_BYTES + 1)
+    if len(content) > _AVATAR_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="photo_too_large")
+    validate_avatar(file, content)
+    try:
+        img = Image.open(BytesIO(content))
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_image")
+
+    w, h = img.size
+    side = min(w, h)
+    img = img.crop(((w - side) // 2, (h - side) // 2,
+                    (w + side) // 2, (h + side) // 2))
+    if side > _AVATAR_SIDE:
+        img = img.resize((_AVATAR_SIDE, _AVATAR_SIDE), Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=88)
+
+    now = datetime.now(timezone.utc)
+    row = db.query(ProfilePhoto).filter_by(profile_key=profile_key).first()
+    if row:
+        row.data, row.mime, row.updated_at = buf.getvalue(), "image/jpeg", now
+    else:
+        row = ProfilePhoto(profile_key=profile_key, mime="image/jpeg",
+                           data=buf.getvalue(), updated_at=now)
+        db.add(row)
+    db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_set",
+                    details=[("profile", name)])
+    return {"ok": True, "photo_ver": _photo_version(row)}
+
+
+class PhotoDeletePayload(BaseModel):
+    profile_key: str
+
+
+@router.delete("/admin/photo")
+def admin_delete_photo(payload: PhotoDeletePayload, db: Session = Depends(get_db),
+                       caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    role, ref = parse_profile_key(payload.profile_key)
+    if not role or not ref or role not in PROFILE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid profile")
+    _deny_admin_profile(caller, role)
+    row = db.query(ProfilePhoto).filter_by(profile_key=payload.profile_key).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No photo")
+    db.delete(row)
+    db.commit()
+    alert_grant_use(db, caller, CAP_PROFILES_MANAGE, "profile.photo_removed",
+                    details=[("profile", profile_display_name(db, payload.profile_key) or payload.profile_key)])
+    return {"ok": True}
+
+
 # ── Registration options (pre-login, Telegram-initData-gated) ─────────────────
 
 class RegistrationOptionsPayload(BaseModel):
@@ -1822,3 +1931,116 @@ def update_my_name(payload: MyNamePayload, caller: dict = Depends(_caller),
         _apply_overrides(db, canonical, payload.overrides)
     db.commit()
     return {"ok": True, "canonical": canonical}
+
+
+# ── Self-service: my profile card (/profile page) ─────────────────────────────
+
+def _factory_dict(f: Optional[Factory]) -> Optional[dict]:
+    if not f:
+        return None
+    return {"code": f.code, "name_uz": f.name_uz, "name_uz_cyrl": f.name_uz_cyrl,
+            "name_ru": f.name_ru, "name_en": f.name_en}
+
+
+def _cell_dict(c: Cell) -> dict:
+    return {"verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "name_workshop_uz": c.name_workshop_uz,
+            "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
+            "name_workshop_ru": c.name_workshop_ru,
+            "name_workshop_en": c.name_workshop_en}
+
+
+@router.get("/me/details")
+def my_profile_details(caller: dict = Depends(_caller), db: Session = Depends(get_db)):
+    """Everything the /profile page shows about the caller's ACTIVE profile.
+
+    Read-only by design: the page's edit surface is admin-only, and the one
+    thing a user changes themselves (the web password) has its own endpoint.
+    Resolved live from the profile so a rename or reassignment shows up on the
+    next open, never from a JWT snapshot.
+    """
+    key = viewer_profile_key(db, caller)
+    role = caller.get("role")
+    out = {
+        "role": role,
+        "profile_key": key,
+        "name": caller.get("full_name"),
+        "names": {},
+        "shift": None,
+        "unit": None,
+        "cells": [],
+        "verifix_id": None,
+        "factory": None,
+        "holders": [],
+        "web": None,
+        "photo_ver": None,
+    }
+    if not key:
+        return out  # legacy unresolvable identity — JWT basics only
+
+    ptype, ref = parse_profile_key(key)
+    canonical = out["name"]
+    factory_id = None
+
+    if ptype == "supervisor":
+        m = db.query(Manager).filter_by(id=ref).first()
+        if m:
+            canonical = m.name
+            out.update(shift=m.shift, verifix_id=m.id)
+            factory_id = m.factory_id
+    else:
+        p = db.query(RoleProfile).filter_by(id=ref).first()
+        if p:
+            canonical = p.name
+            out["names"] = {"uz_cyrl": p.name_uz_cyrl or "", "ru": p.name_ru or "",
+                            "en": p.name_en or ""}
+            if ptype == "shift-manager":
+                out["shift"] = p.shift
+            if ptype == "leader" and p.manager_id:
+                m = db.query(Manager).filter_by(id=p.manager_id).first()
+                if m:
+                    out["unit"] = m.name
+                    out["shift"] = m.shift
+                    factory_id = m.factory_id
+                out["cells"] = [
+                    _cell_dict(c) for c in db.query(Cell)
+                    .filter_by(leader_id=p.id).order_by(Cell.verifix_code).all()
+                ]
+
+    out["name"] = canonical
+
+    # Per-language display names: profile columns first, the legacy
+    # translation overrides second — the same resolution tl() renders by.
+    if canonical:
+        for t in db.query(Translation).filter(Translation.key == f"name.{canonical}").all():
+            if t.lang in ("uz_cyrl", "ru", "en") and not out["names"].get(t.lang):
+                out["names"][t.lang] = t.value
+
+    if factory_id:
+        out["factory"] = _factory_dict(db.query(Factory).filter_by(id=factory_id).first())
+
+    me = int(caller["sub"])
+    holder_ids = profile_holders(db, key)
+    if holder_ids:
+        users = {u.telegram_id: u for u in db.query(TelegramUser)
+                 .filter(TelegramUser.telegram_id.in_(holder_ids)).all()}
+        out["holders"] = [{
+            "telegram_id": tid,
+            "tg_name": users[tid].tg_name if tid in users else None,
+            "username": users[tid].username if tid in users else None,
+            "is_me": tid == me,
+        } for tid in holder_ids]
+
+    cred = db.query(WebCredential).filter_by(profile_key=key).first()
+    if cred:
+        out["web"] = {
+            "username": cred.username,
+            "enabled": bool(cred.enabled),
+            "locked": web_auth.lock_seconds_left(cred) > 0,
+            "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
+        }
+
+    photo = db.query(ProfilePhoto).filter_by(profile_key=key).first()
+    if photo:
+        out["photo_ver"] = _photo_version(photo)
+    return out

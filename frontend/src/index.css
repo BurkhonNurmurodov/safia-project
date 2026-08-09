@@ -164,6 +164,24 @@ body.sidebar-open { overflow: hidden; }
 .nav-grp-items > div { overflow: hidden; min-height: 0; }
 .nav-grp-chev { transition: transform .2s var(--ease-io); }
 
+/* Sidebar nav rows — hover wash + text lift on every clickable row. The active
+   link is excluded: the gold pill already marks it, and hovering where you
+   already are signals nothing. `color` needs !important because NavLink writes
+   the rest color inline. Hover-capable pointers only — on touch, :hover fires
+   on tap and sticks, so the phone drawer would keep a ghost highlight. */
+@media (hover: hover) {
+  .nav-item:hover:not([aria-current="page"]) {
+    background: var(--hover-bg);
+    color: var(--text-1) !important;
+  }
+}
+/* Keyboard focus gets a ring instead — never gated on hover support. Inset so
+   the scrollable nav can't clip it against a neighbouring row. */
+.nav-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--brand-ring);
+}
+
 /* Honor reduced-motion for every shell animation — same stance as the
    Leaderboard podium halo. Base states are already the visible state, so
    killing the animation is safe. */

@@ -206,7 +206,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         end={to === "/"}
         onClick={onClose}
         title={!expanded ? t(key) : undefined}
-        className="flex items-center rounded-lg text-sm transition-colors px-2.5 py-2.5 md:py-2"
+        className="nav-item flex items-center rounded-lg text-sm transition-colors px-2.5 py-2.5 md:py-2"
         style={({ isActive }) => ({
           gap: "12px",
           position: "relative",
@@ -327,7 +327,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               {/* Desktop: pin toggle button */}
               <button
                 onClick={onTogglePin}
-                className="hidden md:flex p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-white/10"
+                className="hidden md:flex p-1.5 rounded-lg flex-shrink-0 transition-colors hover:bg-[var(--hover-bg)]"
                 style={{ color: pinned ? "var(--brand-text)" : "var(--text-3)" }}
                 title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
               >
@@ -377,7 +377,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                     onClick={() => toggleGroup(g.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-grp-${g.id}`}
-                    className="w-full flex items-center gap-1.5 rounded-lg text-[10.5px] font-semibold uppercase tracking-wider"
+                    className="nav-item w-full flex items-center gap-1.5 rounded-lg text-[10.5px] font-semibold uppercase tracking-wider transition-colors"
                     style={{
                       padding: "4px 10px",
                       marginTop: 10,
@@ -455,12 +455,14 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               to={withSearch("/admin/upload")}
               onClick={onClose}
               title={!expanded ? t("nav.admin") : undefined}
-              className="flex items-center rounded-lg text-sm transition-colors"
+              className="nav-item flex items-center rounded-lg text-sm transition-colors"
               style={({ isActive }) => ({
                 gap: "12px",
                 padding: "10px",
-                color:      isActive ? "var(--text-1)" : "var(--text-3)",
-                background: isActive ? "var(--bg-inner)" : "transparent",
+                color: isActive ? "var(--text-1)" : "var(--text-3)",
+                // Background only while active — an inline "transparent" would
+                // beat the .nav-item hover wash.
+                ...(isActive ? { background: "var(--bg-inner)" } : null),
                 justifyContent: !expanded ? "center" : undefined,
               })}
             >
@@ -500,7 +502,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 setTimeout(() => onClose?.(), 150);
               }}
               title={!expanded ? t("nav.support") : undefined}
-              className="flex items-center rounded-lg text-sm transition-colors"
+              className="nav-item flex items-center rounded-lg text-sm transition-colors"
               style={{
                 gap: "12px",
                 padding: "10px",

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app import web_auth
 from app.config import settings
 from app.database import get_db
-from app.identity import profile_display_name
+from app.identity import profile_display_name, viewer_profile_key
 from app.models import Admin, TelegramUser, WebCredential
 
 log = logging.getLogger(__name__)
@@ -165,18 +165,57 @@ def _web_caller(token: Annotated[str, Depends(_oauth2)], db: Session = Depends(g
 
 
 class ChangePasswordBody(BaseModel):
-    current_password: str
+    # Optional because a TELEGRAM session does not prove it holds the current
+    # password (see below); a browser session must always supply it.
+    current_password: Optional[str] = None
     new_password: str
 
 
-@router.post("/password")
-def change_password(body: ChangePasswordBody, payload: dict = Depends(_web_caller),
-                    db: Session = Depends(get_db)):
-    cred = db.query(WebCredential).filter(WebCredential.username == payload.get("wu")).first()
-    if not cred:
-        raise HTTPException(status_code=404, detail="No web login")
+def _any_caller(token: Annotated[str, Depends(_oauth2)]) -> dict:
+    """Any live session — browser or Telegram. The app-wide origin guard has
+    already run for this request, so a Telegram-issued token here arrived with
+    valid initData and a web token with nothing else; web-token revocation is
+    still re-checked by the caller below."""
+    try:
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    if not web_auth.verify_password(body.current_password, cred.password_hash):
+
+@router.post("/password")
+def change_password(body: ChangePasswordBody, payload: dict = Depends(_any_caller),
+                    db: Session = Depends(get_db)):
+    """Change the web password from EITHER surface.
+
+    A browser session must prove it holds the current password: its token was
+    minted from that password, and an unlocked machine must not be enough to
+    quietly take over the account.
+
+    A Telegram session proves identity with initData instead — the same proof
+    the password is DELIVERED against (both the admin reset and «Forgot
+    password» DM a fresh password to Telegram with no current-password check).
+    Requiring the current password there would add friction, not security, so
+    it changes with the new password alone.
+    """
+    is_web = bool(payload.get("web"))
+    if is_web:
+        if not web_auth.web_session_is_live(db, payload):
+            raise HTTPException(status_code=401, detail="Not a live web session")
+        cred = db.query(WebCredential).filter(
+            WebCredential.username == payload.get("wu")).first()
+    else:
+        key = viewer_profile_key(db, payload)
+        cred = db.query(WebCredential).filter(
+            WebCredential.profile_key == key).first() if key else None
+    if not cred:
+        raise HTTPException(status_code=404, detail="no_web_login")
+    if not cred.enabled:
+        # An admin disabled this login on purpose; a self-change must not be a
+        # way to argue with that (and a fresh password would not log in anyway).
+        raise HTTPException(status_code=403, detail="login_disabled")
+
+    if is_web and not web_auth.verify_password(body.current_password or "",
+                                               cred.password_hash):
         raise HTTPException(status_code=400, detail="wrong_current_password")
 
     err = web_auth.password_error(body.new_password)
@@ -186,12 +225,17 @@ def change_password(body: ChangePasswordBody, payload: dict = Depends(_web_calle
     cred.password_hash = web_auth.hash_password(body.new_password)
     cred.password_set_at = datetime.now(timezone.utc)
     # Every other browser holding the old password is signed out — that is what
-    # a password change is for. The caller gets a fresh token below so the tab
-    # they are typing in does not log itself out.
+    # a password change is for. A browser caller gets a fresh token below so the
+    # tab they are typing in does not log itself out; a Telegram session carries
+    # no version claim and is untouched.
     cred.token_version = (cred.token_version or 1) + 1
     web_auth.clear_failures(db, cred)
     db.commit()
-    log.info("WEB-LOGIN self_change | login=%s | profile=%s", cred.username, cred.profile_key)
+    log.info("WEB-LOGIN self_change | login=%s | profile=%s | via=%s",
+             cred.username, cred.profile_key, "web" if is_web else "telegram")
+
+    if not is_web:
+        return {"ok": True}
 
     identity = web_auth.session_identity(db, cred.profile_key)
     if not identity:
