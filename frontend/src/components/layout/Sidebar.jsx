@@ -204,7 +204,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   // One renderer for both modes (flat / grouped). Rows are slightly denser on
   // desktop (md:py-2); the phone drawer keeps the full touch height.
-  const renderLink = ({ to, key, icon: Icon }) => {
+  // `indent` steps a row under its folder header while expanded — as a margin
+  // on the icon, not row padding, so the full-width active pill and hover wash
+  // stay flush; on the icon rail it drops to 0 to keep icons centered.
+  const renderLink = ({ to, key, icon: Icon }, indent = false) => {
     const isStaff = to === "/staff";
     const badge = isStaff && showBadge && pendingCount > 0;
     return (
@@ -228,7 +231,10 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         })}
       >
         {/* Icon + dot badge when collapsed */}
-        <div className="relative flex-shrink-0">
+        <div
+          className="relative flex-shrink-0 transition-all duration-200"
+          style={{ marginLeft: indent && expanded ? 16 : 0 }}
+        >
           <Icon size={16} />
           {badge && !expanded && (
             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
@@ -360,7 +366,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
           onScroll={(e) => { savedNavScroll = e.currentTarget.scrollTop; }}
           className="relative flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden"
         >
-          {(grouped ? [] : links).map(renderLink)}
+          {(grouped ? [] : links).map(l => renderLink(l))}
 
           {grouped && NAV_GROUPS.map((g) => {
             const items = byGroup.get(g.id);
@@ -443,7 +449,11 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                   data-collapsed={collapsed ? "true" : "false"}
                   style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
                 >
-                  <div className="space-y-0.5">{items.map(renderLink)}</div>
+                  {/* Only rows under a visible folder header indent — the
+                      headerless Обзор / Активность sections stay flush. */}
+                  <div className="space-y-0.5">
+                    {items.map(l => renderLink(l, Boolean(g.labelKey)))}
+                  </div>
                 </div>
               </div>
             );

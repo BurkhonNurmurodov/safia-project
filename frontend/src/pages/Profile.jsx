@@ -22,7 +22,6 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
-import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
 import { ROLE_LABEL_KEYS } from "../config/pages";
@@ -1116,7 +1115,7 @@ function WebLoginCard({ item, notify, onDone }) {
 
 // ── ADMIN: holders + danger zone ──────────────────────────────────────────────
 
-function HoldersCard({ ptype, item, notify, onDone }) {
+function HoldersCard({ ptype, item, onDone }) {
   const { t } = useLang();
   const { tl } = useTranslit();
   const [confirmUnassign, setConfirmUnassign] = useState(null); // binding
@@ -1253,7 +1252,7 @@ function bindState(item) {
 function AdminProfile({ ptype, pid }) {
   const navigate = useNavigate();
   const { auth } = useAuth();
-  const { t, lang, reloadTranslations } = useLang();
+  const { t, reloadTranslations } = useLang();
   const { tl } = useTranslit();
   const qc = useQueryClient();
   const toast = useToast();
@@ -1375,7 +1374,7 @@ function AdminProfile({ ptype, pid }) {
         <EditCard ptype={ptype} item={item} data={data} notify={notify} onDone={onDone} />
         <div className="space-y-4">
           <WebLoginCard item={item} notify={notify} onDone={onDone} />
-          <HoldersCard ptype={ptype} item={item} notify={notify} onDone={onDone} />
+          <HoldersCard ptype={ptype} item={item} onDone={onDone} />
           <DangerCard ptype={ptype} item={item} onDone={onDone} />
         </div>
       </div>

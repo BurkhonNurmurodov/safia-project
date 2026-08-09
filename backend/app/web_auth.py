@@ -349,19 +349,19 @@ _CRED_DM = {
     "uz": ("🔐 <b>Sayt uchun login</b>\n\n"
            "Endi dashboardni brauzerda ham ochishingiz mumkin:\n{url}\n\n"
            "Login: <code>{username}</code>\nParol: <code>{password}</code>\n\n"
-           "Parolni «Sozlamalar» bo'limida o'zgartirishingiz mumkin."),
+           "Parolni «Profil» sahifasida o'zgartirishingiz mumkin."),
     "uz_cyrl": ("🔐 <b>Сайт учун логин</b>\n\n"
                 "Энди дашбордни браузерда ҳам очишингиз мумкин:\n{url}\n\n"
                 "Логин: <code>{username}</code>\nПарол: <code>{password}</code>\n\n"
-                "Паролни «Созламалар» бўлимида ўзгартиришингиз мумкин."),
+                "Паролни «Профил» саҳифасида ўзгартиришингиз мумкин."),
     "ru": ("🔐 <b>Вход на сайт</b>\n\n"
            "Теперь дашборд можно открыть и в браузере:\n{url}\n\n"
            "Логин: <code>{username}</code>\nПароль: <code>{password}</code>\n\n"
-           "Пароль можно изменить в разделе «Настройки»."),
+           "Пароль можно изменить на странице «Профиль»."),
     "en": ("🔐 <b>Website login</b>\n\n"
            "You can now open the dashboard in a browser:\n{url}\n\n"
            "Username: <code>{username}</code>\nPassword: <code>{password}</code>\n\n"
-           "You can change the password under «Settings»."),
+           "You can change the password on the «Profile» page."),
 }
 
 
