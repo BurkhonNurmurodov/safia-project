@@ -103,6 +103,15 @@ def get_quality(
             "fi": fi,
         })
 
+    # Each matched cell also carries the supervisor unit that OWNS it (`mid`).
+    # The page needs it to split one brigadir's rows into the leaders who
+    # actually report to them versus a foreign workshop that happened to be
+    # blamed on one of their records: `leader` is only a NAME, and grouping by
+    # name alone would quietly file another unit's leader under this brigadir.
+    # Mutating in place is safe — these dicts are built per request.
+    for cid, c in matched.items():
+        c["mid"] = cell_owner.get(cid)
+
     return {
         # Refresh is offered to every profile that can open the page.
         "can_refresh": True,

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   RefreshCw, CalendarClock, AlertTriangle, MessageSquareWarning, ShieldCheck,
   Undo2, Siren, Factory, UserRound, Store, CircleDot, Tag, Layers, Boxes,
   MapPin, Wrench, UserCog, TrendingUp, TrendingDown, ClipboardList, Bug, Hourglass,
-  FileSpreadsheet,
+  FileSpreadsheet, ChevronRight, CornerDownRight,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -80,19 +80,32 @@ const STATUS_COLORS = { done: C_DONE, open: C_OPEN, waiting: C_WAIT, repeat: C_R
 const ACTIONABLE = ["done", "open", "waiting", "repeat"];
 const OPEN_STATES = ["open", "waiting", "repeat"];
 
+// Breakdown buckets that are NOT one of a brigadir's own leaders/cells. They are
+// folded, never dropped: without them an expanded row would stop summing to the
+// «Jami» the reader just looked at. Fixed order — they always trail the real
+// rows and never swap places between renders.
+const F_NOLEAD = "__nolead__", F_OTHER = "__other_cell__", F_NOCELL = "__nocell__";
+const FOLDS = [F_NOLEAD, F_OTHER, F_NOCELL];
+
+// THE place a status becomes a column. Every level of the «status by supervisor»
+// table goes through it — the whole-register split, one supervisor's row, and
+// each expanded leader/cell underneath — so the four columns cannot come to mean
+// different things at different depths of the same table.
+const emptySplit = () => ({ resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 });
+const bumpStatus = (m, st) => {
+  if (st === "done") m.resolved++;
+  else if (st === "repeat") m.recurring++;
+  else if (st === "waiting") m.waiting++;
+  else m.notSolved++; // open
+  m.total++;
+};
+
 // One brigadir's corrective-action split — the four buckets of the «status by
 // supervisor» table. Reused for the supervisor closure ribbon (current window)
 // and its previous-window twin that the ribbon's deltas are measured against.
 const statusSplit = (arr) => {
-  const m = { resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 };
-  for (const r of arr) {
-    if (!ACTIONABLE.includes(r.st)) continue;
-    if (r.st === "done") m.resolved++;
-    else if (r.st === "repeat") m.recurring++;
-    else if (r.st === "waiting") m.waiting++;
-    else m.notSolved++; // open
-    m.total++;
-  }
+  const m = emptySplit();
+  for (const r of arr) if (ACTIONABLE.includes(r.st)) bumpStatus(m, r.st);
   return m;
 };
 
@@ -204,6 +217,11 @@ const TXT = {
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
     fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", allBrig: "Barcha brigadirlar", mSheetName: "Jadvaldagi ism",
     fLead: "Lider", fCell: "Yacheyka", allLead: "Barcha liderlar", allCell: "Barcha yacheykalar",
+    brkByLead: "Liderlar bo‘yicha", brkByCell: "Yacheykalar bo‘yicha",
+    brkOther: "Boshqa sexlarning yacheykalari", brkNoCell: "Yacheyka aniqlanmagan",
+    brkNoLead: "Lider biriktirilmagan",
+    brkEmpty: "O‘z yacheykalaringiz bo‘yicha yozuv yo‘q",
+    brkOpen: "Taqsimotni ochish", brkClose: "Taqsimotni yopish",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
     xBtn: "Excel", xFailed: "Eksport qilib bo‘lmadi",
@@ -257,6 +275,11 @@ const TXT = {
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
     fShift: "Смена", shift: "Смена", shiftAll: "Барчаси", allBrig: "Барча бригадирлар", mSheetName: "Жадвалдаги исм",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Барча лидерлар", allCell: "Барча ячейкалар",
+    brkByLead: "Лидерлар бўйича", brkByCell: "Ячейкалар бўйича",
+    brkOther: "Бошқа сехларнинг ячейкалари", brkNoCell: "Ячейка аниқланмаган",
+    brkNoLead: "Лидер бириктирилмаган",
+    brkEmpty: "Ўз ячейкаларингиз бўйича ёзув йўқ",
+    brkOpen: "Тақсимотни очиш", brkClose: "Тақсимотни ёпиш",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
     textFailed: "Матнли майдонларни юклаб бўлмади",
     xBtn: "Excel", xFailed: "Экспорт қилиб бўлмади",
@@ -310,6 +333,11 @@ const TXT = {
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
     fShift: "Смена", shift: "Смена", shiftAll: "Все", allBrig: "Все бригадиры", mSheetName: "Имя в таблице",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Все лидеры", allCell: "Все ячейки",
+    brkByLead: "По лидерам", brkByCell: "По ячейкам",
+    brkOther: "Ячейки других цехов", brkNoCell: "Ячейка не определена",
+    brkNoLead: "Лидер не назначен",
+    brkEmpty: "Нет записей по вашим ячейкам",
+    brkOpen: "Показать разбивку", brkClose: "Скрыть разбивку",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     textFailed: "Не удалось загрузить текстовые поля",
     xBtn: "Excel", xFailed: "Не удалось выгрузить",
@@ -363,6 +391,11 @@ const TXT = {
     close: "Close", detail: "Non-conformance", otherWord: "Other",
     fShift: "Shift", shift: "Shift", shiftAll: "All", allBrig: "All brigadirs", mSheetName: "Name in the sheet",
     fLead: "Leader", fCell: "Cell", allLead: "All leaders", allCell: "All cells",
+    brkByLead: "By leader", brkByCell: "By cell",
+    brkOther: "Cells of other units", brkNoCell: "Cell unresolved",
+    brkNoLead: "No leader assigned",
+    brkEmpty: "No findings in your own cells",
+    brkOpen: "Show breakdown", brkClose: "Hide breakdown",
     loadFailed: "Could not load the register", retry: "Retry",
     textFailed: "Could not load the text fields",
     xBtn: "Excel", xFailed: "Export failed",
@@ -501,6 +534,13 @@ export default function Quality() {
   const [topMode, setTopMode] = usePersistentState("quality_top_mode", "product");
   const [accMode, setAccMode] = usePersistentState("quality_acc_mode", "brig");
   const [supStatMode, setSupStatMode] = usePersistentState("quality_sup_stat_mode", "count");
+  // Which brigadir rows are expanded, and what their children are grouped by.
+  // Both persist with the rest of the page's view state: coming back to a page
+  // that forgot what you had open is the same as never having opened it.
+  const [brkDim, setBrkDim] = usePersistentState("quality_brk_dim", "leader");
+  const [openSup, setOpenSup] = usePersistentState("quality_sup_open", []);
+  const toggleSup = (name) =>
+    setOpenSup((o) => (o.includes(name) ? o.filter((x) => x !== name) : [...o, name]));
   const [sort, setSort] = usePersistentState("quality_sort", { key: "date", dir: "desc" });
   const [page, setPage] = usePersistentState("quality_page", 1);
   const [openId, setOpenId] = useState(null);
@@ -798,15 +838,77 @@ export default function Quality() {
     for (const r of filtered) {
       const k = who(r);
       if (!k || !ACTIONABLE.includes(r.st)) continue;
-      const m = map[k] || (map[k] = { name: k, resolved: 0, notSolved: 0, waiting: 0, recurring: 0, total: 0 });
-      if (r.st === "done") m.resolved++;
-      else if (r.st === "repeat") m.recurring++;
-      else if (r.st === "waiting") m.waiting++;
-      else m.notSolved++; // open
-      m.total++;
+      const m = map[k] || (map[k] = { name: k, ...emptySplit() });
+      bumpStatus(m, r.st);
     }
     return Object.values(map).sort((a, b) => tl(a.name).localeCompare(tl(b.name)));
   }, [filtered, isProd, tl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Supervisor NAME → Manager.id. The table groups by name (that is what the QA
+  // sheet writes), but ownership is an id, so the breakdown below needs the hop.
+  const supIdOf = useMemo(() => {
+    const m = {};
+    for (const s of data?.supervisors || []) m[s.name] = s.id;
+    return m;
+  }, [data?.supervisors]);
+
+  // ── what sits UNDER an expanded brigadir row ──────────────────────────────
+  // Grouping is org-truthful, not name-based: a row lands under one of this
+  // brigadir's own leaders/cells only when the FAULTING cell belongs to their
+  // unit (cellMap[ci].mid === their Manager.id). `leader` is only a name —
+  // grouping by it alone would file another unit's leader under this brigadir
+  // and invent a reporting line that does not exist.
+  //
+  // Whatever isn't theirs stays VISIBLE as a fold row instead of being dropped:
+  // another unit's cell, a fault code that resolves to no known cell, and their
+  // own cell with no leader assigned yet. That is what keeps the children
+  // summing to the parent's «Jami» — a breakdown that contradicts the total
+  // directly above it is worse than no breakdown at all.
+  //
+  // `own` counts rows genuinely traceable to their workshop, and it is what
+  // makes a row expandable: it does not move with brkDim, so the chevron never
+  // appears and disappears as the reader flips leader ⇄ cell.
+  const breakdown = useMemo(() => {
+    if (!isProd) return {};
+    const out = {};
+    for (const r of filtered) {
+      const nm = who(r);
+      if (!nm || !ACTIONABLE.includes(r.st)) continue;
+      const b = out[nm] || (out[nm] = { kids: {}, own: 0, rows: [] });
+      const c = r.ci != null ? cellMap[r.ci] : null;
+      const supId = supIdOf[nm];
+      const mine = !!c && supId != null && c.mid === supId;
+      if (mine) b.own++;
+
+      let key, label;
+      if (!c)                     { key = F_NOCELL;   label = T.brkNoCell; }
+      else if (!mine)             { key = F_OTHER;    label = T.brkOther; }
+      else if (brkDim === "cell") { key = `c${c.id}`; label = cellNameOf(r, cellMap, lang); }
+      else if (!c.leader)         { key = F_NOLEAD;   label = T.brkNoLead; }
+      else                        { key = `l${c.leader}`; label = tl(c.leader); }
+
+      const kid = b.kids[key] || (b.kids[key] = { key, label, fold: FOLDS.includes(key), ...emptySplit() });
+      bumpStatus(kid, r.st);
+    }
+    for (const b of Object.values(out)) {
+      // Own buckets by volume — the biggest contributor is the one to act on.
+      // Folds trail in their fixed order so they never jump around.
+      b.rows = Object.values(b.kids).sort((x, y) =>
+        (x.fold ? 1 : 0) - (y.fold ? 1 : 0) ||
+        (x.fold ? FOLDS.indexOf(x.key) - FOLDS.indexOf(y.key) : 0) ||
+        y.total - x.total ||
+        x.label.localeCompare(y.label));
+      delete b.kids;
+    }
+    return out;
+  }, [filtered, isProd, brkDim, cellMap, lang, supIdOf, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A row only opens when there is something of the brigadir's OWN under it —
+  // a chevron that reveals nothing but «another unit's cells» is a dead end.
+  const canOpen = (name) => (breakdown[name]?.own || 0) > 0;
+  // The header's leader/cell toggle governs open rows only, so it appears only
+  // while at least one row that can actually open IS open.
+  const anyOpen = supStatus.some((s) => openSup.includes(s.name) && canOpen(s.name));
 
   // ── table ─────────────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
@@ -1148,6 +1250,17 @@ export default function Quality() {
 
   // Ribbon segments / legs — status traffic-light + the waiting purple. `invert`
   // is the direction that counts as good: only «resolved» wants to grow.
+  // The brigadir's own half of the drill-down. They ARE the parent row, so there
+  // is nothing to expand — the breakdown is simply always there under the hero,
+  // one compact ribbon per leader (or per cell). Same org-truthful rule and the
+  // same fold buckets as the table, so a brigadir and the office are reading the
+  // same numbers cut the same way, never two versions of "their" leaders.
+  const myBreakdown = useMemo(
+    () => (lockOwn && myName ? breakdown[myName]?.rows || [] : []),
+    [lockOwn, myName, breakdown]
+  );
+  const myOwn = lockOwn && myName ? breakdown[myName]?.own || 0 : 0;
+
   const closureLegs = myClosure ? [
     { k: "resolved",  v: myClosure.resolved,  d: myClosure.dResolved,  c: C_DONE,    label: T.stResolved,  invert: false },
     { k: "notSolved", v: myClosure.notSolved, d: myClosure.dNotSolved, c: C_OPEN,    label: T.stNotSolved, invert: true },
@@ -1366,8 +1479,18 @@ export default function Quality() {
       sup_status: isProd && !lockOwn && supStatus.length ? {
         title: T.secSupStatus, subtitle: T.supStatusSub, mode: supStatMode,
         columns: [T.colBrig, T.stResolved, T.stNotSolved, T.stRecurring, T.stWaiting, T.stTotal],
-        rows: supStatus.map((s) => ({ name: tl(s.name), values: statRow(s) })),
+        // The export mirrors the screen: a brigadir whose row is expanded brings
+        // its children along, indented, in the dimension currently on display.
+        // A workbook that silently flattened them would disagree with the table
+        // it was exported from.
+        rows: supStatus.flatMap((s) => [
+          { name: tl(s.name), values: statRow(s) },
+          ...(openSup.includes(s.name) && canOpen(s.name)
+            ? (breakdown[s.name]?.rows || []).map((k) => ({ name: k.label, values: statRow(k), child: true }))
+            : []),
+        ]),
         total: { name: T.stTotal, values: statRow(grand) },
+        dim: anyOpen ? (brkDim === "cell" ? T.brkByCell : T.brkByLead) : null,
       } : null,
 
       closure: lockOwn && myClosure ? {
@@ -1379,6 +1502,19 @@ export default function Quality() {
           share: myClosure.total ? Math.round((x.v / myClosure.total) * 1000) / 10 : 0,
           delta: x.d, deltaGood: good(x.d, x.invert),
         })),
+        // The per-leader ribbons come across as the table shape they'd have had
+        // in the office's copy — a spreadsheet is where a stack of 100% bands is
+        // worth less than six columns you can sort. Counts, not percentages:
+        // the brigadir's card has no count/% switch to mirror.
+        breakdown: myBreakdown.length ? {
+          title: brkDim === "cell" ? T.brkByCell : T.brkByLead,
+          columns: [brkDim === "cell" ? T.fCell : T.fLead,
+                    T.stResolved, T.stNotSolved, T.stRecurring, T.stWaiting, T.stTotal],
+          rows: myBreakdown.map((k) => ({
+            name: k.label, fold: k.fold,
+            values: [k.resolved, k.notSolved, k.recurring, k.waiting, k.total],
+          })),
+        } : null,
       } : null,
 
       aging: lockOwn && aging ? {
@@ -1635,14 +1771,31 @@ export default function Quality() {
                  recurring. Numbers/percent toggle: percentages are row-wise, so each
                  supervisor's four status columns sum to 100% and «Resolved» reads
                  as that supervisor's own resolution rate; the Total column stays a
-                 raw actionable count to anchor the percentages. ── */}
+                 raw actionable count to anchor the percentages.
+
+                 A brigadir row with work of its own opens into that same shape one
+                 level down — per leader, or per cell via the header toggle, which
+                 appears only once something is open because that is the only time
+                 it governs anything. Child percentages stay row-wise too, so a
+                 leader's «Resolved» is that leader's own closure rate and means
+                 exactly what it means on the row above. ── */}
           {isProd && !lockOwn && (
             <TableCard
               icon={ShieldCheck}
               title={T.secSupStatus}
               subtitle={T.supStatusSub}
-              right={<SegmentedToggle size="sm" value={supStatMode} onChange={setSupStatMode}
-                options={[["count", T.tglCount], ["pct", T.tglPct]]} />}
+              right={
+                <div className="flex items-center gap-2">
+                  {anyOpen && (
+                    <div className="brk-in">
+                      <SegmentedToggle size="sm" value={brkDim} onChange={setBrkDim}
+                        options={[["leader", T.fLead], ["cell", T.fCell]]} />
+                    </div>
+                  )}
+                  <SegmentedToggle size="sm" value={supStatMode} onChange={setSupStatMode}
+                    options={[["count", T.tglCount], ["pct", T.tglPct]]} />
+                </div>
+              }
             >
               <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
                 <tr>
@@ -1660,26 +1813,82 @@ export default function Quality() {
                     <td colSpan={6} className="px-3 py-10 text-center" style={{ color: "var(--text-4)" }}>{T.noMatch}</td>
                   </tr>
                 ) : supStatus.map((s) => {
-                  const cell = (v, color) => {
+                  const open = openSup.includes(s.name) && canOpen(s.name);
+                  const kids = open ? (breakdown[s.name]?.rows || []) : [];
+                  // Sibling <tr>s have no wrapper to point at, so aria-controls
+                  // names every child row it actually reveals.
+                  const rowId = `sup-brk-${s.name.replace(/\W+/g, "-")}`;
+                  const kidId = (i) => `${rowId}-${i}`;
+                  // One cell renderer for both depths: `m` is whichever split owns
+                  // the row, so percentages are always that row's own 100%.
+                  const cell = (m, v, color, child) => {
                     const text = supStatMode === "pct"
-                      ? `${s.total ? ((v / s.total) * 100).toFixed(2) : "0.00"}%`
+                      ? `${m.total ? ((v / m.total) * 100).toFixed(2) : "0.00"}%`
                       : v.toLocaleString("ru-RU");
                     return (
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold"
-                        style={{ color: v === 0 ? "var(--text-4)" : color }}>{text}</td>
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${child ? "text-[12px]" : ""}`}
+                        style={{ color: v === 0 ? "var(--text-4)" : color, opacity: child ? 0.92 : 1 }}>{text}</td>
                     );
                   };
-                  return (
-                    <tr key={s.name}>
-                      <td className="px-3 py-2 max-w-[220px] truncate" title={tl(s.name)} style={{ color: "var(--text-2)" }}>{tl(s.name)}</td>
-                      {cell(s.resolved, C_DONE)}
-                      {cell(s.notSolved, C_OPEN)}
-                      {cell(s.recurring, C_REPEAT)}
-                      {cell(s.waiting, C_WAITCOL)}
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>
-                        {s.total.toLocaleString("ru-RU")}
+                  const statCells = (m, child) => (
+                    <>
+                      {cell(m, m.resolved, C_DONE, child)}
+                      {cell(m, m.notSolved, C_OPEN, child)}
+                      {cell(m, m.recurring, C_REPEAT, child)}
+                      {cell(m, m.waiting, C_WAITCOL, child)}
+                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${child ? "text-[12px]" : ""}`}
+                        style={{ color: child ? "var(--text-2)" : "var(--text-1)" }}>
+                        {m.total.toLocaleString("ru-RU")}
                       </td>
-                    </tr>
+                    </>
+                  );
+                  return (
+                    <Fragment key={s.name}>
+                      <tr style={open ? { background: "var(--bg-inner)" } : undefined}>
+                        <td className="px-3 py-2 max-w-[240px]"
+                          style={{ color: "var(--text-2)" }}>
+                          {canOpen(s.name) ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleSup(s.name)}
+                              aria-expanded={open}
+                              aria-controls={kids.length ? kids.map((_, i) => kidId(i)).join(" ") : undefined}
+                              title={open ? T.brkClose : T.brkOpen}
+                              className="flex items-center gap-1.5 w-full text-left -my-2 py-2 pr-1 rounded-md min-w-0
+                                         transition-colors hover:text-[var(--text-1)]
+                                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-ring)]"
+                            >
+                              <ChevronRight size={13} className="flex-shrink-0 transition-transform duration-150"
+                                style={{ color: "var(--brand-text)", transform: open ? "rotate(90deg)" : "none" }} />
+                              <span className="truncate" title={tl(s.name)}>{tl(s.name)}</span>
+                            </button>
+                          ) : (
+                            // No own workshop behind this name (a technologist, a
+                            // store, an unmatched spelling) — nothing to open, so
+                            // no chevron promising otherwise.
+                            <span className="block truncate pl-[19px]" title={tl(s.name)}>{tl(s.name)}</span>
+                          )}
+                        </td>
+                        {statCells(s, false)}
+                      </tr>
+
+                      {kids.map((k, i) => (
+                        <tr key={k.key} id={kidId(i)} className="brk-in"
+                          style={{ background: "var(--bg-inner)" }}>
+                          <td className="px-3 py-2 max-w-[240px]">
+                            <span className="flex items-center gap-1.5 min-w-0 pl-[19px]">
+                              <CornerDownRight size={11} className="flex-shrink-0"
+                                style={{ color: "var(--text-4)" }} />
+                              <span className="truncate text-[12px]"
+                                style={{ color: k.fold ? "var(--text-4)" : "var(--text-3)",
+                                         fontStyle: k.fold ? "italic" : "normal" }}
+                                title={k.label}>{k.label}</span>
+                            </span>
+                          </td>
+                          {statCells(k, true)}
+                        </tr>
+                      ))}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1694,7 +1903,11 @@ export default function Quality() {
                  movement vs the previous window. ── */}
           {isProd && lockOwn && myClosure && (
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
-              <SectionHead icon={ShieldCheck} title={T.secMyClosure} subtitle={T.myClosureSub} />
+              <SectionHead icon={ShieldCheck} title={T.secMyClosure} subtitle={T.myClosureSub}
+                right={myOwn > 0 && (
+                  <SegmentedToggle size="sm" value={brkDim} onChange={setBrkDim}
+                    options={[["leader", T.fLead], ["cell", T.fCell]]} />
+                )} />
               <div className="px-4 py-4">
                 <div className="flex items-end justify-between gap-4 mb-3">
                   <div className="min-w-0">
@@ -1755,6 +1968,61 @@ export default function Quality() {
                     </div>
                   ))}
                 </div>
+
+                {/* ── the same split, one level down ──
+                       the office expands a brigadir row to get here; the brigadir
+                       is that row, so their breakdown is simply always open. Each
+                       entry repeats the hero's shape at a glance — closure rate,
+                       volume, and one 100% band — because a table of eight leaders
+                       × four statuses is unreadable on the phone this is used on.
+                       Rows that aren't their workshop stay visible and folded, so
+                       the parts still add up to the total above. ── */}
+                {myBreakdown.length > 0 && (
+                  <div className="mt-4 pt-3.5" style={{ borderTop: "1px solid var(--border)" }}>
+                    <div className="text-[10px] uppercase tracking-wider mb-2.5" style={{ color: "var(--text-4)" }}>
+                      {brkDim === "cell" ? T.brkByCell : T.brkByLead}
+                    </div>
+                    {myOwn === 0 && (
+                      <div className="text-[11px] mb-2.5" style={{ color: "var(--text-4)" }}>{T.brkEmpty}</div>
+                    )}
+                    <div className="flex flex-col gap-3">
+                      {myBreakdown.map((k) => {
+                        const rate = k.total ? (k.resolved / k.total) * 100 : 0;
+                        const legs = [
+                          { v: k.resolved,  c: C_DONE,    l: T.stResolved },
+                          { v: k.notSolved, c: C_OPEN,    l: T.stNotSolved },
+                          { v: k.recurring, c: C_REPEAT,  l: T.stRecurring },
+                          { v: k.waiting,   c: C_WAITCOL, l: T.stWaitShort },
+                        ];
+                        return (
+                          <div key={k.key}>
+                            <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                              <span className="text-[12px] truncate min-w-0" title={k.label}
+                                style={{ color: k.fold ? "var(--text-4)" : "var(--text-2)",
+                                         fontStyle: k.fold ? "italic" : "normal" }}>
+                                {k.label}
+                              </span>
+                              <span className="flex items-baseline gap-2 flex-shrink-0 tabular-nums">
+                                <span className="text-[13px] font-bold" style={{ color: C_DONE }}>
+                                  {rate.toFixed(1)}%
+                                </span>
+                                <span className="text-[11px]" style={{ color: "var(--text-4)" }}>
+                                  {k.total.toLocaleString("ru-RU")}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="flex h-[14px] rounded-md overflow-hidden gap-[2px]">
+                              {legs.filter((x) => x.v > 0).map((x) => (
+                                <div key={x.l} style={{ flex: `${x.v} 1 0%`, minWidth: 6, background: x.c }}
+                                  title={`${x.l} — ${x.v.toLocaleString("ru-RU")} (${((x.v / k.total) * 100).toFixed(1)}%)`} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

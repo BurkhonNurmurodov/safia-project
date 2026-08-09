@@ -255,18 +255,33 @@ def _overview(wb: Workbook, p: dict) -> None:
 
     sup = p.get("sup_status")
     if sup and sup.get("rows"):
-        row = _section(ws, row, C1, C2, sup.get("title", ""), sup.get("subtitle", ""))
+        # The page's leader/cell dimension rides along in the subtitle whenever
+        # the export carries expanded rows — otherwise an indented «Aliyev B.»
+        # under a brigadir gives no clue what it is a breakdown BY.
+        sub = sup.get("subtitle", "")
+        if sup.get("dim"):
+            sub = f"{sub} · {sup['dim']}" if sub else sup["dim"]
+        row = _section(ws, row, C1, C2, sup.get("title", ""), sub)
         cols = sup.get("columns") or []
         pct = sup.get("mode") == "pct"
         _head_row(ws, row, C1, cols, span=2, first_span=2)
         row += 1
         colors = [GREEN, RED, ORANGE, PURPLE]
         first = row
-        for i, r in enumerate(sup["rows"]):
-            ws.row_dimensions[row].height = 17
-            bg = _fill(PANEL if i % 2 == 0 else BAND)
-            _block(ws, row, C1, row, C1 + 1, r.get("name") or "", fill=bg, border=BOX,
-                   font=Font(name=FONT, size=10, color=INK))
+        # Zebra follows the PARENT count, so a brigadir's children sit inside
+        # their parent's band instead of restarting the stripe mid-group.
+        parents = 0
+        for r in sup["rows"]:
+            child = bool(r.get("child"))
+            if not child:
+                parents += 1
+            ws.row_dimensions[row].height = 15 if child else 17
+            bg = _fill(PANEL if parents % 2 == 1 else BAND)
+            name = f"↳ {r.get('name') or ''}" if child else (r.get("name") or "")
+            _block(ws, row, C1, row, C1 + 1, name, fill=bg, border=BOX,
+                   align=Alignment(horizontal="left", vertical="center", indent=3) if child else None,
+                   font=Font(name=FONT, size=9 if child else 10,
+                             italic=child, color=INK_SOFT if child else INK))
             vals = r.get("values") or []
             for j, v in enumerate(vals):
                 c = C1 + 2 + j * 2
@@ -274,7 +289,8 @@ def _overview(wb: Workbook, p: dict) -> None:
                 color = INK if last else (colors[j] if v else INK_FAINT)
                 _block(ws, row, c, row, c + 1, v, fill=bg, border=BOX, align=RIGHT,
                        fmt=(NUM if last or not pct else PCT2),
-                       font=Font(name=FONT, size=10, bold=True, color=color))
+                       font=Font(name=FONT, size=9 if child else 10,
+                                 bold=not child, color=color))
             row += 1
         total = sup.get("total")
         if total:
@@ -338,6 +354,33 @@ def _closure(ws: Worksheet, row: int, c1: int, c2: int, p: dict) -> int:
                    border=Border(left=_side(), right=_side(), bottom=_side()),
                    font=Font(name=FONT, size=9, color=dcolor if txt else INK_FAINT))
         row += 4
+
+        # …and the same split one level down, per leader or per cell. On screen
+        # this is a stack of 100% bands (it is read on a phone); in a workbook
+        # the table form is worth more, and it matches what the office sees when
+        # it expands this brigadir's row in the full matrix.
+        brk = cl.get("breakdown")
+        if brk and brk.get("rows"):
+            row = _section(ws, row, c1, c2, brk.get("title", ""), "")
+            _head_row(ws, row, c1, brk.get("columns") or [], span=2, first_span=2)
+            row += 1
+            bcolors = [GREEN, RED, ORANGE, PURPLE]
+            for i, r in enumerate(brk["rows"]):
+                fold = bool(r.get("fold"))
+                ws.row_dimensions[row].height = 16
+                bg = _fill(PANEL if i % 2 == 0 else BAND)
+                _block(ws, row, c1, row, c1 + 1, r.get("name") or "", fill=bg, border=BOX,
+                       font=Font(name=FONT, size=10, italic=fold,
+                                 color=INK_SOFT if fold else INK))
+                vals = r.get("values") or []
+                for j, v in enumerate(vals):
+                    c = c1 + 2 + j * 2
+                    last = j == len(vals) - 1
+                    color = INK if last else (bcolors[j] if v else INK_FAINT)
+                    _block(ws, row, c, row, c + 1, v, fill=bg, border=BOX, align=RIGHT, fmt=NUM,
+                           font=Font(name=FONT, size=10, bold=True, color=color))
+                row += 1
+            row += 1
 
     ag = p.get("aging")
     if ag and ag.get("buckets"):

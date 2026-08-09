@@ -154,6 +154,12 @@ body.sidebar-open { overflow: hidden; }
 @keyframes saveBarIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .savebar-in { animation: saveBarIn .2s var(--ease-out) both; }
 
+/* Drill-down rows revealed under a table row (and the header control that only
+   governs them while they are open). Opacity + a 3px lift only — animating a
+   <tr>'s height reflows the whole table on every frame and reads as jitter. */
+@keyframes brkIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.brk-in { animation: brkIn .16s var(--ease-out) both; }
+
 /* Notification bell — swing the bell + pop the badge when a new alert lands. */
 @keyframes bellSwing { 0%,100% { transform: rotate(0); } 15% { transform: rotate(13deg); } 32% { transform: rotate(-11deg); } 50% { transform: rotate(7deg); } 68% { transform: rotate(-4deg); } 84% { transform: rotate(2deg); } }
 @keyframes badgePop  { 0% { transform: scale(0); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
@@ -194,7 +200,7 @@ body.sidebar-open { overflow: hidden; }
    killing the animation is safe. */
 @media (prefers-reduced-motion: reduce) {
   .page-enter, .modal-backdrop, .modal-card, .toast-in, .bell-swing, .badge-pop,
-  .savebar-in { animation: none !important; }
+  .savebar-in, .brk-in { animation: none !important; }
   .sidebar-ind { transition: none !important; }
   .nav-grp-items, .nav-grp-chev { transition: none !important; }
 }
