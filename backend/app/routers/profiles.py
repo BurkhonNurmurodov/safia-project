@@ -30,10 +30,13 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile,
+)
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt import PyJWTError as JWTError
+from PIL import Image, ImageOps
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -43,12 +46,15 @@ from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
-from app.identity import parse_profile_key, profile_display_name, profile_holders
+from app.identity import (
+    parse_profile_key, profile_display_name, profile_holders, viewer_profile_key,
+)
 from app.permissions import require_page
 from app.models import (
-    Admin, Cell, LeaderConcern, LeaderTask, Manager, RoleProfile, TelegramUser,
-    TelegramUserRole, Translation, WebCredential,
+    Admin, Cell, Factory, LeaderConcern, LeaderTask, Manager, ProfilePhoto,
+    RoleProfile, TelegramUser, TelegramUserRole, Translation, WebCredential,
 )
+from app.upload_guard import validate_avatar
 from app.reg_token import validate_reg_token
 from app.routers.auth import _validate_init_data
 from app.xlsx_delivery import deliver_xlsx

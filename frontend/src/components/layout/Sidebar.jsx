@@ -315,7 +315,11 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 >
                   Safia Dashboard
                 </div>
-                <div className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-3)" }}>
+                <div
+                  className="text-[11px] truncate"
+                  style={{ color: "var(--text-3)" }}
+                  title={t("nav.appSubtitle")}
+                >
                   {t("nav.appSubtitle")}
                 </div>
               </div>

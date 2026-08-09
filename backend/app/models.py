@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, Text, ForeignKey, func, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, LargeBinary, Text, ForeignKey, func, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -393,6 +393,25 @@ class WebCredential(Base):
     last_login_at   = Column(DateTime(timezone=True), nullable=True)
     password_set_at = Column(DateTime(timezone=True), nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProfilePhoto(Base):
+    """A profile's avatar, keyed by the canonical profile key like the web
+    credential above — several Telegram accounts holding one profile share one
+    photo, exactly as they share everything else the profile owns.
+
+    Bytes live in the DB rather than on disk on purpose: the prod checkout is
+    hard-reset on every deploy, so server-side files are state that has to be
+    remembered about — a DB row survives deploys, restores and the dbdump tab
+    for free. Images are re-encoded server-side (Pillow, ≤512px JPEG) before
+    they land here, so a row is small and never carries the original upload."""
+    __tablename__ = "profile_photos"
+
+    profile_key = Column(String, primary_key=True)
+    mime        = Column(String, nullable=False, default="image/jpeg")
+    data        = Column(LargeBinary, nullable=False)
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(),
+                         onupdate=func.now())
 
 
 class Cell(Base):

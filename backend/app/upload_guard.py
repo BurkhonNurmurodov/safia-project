@@ -123,3 +123,23 @@ def validate_broadcast_media(file: UploadFile) -> None:
     forwarded to Telegram, not run locally, so an extension whitelist that blocks
     executables/scripts is sufficient.)"""
     check_extension(file.filename, BROADCAST_EXTS)
+
+
+# Profile photos. Formats Pillow decodes without extra native codecs; the real
+# sanitizer is the mandatory server-side re-encode to JPEG that follows this
+# check, so the whitelist only has to keep obvious non-images out early.
+AVATAR_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+
+_IMAGE_MAGIC = (
+    b"\xff\xd8\xff",          # JPEG
+    b"\x89PNG\r\n\x1a\n",     # PNG
+    b"RIFF",                  # WEBP (RIFF....WEBP — Pillow verifies the rest)
+)
+
+
+def validate_avatar(file: UploadFile, content: bytes) -> None:
+    """Enforce that an uploaded profile photo is a jpg/png/webp by extension AND
+    leading bytes. Call after reading the bytes; the caller must still re-encode
+    through Pillow, which is what actually neutralises a crafted payload."""
+    check_extension(file.filename, AVATAR_EXTS)
+    check_magic(content, _IMAGE_MAGIC)
