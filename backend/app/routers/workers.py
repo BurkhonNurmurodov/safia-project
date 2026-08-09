@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, and_, tuple_
+from sqlalchemy import func, or_, and_, case, tuple_
 
 from app.database import get_db
 from app.permissions import require_page
@@ -28,6 +28,19 @@ _KNOWN_TITLES = or_(
     Attendance.job_title.in_(["nan", "NaN"]),
 )
 CALC_ROWS_FILTER = and_(_KNOWN_TITLES, Attendance.hours_worked > 0)
+
+# A worker who did NOT come has no «Отработано» value — the day cell holds a
+# marker instead of a clock string, so the parsers store hours_worked = NULL
+# (see services/attendance_sheet.clock_metrics). Presence is therefore
+# hours > 0, absence is everything else, and both are facts in the export
+# rather than anything derived.
+_CAME = Attendance.hours_worked > 0
+# Cyrillic «О» = отпуск — a long leave (whole-period runs in the data), not a
+# skipped shift. Those rows sit on the list all month, so they are counted out
+# of the absences separately instead of reading as people who chose not to
+# turn up. `X` (the other marker) is a day off or a no-show and the export does
+# not distinguish the two, so it stays in the plain absent bucket.
+LEAVE_MARKER = "О"
 
 # Roles that count towards the zagruzka staffing calculation (the CALC set).
 # Everything else is a real job title that keeps its own role slice so the
@@ -155,6 +168,46 @@ def get_headcount(
     for mgr_id, d, hc in daily_q.group_by(Attendance.manager_id, Attendance.date).all():
         daily_hc.setdefault(mgr_id, {})[d] = hc
 
+    # Roster vs came, per (manager, day) — THE attendance pair: how many people
+    # were on the supervisor's list that day and how many of them turned up.
+    # Every assigned worker is in the export whether or not they came, so both
+    # numbers are read, never inferred; job title is deliberately NOT filtered
+    # here (the question is "of the people on the list", not "of the konditers").
+    #
+    # This replaces present ÷ `total` as the page's attendance rate. `total` is
+    # the period UNION of workers who came at least once, so on a single-day
+    # range it EQUALS that day's present count — every brigadir scored a flat
+    # 100 % — and over a longer range it drifts down for no nameable reason.
+    roster_q = (
+        db.query(
+            Attendance.manager_id,
+            Attendance.date,
+            func.count(func.distinct(Attendance.worker_name)).label("roster"),
+            func.count(func.distinct(
+                case((_CAME, Attendance.worker_name)))).label("came"),
+            func.count(func.distinct(
+                case((and_(or_(Attendance.hours_worked.is_(None), Attendance.hours_worked <= 0),
+                           func.trim(Attendance.clock_in_out).like(f"{LEAVE_MARKER}%")),
+                      Attendance.worker_name)))).label("on_leave"),
+        )
+        .join(Manager, Manager.id == Attendance.manager_id)
+        .filter(Attendance.date >= date_from, Attendance.date <= date_to)
+        .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
+        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
+    )
+    if shift:
+        roster_q = roster_q.filter(Manager.shift == shift)
+    if scoped is not None:
+        roster_q = roster_q.filter(Manager.id.in_(scoped))
+    roster: dict[int, dict[date, dict]] = {}
+    for mgr_id, d, r_cnt, came, on_leave in roster_q.group_by(
+            Attendance.manager_id, Attendance.date).all():
+        roster.setdefault(mgr_id, {})[d] = {
+            "roster": r_cnt, "came": came,
+            "absent": r_cnt - came, "on_leave": on_leave,
+        }
+
     # Official HC per (manager name, day) — HeadcountData spells brigadirs in
     # either alphabet, so accept every known spelling and resolve rows back to
     # the canonical Manager.name (same convention as brigadirs.py).
@@ -178,13 +231,32 @@ def get_headcount(
         days = daily_hc.get(m["manager_id"], {})
         off  = official.get(m["name"], {})
         both = [(days[d], off[d]) for d in days if d in off]
-        m["days"] = len(days)
+        rd   = roster.get(m["manager_id"], {})
+        # Days WITH A LIST, not days somebody came — the two differ exactly on
+        # the days worth looking at.
+        m["days"] = len(rd)
         m["total_all"] = total_all.get(m["manager_id"], m["total"])
         m["avg_daily_hc"] = round(sum(days.values()) / len(days), 1) if days else 0
-        # Per-day present count feeds the supervisor×day attendance heatmap on
-        # the frontend. Only confirmed days appear; the grid greys the rest.
-        m["daily"] = [{"date": d.strftime("%d.%m.%Y"), "hc": hc}
-                      for d, hc in sorted(days.items())]
+        # Per-day roster/came pair — feeds the supervisor×day attendance heatmap
+        # and its per-cell breakdown. Iterated over the ROSTER days, not the
+        # present ones: a day where nobody came still has a list, and dropping it
+        # would hide the only 0 % the grid ever needs to show. `hc` is the
+        # zagruzka-role present count kept beside it (what official_hc compares
+        # against); only confirmed days appear, the grid greys the rest.
+        m["daily"] = [{"date": d.strftime("%d.%m.%Y"), "hc": days.get(d), **rd[d]}
+                      for d in sorted(rd)]
+        # Period totals, summed then divided — NOT an average of daily rates,
+        # which would let a 3-person day weigh as much as a 120-person one.
+        r_sum = sum(v["roster"] for v in rd.values())
+        c_sum = sum(v["came"] for v in rd.values())
+        n     = len(rd) or 1
+        m["avg_roster"]  = round(r_sum / n, 1)
+        m["avg_came"]    = round(c_sum / n, 1)
+        m["avg_absent"]  = round((r_sum - c_sum) / n, 1)
+        m["avg_leave"]   = round(sum(v["on_leave"] for v in rd.values()) / n, 1)
+        m["roster_sum"]  = r_sum
+        m["came_sum"]    = c_sum
+        m["att_rate"]    = round(c_sum / r_sum * 100) if r_sum else None
         if both:
             avg_vfx = sum(v for v, _ in both) / len(both)
             avg_off = sum(o for _, o in both) / len(both)

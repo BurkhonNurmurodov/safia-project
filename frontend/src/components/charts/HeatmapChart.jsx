@@ -119,7 +119,7 @@ function SingleGrid({
   dates, managers, data, mode, labelColor,
   onCellClick, onPendingClick, segs, selection, toggleSel, clearSel,
   managerIds, commentedCells, isoOf, approvedCells,
-  avgMode, onCycleAvg,
+  avgMode, onCycleAvg, cellTitle,
   rowLabel = "Brigadir", labelWidth = LABEL_W,
 }) {
   const { t } = useLang();
@@ -375,7 +375,7 @@ function SingleGrid({
                       }}
                       title={pending
                         ? t(PENDING_MSG_KEYS[pendingReason] || "zagruzka.pendingNotClosed")
-                        : undefined}
+                        : cellTitle?.(cell, name, d)}
                       style={{
                         ...buildCellStyle({
                           color, grayed,
@@ -447,6 +447,11 @@ export default function HeatmapChart({
   commentedCells = new Set(),
   approvedCells = null,
   onCellClick = () => {},
+  // Hover text for a cell that HAS a value: (cell, rowName, date) → string.
+  // The percentage alone rarely says enough — the attendance grid uses this to
+  // spell out the counts behind it ("on the list 85 · came 70 · absent 15").
+  // Pending cells keep their own blocked-reason title.
+  cellTitle,
   fullscreen = false,
   // Row-identity column: what the rows ARE, and how much room their names need.
   // Defaults are the fleet page's (supervisors, whose names fit 172px); the
@@ -486,7 +491,7 @@ export default function HeatmapChart({
     onPendingClick: (name, date, reason) => setPendingInfo({ name, date, reason }),
     segs, selection, toggleSel, clearSel,
     managerIds, commentedCells, isoOf, approvedCells, fullscreen,
-    avgMode, onCycleAvg: cycleAvg,
+    avgMode, onCycleAvg: cycleAvg, cellTitle,
     rowLabel, labelWidth,
   };
 

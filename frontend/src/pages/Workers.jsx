@@ -9,6 +9,7 @@ import {
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
+import Modal from "../components/ui/Modal";
 import EmptyState from "../components/ui/EmptyState";
 import Tooltip from "../components/ui/Tooltip";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -44,6 +45,7 @@ const ROLES = ["Konditer", "Fasovshik", "Zagatovitel", "Other"]; // zagruzka-cou
 // Used only by the role-share donut + trend.
 const ROLE_EXTRA_COLORS = CATEGORY_COLORS.slice(3);
 const PRESENT_COLOR  = "#22c55e";   // явка / actual present (green) — used by the attendance table
+const ABSENT_COLOR   = "#f59e0b";   // did not come — amber, the same "gap" hue the shortfall column uses
 // Traffic-light bands for the явка plan-attainment bar (present ÷ штат): green
 // fully staffed, yellow moderate shortfall, red serious shortfall.
 const ATTAIN_RED = "#ef4444", ATTAIN_YELLOW = "#eab308", ATTAIN_GREEN = "#22c55e";
@@ -60,17 +62,19 @@ const REQ_COLORS = { exchange: CATEGORY_COLORS[0], roleChange: CATEGORY_COLORS[1
 const SUP_COLORS = CATEGORY_COLORS;
 
 // The attendance heatmap reuses the fleet HeatmapChart, so it takes the same
-// banded {from,color} segments — but a single-hue sequential green ramp (shades
-// of green) instead of the fleet's traffic-light scale. Bands are keyed to the
-// attendance % (0–100); HeatmapChart auto-contrasts the label text per band.
+// banded {from,color} segments. Traffic-light, on the same 90 / 75 breaks as
+// the table's rate column (`rateColor`) so a cell and its row's % never
+// disagree about whether a day was good. It was a single-hue green ramp while
+// the metric was present ÷ period-union — which was ~100 % for everybody, so
+// every shade meant "fine"; a real came ÷ on-the-list rate is a status, and a
+// 60 % day must not read as green. Shades within a hue rank days inside a band.
 const ATT_SEGMENTS = [
-  { from: 0,  color: "#dcfce7" }, // < 40%  → lightest green
-  { from: 40, color: "#bbf7d0" }, // 40–49%
-  { from: 50, color: "#86efac" }, // 50–59%
-  { from: 60, color: "#4ade80" }, // 60–69%
-  { from: 70, color: "#22c55e" }, // 70–79%
-  { from: 80, color: "#16a34a" }, // 80–89%
-  { from: 90, color: "#15803d" }, // ≥ 90%  → darkest green
+  { from: 0,  color: "#b91c1c" }, // < 60%   → deep red
+  { from: 60, color: "#ef4444" }, // 60–74%  → red
+  { from: 75, color: "#eab308" }, // 75–84%  → yellow
+  { from: 85, color: "#84cc16" }, // 85–89%  → lime (approaching target)
+  { from: 90, color: "#22c55e" }, // 90–94%  → green
+  { from: 95, color: "#15803d" }, // ≥ 95%   → darkest green
 ];
 // Role-transition matrix bins — single violet hue on log-ish breaks so the top
 // flow is unmistakably darkest (a flat 11+ band rendered 35 and 543 identical).
@@ -166,19 +170,29 @@ export default function Workers() {
 
   // ── headcount aggregates ───────────────────────────────────────────────────────
   const totalWorkers  = headcount.reduce((s, m) => s + m.total, 0);
-  const avgPresent    = headcount.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
-  const attRate       = totalWorkers ? Math.round((avgPresent / totalWorkers) * 100) : null;
+  // Attendance = came ÷ on the list, summed over the period then divided (not
+  // an average of per-brigadir rates, which would weigh a 37-worker cell the
+  // same as a 125-worker one). avgOnList / avgCame are the same pair per
+  // average day, which is what the KPI sub-line spells out.
+  const rosterSum     = headcount.reduce((s, m) => s + (m.roster_sum || 0), 0);
+  const cameSum       = headcount.reduce((s, m) => s + (m.came_sum || 0), 0);
+  const attRate       = rosterSum ? Math.round((cameSum / rosterSum) * 100) : null;
+  const avgOnList     = headcount.reduce((s, m) => s + (m.avg_roster || 0), 0);
+  const avgCame       = headcount.reduce((s, m) => s + (m.avg_came || 0), 0);
+  const avgAbsent     = headcount.reduce((s, m) => s + (m.avg_absent || 0), 0);
+  const avgLeave      = headcount.reduce((s, m) => s + (m.avg_leave || 0), 0);
   const withOfficial  = headcount.filter((m) => m.official_hc != null);
   const officialSum   = withOfficial.reduce((s, m) => s + (m.official_hc || 0), 0);
   const presentOfOff  = withOfficial.reduce((s, m) => s + (m.avg_daily_hc || 0), 0);
   const shortfall     = Math.max(0, Math.round((officialSum - presentOfOff) * 10) / 10);
   const mismatchMgrs  = headcount.filter((m) => (m.mismatch_days || 0) > 0);
 
-  // per-supervisor derived rate + shortfall
+  // per-supervisor derived rate + shortfall. `rate` is the backend's came ÷
+  // on-the-list for the period; the old avg_daily_hc ÷ total was present over
+  // "everyone who came at least once", i.e. 100 % on any single-day range.
   const rows = useMemo(() => headcount.map((m) => {
-    const rate = m.total ? Math.round(((m.avg_daily_hc || 0) / m.total) * 100) : null;
-    const gap  = m.official_hc != null ? Math.round((m.official_hc - (m.avg_daily_hc || 0)) * 10) / 10 : null;
-    return { ...m, rate, gap };
+    const gap = m.official_hc != null ? Math.round((m.official_hc - (m.avg_daily_hc || 0)) * 10) / 10 : null;
+    return { ...m, rate: m.att_rate ?? null, gap };
   }), [headcount]);
 
   function onSort(key) {
@@ -190,7 +204,8 @@ export default function Workers() {
     if (!sort.key) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
     const val = {
-      name: (m) => tl(m.name) || "", total: (m) => m.total, avg: (m) => m.avg_daily_hc || 0,
+      name: (m) => tl(m.name) || "", onList: (m) => m.avg_roster || 0,
+      came: (m) => m.avg_came || 0, absent: (m) => m.avg_absent || 0,
       rate: (m) => m.rate ?? -1, official: (m) => m.official_hc ?? -1, gap: (m) => m.gap ?? -999,
       ...Object.fromEntries(ROLES.map((r) => [r, (m) => m.by_role[r] || 0])),
     }[sort.key];
@@ -428,9 +443,10 @@ export default function Workers() {
   };
 
   // Attendance heatmap — reuses the fleet HeatmapChart (supervisor rows × day
-  // cols). Each cell is the per-day attendance rate present/roster (same metric
-  // as the `rate` column). HeatmapChart reads `net_util` as a 0–1 fraction and
-  // renders it as a %; missing days stay null → shown as "—".
+  // cols). Each cell is that day's came ÷ on-the-list (same metric as the
+  // `rate` column), and the counts behind it ride along for the hover text.
+  // HeatmapChart reads `net_util` as a 0–1 fraction and renders it as a %;
+  // days with no list stay null → shown as "—".
   const heatDates = useMemo(() => {
     const set = new Set();
     headcount.forEach((m) => (m.daily || []).forEach((d) => set.add(d.date)));
@@ -440,16 +456,35 @@ export default function Workers() {
   const heatData = useMemo(() => {
     const out = {};
     headcount.forEach((m) => {
-      const byDate = Object.fromEntries((m.daily || []).map((d) => [d.date, d.hc]));
+      const byDate = Object.fromEntries((m.daily || []).map((d) => [d.date, d]));
       const row = {};
       heatDates.forEach((dt) => {
-        const hc = dt in byDate ? byDate[dt] : null;
-        row[dt] = { net_util: hc != null && m.total ? hc / m.total : null };
+        const d = byDate[dt];
+        row[dt] = d && d.roster
+          ? { net_util: d.came / d.roster, roster: d.roster, came: d.came,
+              absent: d.absent, on_leave: d.on_leave }
+          : { net_util: null };
       });
       out[m.name] = row;
     });
     return out;
   }, [headcount, heatDates]);
+  // Hover breakdown for a heatmap cell — the percentage says how bad, these say
+  // how many, which is the number a supervisor is actually asked about.
+  const heatTitle = (cell) => {
+    if (!cell || cell.roster == null) return undefined;
+    const parts = [
+      `${t("workers.onList")}: ${cell.roster}`,
+      `${t("workers.came")}: ${cell.came}`,
+      `${t("workers.absent")}: ${cell.absent}`,
+    ];
+    if (cell.on_leave > 0) parts.push(`${t("workers.onLeave")}: ${cell.on_leave}`);
+    return parts.join(" · ");
+  };
+  // …and the same breakdown on TAP, because `title` is a hover affordance and
+  // this platform is read on a phone: without it the counts behind a cell would
+  // exist only for people on a desktop.
+  const [dayCell, setDayCell] = useState(null);   // { name, date, cell }
 
   // Movements by day (stacked columns).
   const reqDaySeries = [
@@ -635,17 +670,31 @@ export default function Workers() {
       {view === "attendance" ? (
         <>
           {/* KPI row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6">
-            {isLoading ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />) : (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6">
+            {isLoading ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />) : (
               <>
-                <KPICard icon={Users} color="#3b82f6" label={t("workers.kpi.workforce")}
-                  value={totalWorkers} sub={`${headcount.length} ${t("workers.kpi.supervisors")}`}
-                  tooltip={t("workers.tip.workforce")} />
-                <KPICard icon={UserCheck} color="#22c55e" label={t("workers.kpi.avgPresent")}
-                  value={fmt1(Math.round(avgPresent * 10) / 10)} tooltip={t("workers.tip.avgPresent")} />
+                {/* The attendance pair, in the order the question is asked:
+                    how many were on the list → how many came → how many did
+                    not → what that is as a rate. */}
+                <KPICard icon={Users} color="#3b82f6" label={t("workers.kpi.onList")}
+                  value={fmt1(Math.round(avgOnList * 10) / 10)}
+                  sub={`${headcount.length} ${t("workers.kpi.supervisors")} · ${totalWorkers} ${t("workers.kpi.uniqueShort")}`}
+                  tooltip={t("workers.tip.onList")} />
+                <KPICard icon={UserCheck} color="#22c55e" label={t("workers.kpi.came")}
+                  value={fmt1(Math.round(avgCame * 10) / 10)} tooltip={t("workers.tip.came")} />
+                <KPICard icon={UserMinus} color={ABSENT_COLOR} label={t("workers.kpi.absent")}
+                  value={fmt1(Math.round(avgAbsent * 10) / 10)}
+                  sub={avgLeave >= 0.1 ? `${fmt1(Math.round(avgLeave * 10) / 10)} ${t("workers.onLeaveShort")}` : undefined}
+                  tooltip={t("workers.tip.absent")} />
                 <KPICard icon={TrendingUp} color="#14b8a6" label={t("workers.kpi.attRate")}
-                  value={attRate == null ? "—" : `${attRate}%`} tooltip={t("workers.tip.attRate")} />
-                <KPICard icon={UserMinus} color="#f59e0b" label={t("workers.kpi.shortfall")}
+                  value={attRate == null ? "—" : `${attRate}%`}
+                  sub={rosterSum ? `${cameSum} / ${rosterSum}` : undefined}
+                  tooltip={t("workers.tip.attRate")} />
+                {/* Штат gap — a different comparison (plan vs actual, not list
+                    vs came) but it carries the verifix/official mismatch alarm,
+                    so it stays in the headline row rather than living only in
+                    the table. */}
+                <KPICard icon={AlertTriangle} color="#a855f7" label={t("workers.kpi.shortfall")}
                   value={fmt1(shortfall)}
                   sub={mismatchMgrs.length ? `${mismatchMgrs.length} ${t("workers.mismatchWarn")}` : undefined}
                   tooltip={t("workers.tip.shortfall")} />
@@ -704,9 +753,47 @@ export default function Workers() {
           <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6">
             {isLoading ? <SkeletonChart className="h-72" />
               : heatManagers.length && heatDates.length
-                ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData} mode="actual" segments={ATT_SEGMENTS} />
+                ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData}
+                    mode="actual" segments={ATT_SEGMENTS} cellTitle={heatTitle}
+                    onCellClick={(name, date, v, cell) => cell?.roster && setDayCell({ name, date, cell })} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />}
           </ChartCard>
+
+          {/* One day of one brigadir, spelled out — the tap target behind every
+              heatmap cell. Four numbers, no chrome: the cell already said the
+              percentage, this says what it is made of. */}
+          <Modal open={!!dayCell} onClose={() => setDayCell(null)} maxWidth="max-w-xs"
+            icon={<Users size={16} />}
+            title={dayCell ? tl(dayCell.name) : ""}
+            subtitle={dayCell ? fmtLongDate(parseDate(dayCell.date), t, lang) : ""}>
+            {dayCell && (() => {
+              const c = dayCell.cell;
+              const pct = Math.round((c.came / c.roster) * 100);
+              const line = (label, value, color, extra) => (
+                <div className="flex items-baseline justify-between gap-3 py-1.5">
+                  <span className="text-xs" style={{ color: "var(--text-3)" }}>{label}</span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color }}>
+                    {value}
+                    {extra && <span className="ml-1.5 text-[11px] font-normal" style={{ color: "var(--text-4)" }}>{extra}</span>}
+                  </span>
+                </div>
+              );
+              return (
+                <>
+                  <div className="text-center pb-2">
+                    <div className="text-3xl font-bold tabular-nums" style={{ color: rateColor(pct) }}>{pct}%</div>
+                    <div className="text-[11px]" style={{ color: "var(--text-4)" }}>{t("workers.attRate")}</div>
+                  </div>
+                  <div style={{ borderTop: "1px solid var(--border)" }}>
+                    {line(t("workers.onList"), c.roster, "var(--text-1)")}
+                    {line(t("workers.came"), c.came, PRESENT_COLOR)}
+                    {line(t("workers.absent"), c.absent, c.absent > 0 ? ABSENT_COLOR : "var(--text-3)",
+                      c.on_leave > 0 ? `${c.on_leave} ${t("workers.onLeaveShort")}` : null)}
+                  </div>
+                </>
+              );
+            })()}
+          </Modal>
 
           {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
           <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-8"
@@ -716,8 +803,9 @@ export default function Workers() {
                 <Th label={t("workers.name")} k="name" sort={sort} onSort={onSort} />
                 <Th label={t("overview.shift")} align="center" />
                 <Th label={t("workers.days")} align="right" hint={t("workers.tip.daysCol")} />
-                <Th label={t("workers.roster")} k="total" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.roster")} />
-                <Th label={t("workers.present")} k="avg" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.avgPresent")} />
+                <Th label={t("workers.onList")} k="onList" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.onList")} />
+                <Th label={t("workers.came")} k="came" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.came")} />
+                <Th label={t("workers.absent")} k="absent" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.absent")} />
                 <Th label={t("workers.attRate")} k="rate" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.attRate")} />
                 <Th label={t("workers.official")} k="official" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.officialCol")} />
                 <Th label={t("workers.shortfall")} k="gap" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.shortfall")} />
@@ -729,7 +817,7 @@ export default function Workers() {
             </thead>
             <tbody>
               {sortedRows.length === 0 && (
-                <tr><td colSpan={12}>
+                <tr><td colSpan={13}>
                   <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />
                 </td></tr>
               )}
@@ -738,8 +826,19 @@ export default function Workers() {
                   <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{tl(m.name)}</td>
                   <td className="px-3 py-2 text-center" style={{ color: "var(--text-2)" }}>S{m.shift}</td>
                   <td className={numCell} style={{ color: "var(--text-3)" }}>{m.days ?? 0}</td>
-                  <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{m.total}</td>
-                  <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmt1(m.avg_daily_hc)}</td>
+                  <td className={numCell} style={{ color: "var(--text-1)", fontWeight: 600 }}>{fmt1(m.avg_roster)}</td>
+                  <td className={numCell} style={{ color: PRESENT_COLOR }}>{fmt1(m.avg_came)}</td>
+                  {/* Absences are only worth ink when there are any; the leave
+                      share sits beside the number because "8 missing" and "8
+                      missing, 6 of them on leave" are different problems. */}
+                  <td className={numCell} style={{ color: (m.avg_absent || 0) > 0 ? ABSENT_COLOR : "var(--text-3)" }}>
+                    {fmt1(m.avg_absent)}
+                    {(m.avg_leave || 0) > 0 && (
+                      <span className="ml-1 text-[10px]" style={{ color: "var(--text-4)" }}>
+                        ({fmt1(m.avg_leave)} {t("workers.onLeaveShort")})
+                      </span>
+                    )}
+                  </td>
                   <td className={numCell} style={{ color: rateColor(m.rate), fontWeight: 600 }}>
                     {m.rate == null ? "—" : `${m.rate}%`}
                   </td>
