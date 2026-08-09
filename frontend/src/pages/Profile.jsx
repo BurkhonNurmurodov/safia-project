@@ -22,18 +22,24 @@ import EmptyState from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";
 import { useAuth } from "../context/AuthContext";
+import { useCapabilities } from "../hooks/useCapabilities";
 import { useTranslit, transliterate, convertFromUz } from "../utils/transliterate";
 import { cellName } from "../utils/cellName";
 import { ROLE_LABEL_KEYS } from "../config/pages";
 
 /**
- * /profile — the person's own profile card (every role), and
- * /profile/:ptype/:pid — the ADMIN management view of one profile, which the
- * admin Profiles tab now navigates to instead of opening an edit modal.
+ * ONE profile page for both routes — /profile (own) and /profile/:ptype/:pid
+ * (opened from the admin Profiles register). The layout is the same for every
+ * viewer: hero, details, site login, Telegram accounts. What differs is
+ * ACCESS, not structure — a viewer who may manage profiles (admin, or the
+ * `admin.profiles.manage` grantee the register route already admits) gets the
+ * details card as a live form, login management, holder unassign and the
+ * danger zone; everyone else reads the same cards and can only change their
+ * own password. A manager's own /profile therefore opens already editable:
+ * their row is resolved out of the same register list by profile_key, with
+ * full parity to managing anyone else, plus the self password change.
  *
- * Own view is read-only except the web password: profile facts are the
- * identity register's business, and the register lives with the admins. The
- * password form works from BOTH surfaces — a browser session proves the
+ * The password form works from BOTH surfaces — a browser session proves the
  * current password, a Telegram session's initData is the same proof the
  * password was originally delivered against, so it asks only for the new one.
  */

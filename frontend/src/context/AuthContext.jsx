@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../utils/api";
 import { clearToken, getToken, inTelegram, isRemembered, isWebSession, setToken } from "../utils/session";
+import { findProfile, listProfiles, removeProfile, saveProfile } from "../utils/profileWallet";
 
 const AuthContext = createContext(null);
 
@@ -17,6 +18,26 @@ export function AuthProvider({ children }) {
   const [botUsername, setBotUsername] = useState("");
   const [countdown, setCountdown]     = useState(null); // null = not logging out
   const [webSession, setWebSession]   = useState(isWebSession());
+  // Every profile this browser is signed in as — see utils/profileWallet.js.
+  const [webProfiles, setWebProfiles] = useState(() => listProfiles());
+
+  /** Record the profile that is active RIGHT NOW in the wallet, so the switcher
+   *  always lists who you are as well as who else you can become. Also covers
+   *  sessions that pre-date the wallet, and a wallet a browser wiped. */
+  function rememberActive(data, remember = isRemembered()) {
+    const username = data?.web_login?.username;
+    const token = getToken();
+    if (!username || !token) return;
+    saveProfile({
+      username,
+      full_name: data.full_name,
+      role: data.role,
+      role_ref: data.active_role_ref,
+      token,
+      remember,
+    });
+    setWebProfiles(listProfiles());
+  }
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -36,7 +57,7 @@ export function AuthProvider({ children }) {
     if (!inTelegram() || FORCE_WEB_LOGIN) {
       if (getToken() && isWebSession()) {
         api.get("/api/auth/web/session")
-          .then((r) => { setAuth(r.data); setWebSession(true); })
+          .then((r) => { setAuth(r.data); setWebSession(true); rememberActive(r.data); })
           .catch(() => { clearToken(); setWebSession(false); setAuth({ status: "web_login" }); })
           .finally(() => setLoading(false));
         return;
@@ -122,7 +143,20 @@ export function AuthProvider({ children }) {
     // Telegram "sign out" is an unregister (it drops the roles and asks the
     // person to /start again), which would be a catastrophic reading of
     // "log out" on a website. Here it only ends the session.
+    //
+    // With several profiles in the wallet it signs out of the ACTIVE one only:
+    // its row is dropped and the next profile takes over, so signing out never
+    // silently ends a colleague's session too. When it was the last row there is
+    // nothing to fall back to and the login screen is the honest destination.
     if (webSession) {
+      const active = auth?.web_login?.username;
+      if (active) removeProfile(active);
+      const next = listProfiles()[0];
+      if (next) {
+        setToken(next.token, { remember: next.remember, web: true });
+        window.location.assign("/");
+        return;
+      }
       clearToken();
       window.location.href = "/";
       return;
@@ -138,12 +172,70 @@ export function AuthProvider({ children }) {
     if (data?.token) setToken(data.token, { remember, web: true });
     setWebSession(true);
     setAuth(data);
+    rememberActive(data, remember);
+  }
+
+  /**
+   * A second (third, …) profile signed in from the header menu. It becomes
+   * active immediately, which is what every account switcher does.
+   *
+   * A full load rather than a state swap: pages persist filters, scroll and
+   * fetched rows, and none of that belongs to the profile taking over — the
+   * previous person's data must not be on screen under the new person's name.
+   */
+  function addWebProfile(data, remember) {
+    if (!data?.token) return;
+    setToken(data.token, { remember, web: true });
+    saveProfile({
+      username: data?.web_login?.username,
+      full_name: data.full_name,
+      role: data.role,
+      role_ref: data.active_role_ref,
+      token: data.token,
+      remember,
+    });
+    window.location.assign("/");
+  }
+
+  /**
+   * Switch to a profile already in the wallet — no password, that is the point
+   * of holding the token.
+   *
+   * The token is validated before the page commits to it. A stored token can be
+   * dead (expired, or `token_version` bumped by a password reset or an admin's
+   * "sign out everywhere"), and swapping to it blind would reload the app
+   * straight into the login screen, having thrown away a working session on the
+   * way. So: swap, ask /session, and put the old token back if it refuses —
+   * the caller then asks for that profile's password. `isDeadWebSession` in
+   * utils/api.js deliberately skips /api/auth/web/*, so the 401 handled here
+   * does not also trigger the global "dead session" reload.
+   */
+  async function switchWebProfile(username) {
+    const entry = findProfile(username);
+    if (!entry) return { ok: false, expired: true };
+
+    const prevToken = getToken();
+    const prevRemember = isRemembered();
+    setToken(entry.token, { remember: entry.remember, web: true });
+    try {
+      await api.get("/api/auth/web/session");
+    } catch {
+      if (prevToken) setToken(prevToken, { remember: prevRemember, web: true });
+      return { ok: false, expired: true };
+    }
+    window.location.assign("/");
+    return { ok: true };
   }
 
   /** Swap in a token the server re-issued (e.g. after a password change) so the
    *  tab the person is typing in does not log itself out. */
   function replaceWebToken(token) {
-    if (token) setToken(token, { remember: isRemembered(), web: true });
+    if (!token) return;
+    setToken(token, { remember: isRemembered(), web: true });
+    // The wallet row for this profile still holds the token the password change
+    // just revoked; leaving it there would demand the new password the moment
+    // the person switched away and back.
+    rememberActive(auth);
   }
 
   // Swap the JWT for another approved role; a full reload re-fetches
@@ -170,6 +262,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       auth, loading, logout, switchRole, leaveRole, botUsername, countdown,
       webSession, webLogin, replaceWebToken,
+      webProfiles, addWebProfile, switchWebProfile,
     }}>
       {children}
     </AuthContext.Provider>
