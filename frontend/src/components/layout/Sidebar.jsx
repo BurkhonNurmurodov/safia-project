@@ -576,16 +576,15 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
           {/* The person — bottom-most, the anchor of the rail. Opens /profile. */}
           {auth?.status === "approved" && (
+            <div className="mt-1 pt-1.5" style={{ borderTop: "1px solid var(--border)" }}>
             <NavLink
               to="/profile"
               onClick={onClose}
               title={!expanded ? tl(auth.full_name || "") : undefined}
-              className="flex items-center rounded-lg transition-colors mt-1 pt-2"
+              className="flex items-center rounded-lg transition-colors"
               style={({ isActive }) => ({
                 gap: "10px",
                 padding: "8px",
-                borderTop: "1px solid var(--border)",
-                borderRadius: 0,
                 background: isActive ? "var(--bg-inner)" : "transparent",
                 justifyContent: !expanded ? "center" : undefined,
               })}
@@ -609,6 +608,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
                 </div>
               </div>
             </NavLink>
+            </div>
           )}
         </div>
       </aside>

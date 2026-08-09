@@ -72,8 +72,8 @@ function Card({ icon, title, subtitle, right, children, className = "", bodyClas
 
 function InfoRow({ icon: Icon, label, children, top = false }) {
   return (
-    <div className={`flex ${top ? "items-start" : "items-center"} justify-between gap-3 py-2`}
-         style={{ borderBottom: "1px solid var(--border)" }}>
+    <div className={`flex ${top ? "items-start" : "items-center"} justify-between gap-3 py-2 border-b last:border-b-0`}
+         style={{ borderColor: "var(--border)" }}>
       <span className={`flex ${top ? "items-start" : "items-center"} gap-2 flex-shrink-0`}>
         {Icon && <Icon size={13} className={top ? "mt-0.5" : ""} style={{ color: "var(--text-4)" }} />}
         <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
