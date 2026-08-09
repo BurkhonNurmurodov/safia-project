@@ -1422,7 +1422,7 @@ export default function Gamification() {
         const CONFETTI = ["#F2D48C", "#C8973F", "#4FA8E8", "#ffffff", "#E9C476"];
         return (
           <div className="fixed inset-0 z-[130] flex items-center justify-center overflow-hidden cursor-pointer"
-            style={{ background: "rgba(5,7,12,0.9)", paddingTop: "var(--tg-safe-top, 0px)" }}
+            style={{ background: "rgba(5,7,12,0.9)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
             onClick={() => setCeremony(null)}>
             {/* rotating gold rays */}
             <span aria-hidden className="gami-rays absolute rounded-full pointer-events-none"

@@ -301,7 +301,7 @@ export default function Zagruzka() {
       {compFullscreen && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
-          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)" }}
+          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           <div className="flex-1 overflow-auto p-4">
             <ComparisonTable
@@ -347,7 +347,7 @@ export default function Zagruzka() {
       {heatmapFullscreen && createPortal(
         <div
           className="fixed inset-0 z-[200] flex flex-col"
-          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)" }}
+          style={{ background: "var(--bg-base)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}
         >
           {/* Header */}
           <div

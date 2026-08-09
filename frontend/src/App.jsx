@@ -355,7 +355,7 @@ function LogoutOverlay() {
   if (countdown === null) return null;
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)", paddingTop: "var(--tg-safe-top, 0px)" }}>
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}>
       <div className="text-center px-8 py-10 rounded-2xl"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)" }}>
         <div className="text-5xl font-bold mb-3" style={{ color: "var(--brand-text)" }}>

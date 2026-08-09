@@ -40,7 +40,7 @@ export default function PendingInfoModal({ managerName, date, reason, onClose })
   return createPortal(
     <div
       className="fixed inset-0 z-[210] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)" }}
+      style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}
       onClick={onClose}
     >
       <div

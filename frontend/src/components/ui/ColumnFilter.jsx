@@ -414,7 +414,7 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
         position: "relative", background: "var(--bg-card)", borderRadius: "20px 20px 0 0",
         maxHeight: "82vh", display: "flex", flexDirection: "column",
         animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
-        paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+        paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
       }}>
         <div className="flex justify-center pt-3 pb-1">
           <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-md)" }} />

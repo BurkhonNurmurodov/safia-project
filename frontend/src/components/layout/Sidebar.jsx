@@ -444,7 +444,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
         </nav>
 
         {/* Footer */}
-        <div className="px-2 py-3 space-y-1 overflow-hidden" style={{ borderTop: "1px solid var(--border)" }}>
+        <div className="px-2 py-3 space-y-1 overflow-hidden"
+          style={{ borderTop: "1px solid var(--border)", paddingBottom: "calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
           {showAdminPanel && (
             <NavLink
               to={withSearch("/admin/upload")}

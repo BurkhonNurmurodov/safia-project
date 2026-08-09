@@ -349,7 +349,8 @@ export default function DateRangePicker({
             </div>
 
             {/* Apply / Cancel */}
-            <div className="px-4 py-3 flex gap-2" style={{ borderTop:"1px solid var(--border)" }}>
+            <div className="px-4 py-3 flex gap-2"
+              style={{ borderTop:"1px solid var(--border)", paddingBottom:"calc(0.75rem + var(--tg-safe-bottom, 0px))" }}>
               <button onClick={() => setOpen(false)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
                 style={{ background:"var(--bg-inner)", color:"var(--text-2)" }}>

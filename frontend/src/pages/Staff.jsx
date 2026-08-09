@@ -2332,7 +2332,7 @@ function MobileSheetDatePicker({ value, onChange, t }) {
             display: "flex",
             flexDirection: "column",
             animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
-            paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+            paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
           }}>
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-1">
@@ -2572,7 +2572,7 @@ function FilterBottomSheet({
           display: "flex",
           flexDirection: "column",
           animation: "slideUpSheet 0.22s cubic-bezier(0.32,0.72,0,1) both",
-          paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+          paddingBottom: "calc(12px + var(--tg-safe-bottom, 0px))",
         }}
       >
         {/* Handle */}

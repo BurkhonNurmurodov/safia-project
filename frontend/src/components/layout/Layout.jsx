@@ -519,7 +519,8 @@ export default function Layout({ children, title }) {
                 first and last column sit a head-turn apart is harder to read
                 than the same table with margin either side. On phones and
                 laptops the cap never binds, so nothing changes there. */}
-            <div className="page-enter mx-auto w-full" style={{ maxWidth: "var(--content-max)" }}>
+            <div className="page-enter mx-auto w-full"
+              style={{ maxWidth: "var(--content-max)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}>
               {children}
             </div>
           </main>

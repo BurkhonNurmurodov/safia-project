@@ -41,6 +41,13 @@ try {
       const deviceTop  = isMobilePlatform ? (_tg.safeAreaInset?.top ?? 0) : 0
       const contentTop = isMobilePlatform ? (_tg.contentSafeAreaInset?.top ?? 0) : 0
       document.documentElement.style.setProperty('--tg-safe-top', `${deviceTop + contentTop}px`)
+      // Bottom inset = whatever the OS draws OVER the fullscreen WebApp's lower
+      // edge (Android 3-button nav bar, gesture pill, iOS home indicator).
+      // Devices with nothing overlaid report 0, so the clearance appears only
+      // where a system bar actually covers the app.
+      const deviceBottom  = isMobilePlatform ? (_tg.safeAreaInset?.bottom ?? 0) : 0
+      const contentBottom = isMobilePlatform ? (_tg.contentSafeAreaInset?.bottom ?? 0) : 0
+      document.documentElement.style.setProperty('--tg-safe-bottom', `${deviceBottom + contentBottom}px`)
     }
     applySafeArea()
     _tg.onEvent?.('safeAreaChanged', applySafeArea)
