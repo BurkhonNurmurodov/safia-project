@@ -80,12 +80,13 @@ const STATUS_COLORS = { done: C_DONE, open: C_OPEN, waiting: C_WAIT, repeat: C_R
 const ACTIONABLE = ["done", "open", "waiting", "repeat"];
 const OPEN_STATES = ["open", "waiting", "repeat"];
 
-// Breakdown buckets that are NOT one of a brigadir's own leaders/cells. They are
-// folded, never dropped: without them an expanded row would stop summing to the
-// «Jami» the reader just looked at. Fixed order — they always trail the real
-// rows and never swap places between renders.
-const F_NOLEAD = "__nolead__", F_OTHER = "__other_cell__", F_NOCELL = "__nocell__";
-const FOLDS = [F_NOLEAD, F_OTHER, F_NOCELL];
+// The breakdown groups by the cell written on the record — nothing else. Almost
+// every record carries a code (27 of 4 813 don't), and a code the cells registry
+// has never heard of still names itself, so it becomes a row of its own rather
+// than being swept into a bucket. Only two things genuinely have no name to show,
+// and they trail the list in this fixed order.
+const F_NOLEAD = "__nolead__", F_NOCELL = "__nocell__";
+const FOLDS = [F_NOLEAD, F_NOCELL];
 
 // THE place a status becomes a column. Every level of the «status by supervisor»
 // table goes through it — the whole-register split, one supervisor's row, and
@@ -218,9 +219,7 @@ const TXT = {
     fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", allBrig: "Barcha brigadirlar", mSheetName: "Jadvaldagi ism",
     fLead: "Lider", fCell: "Yacheyka", allLead: "Barcha liderlar", allCell: "Barcha yacheykalar",
     brkByLead: "Liderlar bo‘yicha", brkByCell: "Yacheykalar bo‘yicha",
-    brkOther: "Boshqa sexlarning yacheykalari", brkNoCell: "Yacheyka aniqlanmagan",
-    brkNoLead: "Lider biriktirilmagan",
-    brkEmpty: "O‘z yacheykalaringiz bo‘yicha yozuv yo‘q",
+    brkNoCell: "Yacheyka kodi yo‘q", brkNoLead: "Lider noma’lum",
     brkOpen: "Taqsimotni ochish", brkClose: "Taqsimotni yopish",
     loadFailed: "Ma’lumotni yuklab bo‘lmadi", retry: "Qayta urinish",
     textFailed: "Matnli maydonlarni yuklab bo‘lmadi",
@@ -276,9 +275,7 @@ const TXT = {
     fShift: "Смена", shift: "Смена", shiftAll: "Барчаси", allBrig: "Барча бригадирлар", mSheetName: "Жадвалдаги исм",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Барча лидерлар", allCell: "Барча ячейкалар",
     brkByLead: "Лидерлар бўйича", brkByCell: "Ячейкалар бўйича",
-    brkOther: "Бошқа сехларнинг ячейкалари", brkNoCell: "Ячейка аниқланмаган",
-    brkNoLead: "Лидер бириктирилмаган",
-    brkEmpty: "Ўз ячейкаларингиз бўйича ёзув йўқ",
+    brkNoCell: "Ячейка коди йўқ", brkNoLead: "Лидер номаълум",
     brkOpen: "Тақсимотни очиш", brkClose: "Тақсимотни ёпиш",
     loadFailed: "Маълумотни юклаб бўлмади", retry: "Қайта уриниш",
     textFailed: "Матнли майдонларни юклаб бўлмади",
@@ -334,9 +331,7 @@ const TXT = {
     fShift: "Смена", shift: "Смена", shiftAll: "Все", allBrig: "Все бригадиры", mSheetName: "Имя в таблице",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Все лидеры", allCell: "Все ячейки",
     brkByLead: "По лидерам", brkByCell: "По ячейкам",
-    brkOther: "Ячейки других цехов", brkNoCell: "Ячейка не определена",
-    brkNoLead: "Лидер не назначен",
-    brkEmpty: "Нет записей по вашим ячейкам",
+    brkNoCell: "Код ячейки не указан", brkNoLead: "Лидер неизвестен",
     brkOpen: "Показать разбивку", brkClose: "Скрыть разбивку",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     textFailed: "Не удалось загрузить текстовые поля",
@@ -392,9 +387,7 @@ const TXT = {
     fShift: "Shift", shift: "Shift", shiftAll: "All", allBrig: "All brigadirs", mSheetName: "Name in the sheet",
     fLead: "Leader", fCell: "Cell", allLead: "All leaders", allCell: "All cells",
     brkByLead: "By leader", brkByCell: "By cell",
-    brkOther: "Cells of other units", brkNoCell: "Cell unresolved",
-    brkNoLead: "No leader assigned",
-    brkEmpty: "No findings in your own cells",
+    brkNoCell: "No cell code", brkNoLead: "Leader unknown",
     brkOpen: "Show breakdown", brkClose: "Hide breakdown",
     loadFailed: "Could not load the register", retry: "Retry",
     textFailed: "Could not load the text fields",
@@ -844,55 +837,48 @@ export default function Quality() {
     return Object.values(map).sort((a, b) => tl(a.name).localeCompare(tl(b.name)));
   }, [filtered, isProd, tl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Supervisor NAME → Manager.id. The table groups by name (that is what the QA
-  // sheet writes), but ownership is an id, so the breakdown below needs the hop.
-  const supIdOf = useMemo(() => {
-    const m = {};
-    for (const s of data?.supervisors || []) m[s.name] = s.id;
-    return m;
-  }, [data?.supervisors]);
-
   // ── what sits UNDER an expanded brigadir row ──────────────────────────────
-  // Grouping is org-truthful, not name-based: a row lands under one of this
-  // brigadir's own leaders/cells only when the FAULTING cell belongs to their
-  // unit (cellMap[ci].mid === their Manager.id). `leader` is only a name —
-  // grouping by it alone would file another unit's leader under this brigadir
-  // and invent a reporting line that does not exist.
+  // The record's own «Aybdor yacheyka» code IS the grouping — who owns that cell
+  // is not consulted. The register names a responsible brigadir in one column and
+  // a cell in another, and they disagree on a small slice of the rows; filing the
+  // disagreement into a bucket meant a reader had to be told what the bucket was
+  // before the table made sense, which is a table that failed.
   //
-  // Whatever isn't theirs stays VISIBLE as a fold row instead of being dropped:
-  // another unit's cell, a fault code that resolves to no known cell, and their
-  // own cell with no leader assigned yet. That is what keeps the children
-  // summing to the parent's «Jami» — a breakdown that contradicts the total
-  // directly above it is worse than no breakdown at all.
+  // A code the cells registry has never heard of still names itself — cellNameOf
+  // falls back to the sheet's cell_name and then the raw code — so it becomes its
+  // own row rather than a third of the tab disappearing into «unresolved».
   //
-  // `own` counts rows genuinely traceable to their workshop, and it is what
-  // makes a row expandable: it does not move with brkDim, so the chevron never
-  // appears and disappears as the reader flips leader ⇄ cell.
+  // Only two things have no name to show: a blank code (27 rows in the whole
+  // register), and, in leader mode, a cell no leader is registered against. They
+  // trail the list so the children still sum to the «Jami» directly above.
   const breakdown = useMemo(() => {
     if (!isProd) return {};
     const out = {};
     for (const r of filtered) {
       const nm = who(r);
       if (!nm || !ACTIONABLE.includes(r.st)) continue;
-      const b = out[nm] || (out[nm] = { kids: {}, own: 0, rows: [] });
+      const b = out[nm] || (out[nm] = { kids: {}, rows: [] });
       const c = r.ci != null ? cellMap[r.ci] : null;
-      const supId = supIdOf[nm];
-      const mine = !!c && supId != null && c.mid === supId;
-      if (mine) b.own++;
 
       let key, label;
-      if (!c)                     { key = F_NOCELL;   label = T.brkNoCell; }
-      else if (!mine)             { key = F_OTHER;    label = T.brkOther; }
-      else if (brkDim === "cell") { key = `c${c.id}`; label = cellNameOf(r, cellMap, lang); }
-      else if (!c.leader)         { key = F_NOLEAD;   label = T.brkNoLead; }
-      else                        { key = `l${c.leader}`; label = tl(c.leader); }
+      if (brkDim === "cell") {
+        label = cellNameOf(r, cellMap, lang);
+        // Registry hit → key by cell id, so two spellings of one cell merge.
+        // Otherwise the code stands on its own.
+        key = c ? `c${c.id}` : `raw:${label}`;
+        if (!label) { key = F_NOCELL; label = T.brkNoCell; }
+      } else if (c?.leader) {
+        key = `l${c.leader}`; label = tl(c.leader);
+      } else {
+        key = F_NOLEAD; label = T.brkNoLead;
+      }
 
       const kid = b.kids[key] || (b.kids[key] = { key, label, fold: FOLDS.includes(key), ...emptySplit() });
       bumpStatus(kid, r.st);
     }
     for (const b of Object.values(out)) {
-      // Own buckets by volume — the biggest contributor is the one to act on.
-      // Folds trail in their fixed order so they never jump around.
+      // By volume — the biggest contributor is the one to act on. The two
+      // nameless buckets trail in a fixed order so they never jump around.
       b.rows = Object.values(b.kids).sort((x, y) =>
         (x.fold ? 1 : 0) - (y.fold ? 1 : 0) ||
         (x.fold ? FOLDS.indexOf(x.key) - FOLDS.indexOf(y.key) : 0) ||
@@ -901,11 +887,11 @@ export default function Quality() {
       delete b.kids;
     }
     return out;
-  }, [filtered, isProd, brkDim, cellMap, lang, supIdOf, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, isProd, brkDim, cellMap, lang, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A row only opens when there is something of the brigadir's OWN under it —
-  // a chevron that reveals nothing but «another unit's cells» is a dead end.
-  const canOpen = (name) => (breakdown[name]?.own || 0) > 0;
+  // Anything with records has a breakdown now, so the chevron simply follows the
+  // row's total — it can't appear and vanish as the reader flips leader ⇄ cell.
+  const canOpen = (name) => (breakdown[name]?.rows.length || 0) > 0;
   // The header's leader/cell toggle governs open rows only, so it appears only
   // while at least one row that can actually open IS open.
   const anyOpen = supStatus.some((s) => openSup.includes(s.name) && canOpen(s.name));
@@ -1259,7 +1245,6 @@ export default function Quality() {
     () => (lockOwn && myName ? breakdown[myName]?.rows || [] : []),
     [lockOwn, myName, breakdown]
   );
-  const myOwn = lockOwn && myName ? breakdown[myName]?.own || 0 : 0;
 
   const closureLegs = myClosure ? [
     { k: "resolved",  v: myClosure.resolved,  d: myClosure.dResolved,  c: C_DONE,    label: T.stResolved,  invert: false },
@@ -1904,7 +1889,7 @@ export default function Quality() {
           {isProd && lockOwn && myClosure && (
             <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               <SectionHead icon={ShieldCheck} title={T.secMyClosure} subtitle={T.myClosureSub}
-                right={myOwn > 0 && (
+                right={myBreakdown.length > 0 && (
                   <SegmentedToggle size="sm" value={brkDim} onChange={setBrkDim}
                     options={[["leader", T.fLead], ["cell", T.fCell]]} />
                 )} />
@@ -1982,9 +1967,6 @@ export default function Quality() {
                     <div className="text-[10px] uppercase tracking-wider mb-2.5" style={{ color: "var(--text-4)" }}>
                       {brkDim === "cell" ? T.brkByCell : T.brkByLead}
                     </div>
-                    {myOwn === 0 && (
-                      <div className="text-[11px] mb-2.5" style={{ color: "var(--text-4)" }}>{T.brkEmpty}</div>
-                    )}
                     <div className="flex flex-col gap-3">
                       {myBreakdown.map((k) => {
                         const rate = k.total ? (k.resolved / k.total) * 100 : 0;
