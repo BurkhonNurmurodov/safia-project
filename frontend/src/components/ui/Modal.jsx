@@ -49,7 +49,9 @@ export default function Modal({
           background: "var(--bg-card)",
           border: "1px solid var(--border-md)",
           boxShadow: "0 24px 60px rgba(0,0,0,0.35)",
-          maxHeight: "90dvh",
+          // % of the backdrop's PADDED box, never dvh: a 90dvh card overflows
+          // the safe-area paddings and its footer lands under the Android nav bar.
+          maxHeight: "100%",
         }}
         onClick={(e) => e.stopPropagation()}
       >

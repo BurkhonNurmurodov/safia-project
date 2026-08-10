@@ -220,7 +220,7 @@ export default function NotificationsBell({ refetch, ...list }) {
             top: panelTop,
             left: 8,
             right: 8,
-            maxHeight: `calc(100vh - ${panelTop}px - 12px)`,
+            maxHeight: `calc(100dvh - ${panelTop}px - 12px - var(--tg-safe-bottom, 0px))`,
             background: "var(--bg-card)",
             border: "1px solid var(--border-md)",
           } : {

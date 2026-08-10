@@ -44,10 +44,16 @@ try {
       // Bottom inset = whatever the OS draws OVER the fullscreen WebApp's lower
       // edge (Android 3-button nav bar, gesture pill, iOS home indicator).
       // Devices with nothing overlaid report 0, so the clearance appears only
-      // where a system bar actually covers the app.
+      // where a system bar actually covers the app. Some Telegram Android
+      // builds report 0 here even with a button bar overlaying, so the value is
+      // a CSS max() with env(safe-area-inset-bottom) — live since index.html
+      // declares viewport-fit=cover — and the larger source wins at use time.
       const deviceBottom  = isMobilePlatform ? (_tg.safeAreaInset?.bottom ?? 0) : 0
       const contentBottom = isMobilePlatform ? (_tg.contentSafeAreaInset?.bottom ?? 0) : 0
-      document.documentElement.style.setProperty('--tg-safe-bottom', `${deviceBottom + contentBottom}px`)
+      document.documentElement.style.setProperty(
+        '--tg-safe-bottom',
+        `max(${deviceBottom + contentBottom}px, env(safe-area-inset-bottom, 0px))`,
+      )
     }
     applySafeArea()
     _tg.onEvent?.('safeAreaChanged', applySafeArea)

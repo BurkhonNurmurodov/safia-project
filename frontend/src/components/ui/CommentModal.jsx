@@ -73,7 +73,7 @@ export default function CommentModal({ managerId, managerName, date, rawCell, mo
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)", paddingTop: "var(--tg-safe-top, 0px)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }} onClick={onClose}>
       <div
         className="rounded-2xl w-full max-w-md flex flex-col overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "80vh" }}
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", maxHeight: "min(80dvh, 100%)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
