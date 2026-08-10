@@ -619,6 +619,10 @@ class RecheckIn(BaseModel):
     # default: a stricter reviewer mostly changes its mind about rows it already
     # doubted, and re-running those costs a fraction of the corpus.
     scope: str = Field("flagged", pattern="^(flagged|clean|all)$")
+    # Count what would be re-queued without touching anything. The confirm has
+    # to print the real cost — "re-check everything?" with no number attached is
+    # a question nobody can answer, and this one spends metered quota.
+    dry_run: bool = False
 
 
 @router.post("/recheck")
@@ -660,6 +664,9 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
         q = q.filter(LeaderAiReview.date >= body.date_from)
     if body.date_to:
         q = q.filter(LeaderAiReview.date <= body.date_to)
+
+    if body.dry_run:
+        return {"ok": True, "requeued": q.count(), "dryRun": True}
 
     n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
     db.commit()

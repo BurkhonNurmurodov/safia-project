@@ -24,6 +24,7 @@ import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import BotDataClear from "../components/leaders/BotDataClear";
 import LateReports from "../components/leaders/LateReports";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
+import AiRecheck from "../components/leaders/AiRecheck";
 import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -115,6 +116,7 @@ const TXT = {
     aiRowBadge: "AI shubhali deb belgilagan vazifalar",
     aiQueued: "AI tekshiruvi navbatda",
     aiRun: "AI tekshiruvi",
+    aiRecheckOne: "Bu vazifani qaytadan tekshirish",
     aiRunning: "Tekshirilmoqda…",
     aiFlagsN: "shubhali",
     aiPendingN: "navbatda",
@@ -211,6 +213,7 @@ const TXT = {
     aiRowBadge: "AI шубҳали деб белгилаган вазифалар",
     aiQueued: "AI текшируви навбатда",
     aiRun: "AI текшируви",
+    aiRecheckOne: "Бу вазифани қайтадан текшириш",
     aiRunning: "Текширилмоқда…",
     aiFlagsN: "шубҳали",
     aiPendingN: "навбатда",
@@ -307,6 +310,7 @@ const TXT = {
     aiRowBadge: "Задачи, отмеченные ИИ как сомнительные",
     aiQueued: "Ожидает проверки ИИ",
     aiRun: "Проверка ИИ",
+    aiRecheckOne: "Проверить эту задачу заново",
     aiRunning: "Проверяется…",
     aiFlagsN: "сомнительных",
     aiPendingN: "в очереди",
@@ -403,6 +407,7 @@ const TXT = {
     aiRowBadge: "Tasks the AI flagged as suspect",
     aiQueued: "Waiting for AI review",
     aiRun: "AI review",
+    aiRecheckOne: "Re-check this task",
     aiRunning: "Reviewing…",
     aiFlagsN: "flagged",
     aiPendingN: "queued",
@@ -867,7 +872,7 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
             line — which reads as a glitch rather than as progress. One motion
             cue, on the line that says what is happening. */}
         <Button size="sm" variant="secondary" tint disabled={checking}
-          className="flex-shrink-0" onClick={onCheck}>
+          className="flex-shrink-0" onClick={() => onCheck(false)}>
           {failed ? T.retry : T.aiCheck}
         </Button>
       </div>
@@ -896,13 +901,35 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
         {/* The timestamp the model read, verbatim — an admin can judge the
             judge without opening the photo, which is the whole point of a
             pilot. Kept on the header line so a clean card stays one row. */}
-        {rev.imageDate && (
-          <span className="text-[10px] tabular-nums ml-auto truncate max-w-[52%]"
-            style={{ color: "var(--text-4)" }} title={`${T.aiImgDate}: ${rev.imageDate}`}>
-            {rev.imageDate}
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-1 min-w-0">
+          {rev.imageDate && (
+            <span className="text-[10px] tabular-nums truncate"
+              style={{ color: "var(--text-4)" }} title={`${T.aiImgDate}: ${rev.imageDate}`}>
+              {rev.imageDate}
+            </span>
+          )}
+          {/* Re-run THIS verdict. A stored verdict answers the question the
+              reviewer asked on the day it ran; when that question changes, the
+              only honest way to see the new answer on a photo already in front
+              of you is to spend one more call on it. Icon-only — the strip is
+              10px type and a worded button would outweigh the verdict it sits
+              beside. */}
+          {canCheck && (
+            <Button size="sm" variant="ghost" disabled={checking}
+              className="flex-shrink-0 !px-1.5" title={T.aiRecheckOne}
+              onClick={() => onCheck(true)}>
+              {checking ? <Loader2 size={12} className="animate-spin" />
+                : <RefreshCw size={12} />}
+            </Button>
+          )}
+        </span>
       </div>
+
+      {/* A forced re-check can fail (quota, an unreachable photo) on a card that
+          already shows a verdict. Without this the press would look ignored. */}
+      {error && (
+        <p className="text-[10px] mt-1" style={{ color: C_BAD }}>{error}</p>
+      )}
 
       {flagged && (
         <>
@@ -2588,6 +2615,10 @@ export default function Leaders() {
                   icon={<Sparkles size={13} />} onClick={() => aiRunMut.mutate()}>
                   {aiRunMut.isPending ? T.aiRunning : T.aiRun}
                 </Button>
+                {/* Its sibling: «run» judges what has never been judged,
+                    «re-check» re-earns answers the reviewer already gave under
+                    questions it no longer asks. Both used to be shell work. */}
+                <AiRecheck errorCount={aiData?.counts?.error || 0} />
               </span>
             ) : undefined} />
 
