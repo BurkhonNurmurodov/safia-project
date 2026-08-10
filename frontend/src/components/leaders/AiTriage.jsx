@@ -1,15 +1,19 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
+  User, ShieldCheck, Layers, ClipboardCheck, Flag, SearchX,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
+import DateRangePicker from "../ui/DateRangePicker";
+import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { SectionHead } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import { QueuePhoto } from "./ProofPhoto";
 import api from "../../utils/api";
 
@@ -50,6 +54,30 @@ const ACTS = {
   requeried: { tone: "#C8973F", Icon: MessageSquare, key: "R" },
 };
 
+/* ══ the scope bar ════════════════════════════════════════════════════════════
+ *
+ * A queue of 337 flags is not one job. It is "yesterday's shift", "everything
+ * Sevara filed", "task 4 across the week" — and the reviewer pays for mixing
+ * them: every card in the old rail arrived with a different date window, a
+ * different person's camera and a different definition-of-done to hold in the
+ * head. That context switch, not the clicking, is what made the queue slow.
+ *
+ * So the filters are exactly the axes a verdict is judged on — period, leader,
+ * supervisor, task, shift, and the flag itself, finer than the bucket tabs.
+ * Batch on any one of them and the reviewer holds ONE context for a run of
+ * cards, which is where the speed actually comes from.
+ *
+ * Every dimension is evaluated SERVER-side. Filtering the page the browser
+ * happens to hold would answer "Sevara's flags" with "Sevara's flags among the
+ * 300 that fit", and on an older date it would answer "none" for a day holding
+ * forty. The option lists come back from the same pass, each counted against
+ * the other active filters, so no option in the panel is ever a dead end.
+ */
+const EMPTY_FLT = {
+  from: "", to: "", leader: null, supervisor: null, task: null, shift: null, flag: null,
+};
+const FLAGS = ["off_topic", "not_proven", "date_mismatch", "no_date", "unreadable"];
+
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
 // The queue is a work surface, not a register: a window is only useful here as
 // "did the clock fall inside it", so the redundant year is dropped and the two
@@ -68,6 +96,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   const { show: showToast, hide: hideToast, node: toastNode } = useToast({ position: "bottom" });
 
   const [bucket, setBucket] = useState("all");
+  // Persisted like every other page's filters: a triage session gets
+  // interrupted, and coming back to "all 337" after narrowing to one leader
+  // means re-doing the narrowing every time. Merged over EMPTY_FLT so a stored
+  // shape written before a dimension existed cannot arrive missing a key.
+  const [stored, setStored] = usePersistentState("leaders.ai.flt", EMPTY_FLT);
   const [i, setI] = useState(0);
   const [photoIx, setPhotoIx] = useState(0);
   const [zoom, setZoom] = useState(null);       // object URL of the enlarged photo
@@ -78,16 +111,55 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   const [undoable, setUndoable] = useState(null);
   const zoomUrls = useRef({});
 
+  const f = useMemo(() => ({ ...EMPTY_FLT, ...(stored || {}) }), [stored]);
+  const anyFlt = useMemo(
+    () => Object.keys(EMPTY_FLT).some((k) => f[k] !== EMPTY_FLT[k]),
+    [f],
+  );
+  // Patching, not replacing — and both cursors go home, because the row under
+  // the old index belongs to a queue that no longer exists.
+  const setF = useCallback((patch) => {
+    setStored((p) => ({ ...EMPTY_FLT, ...(p || {}), ...patch }));
+    setI(0);
+    setPhotoIx(0);
+  }, [setStored]);
+
+  // The filters are PART of the cache key, so every mutation that writes the
+  // queue back optimistically has to use this exact key — a bare
+  // ["leader-ai-queue"] would write a cache entry nothing renders, and the
+  // dispatched card would sit on screen until the next refetch.
+  const qkey = useMemo(() => ["leader-ai-queue", f], [f]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ["leader-ai-queue"],
-    queryFn: () => api.get("/api/leader-ai/queue").then((r) => r.data),
+    queryKey: qkey,
+    queryFn: () => api.get("/api/leader-ai/queue", {
+      params: {
+        date_from: f.from || undefined,
+        date_to: f.to || undefined,
+        leader: f.leader ?? undefined,
+        supervisor: f.supervisor ?? undefined,
+        task_id: f.task ?? undefined,
+        shift: f.shift ?? undefined,
+        flag: f.flag ?? undefined,
+      },
+    }).then((r) => r.data),
     refetchOnWindowFocus: true,
+    // Adjusting a filter keeps the current rail on screen until the new one
+    // lands. A skeleton between every pick turns a narrowing pass into a
+    // sequence of blank screens.
+    placeholderData: keepPreviousData,
   });
 
   const all = useMemo(() => data?.items ?? [], [data]);
+  const facets = data?.facets || {};
+  const buckets = data?.buckets || {};
+  // A narrowed set may hold nothing of the bucket that was open. Derived, not
+  // reset from an effect: an unselected segment on a tab strip reads as a
+  // broken screen, and «all» is always a live answer.
+  const liveBucket = bucket === "all" || buckets[bucket] ? bucket : "all";
   const items = useMemo(
-    () => (bucket === "all" ? all : all.filter((x) => x.bucket === bucket)),
-    [all, bucket],
+    () => (liveBucket === "all" ? all : all.filter((x) => x.bucket === liveBucket)),
+    [all, liveBucket],
   );
   // Both cursors are CLAMPED during render rather than reset from an effect.
   // A dispatch shortens the list under the index and a new item may carry fewer
@@ -123,15 +195,15 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
     // a series of clicks. A failure puts the item back and says so.
     onMutate: async ({ ref }) => {
       await qc.cancelQueries({ queryKey: ["leader-ai-queue"] });
-      const prev = qc.getQueryData(["leader-ai-queue"]);
-      qc.setQueryData(["leader-ai-queue"], (old) => old && ({
+      const prev = qc.getQueryData(qkey);
+      qc.setQueryData(qkey, (old) => old && ({
         ...old,
         items: old.items.filter((x) => x.ref !== ref),
       }));
       return { prev };
     },
     onError: (e, vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["leader-ai-queue"], ctx.prev);
+      if (ctx?.prev) qc.setQueryData(qkey, ctx.prev);
       setUndoable(null);
       // Errors persist until dismissed — you cannot re-read a toast that left.
       showToast(e?.response?.data?.detail || String(e?.message || e), "error");
@@ -163,7 +235,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
     api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: "open" })
       .then(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }))
       .catch(() => qc.invalidateQueries({ queryKey: ["leader-ai-queue"] }));
-    qc.setQueryData(["leader-ai-queue"], (old) => old && ({
+    qc.setQueryData(qkey, (old) => old && ({
       ...old,
       items: [item, ...old.items.filter((x) => x.ref !== item.ref)],
     }));
@@ -171,7 +243,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
     setI(0);
     setPhotoIx(0);
     hideToast();
-  }, [undoable, qc, hideToast]);
+  }, [undoable, qc, qkey, hideToast]);
 
   // ── keyboard ───────────────────────────────────────────────────────────────
   // The order-of-magnitude change. Guarded against firing while somebody is
@@ -214,12 +286,12 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
 
   if (data && !data.enabled) return <KeySetup T={T} qc={qc} />;
 
-  const buckets = data?.buckets || {};
-  // Every tab counts the WHOLE unresolved set, «all» included — mixing a true
-  // per-bucket tally with a page length made the tabs sum to more than «all».
+  // Every tab counts the WHOLE unresolved set inside the current filters,
+  // «all» included — mixing a true per-bucket tally with a page length made the
+  // tabs sum to more than «all».
   const total = data?.total ?? all.length;
   // What the cap actually delivered for the current tab, against what exists.
-  const shown = bucket === "all" ? total : (buckets[bucket] ?? items.length);
+  const shown = liveBucket === "all" ? total : (buckets[liveBucket] ?? items.length);
   const bucketOpts = [
     { value: "all", label: `${T.aiBall} ${total}` },
     ...["forged", "undone", "date", "tech"]
@@ -227,13 +299,32 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
       .map((b) => ({ value: b, label: `${T[`aiB_${b}`]} ${buckets[b]}`, title: T[`aiBt_${b}`] })),
   ];
 
+  // Options come from the server's facet pass, so a name only appears while it
+  // still has flags behind it, and the count says how many. Busiest first —
+  // ninety leaders sorted alphabetically bury the one worth opening.
+  const opts = (dim, label) => [
+    { value: null, label },
+    ...(facets[dim] || []).map((o) => ({
+      value: o.v, label: `${nm(o.v)} · ${o.n}`, title: nm(o.v),
+    })),
+  ];
+  const facetN = (dim, v) => (facets[dim] || []).find((o) => o.v === v)?.n;
+  const flagOpts = [
+    { value: null, label: T.aiFAllFlags },
+    ...FLAGS.filter((k) => facetN("flag", k))
+      .map((k) => ({ value: k, label: `${T[`aiF_${k}`]} · ${facetN("flag", k)}`, title: T[`aiF_${k}`] })),
+  ];
+  const taskName = (id) =>
+    (facets.task || []).find((o) => o.v === id)?.label || `${T.task} ${id}`;
+
   return (
     <>
-      {/* Bucket router. Technical failures are a SEPARATE queue on purpose —
+      {/* ── row 1 · route and dispatch ──────────────────────────────────────
+          Bucket router. Technical failures are a SEPARATE queue on purpose —
           an unreadable Drive link is the server's problem, and mixing it into a
           discipline queue is how a reviewer learns to distrust the queue. */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <SegmentedToggle scrollable value={bucket} onChange={pickBucket} options={bucketOpts} />
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <SegmentedToggle scrollable value={liveBucket} onChange={pickBucket} options={bucketOpts} />
         <div className="flex-1" />
         {actions}
         {undoable && (
@@ -248,13 +339,112 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
           title={T.aiKeys} onClick={() => setKeysOpen((o) => !o)} />
       </div>
 
+      {/* ── row 2 · scope ───────────────────────────────────────────────────
+          Period inline, everything else inside the ONE filter zone, chips
+          beside it. Its own row rather than sharing row 1: the dispatch cluster
+          already fills that line, and a scope control wrapped under the bucket
+          tabs reads as belonging to them. FilterPanel must stay a DIRECT child
+          of this flex row — it measures the row to decide whether to unfold. */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <DateRangePicker
+          dateFrom={f.from} dateTo={f.to}
+          setDateFrom={(v) => setF({ from: v || "" })}
+          setDateTo={(v) => setF({ to: v || "" })}
+          compactLabel triggerClassName="px-3 py-2 text-sm" />
+        <FilterPanel
+          sections={[
+            {
+              key: "leader", icon: User, label: T.leader,
+              active: !!f.leader, display: f.leader ? nm(f.leader) : "",
+              onClear: () => setF({ leader: null }),
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close} value={f.leader}
+                  opts={opts("leader", T.allLeaders)}
+                  onChange={(v) => setF({ leader: v })} />
+              ),
+            },
+            {
+              key: "supervisor", icon: ShieldCheck, label: T.supervisor,
+              active: !!f.supervisor, display: f.supervisor ? nm(f.supervisor) : "",
+              onClear: () => setF({ supervisor: null }),
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close} value={f.supervisor}
+                  opts={opts("supervisor", T.allSups)}
+                  onChange={(v) => setF({ supervisor: v })} />
+              ),
+            },
+            {
+              key: "task", icon: ClipboardCheck, label: T.task,
+              active: f.task != null, display: f.task != null ? taskName(f.task) : "",
+              onClear: () => setF({ task: null }),
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close} value={f.task}
+                  opts={[
+                    { value: null, label: T.aiFAllTasks },
+                    ...(facets.task || []).map((o) => ({
+                      value: o.v, label: `${o.label} · ${o.n}`, title: o.label,
+                    })),
+                  ]}
+                  onChange={(v) => setF({ task: v })} />
+              ),
+            },
+            {
+              key: "shift", icon: Layers, label: T.shift,
+              active: f.shift != null, display: f.shift != null ? `S${f.shift}` : "",
+              onClear: () => setF({ shift: null }),
+              render: () => (
+                <SegmentedToggle fill value={f.shift}
+                  onChange={(v) => setF({ shift: v })}
+                  options={[
+                    [null, T.bandAll],
+                    ...[1, 2].map((s) => [s, facetN("shift", s) ? `S${s} · ${facetN("shift", s)}` : `S${s}`]),
+                  ]} />
+              ),
+            },
+            {
+              // Finer than the bucket tabs: «Sana 333» is two different jobs —
+              // "no clock on the photo" is a two-second call, "clock outside
+              // the window" needs the window read. Splitting them is worth a
+              // section of its own.
+              key: "flag", icon: Flag, label: T.aiFlag,
+              active: !!f.flag, display: f.flag ? T[`aiF_${f.flag}`] : "",
+              onClear: () => setF({ flag: null }),
+              render: ({ close } = {}) => (
+                <PickFilter close={close} value={f.flag} opts={flagOpts}
+                  onChange={(v) => setF({ flag: v })} />
+              ),
+            },
+          ]}
+        />
+      </div>
+
+      {/* Past the scan cap the counts stop being totals and become floors.
+          Said out loud, because a number nobody flagged as partial is a number
+          people plan against. */}
+      {data?.scanCapped && (
+        <p className="text-[11px] mb-3" style={{ color: "#eab308" }}>{T.aiScanCap}</p>
+      )}
+
       {keysOpen && <KeyLegend T={T} />}
 
       {!cur ? (
-        /* An emptied queue is the goal, so it reads as one — and it never
-           offers the upload link, which has nothing to do with this surface. */
-        <EmptyState icon={Inbox} title={T.aiDoneTitle} message={T.aiDoneBody}
-          showUploadLink={false} height="h-64" />
+        /* Two different emptinesses, and reading one as the other is the
+           trap: an emptied queue is the goal and reads as praise, while
+           "nothing matched" is a dead end that has to hand back the control
+           that caused it. */
+        anyFlt ? (
+          <EmptyState icon={SearchX} title={T.aiNoMatchTitle} message={T.aiNoMatchBody}
+            showUploadLink={false} height="h-64"
+            action={
+              <Button size="lg" variant="secondary" tint
+                onClick={() => setF(EMPTY_FLT)}>
+                {T.aiClearFlt}
+              </Button>
+            } />
+        ) : (
+          <EmptyState icon={Inbox} title={T.aiDoneTitle} message={T.aiDoneBody}
+            showUploadLink={false} height="h-64" />
+        )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3 items-start">
           {/* ── the inbox ─────────────────────────────────────────────────── */}

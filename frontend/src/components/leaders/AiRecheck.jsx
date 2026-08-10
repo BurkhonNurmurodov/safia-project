@@ -394,7 +394,10 @@ export default function AiRecheck({ errorCount = 0 }) {
 
   return (
     <>
-      <Button size="sm" variant="secondary" tint icon={<RefreshCw size={13} />}
+      {/* `lg` = 38px, the toolbar baseline. It sits in a row of filter and
+          period controls now, and a 26px chip beside them reads as misaligned
+          rather than as a smaller action. */}
+      <Button size="lg" variant="secondary" tint icon={<RefreshCw size={14} />}
         onClick={() => setOpen(true)}>
         {T.open}
       </Button>

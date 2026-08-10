@@ -10,6 +10,11 @@ export default function EmptyState({
   // was born for; a section whose emptiness means something else says so with
   // its own icon (an emptied review queue is an achievement, not a gap).
   icon: Icon = DatabaseZap,
+  // The way OUT of this emptiness, when there is one. An empty state caused by
+  // the viewer's own filters has to hand back the control that caused it —
+  // otherwise the only escape from "nothing matches" is guessing which of six
+  // filters to reopen. Rendered under the message, above the upload link.
+  action = null,
 }) {
   const navigate = useNavigate();
   return (
@@ -19,6 +24,7 @@ export default function EmptyState({
         <div className="text-sm font-medium" style={{ color: "var(--text-2)" }}>{title}</div>
         <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{message}</div>
       </div>
+      {action}
       {showUploadLink && (
         <button
           onClick={() => navigate("/admin/upload")}

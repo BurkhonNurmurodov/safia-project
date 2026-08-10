@@ -187,8 +187,35 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     return {"enabled": True, "tasks": out}
 
 
+# ── the filter dimensions ────────────────────────────────────────────────────
+# ONE table, read by both the predicate and the facet pass, so "what a leader
+# filter means" cannot come to differ between the rows that survive a filter and
+# the options the filter offers. `flag` is multi-valued — a row carries several.
+_DIMS = {
+    "leader":     lambda rev, p: p["leader"],
+    "supervisor": lambda rev, p: p["supervisor"],
+    "task":       lambda rev, p: rev.task_id,
+    "shift":      lambda rev, p: rev.shift,
+    "flag":       lambda rev, p: rev.flags or [],
+}
+
+
+def _dim_ok(dim: str, want, rev, p) -> bool:
+    if want is None:
+        return True
+    got = _DIMS[dim](rev, p)
+    return want in got if isinstance(got, list) else got == want
+
+
 @router.get("/queue")
 def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
+          date_from: str | None = Query(None),
+          date_to: str | None = Query(None),
+          leader: str | None = Query(None),
+          supervisor: str | None = Query(None),
+          task_id: int | None = Query(None),
+          shift: int | None = Query(None),
+          flag: str | None = Query(None),
           db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     """The triage feed — everything still awaiting a human decision, ordered by
     how much that decision is worth, with enough context inlined to make it.
@@ -197,32 +224,95 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
     compare its clock to the window, decide", and every one of those needs to be
     on screen at once. Splitting the criteria or the leader's own answer into a
     second call is what turned the old flow into a hunt.
+
+    **Filtering is server-side, and it has to be.** The page ships at most
+    `limit` rows out of a set that can run to thousands, so a filter applied to
+    what the browser happens to hold would answer "this leader's flags" with
+    "this leader's flags among the ones that fit" — and on an old date it would
+    answer "none" for a day with forty. Every dimension is therefore evaluated
+    over the whole unresolved set, and the bucket tallies are recomputed inside
+    it: a tab reading «333» beside a four-row rail is not a filter, it is a bug.
+
+    `facets` ships the option lists with counts, each dimension tallied against
+    every OTHER active filter. Picking a leader narrows the task list to that
+    leader's tasks, so no option in the panel is ever a dead end.
     """
     if not gemini.available():
-        return {"enabled": False, "items": [], "buckets": {}}
+        return {"enabled": False, "items": [], "buckets": {}, "facets": {}}
 
-    rows = (
+    q = (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status == "flagged",
                 LeaderAiReview.resolution.is_(None))
-        .order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.desc())
-        .limit(FLAG_MAP_CAP)
-        .all()
     )
-    # Bucket tallies come from the WHOLE unresolved set, not the page — a tab
-    # that says "3" must mean three, even when the cap trimmed the list.
+    # `date` is a 'YYYY-MM-DD' string, so a lexical compare IS a date compare —
+    # and it narrows BEFORE the scan cap, which is the point: the newest 4 000
+    # flags of the chosen days, not the chosen days out of the newest 4 000.
+    if date_from:
+        q = q.filter(LeaderAiReview.date >= date_from)
+    if date_to:
+        q = q.filter(LeaderAiReview.date <= date_to)
+    rows = (q.order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.desc())
+            .limit(FLAG_MAP_CAP).all())
+
+    proj = _project(db, rows)
+    picked = {"leader": leader, "supervisor": supervisor,
+              "task": task_id, "shift": shift, "flag": flag}
+
+    facets: dict[str, dict] = {d: {} for d in _DIMS}
+    task_labels: dict[int, str] = {}
+    kept: list[LeaderAiReview] = []
+    for rev in rows:
+        p = proj[rev.ref]
+        task_labels.setdefault(rev.task_id, p["task"])
+        ok = {d: _dim_ok(d, picked[d], rev, p) for d in _DIMS}
+        misses = [d for d, v in ok.items() if not v]
+        if not misses:
+            kept.append(rev)
+        # A dimension's own options are counted against every other filter but
+        # not against itself — otherwise picking «Sevara» would leave the leader
+        # list holding only Sevara, and there would be no way back to anyone
+        # else without clearing the filter first.
+        for d in _DIMS:
+            if misses and misses != [d]:
+                continue
+            got = _DIMS[d](rev, p)
+            for v in (got if isinstance(got, list) else [got]):
+                if v is None or v == "":
+                    continue
+                facets[d][v] = facets[d].get(v, 0) + 1
+
+    # Tallies over the FILTERED set — the tabs label the rail beneath them.
     buckets: dict[str, int] = {b: 0 for b in leader_ai.BUCKETS}
-    for r in rows:
+    for r in kept:
         buckets[leader_ai.bucket_of(r.flags)] += 1
 
-    rows = _fair_slice(rows, limit)
+    page = _fair_slice(kept, limit)
+
+    def _opts(dim: str) -> list[dict]:
+        """Busiest first — the option worth picking is the one with the work
+        behind it, and an alphabetical list of 90 leaders buries it."""
+        items = [{"v": v, "n": n} for v, n in facets[dim].items()]
+        items.sort(key=lambda it: (-it["n"], str(it["v"])))
+        return items
 
     return {
         "enabled": True,
-        "items": _hydrate(db, rows),
+        "items": _hydrate(db, page),
         "buckets": buckets,
-        "total": sum(buckets.values()),
-        "capped": sum(buckets.values()) > len(rows),
+        "total": len(kept),
+        "capped": len(kept) > len(page),
+        "facets": {
+            **{d: _opts(d) for d in ("leader", "supervisor", "shift", "flag")},
+            # The label a task carries can differ per unit (a supervisor may
+            # rename it), so the option is keyed by id and labelled with the
+            # first wording seen — newest report first.
+            "task": [{**o, "label": task_labels.get(o["v"], f"#{o['v']}")}
+                     for o in _opts("task")],
+        },
+        # Said out loud rather than silently truncated: past this many flags the
+        # scan itself is capped, so the counts become a floor.
+        "scanCapped": len(rows) >= FLAG_MAP_CAP,
     }
 
 
@@ -267,6 +357,131 @@ def _fair_slice(rows: list[LeaderAiReview], limit: int) -> list[LeaderAiReview]:
     return [r for b in live for r in taken[b]]
 
 
+# ── the task-config chain ────────────────────────────────────────────────────
+# `task_label` and `criteria_for` each walk leader → supervisor → global on
+# their own. Called per row that is up to ~1200 queries for one queue read, so
+# the same three tables are loaded once and the chain is resolved in memory.
+# Same precedence, same answer. Module-level because BOTH the light projection
+# (which labels 4 000 rows for the filter facets) and the hydrator (which
+# labels a page) need it, and a second copy of a precedence rule is one edit
+# away from showing the two surfaces different names for the same task.
+_NAMES = ("name_ru", "name_uz", "name_en")
+
+
+def _first_name(obj) -> str:
+    for attr in _NAMES:
+        got = getattr(obj, attr, None)
+        if got and got.strip():
+            return got.strip()
+    return ""
+
+
+def _task_cfg(db: Session, rows: list[LeaderAiReview]) -> tuple[dict, dict, dict]:
+    defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
+    mgr_ids = {r.manager_id for r in rows if r.manager_id}
+    prof_ids = {r.leader_id for r in rows if r.leader_id}
+    sup_cfg: dict[tuple[int, int], LeaderTaskSetting] = {}
+    if mgr_ids:
+        for s in db.query(LeaderTaskSetting).filter(
+                LeaderTaskSetting.manager_id.in_(mgr_ids)).all():
+            sup_cfg[(s.manager_id, s.task_id)] = s
+    own_cfg: dict[tuple[int, int], LeaderTaskLeaderSetting] = {}
+    if prof_ids:
+        for r in db.query(LeaderTaskLeaderSetting).filter(
+                LeaderTaskLeaderSetting.leader_id.in_(prof_ids)).all():
+            own_cfg[(r.leader_id, r.task_id)] = r
+    return defs, sup_cfg, own_cfg
+
+
+def _chain(cfg, rev, attr: str) -> str:
+    """First non-blank `attr` down leader → supervisor → global."""
+    defs, sup_cfg, own_cfg = cfg
+    for row, key in ((own_cfg, (rev.leader_id, rev.task_id)),
+                     (sup_cfg, (rev.manager_id, rev.task_id))):
+        got = getattr(row.get(key), attr, None) if key[0] else None
+        if got and str(got).strip():
+            return str(got).strip()
+    got = getattr(defs.get(rev.task_id), attr, None)
+    return str(got).strip() if got and str(got).strip() else ""
+
+
+def _label(cfg, rev) -> str:
+    """LEVEL first, then language — the same precedence services/leader_ai
+    `task_label` uses. Walking language-first would let the global `name_ru`
+    beat a supervisor's own `name_uz` override, i.e. show the reviewer a
+    wording nobody in that unit ever read."""
+    defs, sup_cfg, own_cfg = cfg
+    for c, key in ((own_cfg, (rev.leader_id, rev.task_id)),
+                   (sup_cfg, (rev.manager_id, rev.task_id))):
+        obj = c.get(key) if key[0] else None
+        if obj is not None and (got := _first_name(obj)):
+            return got
+    td = defs.get(rev.task_id)
+    return (_first_name(td) if td is not None else "") or f"#{rev.task_id}"
+
+
+def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
+    """(leader, supervisor, task label) per row — and NOTHING else.
+
+    The filter bar and its facet counts have to be computed over the whole
+    unresolved set: an option list built from the rows that survived the page
+    cap is a filter that lies about what it will find. `_hydrate` cannot be
+    that pass — it carries a photo list and the full checklist JSON per row,
+    which is right for 300 rows and ruinous for 4 000. So the names are
+    resolved here from column-projected reads, by the same rules, and the
+    heavy work stays on the page.
+    """
+    if not rows:
+        return {}
+
+    cfg = _task_cfg(db, rows)
+    prof_ids = {r.leader_id for r in rows if r.leader_id}
+    profs = {p.id: p.name for p in db.query(RoleProfile.id, RoleProfile.name)
+             .filter(RoleProfile.id.in_(prof_ids)).all()} if prof_ids else {}
+    mgr_ids = {r.manager_id for r in rows if r.manager_id}
+    mgrs = {m.id: m.name for m in db.query(Manager.id, Manager.name)
+            .filter(Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
+
+    # Sheet rows carry the leader's name as the SHEET spells it, which is what
+    # the rail prints even when the fuzzy match to a profile came back empty —
+    # so the filter has to match on that same string. Columns only: the `tasks`
+    # JSONB on these rows is the whole report and none of it is needed here.
+    by_key: dict[tuple[str, str], tuple[str, str]] = {}
+    by_sub: dict[str, tuple[str, str]] = {}
+    dates = {r.date for r in rows if not r.ref.startswith("bot:")}
+    if dates:
+        for d, ldr, sup, sub in db.query(
+                LeaderChecklist.date, LeaderChecklist.leader,
+                LeaderChecklist.supervisor, LeaderChecklist.submission_id
+        ).filter(LeaderChecklist.date.in_(dates)).all():
+            pair = (ldr, relabel_supervisor(sup))
+            by_key[(d, (ldr or "").strip().lower()[:60])] = pair
+            if sub:
+                by_sub[sub] = pair
+
+    out: dict[str, dict] = {}
+    for rev in rows:
+        leader = supervisor = None
+        if not rev.ref.startswith("bot:"):
+            parts = rev.ref.split(":")
+            pair = (by_sub.get(parts[1]) if rev.ref.startswith("sheet:")
+                    else by_key.get((rev.date, parts[2] if len(parts) > 3 else "")))
+            if pair:
+                leader, supervisor = pair
+        # Bot rows stamp `leader_id` from the day at discovery, so the profile
+        # name IS the name the rail prints — no entry→day walk needed here.
+        if not leader and rev.leader_id in profs:
+            leader = profs[rev.leader_id]
+        if not supervisor and rev.manager_id in mgrs:
+            supervisor = relabel_supervisor(mgrs[rev.manager_id])
+        out[rev.ref] = {
+            "leader": leader or "—",
+            "supervisor": supervisor or "—",
+            "task": _label(cfg, rev),
+        }
+    return out
+
+
 def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
     """Attach names, photos and the leader's own answer to each verdict.
 
@@ -284,54 +499,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
     mgrs = {m.id: m for m in db.query(Manager)
             .filter(Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
 
-    # ── the task-config chain, resolved in three queries instead of 4×N ──────
-    # `task_label` and `criteria_for` each walk leader → supervisor → global on
-    # their own. Called per row that is up to ~1200 queries for one queue read,
-    # so the same three tables are loaded once here and the chain is resolved in
-    # memory. Same precedence, same answer.
-    defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
-    sup_cfg: dict[tuple[int, int], LeaderTaskSetting] = {}
-    if mgr_ids:
-        for s in db.query(LeaderTaskSetting).filter(
-                LeaderTaskSetting.manager_id.in_(mgr_ids)).all():
-            sup_cfg[(s.manager_id, s.task_id)] = s
-    own_cfg: dict[tuple[int, int], LeaderTaskLeaderSetting] = {}
-    if prof_ids:
-        for r in db.query(LeaderTaskLeaderSetting).filter(
-                LeaderTaskLeaderSetting.leader_id.in_(prof_ids)).all():
-            own_cfg[(r.leader_id, r.task_id)] = r
-
-    def _chain(rev, attr):
-        """First non-blank `attr` down leader → supervisor → global."""
-        for row, key in ((own_cfg, (rev.leader_id, rev.task_id)),
-                         (sup_cfg, (rev.manager_id, rev.task_id))):
-            got = getattr(row.get(key), attr, None) if key[0] else None
-            if got and str(got).strip():
-                return str(got).strip()
-        got = getattr(defs.get(rev.task_id), attr, None)
-        return str(got).strip() if got and str(got).strip() else ""
-
-    _NAMES = ("name_ru", "name_uz", "name_en")
-
-    def _first_name(obj):
-        for attr in _NAMES:
-            got = getattr(obj, attr, None)
-            if got and got.strip():
-                return got.strip()
-        return ""
-
-    def _label(rev):
-        """LEVEL first, then language — the same precedence services/leader_ai
-        `task_label` uses. Walking language-first would let the global `name_ru`
-        beat a supervisor's own `name_uz` override, i.e. show the reviewer a
-        wording nobody in that unit ever read."""
-        for cfg, key in ((own_cfg, (rev.leader_id, rev.task_id)),
-                         (sup_cfg, (rev.manager_id, rev.task_id))):
-            obj = cfg.get(key) if key[0] else None
-            if obj is not None and (got := _first_name(obj)):
-                return got
-        td = defs.get(rev.task_id)
-        return (_first_name(td) if td is not None else "") or f"#{rev.task_id}"
+    cfg = _task_cfg(db, rows)
 
     # ── the bot layer: entry → answer, and its media ids ─────────────────────
     entry_ids = {int(r.ref.split(":")[1]) for r in rows if r.ref.startswith("bot:")}
@@ -402,7 +570,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             # The name the LEADER was shown, not the global catalog name — a
             # supervisor may have renamed the task for their own unit, and that
             # renamed line is what the photo was filed against.
-            "taskLabel": _label(rev),
+            "taskLabel": _label(cfg, rev),
             "date": rev.date,
             "shift": rev.shift,
             "source": rev.source,
@@ -416,7 +584,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
-            "criteria": _chain(rev, "criteria"),
+            "criteria": _chain(cfg, rev, "criteria"),
             "leaderDone": task.get("done"),
             "leaderReason": task.get("reason"),
             "photos": photos,
