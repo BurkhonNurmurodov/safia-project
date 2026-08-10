@@ -1574,8 +1574,8 @@ export default function Leaders() {
   const [checkingTask, setCheckingTask] = useState(null);
   const [checkErr, setCheckErr] = useState(null);
   const aiCheckMut = useMutation({
-    mutationFn: ({ uid, task_id }) =>
-      api.post("/api/leader-ai/review-now", { uid, task_id }).then((r) => r.data),
+    mutationFn: ({ uid, task_id, force }) =>
+      api.post("/api/leader-ai/review-now", { uid, task_id, force }).then((r) => r.data),
     onSuccess: (res, vars) => {
       // Splice the verdict straight into the cached report so the card fills in
       // where it stands — refetching would blank every card in the modal.
@@ -1594,10 +1594,14 @@ export default function Leaders() {
     }),
     onSettled: () => setCheckingTask(null),
   });
-  const checkTask = (taskId) => {
+  // `force` re-runs a task that already has a verdict. Without it the server
+  // hands back the stored answer, which is the right default — but after the
+  // reviewer's questions change, the stored answer is the OLD reviewer's and
+  // there is no other way to see the new one on a photo already on screen.
+  const checkTask = (taskId, force = false) => {
     setCheckErr(null);
     setCheckingTask(taskId);
-    aiCheckMut.mutate({ uid: detail.uid, task_id: taskId });
+    aiCheckMut.mutate({ uid: detail.uid, task_id: taskId, force });
   };
 
   const aiRunMut = useMutation({
@@ -2779,12 +2783,13 @@ export default function Leaders() {
                   <AiReview rev={rev} T={T} lang={lang}
                     // Only a task the leader answered YES to, with photos, has
                     // anything to review — the button must not appear where it
-                    // could never do anything.
-                    canCheck={aiOn && !unasked && tk.done && nPhotos > 0
-                      && !(rev?.status === "ok" || rev?.status === "flagged")}
+                    // could never do anything. A task that ALREADY has a verdict
+                    // still qualifies: that is the re-check, and the branch that
+                    // invites a first check tests `judged` itself.
+                    canCheck={aiOn && !unasked && tk.done && nPhotos > 0}
                     checking={checkingTask === id}
                     error={checkErr?.id === id ? checkErr.msg : null}
-                    onCheck={() => checkTask(id)} />
+                    onCheck={(force) => checkTask(id, force)} />
                 </div>
               );
             })}

@@ -478,6 +478,12 @@ def _notify_leader(db: Session, rev: LeaderAiReview) -> None:
 class ReviewNowIn(BaseModel):
     uid: str
     task_id: int
+    # Re-run a task that already has a verdict. Normally refused — a stored
+    # verdict is returned instead of re-spending quota on an answer we have.
+    # But after a prompt or model change the stored answer is the OLD reviewer's,
+    # and this is the only way to see the new one on a photo you are looking at
+    # without a shell on the box.
+    force: bool = False
 
 
 @router.post("/review-now")
@@ -509,7 +515,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
-    if rev.status in ("ok", "flagged"):
+    if rev.status in ("ok", "flagged") and not body.force:
         return {"ok": True, "task": _as_verdict(rev)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
@@ -604,6 +610,64 @@ def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     added = leader_ai.discover(db)
     leader_ai.run_async(discover_first=False)
     return {"ok": True, "queued": added, "counts": leader_ai.counts(db)}
+
+
+class RecheckIn(BaseModel):
+    date_from: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_to: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    # Which verdicts to throw away and re-earn. "flagged" is the cheap, useful
+    # default: a stricter reviewer mostly changes its mind about rows it already
+    # doubted, and re-running those costs a fraction of the corpus.
+    scope: str = Field("flagged", pattern="^(flagged|clean|all)$")
+
+
+@router.post("/recheck")
+def recheck(body: RecheckIn, db: Session = Depends(get_db),
+            admin: dict = Depends(verify_admin)):
+    """Re-queue verdicts that have already been judged, so a changed prompt or
+    model runs against them again.
+
+    This exists because the reviewer's QUESTIONS change. A verdict written by an
+    older prompt is not wrong data to be repaired — it is an answer to a
+    question we no longer ask, and nothing else in the system can tell the two
+    apart. The backfill CLI could do this from a shell; this endpoint is the
+    same thing for people who do not have one.
+
+    Two rules make it safe to hand to a button:
+
+    * **Resolved rows are never touched.** A human ruling is that row's terminal
+      state. Re-queueing it would resurrect a decided flag in the triage queue
+      and pollute the calibration stats, which measure agreement between a human
+      and the machine that the human actually saw.
+    * **It only queues.** The existing drain — batch-capped, advisory-locked,
+      and now on a timer — does the spending, so re-queueing ten thousand rows
+      paces itself instead of becoming one enormous request that dies with its
+      worker.
+    """
+    if not gemini.available():
+        raise HTTPException(status_code=400,
+                            detail="GEMINI_API_KEY is not set on the server")
+
+    q = db.query(LeaderAiReview).filter(
+        LeaderAiReview.status.in_(("ok", "flagged")),
+        LeaderAiReview.resolution.is_(None),
+    )
+    if body.scope == "flagged":
+        q = q.filter(LeaderAiReview.status == "flagged")
+    elif body.scope == "clean":
+        q = q.filter(LeaderAiReview.status == "ok")
+    if body.date_from:
+        q = q.filter(LeaderAiReview.date >= body.date_from)
+    if body.date_to:
+        q = q.filter(LeaderAiReview.date <= body.date_to)
+
+    n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
+    db.commit()
+    log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s)",
+             admin.get("telegram_id"), n, body.scope,
+             body.date_from or "*", body.date_to or "*")
+    leader_ai.run_async(discover_first=False)
+    return {"ok": True, "requeued": n, "counts": leader_ai.counts(db)}
 
 
 @router.post("/retry")
