@@ -30,8 +30,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    LeaderAiReview, LeaderChecklist, LeaderTaskDay, LeaderTaskEntry,
-    LeaderTaskMedia, Manager, RoleProfile,
+    LeaderAiReview, LeaderChecklist, LeaderTaskDay, LeaderTaskDef,
+    LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting,
+    Manager, RoleProfile,
 )
 from app.routers.admin import verify_admin
 from app.services import gemini, leader_ai
@@ -244,6 +245,55 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
     mgrs = {m.id: m for m in db.query(Manager)
             .filter(Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
 
+    # ── the task-config chain, resolved in three queries instead of 4×N ──────
+    # `task_label` and `criteria_for` each walk leader → supervisor → global on
+    # their own. Called per row that is up to ~1200 queries for one queue read,
+    # so the same three tables are loaded once here and the chain is resolved in
+    # memory. Same precedence, same answer.
+    defs = {td.id: td for td in db.query(LeaderTaskDef).all()}
+    sup_cfg: dict[tuple[int, int], LeaderTaskSetting] = {}
+    if mgr_ids:
+        for s in db.query(LeaderTaskSetting).filter(
+                LeaderTaskSetting.manager_id.in_(mgr_ids)).all():
+            sup_cfg[(s.manager_id, s.task_id)] = s
+    own_cfg: dict[tuple[int, int], LeaderTaskLeaderSetting] = {}
+    if prof_ids:
+        for r in db.query(LeaderTaskLeaderSetting).filter(
+                LeaderTaskLeaderSetting.leader_id.in_(prof_ids)).all():
+            own_cfg[(r.leader_id, r.task_id)] = r
+
+    def _chain(rev, attr):
+        """First non-blank `attr` down leader → supervisor → global."""
+        for row, key in ((own_cfg, (rev.leader_id, rev.task_id)),
+                         (sup_cfg, (rev.manager_id, rev.task_id))):
+            got = getattr(row.get(key), attr, None) if key[0] else None
+            if got and str(got).strip():
+                return str(got).strip()
+        got = getattr(defs.get(rev.task_id), attr, None)
+        return str(got).strip() if got and str(got).strip() else ""
+
+    _NAMES = ("name_ru", "name_uz", "name_en")
+
+    def _first_name(obj):
+        for attr in _NAMES:
+            got = getattr(obj, attr, None)
+            if got and got.strip():
+                return got.strip()
+        return ""
+
+    def _label(rev):
+        """LEVEL first, then language — the same precedence services/leader_ai
+        `task_label` uses. Walking language-first would let the global `name_ru`
+        beat a supervisor's own `name_uz` override, i.e. show the reviewer a
+        wording nobody in that unit ever read."""
+        for cfg, key in ((own_cfg, (rev.leader_id, rev.task_id)),
+                         (sup_cfg, (rev.manager_id, rev.task_id))):
+            obj = cfg.get(key) if key[0] else None
+            if obj is not None and (got := _first_name(obj)):
+                return got
+        td = defs.get(rev.task_id)
+        return (_first_name(td) if td is not None else "") or f"#{rev.task_id}"
+
     # ── the bot layer: entry → answer, and its media ids ─────────────────────
     entry_ids = {int(r.ref.split(":")[1]) for r in rows if r.ref.startswith("bot:")}
     entries = {e.id: e for e in db.query(LeaderTaskEntry)
@@ -310,7 +360,10 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             "ref": rev.ref,
             "uid": uid,
             "taskId": rev.task_id,
-            "taskLabel": leader_ai.task_label(db, rev.task_id),
+            # The name the LEADER was shown, not the global catalog name — a
+            # supervisor may have renamed the task for their own unit, and that
+            # renamed line is what the photo was filed against.
+            "taskLabel": _label(rev),
             "date": rev.date,
             "shift": rev.shift,
             "source": rev.source,
@@ -324,8 +377,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
-            "criteria": leader_ai.criteria_for(db, rev.task_id, rev.manager_id,
-                                               rev.leader_id),
+            "criteria": _chain(rev, "criteria"),
             "leaderDone": task.get("done"),
             "leaderReason": task.get("reason"),
             "photos": photos,
