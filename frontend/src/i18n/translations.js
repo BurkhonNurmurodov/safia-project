@@ -9030,7 +9030,7 @@ const t = {
     "workers.perDay":          "avg per day",
     "workers.info.rosterVsPresent":"For each brigadir, actual attendance as a share of the official (planned) headcount: average daily attendance ÷ plan × 100%. Traffic-light coloured: green = fully staffed (≥95%), yellow = moderate shortfall (85–95%), red = serious shortfall (<85%). Only brigadirs with official data are shown.",
     "workers.info.roleMix":    "Each spoke is a role. The filled shape is the selected brigadir's role counts; the grey shape is the average across all brigadirs — compare the two shapes.",
-    "workers.info.trend":      "Workers per day, split by role and stacked. «On list» shows everyone on the list, «Came» only those who turned up. The window is always at least 7 days.",
+    "workers.info.trend":      "Workers per day, split by role and stacked. «On list» shows everyone on the list, «Came» only those who turned up, «Difference» those who did not come. The window is always at least 7 days.",
     "workers.info.heatmap":    "Rows = brigadirs, columns = days. Each cell is the share of that day's list who turned up (came ÷ on the list). Green = nearly everyone came (≥90%), yellow = 75–90%, red = under 75%. Hover a cell for the counts behind it; a blank cell means the day was not confirmed.",
     "workers.info.byDay":      "Bars per day: blue = people-exchange requests, purple = role-change requests.",
     "workers.info.targets":    "Where exchanged workers were sent — a receiving brigadir (→) or a task. Longer bar = more workers moved there.",
