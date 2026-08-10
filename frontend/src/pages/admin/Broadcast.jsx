@@ -2,11 +2,13 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Users, History, Send, Paperclip, X, Image as ImageIcon, Video,
-  FileText, CheckCircle, Loader2, Type, Sparkles, RotateCcw,
+  FileText, CheckCircle, Loader2, Type, Sparkles, RotateCcw, CalendarClock,
+  Clock, Ban,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import Button from "../../components/ui/Button";
+import DateRangePicker from "../../components/ui/DateRangePicker";
 import SearchInput from "../../components/ui/SearchInput";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Modal from "../../components/ui/Modal";
@@ -62,9 +64,19 @@ export default function Broadcast() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [toast, setToast] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
   const [sendError, setSendError] = useState("");
   const [retryTarget, setRetryTarget] = useState(null);
   const [retryError, setRetryError] = useState("");
+  // Deferred send. The date+time are the admin's OWN wall clock — what they
+  // read off their screen is the instant that gets sent, converted to UTC on
+  // the way out. Not persisted: a leftover send time from last week silently
+  // re-arming on a fresh compose is the one failure mode worth designing out.
+  const [schedMode, setSchedMode] = useState("now");
+  const [schedDate, setSchedDate] = useState("");
+  const [schedTime, setSchedTime] = useState("09:00");
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelError, setCancelError] = useState("");
   const toastCtl = useToast();
 
   const { data: recip, isLoading: listLoading } = useQuery({
@@ -75,8 +87,15 @@ export default function Broadcast() {
   const { data: history, isLoading: historyLoading } = useQuery({
     queryKey: ["broadcast-history"],
     queryFn: () => api.get("/api/broadcast/history").then((r) => r.data),
-    refetchInterval: (query) =>
-      query.state.data?.some((r) => r.status === "sending") ? 2000 : false,
+    refetchInterval: (query) => {
+      const rows = query.state.data || [];
+      if (rows.some((r) => r.status === "sending")) return 2000;
+      // A scheduled row past its time is mid-handover to the sender; poll
+      // slowly so it doesn't sit at "scheduled" long after it actually fired.
+      if (rows.some((r) => r.status === "scheduled" && r.scheduled_at &&
+                           new Date(r.scheduled_at).getTime() <= Date.now())) return 10_000;
+      return false;
+    },
   });
 
   // Saved premium (custom) emoji palette for the composer.
@@ -125,8 +144,23 @@ export default function Broadcast() {
   const maxLen = rich ? 32768 : attachment ? 1024 : 4096;
   const len = msg.text.length;
   const over = len > maxLen;
+
+  const later = schedMode === "later";
+  // Local wall-clock → a real instant. Built with the Date constructor rather
+  // than parsing a string so the browser's own zone does the conversion.
+  const schedAt = useMemo(() => {
+    if (!later || !schedDate || !/^\d{2}:\d{2}$/.test(schedTime)) return null;
+    const [y, mo, d] = schedDate.split("-").map(Number);
+    const [h, mi] = schedTime.split(":").map(Number);
+    const dt = new Date(y, mo - 1, d, h, mi, 0, 0);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }, [later, schedDate, schedTime]);
+  // The backend rejects a past time outright; catching it here means the
+  // admin sees why the button is dead instead of getting a 422 after confirm.
+  const schedPast = !!schedAt && schedAt.getTime() < Date.now() + 30_000;
+
   const canSend = (!!msg.text.trim() || (rich && msg.media.length > 0)) &&
-    selected.length > 0 && !over;
+    selected.length > 0 && !over && (!later || (!!schedAt && !schedPast));
 
   const sendMut = useMutation({
     mutationFn: () => {
@@ -141,14 +175,23 @@ export default function Broadcast() {
       } else if (attachment) {
         form.append("file", attachment);
       }
+      // UTC, so the send time survives an admin on a different device clock.
+      if (schedAt) form.append("scheduled_at", schedAt.toISOString());
       return api.post("/api/broadcast/send", form);
     },
     onSuccess: () => {
       setConfirmOpen(false);
+      // Read the schedule BEFORE the reset below clears it — "queued" and
+      // "scheduled for Tuesday" are not the same promise to make.
+      setToastMsg(schedAt
+        ? t("admin.broadcast.scheduledToast").replace("{when}", fmtDT(schedAt))
+        : t("admin.broadcast.queuedToast"));
       setMsg({ html: "", text: "", media: [] });
       setEditorKey((k) => k + 1);
       setAttachment(null);
       setSelected([]);
+      setSchedMode("now");
+      setSchedDate("");
       setToast(true);
       setTimeout(() => setToast(false), 3000);
       qc.invalidateQueries({ queryKey: ["broadcast-history"] });
@@ -170,6 +213,19 @@ export default function Broadcast() {
       qc.invalidateQueries({ queryKey: ["broadcast-history"] });
     },
     onError: (e) => setRetryError(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
+  });
+
+  // Call off a broadcast that has not fired. Loses cleanly against a send that
+  // just started — the backend answers 409 and the error stays on the dialog.
+  const cancelMut = useMutation({
+    mutationFn: (id) => api.post(`/api/broadcast/${id}/cancel`),
+    onSuccess: () => {
+      setCancelTarget(null);
+      setCancelError("");
+      toastCtl.success(t("admin.broadcast.cancelDone"));
+      qc.invalidateQueries({ queryKey: ["broadcast-history"] });
+    },
+    onError: (e) => setCancelError(e?.response?.data?.detail || t("admin.broadcast.sendFailed")),
   });
 
   const pickFile = (e) => {
@@ -263,18 +319,66 @@ export default function Broadcast() {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 pt-1" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+            {/* ── When to send ──────────────────────────────────────────── */}
+            {/* The date/time row only exists once "later" is picked, so sending
+                now stays exactly as immediate as it was. */}
+            <div className="space-y-2" style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+              <SegmentedToggle
+                size="sm"
+                value={schedMode}
+                onChange={setSchedMode}
+                options={[
+                  { value: "now", label: <span className="inline-flex items-center gap-1.5"><Send size={13} /> {t("admin.broadcast.sendNow")}</span> },
+                  { value: "later", label: <span className="inline-flex items-center gap-1.5"><CalendarClock size={13} /> {t("admin.broadcast.sendLater")}</span> },
+                ]}
+              />
+              {later && (
+                <>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <DateRangePicker
+                      single
+                      dateFrom={schedDate}
+                      dateTo={schedDate}
+                      setDateFrom={setSchedDate}
+                      setDateTo={setSchedDate}
+                      triggerClassName="px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="time"
+                      value={schedTime}
+                      onChange={(e) => setSchedTime(e.target.value)}
+                      className="rounded-xl px-3 py-2 text-sm tabular-nums outline-none"
+                      style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                    />
+                    {schedAt && !schedPast && (
+                      <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+                        <Clock size={11} /> {fmtDT(schedAt)}
+                      </span>
+                    )}
+                  </div>
+                  {/* Consequential, so it sits under the control at --text-3,
+                      not at --text-4 where the eye skips it. */}
+                  <div className="text-[11px]" style={{ color: schedPast ? "#ef4444" : "var(--text-3)" }}>
+                    {!schedDate ? t("admin.broadcast.schedPick")
+                      : schedPast ? t("admin.broadcast.schedPast")
+                      : t("admin.broadcast.schedHint")}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-1">
               <span className="text-xs" style={{ color: selected.length ? "var(--text-3)" : "var(--text-4)" }}>
                 {t("admin.broadcast.selected").replace("{n}", selected.length)}
               </span>
               <Button
                 size="lg"
-                icon={<Send size={14} />}
+                icon={later ? <CalendarClock size={14} /> : <Send size={14} />}
                 disabled={!canSend}
                 loading={sendMut.isPending}
                 onClick={() => setConfirmOpen(true)}
               >
-                {t("admin.broadcast.send")}
+                {later ? t("admin.broadcast.schedule") : t("admin.broadcast.send")}
               </Button>
             </div>
           </div>
@@ -404,7 +508,30 @@ export default function Broadcast() {
                 </td>
                 <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.sender_name || "—"}</td>
                 <td className="px-3 py-2">
-                  {r.status === "sending" ? (
+                  {r.status === "scheduled" ? (
+                    /* Amber = armed and waiting. Deliberately not the grey a
+                       canceled row gets — the two must not read alike. */
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap" style={{ color: "#eab308" }}>
+                        <CalendarClock size={12} /> {r.scheduled_at ? fmtDT(r.scheduled_at) : t("admin.broadcast.statusScheduled")}
+                      </span>
+                      {r.can_cancel && (
+                        <Button
+                          variant="danger"
+                          tint
+                          size="sm"
+                          icon={<Ban size={12} />}
+                          onClick={(e) => { e.stopPropagation(); setCancelError(""); setCancelTarget(r); }}
+                        >
+                          {t("admin.broadcast.cancelSend")}
+                        </Button>
+                      )}
+                    </span>
+                  ) : r.status === "canceled" ? (
+                    <span className="inline-flex items-center gap-1.5" style={{ color: "var(--text-4)" }}>
+                      <Ban size={12} /> {t("admin.broadcast.statusCanceled")}
+                    </span>
+                  ) : r.status === "sending" ? (
                     <span className="inline-flex items-center gap-1.5" style={{ color: "var(--brand-text)" }}>
                       <Loader2 size={12} className="animate-spin" /> {t("admin.broadcast.statusSending")}
                     </span>
@@ -439,12 +566,20 @@ export default function Broadcast() {
         error={sendError}
         onCancel={() => { if (!sendMut.isPending) { setConfirmOpen(false); setSendError(""); } }}
         onConfirm={() => { setSendError(""); sendMut.mutate(); }}
-        title={t("admin.broadcast.confirmTitle")}
+        title={later ? t("admin.broadcast.confirmSchedTitle") : t("admin.broadcast.confirmTitle")}
         /* Confirming a bare number gives friction but no verification value —
            especially next to a "select all" that ignores the active filter.
            The readback now names the groups and quotes the message. */
         message={
           <>
+            {/* The WHEN leads for a scheduled send: it is the one detail the
+                admin cannot check afterwards by re-reading the composer. */}
+            {later && schedAt && (
+              <p className="mb-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-semibold"
+                 style={{ background: "rgba(234,179,8,0.12)", color: "#a16207", border: "1px solid rgba(234,179,8,0.25)" }}>
+                <CalendarClock size={13} /> {fmtDT(schedAt)}
+              </p>
+            )}
             <p className="mb-2">{t("admin.broadcast.confirmMsg").replace("{n}", selected.length)}</p>
             {groupBreakdown.length > 0 && (
               <ul className="mb-2 space-y-0.5">
@@ -463,8 +598,8 @@ export default function Broadcast() {
             )}
           </>
         }
-        confirmLabel={t("admin.broadcast.send")}
-        icon={<Megaphone size={20} />}
+        confirmLabel={later ? t("admin.broadcast.schedule") : t("admin.broadcast.send")}
+        icon={later ? <CalendarClock size={20} /> : <Megaphone size={20} />}
         loading={sendMut.isPending}
       />
 
@@ -481,6 +616,22 @@ export default function Broadcast() {
         loading={retryMut.isPending}
       />
 
+      {/* ── Confirm cancel of a scheduled broadcast ─────────────────────────── */}
+      <ConfirmDialog
+        open={!!cancelTarget}
+        tone="danger"
+        error={cancelError}
+        onCancel={() => { if (!cancelMut.isPending) { setCancelTarget(null); setCancelError(""); } }}
+        onConfirm={() => { setCancelError(""); cancelMut.mutate(cancelTarget.id); }}
+        title={t("admin.broadcast.cancelTitle")}
+        message={t("admin.broadcast.cancelMsg")
+          .replace("{when}", cancelTarget?.scheduled_at ? fmtDT(cancelTarget.scheduled_at) : "—")
+          .replace("{n}", cancelTarget?.recipient_total ?? 0)}
+        confirmLabel={t("admin.broadcast.cancelConfirm")}
+        icon={<Ban size={20} />}
+        loading={cancelMut.isPending}
+      />
+
       {/* ── Detail modal ────────────────────────────────────────────────────── */}
       {detail && (
         <Modal
@@ -491,6 +642,15 @@ export default function Broadcast() {
           footer={
             <>
               <Button variant="secondary" onClick={() => setDetail(null)}>{t("admin.broadcast.close")}</Button>
+              {detail.can_cancel && (
+                <Button
+                  variant="danger"
+                  icon={<Ban size={14} />}
+                  onClick={() => { setDetail(null); setCancelError(""); setCancelTarget(detail); }}
+                >
+                  {t("admin.broadcast.cancelSend")}
+                </Button>
+              )}
               {detail.can_retry && (
                 <Button
                   icon={<RotateCcw size={14} />}
@@ -507,6 +667,15 @@ export default function Broadcast() {
             style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" }}
             dangerouslySetInnerHTML={{ __html: detail.text_html }}
           />
+          {detail.status === "scheduled" && detail.scheduled_at && (
+            <div
+              className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md"
+              style={{ background: "rgba(234,179,8,0.12)", color: "#a16207", border: "1px solid rgba(234,179,8,0.25)" }}
+            >
+              <CalendarClock size={12} />
+              {t("admin.broadcast.scheduledFor").replace("{when}", fmtDT(detail.scheduled_at))}
+            </div>
+          )}
           {detail.attachment_kind && (
             <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
               <Paperclip size={12} style={{ color: "var(--brand-text)" }} />
@@ -555,7 +724,7 @@ export default function Broadcast() {
       )}
 
       {/* ── Queued toast — same pattern as the Staff export toast ──────────── */}
-      <Toast open={toast} message={t("admin.broadcast.queuedToast")} onClose={() => setToast(false)} />
+      <Toast open={toast} message={toastMsg} onClose={() => setToast(false)} />
       {toastCtl.node}
     </div>
   );

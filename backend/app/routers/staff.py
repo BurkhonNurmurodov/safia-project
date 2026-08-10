@@ -199,6 +199,23 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Опоздавший отчёт засчитан", "Дата: {date} | Открыл(а): {decided_by} | День теперь считается с результатом {score}% (отмечен как опоздавший)"),
         "en": ("Late report accepted", "Date: {date} | Opened by: {decided_by} | The day now counts at {score}% (still flagged as late)"),
     },
+    # An admin reviewed the AI's doubt about a proof photo and agreed with it.
+    # `rejected` costs the task its weight for that day; `requeried` costs
+    # nothing yet and asks for a replacement — so the two texts must NOT be
+    # interchangeable, or a leader re-uploads thinking they still have time when
+    # the day is already scored.
+    "leader_proof_rejected": {
+        "uz": ("Dalil rasmi qabul qilinmadi", "Sana: {date} | Vazifa: {task} | Tekshirdi: {by} | Bu vazifa shu kun uchun bajarilmagan deb hisoblanadi."),
+        "uz_cyrl": ("Далил расми қабул қилинмади", "Сана: {date} | Вазифа: {task} | Текширди: {by} | Бу вазифа шу кун учун бажарилмаган деб ҳисобланади."),
+        "ru": ("Фото-подтверждение не принято", "Дата: {date} | Задача: {task} | Проверил(а): {by} | Задача засчитана как невыполненная за этот день."),
+        "en": ("Proof photo rejected", "Date: {date} | Task: {task} | Reviewed by: {by} | The task now counts as not done for that day."),
+    },
+    "leader_proof_requeried": {
+        "uz": ("Dalil rasmini qayta yuboring", "Sana: {date} | Vazifa: {task} | So'radi: {by} | Hozircha baho o'zgargani yo'q — yangi rasm yuklang."),
+        "uz_cyrl": ("Далил расмини қайта юборинг", "Сана: {date} | Вазифа: {task} | Сўради: {by} | Ҳозирча баҳо ўзгаргани йўқ — янги расм юкланг."),
+        "ru": ("Нужно переснять подтверждение", "Дата: {date} | Задача: {task} | Запросил(а): {by} | Оценка пока не изменена — загрузите новое фото."),
+        "en": ("Please re-file your proof", "Date: {date} | Task: {task} | Requested by: {by} | Nothing has been deducted yet — upload a new photo."),
+    },
     "new_edit_request": {
         "uz": ("{supervisor_name} tahrirlash so'rovi yubordi", "Xodim: {worker_name} | Sana: {date}"),
         "uz_cyrl": ("{supervisor_name} таҳрирлаш сўрови юборди", "Ходим: {worker_name} | Сана: {date}"),

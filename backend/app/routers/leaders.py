@@ -18,7 +18,7 @@ from app.capabilities import page_scope_is_all
 from app.permissions import require_page
 from app import identity
 from app.models import RoleProfile
-from app.services import leader_bot
+from app.services import leader_ai, leader_bot
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -376,6 +376,8 @@ def get_leaders(
     data = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
     data.sort(key=lambda r: str(r["date"]), reverse=True)
 
+    _apply_ai_rejections(db, data)
+
     return {
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
@@ -386,6 +388,57 @@ def get_leaders(
         "can_request_late": role in ("admin", "supervisor"),
         "can_decide_late": _may_decide(payload),
     }
+
+
+def _apply_ai_rejections(db: Session, data: list[dict]) -> None:
+    """Make a rejected proof cost the day its points, in place.
+
+    An AI flag that a human upheld has to change a number, or the whole review
+    loop is theatre — the admin rules on a photo and the leaderboard goes on
+    showing the score the fake earned. Neither source can be written back
+    (the leaders sheet is wipe-and-reloaded, a closed bot day is immutable), so
+    the penalty is applied here, at read time, every time.
+
+    The rule is a DELTA, not a re-derivation: a report with no rejection is left
+    byte-for-byte as it was, and one with a rejection loses exactly that task's
+    share of its own answered weight. Re-deriving every completion from the task
+    list would silently restate the sheet's own arithmetic for thousands of rows
+    that nobody ruled on.
+
+    Deliberately AFTER the merge and sort, so it sees the rows the client will
+    actually score — a sheet row a bot day replaced must not be penalised for a
+    verdict on a task nobody ends up reading.
+    """
+    rejected = leader_ai.rejected_by_uid(db, {str(r["date"]) for r in data})
+    if not rejected:
+        return
+    weights = leader_ai.task_weights(db)
+
+    for row in data:
+        hit = rejected.get(row["uid"])
+        if not hit:
+            continue
+        tasks = row.get("tasks") or []
+        # Denominator = the weight this report actually put in front of the
+        # leader. A question the form never asked (`answered: False`) was never
+        # theirs to fail, so it cannot dilute the penalty either.
+        total = sum(weights.get(int(t.get("id") or 0), 0)
+                    for t in tasks if t.get("answered") is not False)
+        if total <= 0:
+            continue
+        lost = 0
+        for t in tasks:
+            tid = int(t.get("id") or 0)
+            if tid not in hit:
+                continue
+            # Flagged on the row itself so the detail modal can say WHY the task
+            # reads as failed while the leader's own answer still says «Ha».
+            t["ai_rejected"] = True
+            # Only a task that was counting as done has anything to take away.
+            if t.get("done"):
+                lost += weights.get(tid, 0)
+        if lost:
+            row["completion"] = max(0.0, row["completion"] - lost / total * 100)
 
 
 # ── «Late reports» — the review queue ────────────────────────────────────────

@@ -914,7 +914,10 @@ def _preflight_media(sender_tid: int, mode: str, html: str, kind: str | None,
                  "rich_message": json.dumps({"html": plain_html, "is_rtl": False, "media": specs})},
                 files,
             )
-            probe_id = (result or {}).get("message_id")
+            # Only used to delete the probe afterwards, so a shape surprise
+            # must not fail a preflight that already minted the ids.
+            _probe = result[0] if isinstance(result, list) and result else result
+            probe_id = _probe.get("message_id") if isinstance(_probe, dict) else None
             reusable = _harvest_file_ids(result, media_items)
             if reusable is None:
                 raise RuntimeError("could not match uploaded media back to the message")

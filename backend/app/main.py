@@ -147,6 +147,10 @@ async def lifespan(app: FastAPI):
     # composing a broadcast and its send time therefore costs nothing.
     start_scheduler()
     register_scheduled_broadcasts()
+    # The AI proof reviewer used to move only when a human hit Refresh; now the
+    # queue drains itself (mirrored in passenger_wsgi.py).
+    from app.services.leader_ai import register_drain_job
+    register_drain_job()
     yield
     shutdown_scheduler()
 

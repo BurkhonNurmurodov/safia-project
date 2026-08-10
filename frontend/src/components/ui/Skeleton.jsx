@@ -1,5 +1,8 @@
-export function SkeletonBlock({ className = "" }) {
-  return <div className={`animate-pulse rounded bg-white/[0.06] ${className}`} />;
+// `style` is the escape hatch for a placeholder sized off a runtime value (the
+// proof-photo loader reserves exactly the height its image will take, so the
+// pane does not jump when the blob resolves). Tailwind classes stay the norm.
+export function SkeletonBlock({ className = "", style }) {
+  return <div className={`animate-pulse rounded bg-white/[0.06] ${className}`} style={style} />;
 }
 
 export function SkeletonCard() {

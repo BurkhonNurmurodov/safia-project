@@ -749,15 +749,81 @@ def severity(flags: list[str] | None) -> int:
     return _BUCKET_RANK.get(bucket_of(flags), 9)
 
 
-def rejected_refs(db: Session, dates: set[str] | None = None) -> set[str]:
-    """Every ref a human REJECTED — the proof was judged bad, so the task must
-    stop counting toward its day. Read by routers/leaders.py to apply the
-    penalty at read time: the leaders sheet is an immutable source we cannot
-    write back to, so the deduction is an overlay, never an edit."""
-    q = db.query(LeaderAiReview.ref).filter(LeaderAiReview.resolution == "rejected")
+def uid_map(db: Session, revs: list) -> dict[str, str]:
+    """ref → the uid /api/leaders prints for that verdict's report.
+
+    THE resolver. The register badge, the triage queue and the score overlay all
+    have to agree about which report a verdict belongs to; two copies of this
+    would drift the first time a ref form changed, and the symptom would be a
+    badge on the wrong row rather than an error.
+
+    A `sheet:` ref already carries the submission id, which IS the uid. A
+    `sheetd:` ref predates submission ids and has to be resolved back to a live
+    row, because the uid for those is the (recycled) row id.
+    """
+    out: dict[str, str] = {}
+
+    bot_entry_ids = {int(r.ref.split(":")[1]) for r in revs if r.ref.startswith("bot:")}
+    if bot_entry_ids:
+        by_id = {e.id: e for e in db.query(LeaderTaskEntry)
+                 .filter(LeaderTaskEntry.id.in_(bot_entry_ids)).all()}
+        for r in revs:
+            if r.ref.startswith("bot:"):
+                e = by_id.get(int(r.ref.split(":")[1]))
+                if e is not None:
+                    out[r.ref] = f"bot-{e.day_id}"
+
+    dated = [r.ref for r in revs if r.ref.startswith("sheetd:")]
+    for r in revs:
+        if r.ref.startswith("sheet:"):
+            out[r.ref] = r.ref.split(":", 2)[1]
+    if dated:
+        dates = {ref.split(":")[1] for ref in dated}
+        rows = db.query(LeaderChecklist).filter(LeaderChecklist.date.in_(dates)).all()
+        by_key = {(row.date, (row.leader or "").strip().lower()[:60]): row for row in rows}
+        for ref in dated:
+            parts = ref.split(":")
+            row = by_key.get((parts[1], parts[2] if len(parts) > 3 else ""))
+            if row is not None:
+                out[ref] = row_uid(row)
+    return out
+
+
+def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set[int]]:
+    """report uid → the task ids whose proof a human REJECTED.
+
+    The leaders sheet is a read-only source we cannot write back to, and a bot
+    day is closed and immutable, so a rejection can never be an edit — it is an
+    overlay applied at read time by routers/leaders.py. That also means a
+    rejection is reversible by re-ruling the verdict, which is the behaviour you
+    want from a judgement call.
+    """
+    q = (db.query(LeaderAiReview)
+         .filter(LeaderAiReview.resolution == "rejected"))
     if dates:
         q = q.filter(LeaderAiReview.date.in_(dates))
-    return {r[0] for r in q.all()}
+    revs = q.all()
+    if not revs:
+        return {}
+    uids = uid_map(db, revs)
+    out: dict[str, set[int]] = {}
+    for rev in revs:
+        uid = uids.get(rev.ref)
+        if uid:
+            out.setdefault(uid, set()).add(rev.task_id)
+    return out
+
+
+def task_weights(db: Session) -> dict[int, int]:
+    """task_id → the catalog weight, for the rejection deduction.
+
+    Deliberately the GLOBAL catalog, not the per-supervisor override chain: the
+    deduction is a task's share of its own report (weight ÷ the weights actually
+    on that report), and both collection layers seed from this one set. Reading
+    the override chain here would mean resolving a supervisor per row for a
+    number that moves a percentage by a point or two.
+    """
+    return {td.id: (td.default_weight or 0) for td in db.query(LeaderTaskDef).all()}
 
 
 # ── background kick ──────────────────────────────────────────────────────────
@@ -831,3 +897,33 @@ def run_async(discover_first: bool = True) -> None:
             _lock.release()
 
     threading.Thread(target=_work, name="leader-ai-drain", daemon=True).start()
+
+
+# Every this many minutes the queue drains itself. Chosen against the free
+# tier's per-DAY cap rather than latency: a batch of `gemini_batch_size` every
+# 20 minutes is ~72 batches a day, which keeps a normal day's photos judged
+# within the hour without racing the quota to zero by lunchtime.
+DRAIN_EVERY_MIN = 20
+
+
+def register_drain_job() -> None:
+    """Put the drain on the scheduler at boot.
+
+    Until the platform grew a scheduler this feature had NO periodic trigger:
+    the queue only moved when somebody hit the sheet Refresh or a leader closed
+    a bot day, so a report nobody touched stayed unreviewed indefinitely and
+    "N pending" was a number that could sit still for a week. That gap was known
+    and accepted at the time; it does not have to be any more.
+
+    Safe as an in-process timer for the same reason the broadcast fan-out is:
+    the drain claims a Postgres advisory lock before doing any work, so even if
+    the unit ever moves off `--workers 1` the extra firings no-op instead of
+    double-spending quota.
+    """
+    if not gemini.available():
+        log.info("leader-ai: no API key, periodic drain not scheduled")
+        return
+    from app.scheduler import schedule_interval
+    schedule_interval("leader-ai-drain", lambda: run_async(discover_first=True),
+                      minutes=DRAIN_EVERY_MIN)
+    log.info("leader-ai: periodic drain scheduled every %s min", DRAIN_EVERY_MIN)

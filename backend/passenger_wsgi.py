@@ -108,6 +108,7 @@ try:
     add_leader_submission_columns()
     add_broadcast_rich_columns()
     add_broadcast_resume_columns()
+    add_broadcast_schedule_column()
     add_pp_product_op()
     add_downtime_ns_columns()
     add_leader_task_setting_names()
@@ -157,6 +158,9 @@ try:
     from app.scheduler import start_scheduler
     start_scheduler()
     register_scheduled_broadcasts()
+    # The AI proof reviewer's queue drains itself (mirrored in app/main.py).
+    from app.services.leader_ai import register_drain_job
+    register_drain_job()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
