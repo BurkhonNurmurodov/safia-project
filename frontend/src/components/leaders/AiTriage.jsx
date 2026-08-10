@@ -233,7 +233,14 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
     // server a human had cleared it, and the calibration stats count exactly
     // that. The row goes back to unresolved, which is what undo means.
     api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: "open" })
-      .then(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }))
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+        // The optimistic re-insert puts the row at the head of whatever queue
+        // is on screen — which, if the scope changed between the dispatch and
+        // the undo, is a queue it does not belong to. Re-reading settles it:
+        // the server decides where an unresolved row lands, not this component.
+        qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
+      })
       .catch(() => qc.invalidateQueries({ queryKey: ["leader-ai-queue"] }));
     qc.setQueryData(qkey, (old) => old && ({
       ...old,
@@ -302,20 +309,26 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   // Options come from the server's facet pass, so a name only appears while it
   // still has flags behind it, and the count says how many. Busiest first —
   // ninety leaders sorted alphabetically bury the one worth opening.
-  const opts = (dim, label) => [
-    { value: null, label },
-    ...(facets[dim] || []).map((o) => ({
-      value: o.v, label: `${nm(o.v)} · ${o.n}`, title: nm(o.v),
-    })),
-  ];
   const facetN = (dim, v) => (facets[dim] || []).find((o) => o.v === v)?.n;
-  const flagOpts = [
-    { value: null, label: T.aiFAllFlags },
-    ...FLAGS.filter((k) => facetN("flag", k))
-      .map((k) => ({ value: k, label: `${T[`aiF_${k}`]} · ${facetN("flag", k)}`, title: T[`aiF_${k}`] })),
-  ];
   const taskName = (id) =>
     (facets.task || []).find((o) => o.v === id)?.label || `${T.task} ${id}`;
+
+  /** `[«All …», …live options]` — with the CURRENT pick forced in even when the
+   *  other filters have starved it to zero. A list that silently drops what is
+   *  selected leaves the control showing no selection at all, which reads as
+   *  "no filter" over a queue that is very much filtered. */
+  const optList = (dim, allLabel, name) => {
+    const live = (facets[dim] || []).map((o) => ({
+      value: o.v, label: `${name(o.v)} · ${o.n}`, title: name(o.v),
+    }));
+    const pick = f[dim];            // the state keys ARE the dimension names
+    const missing = pick != null && !live.some((o) => o.value === pick);
+    return [
+      { value: null, label: allLabel },
+      ...(missing ? [{ value: pick, label: `${name(pick)} · 0`, title: name(pick) }] : []),
+      ...live,
+    ];
+  };
 
   return (
     <>
@@ -359,7 +372,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
               onClear: () => setF({ leader: null }),
               render: ({ close } = {}) => (
                 <PickFilter searchable close={close} value={f.leader}
-                  opts={opts("leader", T.allLeaders)}
+                  opts={optList("leader", T.allLeaders, nm)}
                   onChange={(v) => setF({ leader: v })} />
               ),
             },
@@ -369,7 +382,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
               onClear: () => setF({ supervisor: null }),
               render: ({ close } = {}) => (
                 <PickFilter searchable close={close} value={f.supervisor}
-                  opts={opts("supervisor", T.allSups)}
+                  opts={optList("supervisor", T.allSups, nm)}
                   onChange={(v) => setF({ supervisor: v })} />
               ),
             },
@@ -379,12 +392,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
               onClear: () => setF({ task: null }),
               render: ({ close } = {}) => (
                 <PickFilter searchable close={close} value={f.task}
-                  opts={[
-                    { value: null, label: T.aiFAllTasks },
-                    ...(facets.task || []).map((o) => ({
-                      value: o.v, label: `${o.label} · ${o.n}`, title: o.label,
-                    })),
-                  ]}
+                  opts={optList("task", T.aiFAllTasks, taskName)}
                   onChange={(v) => setF({ task: v })} />
               ),
             },
@@ -397,7 +405,8 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
                   onChange={(v) => setF({ shift: v })}
                   options={[
                     [null, T.bandAll],
-                    ...[1, 2].map((s) => [s, facetN("shift", s) ? `S${s} · ${facetN("shift", s)}` : `S${s}`]),
+                    ...[1, 2].filter((s) => facetN("shift", s) || f.shift === s)
+                      .map((s) => [s, `S${s} · ${facetN("shift", s) || 0}`]),
                   ]} />
               ),
             },
@@ -410,7 +419,15 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
               active: !!f.flag, display: f.flag ? T[`aiF_${f.flag}`] : "",
               onClear: () => setF({ flag: null }),
               render: ({ close } = {}) => (
-                <PickFilter close={close} value={f.flag} opts={flagOpts}
+                <PickFilter close={close} value={f.flag}
+                  opts={[
+                    { value: null, label: T.aiFAllFlags },
+                    ...FLAGS.filter((k) => facetN("flag", k) || f.flag === k)
+                      .map((k) => ({
+                        value: k, title: T[`aiF_${k}`],
+                        label: `${T[`aiF_${k}`]} · ${facetN("flag", k) || 0}`,
+                      })),
+                  ]}
                   onChange={(v) => setF({ flag: v })} />
               ),
             },
