@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
+        add_web_credential_password_enc,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
@@ -103,6 +104,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_criteria()
     add_profile_identity_columns()
     add_activity_profile_key()
+    add_web_credential_password_enc()
     migrate_multi_roles()
     backfill_leader_page_access()
     seed_admins()

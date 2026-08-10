@@ -384,6 +384,16 @@ class WebCredential(Base):
     # keyboard's automatic capital never locks anyone out of their own account.
     username        = Column(String, nullable=False, unique=True, index=True)
     password_hash   = Column(String, nullable=False)
+    # A SEALED, reversible copy of the same password (``web_auth.seal_password``).
+    # The hash answers "is this the password?"; an admin managing logins also has
+    # to answer "what IS it?" — people lose the DM, and the only other answer,
+    # "reset it", signs that person out of every browser they are working in.
+    # Sealed rather than plaintext because the key is derived from SECRET_KEY,
+    # which lives in backend/.env and NOT in the database, so the .sql.gz the
+    # dbdump tab mails to Telegram carries ciphertext and nothing more. NULL on
+    # credentials last set before this column existed — those read as "unknown"
+    # on the profile page, never as a guess.
+    password_enc    = Column(String, nullable=True)
     enabled         = Column(Boolean, nullable=False, default=True)
     token_version   = Column(Integer, nullable=False, default=1)
     # Lockout state lives in the DB, not in process memory: an attacker who can

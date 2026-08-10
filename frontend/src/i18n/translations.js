@@ -2190,6 +2190,12 @@ const t = {
     "weblogin.deleteTitle":    "Loginni o'chirish",
     "weblogin.deleteBody":     "Bu profil endi brauzerdan kira olmaydi. Telegram orqali kirish saqlanadi.",
     "weblogin.saveFailed":     "Saqlab bo'lmadi",
+    "weblogin.copyLogin":      "Loginni nusxalash",
+    "weblogin.copyPassword":   "Parolni nusxalash",
+    "weblogin.copyFailed":     "Nusxalab bo'lmadi",
+    "weblogin.revealHint":     "Parolni faqat adminlar ko'radi; har bir ko'rish jurnalga yoziladi.",
+    "weblogin.pwUnknown":      "noma'lum",
+    "weblogin.pwUnknownHint":  "Bu parol saqlanmagan — uni ko'rsatib bo'lmaydi. «Parolni tiklash» yangi parol yaratadi va Telegram'ga yuboradi.",
     "auth.updateTg":            "Telegram'ni yangilash",
 
     // ── General ───────────────────────────────────────────────────────────────
@@ -4860,6 +4866,12 @@ const t = {
     "weblogin.deleteTitle":    "Логинни ўчириш",
     "weblogin.deleteBody":     "Бу профил энди браузердан кира олмайди. Telegram орқали кириш сақланади.",
     "weblogin.saveFailed":     "Сақлаб бўлмади",
+    "weblogin.copyLogin":      "Логинни нусхалаш",
+    "weblogin.copyPassword":   "Паролни нусхалаш",
+    "weblogin.copyFailed":     "Нусхалаб бўлмади",
+    "weblogin.revealHint":     "Паролни фақат админлар кўради; ҳар бир кўриш журналга ёзилади.",
+    "weblogin.pwUnknown":      "номаълум",
+    "weblogin.pwUnknownHint":  "Бу парол сақланмаган — уни кўрсатиб бўлмайди. «Паролни тиклаш» янги парол яратади ва Telegram'га юборади.",
     "auth.updateTg":            "Telegram'ни янгилаш",
 
     // ── General ───────────────────────────────────────────────────────────────
@@ -7530,6 +7542,12 @@ const t = {
     "weblogin.deleteTitle":    "Удалить логин",
     "weblogin.deleteBody":     "Этот профиль больше не сможет войти из браузера. Вход через Telegram сохранится.",
     "weblogin.saveFailed":     "Не удалось сохранить",
+    "weblogin.copyLogin":      "Скопировать логин",
+    "weblogin.copyPassword":   "Скопировать пароль",
+    "weblogin.copyFailed":     "Не удалось скопировать",
+    "weblogin.revealHint":     "Пароль виден только админам; каждый просмотр пишется в журнал.",
+    "weblogin.pwUnknown":      "неизвестен",
+    "weblogin.pwUnknownHint":  "Этот пароль не сохранён — показать его нельзя. «Сбросить пароль» создаст новый и отправит в Telegram.",
     "auth.updateTg":            "Обновить Telegram",
 
     // ── General ───────────────────────────────────────────────────────────────
@@ -10200,6 +10218,12 @@ const t = {
     "weblogin.deleteTitle":    "Delete login",
     "weblogin.deleteBody":     "This profile will no longer be able to sign in from a browser. Telegram access is unaffected.",
     "weblogin.saveFailed":     "Could not save",
+    "weblogin.copyLogin":      "Copy username",
+    "weblogin.copyPassword":   "Copy password",
+    "weblogin.copyFailed":     "Could not copy",
+    "weblogin.revealHint":     "Only admins can see the password; every reveal is written to the log.",
+    "weblogin.pwUnknown":      "unknown",
+    "weblogin.pwUnknownHint":  "This password was not stored — it cannot be shown. «Reset password» creates a new one and sends it to Telegram.",
     "auth.updateTg":            "Update Telegram",
 
     // ── General ───────────────────────────────────────────────────────────────

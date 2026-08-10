@@ -320,6 +320,10 @@ def admin_list_profiles(db: Session = Depends(get_db),
             "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
             "locked":        web_auth.lock_seconds_left(cred) > 0,
             "deliverable":   any(b.get("status") == "approved" for b in bindings),
+            # Whether the password can be READ back at all. The value itself is
+            # never in this list — it is fetched one profile at a time from the
+            # reveal endpoint below, which is admin-only and audited.
+            "has_password":  bool(cred.password_enc),
         }
 
     supervisors = []
@@ -1427,9 +1431,14 @@ def admin_unassign_profile(payload: UnassignPayload, db: Session = Depends(get_d
 #
 # A browser login belongs to the PROFILE, so it is managed here, in the row of
 # the person it belongs to — not in a separate register that would drift out of
-# step with the profiles it describes. The generated password is never returned
-# to the caller: it goes to the profile's Telegram holders and nowhere else, so
-# running this tab does not mean learning anyone's password.
+# step with the profiles it describes. A generated password is still DM'd to the
+# profile's Telegram holders — that is how the person receives it — and no
+# create/reset/bulk response carries it back.
+#
+# Reading one is a separate, deliberate act: `/admin/web-login/reveal`, one
+# profile per call, ADMINS only, and audited. So running this tab still does not
+# hand anyone a password list; asking for a specific person's password does, and
+# leaves a line in the log saying who asked.
 
 class WebLoginPayload(BaseModel):
     profile_key: str
@@ -1472,6 +1481,7 @@ def _web_state(db: Session, cred: WebCredential, key: str) -> dict:
         "last_login_at": cred.last_login_at.isoformat() if cred.last_login_at else None,
         "locked":        web_auth.lock_seconds_left(cred) > 0,
         "deliverable":   bool(profile_holders(db, key)),
+        "has_password":  bool(cred.password_enc),
     }
 
 
@@ -1508,19 +1518,15 @@ def admin_set_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
 
     if cred:
         cred.username = username
-        cred.password_hash = web_auth.hash_password(password)
-        cred.password_set_at = datetime.now(timezone.utc)
+        web_auth.set_password(cred, password)
         # A reset ends every browser session that held the old password.
         cred.token_version = (cred.token_version or 1) + 1
         cred.enabled = True
         web_auth.clear_failures(db, cred)
         action = "weblogin.reset"
     else:
-        cred = WebCredential(
-            profile_key=key, username=username,
-            password_hash=web_auth.hash_password(password),
-            password_set_at=datetime.now(timezone.utc),
-        )
+        cred = WebCredential(profile_key=key, username=username)
+        web_auth.set_password(cred, password)
         db.add(cred)
         action = "weblogin.created"
     db.commit()
@@ -1531,6 +1537,41 @@ def admin_set_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
                     details=[("profile", name), ("login", username)])
     return {"ok": True, "username": username, "sent": sent,
             "web": _web_state(db, cred, key)}
+
+
+@router.post("/admin/web-login/reveal")
+def admin_reveal_web_login(payload: WebLoginPayload, db: Session = Depends(get_db),
+                           caller: dict = Depends(require_cap(CAP_PROFILES_MANAGE))):
+    """Read one profile's browser password back.
+
+    ADMINS ONLY — a deliberate step narrower than the rest of this tab. Everything
+    else here is grantable through ``admin.profiles.manage`` because it CHANGES a
+    credential and is therefore visible to the person it belongs to (a reset
+    arrives as a DM, a disable stops their login). Reading a password leaves no
+    trace the owner can see, so it stays with the role that already answers for
+    the whole platform rather than with a delegated one.
+
+    Deliberately one profile per call, never a column on the register: a list
+    endpoint would put every password in one response and in the browser's query
+    cache, where this feature would stop being «look up a login» and start being
+    «export the password file».
+
+    Answers 200 with ``password: null`` when the credential predates the sealed
+    copy (or SECRET_KEY was rotated) — the page then says «unknown» and offers a
+    reset, which is the honest state. It never guesses.
+    """
+    key = payload.profile_key
+    _web_guard(caller, key)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin_only")
+    cred = _web_row(db, key)
+
+    password = web_auth.open_password(cred.password_enc)
+    # Audited like every other credential event — reading one is the only way to
+    # use a login without touching it, so the trail has to record it too.
+    web_auth.audit("revealed", caller, profile_display_name(db, key) or "",
+                   cred.username, "known" if password else "unavailable")
+    return {"ok": True, "username": cred.username, "password": password}
 
 
 @router.post("/admin/web-login/bulk")
@@ -1564,11 +1605,9 @@ def admin_bulk_web_login(payload: WebLoginBulkPayload, db: Session = Depends(get
         username = web_auth.suggest_username(db, name, taken)
         taken.add(username)
         password = web_auth.generate_password()
-        db.add(WebCredential(
-            profile_key=key, username=username,
-            password_hash=web_auth.hash_password(password),
-            password_set_at=datetime.now(timezone.utc),
-        ))
+        cred = WebCredential(profile_key=key, username=username)
+        web_auth.set_password(cred, password)
+        db.add(cred)
         db.commit()
         web_auth.dm_credentials(db, key, username, password)
         web_auth.audit("created", caller, name, username, "bulk")

@@ -17,6 +17,10 @@ all behave exactly as they do in Telegram, with nothing to keep in sync.
 Password storage is PBKDF2-HMAC-SHA256 from the standard library. passlib is in
 requirements, but a hash this simple has no business carrying a native
 dependency that can fail to build on a deploy that goes straight to production.
+Alongside the hash the password is kept a second time in a SEALED, reversible
+form, so an admin can read a login back on the profile page instead of resetting
+it — see ``seal_password`` for what that costs and why it is keyed off
+SECRET_KEY rather than stored in the clear.
 """
 import base64
 import hashlib
@@ -93,6 +97,100 @@ def verify_password(raw: str, stored: str) -> bool:
 
 def generate_password(length: int = 10) -> str:
     return "".join(secrets.choice(_PW_ALPHABET) for _ in range(length))
+
+
+# ── the sealed copy (what an admin reads back) ────────────────────────────────
+
+# A hash cannot be read back — that is its entire point, and it is the right
+# store for VERIFYING a login. It is the wrong store for the other question an
+# admin answers all day: "what is this person's password?". Until now the only
+# answer was «reset it», which mints a new one, DMs it, and signs that person
+# out of every browser they had open — a support question turning into an
+# interruption. So the password is kept a second time, sealed.
+#
+# Sealed, not plaintext. The key is derived from SECRET_KEY, which lives in
+# backend/.env and never in the database, so the .sql.gz the dbdump tab mails to
+# Telegram carries ciphertext that is useless without the server's own secret.
+# Encrypt-then-MAC built on HMAC-SHA256: HMAC is a PRF, so HMAC(key, nonce‖ctr)
+# is a keystream, and a second independent key authenticates it. Stdlib only —
+# the same reason the hash above is PBKDF2 and not a native library on a
+# pipeline that deploys straight to production.
+#
+# This is a deliberate trade: an attacker holding BOTH the database and .env
+# reads every browser password, where before they read none. It buys the admin
+# panel the answer it actually needs, and the passwords it protects are for this
+# dashboard alone.
+
+_SEAL_SCHEME = "v1"
+
+
+def _seal_keys() -> tuple[bytes, bytes]:
+    """Two independent subkeys from SECRET_KEY — one to encrypt, one to
+    authenticate. Never the same bytes for both."""
+    root = (settings.secret_key or "").encode("utf-8")
+    return (
+        hmac.new(root, b"web-login-seal-enc-v1", hashlib.sha256).digest(),
+        hmac.new(root, b"web-login-seal-mac-v1", hashlib.sha256).digest(),
+    )
+
+
+def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
+    out = bytearray()
+    counter = 0
+    while len(out) < length:
+        out += hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        counter += 1
+    return bytes(out[:length])
+
+
+def seal_password(raw: str) -> str:
+    """``v1$<nonce>$<ciphertext>$<tag>``, all base64 — self-describing, so the
+    construction can be replaced later without stranding old rows."""
+    enc_key, mac_key = _seal_keys()
+    nonce = secrets.token_bytes(16)
+    data = (raw or "").encode("utf-8")
+    ct = bytes(a ^ b for a, b in zip(data, _keystream(enc_key, nonce, len(data))))
+    tag = hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()
+    return "{}${}${}${}".format(
+        _SEAL_SCHEME,
+        base64.b64encode(nonce).decode(),
+        base64.b64encode(ct).decode(),
+        base64.b64encode(tag).decode(),
+    )
+
+
+def open_password(sealed: Optional[str]) -> Optional[str]:
+    """Read a sealed password back, or None when there is nothing honest to
+    show: no sealed copy (a login last set before this existed), a corrupt row,
+    or a rotated SECRET_KEY. The caller renders «unknown» — a wrong password
+    displayed confidently is worse than no password at all."""
+    if not sealed:
+        return None
+    try:
+        scheme, nonce_b64, ct_b64, tag_b64 = sealed.split("$")
+        if scheme != _SEAL_SCHEME:
+            return None
+        enc_key, mac_key = _seal_keys()
+        nonce = base64.b64decode(nonce_b64)
+        ct = base64.b64decode(ct_b64)
+        expected = hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, base64.b64decode(tag_b64)):
+            return None
+        plain = bytes(a ^ b for a, b in zip(ct, _keystream(enc_key, nonce, len(ct))))
+        return plain.decode("utf-8")
+    except Exception:
+        return None
+
+
+def set_password(cred: WebCredential, raw: str) -> None:
+    """THE one way to put a password on a credential. Both stores are written
+    here because a writer that sets only the hash leaves the admin panel showing
+    a password that no longer logs in — a stale answer being the one failure
+    mode worse than the missing one this feature exists to fix. Caller commits.
+    """
+    cred.password_hash = hash_password(raw)
+    cred.password_enc = seal_password(raw)
+    cred.password_set_at = _now()
 
 
 # ── usernames ─────────────────────────────────────────────────────────────────

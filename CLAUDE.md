@@ -150,11 +150,27 @@ re-verifies it on every request. The second is a username + password at
   deliberately no native dependency on a pipeline that deploys straight to prod.
   5 failed attempts → 15-minute lockout, DB-backed; the per-IP throttle is
   in-process and deliberately secondary.
-- **The password only ever goes to Telegram.** `web_auth.dm_credentials()` DMs
-  every holder of the profile; it is never returned by an API, so running the
-  Profiles tab never means learning someone's password. A profile with no
-  approved holder therefore gets no login — the admin UI says so rather than
-  offering one that could not be delivered.
+- **A new password is DELIVERED only to Telegram.** `web_auth.dm_credentials()`
+  DMs every holder of the profile, and no create/reset/bulk response carries it
+  back. A profile with no approved holder therefore gets no login — the admin UI
+  says so rather than offering one that could not be delivered.
+- **An admin can READ an existing password back** on the profile page — the
+  «Sayt logini» card shows the login and the password, both copyable, the
+  password masked until the eye is tapped. This needs the password to be
+  recoverable, so `WebCredential` carries `password_enc` beside the hash: the
+  same secret sealed with `web_auth.seal_password` (HMAC-SHA256 encrypt-then-MAC,
+  stdlib only, key derived from `SECRET_KEY` — which lives in `backend/.env` and
+  never in the DB, so a dbdump `.sql.gz` is ciphertext). `web_auth.set_password`
+  is THE writer: it sets hash + sealed copy + `password_set_at` together, and
+  every path that changes a password (admin create/reset/bulk, self-change,
+  «forgot password») goes through it — a writer that sets only the hash makes
+  the panel show a password that no longer logs in. Rows predating the column
+  read as «unknown»; nothing is ever guessed.
+  `POST /api/profiles/admin/web-login/reveal` returns it for ONE profile, is
+  **admin-only** (narrower than the rest of the tab, which `admin.profiles.manage`
+  grantees may run — every other action changes a login and is therefore visible
+  to its owner; reading one is not), and is audited under `WEB-LOGIN revealed`.
+  Never add the password to `/admin/list` or any other bulk payload.
 - Admin surface: the **Profiles tab** (`pages/admin/WebLoginModal.jsx`) — a
   «Sayt logini» column plus one row action for create / reset / rename /
   disable / sign-out-everywhere / delete, and a bulk «create for everyone

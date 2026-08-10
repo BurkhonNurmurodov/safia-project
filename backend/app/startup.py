@@ -1914,6 +1914,25 @@ def add_leader_task_setting_names() -> None:
         db.close()
 
 
+def add_web_credential_password_enc() -> None:
+    """The sealed copy of a browser password (WebCredential.password_enc), so an
+    admin can READ a login back on the profile page instead of resetting it.
+
+    Idempotent and deliberately backfill-free: an existing hash cannot be turned
+    back into a password, so rows predating this stay NULL and the page says the
+    password is unknown until it is next set. Guessing would be worse."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE web_credentials ADD COLUMN IF NOT EXISTS password_enc VARCHAR"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] web_credentials.password_enc migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 CAPS_PER_USER_FLAG = "caps_migrated_to_user_v1"
 
 

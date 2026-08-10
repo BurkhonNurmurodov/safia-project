@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive, ArchiveRestore, ArrowLeft, Ban, Camera, Check, Clock,
+  Archive, ArchiveRestore, ArrowLeft, Ban, Camera, Check, Clock, Copy, Eye, EyeOff,
   Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
   LayoutGrid, Link2, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
   UserCog, UserRound, Users, X,
@@ -153,6 +153,36 @@ function fmtDateTime(iso, lang) {
     return d.toLocaleString(DT_LOCALE[lang] || "ru-RU", { dateStyle: "medium", timeStyle: "short" });
   } catch {
     return d.toLocaleString();
+  }
+}
+
+/** Put a value on the clipboard, and say whether it landed.
+ *
+ *  `navigator.clipboard` needs a secure context and is missing or refused in
+ *  parts of the Telegram WebView, so the textarea+execCommand fallback is not
+ *  legacy politeness — it is the path that actually runs on the primary device.
+ *  The boolean matters as much as the copy: a button that silently did nothing
+ *  reads as success, and the operator pastes yesterday's clipboard into a login
+ *  form.
+ */
+async function copyText(value) {
+  if (!value) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch { /* not a secure context, or permission refused — try the fallback */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
   }
 }
 
@@ -1095,29 +1125,45 @@ function EditCard({ ptype, item, data, notify, onDone }) {
 
 // ── ADMIN: web login management (ported from WebLoginModal) ───────────────────
 
-function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
+// `resetSignal` bumps when the password changed somewhere this card cannot see
+// — the self-change modal beside it — so a revealed value is dropped instead of
+// lingering as the answer to a question that has moved on.
+function WebLoginCard({ item, own = false, onChangePassword, resetSignal = 0, notify, onDone }) {
   const { t } = useLang();
+  const { auth } = useAuth();
   const web = item?.web || null;
 
   const [username, setUsername] = useState(web?.username || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  // The saved password, held ONLY while it is on screen (see reveal below).
+  const [shownPw, setShownPw] = useState("");
+  const [pwBusy, setPwBusy] = useState("");   // "" | "show" | "copy"
+  const [pwError, setPwError] = useState("");
 
   useEffect(() => {
     setUsername(web?.username || "");
     setPassword("");
     setError("");
-  }, [web?.username, item.profile_key]);
+    setShownPw("");
+    setPwError("");
+  }, [web?.username, item.profile_key, resetSignal]);
 
   const deliverable = web ? web.deliverable : true;
+  // Reading a password back is admins-only, server-side too: every other action
+  // on this card CHANGES the login, which the owner sees (a reset arrives as a
+  // DM, a disable stops their access), so those are safe to delegate through
+  // `admin.profiles.manage`. Reading one leaves nothing the owner can notice.
+  const canReveal = auth?.role === "admin";
 
-  function fail(e) {
+  function failText(e) {
     const detail = e?.response?.data?.detail;
-    if (detail === "username_taken") return setError(t("weblogin.taken"));
-    if (detail === "no_holder")      return setError(t("weblogin.noHolder"));
-    setError(typeof detail === "string" ? detail : t("weblogin.saveFailed"));
+    if (detail === "username_taken") return t("weblogin.taken");
+    if (detail === "no_holder")      return t("weblogin.noHolder");
+    return typeof detail === "string" ? detail : t("weblogin.saveFailed");
   }
+  function fail(e) { setError(failText(e)); }
 
   const post = (url, body) => api.post(url, { profile_key: item.profile_key, ...body });
 
@@ -1126,7 +1172,10 @@ function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
       username: username.trim() || undefined,
       password: password.trim() || undefined,
     }),
-    onSuccess: () => { onDone(); notify(t("weblogin.sent"), "success"); setPassword(""); },
+    onSuccess: () => {
+      onDone(); notify(t("weblogin.sent"), "success");
+      setPassword(""); setShownPw("");
+    },
     onError: fail,
   });
   const renameMut = useMutation({
@@ -1137,7 +1186,12 @@ function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
   });
   const resetMut = useMutation({
     mutationFn: () => post("/api/profiles/admin/web-login", {}),
-    onSuccess: () => { setConfirmReset(false); onDone(); notify(t("weblogin.sent"), "success"); },
+    onSuccess: () => {
+      // The password on screen is now the OLD one — drop it rather than let it
+      // sit there looking current.
+      setShownPw("");
+      setConfirmReset(false); onDone(); notify(t("weblogin.sent"), "success");
+    },
     onError: (e) => { setConfirmReset(false); fail(e); },
   });
   const toggleMut = useMutation({
@@ -1153,6 +1207,46 @@ function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
   const busy = createMut.isPending || renameMut.isPending || resetMut.isPending ||
                toggleMut.isPending || revokeMut.isPending;
   const renamed = Boolean(web && username.trim() && username.trim() !== web.username);
+
+  /** Fetch the saved password. Deliberately re-fetched on every reveal and every
+   *  copy rather than cached in the component: a reset here, a self-change in
+   *  the modal beside it, or another admin's reset elsewhere all invalidate a
+   *  cached value silently, and a confidently-displayed password that no longer
+   *  logs in is worse than the missing one this feature exists to fix. It also
+   *  means the audit line records each time it was actually looked at. */
+  async function fetchPassword(which) {
+    setPwBusy(which);
+    setPwError("");
+    try {
+      const r = await api.post("/api/profiles/admin/web-login/reveal",
+                               { profile_key: item.profile_key });
+      const value = r.data?.password || "";
+      // The credential exists but nothing readable came back — a sealed copy
+      // written under a rotated SECRET_KEY. Say so on the field; never blank.
+      if (!value) setPwError(t("weblogin.pwUnknownHint"));
+      return value;
+    } catch (e) {
+      setPwError(failText(e));
+      return "";
+    } finally {
+      setPwBusy("");
+    }
+  }
+
+  async function toggleReveal() {
+    if (shownPw) return setShownPw("");   // hiding drops the value from the page
+    setShownPw(await fetchPassword("show"));
+  }
+
+  async function copyValue(value) {
+    const ok = await copyText(value);
+    notify(ok ? t("admin.copied") : t("weblogin.copyFailed"), ok ? "success" : "error");
+  }
+
+  async function copyPassword() {
+    const value = shownPw || await fetchPassword("copy");
+    if (value) await copyValue(value);
+  }
 
   // Renaming an existing login is a deferred edit, so the page's save button
   // owns it. Creating one is not: it mints a password and DMs it, which stays
@@ -1179,17 +1273,60 @@ function WebLoginCard({ item, own = false, onChangePassword, notify, onDone }) {
           hint={web && renamed ? t("weblogin.renamePending") : web ? undefined : t("weblogin.usernameHint")}
           error={error || undefined}
         >
-          <input
-            value={username}
-            onChange={(e) => { setUsername(e.target.value); setError(""); }}
-            placeholder={t("weblogin.usernamePh")}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            className="w-full rounded-xl px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[var(--brand)]"
-            style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-          />
+          <div className="flex items-stretch gap-1.5">
+            <input
+              value={username}
+              onChange={(e) => { setUsername(e.target.value); setError(""); }}
+              placeholder={t("weblogin.usernamePh")}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="flex-1 min-w-0 rounded-xl px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[var(--brand)]"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+            />
+            {/* Copies the SAVED login, not what is being typed — the typed one
+                does not log anybody in until the page is saved. */}
+            {web && (
+              <Button size="sm" tint variant="secondary" className="px-2.5"
+                      title={t("weblogin.copyLogin")} aria-label={t("weblogin.copyLogin")}
+                      icon={<Copy size={13} />} onClick={() => copyValue(web.username)} />
+            )}
+          </div>
         </FormField>
+
+        {/* The password itself — admins only, masked until asked for, and
+            copyable without ever being displayed. */}
+        {web && canReveal && (
+          <FormField
+            label={t("weblogin.password")}
+            hint={web.has_password ? t("weblogin.revealHint") : t("weblogin.pwUnknownHint")}
+            error={pwError || undefined}
+          >
+            <div className="flex items-stretch gap-1.5">
+              <div className="flex-1 min-w-0 flex items-center rounded-xl px-3 py-2 text-sm font-mono"
+                   style={{
+                     background: "var(--bg-inner)",
+                     border: "1px solid var(--border-md)",
+                     color: shownPw ? "var(--text-1)" : "var(--text-4)",
+                   }}>
+                <span className="truncate select-all">
+                  {shownPw || (web.has_password ? "••••••••••" : t("weblogin.pwUnknown"))}
+                </span>
+              </div>
+              <Button size="sm" tint variant="secondary" className="px-2.5"
+                      title={t(shownPw ? "weblogin.hidePassword" : "weblogin.showPassword")}
+                      aria-label={t(shownPw ? "weblogin.hidePassword" : "weblogin.showPassword")}
+                      loading={pwBusy === "show"} disabled={busy || !web.has_password}
+                      onClick={toggleReveal}
+                      icon={shownPw ? <EyeOff size={13} /> : <Eye size={13} />} />
+              <Button size="sm" tint variant="secondary" className="px-2.5"
+                      title={t("weblogin.copyPassword")} aria-label={t("weblogin.copyPassword")}
+                      loading={pwBusy === "copy"} disabled={busy || !web.has_password}
+                      onClick={copyPassword}
+                      icon={<Copy size={13} />} />
+            </div>
+          </FormField>
+        )}
 
         {!web && (
           <>
@@ -1461,6 +1598,7 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
   const { bus, dirty, busy } = useSaveHub();
   const [saveOnScreen, saveRef] = useOnScreen();
   const [pwOpen, setPwOpen] = useState(false);
+  const [pwEpoch, setPwEpoch] = useState(0);
 
   const { data: me } = useMyProfileDetails();
   const { data, isLoading } = useQuery({
@@ -1601,7 +1739,7 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
         <EditCard ptype={ptype} item={item} data={data} notify={notify} onDone={onDone} />
         <div className="space-y-4">
           <WebLoginCard item={item} own={own} onChangePassword={() => setPwOpen(true)}
-                        notify={notify} onDone={onDone} />
+                        resetSignal={pwEpoch} notify={notify} onDone={onDone} />
           <HoldersCard ptype={ptype} item={item} onDone={onDone} />
         </div>
       </div>
@@ -1629,7 +1767,7 @@ function AdminProfile({ ptype: routePtype, pid, fromRegister = false }) {
         <ChangePasswordModal
           open={pwOpen}
           onClose={() => setPwOpen(false)}
-          onChanged={() => toast.success(t("weblogin.changed"))}
+          onChanged={() => { setPwEpoch((n) => n + 1); toast.success(t("weblogin.changed")); }}
         />
       )}
 

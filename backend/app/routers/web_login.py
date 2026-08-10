@@ -136,8 +136,7 @@ def web_forgot(body: ForgotBody, request: Request, db: Session = Depends(get_db)
     cred = db.query(WebCredential).filter(WebCredential.username == username).first()
     if cred and cred.enabled:
         password = web_auth.generate_password()
-        cred.password_hash = web_auth.hash_password(password)
-        cred.password_set_at = datetime.now(timezone.utc)
+        web_auth.set_password(cred, password)
         # A reset must not leave old browser sessions alive — the point of
         # resetting is usually that someone else may hold the old password.
         cred.token_version = (cred.token_version or 1) + 1
@@ -222,8 +221,7 @@ def change_password(body: ChangePasswordBody, payload: dict = Depends(_any_calle
     if err:
         raise HTTPException(status_code=400, detail=err)
 
-    cred.password_hash = web_auth.hash_password(body.new_password)
-    cred.password_set_at = datetime.now(timezone.utc)
+    web_auth.set_password(cred, body.new_password)
     # Every other browser holding the old password is signed out — that is what
     # a password change is for. A browser caller gets a fresh token below so the
     # tab they are typing in does not log itself out; a Telegram session carries
