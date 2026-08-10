@@ -71,6 +71,10 @@ const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
+import ErrorScreen from "./components/ui/ErrorScreen";
+import {
+  ArrowUpCircle, SmartphoneNfc, UserPlus, Clock, UserX, WifiOff, AlertTriangle, Lock, ChevronRight,
+} from "lucide-react";
 import FindInPage from "./components/FindInPage";
 import DocumentTitle from "./components/DocumentTitle";
 import { usePageAccess } from "./hooks/usePageAccess";
@@ -106,59 +110,32 @@ function AuthGate({ children }) {
   if (auth?.status === "outdated_telegram") {
     const tgVersion = window.Telegram?.WebApp?.version;
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">🔄</div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--text-1)" }}>
-            {t("auth.oldTgTitle")}
-          </h2>
-          <p className="text-sm mb-5" style={{ color: "var(--text-3)" }}>
-            {t("auth.oldTgMsg")}
-          </p>
-          <a
-            href="https://telegram.org/dl"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block px-5 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ background: "var(--brand)", color: "#fff" }}
-          >
-            {t("auth.updateTg")}
-          </a>
-          {tgVersion && (
-            <p className="text-[10px] mt-6" style={{ color: "var(--text-4)" }}>
-              Telegram API v{tgVersion}
-            </p>
-          )}
-        </div>
-      </div>
+      <ErrorScreen
+        tone="warning"
+        icon={ArrowUpCircle}
+        title={t("auth.oldTgTitle")}
+        message={t("auth.oldTgMsg")}
+        action={{ label: t("auth.updateTg"), href: "https://telegram.org/dl" }}
+        footnote={tgVersion ? `Telegram API v${tgVersion}` : null}
+      />
     );
   }
 
   if (auth?.status === "no_init_data") {
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">📵</div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--text-1)" }}>
-            {t("auth.noInitTitle")}
-          </h2>
-          <p className="text-sm mb-5" style={{ color: "var(--text-3)" }}>
-            {t("auth.noInitMsg")}
-          </p>
-          {botUsername && (
-            <a
-              href={`https://t.me/${botUsername}`}
-              className="inline-block px-5 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ background: "var(--brand)", color: "#fff" }}
-            >
-              {t("auth.openBot")}
-            </a>
-          )}
-          <p className="text-[10px] mt-6" style={{ color: "var(--text-4)", wordBreak: "break-word" }}>
-            {navigator.userAgent}
-          </p>
-        </div>
-      </div>
+      <ErrorScreen
+        tone="warning"
+        icon={SmartphoneNfc}
+        title={t("auth.noInitTitle")}
+        message={t("auth.noInitMsg")}
+        action={botUsername ? { label: t("auth.openBot"), href: `https://t.me/${botUsername}` } : null}
+        // The user agent is diagnostic, not an instruction. It used to sit in
+        // the open at --text-4, where it read as part of the message and the
+        // user was left parsing a Mozilla string; behind the disclosure it is
+        // still one tap away for whoever is actually debugging the WebView.
+        detail={navigator.userAgent}
+        detailLabel={t("error.details")}
+      />
     );
   }
 
@@ -167,28 +144,21 @@ function AuthGate({ children }) {
     if (tg?.initData) {
       // Opened inside Telegram — sendData won't work from menu button, guide them to bot
       return (
-        <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-          <div className="text-center max-w-xs">
-            <div className="text-5xl mb-4">👋</div>
-            <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--text-1)" }}>
-              {t("auth.notRegisteredTitle")}
-            </h2>
-            <p className="text-sm mb-5" style={{ color: "var(--text-3)" }}>
-              {t("auth.notRegisteredMsg")}
-            </p>
-            {botUsername && (
-              <button
-                onClick={() => {
-                  tg.openTelegramLink(`https://t.me/${botUsername}?start=register`);
-                }}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: "var(--brand)", color: "#fff" }}
-              >
-                {t("auth.openBot")}
-              </button>
-            )}
-          </div>
-        </div>
+        <ErrorScreen
+          tone="brand"
+          icon={UserPlus}
+          live="status"
+          title={t("auth.notRegisteredTitle")}
+          message={t("auth.notRegisteredMsg")}
+          action={
+            botUsername
+              ? {
+                  label: t("auth.openBot"),
+                  onClick: () => tg.openTelegramLink(`https://t.me/${botUsername}?start=register`),
+                }
+              : null
+          }
+        />
       );
     }
     return <Navigate to="/login" replace />;
@@ -196,46 +166,46 @@ function AuthGate({ children }) {
 
   if (auth?.status === "pending") {
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">⏳</div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--text-1)" }}>
-            {t("auth.pendingTitle")}
-          </h2>
-          <p className="text-sm" style={{ color: "var(--text-3)" }}>
-            {t("auth.pendingMsg")}
-          </p>
-        </div>
-      </div>
+      <ErrorScreen
+        tone="warning"
+        icon={Clock}
+        live="status"
+        title={t("auth.pendingTitle")}
+        message={t("auth.pendingMsg")}
+        // Approval happens in the bot, out of this tab's sight: without a way
+        // to re-ask, the only way to learn it landed is to kill the app and
+        // reopen it.
+        action={{ label: t("auth.checkAgain"), onClick: () => window.location.reload() }}
+      />
     );
   }
 
   if (auth?.status === "rejected") {
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">❌</div>
-          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--text-1)" }}>
-            {t("auth.rejectedTitle")}
-          </h2>
-          <p className="text-sm" style={{ color: "var(--text-3)" }}>
-            {t("auth.rejectedMsg")}
-          </p>
-        </div>
-      </div>
+      <ErrorScreen
+        tone="danger"
+        icon={UserX}
+        title={t("auth.rejectedTitle")}
+        message={t("auth.rejectedMsg")}
+      />
     );
   }
 
+  // The catch-all also covers status "error" — the /api/auth request never
+  // came back. That is overwhelmingly a dead connection rather than a broken
+  // account, so it gets its own screen and, above all, a retry: the previous
+  // shared "⚠️ something is wrong" card offered no control at all and left a
+  // supervisor on a weak signal with nothing to tap.
   if (auth?.status !== "approved") {
+    const offline = auth?.status === "error";
     return (
-      <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">⚠️</div>
-          <p className="text-sm" style={{ color: "var(--text-3)" }}>
-            {t("auth.errorMsg")}
-          </p>
-        </div>
-      </div>
+      <ErrorScreen
+        tone={offline ? "warning" : "danger"}
+        icon={offline ? WifiOff : AlertTriangle}
+        title={offline ? t("auth.offlineTitle") : t("error.title")}
+        message={offline ? t("auth.offlineMsg") : t("auth.errorMsg")}
+        action={{ label: t("error.reload"), onClick: () => window.location.reload() }}
+      />
     );
   }
 
@@ -310,43 +280,45 @@ function NoAccess() {
   // "contact an administrator" would read like a pending confirmation.
   const isAdminAccount = (auth?.roles ?? []).some((r) => r.role === "admin");
   return (
-    <div className="flex items-center justify-center min-h-screen px-6" style={{ background: "var(--bg-base)" }}>
-      <div className="text-center max-w-xs w-full">
-        <div className="text-5xl mb-4">🔒</div>
-        <p className="text-sm mb-6" style={{ color: "var(--text-3)" }}>
-          {t(isAdminAccount ? "access.noPagesAdmin" : "access.noPages")}
-        </p>
-
-        {others.length > 0 && (
-          <div className="space-y-2 mb-5 text-left">
-            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
-              {t("access.switchProfile")}
-            </p>
-            {others.map((r) => {
-              const rTkey = ROLE_LABEL_KEYS[r.role];
-              const rRole = rTkey ? t(rTkey) : (r.role ?? "");
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => switchRole(r.id)}
-                  className="w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--brand)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-md)")}
-                >
+    <ErrorScreen
+      tone="neutral"
+      icon={Lock}
+      code="403"
+      live="status"
+      title={t("access.noPagesTitle")}
+      message={t(isAdminAccount ? "access.noPagesAdmin" : "access.noPages")}
+      secondary={{ label: t("nav.signOut"), onClick: logout }}
+    >
+      {others.length > 0 && (
+        <div className="space-y-2 text-left">
+          <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>
+            {t("access.switchProfile")}
+          </p>
+          {others.map((r) => {
+            const rTkey = ROLE_LABEL_KEYS[r.role];
+            const rRole = rTkey ? t(rTkey) : (r.role ?? "");
+            return (
+              <button
+                key={r.id}
+                onClick={() => switchRole(r.id)}
+                // Hover used to be painted by onMouseEnter/onMouseLeave, which
+                // never fire on a touchscreen — on the phone this app mostly
+                // runs on, the row sat inert. The affordance is now the chevron
+                // and the border, present at rest on every input.
+                className="w-full flex items-center gap-2 text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors hover:border-[var(--brand)]"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
+              >
+                <span className="flex-1 min-w-0 truncate">
                   {tl(r.full_name) || rRole}
                   <span className="ml-2 text-xs" style={{ color: "var(--text-3)" }}>· {rRole}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <button onClick={logout} className="text-xs underline" style={{ color: "var(--text-3)" }}>
-          {t("nav.signOut")}
-        </button>
-      </div>
-    </div>
+                </span>
+                <ChevronRight size={15} style={{ color: "var(--text-4)" }} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </ErrorScreen>
   );
 }
 

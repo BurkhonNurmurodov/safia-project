@@ -125,6 +125,11 @@ body.sidebar-open { overflow: hidden; }
      an invalid value and the padding silently disappears. */
   --tg-safe-top: 0px;
   --tg-safe-bottom: 0px;
+  /* Side insets are 0 in portrait; a landscape Android phone parks its nav bar
+     on one of them, so the shell pads by these rather than letting a wide table
+     slide under the buttons. */
+  --tg-safe-left: 0px;
+  --tg-safe-right: 0px;
 
   /* Widest the reading column ever gets. The pages were laid out for a phone;
      stretched across a 27" monitor a table's first and last column end up a

@@ -503,8 +503,15 @@ export default function Layout({ children, title }) {
         onTogglePin={toggleSidebarPin}
       />
 
-      {/* Offset matches sidebar width: 60px collapsed, 256px pinned */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}>
+      {/* Offset matches sidebar width: 60px collapsed, 256px pinned. The side
+          insets are 0 everywhere except a landscape Android phone, where the
+          nav bar sits on one edge — padding the whole column keeps the header
+          and the content clear of it together, so nothing shifts relative to
+          anything else. */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${sidebarPinned ? "md:ml-64" : "md:ml-[60px]"}`}
+        style={{ paddingLeft: "var(--tg-safe-left, 0px)", paddingRight: "var(--tg-safe-right, 0px)" }}
+      >
         {/* Header */}
         <header
           className="flex-shrink-0"
@@ -558,8 +565,13 @@ export default function Layout({ children, title }) {
                 first and last column sit a head-turn apart is harder to read
                 than the same table with margin either side. On phones and
                 laptops the cap never binds, so nothing changes there. */}
+            {/* The inset alone only guarantees the last row is not COVERED by the
+                system bar — it would still end flush against it, which reads as
+                broken and puts a 44px tap target a thumb-width from the Back
+                button. One spacing step on top keeps the page ending where the
+                app ends. */}
             <div className="page-enter mx-auto w-full"
-              style={{ maxWidth: "var(--content-max)", paddingBottom: "var(--tg-safe-bottom, 0px)" }}>
+              style={{ maxWidth: "var(--content-max)", paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
               {children}
             </div>
           </main>

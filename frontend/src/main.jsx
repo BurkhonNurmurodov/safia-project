@@ -37,27 +37,49 @@ try {
 
     // Only apply safe-area padding on mobile platforms (android/ios).
     const isMobilePlatform = ["android", "ios"].includes(_tg.platform)
+
+    // Android's navigation bar — the ▮ ○ ‹ button strip, or the gesture pill —
+    // is drawn ON TOP of a fullscreen Mini App and the user cannot dismiss it.
+    // Telegram is supposed to report it as safeAreaInset.bottom, and a number of
+    // Android builds report 0 instead; the app then parks its last row of
+    // controls underneath the buttons, where it is perfectly visible and
+    // impossible to tap. Fullscreen means the WebView spans the whole display,
+    // so a 0 there is always wrong — fall back to Android's own nav-bar height
+    // (48dp, and 1dp = 1 CSS px at our viewport scale). On a gesture-nav phone
+    // whose client under-reports this costs ~24px of extra clearance; trusting
+    // the 0 costs the user a button they can see but never press.
+    const ANDROID_NAV_BAR = 48
+    const androidNavFloor = () =>
+      _tg.platform === 'android' && _tg.isFullscreen ? ANDROID_NAV_BAR : 0
+
     const applySafeArea = () => {
-      const deviceTop  = isMobilePlatform ? (_tg.safeAreaInset?.top ?? 0) : 0
-      const contentTop = isMobilePlatform ? (_tg.contentSafeAreaInset?.top ?? 0) : 0
-      document.documentElement.style.setProperty('--tg-safe-top', `${deviceTop + contentTop}px`)
+      // Empty objects off mobile, so every inset below resolves to 0 there.
+      const dev = isMobilePlatform ? (_tg.safeAreaInset || {}) : {}
+      const con = isMobilePlatform ? (_tg.contentSafeAreaInset || {}) : {}
+      const sum = (a, b) => (a ?? 0) + (b ?? 0)
+      const root = document.documentElement.style
+      root.setProperty('--tg-safe-top', `${sum(dev.top, con.top)}px`)
+      // Landscape moves the Android nav bar to a side edge. Without these a wide
+      // table runs under the buttons instead of stopping at the app's own edge.
+      root.setProperty('--tg-safe-left',  `${sum(dev.left,  con.left)}px`)
+      root.setProperty('--tg-safe-right', `${sum(dev.right, con.right)}px`)
       // Bottom inset = whatever the OS draws OVER the fullscreen WebApp's lower
-      // edge (Android 3-button nav bar, gesture pill, iOS home indicator).
-      // Devices with nothing overlaid report 0, so the clearance appears only
-      // where a system bar actually covers the app. Some Telegram Android
-      // builds report 0 here even with a button bar overlaying, so the value is
-      // a CSS max() with env(safe-area-inset-bottom) — live since index.html
-      // declares viewport-fit=cover — and the larger source wins at use time.
-      const deviceBottom  = isMobilePlatform ? (_tg.safeAreaInset?.bottom ?? 0) : 0
-      const contentBottom = isMobilePlatform ? (_tg.contentSafeAreaInset?.bottom ?? 0) : 0
-      document.documentElement.style.setProperty(
+      // edge (Android nav bar, gesture pill, iOS home indicator). Three sources,
+      // largest wins at use time: what Telegram reports, what the OS reports
+      // through env() — live since index.html declares viewport-fit=cover — and
+      // the Android floor above, used only when Telegram reports nothing.
+      const reported = sum(dev.bottom, con.bottom)
+      root.setProperty(
         '--tg-safe-bottom',
-        `max(${deviceBottom + contentBottom}px, env(safe-area-inset-bottom, 0px))`,
+        `max(${reported}px, env(safe-area-inset-bottom, 0px), ${reported ? 0 : androidNavFloor()}px)`,
       )
     }
     applySafeArea()
     _tg.onEvent?.('safeAreaChanged', applySafeArea)
     _tg.onEvent?.('contentSafeAreaChanged', applySafeArea)
+    // Rotating the device moves the bar between the bottom edge and a side, and
+    // Telegram does not always follow that with a safeAreaChanged of its own.
+    _tg.onEvent?.('viewportChanged', applySafeArea)
 
     if (supportsFullscreen) {
       _tg.onEvent?.('fullscreenChanged', () => {

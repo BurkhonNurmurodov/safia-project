@@ -389,10 +389,16 @@ function CellAccordion({ cell, date, t, tl, lang, autoOpen }) {
               Negative bottom = Layout's <main> padding (p-4 / md:p-6): sticky
               pins to the scrollport's CONTENT box, so bottom-0 left that padding
               strip open under the bar (rows showing through it). Pulling the bar
-              down by exactly that much parks it flush with the screen edge. */}
+              down by exactly that much parks it flush with the screen edge —
+              which is also where Android draws its nav buttons, hence the
+              safe-area padding: flush with the SCREEN, clear of the SYSTEM. */}
           <div
-            className="sticky -bottom-4 md:-bottom-6 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-3 pt-2 pb-3 md:pb-2"
-            style={{ borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}
+            className="sticky -bottom-4 md:-bottom-6 z-10 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-3 pt-2"
+            style={{
+              borderTop: "1px solid var(--border)",
+              background: "var(--bg-card)",
+              paddingBottom: "calc(0.75rem + var(--tg-safe-bottom, 0px))",
+            }}
           >
             {incompleteCount > 0 && (
               <span className="text-xs" style={{ color: "#eab308" }}>{t("idleCell.incompleteHint")}</span>
