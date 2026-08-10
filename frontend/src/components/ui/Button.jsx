@@ -28,6 +28,11 @@ import { Loader2 } from "lucide-react";
  *   icon      – optional lucide icon element rendered before the label
  *   loading   – overlays a centered Loader2 spinner (label kept in place to
  *               reserve width, so the button never reflows) and disables
+ *   href      – renders an <a> instead of a <button>, styled identically. For
+ *               actions that are genuinely navigations (the Telegram update
+ *               link, "open the bot"), where an anchor survives a WebView that
+ *               blocks window.open and gives the OS its normal long-press menu.
+ *               `loading` is meaningless here and ignored.
  *   className – extra classes (layout only — colors come from the variant)
  */
 const SOLID = {
@@ -53,6 +58,7 @@ const Button = forwardRef(function Button({
   icon = null,
   loading = false,
   disabled = false,
+  href = undefined,
   className = "",
   style = {},
   children,
@@ -68,14 +74,30 @@ const Button = forwardRef(function Button({
     : "px-3.5 py-1.5 text-xs";               // md, ≈30px
   const isDisabled = disabled || loading;
   const spinner = <Loader2 size={size === "sm" ? 12 : size === "lg" ? 14 : 13} className="animate-spin" />;
+  const shared = {
+    ref,
+    className: `relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-opacity ${sizing} ${className}`,
+    style: { ...palette, opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? "not-allowed" : "pointer", ...style },
+  };
+
+  // Navigation form: same pixels, anchor semantics (keyboard, long-press,
+  // middle-click all behave as the platform expects).
+  if (href) {
+    return (
+      <a href={href} {...shared} {...rest}>
+        <span className="inline-flex items-center gap-1.5">
+          {icon}
+          {children}
+        </span>
+      </a>
+    );
+  }
 
   return (
     <button
-      ref={ref}
       type="button"
       disabled={isDisabled}
-      className={`relative inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-opacity ${sizing} ${className}`}
-      style={{ ...palette, opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? "not-allowed" : "pointer", ...style }}
+      {...shared}
       {...rest}
     >
       {/* Spinner is overlaid (not inline) so toggling `loading` never changes

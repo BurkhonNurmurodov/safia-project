@@ -303,40 +303,51 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
             paddingBottom: "0.75rem",
           }}
         >
-          {/* Collapsed: logo icon (desktop only, not expanded) */}
+          {/* Collapsed: logo icon (desktop only, not expanded) — home link */}
           {!expanded && (
-            <div className="hidden md:flex w-full items-center justify-center">
+            <Link
+              to={withSearch("/")}
+              onClick={onClose}
+              title={t("nav.overview")}
+              className="hidden md:flex w-full items-center justify-center transition-opacity hover:opacity-80"
+            >
               <img
                 src={logoSrc}
                 alt="Safia"
                 className="w-8 h-8 rounded-full object-cover flex-shrink-0"
               />
-            </div>
+            </Link>
           )}
 
-          {/* Expanded: logo + brand text + pin button */}
+          {/* Expanded: logo + brand text (home link) + pin button */}
           {expanded && (
             <>
-              <img
-                src={logoSrc}
-                alt="Safia"
-                className="w-9 h-9 rounded-full object-cover flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <div
-                  className="text-xs font-semibold uppercase tracking-widest mb-0.5 whitespace-nowrap"
-                  style={{ color: "var(--brand-text)" }}
-                >
-                  Safia Dashboard
+              <Link
+                to={withSearch("/")}
+                onClick={onClose}
+                className="flex items-center gap-2 flex-1 min-w-0 rounded-lg transition-opacity hover:opacity-80"
+              >
+                <img
+                  src={logoSrc}
+                  alt="Safia"
+                  className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                />
+                <div className="min-w-0 overflow-hidden">
+                  <div
+                    className="text-xs font-semibold uppercase tracking-widest mb-0.5 whitespace-nowrap"
+                    style={{ color: "var(--brand-text)" }}
+                  >
+                    Safia Dashboard
+                  </div>
+                  <div
+                    className="text-[11px] truncate"
+                    style={{ color: "var(--text-3)" }}
+                    title={t("nav.appSubtitle")}
+                  >
+                    {t("nav.appSubtitle")}
+                  </div>
                 </div>
-                <div
-                  className="text-[11px] truncate"
-                  style={{ color: "var(--text-3)" }}
-                  title={t("nav.appSubtitle")}
-                >
-                  {t("nav.appSubtitle")}
-                </div>
-              </div>
+              </Link>
 
               {/* Desktop: pin toggle button */}
               <button

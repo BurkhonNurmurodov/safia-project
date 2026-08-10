@@ -10,7 +10,7 @@ import { useFactory, factoryName } from "../../context/FactoryContext";
  * Returns null when the platform has fewer than two factories (no chrome at
  * all), and a `static` chip section for locked viewers (supervisor / leader):
  * their plant stays readable in the bar, but there is no control to imply a
- * choice the server would overrule. «All factories» stays the LAST option.
+ * choice the server would overrule. «All factories» is the FIRST option.
  */
 export function useFactorySection() {
   const { t, lang } = useLang();
@@ -24,8 +24,8 @@ export function useFactorySection() {
     };
   }
   const opts = [
-    ...factories.map((f) => ({ value: f.id, label: nameOf(f) })),
     ...(allTab ? [{ value: "__all__", label: t("factory.all"), title: t("factory.all") }] : []),
+    ...factories.map((f) => ({ value: f.id, label: nameOf(f) })),
   ];
   return {
     key: "factory", icon: Factory, label: t("factory.label"),
@@ -109,14 +109,14 @@ export default function FactorySelect({
       </span>
     );
 
-  // «All factories» is LAST: the plants are the subject, the roll-up is the
-  // summary you fall back to — first would make every page open reading as
-  // "everything", which is the view this feature exists to split.
+  // «All factories» is FIRST: it is the widest scope in the list, so the
+  // options read top-down from "everything" down to a single plant, the same
+  // broad→narrow direction the toolbar itself reads left→right.
   const options = [
-    ...factories.map((f) => ({ value: f.id, label: deco(nameOf(f)), title: nameOf(f) })),
     ...(allTab
       ? [{ value: "__all__", label: deco(t("factory.all")), title: t("factory.allHint") }]
       : []),
+    ...factories.map((f) => ({ value: f.id, label: deco(nameOf(f)), title: nameOf(f) })),
   ];
 
   return (
