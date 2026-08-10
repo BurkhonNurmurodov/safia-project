@@ -18,3 +18,8 @@ python-dotenv==1.0.1
 pyTelegramBotAPI==4.25.0
 # Image rendering for the bot's /ojidaniya dashboard card.
 Pillow==11.0.0
+# Background/scheduled jobs. Runs IN-PROCESS inside the uvicorn worker — viable
+# only since prod moved to systemd (Passenger killed processes in seconds).
+# Jobs persist in the existing Postgres via SQLAlchemyJobStore, so no broker and
+# no second systemd unit. Pulls in tzlocal.
+APScheduler==3.11.0
