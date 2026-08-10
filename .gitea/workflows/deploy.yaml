@@ -17,9 +17,15 @@ jobs:
   deploy:
     # The shared act_runner is registered as `ubuntu-latest:host`, so jobs run
     # directly on 185.74.5.198 as `user` — the account that owns
-    # /var/www/production. That is why this job needs no SSH and no secrets:
-    # the deploy target is the machine the job is already running on, and the
-    # checkout authenticates to Gitea with its own read-only deploy key.
+    # /var/www/production. That is why this job needs no SSH: the deploy target
+    # is the machine the job is already running on, and the checkout
+    # authenticates to Gitea with its own read-only deploy key.
+    #
+    # It DOES now carry secrets, for one narrow purpose: writing runtime API
+    # keys into the untracked backend/.env (see the sync step below). Setting a
+    # key used to require an SSH session, which meant a feature needing a new
+    # key could not be switched on at all when nobody had a terminal. The key
+    # still never enters a commit — Gitea holds it, the runner writes it.
     runs-on: ubuntu-latest
 
     # That runner has capacity 1 and is shared with every other repo in the
@@ -29,6 +35,45 @@ jobs:
     timeout-minutes: 12
 
     steps:
+      # Runtime API keys, from Gitea's secret store into backend/.env.
+      #
+      # Runs on EVERY deploy, not just workflow_dispatch, so the file is
+      # self-healing: if .env is ever lost or rebuilt, the next push restores
+      # the keys. A secret that is not configured is skipped, never blanked.
+      #
+      # Add a key: define it in Gitea (repo → Settings → Actions → Secrets),
+      # add one `env:` line here, add its name to KEYS in deploy/sync-env.sh.
+      - name: Sync secrets into backend/.env
+        id: syncenv
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          cd /var/www/production
+          git fetch --prune origin main
+
+          # Extracted at the commit being deployed, exactly like deploy.sh
+          # below. The checkout is still at the PREVIOUSLY deployed commit at
+          # this point — reading the script out of the working tree would run
+          # the old copy, and on the very deploy that introduces this file,
+          # no copy at all.
+          SCRIPT=$(mktemp /tmp/safia-syncenv-XXXXXX.sh)
+          trap 'rm -f "$SCRIPT"' EXIT
+          git show "${{ github.sha }}:deploy/sync-env.sh" > "$SCRIPT"
+
+          OUT=$(bash "$SCRIPT")
+          echo "$OUT"
+
+          # A changed key is only live once the process re-reads its
+          # environment, and a frontend-only push would not otherwise restart.
+          # Guarded: if this runner does not implement the env file, the deploy
+          # still succeeds — the restart is then the operator's «Run workflow»
+          # with force_restart, which is the documented path anyway.
+          if [ "$(printf '%s\n' "$OUT" | tail -n 1)" = "env-changed" ] \
+             && [ -n "${GITHUB_ENV:-}" ]; then
+            echo "ENV_CHANGED=1" >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy
         env:
           # Resolved in bash rather than in a `${{ … && … || … }}` expression so
@@ -44,6 +89,13 @@ jobs:
           if [ "${FORCE_RESTART_INPUT:-false}" = "true" ]; then
             export FORCE_RESTART=1
             echo "force_restart requested — the service will be restarted"
+          fi
+          # A key that just changed is only live after the process re-reads its
+          # environment, so this restarts even on a commit that touches nothing
+          # the deploy script would otherwise restart for.
+          if [ "${ENV_CHANGED:-0}" = "1" ]; then
+            export FORCE_RESTART=1
+            echo "backend/.env changed — the service will be restarted"
           fi
 
           # Run the deploy script from /tmp, extracted at exactly the commit
