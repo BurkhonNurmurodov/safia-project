@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { createElement, isValidElement, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Trash2, XCircle } from "lucide-react";
 import Button from "./Button";
 import { useLang } from "../../context/LangContext";
+
+// `icon` may be an ELEMENT (<Sparkles size={16} />) or the COMPONENT itself
+// (Sparkles). SectionHead / TableCard / EmptyState take the component and render
+// it; this one renders `icon` as a child, and those two conventions live side by
+// side in this codebase. Passing the component where an element was expected
+// handed React a forwardRef object to render as a child — error #31, a blank
+// page the instant the surface opened. Accepting both makes that impossible.
+const iconEl = (icon, size) =>
+  !icon || isValidElement(icon) ? icon : createElement(icon, { size });
+
 
 /**
  * Canonical confirmation dialog — THE template for every "are you sure"
@@ -120,7 +130,7 @@ export default function ConfirmDialog({
       >
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={chip}>
-            {icon ?? defaultIcon}
+            {iconEl(icon, 20) ?? defaultIcon}
           </div>
           <div className="text-sm font-bold" style={{ color: "var(--text-1)" }}>{title}</div>
         </div>

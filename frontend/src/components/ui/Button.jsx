@@ -1,5 +1,15 @@
-import { forwardRef } from "react";
+import { createElement, forwardRef, isValidElement } from "react";
 import { Loader2 } from "lucide-react";
+
+// `icon` may be an ELEMENT (<Sparkles size={16} />) or the COMPONENT itself
+// (Sparkles). SectionHead / TableCard / EmptyState take the component and render
+// it; this one renders `icon` as a child, and those two conventions live side by
+// side in this codebase. Passing the component where an element was expected
+// handed React a forwardRef object to render as a child — error #31, a blank
+// page the instant the surface opened. Accepting both makes that impossible.
+const iconEl = (icon, size) =>
+  !icon || isValidElement(icon) ? icon : createElement(icon, { size });
+
 
 /**
  * Canonical button — THE template for every action button in the app.
@@ -86,7 +96,7 @@ const Button = forwardRef(function Button({
     return (
       <a href={href} {...shared} {...rest}>
         <span className="inline-flex items-center gap-1.5">
-          {icon}
+          {iconEl(icon, 15)}
           {children}
         </span>
       </a>
@@ -108,7 +118,7 @@ const Button = forwardRef(function Button({
         <span className="absolute inset-0 flex items-center justify-center">{spinner}</span>
       )}
       <span className={`inline-flex items-center gap-1.5 ${loading ? "invisible" : ""}`}>
-        {icon}
+        {iconEl(icon, 15)}
         {children}
       </span>
     </button>

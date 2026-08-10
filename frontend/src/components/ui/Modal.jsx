@@ -1,5 +1,16 @@
 import { createPortal } from "react-dom";
+import { createElement, isValidElement } from "react";
 import { X } from "lucide-react";
+
+// `icon` may be an ELEMENT (<Sparkles size={16} />) or the COMPONENT itself
+// (Sparkles). SectionHead / TableCard / EmptyState take the component and render
+// it; this one renders `icon` as a child, and those two conventions live side by
+// side in this codebase. Passing the component where an element was expected
+// handed React a forwardRef object to render as a child — error #31, a blank
+// page the instant the surface opened. Accepting both makes that impossible.
+const iconEl = (icon, size) =>
+  !icon || isValidElement(icon) ? icon : createElement(icon, { size });
+
 
 /**
  * Canonical modal shell — THE template for every dialog in the app.
@@ -61,7 +72,7 @@ export default function Modal({
             style={{ borderBottom: "1px solid var(--border)" }}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              {icon}
+              {iconEl(icon, 16)}
               <div className="min-w-0">
                 <div className="font-semibold text-sm" style={{ color: "var(--text-1)" }}>{title}</div>
                 {subtitle && (

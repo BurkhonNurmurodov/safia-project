@@ -400,8 +400,13 @@ export default function AiRecheck({ errorCount = 0 }) {
       </Button>
 
       {open && (
+        /* Modal renders `icon` as a CHILD, so it takes an ELEMENT — unlike
+           SectionHead / TableCard / EmptyState, which take the component and
+           render <Icon/> themselves. Passing the bare component here handed
+           React a forwardRef object to render as a child (error #31), which
+           took the whole page down the moment this modal opened. */
         <Modal open onClose={() => setOpen(false)} title={T.title} subtitle={T.sub}
-          icon={Sparkles}
+          icon={<Sparkles size={16} />}
           footer={
             <>
               <Button variant="secondary" onClick={() => setOpen(false)}>{T.cancel}</Button>
