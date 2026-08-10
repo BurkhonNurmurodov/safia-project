@@ -115,12 +115,21 @@ function ChartCard({ icon, title, info, right, children, className = "" }) {
 // Wraps to a second line rather than shrinking the segments — SectionHead is
 // already a flex-wrap row, and at 390px two toggles plus a title do not fit
 // one line in any typography that stays readable.
+// WHICH people, on its own — the heatmap is a ratio, so the measure switch has
+// nothing to say about it, but the population does. One definition of the pair
+// so the segments can never drift between the cards that carry it.
+function ScopeSwitch({ scope, setScope, t }) {
+  return (
+    <SegmentedToggle
+      size="sm" value={scope} onChange={setScope}
+      options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />
+  );
+}
+
 function ModeSwitches({ scope, setScope, measure, setMeasure, t }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
-      <SegmentedToggle
-        size="sm" value={scope} onChange={setScope}
-        options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />
+      <ScopeSwitch scope={scope} setScope={setScope} t={t} />
       <SegmentedToggle
         size="sm" value={measure} onChange={setMeasure}
         options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")], ["diff", t("workers.msDiff")]]} />
@@ -538,6 +547,12 @@ export default function Workers() {
   // `rate` column), and the counts behind it ride along for the hover text.
   // HeatmapChart reads `net_util` as a 0–1 fraction and renders it as a %;
   // days with no list stay null → shown as "—".
+  //
+  // The grid follows the page's `scope` switch like every other measured
+  // surface: «Jami» is the whole list, «Zagruzka» the zagruzka-counted titles
+  // only (`z_*`, the same halves the backend sends for that day). Same metric
+  // either way — came ÷ on-the-list — so the two views are directly comparable
+  // and a cell never changes meaning, only its population.
   const heatDates = useMemo(() => {
     const set = new Set();
     headcount.forEach((m) => (m.daily || []).forEach((d) => set.add(d.date)));
@@ -546,20 +561,26 @@ export default function Workers() {
   const heatManagers = useMemo(() => headcount.map((m) => m.name), [headcount]);
   const heatData = useMemo(() => {
     const out = {};
+    const zag = scope === "zagruzka";
     headcount.forEach((m) => {
       const byDate = Object.fromEntries((m.daily || []).map((d) => [d.date, d]));
       const row = {};
       heatDates.forEach((dt) => {
         const d = byDate[dt];
-        row[dt] = d && d.roster
-          ? { net_util: d.came / d.roster, roster: d.roster, came: d.came,
-              absent: d.absent, on_leave: d.on_leave }
+        // Pre-`z_*` payloads (a cached response from before the split) fall back
+        // to the whole-list numbers rather than rendering an empty grid.
+        const roster   = d && (zag ? d.z_roster   ?? d.roster   : d.roster);
+        const came     = d && (zag ? d.z_came     ?? d.came     : d.came);
+        const absent   = d && (zag ? d.z_absent   ?? d.absent   : d.absent);
+        const on_leave = d && (zag ? d.z_on_leave ?? d.on_leave : d.on_leave);
+        row[dt] = roster
+          ? { net_util: came / roster, roster, came, absent, on_leave }
           : { net_util: null };
       });
       out[m.name] = row;
     });
     return out;
-  }, [headcount, heatDates]);
+  }, [headcount, heatDates, scope]);
   // Hover breakdown for a heatmap cell — the percentage says how bad, these say
   // how many, which is the number a supervisor is actually asked about.
   const heatTitle = (cell) => {
@@ -839,7 +860,8 @@ export default function Workers() {
           </ChartCard>
 
           {/* Attendance heatmap (full width) — same component as the fleet heatmap */}
-          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6">
+          <ChartCard icon={Grid3x3} title={t("workers.heatmap")} info={t("workers.info.heatmap")} className="mb-6"
+            right={<ScopeSwitch scope={scope} setScope={setScope} t={t} />}>
             {isLoading ? <SkeletonChart className="h-72" />
               : heatManagers.length && heatDates.length
                 ? <HeatmapChart dates={heatDates} managers={heatManagers} data={heatData}
@@ -854,7 +876,13 @@ export default function Workers() {
           <Modal open={!!dayCell} onClose={() => setDayCell(null)} maxWidth="max-w-xs"
             icon={<Users size={16} />}
             title={dayCell ? tl(dayCell.name) : ""}
-            subtitle={dayCell ? fmtLongDate(parseDate(dayCell.date), t, lang) : ""}>
+            subtitle={dayCell
+              ? fmtLongDate(parseDate(dayCell.date), t, lang)
+                // Which population these four numbers are about. The header
+                // switch is not visible from inside the modal, so a narrowed
+                // grid must say so here or the counts read as the whole list.
+                + (scope === "zagruzka" ? ` · ${t("workers.tmZagruzka")}` : "")
+              : ""}>
             {dayCell && (() => {
               const c = dayCell.cell;
               const pct = Math.round((c.came / c.roster) * 100);

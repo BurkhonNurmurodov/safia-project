@@ -696,7 +696,68 @@ def counts(db: Session) -> dict:
                 LeaderAiReview.attempts >= MAX_ATTEMPTS)
         .count()
     )
+    # What is actually LEFT to look at. `flagged` is a lifetime total and only
+    # ever grows; the triage tab badges this instead, so the number goes to zero
+    # when the work is done.
+    out["open"] = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status == "flagged",
+                LeaderAiReview.resolution.is_(None))
+        .count()
+    )
+    for res, n in (db.query(LeaderAiReview.resolution, func.count(LeaderAiReview.id))
+                   .filter(LeaderAiReview.resolution.isnot(None))
+                   .group_by(LeaderAiReview.resolution).all()):
+        out[res] = n
     return out
+
+
+# ── triage buckets ───────────────────────────────────────────────────────────
+# A flag list is not equally actionable in every combination, and the queue is
+# ordered by how much a human decision is worth — not by date.
+#
+#   forged   a photo that is BOTH off-window and does not show the work: the
+#            only combination that looks like a fabricated proof rather than a
+#            mistake, so it is triaged first.
+#   undone   the work is not visible, but the timestamp is fine — usually a
+#            criteria argument, not a discipline one.
+#   date     right work, wrong day (or no readable clock at all).
+#   tech     `unreadable`, and every `error` row. NOT a person's problem: a dead
+#            Drive permission or a revoked bot token. It is bucketed away from
+#            the behavioural queue on purpose — technical noise mixed into a
+#            discipline queue is what makes a reviewer stop trusting the queue.
+BUCKETS = ("forged", "undone", "date", "tech")
+_DATE_FLAGS = ("date_mismatch", "no_date")
+
+
+def bucket_of(flags: list[str] | None) -> str:
+    f = set(flags or ())
+    if "unreadable" in f:
+        return "tech"
+    bad_date = bool(f & set(_DATE_FLAGS))
+    if "not_proven" in f:
+        return "forged" if bad_date else "undone"
+    return "date" if bad_date else "undone"
+
+
+# Lower sorts first. Within a bucket the newest report wins — an admin acts on
+# yesterday's fake before last month's.
+_BUCKET_RANK = {"forged": 0, "undone": 1, "date": 2, "tech": 3}
+
+
+def severity(flags: list[str] | None) -> int:
+    return _BUCKET_RANK.get(bucket_of(flags), 9)
+
+
+def rejected_refs(db: Session, dates: set[str] | None = None) -> set[str]:
+    """Every ref a human REJECTED — the proof was judged bad, so the task must
+    stop counting toward its day. Read by routers/leaders.py to apply the
+    penalty at read time: the leaders sheet is an immutable source we cannot
+    write back to, so the deduction is an overlay, never an edit."""
+    q = db.query(LeaderAiReview.ref).filter(LeaderAiReview.resolution == "rejected")
+    if dates:
+        q = q.filter(LeaderAiReview.date.in_(dates))
+    return {r[0] for r in q.all()}
 
 
 # ── background kick ──────────────────────────────────────────────────────────

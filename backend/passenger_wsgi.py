@@ -67,13 +67,14 @@ try:
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
-        add_broadcast_resume_columns, add_pp_product_op,
+        add_broadcast_resume_columns, add_broadcast_schedule_column, add_pp_product_op,
         add_downtime_ns_columns,
         add_profile_identity_columns, add_activity_profile_key,
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
+        add_leader_ai_resolution,
         add_web_credential_password_enc,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
@@ -111,6 +112,7 @@ try:
     add_downtime_ns_columns()
     add_leader_task_setting_names()
     add_leader_task_criteria()
+    add_leader_ai_resolution()
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
@@ -147,8 +149,14 @@ try:
 
     # Continue any broadcast fan-out orphaned by Passenger recycling its
     # process mid-send (mirrored in the FastAPI lifespan).
-    from app.routers.broadcast import resume_stuck_broadcasts
+    from app.routers.broadcast import register_scheduled_broadcasts, resume_stuck_broadcasts
     resume_stuck_broadcasts()
+
+    # Background jobs. Timers live in memory only, so every boot rebuilds them
+    # from the rows that own them.
+    from app.scheduler import start_scheduler
+    start_scheduler()
+    register_scheduled_broadcasts()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.

@@ -353,6 +353,28 @@ def add_broadcast_resume_columns() -> None:
         db.close()
 
 
+def add_broadcast_schedule_column() -> None:
+    """Deferred-send column (idempotent). A scheduled broadcast is a normal,
+    fully-resolved row parked at status 'scheduled' until scheduled_at; the
+    timer that fires it is rebuilt from this column at every boot
+    (routers/broadcast.py register_scheduled_broadcasts), so the send survives
+    a restart or a deploy between composing and sending."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ"))
+        # Partial index: the boot sweep and the 5-minute safety net both ask
+        # exactly this question, and the table grows one row per broadcast
+        # forever while pending rows stay a handful.
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_broadcasts_scheduled "
+                        "ON broadcasts (scheduled_at) WHERE status = 'scheduled'"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] broadcasts schedule column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_admin_language_column() -> None:
     """Add a language column to admins (idempotent). Seeded admins have no
     telegram_users row, so this is where their bot-DM language is stored, kept in
@@ -592,6 +614,34 @@ def add_leader_task_criteria() -> None:
     except Exception as exc:
         db.rollback()
         print(f"[startup] leader task criteria migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def add_leader_ai_resolution() -> None:
+    """2026-08-10: an AI flag gains a terminal state.
+
+    Until now a verdict was write-once and read-forever: nothing recorded that a
+    human had looked at it, so the admin re-read the same flags every session and
+    the "N suspect" counter only ever grew. These four columns turn the flag list
+    into a queue that empties — and `resolution='rejected'` is what lets a bad
+    proof actually cost the day its points (routers/leaders.py). Idempotent; the
+    index matters because every queue read filters on `resolution IS NULL`."""
+    db = SessionLocal()
+    try:
+        for ddl in (
+            "ALTER TABLE leader_ai_reviews ADD COLUMN IF NOT EXISTS resolution VARCHAR(12)",
+            "ALTER TABLE leader_ai_reviews ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(160)",
+            "ALTER TABLE leader_ai_reviews ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ",
+            "ALTER TABLE leader_ai_reviews ADD COLUMN IF NOT EXISTS resolution_note TEXT",
+            "CREATE INDEX IF NOT EXISTS ix_leader_ai_reviews_resolution "
+            "ON leader_ai_reviews (resolution)",
+        ):
+            db.execute(text(ddl))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader-ai resolution migration skipped: {exc}")
     finally:
         db.close()
 

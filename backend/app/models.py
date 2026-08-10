@@ -1330,6 +1330,22 @@ class LeaderAiReview(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # ── the human decision ───────────────────────────────────────────────────
+    # A flag with no terminal state is a flag the admin re-reads forever: the
+    # triage queue has no bottom, and "12 suspect" means "12 ever", not "12 left
+    # to look at". These four columns are what give a verdict an end.
+    #   NULL       → still in the queue
+    #   approved   → a human looked and the AI was wrong; flag retired
+    #   rejected   → the AI was right; the task stops counting toward the day
+    #   requeried  → the leader was asked to re-file; no penalty yet
+    # `rejected` is the only value that changes a number anywhere (see
+    # routers/leaders.py `_ai_penalties`), which is why it is stored as a
+    # decision and never inferred from `flags`.
+    resolution      = Column(String(12), nullable=True, index=True)
+    resolved_by     = Column(String(160), nullable=True)   # actor's display name
+    resolved_at     = Column(DateTime(timezone=True), nullable=True)
+    resolution_note = Column(Text, nullable=True)
+
 
 class LeaderTaskPendingChange(Base):
     """A config edit STAGED to take effect from a future checklist day
@@ -1604,7 +1620,7 @@ class Broadcast(Base):
     sent_count         = Column(Integer, nullable=False, default=0)
     failed_count       = Column(Integer, nullable=False, default=0)
     failed_names       = Column(JSONB, nullable=False, default=list)  # profile names whose DM failed
-    status             = Column(String, nullable=False, default="sending")  # sending | done
+    status             = Column(String, nullable=False, default="sending")  # scheduled | sending | done | canceled
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     finished_at        = Column(DateTime(timezone=True), nullable=True)
     # Resumable fan-out state. Passenger recycles app processes within seconds,
@@ -1618,6 +1634,14 @@ class Broadcast(Base):
     attachment_file_id = Column(String, nullable=True)   # harvested after the 1st successful media send
     media_specs        = Column(JSONB, nullable=True)    # rich mode: reusable media specs, ditto
     claimed_at         = Column(DateTime(timezone=True), nullable=True)
+    # Deferred send. NULL = went out immediately (every row before scheduling
+    # existed). A 'scheduled' row is already FULLY resolved — recipients,
+    # sanitized HTML, and for media the harvested file_id/media_specs — so
+    # firing it is just a status flip into the same resumable fan-out; nothing
+    # about the send needs the process that composed it, which is what lets it
+    # survive a deploy. app/scheduler.py holds the timer, this column is the
+    # truth that timer is rebuilt from at every boot.
+    scheduled_at       = Column(DateTime(timezone=True), nullable=True)
 
 
 class BroadcastDraft(Base):

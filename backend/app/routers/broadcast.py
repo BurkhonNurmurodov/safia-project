@@ -39,6 +39,7 @@ from app.models import (
 )
 from pydantic import BaseModel
 from app.routers.admin import oauth2_scheme, verify_admin
+from app.scheduler import schedule_at, schedule_interval, unschedule
 from app.upload_guard import validate_broadcast_media
 
 logger = logging.getLogger(__name__)
@@ -844,6 +845,188 @@ def resume_stuck_broadcasts() -> None:
     threading.Thread(target=_worker, daemon=True).start()
 
 
+# ── Scheduled broadcasts ─────────────────────────────────────────────────────
+# A scheduled broadcast is NOT a different kind of send. /send resolves it
+# completely — recipients, sanitized HTML, and for media the Telegram file_id
+# harvested up front — then parks the row at status 'scheduled' instead of
+# spawning a runner. Firing it is a guarded status flip into the very same
+# resumable fan-out, so a scheduled send inherits the resume, retry and
+# progress machinery for free and depends on nothing held by the process that
+# composed it.
+#
+# app/scheduler.py keeps the timer in memory; THIS table is the truth. Every
+# boot re-arms the pending rows, and a 5-minute sweep catches anything whose
+# timer was lost, so the worst case is a late send, never a silent one.
+
+# Guard rails on how far out a send may be parked. The upper bound is not
+# paranoia: the harvested Telegram file_id is the only copy of the attachment
+# left, and file_ids are not guaranteed forever.
+MIN_SCHEDULE_LEAD = timedelta(seconds=30)
+MAX_SCHEDULE_DAYS = 180
+
+_SWEEP_JOB_ID = "broadcast-schedule-sweep"
+
+
+def _job_id(bid: int) -> str:
+    return f"broadcast-send-{bid}"
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Postgres hands back tz-aware values, but a column added mid-flight can
+    still yield naive ones on a stale connection. Read naive as UTC."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _preflight_media(sender_tid: int, mode: str, html: str, kind: str | None,
+                     data: bytes | None, filename: str | None,
+                     media_items: list[dict]) -> tuple[str | None, list[dict] | None]:
+    """Upload a scheduled broadcast's media to Telegram NOW and return its
+    reusable ids as (attachment_file_id, media_specs).
+
+    An immediate broadcast carries its bytes in the sending thread and harvests
+    a file_id off the first successful DM. A scheduled one has no such thread:
+    by the time it fires the request that uploaded the file is long gone and
+    the runner's media-lost path would mark every recipient failed. So the file
+    is uploaded once, here, to the SENDER's own chat — the message is deleted
+    immediately afterwards, and Telegram keeps a file_id valid after the
+    message carrying it is gone.
+
+    Raises HTTPException so the admin learns at schedule time that the media
+    could not be prepared, rather than finding an all-failed broadcast in the
+    morning. Sent with premium emoji already stripped: this upload only exists
+    to mint ids, and a bot without a Fragment username would fail the whole
+    preflight on markup the real send degrades gracefully.
+    """
+    from app.telegram_bot import bot, strip_custom_emoji
+
+    plain_html = strip_custom_emoji(html)
+    probe_id = None
+    try:
+        if mode == "rich":
+            specs = [{"id": m["id"], "media": {"type": m["kind"], "media": f"attach://f{n}"}}
+                     for n, m in enumerate(media_items)]
+            files = {f"f{n}": (m["filename"], m["data"]) for n, m in enumerate(media_items)}
+            result = _tg_api(
+                "sendRichMessage",
+                {"chat_id": sender_tid,
+                 "rich_message": json.dumps({"html": plain_html, "is_rtl": False, "media": specs})},
+                files,
+            )
+            probe_id = (result or {}).get("message_id")
+            reusable = _harvest_file_ids(result, media_items)
+            if reusable is None:
+                raise RuntimeError("could not match uploaded media back to the message")
+            return None, reusable
+
+        if kind == "photo":
+            msg = bot.send_photo(sender_tid, data)
+            probe_id, fid = msg.message_id, msg.photo[-1].file_id
+        elif kind == "video":
+            msg = bot.send_video(sender_tid, data)
+            probe_id, fid = msg.message_id, msg.video.file_id
+        else:
+            msg = bot.send_document(sender_tid, document=(filename, data))
+            probe_id, fid = msg.message_id, msg.document.file_id
+        return fid, None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Scheduled broadcast media preflight failed for %s: %s", sender_tid, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not prepare the attachment for a scheduled send. "
+                   "Open a chat with the bot and try again, or send now instead.",
+        ) from exc
+    finally:
+        # Best effort: the ids are already minted and stay valid, so a message
+        # left behind is cosmetic — never a reason to fail the schedule.
+        if probe_id:
+            try:
+                bot.delete_message(sender_tid, probe_id)
+            except Exception:
+                logger.info("Scheduled broadcast preflight message %s left in chat %s",
+                            probe_id, sender_tid)
+
+
+def fire_scheduled_broadcast(bid: int) -> None:
+    """Hand a scheduled row to the normal fan-out.
+
+    The status flip is guarded on 'scheduled', so the timer and the safety-net
+    sweep racing on the same row can only ever produce ONE runner — the loser's
+    update matches no row. claimed_at is pre-set exactly as /send does it, so a
+    concurrent resume sweep can't steal the row before the thread starts."""
+    try:
+        with SessionLocal() as db:
+            row = db.query(Broadcast.mode).filter_by(id=bid, status="scheduled").first()
+            if not row:
+                return
+            mode = row[0]
+            updated = db.query(Broadcast).filter_by(id=bid, status="scheduled").update({
+                "status": "sending",
+                "claimed_at": datetime.now(timezone.utc),
+            })
+            db.commit()
+        if not updated:
+            return
+        logger.info("Scheduled broadcast %s firing", bid)
+        runner = _run_broadcast_rich if mode == "rich" else _run_broadcast
+        threading.Thread(target=runner, args=(bid,), kwargs={"claimed": True},
+                         daemon=True).start()
+    except Exception:
+        logger.exception("Scheduled broadcast %s failed to fire", bid)
+
+
+def sweep_due_broadcasts() -> None:
+    """Safety net: send anything already due that no live timer covers.
+
+    The timers live in memory, so they are lost on every restart and on any
+    failed re-arm. This runs every few minutes and after each boot, which turns
+    the worst failure mode from "the broadcast never went out" into "it went
+    out a few minutes late"."""
+    try:
+        now = datetime.now(timezone.utc)
+        with SessionLocal() as db:
+            due = [r[0] for r in db.query(Broadcast.id).filter(
+                Broadcast.status == "scheduled",
+                Broadcast.scheduled_at.isnot(None),
+                Broadcast.scheduled_at <= now,
+            ).all()]
+        for bid in due:
+            fire_scheduled_broadcast(bid)
+    except Exception:
+        logger.exception("Scheduled-broadcast sweep failed")
+
+
+def register_scheduled_broadcasts() -> None:
+    """Rebuild every pending timer from the table, and install the sweep.
+
+    Called from both startup entrypoints. Overdue rows (the service was down
+    across their time, or a deploy landed on it) go out immediately rather than
+    being dropped — a broadcast that missed its slot is still wanted; one that
+    silently vanishes is not."""
+    try:
+        with SessionLocal() as db:
+            rows = db.query(Broadcast.id, Broadcast.scheduled_at).filter(
+                Broadcast.status == "scheduled",
+                Broadcast.scheduled_at.isnot(None),
+            ).all()
+        now = datetime.now(timezone.utc)
+        armed = 0
+        for bid, when in rows:
+            when = _as_utc(when)
+            if when <= now:
+                fire_scheduled_broadcast(bid)
+            elif schedule_at(_job_id(bid), when, fire_scheduled_broadcast, (bid,)):
+                armed += 1
+        schedule_interval(_SWEEP_JOB_ID, sweep_due_broadcasts, minutes=5)
+        if armed:
+            logger.info("Re-armed %s scheduled broadcast(s)", armed)
+    except Exception:
+        logger.exception("Could not register scheduled broadcasts")
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/send")
@@ -852,6 +1035,7 @@ async def send_broadcast(
     targets: str = Form(...),
     mode: str = Form("normal"),
     media_meta: str = Form("[]"),
+    scheduled_at: str = Form(""),
     file: UploadFile | None = File(None),
     media_files: list[UploadFile] | None = File(None),
     payload: dict = Depends(verify_admin),
@@ -864,6 +1048,26 @@ async def send_broadcast(
         raise HTTPException(status_code=422, detail="targets must be a JSON list")
     if mode not in ("normal", "rich"):
         raise HTTPException(status_code=422, detail="mode must be normal or rich")
+
+    # Deferred send. Parsed before any upload is read so a bad time costs
+    # nothing; empty means send now, which is every caller that predates this.
+    when: datetime | None = None
+    if scheduled_at.strip():
+        try:
+            when = datetime.fromisoformat(scheduled_at.strip().replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="scheduled_at must be an ISO-8601 datetime")
+        when = _as_utc(when)
+        now = datetime.now(timezone.utc)
+        if when < now + MIN_SCHEDULE_LEAD:
+            # A time in the past is a mistake (a mistyped date, a stale form),
+            # not an instruction to send immediately — say so instead of
+            # blasting a mass DM the admin did not just ask for.
+            raise HTTPException(status_code=422, detail="scheduled_at must be in the future")
+        if when > now + timedelta(days=MAX_SCHEDULE_DAYS):
+            raise HTTPException(
+                status_code=422,
+                detail=f"scheduled_at cannot be more than {MAX_SCHEDULE_DAYS} days out")
 
     kind = data = filename = None
     media_items: list[dict] = []
@@ -931,6 +1135,18 @@ async def send_broadcast(
 
     from app.telegram_bot import admin_profile_name
     sender_tid = int(payload.get("sub", 0) or 0)
+
+    # A scheduled send has no thread to hold the uploaded bytes until its time
+    # comes, so the media is turned into reusable Telegram ids right now. This
+    # can fail (the bot cannot DM the admin, Telegram rejects the file) and
+    # deliberately fails the whole request: better a red error on the compose
+    # screen than a broadcast that fires at 06:00 and fails every recipient.
+    pre_file_id: str | None = None
+    pre_specs: list[dict] | None = None
+    if when and (kind or media_items):
+        pre_file_id, pre_specs = _preflight_media(
+            sender_tid, mode, html, kind, data, filename, media_items)
+
     row = Broadcast(
         sender_telegram_id=sender_tid,
         sender_name=admin_profile_name(sender_tid),
@@ -939,17 +1155,33 @@ async def send_broadcast(
         attachment_kind=kind, attachment_name=filename,
         media_names=[m["filename"] for m in media_items],
         target_keys=keys, recipient_total=len(recipients),
-        sent_count=0, failed_count=0, failed_names=[], status="sending",
+        sent_count=0, failed_count=0, failed_names=[],
+        status="scheduled" if when else "sending",
+        scheduled_at=when,
         # Resumable fan-out state: the resolved list + cursor live on the row.
         # claimed_at is set NOW so a concurrently booting process's resume
         # sweep can't steal the row from the only process holding the
-        # in-memory attachment bytes.
+        # in-memory attachment bytes. A scheduled row claims nothing — it is
+        # not sending yet, and the resume sweep only looks at 'sending'.
         recipients=[[tid, name] for tid, name in sorted(recipients.items())],
-        send_cursor=0, claimed_at=datetime.now(timezone.utc),
+        send_cursor=0,
+        claimed_at=None if when else datetime.now(timezone.utc),
+        attachment_file_id=pre_file_id,
+        media_specs=pre_specs,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    if when:
+        # The row is already the durable record; the timer is a convenience
+        # rebuilt at every boot. If arming fails the send is still covered by
+        # the 5-minute sweep, so this is logged, not raised.
+        schedule_at(_job_id(row.id), when, fire_scheduled_broadcast, (row.id,))
+        logger.info("Broadcast %s scheduled for %s (%s recipients)",
+                    row.id, when.isoformat(), len(recipients))
+        return {"id": row.id, "recipients": len(recipients),
+                "scheduled_at": when.isoformat()}
 
     if mode == "rich":
         threading.Thread(
@@ -1028,6 +1260,35 @@ def retry_broadcast(bid: int, db: Session = Depends(get_db),
     return {"id": bid, "retrying": len(failed_subset)}
 
 
+@router.post("/{bid}/cancel")
+def cancel_scheduled_broadcast(bid: int, db: Session = Depends(get_db),
+                               _: dict = Depends(verify_admin)):
+    """Call off a broadcast that has not fired yet.
+
+    Guarded on 'scheduled', so this loses cleanly against a send that started a
+    moment ago: the update matches no row and the admin is told it is already
+    going out rather than being shown a cancel that did nothing. The row is
+    kept as 'canceled' instead of deleted — a mass DM that was planned and
+    called off is exactly the kind of thing the history is for."""
+    row = db.query(Broadcast).filter_by(id=bid).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+
+    updated = db.query(Broadcast).filter_by(id=bid, status="scheduled").update({
+        "status": "canceled",
+        "finished_at": datetime.now(timezone.utc),
+    })
+    db.commit()
+    if not updated:
+        raise HTTPException(status_code=409,
+                            detail="This broadcast is no longer scheduled")
+    # Drop the timer only after the row says canceled: if this process dies in
+    # between, the fired job finds a non-'scheduled' row and does nothing.
+    unschedule(_job_id(bid))
+    logger.info("Scheduled broadcast %s canceled", bid)
+    return {"id": bid, "status": "canceled"}
+
+
 @router.get("/history")
 def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     rows = db.query(Broadcast).order_by(Broadcast.id.desc()).limit(50).all()
@@ -1070,6 +1331,8 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
         "failed_names": r.failed_names or [],
         "status": r.status,
         "can_retry": _retryable(r),
+        "scheduled_at": r.scheduled_at.isoformat() if r.scheduled_at else None,
+        "can_cancel": r.status == "scheduled",
     } for r in rows]
 
 

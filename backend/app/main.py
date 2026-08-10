@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 # Aliased: `settings` (unqualified) is the app.routers.settings module below.
 from app.config import assert_secure_config, settings as cfg
 from app.database import engine, Base
+from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories
 from app.routers import production as production_router
@@ -62,13 +63,14 @@ async def lifespan(app: FastAPI):
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
-        add_broadcast_resume_columns, add_pp_product_op,
+        add_broadcast_resume_columns, add_broadcast_schedule_column, add_pp_product_op,
         add_downtime_ns_columns,
         add_profile_identity_columns, add_activity_profile_key,
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
+        add_leader_ai_resolution,
         add_web_credential_password_enc,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
@@ -98,10 +100,12 @@ async def lifespan(app: FastAPI):
     add_leader_submission_columns()
     add_broadcast_rich_columns()
     add_broadcast_resume_columns()
+    add_broadcast_schedule_column()
     add_pp_product_op()
     add_downtime_ns_columns()
     add_leader_task_setting_names()
     add_leader_task_criteria()
+    add_leader_ai_resolution()
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
@@ -136,9 +140,15 @@ async def lifespan(app: FastAPI):
     setup_webhook()
     # Continue any broadcast fan-out orphaned by a process restart mid-send
     # (mirrored in passenger_wsgi.py — prod boots through that entrypoint).
-    from app.routers.broadcast import resume_stuck_broadcasts
+    from app.routers.broadcast import register_scheduled_broadcasts, resume_stuck_broadcasts
     resume_stuck_broadcasts()
+    # Background jobs. The scheduler holds its timers in memory only, so every
+    # boot rebuilds them from the rows that own them; a deploy landing between
+    # composing a broadcast and its send time therefore costs nothing.
+    start_scheduler()
+    register_scheduled_broadcasts()
     yield
+    shutdown_scheduler()
 
 
 # Every /api/* request must carry a valid Telegram initData header (verified

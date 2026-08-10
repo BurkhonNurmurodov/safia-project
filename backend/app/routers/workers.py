@@ -41,6 +41,10 @@ _CAME = Attendance.hours_worked > 0
 # turn up. `X` (the other marker) is a day off or a no-show and the export does
 # not distinguish the two, so it stays in the plain absent bucket.
 LEAVE_MARKER = "О"
+_ON_LEAVE = and_(
+    or_(Attendance.hours_worked.is_(None), Attendance.hours_worked <= 0),
+    func.trim(Attendance.clock_in_out).like(f"{LEAVE_MARKER}%"),
+)
 
 # Roles that count towards the zagruzka staffing calculation (the CALC set).
 # Everything else is a real job title that keeps its own role slice so the
@@ -186,9 +190,22 @@ def get_headcount(
             func.count(func.distinct(
                 case((_CAME, Attendance.worker_name)))).label("came"),
             func.count(func.distinct(
-                case((and_(or_(Attendance.hours_worked.is_(None), Attendance.hours_worked <= 0),
-                           func.trim(Attendance.clock_in_out).like(f"{LEAVE_MARKER}%")),
-                      Attendance.worker_name)))).label("on_leave"),
+                case((_ON_LEAVE, Attendance.worker_name)))).label("on_leave"),
+            # The same three numbers over the zagruzka-counted titles only —
+            # the «Jami / Zagruzka» switch on the heatmap flips a cell between
+            # this half and the pair above. Conditional distinct counts rather
+            # than a second query so both halves are read off the SAME day set
+            # (a day with a list but no konditers must stay a day, at 0 %), and
+            # rather than summing the per-role counts below, which double-counts
+            # a worker who carries two job titles in one day. (`z_came` restates
+            # `hc` from daily_q; it is re-read here so the three numbers of a
+            # cell come from one query and one filter set.)
+            func.count(func.distinct(
+                case((_KNOWN_TITLES, Attendance.worker_name)))).label("z_roster"),
+            func.count(func.distinct(
+                case((and_(_KNOWN_TITLES, _CAME), Attendance.worker_name)))).label("z_came"),
+            func.count(func.distinct(
+                case((and_(_KNOWN_TITLES, _ON_LEAVE), Attendance.worker_name)))).label("z_on_leave"),
         )
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
@@ -201,11 +218,13 @@ def get_headcount(
     if scoped is not None:
         roster_q = roster_q.filter(Manager.id.in_(scoped))
     roster: dict[int, dict[date, dict]] = {}
-    for mgr_id, d, r_cnt, came, on_leave in roster_q.group_by(
+    for mgr_id, d, r_cnt, came, on_leave, z_r, z_c, z_leave in roster_q.group_by(
             Attendance.manager_id, Attendance.date).all():
         roster.setdefault(mgr_id, {})[d] = {
             "roster": r_cnt, "came": came,
             "absent": r_cnt - came, "on_leave": on_leave,
+            "z_roster": z_r, "z_came": z_c,
+            "z_absent": z_r - z_c, "z_on_leave": z_leave,
         }
 
     # The same roster/came pair, split by job title — the per-role, per-day
