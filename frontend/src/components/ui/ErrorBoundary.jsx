@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import dict from "../../i18n/translations";
+import ErrorScreen from "./ErrorScreen";
 
 /**
  * App-wide error boundary.
@@ -13,6 +14,10 @@ import dict from "../../i18n/translations";
  * even if a provider is what threw — it reads the language from localStorage and
  * looks keys up in the static dictionary directly (mirroring the t() fallback
  * chain: lang → uz for uz_cyrl → en → key).
+ *
+ * The layout itself comes from ErrorScreen, the shared template — safe to use
+ * here because it reads no context of its own, only React's own hooks, so a
+ * blown-up provider still cannot take the recovery screen down with it.
  */
 function tStatic(key) {
   let lang = "uz";
@@ -27,7 +32,7 @@ function tStatic(key) {
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, showDetails: false, detail: "" };
+    this.state = { hasError: false, detail: "" };
   }
 
   static getDerivedStateFromError() {
@@ -59,90 +64,15 @@ export default class ErrorBoundary extends React.Component {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px",
-          background: "var(--bg-inner)",
-        }}
-      >
-        <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 9999,
-              margin: "0 auto 16px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(239,68,68,0.12)",
-            }}
-          >
-            <AlertTriangle size={28} color="#ef4444" />
-          </div>
-          <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8, color: "var(--text-1)" }}>
-            {tStatic("error.title")}
-          </h2>
-          <p style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20, color: "var(--text-3)" }}>
-            {tStatic("error.message")}
-          </p>
-          <button
-            onClick={this.handleReload}
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: 12,
-              fontSize: 14,
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              background: "var(--brand)",
-              color: "#1a1206",
-            }}
-          >
-            {tStatic("error.reload")}
-          </button>
-          <button
-            onClick={() => this.setState((s) => ({ showDetails: !s.showDetails }))}
-            style={{
-              marginTop: 12,
-              background: "none",
-              border: "none",
-              color: "var(--text-3)",
-              fontSize: 12,
-              cursor: "pointer",
-              opacity: 0.75,
-            }}
-          >
-            {tStatic("error.details")}
-          </button>
-          {this.state.showDetails && (
-            <pre
-              style={{
-                marginTop: 10,
-                textAlign: "left",
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                padding: "10px 12px",
-                fontSize: 11,
-                lineHeight: 1.5,
-                color: "var(--text-3)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                maxHeight: 180,
-                overflow: "auto",
-              }}
-            >
-              {this.state.detail || "—"}
-            </pre>
-          )}
-        </div>
-      </div>
+      <ErrorScreen
+        tone="danger"
+        icon={AlertTriangle}
+        title={tStatic("error.title")}
+        message={tStatic("error.message")}
+        action={{ label: tStatic("error.reload"), onClick: this.handleReload }}
+        detail={this.state.detail || "—"}
+        detailLabel={tStatic("error.details")}
+      />
     );
   }
 }

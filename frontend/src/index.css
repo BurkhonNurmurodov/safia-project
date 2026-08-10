@@ -200,6 +200,15 @@ body.sidebar-open { overflow: hidden; }
   box-shadow: inset 0 0 0 2px var(--brand-ring);
 }
 
+/* Full-screen error / blocked states (ErrorScreen). Its primary action takes
+   focus on mount so a keyboard user lands on the way out rather than at the
+   top of a document that just replaced itself — which only helps if the ring
+   is actually visible, and the UA default all but disappears on --bg-base. */
+.err-screen :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
 /* Honor reduced-motion for every shell animation — same stance as the
    Leaderboard podium halo. Base states are already the visible state, so
    killing the animation is safe. */

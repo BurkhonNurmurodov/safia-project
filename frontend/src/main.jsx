@@ -82,12 +82,12 @@ try {
     _tg.onEvent?.('viewportChanged', applySafeArea)
 
     if (supportsFullscreen) {
-      _tg.onEvent?.('fullscreenChanged', () => {
-        if (!_tg.isFullscreen) {
-          try { _tg.requestFullscreen() } catch { /* ignore */ }
-        }
-        applySafeArea()
-      })
+      // Fullscreen is requested ONCE, at boot. Leaving it is the user's call —
+      // the chevron in Telegram's header is a control they can see, so an app
+      // that snaps straight back reads as broken rather than as opinionated.
+      // Only the insets are re-read: exiting fullscreen hands the system bars
+      // back to Telegram's own container, which is a safe-area change.
+      _tg.onEvent?.('fullscreenChanged', applySafeArea)
     }
   }
 } catch (e) {

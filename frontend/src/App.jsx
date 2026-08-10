@@ -69,6 +69,7 @@ const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
 const Profile = lazyWithReload(() => import("./pages/Profile"));
+const NotFound = lazyWithReload(() => import("./pages/NotFound"));
 import PageLoader from "./components/ui/PageLoader";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import ErrorScreen from "./components/ui/ErrorScreen";
@@ -432,6 +433,10 @@ function AppWithLang() {
               element={<AuthGate><BroadcastReceivers /></AuthGate>}
             />
             <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
+            {/* Catch-all. Must stay LAST — it matches whatever nothing above
+                did. Behind AuthGate so a signed-out visitor on a bad URL gets
+                the login screen (and keeps their deep link), not a 404. */}
+            <Route path="*" element={<AuthGate><NotFound /></AuthGate>} />
           </Routes>
           </Suspense>
          </FactoryProvider>

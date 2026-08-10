@@ -99,7 +99,7 @@ export default function ErrorScreen({
             }
       }
     >
-      <div className="w-full text-center page-enter" style={{ maxWidth: 340 }} role={live === "alert" ? "alert" : "status"}>
+      <div className="err-screen w-full text-center page-enter" style={{ maxWidth: 340 }} role={live === "alert" ? "alert" : "status"}>
         {Icon && (
           <div
             className="grid place-items-center rounded-full"
@@ -124,8 +124,12 @@ export default function ErrorScreen({
           </h1>
         )}
 
+        {/* --text-2, not the --text-3 these screens used to use: on the dark
+            base that grey lands at ~4.1:1, under AA, and this sentence is the
+            one thing on the page that has to be read — often on a phone, on a
+            factory floor, by someone whose shift just stopped working. */}
         {message && (
-          <p className="text-[13px] mx-auto" style={{ color: "var(--text-3)", lineHeight: 1.6, maxWidth: "34ch" }}>
+          <p className="text-[13px] mx-auto" style={{ color: "var(--text-2)", lineHeight: 1.6, maxWidth: "34ch" }}>
             {message}
           </p>
         )}

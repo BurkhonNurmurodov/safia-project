@@ -2315,6 +2315,17 @@ const t = {
     "error.reload":  "Qayta yuklash",
     "error.details": "Texnik ma'lumot",
 
+    "notFound.title":   "Bunday sahifa yo'q",
+    "notFound.message": "Havola eskirgan yoki sahifa nomi o'zgartirilgan. Menyudan sahifani tanlang yoki ortga qayting.",
+    "notFound.home":    "Bosh sahifaga",
+    "notFound.back":    "Ortga",
+
+    "access.noPagesTitle": "Sahifa biriktirilmagan",
+
+    "auth.checkAgain":   "Qayta tekshirish",
+    "auth.offlineTitle": "Aloqa yo'q",
+    "auth.offlineMsg":   "Serverga ulanib bo'lmadi. Internet aloqasini tekshirib, qayta urinib ko'ring.",
+
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Rasmiy Xodimlar soni va Verifix Xodimlar soni",
     "workers.diffWarn":          "⚠ farq 2 kishidan ortiq bo'lganda ko'rsatiladi",
@@ -4990,6 +5001,17 @@ const t = {
     "error.message": "Саҳифани қайта юкланг. Муаммо такрорланса, администратор билан боғланинг.",
     "error.reload":  "Қайта юклаш",
     "error.details": "Техник маълумот",
+
+    "notFound.title":   "Бундай саҳифа йўқ",
+    "notFound.message": "Ҳавола эскирган ёки саҳифа номи ўзгартирилган. Менюдан саҳифани танланг ёки ортга қайтинг.",
+    "notFound.home":    "Бош саҳифага",
+    "notFound.back":    "Ортга",
+
+    "access.noPagesTitle": "Саҳифа бириктирилмаган",
+
+    "auth.checkAgain":   "Қайта текшириш",
+    "auth.offlineTitle": "Алоқа йўқ",
+    "auth.offlineMsg":   "Серверга уланиб бўлмади. Интернет алоқасини текшириб, қайта уриниб кўринг.",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Расмий Ходимлар сони ва Verifix Ходимлар сони",
@@ -7667,6 +7689,17 @@ const t = {
     "error.reload":  "Перезагрузить",
     "error.details": "Технические детали",
 
+    "notFound.title":   "Такой страницы нет",
+    "notFound.message": "Ссылка устарела или страницу переименовали. Выберите страницу в меню или вернитесь назад.",
+    "notFound.home":    "На главную страницу",
+    "notFound.back":    "Назад",
+
+    "access.noPagesTitle": "Страницы не назначены",
+
+    "auth.checkAgain":   "Проверить снова",
+    "auth.offlineTitle": "Нет связи",
+    "auth.offlineMsg":   "Не удалось связаться с сервером. Проверьте интернет-соединение и попробуйте ещё раз.",
+
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Официальная числ. и Verifix числ.",
     "workers.diffWarn":          "⚠ показывается, где разница > 2 человек",
@@ -10342,6 +10375,17 @@ const t = {
     "error.message": "Reload the page. If the problem persists, contact your administrator.",
     "error.reload":  "Reload",
     "error.details": "Technical details",
+
+    "notFound.title":   "This page doesn't exist",
+    "notFound.message": "The link may be out of date, or the page was renamed. Pick a page from the menu, or go back to where you started.",
+    "notFound.home":    "Go to my start page",
+    "notFound.back":    "Back",
+
+    "access.noPagesTitle": "No pages assigned",
+
+    "auth.checkAgain":   "Check again",
+    "auth.offlineTitle": "No connection",
+    "auth.offlineMsg":   "We couldn't reach the server. Check your internet connection and try again.",
 
     // ── Workers (added) ──────────────────────────────────────────────────────
     "workers.officialVsVerifix": "Official HC vs Verifix HC",
