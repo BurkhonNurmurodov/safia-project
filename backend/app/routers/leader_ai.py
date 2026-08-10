@@ -214,10 +214,7 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
     for r in rows:
         buckets[leader_ai.bucket_of(r.flags)] += 1
 
-    # Stable sort: already newest-first, so ranking by severity keeps the newest
-    # report at the head of each severity band.
-    rows.sort(key=lambda r: leader_ai.severity(r.flags))
-    rows = rows[:limit]
+    rows = _fair_slice(rows, limit)
 
     return {
         "enabled": True,
@@ -226,6 +223,47 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
         "total": sum(buckets.values()),
         "capped": sum(buckets.values()) > len(rows),
     }
+
+
+def _fair_slice(rows: list[LeaderAiReview], limit: int) -> list[LeaderAiReview]:
+    """Trim to `limit` WITHOUT ever emptying a bucket.
+
+    A plain severity sort followed by `rows[:limit]` spends the whole cap on the
+    most serious band and hands the tail nothing: with 424 `date` flags against a
+    300 cap, `tech` — last by severity — shipped zero items while its tab still
+    read "3", because the tallies count the whole unresolved set. A tab that says
+    three and then shows an empty queue reads as a broken screen, and the flags it
+    hides are the ones nobody can reach by scrolling either.
+
+    So every non-empty bucket is guaranteed an equal floor first, and only the
+    REMAINDER is handed out by severity. Order is unchanged — buckets emitted
+    most-serious-first, newest report at the head of each band.
+
+    An under-cap list runs the same path rather than short-circuiting: returning
+    it untouched would hand back DB order (date desc), and the queue's whole
+    premise is that the most expensive decision sits at the top.
+    """
+    if not rows:
+        return []
+
+    by_bucket: dict[str, list[LeaderAiReview]] = {b: [] for b in leader_ai.BUCKETS}
+    for r in rows:                       # already newest-first
+        by_bucket[leader_ai.bucket_of(r.flags)].append(r)
+
+    live = sorted((b for b in leader_ai.BUCKETS if by_bucket[b]),
+                  key=leader_ai.bucket_rank)
+    share = limit // len(live)
+    taken = {b: by_bucket[b][:share] for b in live}
+
+    spare = limit - sum(len(v) for v in taken.values())
+    for b in live:
+        if spare <= 0:
+            break
+        extra = by_bucket[b][len(taken[b]):len(taken[b]) + spare]
+        taken[b].extend(extra)
+        spare -= len(extra)
+
+    return [r for b in live for r in taken[b]]
 
 
 def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:

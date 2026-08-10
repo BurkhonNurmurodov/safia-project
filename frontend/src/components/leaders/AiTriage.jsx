@@ -210,8 +210,13 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
   if (data && !data.enabled) return <KeySetup T={T} qc={qc} />;
 
   const buckets = data?.buckets || {};
+  // Every tab counts the WHOLE unresolved set, «all» included — mixing a true
+  // per-bucket tally with a page length made the tabs sum to more than «all».
+  const total = data?.total ?? all.length;
+  // What the cap actually delivered for the current tab, against what exists.
+  const shown = bucket === "all" ? total : (buckets[bucket] ?? items.length);
   const bucketOpts = [
-    { value: "all", label: `${T.aiBall} ${all.length}` },
+    { value: "all", label: `${T.aiBall} ${total}` },
     ...["forged", "undone", "date", "tech"]
       .filter((b) => buckets[b])
       .map((b) => ({ value: b, label: `${T[`aiB_${b}`]} ${buckets[b]}`, title: T[`aiBt_${b}`] })),
@@ -248,9 +253,12 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
         <div className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3 items-start">
           {/* ── the inbox ─────────────────────────────────────────────────── */}
           <Card className="order-3 lg:order-1">
+            {/* «288 / 424» when the cap trimmed this bucket. A rail that shows
+                fewer rows than its own tab claims has to say so — otherwise the
+                missing ones look resolved. */}
             <SectionHead icon={Inbox} title={T.aiQueue}
               right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                {items.length}
+                {shown > items.length ? `${items.length} / ${shown}` : items.length}
               </span>} />
             <div className="overflow-y-auto" style={{ maxHeight: "min(62vh, 560px)" }}>
               {items.map((it, k) => (

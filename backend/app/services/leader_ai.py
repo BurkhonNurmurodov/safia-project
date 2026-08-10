@@ -820,12 +820,19 @@ def bucket_of(flags: list[str] | None) -> str:
 
 
 # Lower sorts first. Within a bucket the newest report wins — an admin acts on
-# yesterday's fake before last month's.
-_BUCKET_RANK = {"forged": 0, "undone": 1, "date": 2, "tech": 3}
+# yesterday's fake before last month's. DERIVED from BUCKETS rather than written
+# out again: the tuple above is already declared in severity order, and a second
+# hand-kept table is one edit away from disagreeing with it.
+_BUCKET_RANK = {b: i for i, b in enumerate(BUCKETS)}
+
+
+def bucket_rank(bucket: str) -> int:
+    """Severity of a bucket NAME — for callers that have already bucketed."""
+    return _BUCKET_RANK.get(bucket, 9)
 
 
 def severity(flags: list[str] | None) -> int:
-    return _BUCKET_RANK.get(bucket_of(flags), 9)
+    return bucket_rank(bucket_of(flags))
 
 
 def uid_map(db: Session, revs: list) -> dict[str, str]:
