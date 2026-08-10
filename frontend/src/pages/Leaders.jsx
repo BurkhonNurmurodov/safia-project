@@ -2341,7 +2341,11 @@ export default function Leaders() {
       <Layout title={pageTitle}>
         {headerBar}
         {pageChrome}
-        <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm} />
+        {/* The request control belongs where an admin looks for AI actions.
+            It stays in the register header too — that is where you notice a
+            suspect row — but this tab is where you come to run one. */}
+        <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm}
+          actions={<AiRecheck errorCount={aiData?.counts?.error || 0} />} />
       </Layout>
     );
   }

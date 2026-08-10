@@ -950,27 +950,55 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
 @router.post("/progress/cancel")
 def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
-    """Stop a run: everything still queued is marked `skipped` and the record
-    cleared.
+    """Stop whatever is queued and CLEAR it — leaving nothing behind.
 
-    A progress bar with no stop is a bill you cannot decline — the operator who
-    queued the whole corpus by mistake can now see it happening and has no way
-    to intervene. `skipped` is a real terminal status the drain already filters
-    out (never `ok`, which would be a verdict nobody earned); those rows can be
-    put back later with a fresh catch-up run.
+    A progress bar with no stop is a bill you cannot decline: the operator who
+    queued the whole corpus by mistake can watch it spend and not intervene.
+
+    Unfinished work is disposed of by what it would cost to lose, which is two
+    different things wearing one status:
+
+    * **Never judged** → DELETED outright. The row is re-creatable from its own
+      `ref` by the next discovery, so nothing is lost, and deleting beats the
+      old behaviour of parking it as `skipped` — that left permanent debris in
+      the coverage denominator, so the bar could never read 100% again.
+    * **Judged before, re-queued by a re-check** → RESTORED to the verdict it
+      already had (`flagged` when it carries flags, else `ok`). Deleting those
+      would throw away a real answer that the re-check had not yet replaced.
+
+    Existing `skipped` rows from the earlier behaviour are swept by the same
+    rule, so one press also cleans up after the old one.
+
+    Works whenever anything is queued — not only during a run somebody started
+    from this page. The timer drain and a sheet Refresh both queue work too, and
+    "stop it" has to mean all of it.
     """
-    n = (
+    doomed = (
         db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status == "pending")
-        .update({"status": "skipped"}, synchronize_session=False)
+        .filter(LeaderAiReview.status.in_(("pending", "skipped")))
+        .all()
     )
+    deleted = restored = 0
+    for rev in doomed:
+        if rev.reviewed_at is None:
+            db.delete(rev)
+            deleted += 1
+        else:
+            # Its previous verdict is still on the row — `recheck` only flipped
+            # `status`, it never cleared the reasons or the flags. So putting
+            # the status back is a complete restoration, not an approximation.
+            rev.status = "flagged" if rev.flags else "ok"
+            rev.attempts = 0
+            restored += 1
+
     row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
     if row is not None:
         db.delete(row)
     db.commit()
-    log.info("LEADER-AI run cancelled by %s: %s rows skipped",
-             admin.get("telegram_id"), n)
-    return {"ok": True, "skipped": n}
+    log.info("LEADER-AI queue cleared by %s: %s deleted, %s restored",
+             admin.get("telegram_id"), deleted, restored)
+    return {"ok": True, "deleted": deleted, "restored": restored,
+            "cleared": deleted + restored, "counts": leader_ai.counts(db)}
 
 
 @router.post("/retry")

@@ -56,7 +56,12 @@ const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
 // halves are shown as the times they are.
 const shortWin = (w) => (w || "").replace(/(\d{4})-(\d{2})-(\d{2})/g, (_, y, m, d) => `${d}.${m}`);
 
-export default function AiTriage({ T, lang, taskDetail, nm }) {
+/** `actions` — the «request a check» control, injected from Leaders.jsx so this
+ *  component needs no overview query of its own. It belongs on THIS tab: it
+ *  used to live only in the register header on Monitoring, gated on the feature
+ *  being enabled, so the admin who came to the AI tab to start a check found no
+ *  way to start one. */
+export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   const qc = useQueryClient();
   // `position="bottom"`: this is a dense editing surface and the eye lives at
   // the decision bar, not the page head.
@@ -230,6 +235,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <SegmentedToggle scrollable value={bucket} onChange={pickBucket} options={bucketOpts} />
         <div className="flex-1" />
+        {actions}
         {undoable && (
           <Button size="lg" variant="secondary" tint icon={<Undo2 size={14} />} onClick={undo}>
             {T.aiUndo}
