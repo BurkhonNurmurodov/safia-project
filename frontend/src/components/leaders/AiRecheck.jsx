@@ -47,6 +47,13 @@ const TXT = {
     scFlagged: "Shubhali",
     scClean: "Toza",
     scAll: "Hammasi",
+    scUnchecked: "Tekshirilmagan",
+    unWhy: "Hali tekshirilmagan hisobotlarni navbatga qo'yadi. Hech qanday xulosa o'chirilmaydi.",
+    unCount: "{n} ta qator tekshiriladi",
+    unNone: "Bu oraliqda tekshirilmagan qator yo'q",
+    unConfirm: "{n} ta qator tekshirilsinmi?",
+    unBody: "Mavjud xulosalarga tegilmaydi. Tekshiruv fonda, navbat bilan bajariladi.",
+    unGo: "Tekshirishni boshlash",
     scopeHint: "Odatda «Shubhali» yetarli: qat'iyroq tekshiruv ko'pincha o'zi shubhalangan rasmlar haqida fikrini o'zgartiradi.",
     range: "Sana oralig'i",
     rangeHint: "Bo'sh qoldirilsa — butun tarix.",
@@ -77,6 +84,13 @@ const TXT = {
     scFlagged: "Шубҳали",
     scClean: "Тоза",
     scAll: "Ҳаммаси",
+    scUnchecked: "Текширилмаган",
+    unWhy: "Ҳали текширилмаган ҳисоботларни навбатга қўяди. Ҳеч қандай хулоса ўчирилмайди.",
+    unCount: "{n} та қатор текширилади",
+    unNone: "Бу оралиқда текширилмаган қатор йўқ",
+    unConfirm: "{n} та қатор текширилсинми?",
+    unBody: "Мавжуд хулосаларга тегилмайди. Текширув фонда, навбат билан бажарилади.",
+    unGo: "Текширишни бошлаш",
     scopeHint: "Одатда «Шубҳали» етарли: қатъийроқ текширув кўпинча ўзи шубҳаланган расмлар ҳақида фикрини ўзгартиради.",
     range: "Сана оралиғи",
     rangeHint: "Бўш қолдирилса — бутун тарих.",
@@ -107,6 +121,13 @@ const TXT = {
     scFlagged: "Подозрительные",
     scClean: "Чистые",
     scAll: "Все",
+    scUnchecked: "Непроверенные",
+    unWhy: "Ставит в очередь отчёты, которые ещё не проверялись. Ни один вывод не удаляется.",
+    unCount: "Будет проверено строк: {n}",
+    unNone: "В этом диапазоне непроверенных строк нет",
+    unConfirm: "Проверить {n} строк?",
+    unBody: "Существующие выводы не затрагиваются. Проверка идёт в фоне, по очереди.",
+    unGo: "Начать проверку",
     scopeHint: "Обычно достаточно «Подозрительных»: более строгая проверка чаще меняет мнение там, где уже сомневалась.",
     range: "Период",
     rangeHint: "Пусто — вся история.",
@@ -137,6 +158,13 @@ const TXT = {
     scFlagged: "Flagged",
     scClean: "Clean",
     scAll: "All",
+    scUnchecked: "Unchecked",
+    unWhy: "Queues reports that have never been checked. No verdict is deleted.",
+    unCount: "{n} rows will be checked",
+    unNone: "Nothing unchecked in this range",
+    unConfirm: "Check {n} rows?",
+    unBody: "Existing verdicts are untouched. The check runs in the background, paced.",
+    unGo: "Start checking",
     scopeHint: "«Flagged» is usually enough: a stricter reviewer mostly changes its mind where it already had doubts.",
     range: "Date range",
     rangeHint: "Leave empty for all history.",
@@ -178,6 +206,11 @@ export default function AiRecheck({ errorCount = 0 }) {
   // earns a typed challenge — it is also the shape a hurried tap produces,
   // since it is the state the form reaches by touching nothing but the scope.
   const wholeCorpus = scope === "all" && !range.from && !range.to;
+  // `unchecked` only ADDS work — nothing is overwritten, so it earns none of
+  // the destructive framing below: no typed challenge, no "cannot be undone",
+  // and a verb that says what it does rather than what it replaces. Reusing one
+  // confirm for both would teach people to click through the dangerous one.
+  const additive = scope === "unchecked";
 
   const body = useMemo(() => ({
     scope,
@@ -200,6 +233,10 @@ export default function AiRecheck({ errorCount = 0 }) {
       showToast(fmt(T.queued, d.requeued), "success");
       // The drain is asynchronous; the counts only move once it has done some
       // work, so re-read shortly after rather than pretending it is finished.
+      // The progress strip is the whole feedback for this action — light it up
+      // now rather than on its next poll, or the modal closes onto a page that
+      // looks like nothing happened.
+      qc.invalidateQueries({ queryKey: ["leader-ai-progress"] });
       setTimeout(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }), 4000);
     },
     // Rendered INSIDE the dialog: a mutation that fails must leave the dialog
@@ -231,16 +268,17 @@ export default function AiRecheck({ errorCount = 0 }) {
               <Button variant="secondary" onClick={() => setOpen(false)}>{T.cancel}</Button>
               <Button loading={countMut.isPending}
                 onClick={() => { setConfirmErr(null); countMut.mutate(); }}>
-                {T.go}
+                {additive ? T.unGo : T.go}
               </Button>
             </>
           }>
           <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--text-3)" }}>
-            {T.why}
+            {additive ? T.unWhy : T.why}
           </p>
 
           <FormField label={T.scope} hint={T.scopeHint}>
-            <SegmentedToggle fill value={scope} onChange={setScope} options={[
+            <SegmentedToggle fill scrollable value={scope} onChange={setScope} options={[
+              ["unchecked", T.scUnchecked],
               ["flagged", T.scFlagged], ["clean", T.scClean], ["all", T.scAll],
             ]} />
           </FormField>
@@ -283,14 +321,16 @@ export default function AiRecheck({ errorCount = 0 }) {
       {confirm && (
         <ConfirmDialog
           open
-          title={fmt(T.confirmTitle, confirm.n)}
-          message={`${T.confirmBody}${wholeCorpus ? ` ${T.confirmAll}` : ""}`}
-          confirmLabel={T.go}
+          tone={additive ? undefined : "danger"}
+          title={fmt(additive ? T.unConfirm : T.confirmTitle, confirm.n)}
+          message={additive ? T.unBody
+            : `${T.confirmBody}${wholeCorpus ? ` ${T.confirmAll}` : ""}`}
+          confirmLabel={additive ? T.unGo : T.go}
           cancelLabel={T.cancel}
           loading={runMut.isPending}
           error={confirmErr}
-          challenge={wholeCorpus ? CHALLENGE : undefined}
-          challengeLabel={wholeCorpus ? T.challengeLabel : undefined}
+          challenge={!additive && wholeCorpus ? CHALLENGE : undefined}
+          challengeLabel={!additive && wholeCorpus ? T.challengeLabel : undefined}
           onCancel={() => { setConfirm(null); setConfirmErr(null); }}
           onConfirm={() => { setConfirmErr(null); runMut.mutate(); }}
         />

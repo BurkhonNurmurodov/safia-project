@@ -702,7 +702,13 @@ class RecheckIn(BaseModel):
     # Which verdicts to throw away and re-earn. "flagged" is the cheap, useful
     # default: a stricter reviewer mostly changes its mind about rows it already
     # doubted, and re-running those costs a fraction of the corpus.
-    scope: str = Field("flagged", pattern="^(flagged|clean|all)$")
+    #
+    # "unchecked" is the odd one out and deliberately FIRST in the UI: it
+    # destroys nothing. It discovers reports that never got a row and drains
+    # what is already queued, which is the ordinary "catch up on this week"
+    # errand — and until it existed the only way to do it was `/run`, which has
+    # no date range and therefore no way to say "just this week".
+    scope: str = Field("flagged", pattern="^(unchecked|flagged|clean|all)$")
     # Count what would be re-queued without touching anything. The confirm has
     # to print the real cost — "re-check everything?" with no number attached is
     # a question nobody can answer, and this one spends metered quota.
@@ -736,29 +742,178 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
 
-    q = db.query(LeaderAiReview).filter(
+    def _ranged(q):
+        if body.date_from:
+            q = q.filter(LeaderAiReview.date >= body.date_from)
+        if body.date_to:
+            q = q.filter(LeaderAiReview.date <= body.date_to)
+        return q
+
+    # ── "catch up": never-judged rows only ───────────────────────────────────
+    # Nothing is overwritten, so there is no verdict to lose and no confirm to
+    # earn. `discover()` runs even for the dry run: a report filed since the
+    # last pass has no row yet, and counting only what is already queued would
+    # under-report exactly the work the operator came here to start. Discovery
+    # inserts `pending` rows — it spends no quota, the drain does that.
+    if body.scope == "unchecked":
+        found = leader_ai.discover(db)
+        n = _ranged(
+            db.query(LeaderAiReview).filter(LeaderAiReview.status == "pending")
+        ).count()
+        if body.dry_run:
+            return {"ok": True, "requeued": n, "found": found, "dryRun": True}
+        _start_run(db, n, body, admin)
+        log.info("LEADER-AI catch-up by %s: %s pending (%s new) in %s..%s",
+                 admin.get("telegram_id"), n, found,
+                 body.date_from or "*", body.date_to or "*")
+        leader_ai.run_async(discover_first=False)
+        return {"ok": True, "requeued": n, "found": found,
+                "counts": leader_ai.counts(db)}
+
+    # ── re-check: throw away a verdict and earn it again ─────────────────────
+    q = _ranged(db.query(LeaderAiReview).filter(
         LeaderAiReview.status.in_(("ok", "flagged")),
         LeaderAiReview.resolution.is_(None),
-    )
+    ))
     if body.scope == "flagged":
         q = q.filter(LeaderAiReview.status == "flagged")
     elif body.scope == "clean":
         q = q.filter(LeaderAiReview.status == "ok")
-    if body.date_from:
-        q = q.filter(LeaderAiReview.date >= body.date_from)
-    if body.date_to:
-        q = q.filter(LeaderAiReview.date <= body.date_to)
 
     if body.dry_run:
         return {"ok": True, "requeued": q.count(), "dryRun": True}
 
     n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
     db.commit()
+    _start_run(db, n, body, admin)
     log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s)",
              admin.get("telegram_id"), n, body.scope,
              body.date_from or "*", body.date_to or "*")
     leader_ai.run_async(discover_first=False)
     return {"ok": True, "requeued": n, "counts": leader_ai.counts(db)}
+
+
+# ── the run record: what the progress bar is measuring ───────────────────────
+# Queueing ten thousand rows from a button and then showing nothing is how an
+# operator ends up pressing it three more times. But the drain is a shared,
+# advisory-locked background worker that knows nothing about who queued what, so
+# progress needs a mark somewhere outside it.
+#
+# ONE app_settings row, not a jobs table. The bar needs three numbers — how many
+# were queued, how many have been judged since, is it still going — and all three
+# come from a start timestamp plus a total. A table would add a schema, a
+# lifecycle and a second source of truth about work whose real state already
+# lives in `leader_ai_reviews.status`.
+RUN_SETTING = "leader_ai_run"
+
+
+def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
+    """Mark the start of a run so `/progress` can measure it. A run with nothing
+    queued is not recorded — an empty progress bar is worse than none."""
+    if total <= 0:
+        return
+    import json
+
+    payload = json.dumps({
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "total": total,
+        "scope": body.scope,
+        "from": body.date_from,
+        "to": body.date_to,
+        "by": (admin.get("full_name") or str(admin.get("telegram_id") or "admin"))[:120],
+    })
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is None:
+        db.add(AppSetting(key=RUN_SETTING, value=payload))
+    else:
+        row.value = payload
+    db.commit()
+
+
+@router.get("/progress")
+def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """How far the current run has got. Polled by the page while a run is live.
+
+    `done` counts rows JUDGED SINCE the run started rather than "total minus
+    pending", because pending also grows on its own — a leader closing a bot day
+    mid-run would otherwise make the bar go backwards, which reads as a bug even
+    when the work is fine.
+
+    Deliberately three cheap COUNT queries and no joins: this is polled every
+    few seconds for as long as a backfill takes.
+    """
+    import json
+
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    pending = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status.in_(("pending", "error")),
+                LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS)
+        .count()
+    )
+    if row is None:
+        return {"active": False, "pending": pending}
+
+    try:
+        run = json.loads(row.value)
+        started = datetime.fromisoformat(run["started_at"])
+    except Exception:
+        db.delete(row)
+        db.commit()
+        return {"active": False, "pending": pending}
+
+    done = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.reviewed_at.isnot(None),
+                LeaderAiReview.reviewed_at >= started)
+        .count()
+    )
+    total = max(1, int(run.get("total") or 1))
+    # A run ends when nothing is left to drain, not when done reaches total: a
+    # row can die on `error` after its attempts run out and never be judged, and
+    # a bar that waits for it would hang at 97% forever.
+    finished = pending == 0
+    if finished:
+        db.delete(row)
+        db.commit()
+
+    return {
+        "active": not finished,
+        "justFinished": finished,
+        "total": total,
+        "done": min(done, total),
+        "pending": pending,
+        "startedAt": run["started_at"],
+        "scope": run.get("scope"),
+        "from": run.get("from"),
+        "to": run.get("to"),
+        "by": run.get("by"),
+    }
+
+
+@router.post("/progress/cancel")
+def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
+    """Stop a run: everything still queued is marked `skipped` and the record
+    cleared.
+
+    A progress bar with no stop is a bill you cannot decline — the operator who
+    queued the whole corpus by mistake can now see it happening and has no way
+    to intervene. `skipped` is a real terminal status the drain already filters
+    out (never `ok`, which would be a verdict nobody earned); those rows can be
+    put back later with a fresh catch-up run.
+    """
+    n = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status == "pending")
+        .update({"status": "skipped"}, synchronize_session=False)
+    )
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is not None:
+        db.delete(row)
+    db.commit()
+    log.info("LEADER-AI run cancelled by %s: %s rows skipped",
+             admin.get("telegram_id"), n)
+    return {"ok": True, "skipped": n}
 
 
 @router.post("/retry")

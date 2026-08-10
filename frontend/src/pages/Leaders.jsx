@@ -25,6 +25,7 @@ import BotDataClear from "../components/leaders/BotDataClear";
 import LateReports from "../components/leaders/LateReports";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
 import AiRecheck from "../components/leaders/AiRecheck";
+import AiProgress from "../components/leaders/AiProgress";
 import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -2304,11 +2305,22 @@ export default function Leaders() {
     </div>
   ) : null;
 
+  // A run is STARTED from the register (Monitoring) and WATCHED from the AI
+  // tab, so the bar is bolted to the tab strip rather than to either view — a
+  // progress bar you have to navigate to is one nobody sees. It renders nothing
+  // unless a run is live, so it costs the other tabs no space.
+  const pageChrome = (
+    <>
+      {tabsBar}
+      {isAdmin && <AiProgress />}
+    </>
+  );
+
   if (tab === "clear") {
     return (
       <Layout title={pageTitle}>
         {headerBar}
-        {tabsBar}
+        {pageChrome}
         <BotDataClear />
       </Layout>
     );
@@ -2318,7 +2330,7 @@ export default function Leaders() {
     return (
       <Layout title={pageTitle}>
         {headerBar}
-        {tabsBar}
+        {pageChrome}
         <LateReports canDecide={!!lateData?.can_decide} />
       </Layout>
     );
@@ -2328,7 +2340,7 @@ export default function Leaders() {
     return (
       <Layout title={pageTitle}>
         {headerBar}
-        {tabsBar}
+        {pageChrome}
         <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm} />
       </Layout>
     );
@@ -2337,7 +2349,7 @@ export default function Leaders() {
   return (
     <Layout title={pageTitle}>
       {headerBar}
-      {tabsBar}
+      {pageChrome}
 
       {/* ONE-ROW filter bar: period inline; shift / supervisor / leader live in
           the consolidated panel (role-scoped) and surface as chips when active. */}
