@@ -208,6 +208,42 @@ def get_headcount(
             "absent": r_cnt - came, "on_leave": on_leave,
         }
 
+    # The same roster/came pair, split by job title — the per-role, per-day
+    # numbers behind the role donut, the trend's roster bands and the table's
+    # role columns. Deliberately its own query rather than a job_title grouping
+    # bolted onto roster_q: a distinct-worker count per (manager, day) is NOT
+    # the sum of its per-role counts if a worker ever carries two titles in one
+    # day, and the pair above has to keep reading exactly as it does today.
+    role_q = (
+        db.query(
+            Attendance.manager_id,
+            Attendance.date,
+            Attendance.job_title,
+            func.count(func.distinct(Attendance.worker_name)).label("roster"),
+            func.count(func.distinct(
+                case((_CAME, Attendance.worker_name)))).label("came"),
+        )
+        .join(Manager, Manager.id == Attendance.manager_id)
+        .filter(Attendance.date >= date_from, Attendance.date <= date_to)
+        .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
+        .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
+        .filter(Manager.archived.is_(False))
+    )
+    if shift:
+        role_q = role_q.filter(Manager.shift == shift)
+    if scoped is not None:
+        role_q = role_q.filter(Manager.id.in_(scoped))
+    # {manager: {role: {"roster": n, "came": n}}}, summed over the period's days.
+    # Divided below by the SAME day count as avg_roster/avg_came so the role
+    # numbers add back up to the pair instead of drifting away from it.
+    role_sums: dict[int, dict[str, dict[str, int]]] = {}
+    for mgr_id, _d, job_title, r_cnt, came_cnt in role_q.group_by(
+            Attendance.manager_id, Attendance.date, Attendance.job_title).all():
+        role = normalize_role(job_title or "")
+        slot = role_sums.setdefault(mgr_id, {}).setdefault(role, {"roster": 0, "came": 0})
+        slot["roster"] += r_cnt
+        slot["came"]   += came_cnt
+
     # Official HC per (manager name, day) — HeadcountData spells brigadirs in
     # either alphabet, so accept every known spelling and resolve rows back to
     # the canonical Manager.name (same convention as brigadirs.py).
@@ -257,6 +293,13 @@ def get_headcount(
         m["roster_sum"]  = r_sum
         m["came_sum"]    = c_sum
         m["att_rate"]    = round(c_sum / r_sum * 100) if r_sum else None
+        # Per-role halves of that same pair, on the same per-day basis. The
+        # frontend's «Ro'yxatda / Kelgan» switch reads one of these two maps and
+        # sums the roles the «Jami / Zagruzka» switch selected; summing all of
+        # them reproduces avg_roster / avg_came above.
+        rs = role_sums.get(m["manager_id"], {})
+        m["avg_roster_by_role"] = {r: round(v["roster"] / n, 1) for r, v in rs.items()}
+        m["avg_came_by_role"]   = {r: round(v["came"] / n, 1) for r, v in rs.items()}
         if both:
             avg_vfx = sum(v for v, _ in both) / len(both)
             avg_off = sum(o for _, o in both) / len(both)
@@ -285,7 +328,9 @@ def get_role_trend(
         date_from = date_to - timedelta(days=13)
 
     scoped = scoped_manager_ids(db, payload, factory, manager_id)
-    empty = {"dates": [], "series": {role: [] for role in ["Konditer", "Fasovshik", "Zagatovitel", "Other"]}}
+    empty = {"dates": [],
+             "series":        {role: [] for role in ZAGRUZKA_ROLES},
+             "series_roster": {role: [] for role in ZAGRUZKA_ROLES}}
     if empty_scope(scoped):
         return empty
 
@@ -298,14 +343,18 @@ def get_role_trend(
         db.query(
             Attendance.date,
             Attendance.job_title,
-            func.count(func.distinct(Attendance.worker_name)).label("count"),
+            func.count(func.distinct(Attendance.worker_name)).label("roster"),
+            func.count(func.distinct(
+                case((_CAME, Attendance.worker_name)))).label("came"),
         )
         .join(Manager, Manager.id == Attendance.manager_id)
         .filter(Attendance.date >= date_from, Attendance.date <= date_to)
         .filter(Attendance.worker_name.notin_(["nan", "NaN", ""]))
-        # Present workers of ANY job title — extra titles feed the "all roles"
-        # view; the frontend toggle filters back to the zagruzka roles.
-        .filter(Attendance.hours_worked > 0)
+        # Workers of ANY job title — extra titles feed the "all roles" view; the
+        # frontend toggle filters back to the zagruzka roles. There is NO hours
+        # filter here on purpose: the «Ro'yxatda» bands are exactly the people
+        # who did not come, so presence is counted with a CASE instead and both
+        # series come out of one pass.
         .filter(tuple_(Attendance.manager_id, Attendance.date).in_(list(confirmed)))
         .filter(Manager.archived.is_(False))
     )
@@ -317,25 +366,34 @@ def get_role_trend(
     q = q.group_by(Attendance.date, Attendance.job_title).order_by(Attendance.date)
     rows = q.all()
 
-    trend: dict[str, dict[str, int]] = {}
+    trend: dict[str, dict[str, int]] = {}          # came  — who turned up
+    roster: dict[str, dict[str, int]] = {}         # on the list, came or not
     seen_roles: set[str] = set()
-    for d, job_title, cnt in rows:
+    for d, job_title, r_cnt, came_cnt in rows:
         d_str = d.strftime("%d.%m.%Y")
         role = normalize_role(job_title or "")
         seen_roles.add(role)
         trend.setdefault(d_str, {})
-        trend[d_str][role] = trend[d_str].get(role, 0) + cnt
+        roster.setdefault(d_str, {})
+        trend[d_str][role]  = trend[d_str].get(role, 0) + came_cnt
+        roster[d_str][role] = roster[d_str].get(role, 0) + r_cnt
 
     from datetime import datetime as dt
-    dates = sorted(trend.keys(), key=lambda s: dt.strptime(s, "%d.%m.%Y"))
-    # Zagruzka roles always present (even at 0); extra roles appended, count-sorted.
+    dates = sorted(roster.keys(), key=lambda s: dt.strptime(s, "%d.%m.%Y"))
+    # Zagruzka roles always present (even at 0); extra roles appended, sorted by
+    # roster size — one order for BOTH series, so a role keeps its band position
+    # and its colour when the measure switch flips.
     extra = sorted(seen_roles - set(ZAGRUZKA_ROLES),
-                   key=lambda r: -sum(trend.get(d, {}).get(r, 0) for d in dates))
+                   key=lambda r: -sum(roster.get(d, {}).get(r, 0) for d in dates))
     role_keys = list(ZAGRUZKA_ROLES) + extra
     return {
         "dates": dates,
         "series": {
             role: [trend.get(d, {}).get(role, 0) for d in dates]
+            for role in role_keys
+        },
+        "series_roster": {
+            role: [roster.get(d, {}).get(role, 0) for d in dates]
             for role in role_keys
         },
     }

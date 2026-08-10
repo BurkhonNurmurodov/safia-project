@@ -114,8 +114,15 @@ export default function Workers() {
   const { chartTheme, cardBg, gridColor, labelColor, legendColor, tooltipTheme } = useChartTheme();
   const [view, setView] = usePersistentState("workers_view", "attendance");   // "attendance" | "movements"
   const [tgtTab, setTgtTab] = usePersistentState("workers_tgt_tab", "supervisor"); // exchange-targets chart: "supervisor" | "task"
-  const [treeMode, setTreeMode] = usePersistentState("workers_tree_mode", "all");    // treemap metric: "all" | "zagruzka"
-  const [roleMode, setRoleMode] = usePersistentState("workers_role_mode", "all");    // role charts: "all" roles | "zagruzka" subset
+  // The page's two measurement switches, shared by every card they drive (the
+  // control is repeated in each card header, the STATE is one — flipping it
+  // anywhere moves the whole page, which is the point of it).
+  //   scope   — WHICH people: every role, or only the four zagruzka-counted ones
+  //   measure — WHICH number about them: on the list, or actually turned up
+  // These replace the old treeMode/roleMode pair, which were two independent
+  // states meaning the same thing on one page.
+  const [scope, setScope]     = usePersistentState("workers_scope", "all");        // "all" | "zagruzka"
+  const [measure, setMeasure] = usePersistentState("workers_measure", "roster");   // "roster" | "came"
   const [sort, setSort] = usePersistentState("workers_sort", { key: null, dir: "asc" });
   const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
   const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
