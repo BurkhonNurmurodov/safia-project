@@ -142,7 +142,14 @@ const TXT = {
     aiDoneTitle: "Navbat bo'sh",
     aiDoneBody: "Barcha shubhali dalillar ko'rib chiqildi. Yangi hisobotlar kelganda navbat o'zi to'ladi.",
     aiOffTitle: "AI tekshiruvi yoqilmagan",
-    aiOffBody: "Serverda GEMINI_API_KEY yo'q — kalit qo'yilmaguncha bu bo'lim ishlamaydi.",
+    aiKeyLabel: "Gemini API kaliti",
+    aiKeySave: "Saqlash va yoqish", aiKeyClear: "O'chirish",
+    aiKeyShow: "Ko'rsatish", aiKeyHide: "Yashirish",
+    aiKeySaved: "Kalit saqlandi — tekshiruv boshlandi",
+    aiKeyCleared: "Kalit o'chirildi — bo'lim yana o'chiq",
+    aiKeyHint: "Kalit shifrlanadi (SECRET_KEY bilan) va bazaning nusxasida ham o'qib bo'lmaydi. Faqat adminlar ko'ra oladi.",
+    aiKeyEnvPinned: "Kalit serverdagi backend/.env faylida belgilangan — u ustun turadi va faqat o'sha yerda o'zgartiriladi.",
+    aiOffBody: "Bu bo'lim ishlashi uchun Gemini API kaliti kerak. Kalitni Google AI Studio'dan oling va shu yerga qo'ying — u shifrlangan holda saqlanadi va boshqa hech qachon ko'rsatilmaydi.",
     aiCalTip: "AI bilan rozilik darajasi: siz tasdiqlagan belgilar ulushi va ko'rib chiqilgan belgilar soni",
     aiRejChip: "AI dalili rad etildi",
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
@@ -239,7 +246,14 @@ const TXT = {
     aiDoneTitle: "Навбат бўш",
     aiDoneBody: "Барча шубҳали далиллар кўриб чиқилди. Янги ҳисоботлар келганда навбат ўзи тўлади.",
     aiOffTitle: "AI текшируви ёқилмаган",
-    aiOffBody: "Серверда GEMINI_API_KEY йўқ — калит қўйилмагунча бу бўлим ишламайди.",
+    aiKeyLabel: "Gemini API калити",
+    aiKeySave: "Сақлаш ва ёқиш", aiKeyClear: "Ўчириш",
+    aiKeyShow: "Кўрсатиш", aiKeyHide: "Яшириш",
+    aiKeySaved: "Калит сақланди — текширув бошланди",
+    aiKeyCleared: "Калит ўчирилди — бўлим яна ўчиқ",
+    aiKeyHint: "Калит шифрланади (SECRET_KEY билан) ва базанинг нусхасида ҳам ўқиб бўлмайди. Фақат админлар кўра олади.",
+    aiKeyEnvPinned: "Калит сервердаги backend/.env файлида белгиланган — у устун туради ва фақат ўша ерда ўзгартирилади.",
+    aiOffBody: "Бу бўлим ишлаши учун Gemini API калити керак. Калитни Google AI Studio'дан олинг ва шу ерга қўйинг — у шифрланган ҳолда сақланади ва бошқа ҳеч қачон кўрсатилмайди.",
     aiCalTip: "AI билан розилик даражаси: сиз тасдиқлаган белгилар улуши ва кўриб чиқилган белгилар сони",
     aiRejChip: "AI далили рад этилди",
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
@@ -336,7 +350,14 @@ const TXT = {
     aiDoneTitle: "Очередь пуста",
     aiDoneBody: "Все сомнительные подтверждения разобраны. Очередь наполнится сама, когда придут новые отчёты.",
     aiOffTitle: "Проверка ИИ не включена",
-    aiOffBody: "На сервере нет GEMINI_API_KEY — без ключа раздел не работает.",
+    aiKeyLabel: "API-ключ Gemini",
+    aiKeySave: "Сохранить и включить", aiKeyClear: "Удалить",
+    aiKeyShow: "Показать", aiKeyHide: "Скрыть",
+    aiKeySaved: "Ключ сохранён — проверка запущена",
+    aiKeyCleared: "Ключ удалён — раздел снова выключен",
+    aiKeyHint: "Ключ шифруется (на SECRET_KEY) и остаётся нечитаемым даже в выгрузке базы. Виден только администраторам.",
+    aiKeyEnvPinned: "Ключ задан в backend/.env на сервере — он имеет приоритет и меняется только там.",
+    aiOffBody: "Для работы раздела нужен API-ключ Gemini. Получите его в Google AI Studio и вставьте здесь — он сохранится в зашифрованном виде и больше нигде не показывается.",
     aiCalTip: "Согласие с ИИ: доля подтверждённых вами меток и число разобранных меток",
     aiRejChip: "Подтверждение отклонено",
     notAsked: "Не задавалась", submittedAt: "Отправлено",
@@ -433,7 +454,14 @@ const TXT = {
     aiDoneTitle: "Queue is empty",
     aiDoneBody: "Every suspect proof has been ruled on. The queue refills itself as new reports arrive.",
     aiOffTitle: "AI review is not enabled",
-    aiOffBody: "There is no GEMINI_API_KEY on the server — this section does nothing until one is set.",
+    aiKeyLabel: "Gemini API key",
+    aiKeySave: "Save and enable", aiKeyClear: "Remove",
+    aiKeyShow: "Show", aiKeyHide: "Hide",
+    aiKeySaved: "Key saved — review has started",
+    aiKeyCleared: "Key removed — the section is off again",
+    aiKeyHint: "The key is encrypted (with SECRET_KEY) and stays unreadable even in a database dump. Admins only.",
+    aiKeyEnvPinned: "A key is pinned in backend/.env on the server — it takes precedence and can only be changed there.",
+    aiOffBody: "This section needs a Gemini API key. Get one from Google AI Studio and paste it here — it is stored encrypted and never shown again.",
     aiCalTip: "Agreement with the AI: the share of flags you upheld, and how many you have ruled on",
     aiRejChip: "Proof rejected",
     notAsked: "Not asked", submittedAt: "Submitted",
@@ -1518,9 +1546,11 @@ export default function Leaders() {
   const [tabSaved, setTab] = usePersistentState(`${prefix}_tab`, "monitor");
   // A saved tab the viewer can no longer open (role changed, or a shift page
   // that has no such view) falls back to the dashboard rather than a blank one.
-  // `ai` is admin-only AND key-gated: with no GEMINI_API_KEY the whole feature
-  // is inert, so the tab must not exist rather than open onto an explanation.
-  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab, ai: aiOn };
+  // `ai` is admin-only. Deliberately NOT key-gated: hiding it until a key
+  // exists made the tab unreachable for the one person who can supply the key,
+  // which is how this feature shipped and then sat dark for days. With no key
+  // the tab opens onto the setup form instead of the queue.
+  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab, ai: isAdmin };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
 
   // The queue's own feed: the tab badge needs the count before the tab is ever
@@ -2257,12 +2287,12 @@ export default function Leaders() {
           }] : []),
           // Same to-do logic as «Kechikkan»: the badge is what is left to
           // decide, so an admin who works the queue watches it reach zero.
-          ...(aiOn ? [{
+          ...(isAdmin ? [{
             value: "ai",
             label: (
               <span className="inline-flex items-center gap-1.5">
                 {T.tabAi}
-                {aiTodo > 0 && (
+                {aiOn && aiTodo > 0 && (
                   <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
                     style={{ background: "#eab308", color: "#1a1a1a" }}>{aiTodo}</span>
                 )}

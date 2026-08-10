@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    LeaderAiReview, LeaderChecklist, LeaderTaskDay, LeaderTaskDef,
+    AppSetting, LeaderAiReview, LeaderChecklist, LeaderTaskDay, LeaderTaskDef,
     LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting,
     Manager, RoleProfile,
 )
@@ -598,6 +598,90 @@ def _as_verdict(rev: LeaderAiReview) -> dict:
         "resolvedAt": rev.resolved_at.isoformat() if rev.resolved_at else None,
         "resolutionNote": rev.resolution_note,
     }
+
+
+class ApiKeyIn(BaseModel):
+    # "" clears the stored key and turns the feature back off.
+    key: str = Field(default="", max_length=400)
+
+
+@router.get("/key")
+def get_key(_: dict = Depends(verify_admin)):
+    """Whether a key is configured, where it came from, and a masked preview.
+
+    Never returns the key. The preview is first-4 + last-4 so an operator can
+    tell "the key I pasted" from "some other key" without the value being
+    readable — enough to diagnose a bad paste, useless to anyone reading over a
+    shoulder or scrolling back through a screen share.
+    """
+    src = gemini.key_source()
+    raw = gemini.api_key()
+    return {
+        "configured": bool(raw),
+        # env wins over the stored key, so the form says so rather than letting
+        # somebody type a value that silently never takes effect.
+        "source": src,
+        "editable": src != "env",
+        "preview": f"{raw[:4]}…{raw[-4:]}" if len(raw) >= 12 else ("…" if raw else ""),
+    }
+
+
+@router.post("/key")
+def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
+            admin: dict = Depends(verify_admin)):
+    """Store (or clear) the Gemini API key from the admin UI.
+
+    This endpoint exists because the key's only other homes are `backend/.env`
+    (needs a shell on the VPS) and a CI secret (needs repo-admin on Gitea). An
+    operator with neither could not turn the feature on at all — it shipped and
+    then sat dark. Now the person who runs the plant can paste their own key.
+
+    Stored SEALED (`web_auth.seal_password`, keyed off SECRET_KEY, which is in
+    .env and never in the database), so a `dbdump` export carries ciphertext.
+    The value is never logged and never read back — see GET above.
+    """
+    from app.web_auth import seal_password
+
+    if gemini.key_source() == "env":
+        raise HTTPException(
+            status_code=409,
+            detail="A key is pinned in backend/.env on the server; "
+                   "it takes precedence and must be changed there.",
+        )
+
+    raw = (body.key or "").strip()
+    who = (admin.get("full_name") or admin.get("username")
+           or str(admin.get("telegram_id") or "admin"))
+
+    row = db.query(AppSetting).filter_by(key=gemini.KEY_SETTING).first()
+    if not raw:
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        gemini.invalidate_key_cache()
+        log.info("leader-ai: %s CLEARED the Gemini API key", who)
+        return {"ok": True, "configured": False}
+
+    sealed = seal_password(raw)
+    if row is None:
+        db.add(AppSetting(key=gemini.KEY_SETTING, value=sealed))
+    else:
+        row.value = sealed
+    db.commit()
+    # Without this the new key would not be live until the 30s cache expired,
+    # and the very next thing the operator does is press «Tekshirish».
+    gemini.invalidate_key_cache()
+    # Length only. A key in the log is a key in a rotated logfile nobody thinks
+    # to shred, and this file is read by everyone debugging the bot.
+    log.info("leader-ai: %s set a Gemini API key (%s chars)", who, len(raw))
+
+    # Queue anything unreviewed now that the feature can actually run — the
+    # backlog is the whole reason somebody just turned this on.
+    try:
+        leader_ai.run_async(discover_first=True)
+    except Exception:
+        log.exception("leader-ai: could not kick a drain after the key was set")
+    return {"ok": True, "configured": True, "source": "db"}
 
 
 @router.post("/run")

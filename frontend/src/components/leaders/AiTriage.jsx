@@ -207,10 +207,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
     );
   }
 
-  if (data && !data.enabled) {
-    return <EmptyState icon={Sparkles} title={T.aiOffTitle} message={T.aiOffBody}
-      showUploadLink={false} height="h-56" />;
-  }
+  if (data && !data.enabled) return <KeySetup T={T} qc={qc} />;
 
   const buckets = data?.buckets || {};
   const bucketOpts = [
@@ -331,6 +328,108 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
       )}
 
       {toastNode}
+    </>
+  );
+}
+
+/* ══ setup ════════════════════════════════════════════════════════════════════
+ * With no API key the whole feature is inert, and until now the only ways to
+ * supply one were an SSH session on the VPS or repo-admin rights on the CI. An
+ * operator with neither could not switch on a feature built for them — so it
+ * shipped and sat dark. This is the third way: the person who runs the plant
+ * pastes their own key here.
+ *
+ * The value is sent once and never comes back. The server seals it (keyed off
+ * SECRET_KEY, which lives in .env and never in the database, so a dbdump is
+ * ciphertext) and afterwards will only ever say "configured", plus a
+ * first4…last4 preview — enough to spot a bad paste, useless to a shoulder. */
+function KeySetup({ T, qc }) {
+  const [key, setKey] = useState("");
+  const [show, setShow] = useState(false);
+  const { show: toast, node } = useToast({ position: "bottom" });
+
+  const { data: st } = useQuery({
+    queryKey: ["leader-ai-key"],
+    queryFn: () => api.get("/api/leader-ai/key").then((r) => r.data),
+  });
+
+  const save = useMutation({
+    // The value is an ARGUMENT, not read from state: «Clear» sets the field
+    // empty and submits in the same tick, and state would still hold the old
+    // text at that point — so clearing would have re-saved what was typed.
+    mutationFn: (value) => api.post("/api/leader-ai/key", { key: value }).then((r) => r.data),
+    onSuccess: (_res, value) => {
+      setKey("");
+      toast(value ? T.aiKeySaved : T.aiKeyCleared, "success");
+      // The tab badge, the queue and the register strip all read `enabled`.
+      qc.invalidateQueries({ queryKey: ["leader-ai-key"] });
+      qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+      qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
+    },
+    onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
+  });
+
+  // A key pinned in backend/.env wins server-side. Saying so beats letting
+  // somebody type a value that silently never takes effect.
+  const locked = st?.source === "env";
+
+  return (
+    <>
+      <div className="rounded-2xl overflow-hidden max-w-xl"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <SectionHead icon={Sparkles} title={T.aiOffTitle} />
+        <div className="p-4 flex flex-col gap-3">
+          <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+            {T.aiOffBody}
+          </p>
+
+          {locked ? (
+            <p className="text-xs rounded-lg p-2.5"
+              style={{ color: "var(--text-3)", background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
+              {T.aiKeyEnvPinned}
+            </p>
+          ) : (
+            <>
+              <label className="text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: "var(--text-4)" }} htmlFor="gkey">
+                {T.aiKeyLabel}
+              </label>
+              <div className="flex gap-2">
+                <input id="gkey" type={show ? "text" : "password"} value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  autoComplete="off" spellCheck={false} placeholder="AIza…"
+                  className="flex-1 min-w-0 px-3 rounded-lg text-sm font-mono"
+                  style={{ height: 38, background: "var(--bg-inner)",
+                           border: "1px solid var(--border)", color: "var(--text-1)" }} />
+                <Button size="lg" variant="secondary" onClick={() => setShow((s) => !s)}
+                  title={show ? T.aiKeyHide : T.aiKeyShow}>
+                  {show ? T.aiKeyHide : T.aiKeyShow}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button size="lg" variant="primary" loading={save.isPending}
+                  disabled={!key.trim()} onClick={() => save.mutate(key.trim())}>
+                  {T.aiKeySave}
+                </Button>
+                {st?.configured && (
+                  <>
+                    <span className="text-xs font-mono tabular-nums" style={{ color: "var(--text-4)" }}>
+                      {st.preview}
+                    </span>
+                    <Button size="lg" variant="ghost" onClick={() => save.mutate("")}>
+                      {T.aiKeyClear}
+                    </Button>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>
+                {T.aiKeyHint}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+      {node}
     </>
   );
 }

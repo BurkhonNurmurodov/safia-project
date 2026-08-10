@@ -43,8 +43,85 @@ class GeminiQuotaError(GeminiError):
     """
 
 
+# ── where the key comes from ─────────────────────────────────────────────────
+# Two sources, env first:
+#
+#   1. `GEMINI_API_KEY` in backend/.env — the original, and still the right home
+#      when somebody has a shell on the box. It wins, so a key pinned by an
+#      operator can never be overridden from a web form.
+#   2. `app_settings["gemini_api_key"]`, SEALED — set from the admin UI by
+#      whoever runs the plant. This exists because setting (1) requires SSH or
+#      repo-admin rights on the CI, and an operator who has neither cannot
+#      switch the feature on at all, which is how it sat dark after being built.
+#
+# The DB copy is sealed with `web_auth.seal_password` — the same encrypt-then-MAC
+# used for recoverable web-login passwords, keyed off SECRET_KEY, which lives in
+# .env and never in the database. So a `dbdump` .sql.gz carries ciphertext, not
+# a live API key, which is the whole reason it can be stored there at all.
+KEY_SETTING = "gemini_api_key"
+
+# The drain asks `available()` per row, so an uncached read would be a query per
+# photo. Short TTL rather than a permanent cache: a key set in the admin UI has
+# to take effect without a restart, which is the entire point of storing it here.
+_KEY_TTL = 30.0
+_key_cache: tuple[float, str] = (0.0, "")
+
+
+def _stored_key() -> str:
+    """The sealed key from app_settings, or "" — never raises. A failure here
+    must degrade to "no key" (feature inert), never take down a request."""
+    import time
+
+    global _key_cache
+    now = time.monotonic()
+    if now - _key_cache[0] < _KEY_TTL:
+        return _key_cache[1]
+
+    val = ""
+    try:
+        from app.database import SessionLocal
+        from app.models import AppSetting
+        from app.web_auth import open_password
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter_by(key=KEY_SETTING).first()
+            if row and row.value:
+                val = (open_password(row.value) or "").strip()
+        finally:
+            db.close()
+    except Exception:
+        log.exception("gemini: could not read the stored API key")
+        val = ""
+
+    _key_cache = (now, val)
+    return val
+
+
+def invalidate_key_cache() -> None:
+    """Called by the admin endpoint so a newly saved key works on the next
+    request instead of up to _KEY_TTL later."""
+    global _key_cache
+    _key_cache = (0.0, "")
+
+
+def api_key() -> str:
+    """THE resolver. Every caller goes through here — a second place reading
+    `settings.gemini_api_key` directly would ignore the admin-set key and report
+    the feature as off while it is on."""
+    return (settings.gemini_api_key or "").strip() or _stored_key()
+
+
+def key_source() -> str:
+    """Which of the two provided the live key — shown in the admin UI so an
+    operator can see why the value they just typed is not the one in use."""
+    if (settings.gemini_api_key or "").strip():
+        return "env"
+    return "db" if _stored_key() else "none"
+
+
 def available() -> bool:
-    return bool((settings.gemini_api_key or "").strip())
+    return bool(api_key())
 
 
 def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
@@ -83,7 +160,7 @@ def generate_json(
     remember to. Raises GeminiQuotaError on 429, GeminiError on anything else
     that leaves us without a usable object.
     """
-    key = (settings.gemini_api_key or "").strip()
+    key = api_key()
     if not key:
         raise GeminiError("GEMINI_API_KEY is not configured")
     mdl = (model or settings.gemini_model or "gemini-2.5-flash").strip()
