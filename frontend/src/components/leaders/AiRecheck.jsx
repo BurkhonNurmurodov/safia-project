@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
 import Modal from "../ui/Modal";
 import Button from "../ui/Button";
@@ -47,6 +47,11 @@ const TXT = {
     scFlagged: "Shubhali",
     scClean: "Toza",
     scAll: "Hammasi",
+    rsReports: "hisobot", rsChecked: "tekshirilgan", rsPartial: "qisman", rsUnchecked: "tekshirilmagan",
+    rsRows: "dalil rasmi", rsJudged: "xulosa bor", rsQueued: "navbatda", rsStuck: "xatolik",
+    rsFlagged: "{n} ta shubhali", rsOpen: "{n} tasi hali ko'rilmagan",
+    rsEmpty: "Bu oraliqda dalil rasmi yo'q.",
+    rsApprox: "Hisobot soni taxminiy — oraliq juda katta. Qatorlar soni aniq.",
     scUnchecked: "Tekshirilmagan",
     unWhy: "Hali tekshirilmagan hisobotlarni navbatga qo'yadi. Hech qanday xulosa o'chirilmaydi.",
     unCount: "{n} ta qator tekshiriladi",
@@ -84,6 +89,11 @@ const TXT = {
     scFlagged: "Шубҳали",
     scClean: "Тоза",
     scAll: "Ҳаммаси",
+    rsReports: "ҳисобот", rsChecked: "текширилган", rsPartial: "қисман", rsUnchecked: "текширилмаган",
+    rsRows: "далил расми", rsJudged: "хулоса бор", rsQueued: "навбатда", rsStuck: "хатолик",
+    rsFlagged: "{n} та шубҳали", rsOpen: "{n} таси ҳали кўрилмаган",
+    rsEmpty: "Бу оралиқда далил расми йўқ.",
+    rsApprox: "Ҳисобот сони тахминий — оралиқ жуда катта. Қаторлар сони аниқ.",
     scUnchecked: "Текширилмаган",
     unWhy: "Ҳали текширилмаган ҳисоботларни навбатга қўяди. Ҳеч қандай хулоса ўчирилмайди.",
     unCount: "{n} та қатор текширилади",
@@ -121,6 +131,11 @@ const TXT = {
     scFlagged: "Подозрительные",
     scClean: "Чистые",
     scAll: "Все",
+    rsReports: "отчётов", rsChecked: "проверено", rsPartial: "частично", rsUnchecked: "не проверено",
+    rsRows: "фото-подтверждений", rsJudged: "с выводом", rsQueued: "в очереди", rsStuck: "с ошибкой",
+    rsFlagged: "сомнительных: {n}", rsOpen: "не разобрано: {n}",
+    rsEmpty: "В этом диапазоне нет фото-подтверждений.",
+    rsApprox: "Число отчётов приблизительное — диапазон слишком большой. Число строк точное.",
     scUnchecked: "Непроверенные",
     unWhy: "Ставит в очередь отчёты, которые ещё не проверялись. Ни один вывод не удаляется.",
     unCount: "Будет проверено строк: {n}",
@@ -158,6 +173,11 @@ const TXT = {
     scFlagged: "Flagged",
     scClean: "Clean",
     scAll: "All",
+    rsReports: "reports", rsChecked: "checked", rsPartial: "partial", rsUnchecked: "unchecked",
+    rsRows: "proof rows", rsJudged: "judged", rsQueued: "queued", rsStuck: "errored",
+    rsFlagged: "{n} flagged", rsOpen: "{n} not yet reviewed",
+    rsEmpty: "No proof photos in this range.",
+    rsApprox: "The report count is approximate — the range is very large. Row counts are exact.",
     scUnchecked: "Unchecked",
     unWhy: "Queues reports that have never been checked. No verdict is deleted.",
     unCount: "{n} rows will be checked",
@@ -189,6 +209,125 @@ const TXT = {
 };
 
 const fmt = (s, n) => String(s).replace("{n}", n);
+
+/* ══ what the selected range holds ════════════════════════════════════════════
+ *
+ * The dry-run count answers "how much will this cost". It cannot answer "is
+ * this the range I meant, and how much of it is already done" — a bare
+ * "1 240 rows" has no denominator, so there is no way to tell a range that is
+ * mostly unchecked from one that is nearly finished.
+ *
+ * Two units, kept separate because they are not interchangeable: REPORTS are
+ * what a leader files and what the register lists, PROOF ROWS are what the
+ * reviewer judges and what quota is spent per. A report only counts as checked
+ * when every row in it has a verdict — half-done days get their own bucket
+ * rather than being rounded into "checked", which is the kind of rounding that
+ * makes a number stop being believed.
+ */
+const SEG = {
+  judged:  "#22c55e",
+  pending: "#94a3b8",
+  stuck:   "#eab308",
+};
+
+function RangeSummary({ T, from, to }) {
+  const { data, isFetching } = useQuery({
+    // Keyed by the range, so picking a new one refetches and nothing stale is
+    // ever shown next to a date the operator just changed.
+    queryKey: ["leader-ai-range", from || "", to || ""],
+    queryFn: () => api.get("/api/leader-ai/range", {
+      params: { date_from: from || undefined, date_to: to || undefined },
+    }).then((r) => r.data),
+  });
+
+  const box = "mt-2 rounded-xl p-3";
+  const boxStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)" };
+
+  if (isFetching && !data) {
+    return (
+      <div className={box} style={boxStyle}>
+        <div className="h-3 w-40 rounded animate-pulse" style={{ background: "var(--border)" }} />
+        <div className="h-1.5 w-full rounded mt-3 animate-pulse" style={{ background: "var(--border)" }} />
+      </div>
+    );
+  }
+  if (!data?.enabled) return null;
+
+  const r = data.rows, rep = data.reports;
+  if (!r.total) {
+    return (
+      <div className={box} style={boxStyle}>
+        <p className="text-xs" style={{ color: "var(--text-4)" }}>{T.rsEmpty}</p>
+      </div>
+    );
+  }
+
+  const pct = (n) => (n / r.total) * 100;
+  const segs = [
+    ["judged", r.judged], ["pending", r.pending + r.skipped], ["stuck", r.stuck],
+  ].filter(([, n]) => n > 0);
+
+  return (
+    <div className={box} style={boxStyle} aria-busy={isFetching}>
+      {/* The headline is REPORTS, because that is the unit the question gets
+          asked in — "how many reports, and how many are checked". */}
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-lg font-bold tabular-nums leading-none" style={{ color: "var(--text-1)" }}>
+          {rep.total.toLocaleString()}
+        </span>
+        <span className="text-xs" style={{ color: "var(--text-3)" }}>{T.rsReports}</span>
+        <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
+          <b style={{ color: SEG.judged }}>{rep.checked.toLocaleString()}</b> {T.rsChecked}
+          {rep.partial > 0 && <> · {rep.partial.toLocaleString()} {T.rsPartial}</>}
+          {rep.unchecked > 0 && <> · {rep.unchecked.toLocaleString()} {T.rsUnchecked}</>}
+        </span>
+      </div>
+
+      {/* One stacked bar of the PROOF ROWS — the unit that gets spent. Each
+          segment is labelled below; colour never carries the meaning alone. */}
+      <div className="flex h-1.5 rounded-full overflow-hidden mt-2.5" style={{ background: "var(--border)" }}
+        role="img" aria-label={`${r.judged} / ${r.total}`}>
+        {segs.map(([k, n]) => (
+          <div key={k} style={{ width: `${pct(n)}%`, background: SEG[k] }} />
+        ))}
+      </div>
+
+      {/* Each number and its label are ONE flex item — bare text nodes become
+          anonymous flex items, so the row gap would have pushed every count
+          away from the word that gives it meaning. */}
+      <div className="flex items-center gap-x-3 gap-y-1 mt-2 flex-wrap text-[11px] tabular-nums"
+        style={{ color: "var(--text-4)" }}>
+        <span>{r.total.toLocaleString()} {T.rsRows}</span>
+        <Legend c={SEG.judged} n={r.judged} label={T.rsJudged} />
+        <Legend c={SEG.pending} n={r.pending + r.skipped} label={T.rsQueued} />
+        <Legend c={SEG.stuck} n={r.stuck} label={T.rsStuck} />
+      </div>
+
+      {(r.flagged > 0 || data.openFlags > 0) && (
+        <p className="text-[11px] tabular-nums mt-1.5" style={{ color: "var(--text-4)" }}>
+          {fmt(T.rsFlagged, r.flagged.toLocaleString())}
+          {data.openFlags > 0 && ` · ${fmt(T.rsOpen, data.openFlags.toLocaleString())}`}
+        </p>
+      )}
+
+      {/* Said out loud rather than silently truncating: a capped scan makes the
+          REPORT count approximate while the row counts stay exact. */}
+      {rep.approx && (
+        <p className="text-[11px] mt-1.5" style={{ color: "#eab308" }}>{T.rsApprox}</p>
+      )}
+    </div>
+  );
+}
+
+// A zero segment is not drawn at all — "0 errored" is noise that makes the
+// clean case look like it has a problem to read.
+const Legend = ({ c, n, label }) => (n > 0 ? (
+  <span className="inline-flex items-center gap-1.5">
+    <span className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+      style={{ background: c }} aria-hidden="true" />
+    {n.toLocaleString()} {label}
+  </span>
+) : null);
 
 export default function AiRecheck({ errorCount = 0 }) {
   const { lang } = useLang();
@@ -289,6 +428,11 @@ export default function AiRecheck({ errorCount = 0 }) {
               setDateFrom={(v) => setRange((r) => ({ ...r, from: v || "" }))}
               setDateTo={(v) => setRange((r) => ({ ...r, to: v || "" }))} />
           </FormField>
+
+          {/* What the chosen range actually holds. Sits directly under the
+              picker because that is where the doubt is: the dry-run count below
+              tells you the PRICE, this tells you what you are buying. */}
+          <RangeSummary T={T} from={range.from} to={range.to} />
 
           <ul className="mt-1 flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-4)" }}>
             <li>· {T.resolved}</li>

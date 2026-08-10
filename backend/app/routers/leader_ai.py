@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -866,6 +867,125 @@ def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
     else:
         row.value = payload
     db.commit()
+
+
+# Rows scanned to work out how many REPORTS a range holds. Row counts below are
+# exact SQL aggregates and need no cap; the report count has to group refs in
+# Python, so a whole-history query is bounded and marked approximate rather than
+# becoming the slowest read on the platform.
+REPORT_SCAN_CAP = 20000
+
+
+@router.get("/range")
+def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                  date_to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                  db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """What a date range actually holds, and how much of it is already checked.
+
+    Answers the question an operator has with their finger over a button that
+    spends metered quota: *is this the range I think it is, and how much of it
+    is already done?* Until this existed the modal could only say how many rows
+    a given scope would queue — a number with no denominator, which tells you
+    the price but not what you are buying.
+
+    Two units, because both are real and they are not interchangeable:
+
+    * **reports** — a leader's day. This is what a person files and what the
+      register lists, so it is the unit the question is usually asked in.
+    * **proof rows** — one task's photos inside a report. This is the unit the
+      reviewer judges and the unit quota is spent per, so it is what the
+      progress bar and the cost estimate run on.
+
+    A report counts as `checked` only when EVERY reviewable row in it has a
+    verdict. Half-judged reports are their own bucket rather than being rounded
+    into either — "68% checked" hiding a pile of half-done days is exactly the
+    kind of number that stops being trusted.
+    """
+    if not gemini.available():
+        return {"enabled": False}
+
+    def _ranged(q):
+        if date_from:
+            q = q.filter(LeaderAiReview.date >= date_from)
+        if date_to:
+            q = q.filter(LeaderAiReview.date <= date_to)
+        return q
+
+    # ── rows: exact, one aggregate ───────────────────────────────────────────
+    by_status = dict(
+        _ranged(db.query(LeaderAiReview.status, func.count(LeaderAiReview.id)))
+        .group_by(LeaderAiReview.status).all()
+    )
+    judged = by_status.get("ok", 0) + by_status.get("flagged", 0)
+    stuck = _ranged(
+        db.query(LeaderAiReview).filter(LeaderAiReview.status == "error",
+                                        LeaderAiReview.attempts >= leader_ai.MAX_ATTEMPTS)
+    ).count()
+    rows = {
+        "total": sum(by_status.values()),
+        "judged": judged,
+        "ok": by_status.get("ok", 0),
+        "flagged": by_status.get("flagged", 0),
+        # Queued = pending plus error rows that still have retries left; those
+        # will drain on their own, so they are waiting, not broken.
+        "pending": by_status.get("pending", 0) + max(0, by_status.get("error", 0) - stuck),
+        "stuck": stuck,
+        "skipped": by_status.get("skipped", 0),
+    }
+    # What triage still owes on this range — the number that says whether the
+    # human queue has work here, as opposed to the machine.
+    open_flags = _ranged(
+        db.query(LeaderAiReview).filter(LeaderAiReview.status == "flagged",
+                                        LeaderAiReview.resolution.is_(None))
+    ).count()
+
+    # ── reports: group rows by the report they belong to ─────────────────────
+    refs = _ranged(
+        db.query(LeaderAiReview.ref, LeaderAiReview.status)
+    ).limit(REPORT_SCAN_CAP + 1).all()
+    approx = len(refs) > REPORT_SCAN_CAP
+    refs = refs[:REPORT_SCAN_CAP]
+
+    # A sheet ref already names its report; a bot ref names an ENTRY, and the
+    # report is that entry's day, so those need one lookup.
+    day_of: dict[int, int] = {}
+    entry_ids = {int(r.split(":")[1]) for r, _ in refs if r.startswith("bot:")}
+    if entry_ids:
+        day_of = dict(
+            db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
+            .filter(LeaderTaskEntry.id.in_(entry_ids)).all()
+        )
+
+    per_report: dict[str, list[str]] = {}
+    for ref, status in refs:
+        if ref.startswith("bot:"):
+            day = day_of.get(int(ref.split(":")[1]))
+            key = f"bot:{day}" if day else ref     # orphan entry: its own report
+        else:
+            parts = ref.split(":")
+            # drop the trailing task id — what remains identifies the report
+            key = ":".join(parts[:-1]) if len(parts) > 2 else ref
+        per_report.setdefault(key, []).append(status)
+
+    checked = partial = unchecked = 0
+    for statuses in per_report.values():
+        done = sum(1 for s in statuses if s in ("ok", "flagged"))
+        if done == len(statuses):
+            checked += 1
+        elif done:
+            partial += 1
+        else:
+            unchecked += 1
+
+    return {
+        "enabled": True,
+        "from": date_from, "to": date_to,
+        "reports": {"total": len(per_report), "checked": checked,
+                    "partial": partial, "unchecked": unchecked,
+                    "approx": approx},
+        "rows": rows,
+        "openFlags": open_flags,
+    }
 
 
 @router.get("/progress")
