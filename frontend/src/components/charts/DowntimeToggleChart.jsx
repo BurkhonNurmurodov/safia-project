@@ -126,16 +126,27 @@ export default function DowntimeToggleChart({
         return (val / axisMax) * plotW >= labelPx;
       };
 
-      // A bar is a single "total" bar (vs. a stack of category segments) when none of the
-      // category series (index ≥ 2) carry a value at this data point.
-      const isTotalBar = (opts) => {
+      // Same test for the space PAST the bar's end: is there room for an outside label
+      // before the plot edge? niceAxisMax keeps ≥10% headroom, so on desktop this is
+      // effectively always true — on a phone the longest stacks drop their end label
+      // rather than let it clip against the edge.
+      const fitsOutside = (val, text, globals) => {
+        const labelPx = String(text).length * 8 + 20;
+        const gridW = globals && globals.gridWidth;
+        const plotW = gridW && gridW > 0 ? gridW : 900;
+        return ((axisMax - val) / axisMax) * plotW >= labelPx;
+      };
+
+      // Non-zero category-series (index ≥ 2) values at this data point. Empty ⇒ the bar
+      // is a single "total" bar rather than a stack of category segments.
+      const catValsAt = (opts) => {
         const g = opts && opts.w && opts.w.globals;
         const di = opts && opts.dataPointIndex;
-        if (!g || !Array.isArray(g.series) || di == null) return true;
-        const catSum = g.series
+        if (!g || !Array.isArray(g.series) || di == null) return [];
+        return g.series
           .slice(2)
-          .reduce((a, arr) => a + (Number(arr && arr[di]) || 0), 0);
-        return catSum === 0;
+          .map((arr) => Number(arr && arr[di]) || 0)
+          .filter((v) => v > 0);
       };
 
       return {
@@ -155,17 +166,24 @@ export default function DowntimeToggleChart({
             horizontal: true,
             barHeight: "70%",
             dataLabels: {
-              // Outside label for the short total bars: rendered at the bar's end, nudged
-              // right so it clears the bar. Only emitted when the bar is a single total bar
-              // AND its value can't hold the label inside.
+              // Outside label rendered at the bar's end, nudged right so it clears the bar.
+              // A solid total bar gets it only as a fallback when the bar is too short to
+              // hold its label inside. A category stack anchors its SUM here — skipped only
+              // when the "stack" is one lone segment already labelled inside (the sum would
+              // print the same number twice in a row) or there's no room left before the
+              // plot edge.
               total: {
                 enabled: true,
                 offsetX: 6,
                 style: { fontSize: "11px", fontWeight: 600, color: outsideLabel },
                 formatter: (val, opts) => {
-                  if (!val || val <= 0 || !isTotalBar(opts)) return "";
+                  if (!val || val <= 0) return "";
                   const text = fmtVal(val);
-                  return fitsInside(val, text, opts && opts.w && opts.w.globals) ? "" : text;
+                  const globals = opts && opts.w && opts.w.globals;
+                  const cats = catValsAt(opts);
+                  if (cats.length === 0) return fitsInside(val, text, globals) ? "" : text;
+                  if (cats.length === 1 && fitsInside(val, text, globals)) return "";
+                  return fitsOutside(val, text, globals) ? text : "";
                 },
               },
             },
@@ -176,14 +194,13 @@ export default function DowntimeToggleChart({
           enabled: true,
           // Every segment (total bars AND category segments) follows the global min/hrs
           // filter, so labels read e.g. "30min" or "0.5soat" — never a bare, unitless number.
-          // For the two total series (index 0/1) drop the inside label when the bar is too
-          // short; the outside total label above shows it instead.
+          // ANY segment too narrow for its text stays silent instead of bleeding into its
+          // neighbours: a total bar falls back to the outside total label, a category
+          // sliver to the stack-end sum and the per-segment tooltip.
           formatter: (val, opts) => {
             if (!val || val <= 0) return "";
             const text = fmtVal(val);
-            const si = opts && opts.seriesIndex;
-            if ((si === 0 || si === 1) && !fitsInside(val, text, opts && opts.w && opts.w.globals)) return "";
-            return text;
+            return fitsInside(val, text, opts && opts.w && opts.w.globals) ? text : "";
           },
           style: { fontSize: "11px", fontWeight: 600, colors: ["#fff"] },
           dropShadow: { enabled: false },
