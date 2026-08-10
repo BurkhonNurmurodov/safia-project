@@ -334,12 +334,9 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
     return out
 
 
-RESOLUTIONS = ("approved", "rejected", "requeried")
-
-
 class ResolveIn(BaseModel):
     ref: str
-    resolution: str = Field(..., pattern="^(approved|rejected|requeried)$")
+    resolution: str = Field(..., pattern="^(approved|rejected|requeried|open)$")
     note: str | None = None
 
 
@@ -348,13 +345,20 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
             admin: dict = Depends(verify_admin)):
     """Record the human decision that takes a flag out of the queue.
 
-    Three outcomes, and only one of them costs anybody anything:
+    Three rulings, and only one of them costs anybody anything:
       approved   the AI was wrong — the flag retires, nothing else moves.
       rejected   the AI was right — the task stops counting toward the day
                  (applied as a read-time overlay in routers/leaders.py; the
                  leaders sheet is not ours to write) and the leader is told.
       requeried  the leader is asked to re-file. No penalty yet — this is the
                  humane default when a photo is merely unreadable.
+
+    …plus `open`, which is not a ruling but its REVERSAL: it clears the decision
+    and puts the row back in the queue. That exists because the triage screen
+    dispatches on a single keystroke, and a one-key decision is only safe if one
+    key takes it back. Undoing by writing `approved` would have been a lie —
+    "nobody has looked at this yet" and "somebody looked and cleared it" are
+    different facts, and the calibration stats read exactly that difference.
 
     Idempotent per row: re-deciding overwrites the previous ruling and re-stamps
     the actor, so a correction is a normal action rather than a DB edit.
@@ -366,13 +370,25 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=400,
                             detail="Only a flagged verdict can be resolved")
 
+    who = (admin.get("full_name") or admin.get("username")
+           or str(admin.get("telegram_id") or "admin"))[:160]
+
+    if body.resolution == "open":
+        rev.resolution = None
+        rev.resolved_by = None
+        rev.resolved_at = None
+        rev.resolution_note = None
+        db.commit()
+        log.info("leader-ai: %s reopened %s", who, rev.ref)
+        return {"ok": True, "ref": rev.ref, "resolution": None,
+                "counts": leader_ai.counts(db)}
+
     rev.resolution = body.resolution
-    rev.resolved_by = (admin.get("full_name") or admin.get("username")
-                       or str(admin.get("telegram_id") or "admin"))[:160]
+    rev.resolved_by = who
     rev.resolved_at = datetime.now(timezone.utc)
     rev.resolution_note = (body.note or "").strip()[:1000] or None
     db.commit()
-    log.info("leader-ai: %s ruled %s on %s", rev.resolved_by, rev.resolution, rev.ref)
+    log.info("leader-ai: %s ruled %s on %s", who, rev.resolution, rev.ref)
 
     if body.resolution in ("rejected", "requeried"):
         _notify_leader(db, rev)

@@ -1,15 +1,15 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Sparkles, CheckCircle2, XCircle, MessageSquare, ArrowRight, Inbox,
-  ChevronLeft, ChevronRight, Loader2, Undo2, Keyboard, X, Gauge,
+  Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
+  ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
 } from "lucide-react";
 import Button from "../ui/Button";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import { SectionHead } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonBlock } from "../ui/Skeleton";
-import Toast, { useToast } from "../ui/Toast";
+import { useToast } from "../ui/Toast";
 import { QueuePhoto } from "./ProofPhoto";
 import api from "../../utils/api";
 
@@ -58,7 +58,9 @@ const shortWin = (w) => (w || "").replace(/(\d{4})-(\d{2})-(\d{2})/g, (_, y, m, 
 
 export default function AiTriage({ T, lang, taskDetail, nm }) {
   const qc = useQueryClient();
-  const { toast, show: showToast, hide: hideToast } = useToast();
+  // `position="bottom"`: this is a dense editing surface and the eye lives at
+  // the decision bar, not the page head.
+  const { show: showToast, hide: hideToast, node: toastNode } = useToast({ position: "bottom" });
 
   const [bucket, setBucket] = useState("all");
   const [i, setI] = useState(0);
@@ -82,13 +84,22 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
     () => (bucket === "all" ? all : all.filter((x) => x.bucket === bucket)),
     [all, bucket],
   );
-  // The index can outrun the list when a decision removes the last item, or
-  // when switching buckets. Clamped here rather than in every handler.
+  // Both cursors are CLAMPED during render rather than reset from an effect.
+  // A dispatch shortens the list under the index and a new item may carry fewer
+  // photos than the last — resetting those in effects meant a frame rendered
+  // against the stale value first, which on this screen is a frame of somebody
+  // else's photo. Deriving cannot show that frame at all. It also means the
+  // index stays put as items leave, so the next card slides into place under
+  // the cursor, which is what makes the queue feel like an inbox.
   const ix = Math.min(i, Math.max(0, items.length - 1));
   const cur = items[ix] || null;
+  const pIx = Math.min(photoIx, Math.max(0, (cur?.photos.length || 1) - 1));
 
-  useEffect(() => { setI(0); setPhotoIx(0); }, [bucket]);
-  useEffect(() => { setPhotoIx(0); zoomUrls.current = {}; }, [cur?.ref]);
+  // Keyed by ref, so a stale entry can never hand the zoom overlay the previous
+  // item's image — and no reset pass is needed when the card changes.
+  const zoomKey = cur ? `${cur.ref}:${pIx}` : "";
+
+  const pickBucket = useCallback((b) => { setBucket(b); setI(0); setPhotoIx(0); }, []);
 
   const move = useCallback((d) => {
     setI((p) => {
@@ -140,17 +151,20 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
   const undo = useCallback(() => {
     if (!undoable) return;
     const { item } = undoable;
-    // Re-decide back to open. The server treats a re-rule as a normal action,
-    // so undo is the same call with a different value — nothing special-cased.
-    api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: "approved" })
-      .catch(() => {});
+    // `open` CLEARS the ruling — it does not record a different one. Writing
+    // "approved" here would have put the item back on screen while telling the
+    // server a human had cleared it, and the calibration stats count exactly
+    // that. The row goes back to unresolved, which is what undo means.
+    api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: "open" })
+      .then(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }))
+      .catch(() => qc.invalidateQueries({ queryKey: ["leader-ai-queue"] }));
     qc.setQueryData(["leader-ai-queue"], (old) => old && ({
       ...old,
       items: [item, ...old.items.filter((x) => x.ref !== item.ref)],
     }));
-    qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
     setUndoable(null);
     setI(0);
+    setPhotoIx(0);
     hideToast();
   }, [undoable, qc, hideToast]);
 
@@ -167,7 +181,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
       if (e.key === "Escape") { setZoom(null); setKeysOpen(false); return; }
       if (e.key === " ") {
         e.preventDefault();
-        setZoom((z) => (z ? null : zoomUrls.current[photoIx] || null));
+        setZoom((z) => (z ? null : zoomUrls.current[zoomKey] || null));
         return;
       }
       if (k === "j" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
@@ -181,7 +195,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [move, dispatch, undo, photoIx]);
+  }, [move, dispatch, undo, zoomKey]);
 
   if (isLoading) {
     return (
@@ -194,7 +208,8 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
   }
 
   if (data && !data.enabled) {
-    return <EmptyState icon={Sparkles} title={T.aiOffTitle} description={T.aiOffBody} />;
+    return <EmptyState icon={Sparkles} title={T.aiOffTitle} message={T.aiOffBody}
+      showUploadLink={false} height="h-56" />;
   }
 
   const buckets = data?.buckets || {};
@@ -211,7 +226,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
           an unreadable Drive link is the server's problem, and mixing it into a
           discipline queue is how a reviewer learns to distrust the queue. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <SegmentedToggle scrollable value={bucket} onChange={setBucket} options={bucketOpts} />
+        <SegmentedToggle scrollable value={bucket} onChange={pickBucket} options={bucketOpts} />
         <div className="flex-1" />
         {undoable && (
           <Button size="lg" variant="secondary" tint icon={<Undo2 size={14} />} onClick={undo}>
@@ -228,7 +243,10 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
       {keysOpen && <KeyLegend T={T} />}
 
       {!cur ? (
-        <EmptyState icon={Inbox} title={T.aiDoneTitle} description={T.aiDoneBody} />
+        /* An emptied queue is the goal, so it reads as one — and it never
+           offers the upload link, which has nothing to do with this surface. */
+        <EmptyState icon={Inbox} title={T.aiDoneTitle} message={T.aiDoneBody}
+          showUploadLink={false} height="h-64" />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3 items-start">
           {/* ── the inbox ─────────────────────────────────────────────────── */}
@@ -269,20 +287,25 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
               {cur.photos.length === 0 ? (
                 <p className="py-10 text-sm" style={{ color: "var(--text-4)" }}>{T.aiNoPhoto}</p>
               ) : (
-                <QueuePhoto key={`${cur.ref}-${photoIx}`} photo={cur.photos[photoIx]} T={T}
+                /* `pIx`, not `photoIx`: moving from a 3-photo card to a 1-photo
+                   one leaves the raw index out of range, and an undefined photo
+                   takes the whole pane down. */
+                <QueuePhoto key={zoomKey} photo={cur.photos[pIx]} T={T}
                   className="" fit="contain" maxHeight={420}
-                  onReady={(u) => { zoomUrls.current[photoIx] = u; }}
+                  onReady={(u) => { zoomUrls.current[zoomKey] = u; }}
                   onClick={(u) => setZoom(u)} />
               )}
               {cur.photos.length > 1 && (
                 <div className="flex items-center gap-2 flex-wrap justify-center">
+                  {/* Stepped off the CLAMPED index, so the counter can never
+                      read "3 / 1" on a card that carries one photo. */}
                   <Button size="sm" variant="ghost" icon={<ChevronLeft size={14} />}
-                    onClick={() => setPhotoIx((p) => (p - 1 + cur.photos.length) % cur.photos.length)} />
+                    onClick={() => setPhotoIx((pIx - 1 + cur.photos.length) % cur.photos.length)} />
                   <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                    {photoIx + 1} / {cur.photos.length}
+                    {pIx + 1} / {cur.photos.length}
                   </span>
                   <Button size="sm" variant="ghost" icon={<ChevronRight size={14} />}
-                    onClick={() => setPhotoIx((p) => (p + 1) % cur.photos.length)} />
+                    onClick={() => setPhotoIx((pIx + 1) % cur.photos.length)} />
                 </div>
               )}
             </div>
@@ -307,7 +330,7 @@ export default function AiTriage({ T, lang, taskDetail, nm }) {
         </div>
       )}
 
-      <Toast {...toast} onClose={hideToast} position="bottom" />
+      {toastNode}
     </>
   );
 }
@@ -321,19 +344,23 @@ const Card = ({ children, className = "" }) => (
 
 // Colour alone never carries the meaning — every dot has a title, and the panel
 // beside it spells the same flags out in words.
-const FLAG_TONE = { not_proven: C_BAD, date_mismatch: C_AI, no_date: C_AI, unreadable: C_FLAT };
+const FLAG_TONE = { off_topic: C_BAD, not_proven: C_BAD, date_mismatch: C_AI, no_date: C_AI, unreadable: C_FLAT };
 const FlagDot = ({ flag }) => (
   <i className="inline-block w-1.5 h-1.5 rounded-full"
     style={{ background: FLAG_TONE[flag] || C_FLAT }} />
 );
 
-/** The three questions as a checklist, prose second. People triage on glyphs. */
+/** The questions as a checklist, prose second. People triage on glyphs. */
 function Verdict({ item, T, lang }) {
   const f = new Set(item.flags);
   const reason = item.reason?.[lang] || item.reason?.ru || item.reason?.en || "";
   const rows = [
     { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
     { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
+    // Subject before completeness: a reviewer who sees "wrong subject" ticked
+    // red stops reading, and asking "does it prove the work" about a photo of
+    // something else is a question with no meaning.
+    { ok: !f.has("off_topic"), label: T.aiQ_match, val: "" },
     { ok: !f.has("not_proven"), label: T.aiQ_done, val: "" },
   ];
   return (
@@ -428,8 +455,6 @@ function Decide({ T, onAct, busy }) {
           </button>
         );
       })}
-      <button onClick={() => onAct(null) || null} disabled
-        className="hidden" aria-hidden="true" tabIndex={-1} />
       <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>{T.aiActHint}</p>
     </div>
   );

@@ -4,7 +4,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   Gauge, TrendingUp, TrendingDown, Minus, BarChart3, Trophy, ListChecks, Info,
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
-  AlertTriangle, Users, User, RefreshCw, Loader2, Clock, ImageOff, CalendarClock,
+  AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
   ShieldCheck, Hourglass, Layers,
 } from "lucide-react";
@@ -23,6 +23,8 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import BotDataClear from "../components/leaders/BotDataClear";
 import LateReports from "../components/leaders/LateReports";
+import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
+import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -94,7 +96,7 @@ const TXT = {
     hmTitle: "Kunlar kalendari", hmNoSync: "Ma'lumot hali kelmagan",
     tableTitle: "Oxirgi hisobotlar (past ko'rsatkich birinchi)",
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
-    thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun",
+    thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
     voidChip: "Vaqtdan tashqari",
     voidTitle: "1-smena: hisobot o'z kunida 08:00–20:00 oralig'ida yuborilishi kerak — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
     aiTitle: "AI tekshiruvi",
@@ -107,6 +109,7 @@ const TXT = {
     aiExpected: "Ruxsat etilgan oyna",
     aiFdate_mismatch: "Sana mos emas",
     aiFno_date: "Rasmda sana yo'q",
+    aiFoff_topic: "Rasm vazifaga mos emas",
     aiFnot_proven: "Bajarilgani ko'rinmayapti",
     aiFunreadable: "Rasm o'qilmadi",
     aiRowBadge: "AI shubhali deb belgilagan vazifalar",
@@ -116,6 +119,30 @@ const TXT = {
     aiFlagsN: "shubhali",
     aiPendingN: "navbatda",
     aiNote: "AI xulosasi — yordamchi belgi, yakuniy hukm emas.",
+    tabAi: "AI tekshiruvi",
+    aiBall: "Hammasi", aiB_forged: "Soxta dalil", aiB_undone: "Bajarilmagan",
+    aiB_date: "Sana", aiB_tech: "Texnik",
+    aiBt_forged: "Ham vaqti noto'g'ri, ham bajarilgani ko'rinmaydi",
+    aiBt_undone: "Vaqti to'g'ri, lekin ish ko'rinmaydi",
+    aiBt_date: "Ish ko'rinadi, lekin rasm boshqa kundan",
+    aiBt_tech: "Rasmni o'qib bo'lmadi — server muammosi, liderning aybi emas",
+    aiQueue: "Navbat", aiPhotoN: "rasm", aiNoPhoto: "Rasm topilmadi",
+    aiZoom: "Rasmni kattalashtirish",
+    aiQ_read: "Sana o'qildi", aiQ_window: "Ruxsat etilgan oynada",
+    aiQ_match: "Rasm vazifaga mos", aiQ_done: "Bajarilgani ko'rinadi",
+    aiWhy: "Nima uchun", aiLeaderSaid: "Lider izohi",
+    aiCriteria: "O'lchov mezoni", aiNoCriteria: "Mezon yozilmagan — faqat sana tekshirildi.",
+    aiAct_approved: "Dalil to'g'ri", aiAct_rejected: "Rad etish",
+    aiAct_requeried: "Qayta so'rash",
+    aiActHint: "Rad etilsa — vazifa shu kun uchun bajarilmagan deb hisoblanadi va liderga xabar boradi. «Qayta so'rash» bahoni o'zgartirmaydi.",
+    aiUndo: "Qaytarish", aiKeys: "Tugmalar", aiKeyMove: "navbat bo'ylab",
+    aiKeySkip: "keyinroq", aiKeyZoom: "kattalashtirish",
+    aiDoneTitle: "Navbat bo'sh",
+    aiDoneBody: "Barcha shubhali dalillar ko'rib chiqildi. Yangi hisobotlar kelganda navbat o'zi to'ladi.",
+    aiOffTitle: "AI tekshiruvi yoqilmagan",
+    aiOffBody: "Serverda GEMINI_API_KEY yo'q — kalit qo'yilmaguncha bu bo'lim ishlamaydi.",
+    aiCalTip: "AI bilan rozilik darajasi: siz tasdiqlagan belgilar ulushi va ko'rib chiqilgan belgilar soni",
+    aiRejChip: "AI dalili rad etildi",
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
     details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
@@ -165,7 +192,7 @@ const TXT = {
     hmTitle: "Кунлар календари", hmNoSync: "Маълумот ҳали келмаган",
     tableTitle: "Охирги ҳисоботлар (паст кўрсаткич биринчи)",
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
-    thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун",
+    thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
     voidChip: "Вақтдан ташқари",
     voidTitle: "1-смена: ҳисобот ўз кунида 08:00–20:00 оралиғида юборилиши керак — бу ҳисобот қабул қилинмади ва кун 0% ҳисобланади",
     aiTitle: "AI текшируви",
@@ -178,6 +205,7 @@ const TXT = {
     aiExpected: "Рухсат этилган ойна",
     aiFdate_mismatch: "Сана мос эмас",
     aiFno_date: "Расмда сана йўқ",
+    aiFoff_topic: "Расм вазифага мос эмас",
     aiFnot_proven: "Бажарилгани кўринмаяпти",
     aiFunreadable: "Расм ўқилмади",
     aiRowBadge: "AI шубҳали деб белгилаган вазифалар",
@@ -187,6 +215,30 @@ const TXT = {
     aiFlagsN: "шубҳали",
     aiPendingN: "навбатда",
     aiNote: "AI хулосаси — ёрдамчи белги, якуний ҳукм эмас.",
+    tabAi: "AI текшируви",
+    aiBall: "Ҳаммаси", aiB_forged: "Сохта далил", aiB_undone: "Бажарилмаган",
+    aiB_date: "Сана", aiB_tech: "Техник",
+    aiBt_forged: "Ҳам вақти нотўғри, ҳам бажарилгани кўринмайди",
+    aiBt_undone: "Вақти тўғри, лекин иш кўринмайди",
+    aiBt_date: "Иш кўринади, лекин расм бошқа кундан",
+    aiBt_tech: "Расмни ўқиб бўлмади — сервер муаммоси, лидернинг айби эмас",
+    aiQueue: "Навбат", aiPhotoN: "расм", aiNoPhoto: "Расм топилмади",
+    aiZoom: "Расмни катталаштириш",
+    aiQ_read: "Сана ўқилди", aiQ_window: "Рухсат этилган ойнада",
+    aiQ_match: "Расм вазифага мос", aiQ_done: "Бажарилгани кўринади",
+    aiWhy: "Нима учун", aiLeaderSaid: "Лидер изоҳи",
+    aiCriteria: "Ўлчов мезони", aiNoCriteria: "Мезон ёзилмаган — фақат сана текширилди.",
+    aiAct_approved: "Далил тўғри", aiAct_rejected: "Рад этиш",
+    aiAct_requeried: "Қайта сўраш",
+    aiActHint: "Рад этилса — вазифа шу кун учун бажарилмаган деб ҳисобланади ва лидерга хабар боради. «Қайта сўраш» баҳони ўзгартирмайди.",
+    aiUndo: "Қайтариш", aiKeys: "Тугмалар", aiKeyMove: "навбат бўйлаб",
+    aiKeySkip: "кейинроқ", aiKeyZoom: "катталаштириш",
+    aiDoneTitle: "Навбат бўш",
+    aiDoneBody: "Барча шубҳали далиллар кўриб чиқилди. Янги ҳисоботлар келганда навбат ўзи тўлади.",
+    aiOffTitle: "AI текшируви ёқилмаган",
+    aiOffBody: "Серверда GEMINI_API_KEY йўқ — калит қўйилмагунча бу бўлим ишламайди.",
+    aiCalTip: "AI билан розилик даражаси: сиз тасдиқлаган белгилар улуши ва кўриб чиқилган белгилар сони",
+    aiRejChip: "AI далили рад этилди",
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
@@ -236,7 +288,7 @@ const TXT = {
     hmTitle: "Календарь дней", hmNoSync: "Данные ещё не поступили",
     tableTitle: "Последние отчёты (сначала низкий балл)",
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
-    thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.",
+    thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
     voidChip: "Вне окна",
     voidTitle: "1-я смена: отчёт должен быть отправлен в свой день с 08:00 до 20:00 — этот отчёт не засчитан, день считается за 0%",
     aiTitle: "Проверка ИИ",
@@ -249,6 +301,7 @@ const TXT = {
     aiExpected: "Допустимое окно",
     aiFdate_mismatch: "Дата не совпадает",
     aiFno_date: "На фото нет даты",
+    aiFoff_topic: "Фото не по задаче",
     aiFnot_proven: "Выполнение не видно",
     aiFunreadable: "Фото не читается",
     aiRowBadge: "Задачи, отмеченные ИИ как сомнительные",
@@ -258,6 +311,30 @@ const TXT = {
     aiFlagsN: "сомнительных",
     aiPendingN: "в очереди",
     aiNote: "Вывод ИИ — подсказка, а не окончательное решение.",
+    tabAi: "Проверка ИИ",
+    aiBall: "Все", aiB_forged: "Подделка", aiB_undone: "Не выполнено",
+    aiB_date: "Дата", aiB_tech: "Технические",
+    aiBt_forged: "И время не то, и выполнение не видно",
+    aiBt_undone: "Время верное, но работы не видно",
+    aiBt_date: "Работа видна, но фото с другого дня",
+    aiBt_tech: "Фото не удалось прочитать — проблема сервера, а не лидера",
+    aiQueue: "Очередь", aiPhotoN: "фото", aiNoPhoto: "Фото не найдено",
+    aiZoom: "Увеличить фото",
+    aiQ_read: "Дата прочитана", aiQ_window: "В допустимом окне",
+    aiQ_match: "Фото по задаче", aiQ_done: "Выполнение видно",
+    aiWhy: "Почему", aiLeaderSaid: "Комментарий лидера",
+    aiCriteria: "Критерий оценки", aiNoCriteria: "Критерий не задан — проверялась только дата.",
+    aiAct_approved: "Фото верное", aiAct_rejected: "Отклонить",
+    aiAct_requeried: "Запросить заново",
+    aiActHint: "При отклонении задача засчитывается как невыполненная за этот день, и лидер получает уведомление. «Запросить заново» оценку не меняет.",
+    aiUndo: "Отменить", aiKeys: "Клавиши", aiKeyMove: "по очереди",
+    aiKeySkip: "позже", aiKeyZoom: "увеличить",
+    aiDoneTitle: "Очередь пуста",
+    aiDoneBody: "Все сомнительные подтверждения разобраны. Очередь наполнится сама, когда придут новые отчёты.",
+    aiOffTitle: "Проверка ИИ не включена",
+    aiOffBody: "На сервере нет GEMINI_API_KEY — без ключа раздел не работает.",
+    aiCalTip: "Согласие с ИИ: доля подтверждённых вами меток и число разобранных меток",
+    aiRejChip: "Подтверждение отклонено",
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
@@ -307,7 +384,7 @@ const TXT = {
     hmTitle: "Day calendar", hmNoSync: "Not synced yet",
     tableTitle: "Recent Submissions (Low Score First)",
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
-    thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d",
+    thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
     voidChip: "Out of window",
     voidTitle: "Shift 1: a checklist must be filed on its own day between 08:00 and 20:00 — this one was not accepted, so the day scores 0%",
     aiTitle: "AI review",
@@ -320,6 +397,7 @@ const TXT = {
     aiExpected: "Allowed window",
     aiFdate_mismatch: "Date does not match",
     aiFno_date: "No date on the photo",
+    aiFoff_topic: "Photo is not about this task",
     aiFnot_proven: "Does not show the work done",
     aiFunreadable: "Photo unreadable",
     aiRowBadge: "Tasks the AI flagged as suspect",
@@ -329,6 +407,30 @@ const TXT = {
     aiFlagsN: "flagged",
     aiPendingN: "queued",
     aiNote: "The AI verdict is a hint, not a final ruling.",
+    tabAi: "AI review",
+    aiBall: "All", aiB_forged: "Forged", aiB_undone: "Not done",
+    aiB_date: "Date", aiB_tech: "Technical",
+    aiBt_forged: "Wrong time AND no visible work — the fabricated-proof shape",
+    aiBt_undone: "Time is fine, but the work is not visible",
+    aiBt_date: "Work is visible, but the photo is from another day",
+    aiBt_tech: "The photo could not be read — a server problem, not the leader's",
+    aiQueue: "Queue", aiPhotoN: "photos", aiNoPhoto: "No photo found",
+    aiZoom: "Enlarge photo",
+    aiQ_read: "Date read", aiQ_window: "Inside the window",
+    aiQ_match: "Photo matches the task", aiQ_done: "Work is visible",
+    aiWhy: "Why", aiLeaderSaid: "Leader's own note",
+    aiCriteria: "Criterion", aiNoCriteria: "No criterion written — only the date was checked.",
+    aiAct_approved: "Proof is fine", aiAct_rejected: "Reject",
+    aiAct_requeried: "Ask to re-file",
+    aiActHint: "Rejecting makes the task count as not done for that day and notifies the leader. «Ask to re-file» changes no score.",
+    aiUndo: "Undo", aiKeys: "Shortcuts", aiKeyMove: "move through queue",
+    aiKeySkip: "later", aiKeyZoom: "zoom",
+    aiDoneTitle: "Queue is empty",
+    aiDoneBody: "Every suspect proof has been ruled on. The queue refills itself as new reports arrive.",
+    aiOffTitle: "AI review is not enabled",
+    aiOffBody: "There is no GEMINI_API_KEY on the server — this section does nothing until one is set.",
+    aiCalTip: "Agreement with the AI: the share of flags you upheld, and how many you have ruled on",
+    aiRejChip: "Proof rejected",
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
@@ -699,67 +801,10 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
   );
 }
 
-// A proof photo. BOTH sources go through the backend and are fetched as a BLOB,
-// rendered via an object URL, because neither can be handed to a bare <img src>:
-// the bot's archive photo needs the JWT on the request, and the sheet's photo is
-// a Google Drive SHARE link, which answers an HTML viewer page rather than image
-// bytes (and the app's CSP is img-src 'self' data: blob: anyway). Each keeps its
-// own load state, so one dead photo shows a compact "failed + retry" card in its
-// own place instead of bubbling a broken <img> up to the boot-error overlay.
-function ProxyPhoto({ load, deps = [], href, T, className = "mt-2" }) {
-  const [url, setUrl] = useState("");
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let obj = "";
-    let alive = true;
-    setFailed(false);
-    setUrl("");
-    load()
-      .then((res) => {
-        obj = URL.createObjectURL(res.data);
-        if (alive) setUrl(obj);
-        else URL.revokeObjectURL(obj);
-      })
-      .catch(() => { if (alive) setFailed(true); });
-    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, attempt]);
-  if (failed) {
-    return (
-      <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
-        style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
-        <ImageOff size={22} color="var(--text-4)" />
-        <span className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{T.photoFailed}</span>
-        <button type="button" onClick={() => setAttempt((a) => a + 1)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md"
-          style={{ color: "var(--brand)", background: hexA("#C8973F", 0.12) }}>
-          <RefreshCw size={13} /> {T.retry}
-        </button>
-      </div>
-    );
-  }
-  if (!url) return <SkeletonBlock className={`${className} h-28 w-full`} />;
-  return (
-    <img src={url} alt="" onClick={() => window.open(href || url, "_blank")} loading="lazy"
-      className={`${className} w-full rounded-lg border cursor-zoom-in`}
-      style={{ maxHeight: 240, objectFit: "cover", borderColor: "var(--border)" }} />
-  );
-}
-
-// A sheet (Fillout → Google Drive) proof photo. Zooming opens the ORIGINAL Drive
-// link, which is the full-resolution copy — the proxied one is just what renders
-// in the card.
-const ReportPhoto = ({ src, T, className }) => (
-  <ProxyPhoto T={T} className={className} href={src} deps={[src]}
-    load={() => api.get("/api/leaders/photo", { params: { url: src }, responseType: "blob" })} />
-);
-
-// A bot-submission proof photo, streamed out of the Telegram archive channel.
-const BotPhoto = ({ id, T, className }) => (
-  <ProxyPhoto T={T} className={className} deps={[id]}
-    load={() => api.get(`/api/leader-tasks/media/${id}`, { responseType: "blob" })} />
-);
+// The proof-photo loaders (ProxyPhoto / ReportPhoto / BotPhoto) now live in
+// components/leaders/ProofPhoto.jsx — the AI triage view shows the SAME photos,
+// and two copies would have meant two blob lifecycles and two retry behaviours
+// for one image.
 
 /* ══ AI proof review (admin-only pilot) ═══════════════════════════════════════
  * Two questions are asked of each proof photo — is its drawn-on timestamp
@@ -1420,10 +1465,35 @@ export default function Leaders() {
   // asks, an admin decides).
   const showClearTab = isAdmin;
   const showLateTab = isAdmin || auth?.role === "supervisor";
+
+  // ── AI proof review (admin-only pilot) ─────────────────────────────────────
+  // `enabled: isAdmin` is the whole gate on the client: for anybody else the
+  // request is never made and every AI affordance below evaluates to null, so
+  // the page is byte-for-byte what it was. The server gates it again.
+  // Only flag/queue COUNTS per report come down here — verdict prose is fetched
+  // per report when its modal opens, so this stays small over years of rows.
+  // Read BEFORE the tab list, because the triage tab's existence depends on it.
+  const { data: aiData } = useQuery({
+    queryKey: ["leader-ai-overview"],
+    queryFn: () => api.get("/api/leader-ai/overview").then((r) => r.data),
+    enabled: isAdmin,
+    // A drain runs on a timer now (services/leader_ai.register_drain_job) as
+    // well as after a Refresh or a bot day-close, so the counts go stale on
+    // their own; refetching on focus follows it without polling all day.
+    refetchOnWindowFocus: true,
+  });
+  const aiOn = isAdmin && !!aiData?.enabled;
+  const aiFlags = aiData?.flags ?? {};
+  // What is still OWED, not what was ever flagged. The server only counts
+  // unresolved rows here, so the badge can reach zero.
+  const aiTodo = aiData?.counts?.open ?? 0;
+
   const [tabSaved, setTab] = usePersistentState(`${prefix}_tab`, "monitor");
   // A saved tab the viewer can no longer open (role changed, or a shift page
   // that has no such view) falls back to the dashboard rather than a blank one.
-  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab };
+  // `ai` is admin-only AND key-gated: with no GEMINI_API_KEY the whole feature
+  // is inert, so the tab must not exist rather than open onto an explanation.
+  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab, ai: aiOn };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
 
   // The queue's own feed: the tab badge needs the count before the tab is ever
@@ -1490,23 +1560,6 @@ export default function Leaders() {
     },
   });
 
-  // ── AI proof review (admin-only pilot) ─────────────────────────────────────
-  // `enabled: isAdmin` is the whole gate on the client: for anybody else the
-  // request is never made and every AI affordance below evaluates to null, so
-  // the page is byte-for-byte what it was. The server gates it again.
-  // Only flag/queue COUNTS per report come down here — verdict prose is fetched
-  // per report when its modal opens, so this stays small over years of rows.
-  const { data: aiData } = useQuery({
-    queryKey: ["leader-ai-overview"],
-    queryFn: () => api.get("/api/leader-ai/overview").then((r) => r.data),
-    enabled: isAdmin,
-    // A drain runs in the background after a Refresh or a bot day-close, so the
-    // counts go stale on their own; refetching on focus is enough to follow it
-    // without polling the server all day.
-    refetchOnWindowFocus: true,
-  });
-  const aiOn = isAdmin && !!aiData?.enabled;
-  const aiFlags = aiData?.flags ?? {};
   // Verdict prose for the ONE report whose detail modal is open. Keyed on the
   // uid so reopening a report reuses the cached answer.
   const { data: aiReport } = useQuery({
@@ -2171,6 +2224,20 @@ export default function Leaders() {
               </span>
             ),
           }] : []),
+          // Same to-do logic as «Kechikkan»: the badge is what is left to
+          // decide, so an admin who works the queue watches it reach zero.
+          ...(aiOn ? [{
+            value: "ai",
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {T.tabAi}
+                {aiTodo > 0 && (
+                  <span className="px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+                    style={{ background: "#eab308", color: "#1a1a1a" }}>{aiTodo}</span>
+                )}
+              </span>
+            ),
+          }] : []),
           ...(showClearTab ? [["clear", T.tabClear]] : []),
         ]} />
     </div>
@@ -2192,6 +2259,16 @@ export default function Leaders() {
         {headerBar}
         {tabsBar}
         <LateReports canDecide={!!lateData?.can_decide} />
+      </Layout>
+    );
+  }
+
+  if (tab === "ai") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {tabsBar}
+        <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm} />
       </Layout>
     );
   }
@@ -2488,16 +2565,21 @@ export default function Leaders() {
                  it reads the same whether nothing is suspect or nothing has
                  been reviewed yet. The counts say which. */
               <span className="flex items-center gap-2">
-                {!!aiData?.counts?.flagged && (
-                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: C_AI }}>
-                    {aiData.counts.flagged} {T.aiFlagsN}
-                  </span>
+                {/* OPEN, not lifetime-flagged: the strip is a to-do, and the
+                    tab beside it is where the doing happens. */}
+                {aiTodo > 0 && (
+                  <button onClick={() => setTab("ai")}
+                    className="text-[11px] font-semibold tabular-nums hover:underline underline-offset-2"
+                    style={{ color: C_AI }}>
+                    {aiTodo} {T.aiFlagsN}
+                  </button>
                 )}
                 {!!(aiData?.counts?.pending || aiData?.counts?.error) && (
                   <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
                     {(aiData.counts.pending || 0) + (aiData.counts.error || 0)} {T.aiPendingN}
                   </span>
                 )}
+                <AiCalibration cal={aiData?.calibration} T={T} />
                 <Button size="sm" variant="secondary" tint loading={aiRunMut.isPending}
                   icon={<Sparkles size={13} />} onClick={() => aiRunMut.mutate()}>
                   {aiRunMut.isPending ? T.aiRunning : T.aiRun}
@@ -2649,7 +2731,12 @@ export default function Leaders() {
               const desc = taskDetail(id, lang).n;
               // a question the form did not put to this leader — neither pass nor fail
               const unasked = tk.answered === false;
-              const tone = unasked ? "#94a3b8" : tk.done ? C_GOOD : C_BAD;
+              // A proof an admin rejected: the leader still answered «Ha», but
+              // the day no longer counts it. The card has to read as failed —
+              // otherwise the modal shows a green task next to a score that
+              // already deducted it, and nothing on screen explains the gap.
+              const voided = !!tk.ai_rejected;
+              const tone = unasked ? "#94a3b8" : (tk.done && !voided) ? C_GOOD : C_BAD;
               const rev = aiOn ? aiReport?.tasks?.[String(id)] : null;
               // Several photos side by side rather than stacked: a 3-photo task
               // used to be a card taller than the modal, which buried the next
@@ -2667,11 +2754,19 @@ export default function Leaders() {
                             answer, not instead of it: a task can be genuinely
                             done AND have a suspect photo, and the header has to
                             show both at once. */}
-                        {rev?.status === "flagged" && <Sparkles size={13} color={C_AI} />}
+                        {rev?.status === "flagged" && !voided && <Sparkles size={13} color={C_AI} />}
                         {unasked ? <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>
-                          : tk.done ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
+                          : (tk.done && !voided) ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
                       </span>
                     </div>
+                    {/* Stated before the leader's own answer, because it is the
+                        reason that answer no longer stands. */}
+                    {voided && (
+                      <span className="inline-flex items-center gap-1 mb-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                        style={{ background: hexA(C_BAD, 0.14), color: C_BAD, border: `1px solid ${hexA(C_BAD, 0.3)}` }}>
+                        <Ban size={10} />{T.aiRejChip}
+                      </span>
+                    )}
                     {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
                     {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{showReason(tk.reason, T) || (tk.done ? T.noIssues : T.noReason)}</p>}
                     {nPhotos > 0 && (

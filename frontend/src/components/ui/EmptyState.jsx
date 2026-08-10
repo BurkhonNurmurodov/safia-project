@@ -6,11 +6,15 @@ export default function EmptyState({
   message = "Upload verifix files to see data here.",
   showUploadLink = true,
   height = "h-40",
+  // The lead glyph. Defaults to the "no data yet" database icon this component
+  // was born for; a section whose emptiness means something else says so with
+  // its own icon (an emptied review queue is an achievement, not a gap).
+  icon: Icon = DatabaseZap,
 }) {
   const navigate = useNavigate();
   return (
     <div className={`flex flex-col items-center justify-center ${height} gap-3`}>
-      <DatabaseZap size={28} style={{ color: "var(--text-4)" }} />
+      <Icon size={28} style={{ color: "var(--text-4)" }} />
       <div className="text-center">
         <div className="text-sm font-medium" style={{ color: "var(--text-2)" }}>{title}</div>
         <div className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>{message}</div>

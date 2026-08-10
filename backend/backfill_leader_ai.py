@@ -326,6 +326,7 @@ def main() -> int:
 _FLAG_LABEL = {
     "date_mismatch": "date outside the shift window",
     "no_date":       "no capture timestamp on the photo",
+    "off_topic":     "photo is not about the task it was filed under",
     "not_proven":    "photo does not show the work done",
     "unreadable":    "photo unreadable",
 }

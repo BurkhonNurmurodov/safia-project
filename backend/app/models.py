@@ -1312,7 +1312,7 @@ class LeaderAiReview(Base):
     # pending → ok | flagged | skipped | error
     status     = Column(String(10), nullable=False, default="pending", index=True)
     # Machine-readable reasons, rendered as chips: "date_mismatch" | "no_date" |
-    # "not_proven" | "unreadable". Empty on a clean pass.
+    # "off_topic" | "not_proven" | "unreadable". Empty on a clean pass.
     flags      = Column(JSONB, nullable=False, default=list)
     # The timestamp the model actually read off the image, verbatim, so an
     # admin can judge the judge without opening the photo.

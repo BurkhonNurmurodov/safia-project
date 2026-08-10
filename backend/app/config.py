@@ -54,9 +54,14 @@ class Settings(BaseSettings):
     # Free-tier vision model. A "-latest" alias on purpose: gemini-2.5-flash was
     # already retired for new keys ("no longer available to new users") while
     # still being listed, and a pinned version 404s the day that happens again.
-    # Lite is the default because the binding constraint is free-tier requests
-    # per DAY while the backfill drains, not per-photo accuracy.
-    gemini_model: str = "gemini-flash-lite-latest"
+    # NOT the lite alias any more. Lite was right while the backfill was the
+    # whole job — requests per DAY was the binding constraint and the reviewer
+    # only had to read a clock off an image. It now also judges whether the
+    # photo is even about the task it was filed under, which is a semantic
+    # comparison against the task's own description; lite (today
+    # gemini-3.5-flash-lite) answers that noticeably worse than flash (today
+    # gemini-3.6-flash) for a handful of thinking tokens a photo.
+    gemini_model: str = "gemini-flash-latest"
     # Reviews attempted per drain. The free tier caps requests per minute AND
     # per day, so a full backfill drains in slices rather than failing at once.
     gemini_batch_size: int = 40

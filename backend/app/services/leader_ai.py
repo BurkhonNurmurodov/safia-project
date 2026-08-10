@@ -1,6 +1,6 @@
 """AI review of leader-checklist proof photos.
 
-Two questions per task, both asked of the image itself:
+Three questions per task, all asked of the image itself:
 
 1. **Is the photo from the right day?** Every proof photo carries a drawn-on
    date-time. The expected window is the LEADER's shift submission window —
@@ -8,19 +8,29 @@ Two questions per task, both asked of the image itself:
    so a 02:00 photo carries tomorrow's calendar date and is still on time.
    Judging shift 2 against a bare calendar date would flag a correct photo
    every single night.
-2. **Does the photo actually show the task done?** Measured against the written
+2. **Is the photo even about this task?** Measured against the task's own name
+   and its `note_*` description — the line the leader is shown in the bot for
+   what to photograph ("Aylanib chiqish chek-listi", "Nazorat varaqasi"). This
+   question needs nothing authored: every task already has a description, so a
+   photo filed under the wrong task is caught on day one. It is deliberately
+   biased toward "yes" — a related photo that is merely poor is question 3's
+   problem, not this one's, and a relevance check that fires on doubt turns the
+   queue back into noise.
+3. **Does the photo actually show the task done?** Measured against the written
    criteria an admin sets per task (global → supervisor → leader, the same
-   chain as name/weight/min_media). With no criteria written yet, only question
-   1 is asked — the feature is useful before anyone fills the text in, and gets
-   stricter as they do.
+   chain as name/weight/min_media). With no criteria written yet this question
+   is skipped — but 1 and 2 still run, so the feature is useful before anyone
+   fills the text in and gets stricter as they do.
 
 The queue IS the `leader_ai_reviews` table: discovery inserts `pending` rows,
 a drain turns them into verdicts. Both collection layers feed it — bot entries
 and Google-Form rows — keyed by a `ref` that survives the leaders sheet's
 wipe-and-reload re-sync (see LeaderAiReview).
 
-There is no scheduler on this host, so a drain is kicked by the two events that
-create work: the leaders-sheet Refresh and a leader closing their bot day.
+A drain is kicked by the two events that create work — the leaders-sheet
+Refresh and a leader closing their bot day — and, since the platform grew a
+scheduler, by a periodic job as well (`register_drain_job`). Before that timer
+existed a report nobody happened to refresh stayed unreviewed indefinitely.
 """
 import ipaddress
 import logging
@@ -84,6 +94,7 @@ _SCHEMA = {
     "properties": {
         "image_date": {"type": "STRING"},
         "date_ok": {"type": "BOOLEAN"},
+        "matches_task": {"type": "BOOLEAN"},
         "proves_done": {"type": "BOOLEAN"},
         "readable": {"type": "BOOLEAN"},
         "reason_uz": {"type": "STRING"},
@@ -91,7 +102,8 @@ _SCHEMA = {
         "reason_ru": {"type": "STRING"},
         "reason_en": {"type": "STRING"},
     },
-    "required": ["image_date", "date_ok", "proves_done", "readable",
+    "required": ["image_date", "date_ok", "matches_task", "proves_done",
+                 "readable",
                  "reason_uz", "reason_uz_cyrl", "reason_ru", "reason_en"],
 }
 
@@ -140,11 +152,46 @@ def criteria_for(db: Session, task_id: int, manager_id: int | None,
     return (td.criteria or "").strip() if td and td.criteria else ""
 
 
-def task_label(db: Session, task_id: int) -> str:
+def task_label(db: Session, task_id: int, manager_id: int | None = None,
+               leader_id: int | None = None) -> str:
+    """The task's name, resolved leader → supervisor → global when the caller
+    knows whose report this is.
+
+    A supervisor may rename a task for their own leaders, and the renamed text
+    is what the leader was actually shown in the bot. Describing the photo to
+    the model under the GLOBAL name would judge it against a wording nobody
+    involved ever read. Callers that only have a task id (queue listings) pass
+    neither and get the global name, which is right for a register column.
+    """
+    if leader_id:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if row and (row.name_ru or row.name_uz or row.name_en):
+            return row.name_ru or row.name_uz or row.name_en
+    if manager_id:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if row and (row.name_ru or row.name_uz or row.name_en):
+            return row.name_ru or row.name_uz or row.name_en
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
     if not td:
         return f"#{task_id}"
     return td.name_ru or td.name_uz or td.name_en or f"#{task_id}"
+
+
+def task_note(db: Session, task_id: int) -> str:
+    """What the leader is told to photograph — «Foto hisobot», «Nazorat
+    varaqasi», «Aylanib chiqish chek-listi».
+
+    Global only: `note_*` lives on LeaderTaskDef alone, unlike name/criteria,
+    so there is no chain to walk. This is the description the relevance
+    question is judged against, and it exists for every seeded task — which is
+    why that question works without an admin writing a single criterion.
+    """
+    td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+    if not td:
+        return ""
+    return (td.note_ru or td.note_uz or td.note_en or "").strip()
 
 
 # ── the expected date window ─────────────────────────────────────────────────
@@ -171,7 +218,7 @@ def date_window(date: str, shift: int | None) -> tuple[str, str]:
     return f"{date} 00:00", f"{date} 23:59"
 
 
-def _prompt(*, task: str, criteria: str, date: str, shift: int | None,
+def _prompt(*, task: str, note: str, criteria: str, date: str, shift: int | None,
             n_images: int, omitted: int) -> str:
     lo, hi = date_window(date, shift)
     # Shift 2's window crosses midnight, so it is spelled out as two concrete
@@ -196,16 +243,36 @@ def _prompt(*, task: str, criteria: str, date: str, shift: int | None,
         f"Bu 1-smena: ish kuni oddiy kalendar kuni — rasmdagi sana {date} "
         f"bo'lishi kerak."
     )
+    # Relevance is asked against the task name plus its `note_*` description —
+    # the same line the leader reads in the bot for what to photograph. It is
+    # deliberately lenient: the failure it exists to catch is a photo about
+    # something else entirely (yesterday's screenshot, a different form, a
+    # personal picture), not a weak photo of the right thing. A strict reading
+    # would double-flag every `not_proven` row and make the chip meaningless.
+    what = f"«{task}»" + (f" — {note}" if note else "")
+    note_line = f"TALAB QILINGAN ISBOT: {note}\n" if note else ""
+    match_block = (
+        "2) MAVZU MOSLIGI. Bu vazifa uchun aynan nima suratga olinishi kerakligi "
+        f"yuqorida yozilgan: {what}.\n"
+        "Rasm(lar) shu narsani ko'rsatyaptimi?\n"
+        "- Ha, ya'ni rasm shu vazifaga aloqador — matches_task=true.\n"
+        "- Yo'q, ya'ni rasm butunlay boshqa narsa: boshqa hujjat yoki shakl, "
+        "boshqa jarayon, shaxsiy surat, tasodifiy ekran, vazifaga hech qanday "
+        "aloqasi yo'q rasm — matches_task=false.\n"
+        "MUHIM: ikkilansang matches_task=true qo'y. Rasm mavzuga aloqador "
+        "bo'lsa-yu sifatsiz, chala yoki to'liq bo'lmasa — bu MAVZU muammosi "
+        "EMAS, buni keyingi savolda ayt."
+    )
     done_block = (
-        "2) ISBOT. Quyida vazifa qanday bajarilgan hisoblanishi yozilgan. "
+        "3) ISBOT. Quyida vazifa qanday bajarilgan hisoblanishi yozilgan. "
         "Rasm(lar) shu talabni bajarilganini KO'RSATyaptimi?\n"
         f"TALAB: {criteria}\n"
         "Agar rasm talabga aloqador bo'lmasa, yarim bajarilgan bo'lsa, bo'sh "
         "shakl/jadval ko'rsatsa yoki talabni tasdiqlamasa — proves_done=false."
         if criteria else
-        "2) ISBOT. Bu vazifa uchun yozma talab kiritilmagan, shuning uchun "
-        "mazmunini BAHOLAMA: rasm umuman o'qib bo'lmaydigan yoki bo'sh "
-        "bo'lmasa — proves_done=true qo'y."
+        "3) ISBOT. Bu vazifa uchun yozma talab kiritilmagan, shuning uchun "
+        "BAJARILGANLIK darajasini baholama: yuqoridagi mavzu mosligi tekshiruvi "
+        "o'tgan bo'lsa — proves_done=true qo'y."
     )
     omit = (f"\nEslatma: bu vazifada ko'proq rasm bor, faqat birinchi "
             f"{n_images} tasi yuborildi ({omitted} tasi yuborilmadi).") if omitted else ""
@@ -213,11 +280,11 @@ def _prompt(*, task: str, criteria: str, date: str, shift: int | None,
 Senga bitta vazifa uchun {n_images} ta isbot rasmi berilgan.
 
 VAZIFA: {task}
-HISOBOT SANASI: {date}
+{note_line}HISOBOT SANASI: {date}
 {shift_note}
 RUXSAT ETILGAN VAQT OYNASI: {lo} dan {hi} gacha.{omit}
 
-Ikkita savolga javob ber:
+Quyidagi savollarga javob ber:
 
 1) SANA. Sen rasm QACHON OLINGANINI tekshirasan. Buning uchun FAQAT quyidagi
 uch manbadan biri hisobga olinadi:
@@ -258,9 +325,11 @@ avgust).
 Sababda sanani QAYERDAN o'qiganingni ayt (masalan: «Windows soati», «macOS
 menyu satri», «kamera muhri»).
 
+{match_block}
+
 {done_block}
 
-3) O'QILISHI. Rasm juda xira, qorong'i yoki kesilgan bo'lib, hech narsani
+4) O'QILISHI. Rasm juda xira, qorong'i yoki kesilgan bo'lib, hech narsani
 aniqlab bo'lmasa — readable=false.
 
 Sabablarni TO'RT tilda yoz (reason_uz — o'zbek lotin, reason_uz_cyrl — o'zbek
@@ -596,7 +665,8 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         return "image"
 
     prompt = _prompt(
-        task=task_label(db, rev.task_id),
+        task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
+        note=task_note(db, rev.task_id),
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
         date=rev.date, shift=rev.shift,
         n_images=len(images), omitted=omitted,
@@ -623,6 +693,11 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         flags.append("no_date")
     elif not out.get("date_ok", False):
         flags.append("date_mismatch")
+    # Ordered strongest-claim first: "this photo is about something else" is a
+    # bigger statement than "it doesn't finish the job", and the chip row reads
+    # in this order.
+    if not out.get("matches_task", True):
+        flags.append("off_topic")
     if not out.get("proves_done", True):
         flags.append("not_proven")
 
@@ -728,6 +803,10 @@ def counts(db: Session) -> dict:
 #            discipline queue is what makes a reviewer stop trusting the queue.
 BUCKETS = ("forged", "undone", "date", "tech")
 _DATE_FLAGS = ("date_mismatch", "no_date")
+# Both say "the picture does not back this claim" — one because it is about
+# something else, one because it does not go far enough — so they bucket
+# identically. Wrong subject AND wrong day is the forgery signature either way.
+_CONTENT_FLAGS = ("off_topic", "not_proven")
 
 
 def bucket_of(flags: list[str] | None) -> str:
@@ -735,7 +814,7 @@ def bucket_of(flags: list[str] | None) -> str:
     if "unreadable" in f:
         return "tech"
     bad_date = bool(f & set(_DATE_FLAGS))
-    if "not_proven" in f:
+    if f & set(_CONTENT_FLAGS):
         return "forged" if bad_date else "undone"
     return "date" if bad_date else "undone"
 
