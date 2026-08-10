@@ -715,20 +715,105 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     return "done"
 
 
+# ── the active run's dates: what confines the drain ──────────────────────────
+# The record is WRITTEN by the /leader-ai/recheck endpoint, which owns its
+# shape; the drain only ever reads the range off it. The key lives here rather
+# than in the router because the dependency runs router → service.
+RUN_SETTING = "leader_ai_run"
+
+
+def _active_run_range(db: Session) -> tuple[str | None, str | None] | None:
+    """The dates an operator-started run is waiting on, or None for "anywhere".
+
+    An operator who picks one day is asking for that day. Until this existed the
+    picker narrowed the progress bar's denominator and NOTHING else: the drain
+    took the newest pending row anywhere, so a one-day run quietly walked
+    backwards through the whole corpus spending quota on dates nobody asked
+    about, while the bar read "5 of 222 · 2%" beside "19,998 left".
+
+    Returns None for a run carrying no dates (that IS the whole corpus) and for
+    one already drained, so a confinement can never outlive its work.
+    """
+    import json
+
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is None:
+        return None
+    try:
+        run = json.loads(row.value)
+    except Exception:
+        return None            # a corrupt record is /progress's to clean up
+    if run.get("drained_at"):
+        return None
+    lo, hi = run.get("from"), run.get("to")
+    return (lo, hi) if (lo or hi) else None
+
+
+def _release_run(db: Session) -> None:
+    """Mark the run's range drained so it stops confining the queue.
+
+    THE stall guard. `/progress` retires a finished run, but only while somebody
+    has the page open — and nobody watches a backfill overnight. A record left
+    behind by a closed tab would otherwise pin the drain to a range with nothing
+    in it forever, which is the entire periodic backfill dying silently.
+
+    The row SURVIVES: deleting it here would rob `/progress` of the one poll
+    that reports the run finished. It just stops meaning "confine to this".
+    """
+    import json
+
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is None:
+        return
+    try:
+        run = json.loads(row.value)
+    except Exception:
+        return
+    if run.get("drained_at"):
+        return
+    run["drained_at"] = datetime.now(timezone.utc).isoformat()
+    row.value = json.dumps(run)
+    db.commit()
+
+
 def drain(db: Session, limit: int | None = None) -> dict:
     """Review up to `limit` pending rows, newest report first. Returns counts;
-    `quota` marks a run cut short by the free tier so the UI can say so."""
+    `quota` marks a run cut short by the free tier so the UI can say so.
+
+    Confined to the active run's dates when there is one (`_active_run_range`).
+    EVERY caller drains through here, the timer included — a periodic firing
+    that ignored the confinement would undo it twenty minutes into the run.
+    """
     if not gemini.available():
         return {"ok": False, "reason": "no_key", "done": 0, "flagged": 0, "errors": 0}
     limit = limit or settings.gemini_batch_size
-    rows = (
+    q = (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status.in_(("pending", "error")),
                 LeaderAiReview.attempts < MAX_ATTEMPTS)
-        .order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.asc())
+    )
+    rng = _active_run_range(db)
+    if rng:
+        lo, hi = rng
+        if lo:
+            q = q.filter(LeaderAiReview.date >= lo)
+        if hi:
+            q = q.filter(LeaderAiReview.date <= hi)
+    rows = (
+        q.order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.asc())
         .limit(limit)
         .all()
     )
+    if rng and not rows:
+        # The run's dates are done. Release the confinement and stop for THIS
+        # pass rather than rolling straight on: it leaves `/progress` a poll in
+        # which to report the run finished, instead of the operator's one-day
+        # run becoming twenty thousand rows in the same breath.
+        _release_run(db)
+        log.info("leader-ai: run range %s..%s drained, backfill resumes next kick",
+                 rng[0] or "*", rng[1] or "*")
+        return {"ok": True, "done": 0, "flagged": 0, "errors": 0,
+                "quota": False, "aborted": None, "runFinished": True}
     done = flagged = errors = 0
     quota = False
     aborted = None

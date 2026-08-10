@@ -30,6 +30,7 @@ const TXT = {
   uz: {
     title: "AI tekshiruvi ketmoqda", of: "dan", checked: "tekshirildi",
     left: "qoldi", eta: "taxminan {t} qoldi", etaSoon: "tugay deb qoldi",
+    outside: "oraliqdan tashqarida {n}",
     stop: "To'xtatish", done: "Tekshiruv tugadi",
     doneN: "{n} ta xulosa yozildi", hide: "Yopish",
     cTitle: "Navbatdagi ishlar bekor qilinsinmi?",
@@ -43,6 +44,7 @@ const TXT = {
   uz_cyrl: {
     title: "AI текшируви кетмоқда", of: "дан", checked: "текширилди",
     left: "қолди", eta: "тахминан {t} қолди", etaSoon: "тугай деб қолди",
+    outside: "оралиқдан ташқарида {n}",
     stop: "Тўхтатиш", done: "Текширув тугади",
     doneN: "{n} та хулоса ёзилди", hide: "Ёпиш",
     cTitle: "Навбатдаги ишлар бекор қилинсинми?",
@@ -56,6 +58,7 @@ const TXT = {
   ru: {
     title: "Идёт проверка ИИ", of: "из", checked: "проверено",
     left: "осталось", eta: "осталось примерно {t}", etaSoon: "почти готово",
+    outside: "вне периода: {n}",
     stop: "Остановить", done: "Проверка завершена",
     doneN: "Записано выводов: {n}", hide: "Закрыть",
     cTitle: "Отменить работу в очереди?",
@@ -69,6 +72,7 @@ const TXT = {
   en: {
     title: "AI review running", of: "of", checked: "checked",
     left: "left", eta: "about {t} left", etaSoon: "almost done",
+    outside: "{n} outside this range",
     stop: "Stop", done: "Review finished",
     doneN: "{n} verdicts written", hide: "Dismiss",
     cTitle: "Cancel the queued work?",
@@ -144,7 +148,11 @@ export default function AiProgress({ showIdle = false }) {
       open
       tone="danger"
       title={T.cTitle}
-      message={fmt(T.cBody, (p?.pending ?? 0).toLocaleString())}
+      /* The GLOBAL count, never the run's. Stop clears the whole queue by
+         design — a dialog quoting the 217 rows left of today while the button
+         removes 20,000 is the one number in this component that must not be
+         scoped. */
+      message={fmt(T.cBody, (p?.pendingAll ?? p?.pending ?? 0).toLocaleString())}
       confirmLabel={T.cGo}
       cancelLabel={T.cCancel}
       loading={stop.isPending}
@@ -280,6 +288,15 @@ export default function AiProgress({ showIdle = false }) {
           <span>·</span>
           <span>{p.pending.toLocaleString()} {T.left}</span>
           {eta && <><span>·</span><span>{eta}</span></>}
+          {/* Queued rows on dates this run does not cover. The bar is scoped to
+              the run now, which is the only way its percentage and its ETA can
+              agree with its remainder — but silently dropping the rest of the
+              backlog would read as "picking one day emptied the queue", and it
+              did not. The standing backfill picks these up when the run ends. */}
+          {p.pendingAll > p.pending && (
+            <><span>·</span>
+            <span>{fmt(T.outside, (p.pendingAll - p.pending).toLocaleString())}</span></>
+          )}
         </div>
       </div>
 

@@ -1011,7 +1011,12 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
 # come from a start timestamp plus a total. A table would add a schema, a
 # lifecycle and a second source of truth about work whose real state already
 # lives in `leader_ai_reviews.status`.
-RUN_SETTING = "leader_ai_run"
+#
+# Defined in the SERVICE, not here: the drain reads the same record to confine
+# itself to an active run's dates, and the dependency only runs router →
+# service. Two constants would drift, and the failure they'd drift into is a
+# drain that ignores the range while the bar swears it is honouring it.
+RUN_SETTING = leader_ai.RUN_SETTING
 
 
 def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
@@ -1214,10 +1219,34 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .count()
     )
     total = max(1, int(run.get("total") or 1))
+
+    # What is left OF THIS RUN — scoped to the dates it was started for, which
+    # is also what the drain now works through. `pending` above is the whole
+    # table, and reporting that beside a one-day run is a bar contradicting
+    # itself: "5 of 222", the percentage and the ETA all describe the run, so
+    # the remainder has to as well, or the operator reads 2% and 25 minutes
+    # next to 19,998 rows and cannot tell which number to believe.
+    #
+    # The global figure still ships, as `pendingAll`. The queue outside this
+    # run is real, it is what Stop would clear, and dropping it from the payload
+    # would only move the surprise later.
+    lo, hi = run.get("from"), run.get("to")
+    if lo or hi:
+        q = (db.query(LeaderAiReview)
+             .filter(LeaderAiReview.status.in_(("pending", "error")),
+                     LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS))
+        if lo:
+            q = q.filter(LeaderAiReview.date >= lo)
+        if hi:
+            q = q.filter(LeaderAiReview.date <= hi)
+        pending_run = q.count()
+    else:
+        pending_run = pending
+
     # A run ends when nothing is left to drain, not when done reaches total: a
     # row can die on `error` after its attempts run out and never be judged, and
     # a bar that waits for it would hang at 97% forever.
-    finished = pending == 0
+    finished = pending_run == 0
     if finished:
         db.delete(row)
         db.commit()
@@ -1227,7 +1256,8 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "justFinished": finished,
         "total": total,
         "done": min(done, total),
-        "pending": pending,
+        "pending": pending_run,
+        "pendingAll": pending,
         "startedAt": run["started_at"],
         "scope": run.get("scope"),
         "from": run.get("from"),
