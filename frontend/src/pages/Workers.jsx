@@ -227,6 +227,10 @@ export default function Workers() {
       ? (p.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" })
       : { key, dir: key === "name" ? "asc" : "desc" }));
   }
+  // `measure` resolved to the per-role field the role columns read. It must sit
+  // ABOVE this memo — the deps array reads it at render, so declaring it with
+  // its siblings in «the two switches, resolved» below is a TDZ crash.
+  const roleField = measure === "roster" ? "avg_roster_by_role" : "avg_came_by_role";
   const sortedRows = useMemo(() => {
     if (!sort.key) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -291,7 +295,6 @@ export default function Workers() {
   // confirmed days as the KPI row, so a treemap block and its own table row
   // carry the SAME number instead of two that have to be reconciled.
   const round1     = (v) => Math.round(v * 10) / 10;
-  const roleField  = measure === "roster" ? "avg_roster_by_role" : "avg_came_by_role";
   const roleVal    = (m, r) => (m[roleField]?.[r] ?? 0);
   const measureLabel = measure === "roster" ? t("workers.msRoster") : t("workers.msCame");
   // On «Jami» the pair is read straight off the row rather than re-summed from
