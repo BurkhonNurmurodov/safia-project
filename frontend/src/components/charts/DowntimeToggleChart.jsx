@@ -46,12 +46,15 @@ function niceAxisMax(raw) {
  * position/size as it morphs) the legend is always off and the 50-min threshold line is
  * always on — neither depends on the active view.
  *
- * Labels: a total bar shows its value centred *inside* the bar, but a short bar can't hold
- * the text — it would spill past both ends. When the label is wider than the bar we drop the
- * inside label and instead paint it just past the bar's end (outside, to the right) via the
- * stacked-total label. Whether a bar is a single "total" bar is inferred from the live series
- * values at draw time, so this needs no extra prop and keeps the `options` identity stable
- * across the Total⇄Categories toggle (preserving the morph animation).
+ * Labels: every segment — a solid total bar or a category slice — prints its value centred
+ * inside itself only when the text actually fits; a segment too narrow stays silent instead
+ * of spilling over its neighbours. A silent total bar paints its value just past the bar's
+ * end (outside, to the right) via the stacked-total label. A category stack anchors its SUM
+ * there instead — always, except when that would merely repeat a lone segment's inside label
+ * or the stack runs too close to the plot edge — and unlabelled slivers stay readable via
+ * the per-segment tooltip. Whether a bar is a single "total" bar is inferred from the live
+ * series values at draw time, so this needs no extra prop and keeps the `options` identity
+ * stable across the Total⇄Categories toggle (preserving the morph animation).
  *
  * This component opts out of the React Compiler (`"use no memo"`) on purpose: the option
  * memo is keyed on `lang` rather than the `t()` / `tl()` closures (which the LangContext
