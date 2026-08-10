@@ -26,8 +26,6 @@ const TITLE_KEYS = {
   "/production":       "nav.production",
   "/trudoyomkost":     "nav.trudoyomkost",
   "/leaders":          "nav.leaders",
-  "/leaders-shift1":   "nav.leadersShift1",
-  "/leaders-shift2":   "nav.leadersShift2",
   "/cells":            "nav.cells",
   "/kaizen":           "nav.kaizen",
   "/quality":          "nav.quality",

@@ -1068,7 +1068,22 @@ function CardStat({ label, value, pct, color, active }) {
 /* A podium card — places 1-3, or the bottom three when the list is flipped.
  * Either way it keeps its REAL place number, so the flipped state reads as
  * "the three who need help" rather than as a fake podium. */
-function StandCard({ e, worst, metric, T, name, cuts, trend }) {
+// S1/S2 identity chip beside a name — rendered only when the view mixes both
+// shifts (the Smena filter on «All»), where a combined ranking is unreadable
+// without knowing which shift a row belongs to. Neutral chrome on purpose:
+// shift is an identity, not a status, so it takes no traffic-light color.
+function ShiftChip({ shift, T }) {
+  if (!shift) return null; // unresolved unit — claim nothing
+  return (
+    <span className="flex-shrink-0 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums leading-none"
+      title={shift === 1 ? T.shift1 : T.shift2}
+      style={{ border: "1px solid var(--border)", color: "var(--text-3)" }}>
+      S{shift}
+    </span>
+  );
+}
+
+function StandCard({ e, worst, metric, T, name, cuts, trend, shift }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
   const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
@@ -1100,6 +1115,7 @@ function StandCard({ e, worst, metric, T, name, cuts, trend }) {
       <div className="relative mt-2 flex items-center gap-1.5">
         <TierChip value={ranked} T={T} cuts={cuts} />
         {trend && <DeltaChip trend={trend} e={e} T={T} />}
+        <ShiftChip shift={shift} T={T} />
       </div>
 
       <div className="relative grid grid-cols-3 gap-2 mt-2.5">
@@ -1338,14 +1354,12 @@ function DayGrid({ rows, dates, dataMax, T, nm, nameHead }) {
 }
 
 // ── main page ──────────────────────────────────────────────────────────────────
-// shiftLock: 1 | 2 pins the page to one shift's units — the two entries admins
-// and top-managers get in the nav («… · 1-smena» / «… · 2-smena»). Everyone
-// else opens the unlocked page and sees both shifts, scoped to their own rows.
-// The DATA is the same feed either way: /api/leaders serves shift-2 days from
-// the bot when the leader closed one there and from the sheet otherwise, so the
-// two pages differ only in which units they show — plus the admin-only data
-// clear tab, which rides on the shift-2 page where the bot data lives.
-export default function Leaders({ shiftLock = null }) {
+// ONE page for every role (the 2026-08-05 per-shift admin copies were merged
+// back on 2026-08-10): the Smena filter narrows to a shift, «All» shows both
+// with S1/S2 chips on the standings so a mixed ranking stays readable. The DATA
+// is one feed: /api/leaders serves shift-2 days from the bot when the leader
+// closed one there and from the sheet otherwise, scoped per role server-side.
+export default function Leaders() {
   const { auth } = useAuth();
   const { seesAllOn } = useCapabilities();
   const { lang } = useLang();
@@ -1373,21 +1387,17 @@ export default function Leaders({ shiftLock = null }) {
   // each still only reads their own scoped rows afterwards. The sheet is still
   // the history behind both shifts, so both locked pages keep it.
   const canRefresh = true;
-  const pageTitle = shiftLock ? `${T.title} · ${shiftLock === 1 ? T.shift1 : T.shift2}` : T.title;
+  const pageTitle = T.title;
 
-  // Filters persist across visits, namespaced per route — the unlocked page and
-  // the two shift pages are one component but must not share saved state.
-  // shiftLock is fixed for the lifetime of a mount, so the keys are stable.
-  const prefix = shiftLock ? `leaders${shiftLock}` : "leaders";
+  // Filters persist across visits under the pre-split "leaders" prefix; the
+  // retired shift pages' leaders1_*/leaders2_* keys are orphaned, not read.
+  const prefix = "leaders";
 
   // Period — a concrete date range picked with the same control as the global
   // filters (presets + calendar popover). Defaults to the last 7 days.
   const [startDate, setStartDate] = usePersistentState(`${prefix}_date_from`, () => isoShift(todayISO(), -6));
   const [endDate, setEndDate] = usePersistentState(`${prefix}_date_to`, () => todayISO());
-  // On a shift-locked page the picker is gone and the lock does the narrowing,
-  // so the saved value must not narrow a second time.
-  const [fShiftSaved, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
-  const fShift = shiftLock ? null : fShiftSaved;
+  const [fShift, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
   const [fSup, setFSup] = usePersistentState(`${prefix}_supervisor`, "All");
   const [fLeader, setFLeader] = usePersistentState(`${prefix}_leader`, "All");
   const [standMode, setStandMode] = usePersistentState(`${prefix}_stand_mode`, "leader");
@@ -1401,15 +1411,15 @@ export default function Leaders({ shiftLock = null }) {
   const [detail, setDetail] = useState(null);
   const [taskInfo, setTaskInfo] = useState(false);
 
-  // The bot-data clear tool is the page's second VIEW, admin-only and only on
-  // the shift-2 page — that is the shift whose days the bot files, so it is the
-  // only page where deleting one changes what anybody sees.
-  const showClearTab = isAdmin && shiftLock === 2;
-  // «Kechikkan hisobotlar» — the review queue for days the shift-1 submission
-  // window voided. Shown to the two roles that can act in that flow (a brigadir
-  // asks, an admin decides), and never on the shift-2 page, where the rule does
-  // not apply and the tab could only ever be empty.
-  const showLateTab = (isAdmin || auth?.role === "supervisor") && shiftLock !== 2;
+  // The page's tool tabs are shift-specific WORKFLOWS, not shift-filtered
+  // views — each carries its own filters, so both stay put no matter where the
+  // Smena filter points. The bot-data clear tool is admin-only (shift 2 is
+  // where the bot files days, so deleting one changes what everybody sees);
+  // «Kechikkan hisobotlar» is the review queue for days the shift-1 submission
+  // window voided, shown to the two roles that act in that flow (a brigadir
+  // asks, an admin decides).
+  const showClearTab = isAdmin;
+  const showLateTab = isAdmin || auth?.role === "supervisor";
   const [tabSaved, setTab] = usePersistentState(`${prefix}_tab`, "monitor");
   // A saved tab the viewer can no longer open (role changed, or a shift page
   // that has no such view) falls back to the dashboard rather than a blank one.
@@ -1447,14 +1457,25 @@ export default function Leaders({ shiftLock = null }) {
     queryKey: ["leaders"],
     queryFn: () => api.get("/api/leaders").then((r) => r.data),
   });
-  // A shift-locked page drops every other unit's rows before anything else runs,
-  // so the pickers, the scoring window and the standings all see one shift only.
-  // Rows the backend could not resolve to a unit carry a null shift and fall out
-  // of both locked pages — they stay visible on the unlocked one.
-  const rows = useMemo(() => {
-    const all = data?.data ?? [];
-    return shiftLock ? all.filter((r) => r.shift === shiftLock) : all;
-  }, [data, shiftLock]);
+  // Rows the backend could not resolve to a unit carry a null shift: they show
+  // under «All» and drop out when the Smena filter narrows — visible somewhere,
+  // never padded onto a shift they may not belong to.
+  const rows = useMemo(() => data?.data ?? [], [data]);
+  // Name → shift, for the S1/S2 chips the combined view prints beside people:
+  // a unit lives in one shift, so any of a person's rows answers for them.
+  const shiftOf = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) {
+      if (r.shift == null) continue;
+      if (r.leader && !m.has(r.leader)) m.set(r.leader, r.shift);
+      if (r.supervisor && !m.has(r.supervisor)) m.set(r.supervisor, r.shift);
+    }
+    return m;
+  }, [rows]);
+  // Chips only where two shifts can actually meet: the Smena filter on «All»,
+  // seen by a viewer whose scope spans shifts. A supervisor's unit and a
+  // leader's own rows are single-shift by construction — the chip is noise.
+  const showShiftChips = fShift == null && !isSupervisor && !isLeader;
   const lastSynced = fmtDateTime(data?.last_synced);
 
   // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
@@ -2194,9 +2215,8 @@ export default function Leaders({ shiftLock = null }) {
         {(!isLeader) && (
           <FilterPanel
             sections={[
-              // Shift — hidden for supervisors (locked to their unit/shift) and
-              // on the two shift-locked pages, where it would be one-value.
-              ...(!isSupervisor && !shiftLock ? [{
+              // Shift — hidden for supervisors (locked to their unit/shift).
+              ...(!isSupervisor ? [{
                 key: "shift", icon: Layers, label: T.shift,
                 active: fShift != null,
                 display: fShift != null ? `S${fShift}` : "",
@@ -2356,7 +2376,8 @@ export default function Leaders({ shiftLock = null }) {
           {!standSearch.trim() && standTop.length === 3 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3">
               {standTop.map((e) => (
-                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} trend={standTrend} />
+                <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} trend={standTrend}
+                  shift={showShiftChips ? shiftOf.get(e.name) : null} />
               ))}
             </div>
           )}
@@ -2393,6 +2414,7 @@ export default function Leaders({ shiftLock = null }) {
                         <span className="inline-flex items-center gap-2">
                           <Avatar name={nm(e.name)} size={24} />
                           <span style={{ color: "var(--text-1)" }}>{initialSurname(nm(e.name))}</span>
+                          {showShiftChips && <ShiftChip shift={shiftOf.get(e.name)} T={T} />}
                         </span>
                       </td>
                       {effStandMode === "leader" && !isSupervisor && (

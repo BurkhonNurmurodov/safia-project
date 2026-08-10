@@ -107,6 +107,26 @@ function ChartCard({ icon, title, info, right, children, className = "" }) {
   );
 }
 
+// The page's two measurement switches, repeated in the header of every card
+// they drive. Order follows the order the question is asked in: WHICH people
+// (role set) then WHICH number about them (on the list vs turned up). The state
+// behind them is shared, so flipping either one here moves the whole page.
+// Wraps to a second line rather than shrinking the segments — SectionHead is
+// already a flex-wrap row, and at 390px two toggles plus a title do not fit
+// one line in any typography that stays readable.
+function ModeSwitches({ scope, setScope, measure, setMeasure, t }) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <SegmentedToggle
+        size="sm" value={scope} onChange={setScope}
+        options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />
+      <SegmentedToggle
+        size="sm" value={measure} onChange={setMeasure}
+        options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")]]} />
+    </div>
+  );
+}
+
 export default function Workers() {
   const { params, ready, dateFrom, dateTo, setDateFrom, setDateTo, brigadirIds, setBrigadirIds, shift, setShift } = useFilters();
   const { t, lang } = useLang();
@@ -210,17 +230,18 @@ export default function Workers() {
   const sortedRows = useMemo(() => {
     if (!sort.key) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
+    // Any key that is not one of the fixed columns is a ROLE column, and those
+    // sort by whichever measure their cells are currently showing.
     const val = {
       name: (m) => tl(m.name) || "", onList: (m) => m.avg_roster || 0,
       came: (m) => m.avg_came || 0, absent: (m) => m.avg_absent || 0,
       rate: (m) => m.rate ?? -1, official: (m) => m.official_hc ?? -1, gap: (m) => m.gap ?? -999,
-      ...Object.fromEntries(ROLES.map((r) => [r, (m) => m.by_role[r] || 0])),
-    }[sort.key];
+    }[sort.key] || ((m) => m[roleField]?.[sort.key] ?? 0);
     return [...rows].sort((a, b) => {
       const av = val(a), bv = val(b);
       return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * dir;
     });
-  }, [rows, sort, tl]);
+  }, [rows, sort, tl, roleField]);
 
   // ── requests aggregates ────────────────────────────────────────────────────────
   const reqKpi     = req?.kpi;
@@ -242,26 +263,58 @@ export default function Workers() {
   // Solid hairline grid — dashed gridlines read as thresholds/projections.
   const gridCfg      = { borderColor: gridColor, strokeDashArray: 0 };
 
-  // Dynamic role set for the role-share donut + attendance trend. `by_role` now
-  // carries every present job title; the toggle switches between all roles and
-  // the zagruzka subset (removing/adding the non-zagruzka roles). Extra roles are
-  // count-sorted so their identity hue stays stable across mode switches.
-  const roleTotalsMap = useMemo(() => {
+  // Dynamic role set for the donut, the trend and the table's role columns.
+  // `avg_*_by_role` carries every present job title; `scope` switches between
+  // all of them and the zagruzka subset.
+  //
+  // The role CATALOG and its hue order are read off the ROSTER numbers whatever
+  // the active measure is. Derive them from the measure instead and a role would
+  // change colour and jump position the moment you flip Ro'yxatda/Kelgan — the
+  // one thing the palette rule forbids. Roster ⊇ came, so it is also the
+  // complete list: a role nobody turned up for still keeps its slot.
+  const rosterTotalsMap = useMemo(() => {
     const acc = {};
-    headcount.forEach((m) => Object.entries(m.by_role || {}).forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
+    headcount.forEach((m) => Object.entries(m.avg_roster_by_role || {})
+      .forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
     return acc;
   }, [headcount]);
   const extraRoles = useMemo(
-    () => Object.keys(roleTotalsMap).filter((r) => !ROLES.includes(r)).sort((a, b) => roleTotalsMap[b] - roleTotalsMap[a]),
-    [roleTotalsMap],
+    () => Object.keys(rosterTotalsMap).filter((r) => !ROLES.includes(r)).sort((a, b) => rosterTotalsMap[b] - rosterTotalsMap[a]),
+    [rosterTotalsMap],
   );
   const roleColor = (r) => ROLE_COLORS[r] ?? ROLE_EXTRA_COLORS[Math.max(0, extraRoles.indexOf(r)) % ROLE_EXTRA_COLORS.length];
-  const activeRoles = roleMode === "all" ? [...ROLES, ...extraRoles] : ROLES;
+  const activeRoles = scope === "all" ? [...ROLES, ...extraRoles] : ROLES;
+
+  // ── the two switches, resolved ───────────────────────────────────────────────
+  // Every measured surface below reads one of these two per-role maps and sums
+  // the roles `scope` selected. Both are per-day averages over the same
+  // confirmed days as the KPI row, so a treemap block and its own table row
+  // carry the SAME number instead of two that have to be reconciled.
+  const round1     = (v) => Math.round(v * 10) / 10;
+  const roleField  = measure === "roster" ? "avg_roster_by_role" : "avg_came_by_role";
+  const roleVal    = (m, r) => (m[roleField]?.[r] ?? 0);
+  const measureLabel = measure === "roster" ? t("workers.msRoster") : t("workers.msCame");
+  // On «Jami» the pair is read straight off the row rather than re-summed from
+  // the roles — it is the very number the table and the KPI cards already show.
+  const mgrValue = (m) => (scope === "all"
+    ? (measure === "roster" ? (m.avg_roster || 0) : (m.avg_came || 0))
+    : round1(ROLES.reduce((s, r) => s + roleVal(m, r), 0)));
+  const roleTotalsMap = useMemo(() => {
+    const acc = {};
+    headcount.forEach((m) => Object.entries(m[roleField] || {})
+      .forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
+    Object.keys(acc).forEach((r) => { acc[r] = Math.round(acc[r] * 10) / 10; });
+    return acc;
+  }, [headcount, roleField]);
+  // One prop bundle so the four card headers carry identical controls, and one
+  // remount key — ApexCharts keeps stale series when the shape changes under it.
+  const switchProps = { scope, setScope, measure, setMeasure, t };
+  const modeKey = `${scope}-${measure}`;
 
   // Workforce composition donut — each role's share of the whole workforce.
   const donutRoles = activeRoles.filter((r) => (roleTotalsMap[r] || 0) > 0);
   const roleTotals = donutRoles.map((r) => roleTotalsMap[r] || 0);
-  const donutTotal = roleTotals.reduce((s, n) => s + n, 0);
+  const donutTotal = round1(roleTotals.reduce((s, n) => s + n, 0));
   const donutOptions = {
     chart: { ...baseChart, type: "donut" },
     labels: donutRoles.map(roleLabel),
@@ -272,9 +325,11 @@ export default function Workers() {
     plotOptions: { pie: { donut: { size: "64%", labels: {
       show: true,
       value: { color: legendColor },
-      total: { show: true, label: t("workers.total"), color: legendColor, formatter: () => String(donutTotal) },
+      total: { show: true, label: measureLabel, color: legendColor, formatter: () => fmt1(donutTotal) },
     } } } },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.present").toLowerCase()}` } },
+    // The number is a per-day average now, not a period headcount — the tooltip
+    // says so rather than leaving a decimal to be read as a people count.
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmt1(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
     theme: chartTheme,
   };
 
@@ -320,15 +375,14 @@ export default function Workers() {
     theme: chartTheme,
   };
 
-  // Workforce treemap — one block per brigadir in their own identity hue; the
-  // toggle picks the metric (all workers on the roster vs zagruzka-counted).
-  // Hue is keyed to the brigadir's position in the stable backend order so it
-  // survives mode switches; data is value-sorted for a tidier layout.
-  // `total_all` needs the updated backend — fall back to `total` until then.
+  // Workforce treemap — one block per brigadir in their own identity hue, sized
+  // by the number the two switches resolve to (see `mgrValue`). Hue is keyed to
+  // the brigadir's position in the stable backend order so it survives BOTH
+  // switches; data is value-sorted for a tidier layout.
   const treePoints = headcount
     .map((m, i) => ({
       x: tl(m.name),
-      y: treeMode === "all" ? (m.total_all ?? m.total) : m.total,
+      y: mgrValue(m),
       color: SUP_COLORS[i % SUP_COLORS.length],
     }))
     .filter((d) => d.y > 0)
@@ -341,11 +395,11 @@ export default function Workers() {
     dataLabels: {
       enabled: true,
       style: { fontSize: "13px", fontWeight: 600, colors: ["#fff"] },
-      formatter: (text, op) => [text, String(op.value)],
+      formatter: (text, op) => [text, fmt1(op.value)],
     },
     plotOptions: { treemap: { distributed: true, enableShades: false } },
     stroke: { width: 2, colors: [cardBg] },
-    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${v} ${t("workers.tmUnit")}` } },
+    tooltip: { theme: tooltipTheme, y: { formatter: (v) => `${fmt1(v)} ${t("workers.tmUnit")} · ${t("workers.perDay")}` } },
     theme: chartTheme,
   };
 
@@ -353,15 +407,23 @@ export default function Workers() {
   // Drop roles that are all-zero across the window: a zero top-of-stack series
   // still paints its translucent gradient down to the baseline, tinting the whole
   // chart its colour ("green shadow everywhere" when Zagatovitel has no attendance).
+  // Which half of the payload the measure switch is showing. `series_roster` is
+  // the newer half — fall back to `series` so the page still renders against a
+  // backend that has not been restarted yet.
+  const trendSrc = (measure === "roster" ? trend?.series_roster : trend?.series)
+    || trend?.series || {};
   const trendRoles = trend
-    ? activeRoles.filter((r) => (trend.series[r] || []).some((v) => v > 0))
+    ? activeRoles.filter((r) => (trendSrc[r] || []).some((v) => v > 0))
     : [];
   // ONE order everywhere — window total (desc), computed ONCE (never per-day):
   // it is the stack order (largest band sits on the stable baseline), the legend
   // order and the chip order, so nothing has to be re-searched between them and
   // chips keep their positions as you hover across days.
+  // Ordered by the ROSTER totals, not by the active measure: flipping
+  // Ro'yxatda/Kelgan must change the band HEIGHTS and nothing else, or the two
+  // states cannot be compared by eye — which is the only reason for the switch.
   const trendRoleOrder = [...trendRoles].sort((a, b) => {
-    const sum = (r) => (trend.series[r] || []).reduce((n, v) => n + (v || 0), 0);
+    const sum = (r) => ((trend.series_roster || trend.series)[r] || []).reduce((n, v) => n + (v || 0), 0);
     return sum(b) - sum(a);
   });
   // Past ~5 bands the top ribbons are a few px tall — unreadable ink. Keep the
@@ -370,10 +432,10 @@ export default function Workers() {
   const foldRoles = trendRoleOrder.length > 5 ? trendRoleOrder.slice(4) : [];
   const keptRoles = foldRoles.length ? trendRoleOrder.slice(0, 4) : trendRoleOrder;
   const foldData = foldRoles.length
-    ? (trend?.dates || []).map((_, i) => foldRoles.reduce((n, r) => n + ((trend.series[r] || [])[i] || 0), 0))
+    ? (trend?.dates || []).map((_, i) => foldRoles.reduce((n, r) => n + ((trendSrc[r] || [])[i] || 0), 0))
     : null;
   const trendSeries = [
-    ...keptRoles.map((r) => ({ name: roleLabel(r), data: trend?.series[r] || [] })),
+    ...keptRoles.map((r) => ({ name: roleLabel(r), data: trendSrc[r] || [] })),
     ...(foldData ? [{ name: t("workers.othersFold"), data: foldData }] : []),
   ];
   const trendColors = [...keptRoles.map(roleColor), ...(foldData ? [FOLD_COLOR] : [])];
@@ -393,7 +455,7 @@ export default function Workers() {
     // link; this is a state readout ("which day am I looking at"), not a control.
     const date = dateStr ? fmtLongDate(parseDate(dateStr), t, lang) : "";
     const items = keptRoles.map((r) => ({
-      name: roleLabel(r), color: roleColor(r), val: (trend.series[r] || [])[idx] ?? 0,
+      name: roleLabel(r), color: roleColor(r), val: (trendSrc[r] || [])[idx] ?? 0,
     }));
     if (foldData) items.push({ name: t("workers.othersFold"), color: FOLD_COLOR, val: foldData[idx] ?? 0 });
     const total = items.reduce((n, it) => n + it.val, 0);
@@ -407,7 +469,7 @@ export default function Workers() {
     // value width-pinned, so the strip keeps the no-reflow contract on hover.
     const foldDetail = foldRoles.length ? `
       <span style="color:var(--text-4)">${foldRoles.map((r) =>
-        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${(trend.series[r] || [])[idx] ?? 0}</span>`).join(" · ")}</span>` : "";
+        `${roleLabel(r)}&nbsp;<span style="display:inline-block;min-width:1.7em;font-variant-numeric:tabular-nums">${(trendSrc[r] || [])[idx] ?? 0}</span>`).join(" · ")}</span>` : "";
     return `<span style="color:var(--text-1);font-weight:600">${date}</span>${chips}${foldDetail}
       <span style="margin-left:auto;color:var(--text-3)">${t("workers.total")}&nbsp;${num(total, "2.8em")}</span>`;
   };
@@ -709,28 +771,27 @@ export default function Workers() {
             )}
           </div>
 
-          {/* Role-share donut + attendance trend (compact pair). The shared
-              toggle adds/removes the non-zagruzka roles on both charts. */}
+          {/* Role-share donut + attendance trend (compact pair). Both switches
+              drive both charts — role set adds/removes the non-zagruzka roles,
+              measure swaps the roster numbers for the ones who turned up. */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
             <ChartCard icon={PieChart} title={t("workers.roleShare")} info={t("workers.info.composition")}
-              right={<SegmentedToggle size="sm" value={roleMode} onChange={setRoleMode}
-                options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
+              right={<ModeSwitches {...switchProps} />}>
               {isLoading ? <SkeletonChart className="h-72" />
-                : roleTotals.some((n) => n > 0) ? <ReactApexChart key={roleMode} type="donut" series={roleTotals} options={donutOptions} height={330} />
+                : roleTotals.some((n) => n > 0) ? <ReactApexChart key={modeKey} type="donut" series={roleTotals} options={donutOptions} height={330} />
                 : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
             </ChartCard>
 
             <ChartCard icon={TrendingUp} title={t("workers.attendanceTrend")} info={t("workers.info.trend")}
-              right={<SegmentedToggle size="sm" value={roleMode} onChange={setRoleMode}
-                options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
+              right={<ModeSwitches {...switchProps} />}>
               {!trend ? <SkeletonChart className="h-72" />
                 : trend?.dates?.length ? (
                   <>
                     <div className="att-trend">
-                      <ReactApexChart key={roleMode} type="area" series={trendSeries} options={trendOptions} height={330} />
+                      <ReactApexChart key={modeKey} type="area" series={trendSeries} options={trendOptions} height={330} />
                     </div>
                     {/* Hover breakdown lives here — under the chart, never over it. */}
-                    <div key={roleMode} ref={trendTip}
+                    <div key={modeKey} ref={trendTip}
                       className="att-trend-panel flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t pt-3 mt-1 text-xs"
                       style={{ borderColor: "var(--border)" }}
                       dangerouslySetInnerHTML={{ __html: trendDefaultHtml }} />
@@ -742,10 +803,9 @@ export default function Workers() {
 
           {/* Workforce treemap — full width, big & readable (one block per brigadir) */}
           <ChartCard icon={LayoutGrid} title={t("workers.composition")} info={t("workers.info.treemap")} className="mb-6"
-            right={<SegmentedToggle size="sm" value={treeMode} onChange={setTreeMode}
-              options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />}>
+            right={<ModeSwitches {...switchProps} />}>
             {isLoading ? <SkeletonChart className="h-96" />
-              : treePoints.length ? <ReactApexChart key={treeMode} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
+              : treePoints.length ? <ReactApexChart key={modeKey} type="treemap" series={treemapSeries} options={treemapOptions} height={560} />
               : <EmptyState title={t("workers.noHeadcount")} message={t("workers.noRoleMsg")} />}
           </ChartCard>
 
@@ -804,7 +864,15 @@ export default function Workers() {
 
           {/* Per-supervisor table — answers "under their name vs actively coming, by role" */}
           <TableCard icon={ClipboardList} title={t("workers.summary")} className="mb-8"
-            right={<span className="text-[11px]" style={{ color: "var(--text-4)" }}>{headcount.length}</span>}>
+            right={(
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* The switches drive the ROLE columns only. Ro'yxatda / Keldi /
+                    Kelmadi stay side by side whatever is selected — comparing
+                    them is the whole job of those three columns. */}
+                <ModeSwitches {...switchProps} />
+                <span className="text-[11px]" style={{ color: "var(--text-4)" }}>{headcount.length}</span>
+              </div>
+            )}>
             <thead>
               <tr>
                 <Th label={t("workers.name")} k="name" sort={sort} onSort={onSort} />
@@ -816,15 +884,17 @@ export default function Workers() {
                 <Th label={t("workers.attRate")} k="rate" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.attRate")} />
                 <Th label={t("workers.official")} k="official" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.officialCol")} />
                 <Th label={t("workers.shortfall")} k="gap" sort={sort} onSort={onSort} align="right" hint={t("workers.tip.shortfall")} />
-                {ROLES.map((r) => (
+                {/* Role columns follow the switches: «Zagruzka» keeps the four
+                    counted roles, «Jami» appends every other job title present. */}
+                {activeRoles.map((r) => (
                   <Th key={r} k={r} sort={sort} onSort={onSort} align="right"
-                    label={<span style={{ color: ROLE_COLORS[r] }}>{roleLabel(r)}</span>} />
+                    label={<span style={{ color: roleColor(r) }}>{roleLabel(r)}</span>} />
                 ))}
               </tr>
             </thead>
             <tbody>
               {sortedRows.length === 0 && (
-                <tr><td colSpan={13}>
+                <tr><td colSpan={9 + activeRoles.length}>
                   <EmptyState title={t("workers.noHeadcount")} message={t("workers.noTableMsg")} />
                 </td></tr>
               )}
@@ -856,8 +926,8 @@ export default function Workers() {
                       {m.gap == null ? "—" : (m.gap > 0 ? `−${fmt1(m.gap)}` : "0")}
                     </span>
                   </td>
-                  {ROLES.map((r) => (
-                    <td key={r} className={numCell} style={{ color: ROLE_COLORS[r] }}>{m.by_role[r] || 0}</td>
+                  {activeRoles.map((r) => (
+                    <td key={r} className={numCell} style={{ color: roleColor(r) }}>{fmt1(roleVal(m, r))}</td>
                   ))}
                 </tr>
               ))}

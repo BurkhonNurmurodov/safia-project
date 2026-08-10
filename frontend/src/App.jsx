@@ -221,17 +221,6 @@ function RequireAdmin({ children }) {
   return children;
 }
 
-/** The two shift-split copies of the leaders page, for the roles that oversee
- *  more than one shift. Anyone else lands on the unlocked page, which shows
- *  them the same rows without asking which shift they belong to. Page ACCESS is
- *  still the ordinary `leaders` grant — this only picks the layout. */
-function RequireAboveShift({ children }) {
-  const { auth } = useAuth();
-  if (auth?.role !== "admin" && auth?.role !== "top-manager")
-    return <Navigate to="/leaders" replace />;
-  return children;
-}
-
 /**
  * Gates the ADMIN view of the profile page (/profile/:ptype/:pid) — the same
  * audience as the Profiles tab it navigates from: admins, plus grantees of the
@@ -396,13 +385,12 @@ function AppWithLang() {
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />
-            {/* One page per shift for the roles that oversee both. Same data
-                feed as /leaders, pinned to that shift's units. */}
-            <Route path="/leaders-shift1" element={<AuthGate><RequirePage page="leaders"><RequireAboveShift><Leaders shiftLock={1} /></RequireAboveShift></RequirePage></AuthGate>} />
-            <Route path="/leaders-shift2" element={<AuthGate><RequirePage page="leaders"><RequireAboveShift><Leaders shiftLock={2} /></RequireAboveShift></RequirePage></AuthGate>} />
-            {/* The bot-only copy this replaced — shift 2 is where its data now
-                lives, merged with the sheet history. */}
-            <Route path="/leaders-bot" element={<Navigate to="/leaders-shift2" replace />} />
+            {/* The retired per-shift admin copies and the bot-only page they
+                replaced — old bookmarks and Telegram buttons land on the one
+                merged page, whose Smena filter does the narrowing now. */}
+            <Route path="/leaders-shift1" element={<Navigate to="/leaders" replace />} />
+            <Route path="/leaders-shift2" element={<Navigate to="/leaders" replace />} />
+            <Route path="/leaders-bot" element={<Navigate to="/leaders" replace />} />
             <Route path="/cells" element={<AuthGate><RequirePage page="cells"><Cells /></RequirePage></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />

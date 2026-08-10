@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BarChart2, Users, Target, Clock,
   Settings, X, PanelLeftClose, PanelLeftOpen, Fingerprint, CalendarCheck, Trophy,
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
-  MessageSquareWarning, Headset, Wrench, Bot, LayoutGrid, Timer, UserCheck,
+  MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
   Grid3x3, TestTubes,
 } from "lucide-react";
@@ -36,16 +36,10 @@ const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
-  // Leader monitoring. Admins and top-managers oversee both shifts, so for them
-  // it splits into one entry per shift; everybody else stays inside their own
-  // shift anyway and gets the single unlocked page. Same route component, same
-  // feed — shift 2's days come from the bot once the leader closed one there.
-  { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck,
-    hideRoles: ["admin", "top-manager"], group: "leaders" },
-  { to: "/leaders-shift1", page: "leaders", key: "nav.leadersShift1", icon: ClipboardCheck,
-    onlyRoles: ["admin", "top-manager"], group: "leaders" },
-  { to: "/leaders-shift2", page: "leaders", key: "nav.leadersShift2", icon: Bot,
-    onlyRoles: ["admin", "top-manager"], group: "leaders" },
+  // Leader monitoring — ONE page for every role (the per-shift admin copies
+  // are retired): the Smena filter inside it narrows to a shift, «All» shows
+  // both. Shift 2's days come from the bot once the leader closed one there.
+  { to: "/leaders", page: "leaders", key: "nav.leaders", icon: ClipboardCheck, group: "leaders" },
   { to: "/cells", page: "cells", key: "nav.cells", icon: LayoutGrid, group: "cells" },
   { to: "/kaizen", page: "kaizen", key: "nav.kaizen", icon: Sparkles, group: "quality" },
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
@@ -124,14 +118,8 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const pendingCount = pendingData?.count ?? 0;
 
   const withSearch = (path) => `${path}${location.search}`;
-  // onlyRoles / hideRoles narrow an ordinary page link to (or away from) a role
-  // without inventing a second page-access key — the two shift copies of the
-  // leaders page are the same `leaders` grant, split by who oversees a shift.
-  const links = ALL_LINKS.filter(l => {
-    if (l.onlyRoles && !l.onlyRoles.includes(auth?.role)) return false;
-    if (l.hideRoles && l.hideRoles.includes(auth?.role)) return false;
-    return l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages);
-  });
+  const links = ALL_LINKS.filter(l =>
+    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages));
 
   // Grouped mode only past the threshold — grouping helps a 20-row register,
   // it would just add chrome to a supervisor's 6 links.
