@@ -109,7 +109,8 @@ function ChartCard({ icon, title, info, right, children, className = "" }) {
 
 // The page's two measurement switches, repeated in the header of every card
 // they drive. Order follows the order the question is asked in: WHICH people
-// (role set) then WHICH number about them (on the list vs turned up). The state
+// (role set) then WHICH number about them (on the list, turned up, or the
+// difference between the two — those who did not come). The state
 // behind them is shared, so flipping either one here moves the whole page.
 // Wraps to a second line rather than shrinking the segments — SectionHead is
 // already a flex-wrap row, and at 390px two toggles plus a title do not fit
@@ -122,7 +123,7 @@ function ModeSwitches({ scope, setScope, measure, setMeasure, t }) {
         options={[["all", t("workers.tmAll")], ["zagruzka", t("workers.tmZagruzka")]]} />
       <SegmentedToggle
         size="sm" value={measure} onChange={setMeasure}
-        options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")]]} />
+        options={[["roster", t("workers.msRoster")], ["came", t("workers.msCame")], ["diff", t("workers.msDiff")]]} />
     </div>
   );
 }
@@ -138,11 +139,12 @@ export default function Workers() {
   // control is repeated in each card header, the STATE is one — flipping it
   // anywhere moves the whole page, which is the point of it).
   //   scope   — WHICH people: every role, or only the four zagruzka-counted ones
-  //   measure — WHICH number about them: on the list, or actually turned up
+  //   measure — WHICH number about them: on the list, actually turned up, or
+  //             the difference between the two (on the list but did not come)
   // These replace the old treeMode/roleMode pair, which were two independent
   // states meaning the same thing on one page.
   const [scope, setScope]     = usePersistentState("workers_scope", "all");        // "all" | "zagruzka"
-  const [measure, setMeasure] = usePersistentState("workers_measure", "roster");   // "roster" | "came"
+  const [measure, setMeasure] = usePersistentState("workers_measure", "roster");   // "roster" | "came" | "diff"
   const [sort, setSort] = usePersistentState("workers_sort", { key: null, dir: "asc" });
   const trendTip = useRef(null);                       // attendance-trend below-chart tooltip panel
   const trendDefault = useRef("");                      // latest-day HTML for the idle/leave state
@@ -227,10 +229,17 @@ export default function Workers() {
       ? (p.dir === "asc" ? { key, dir: "desc" } : { key: null, dir: "asc" })
       : { key, dir: key === "name" ? "asc" : "desc" }));
   }
-  // `measure` resolved to the per-role field the role columns read. It must sit
-  // ABOVE this memo — the deps array reads it at render, so declaring it with
-  // its siblings in «the two switches, resolved» below is a TDZ crash.
-  const roleField = measure === "roster" ? "avg_roster_by_role" : "avg_came_by_role";
+  // `measure` resolved to the per-role reader the role columns use. It must sit
+  // ABOVE this memo — the memo body reads it at render, so declaring it with
+  // its siblings in «the two switches, resolved» below is a TDZ crash. «Farq»
+  // is derived client-side — the backend emits both role maps over the SAME
+  // keys, so roster − came needs no third field (and roster ⊇ came keeps it
+  // non-negative); round1 kills the float dust the subtraction leaves.
+  const round1  = (v) => Math.round(v * 10) / 10;
+  const roleVal = (m, r) =>
+    measure === "roster" ? (m.avg_roster_by_role?.[r] ?? 0)
+    : measure === "came" ? (m.avg_came_by_role?.[r] ?? 0)
+    : round1((m.avg_roster_by_role?.[r] ?? 0) - (m.avg_came_by_role?.[r] ?? 0));
   const sortedRows = useMemo(() => {
     if (!sort.key) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -240,12 +249,12 @@ export default function Workers() {
       name: (m) => tl(m.name) || "", onList: (m) => m.avg_roster || 0,
       came: (m) => m.avg_came || 0, absent: (m) => m.avg_absent || 0,
       rate: (m) => m.rate ?? -1, official: (m) => m.official_hc ?? -1, gap: (m) => m.gap ?? -999,
-    }[sort.key] || ((m) => m[roleField]?.[sort.key] ?? 0);
+    }[sort.key] || ((m) => roleVal(m, sort.key));
     return [...rows].sort((a, b) => {
       const av = val(a), bv = val(b);
       return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * dir;
     });
-  }, [rows, sort, tl, roleField]);
+  }, [rows, sort, tl, measure]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── requests aggregates ────────────────────────────────────────────────────────
   const reqKpi     = req?.kpi;
@@ -290,25 +299,28 @@ export default function Workers() {
   const activeRoles = scope === "all" ? [...ROLES, ...extraRoles] : ROLES;
 
   // ── the two switches, resolved ───────────────────────────────────────────────
-  // Every measured surface below reads one of these two per-role maps and sums
-  // the roles `scope` selected. Both are per-day averages over the same
-  // confirmed days as the KPI row, so a treemap block and its own table row
-  // carry the SAME number instead of two that have to be reconciled.
-  const round1     = (v) => Math.round(v * 10) / 10;
-  const roleVal    = (m, r) => (m[roleField]?.[r] ?? 0);
-  const measureLabel = measure === "roster" ? t("workers.msRoster") : t("workers.msCame");
-  // On «Jami» the pair is read straight off the row rather than re-summed from
-  // the roles — it is the very number the table and the KPI cards already show.
+  // Every measured surface below reads `roleVal` (declared above the sort memo)
+  // and sums the roles `scope` selected. All three measures are per-day averages
+  // over the same confirmed days as the KPI row, so a treemap block and its own
+  // table row carry the SAME number instead of two that have to be reconciled.
+  const measureLabel = measure === "roster" ? t("workers.msRoster")
+    : measure === "came" ? t("workers.msCame") : t("workers.msDiff");
+  // On «Jami» the value is read straight off the row rather than re-summed from
+  // the roles — it is the very number the table and the KPI cards already show
+  // (avg_absent IS roster − came on the backend, i.e. the Kelmadi column).
   const mgrValue = (m) => (scope === "all"
-    ? (measure === "roster" ? (m.avg_roster || 0) : (m.avg_came || 0))
+    ? (measure === "roster" ? (m.avg_roster || 0)
+      : measure === "came" ? (m.avg_came || 0) : (m.avg_absent || 0))
     : round1(ROLES.reduce((s, r) => s + roleVal(m, r), 0)));
+  // Iterates the ROSTER keys — the complete role catalog (roster ⊇ came) — so
+  // «Kelgan» and «Farq» still see a role nobody turned up for.
   const roleTotalsMap = useMemo(() => {
     const acc = {};
-    headcount.forEach((m) => Object.entries(m[roleField] || {})
-      .forEach(([r, n]) => { acc[r] = (acc[r] || 0) + n; }));
+    headcount.forEach((m) => Object.keys(m.avg_roster_by_role || {})
+      .forEach((r) => { acc[r] = (acc[r] || 0) + roleVal(m, r); }));
     Object.keys(acc).forEach((r) => { acc[r] = Math.round(acc[r] * 10) / 10; });
     return acc;
-  }, [headcount, roleField]);
+  }, [headcount, measure]); // eslint-disable-line react-hooks/exhaustive-deps
   // One prop bundle so the four card headers carry identical controls, and one
   // remount key — ApexCharts keeps stale series when the shape changes under it.
   const switchProps = { scope, setScope, measure, setMeasure, t };
@@ -410,11 +422,18 @@ export default function Workers() {
   // Drop roles that are all-zero across the window: a zero top-of-stack series
   // still paints its translucent gradient down to the baseline, tinting the whole
   // chart its colour ("green shadow everywhere" when Zagatovitel has no attendance).
-  // Which half of the payload the measure switch is showing. `series_roster` is
-  // the newer half — fall back to `series` so the page still renders against a
-  // backend that has not been restarted yet.
-  const trendSrc = (measure === "roster" ? trend?.series_roster : trend?.series)
-    || trend?.series || {};
+  // Which slice of the payload the measure switch is showing. `series_roster`
+  // is the newer half — fall back to `series` so the page still renders against
+  // a backend that has not been restarted yet. «Farq» is derived here per role
+  // per day (roster − came; roster ⊇ came keeps it non-negative, and against
+  // the un-restarted fallback both sources coincide so it degrades to zeros).
+  const trendRoster = trend?.series_roster || trend?.series || {};
+  const trendCame   = trend?.series || {};
+  const trendSrc = measure === "roster" ? trendRoster
+    : measure === "came" ? trendCame
+    : Object.fromEntries(Object.entries(trendRoster).map(([r, arr]) => [
+        r, arr.map((v, i) => Math.max(0, (v || 0) - ((trendCame[r] || [])[i] || 0))),
+      ]));
   const trendRoles = trend
     ? activeRoles.filter((r) => (trendSrc[r] || []).some((v) => v > 0))
     : [];

@@ -255,6 +255,21 @@ export default function Downtime() {
   const donutColors = filterActive
     ? CAT_COLORS.map((c, i) => (selectedCats.includes(catNames[i]) ? c : `${c}33`))
     : CAT_COLORS;
+  // Zero-minute categories keep their legend entry, but clicking one would only
+  // strike through a slice that isn't drawn — make those labels inert. Legend
+  // items are focusable buttons (tabindex + "press Enter to toggle" hint), so
+  // pointer-events alone still leaves them keyboard-selectable.
+  const inertZeroLegends = (ctx) => {
+    ctx?.el?.querySelectorAll(".apexcharts-legend-series").forEach((el) => {
+      if (catTotals[Number(el.getAttribute("rel")) - 1] > 0) return;
+      el.style.pointerEvents = "none";
+      el.setAttribute("tabindex", "-1");
+      el.setAttribute("aria-disabled", "true");
+      el.removeAttribute("role");
+      el.removeAttribute("aria-pressed");
+      el.removeAttribute("aria-label");
+    });
+  };
   const donutOptions = {
     chart: {
       type: "donut",
@@ -265,6 +280,8 @@ export default function Downtime() {
           const cat = catNames[cfg.dataPointIndex];
           if (cat) toggleCat(cat);
         },
+        mounted: inertZeroLegends,
+        updated: inertZeroLegends,
       },
     },
     labels: catNames,
