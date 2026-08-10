@@ -2312,7 +2312,7 @@ export default function Leaders() {
   const pageChrome = (
     <>
       {tabsBar}
-      {isAdmin && <AiProgress />}
+      {isAdmin && <AiProgress showIdle={tab === "ai"} />}
     </>
   );
 

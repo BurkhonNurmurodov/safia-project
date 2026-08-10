@@ -37,6 +37,7 @@ const TXT = {
     cGo: "Ha, to'xtatilsin", cCancel: "Yo'q, davom etsin",
     scope: { unchecked: "Tekshirilmaganlar", flagged: "Shubhalilar", clean: "Tozalar", all: "Hammasi" },
     h: "s", m: "daq", d: "kun",
+    coverage: "AI tekshiruvi qamrovi", unchecked: "tekshirilmagan", skipped: "o'tkazib yuborilgan", stuck: "xatolik",
   },
   uz_cyrl: {
     title: "AI текшируви кетмоқда", of: "дан", checked: "текширилди",
@@ -48,6 +49,7 @@ const TXT = {
     cGo: "Ҳа, тўхтатилсин", cCancel: "Йўқ, давом этсин",
     scope: { unchecked: "Текширилмаганлар", flagged: "Шубҳалилар", clean: "Тозалар", all: "Ҳаммаси" },
     h: "с", m: "дақ", d: "кун",
+    coverage: "AI текшируви қамрови", unchecked: "текширилмаган", skipped: "ўтказиб юборилган", stuck: "хатолик",
   },
   ru: {
     title: "Идёт проверка ИИ", of: "из", checked: "проверено",
@@ -59,6 +61,7 @@ const TXT = {
     cGo: "Да, остановить", cCancel: "Нет, продолжить",
     scope: { unchecked: "Непроверенные", flagged: "Сомнительные", clean: "Чистые", all: "Все" },
     h: "ч", m: "мин", d: "дн.",
+    coverage: "Охват проверки ИИ", unchecked: "не проверено", skipped: "пропущено", stuck: "с ошибкой",
   },
   en: {
     title: "AI review running", of: "of", checked: "checked",
@@ -70,6 +73,7 @@ const TXT = {
     cGo: "Yes, stop", cCancel: "No, keep going",
     scope: { unchecked: "Unchecked", flagged: "Flagged", clean: "Clean", all: "All" },
     h: "h", m: "min", d: "d",
+    coverage: "AI review coverage", unchecked: "unchecked", skipped: "skipped", stuck: "errored",
   },
 };
 
@@ -93,7 +97,11 @@ function etaText(p, T) {
   return fmt(T.eta, `${Math.round(secs / 86400)} ${T.d}`);
 }
 
-export default function AiProgress() {
+/** `showIdle` — also render the standing "how much is checked" bar when no run
+ *  is going. True on the AI tab, where that is the subject; false elsewhere,
+ *  where a permanent statistic would just be chrome. A LIVE run renders on
+ *  every tab regardless: somebody started it and it costs quota. */
+export default function AiProgress({ showIdle = false }) {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.ru;
   const qc = useQueryClient();
@@ -123,6 +131,57 @@ export default function AiProgress() {
   // the way. `justFinished` only comes back on the poll that observes the
   // queue empty, so it cannot nag on every later load.
   const finished = p?.justFinished && !dismissed;
+
+  // IDLE: no run, but there is still a true answer to "how much of my data has
+  // been checked". Only where it was asked for — the AI tab — because a
+  // standing statistic on the Monitoring tab is noise, whereas a LIVE run
+  // belongs on every tab (it is a page-wide event somebody started).
+  if (p && !p.active && !finished) {
+    const cov = p.coverage;
+    // Nothing has ever been queued: the feature is off or brand new, and an
+    // empty "0 of 0" bar teaches nobody anything.
+    if (!showIdle || !cov || !cov.known) return null;
+    const pctIdle = Math.round((cov.judged / cov.known) * 100);
+    const left = cov.known - cov.judged;
+    return (
+      <div className="mb-3 rounded-xl px-3 py-2.5"
+        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center gap-2.5 flex-wrap mb-2">
+          <Sparkles size={15} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+          <span className="text-[13px] font-semibold" style={{ color: "var(--text-2)" }}>
+            {T.coverage}
+          </span>
+          <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
+            <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>
+            {" "}{T.of}{" "}{cov.known.toLocaleString()} {T.checked}
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-inner)" }}
+          role="progressbar" aria-valuemin={0} aria-valuemax={cov.known}
+          aria-valuenow={cov.judged} aria-label={T.coverage}>
+          {/* Muted, not brand gold: nothing is happening right now, and a live
+              bar and a standing statistic must not look identical. */}
+          <div className="h-full rounded-full" style={{ width: `${pctIdle}%`, background: "var(--text-4)" }} />
+        </div>
+        <div className="flex items-center gap-2 mt-1.5 text-[11px] tabular-nums flex-wrap"
+          style={{ color: "var(--text-4)" }}>
+          <span>{pctIdle}%</span>
+          {left > 0 && <><span>·</span><span>{left.toLocaleString()} {T.unchecked}</span></>}
+          {cov.skipped > 0 && <><span>·</span><span>{cov.skipped.toLocaleString()} {T.skipped}</span></>}
+          {/* Stuck rows are the one number worth colouring: they will never
+              drain on their own, and the fix (Retry) lives in the re-check
+              modal. Amber + a word, never colour alone. */}
+          {cov.stuck > 0 && (
+            <><span>·</span>
+            <span style={{ color: "#eab308", fontWeight: 600 }}>
+              {cov.stuck.toLocaleString()} {T.stuck}
+            </span></>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!p || (!p.active && !finished)) return null;
 
   if (finished) {

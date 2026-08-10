@@ -852,7 +852,26 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .count()
     )
     if row is None:
-        return {"active": False, "pending": pending}
+        # No run — but "how much of my data has been checked?" is a question an
+        # operator has at any time, not only while something is draining. A bar
+        # that exists solely during a run is one they will never see, because
+        # the runs are rare and mostly happen while nobody is looking.
+        c = leader_ai.counts(db)
+        judged = c.get("ok", 0) + c.get("flagged", 0)
+        stuck = c.get("stuck", 0)
+        skipped = c.get("skipped", 0)
+        # Every row lands in exactly one bucket: judged (ok|flagged), queued
+        # (pending, plus error rows with retries left), stuck (error, retries
+        # spent) or skipped (a cancelled run). Leaving stuck rows out of the
+        # denominator would let the bar read 100% while forty rows sit
+        # permanently unjudged — the one state that most needs saying.
+        known = judged + pending + stuck + skipped
+        return {
+            "active": False,
+            "pending": pending,
+            "coverage": {"judged": judged, "known": known,
+                         "stuck": stuck, "skipped": skipped},
+        }
 
     try:
         run = json.loads(row.value)
