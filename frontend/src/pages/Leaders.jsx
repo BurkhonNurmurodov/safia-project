@@ -3106,8 +3106,11 @@ export default function Leaders() {
             paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)",
             paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
           <img src={zoom} alt="" className="max-w-full max-h-full rounded-xl" />
-          <Button size="sm" variant="secondary" className="absolute right-4"
-            style={{ top: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
+          {/* position via style: Button's own `relative` class outranks a passed
+              `absolute` in the stylesheet, dropping the X into the flex flow */}
+          <Button size="sm" variant="secondary"
+            style={{ position: "absolute", right: "1rem",
+              top: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
             icon={<X size={15} />} onClick={() => setZoom(null)} />
         </div>,
         document.body)}

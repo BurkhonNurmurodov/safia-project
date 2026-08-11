@@ -596,7 +596,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
           className="fixed inset-0 z-[95] flex items-center justify-center p-4 cursor-zoom-out"
           style={{ background: "rgba(0,0,0,0.85)" }}>
           <img src={zoom} alt="" className="max-w-full max-h-full rounded-xl" />
-          <Button size="sm" variant="secondary" className="absolute top-4 right-4"
+          {/* position via style: Button's own `relative` class outranks a passed
+              `absolute` in the stylesheet, dropping the X into the flex flow */}
+          <Button size="sm" variant="secondary"
+            style={{ position: "absolute", right: "1rem",
+              top: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
             icon={<X size={15} />} onClick={() => setZoom(null)} />
         </div>
       )}
