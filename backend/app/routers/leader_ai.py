@@ -882,6 +882,17 @@ def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
     # to shred, and this file is read by everyone debugging the bot.
     log.info("leader-ai: %s set a Gemini API key (%s chars)", who, len(raw))
 
+    # Arm the periodic drain, which boot DECLINED to schedule because there was
+    # no key yet — and a key set from this form is precisely the case where
+    # there wasn't one. Without this the timer never exists on that process, so
+    # the queue only ever moves when a request happens to kick it, and a
+    # swallowed kick strands it until the next restart rather than 20 minutes.
+    # `replace_existing` makes re-registration a no-op when it is already armed.
+    try:
+        leader_ai.register_drain_job()
+    except Exception:
+        log.exception("leader-ai: could not arm the periodic drain")
+
     # Queue anything unreviewed now that the feature can actually run — the
     # backlog is the whole reason somebody just turned this on.
     try:
@@ -1113,6 +1124,71 @@ def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
     else:
         row.value = payload
     db.commit()
+
+
+# ── "is anything actually running?" ──────────────────────────────────────────
+# The queue's SIZE was the only thing the bar could report, and a queue that is
+# not shrinking is consistent with every possible state: a slow batch, a kick
+# that no-op'd because another drain holds the lock, a 429 on the first row, a
+# retired model failing all forty. The operator has no shell to go and settle it
+# with, so the difference has to arrive in this payload.
+#
+# `services/leader_ai` writes the heartbeat; this only reads it and adds the two
+# things the note cannot know: how long ago that was, and when the timer will
+# try again by itself.
+
+# A single verdict can legitimately take a couple of minutes — up to 60s
+# fetching photos plus a 120s Gemini timeout — so a pulse is only overdue well
+# past that. Under it, silence is work; over it, something is wedged.
+DRAIN_STALL_S = 240
+
+
+def _drain_state(db: Session) -> dict:
+    """What the drain is doing right now, in the shape the strip renders."""
+    import json
+
+    from app.scheduler import next_run
+
+    out: dict = {"state": "never"}
+    row = db.query(AppSetting).filter_by(key=leader_ai.HEARTBEAT_SETTING).first()
+    if row is not None:
+        try:
+            beat = json.loads(row.value) or {}
+        except Exception:
+            beat = {}
+        at = beat.get("at")
+        secs = None
+        if at:
+            try:
+                secs = max(0, int((datetime.now(timezone.utc)
+                                   - datetime.fromisoformat(at)).total_seconds()))
+            except Exception:
+                secs = None
+        state = beat.get("state") or "never"
+        out = {
+            "state": state,
+            "at": at,
+            "secondsSince": secs,
+            "done": beat.get("done"),
+            "errors": beat.get("errors"),
+            "quota": bool(beat.get("quota")),
+            # Both are systemic — a retired model, a revoked key, a dead
+            # network — and both are the answer to "why is it not moving".
+            "error": beat.get("aborted") or beat.get("error"),
+            # "running" with no pulse for minutes is NOT running. Saying so
+            # beats a spinner that keeps promising, and it is the state a
+            # restart fixes.
+            "stalled": bool(state == "running" and secs is not None
+                            and secs > DRAIN_STALL_S),
+        }
+    nxt = next_run("leader-ai-drain")
+    if nxt is not None:
+        try:
+            out["nextInS"] = max(0, int((nxt - datetime.now(nxt.tzinfo))
+                                        .total_seconds()))
+        except Exception:
+            pass
+    return out
 
 
 # Rows scanned to work out how many REPORTS a range holds. Row counts below are
@@ -1348,6 +1424,11 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             "pending": pending,
             "coverage": {"judged": judged, "known": known,
                          "stuck": stuck, "skipped": skipped},
+            # Queued work exists without a run behind it too — the timer drain
+            # and a sheet Refresh both queue rows nobody started from this page,
+            # and "why has this sat at 40 unchecked all day" is the same
+            # question with no bar attached to it.
+            "drain": _drain_state(db),
         }
 
     try:
@@ -1390,6 +1471,16 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     else:
         pending_run = pending
 
+    # Rows THIS run has already failed on. A verdict is only counted `done`
+    # when it is written, so a batch that errors on every row leaves the bar at
+    # 0 and the operator with no way to tell that anything happened at all —
+    # which is exactly the case where something happened.
+    errors_run = _narrow(
+        db.query(LeaderAiReview).filter(LeaderAiReview.status == "error"),
+        date_from=lo, date_to=hi, shift=r_shift,
+        manager_id=r_mgr, leader_id=r_ldr,
+    ).count()
+
     # A run ends when nothing is left to drain, not when done reaches total: a
     # row can die on `error` after its attempts run out and never be judged, and
     # a bar that waits for it would hang at 97% forever.
@@ -1400,6 +1491,10 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
     return {
         "active": not finished,
+        "errors": errors_run,
+        # THE answer to "it says 0 and nothing is happening": what the drain
+        # itself is doing, when it last moved, and when it retries by itself.
+        "drain": _drain_state(db),
         "justFinished": finished,
         "total": total,
         "done": min(done, total),
@@ -1414,6 +1509,29 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "narrow": run.get("narrow") or [],
         "by": run.get("by"),
     }
+
+
+@router.post("/progress/kick")
+def kick(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """Start draining NOW instead of waiting for the timer.
+
+    Every path that queues work already kicks a drain, so this is not the normal
+    way anything runs. It is the way OUT of the three states where the kick was
+    swallowed and the queue then sits for up to twenty minutes: the previous
+    drain was still finishing, another worker held the advisory lock, or the
+    batch broke on a quota that has since reset. Before this, the only cure was
+    a restart nobody here can perform.
+
+    Deliberately NOT `/run`: that discovers the whole history first, which is a
+    half-minute request. This kicks the existing queue and returns immediately —
+    the drain has always been a background thread and reports itself through the
+    heartbeat that `/progress` reads.
+    """
+    if not gemini.available():
+        raise HTTPException(status_code=400,
+                            detail="GEMINI_API_KEY is not set on the server")
+    leader_ai.run_async(discover_first=False)
+    return {"ok": True, "drain": _drain_state(db)}
 
 
 @router.post("/progress/cancel")

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, CheckCircle2, XCircle, Trash2 } from "lucide-react";
+import { Sparkles, CheckCircle2, XCircle, Trash2, Play } from "lucide-react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import { useLang } from "../../context/LangContext";
@@ -38,8 +38,12 @@ const TXT = {
     cBody: "Navbatdagi {n} ta qator olib tashlanadi. Hali tekshirilmaganlari o'chiriladi — ular keyin qaytadan topiladi. Ilgari xulosasi bo'lganlari eski xulosasiga qaytadi. Hech narsa yo'qolmaydi.",
     cGo: "Ha, tozalansin", cCancel: "Yo'q, davom etsin",
     scope: { unchecked: "Tekshirilmaganlar", flagged: "Shubhalilar", clean: "Tozalar", all: "Hammasi" },
-    h: "s", m: "daq", d: "kun",
+    h: "s", m: "daq", d: "kun", sec: "sek",
     coverage: "AI tekshiruvi qamrovi", unchecked: "tekshirilmagan", skipped: "o'tkazib yuborilgan", stuck: "xatolik",
+    dRun: "tekshirilmoqda", dWait: "navbatda kutmoqda", dBusy: "boshqa tekshiruv ketmoqda",
+    dNext: "{t} dan keyin avtomatik", dNow: "Hozir boshlash",
+    dQuota: "Kunlik AI limiti tugadi", dStall: "{t} dan beri javob yo'q",
+    dErr: "AI xatoligi", ago: "{t} oldin", errN: "{n} ta xato",
   },
   uz_cyrl: {
     title: "AI текшируви кетмоқда", of: "дан", checked: "текширилди",
@@ -52,8 +56,12 @@ const TXT = {
     cBody: "Навбатдаги {n} та қатор олиб ташланади. Ҳали текширилмаганлари ўчирилади — улар кейин қайтадан топилади. Илгари хулосаси бўлганлари эски хулосасига қайтади. Ҳеч нарса йўқолмайди.",
     cGo: "Ҳа, тозалансин", cCancel: "Йўқ, давом этсин",
     scope: { unchecked: "Текширилмаганлар", flagged: "Шубҳалилар", clean: "Тозалар", all: "Ҳаммаси" },
-    h: "с", m: "дақ", d: "кун",
+    h: "с", m: "дақ", d: "кун", sec: "сек",
     coverage: "AI текшируви қамрови", unchecked: "текширилмаган", skipped: "ўтказиб юборилган", stuck: "хатолик",
+    dRun: "текширилмоқда", dWait: "навбатда кутмоқда", dBusy: "бошқа текширув кетмоқда",
+    dNext: "{t} дан кейин автоматик", dNow: "Ҳозир бошлаш",
+    dQuota: "Кунлик AI лимити тугади", dStall: "{t} дан бери жавоб йўқ",
+    dErr: "AI хатолиги", ago: "{t} олдин", errN: "{n} та хато",
   },
   ru: {
     title: "Идёт проверка ИИ", of: "из", checked: "проверено",
@@ -66,8 +74,12 @@ const TXT = {
     cBody: "Из очереди будет убрано строк: {n}. Ещё не проверенные удаляются — они найдутся заново. Те, у которых уже был вывод, вернутся к прежнему выводу. Ничего не теряется.",
     cGo: "Да, очистить", cCancel: "Нет, продолжить",
     scope: { unchecked: "Непроверенные", flagged: "Сомнительные", clean: "Чистые", all: "Все" },
-    h: "ч", m: "мин", d: "дн.",
+    h: "ч", m: "мин", d: "дн.", sec: "сек",
     coverage: "Охват проверки ИИ", unchecked: "не проверено", skipped: "пропущено", stuck: "с ошибкой",
+    dRun: "идёт проверка", dWait: "ожидает в очереди", dBusy: "идёт другая проверка",
+    dNext: "автоматически через {t}", dNow: "Запустить сейчас",
+    dQuota: "Дневной лимит ИИ исчерпан", dStall: "нет ответа уже {t}",
+    dErr: "Ошибка ИИ", ago: "{t} назад", errN: "ошибок: {n}",
   },
   en: {
     title: "AI review running", of: "of", checked: "checked",
@@ -80,8 +92,12 @@ const TXT = {
     cBody: "{n} queued rows will be removed. Ones never checked are deleted — discovery finds them again. Ones that already had a verdict go back to it. Nothing is lost.",
     cGo: "Yes, clear", cCancel: "No, keep going",
     scope: { unchecked: "Unchecked", flagged: "Flagged", clean: "Clean", all: "All" },
-    h: "h", m: "min", d: "d",
+    h: "h", m: "min", d: "d", sec: "s",
     coverage: "AI review coverage", unchecked: "unchecked", skipped: "skipped", stuck: "errored",
+    dRun: "reviewing", dWait: "queued, not started", dBusy: "another review is running",
+    dNext: "auto-retry in {t}", dNow: "Start now",
+    dQuota: "Daily AI limit reached", dStall: "no response for {t}",
+    dErr: "AI error", ago: "{t} ago", errN: "{n} failed",
   },
 };
 
@@ -105,6 +121,74 @@ function etaText(p, T) {
   return fmt(T.eta, `${Math.round(secs / 86400)} ${T.d}`);
 }
 
+const dur = (s, T) =>
+  s < 60 ? `${s} ${T.sec}`
+    : s < 3600 ? `${Math.round(s / 60)} ${T.m}`
+      : `${(s / 3600).toFixed(1)} ${T.h}`;
+
+/* ── what the drain is actually doing ─────────────────────────────────────────
+ *
+ * The bar could only ever report the queue's SIZE, and a queue that does not
+ * shrink looks the same in every failing state: the drain grinding through a
+ * forty-photo batch, a kick swallowed because another one still held the lock,
+ * a 429 on the very first row, a retired model failing all forty. "0 of 49" a
+ * minute in was consistent with all of them, so the honest reading of a
+ * motionless bar was "no information at all" — and the operator has no shell to
+ * go and settle it with. That is the whole reason this line exists.
+ *
+ * Priority is by what the operator would DO about it: a systemic error and a
+ * spent quota outrank a stall, a stall outranks a live pulse, and anything that
+ * is not currently draining gets the button that starts one. The seconds-since
+ * counter is the load-bearing part — a number that ticks is the only proof of
+ * life a bar at 0% can offer.
+ */
+function DrainLine({ p, T, kick }) {
+  const d = p?.drain;
+  if (!d) return null;
+  const secs = d.secondsSince;
+  const live = d.state === "running" && !d.stalled;
+
+  let tone = "var(--text-4)";
+  let text = T.dWait;
+  if (d.error) { tone = "#ef4444"; text = `${T.dErr}: ${d.error}`; }
+  else if (d.quota) { tone = "#eab308"; text = T.dQuota; }
+  else if (d.stalled) { tone = "#eab308"; text = fmt(T.dStall, dur(secs ?? 0, T)); }
+  else if (live) {
+    tone = BRAND;
+    text = T.dRun + (secs != null && secs > 4 ? ` · ${fmt(T.ago, dur(secs, T))}` : "…");
+  } else if (d.state === "busy" || d.state === "locked") text = T.dBusy;
+
+  return (
+    <div className="flex items-center gap-2 mt-1.5 text-[11px] flex-wrap">
+      <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0${live ? " animate-pulse" : ""}`}
+        style={{ background: tone }} />
+      <span style={{ color: tone, fontWeight: tone === "var(--text-4)" ? 400 : 600 }}>{text}</span>
+      {/* Failed rows, in the one place they explain something: a batch that
+          errors on every row leaves `done` at 0, and without this the operator
+          reads "nothing happened" when in fact everything did and failed. */}
+      {p.errors > 0 && (
+        <><span style={{ color: "var(--text-4)" }}>·</span>
+        <span className="tabular-nums" style={{ color: "#eab308" }}>
+          {fmt(T.errN, p.errors.toLocaleString())}
+        </span></>
+      )}
+      {/* Nothing is draining. Say when the timer will try by itself — the wait
+          is up to twenty minutes and an unexplained one reads as broken — and
+          offer the press that skips it. */}
+      {!live && d.nextInS != null && (
+        <><span style={{ color: "var(--text-4)" }}>·</span>
+        <span style={{ color: "var(--text-4)" }}>{fmt(T.dNext, dur(d.nextInS, T))}</span></>
+      )}
+      {!live && (
+        <Button size="sm" variant="secondary" tint className="ml-auto"
+          icon={<Play size={12} />} loading={kick.isPending} onClick={() => kick.mutate()}>
+          {T.dNow}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** `showIdle` — also render the standing "how much is checked" bar when no run
  *  is going. True on the AI tab, where that is the subject; false elsewhere,
  *  where a permanent statistic would just be chrome. A LIVE run renders on
@@ -124,6 +208,13 @@ export default function AiProgress({ showIdle = false }) {
     // reader; one that polls every 30s during a run is a bar that looks frozen.
     refetchInterval: (q) => (q.state.data?.active ? 4000 : false),
     refetchOnWindowFocus: true,
+  });
+
+  // Start a drain now rather than at the next timer firing. The only cure for
+  // a swallowed kick used to be a restart, which nobody here can perform.
+  const kick = useMutation({
+    mutationFn: () => api.post("/api/leader-ai/progress/kick").then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leader-ai-progress"] }),
   });
 
   const stop = useMutation({
@@ -219,6 +310,11 @@ export default function AiProgress({ showIdle = false }) {
             </span></>
           )}
         </div>
+        {/* Queued rows with no run behind them are timer-paced, so "why has
+            this sat at 40 unchecked all day" is the same question without a bar
+            attached. Only when something is actually waiting — on a fully
+            drained queue this line would be chrome reporting nothing. */}
+        {p.pending > 0 && <DrainLine p={p} T={T} kick={kick} />}
       </div>
       {confirmDialog}
       </>
@@ -306,6 +402,8 @@ export default function AiProgress({ showIdle = false }) {
             </span></>
           )}
         </div>
+
+        <DrainLine p={p} T={T} kick={kick} />
       </div>
 
       {confirmDialog}

@@ -843,6 +843,45 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
 RUN_SETTING = "leader_ai_run"
 
 
+# ── the drain's heartbeat: how "slow" is told apart from "dead" ──────────────
+# A queue that is not moving looks IDENTICAL from the page whether the drain is
+# grinding through a forty-photo batch, was skipped because another worker holds
+# the lock, or broke on the first 429 of the day. The progress bar could only
+# ever report the queue's SIZE, so "0 of 49" a minute in was consistent with all
+# three — and the operator has no shell to go and read the log with, which is
+# the whole reason the re-check button exists at all.
+#
+# So the drain leaves a note: what it is doing, since when, how far it got and
+# why it stopped. ONE app_settings row, REPLACED whole on every write — a merge
+# would carry a stale `quota: true` into the next healthy run and permanently
+# accuse a working feature. Written cheaply enough to fire after every single
+# verdict, because the timestamp IS the pulse: a number that ticks is the only
+# evidence of life a bar at 0% can offer.
+HEARTBEAT_SETTING = "leader_ai_drain"
+
+
+def _beat(db: Session, **fields) -> None:
+    """Record what the drain is doing. Never raises — a note about the work is
+    not worth losing the work over, and this runs inside the drain loop."""
+    import json
+
+    try:
+        payload = json.dumps({"at": datetime.now(timezone.utc).isoformat(),
+                              **fields})
+        row = db.query(AppSetting).filter_by(key=HEARTBEAT_SETTING).first()
+        if row is None:
+            db.add(AppSetting(key=HEARTBEAT_SETTING, value=payload))
+        else:
+            row.value = payload
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.debug("leader-ai: heartbeat write failed", exc_info=True)
+
+
 def _active_run_scope(db: Session) -> dict | None:
     """The slice an operator-started run is waiting on, or None for "anywhere".
 
@@ -906,7 +945,7 @@ def _release_run(db: Session) -> None:
     db.commit()
 
 
-def drain(db: Session, limit: int | None = None) -> dict:
+def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     """Review up to `limit` pending rows, newest report first. Returns counts;
     `quota` marks a run cut short by the free tier so the UI can say so.
 
@@ -914,6 +953,12 @@ def drain(db: Session, limit: int | None = None) -> dict:
     — dates and, since the modal offers them, shift / brigadir / leader. EVERY
     caller drains through here, the timer included: a periodic firing that
     ignored the confinement would undo it twenty minutes into the run.
+
+    `beat(done, errors)` — optional, called after every row so a watcher can
+    prove the drain is alive. One verdict can legitimately take two minutes
+    (image fetch plus a thinking model), and without a per-row pulse a bar
+    sitting at 0% cannot say whether the first row is slow or the drain never
+    started. The web kick passes it; the backfill CLI has its own progress bar.
     """
     if not gemini.available():
         return {"ok": False, "reason": "no_key", "done": 0, "flagged": 0, "errors": 0}
@@ -967,6 +1012,8 @@ def drain(db: Session, limit: int | None = None) -> dict:
             flagged += 1
         elif rev.status == "error":
             errors += 1
+        if beat:
+            beat(done, errors)
         # A retired model, a revoked key or a dead network fails EVERY row
         # identically. Without this the drain would walk the whole batch
         # burning each row's retries on a fault that has nothing to do with it.
@@ -1175,26 +1222,43 @@ def run_async(discover_first: bool = True) -> None:
     """
     if not gemini.available():
         return
-    if _lock.locked():
-        log.debug("leader-ai: drain already running in this worker, skipping kick")
-        return
 
     def _work():
-        if not _lock.acquire(blocking=False):
-            return
+        # The "already draining in this worker" check lives INSIDE the thread
+        # now. As a pre-check it returned before anything could be written down,
+        # so the single most confusing outcome — a kick that did nothing because
+        # the previous one is still going — was the one outcome that left no
+        # trace anywhere. A thread that exits after two cheap statements costs
+        # nothing next to the batch it is guarding.
         db = SessionLocal()
-        holding = False
+        started = datetime.now(timezone.utc).isoformat()
+        got = holding = False
         try:
+            got = _lock.acquire(blocking=False)
+            if not got:
+                log.debug("leader-ai: drain already running in this worker")
+                _beat(db, state="busy", startedAt=started)
+                return
             holding = _try_db_lock(db)
             if not holding:
                 log.debug("leader-ai: another worker is draining, skipping kick")
+                _beat(db, state="locked", startedAt=started)
                 return
+            _beat(db, state="running", startedAt=started, done=0, errors=0)
             if discover_first:
                 discover(db)
-            res = drain(db)
+            res = drain(db, beat=lambda d, e: _beat(
+                db, state="running", startedAt=started, done=d, errors=e))
             log.info("leader-ai: drain finished %s", res)
-        except Exception:
+            _beat(db, state="idle", startedAt=started,
+                  done=res.get("done", 0), errors=res.get("errors", 0),
+                  quota=bool(res.get("quota")), aborted=res.get("aborted"),
+                  reason=res.get("reason"))
+        except Exception as exc:
             log.exception("leader-ai: drain crashed")
+            # A crash used to be a log line on a box nobody can open. It is the
+            # state most worth showing: everything else eventually retries.
+            _beat(db, state="crashed", startedAt=started, error=str(exc)[:300])
         finally:
             # Explicit unlock: db.close() only returns the connection to the
             # pool, and the session outlives it — so an advisory lock left
@@ -1203,7 +1267,11 @@ def run_async(discover_first: bool = True) -> None:
             if holding:
                 _db_unlock(db)
             db.close()
-            _lock.release()
+            # Guarded: this thread may have exited because it never got the
+            # lock, and releasing one it does not hold both raises and frees
+            # the drain that DOES hold it.
+            if got:
+                _lock.release()
 
     threading.Thread(target=_work, name="leader-ai-drain", daemon=True).start()
 

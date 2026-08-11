@@ -108,6 +108,21 @@ def schedule_interval(job_id: str, func, *, minutes: int, args: tuple = ()) -> N
         logger.exception("Could not schedule interval job %s", job_id)
 
 
+def next_run(job_id: str) -> datetime | None:
+    """When a registered job fires next, or None if it is not registered.
+
+    For pages that have to say "this retries by itself in N minutes". Guessing
+    that from an interval constant is how a strip ends up promising a sweep the
+    process never scheduled — after a restart, or when the feature declined to
+    register at boot (`leader-ai-drain` skips registration with no API key).
+    """
+    try:
+        job = get_scheduler().get_job(job_id)
+        return getattr(job, "next_run_time", None) if job else None
+    except Exception:
+        return None
+
+
 def unschedule(job_id: str) -> None:
     """Drop a pending job. A job that already fired or never existed is not an
     error — the caller's DB row is what actually decides whether work happens."""
