@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, History,
-  ImagePlus, ListChecks, Radio, RotateCcw, Trash2, X,
+  AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, Clock,
+  History, ImagePlus, ListChecks, Radio, RotateCcw, Trash2, UserCog, Users, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
 import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
@@ -12,6 +12,7 @@ import Toast, { useToast } from "../../components/ui/Toast";
 import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
+import { FilterPanel, OptsFilter } from "../../components/ui/ColumnFilter";
 import { SectionHead } from "../../components/ui/DataTable";
 import { SkeletonBlock, SkeletonMatrix } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
@@ -126,6 +127,12 @@ export default function LeaderTasksAdmin() {
   const open = useMemo(() => new Set(openArr), [openArr]);
   const setOpen = (next) =>
     setOpenArr((prev) => Array.from(typeof next === "function" ? next(new Set(prev)) : next));
+  // Matrix scope. Shift is single-valued (there are two of them); brigadir and
+  // leader are checkbox sets. These are not decoration: a column-header push
+  // writes exactly the rows they leave on screen.
+  const [fShift, setFShift] = usePersistentState("ltasks_f_shift", 0);
+  const [fMgrs, setFMgrs] = usePersistentState("ltasks_f_mgrs", []);
+  const [fLeads, setFLeads] = usePersistentState("ltasks_f_leads", []);
   const [confirm, setConfirm] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showExc, setShowExc] = useState(false);
@@ -212,6 +219,58 @@ export default function LeaderTasksAdmin() {
     for (const p of leaders) (out[p.manager_id] ||= []).push(p);
     return out;
   }, [leaders]);
+  const mgrById = useMemo(() => new Map(managers.map((m) => [m.id, m])), [managers]);
+  const leaderById = useMemo(() => new Map(leaders.map((p) => [p.id, p])), [leaders]);
+
+  // The filter options cascade — brigadirs follow the shift, leaders follow
+  // both — so a checkbox can never point at a row another filter has already
+  // removed. The STORED selection is reconciled against the live options
+  // rather than rewritten: narrowing the shift parks a leader's tick, clearing
+  // it brings the tick back, and no selection is silently thrown away.
+  const mgrOpts = useMemo(
+    () => managers.filter((m) => !fShift || Number(m.shift) === fShift),
+    [managers, fShift]);
+  const mgrSel = useMemo(() => {
+    const ok = new Set(mgrOpts.map((m) => m.id));
+    return fMgrs.filter((id) => ok.has(id));
+  }, [fMgrs, mgrOpts]);
+  const leaderOpts = useMemo(() => {
+    const pool = new Set(mgrSel.length ? mgrSel : mgrOpts.map((m) => m.id));
+    return leaders.filter((p) => pool.has(p.manager_id));
+  }, [leaders, mgrOpts, mgrSel]);
+  const leadSel = useMemo(() => {
+    const ok = new Set(leaderOpts.map((p) => p.id));
+    return fLeads.filter((id) => ok.has(id));
+  }, [fLeads, leaderOpts]);
+
+  // The visible matrix. A leader filter drops the brigadirs it empties and
+  // keeps the survivors expanded, so the table IS the list of rows a column
+  // push will write — which is the entire point of filtering before pushing.
+  const rows = useMemo(() => {
+    const pickM = new Set(mgrSel);
+    const pickL = new Set(leadSel);
+    const out = [];
+    for (const m of mgrOpts) {
+      if (pickM.size && !pickM.has(m.id)) continue;
+      const kids = leadersByMgr[m.id] || [];
+      const shown = pickL.size ? kids.filter((p) => pickL.has(p.id)) : kids;
+      if (pickL.size && !shown.length) continue;
+      out.push({ m, kids: shown });
+    }
+    return out;
+  }, [mgrOpts, mgrSel, leadSel, leadersByMgr]);
+  const leaderRows = useMemo(() => rows.reduce((a, r) => a + r.kids.length, 0), [rows]);
+  const anyFilter = fShift !== 0 || mgrSel.length > 0 || leadSel.length > 0;
+  const clearFilters = () => { setFShift(0); setFMgrs([]); setFLeads([]); };
+  // Leader ticks ⇒ write those leader rows as overrides; otherwise write the
+  // brigadir rows on screen and let their leaders keep inheriting, as always.
+  // Writing the parents while a leader filter is on would move every OTHER
+  // leader under them — exactly the rows the admin just filtered away.
+  const applyScope = useMemo(() => (
+    leadSel.length
+      ? { level: "leader", ids: rows.flatMap((r) => r.kids.map((p) => p.id)) }
+      : { level: "supervisor", ids: rows.map((r) => r.m.id) }
+  ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
   const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null };
@@ -302,9 +361,23 @@ export default function LeaderTasksAdmin() {
     confirmLabel: t("admin.ltasks.reset"),
     onConfirm: () => leaderMut.mutate({ leader_id: lcell.lid, task_id: lcell.tid, reset: true, when: "now" }),
   });
+  // The scope is stated three times on the way to a write — the warning line,
+  // the button, and the confirm — because this is the one control on the page
+  // that can rewrite ninety rows, and "all" is no longer what it does.
+  const applyN = applyScope.ids.length;
+  const applyMsg = () => (
+    applyScope.level === "leader" ? t("admin.ltasks.applyLeadHint").replace("{n}", applyN)
+      : anyFilter ? t("admin.ltasks.applyFiltHint").replace("{n}", applyN)
+        : t("admin.ltasks.applyAllHint").replace("{n}", applyN)
+  );
+  const applyLabel = () => (
+    applyScope.level === "leader"
+      ? t("admin.ltasks.applyToLeads").replace("{n}", applyN)
+      : t("admin.ltasks.applyToMgrs").replace("{n}", applyN)
+  );
   const askApplyAll = (payload) => setConfirm({
-    title: t("admin.ltasks.applyAll"), message: t("admin.ltasks.applyAllHint").replace("{n}", managers.length),
-    tone: "danger", confirmLabel: t("admin.ltasks.applyAll"), onConfirm: () => applyMut.mutate(payload),
+    title: t("admin.ltasks.applyAll"), message: applyMsg(),
+    tone: "danger", confirmLabel: applyLabel(), onConfirm: () => applyMut.mutate(payload),
   });
   const askCancel = (pc) => setConfirm({
     title: t("admin.ltasks.cancelChange"), message: t("admin.ltasks.cancelChangeMsg"), tone: "danger",
@@ -354,6 +427,48 @@ export default function LeaderTasksAdmin() {
     const m = managers.find((x) => x.id === pc.manager_id); return m ? tl(m.name) : `#${pc.manager_id}`;
   };
   const excChip = (label) => <span key={label} className="text-[10px] rounded px-1.5 py-0.5" style={{ background: "var(--bg-inner)", color: "var(--text-2)", border: "1px solid var(--border)" }}>{label}</span>;
+
+  // Scope sections for the matrix toolbar: shift as a two-value segmented pick,
+  // brigadir and leader as checkbox lists. The leader list is grouped under its
+  // brigadir — ninety-odd names in one flat column are unnavigable, and the
+  // grouping is also what tells the admin which brigadir a leader belongs to.
+  const mgrLabel = (id) => tl(mgrById.get(id)?.name || "") || `#${id}`;
+  const leadLabel = (id) => tl(leaderById.get(id)?.name || "") || `#${id}`;
+  const filterSections = [
+    {
+      key: "shift", icon: Clock, label: t("admin.ltasks.fShift"),
+      active: fShift !== 0, display: fShift ? `S${fShift}` : "",
+      onClear: () => setFShift(0),
+      render: () => (
+        <SegmentedToggle fill size="sm" value={fShift} onChange={setFShift}
+          options={[[0, t("admin.ltasks.fAllShifts")], [1, "S1"], [2, "S2"]]} />
+      ),
+    },
+    {
+      key: "mgr", icon: UserCog, label: t("admin.ltasks.supervisor"),
+      active: mgrSel.length > 0,
+      display: mgrSel.length === 1 ? mgrLabel(mgrSel[0]) : String(mgrSel.length),
+      onClear: () => setFMgrs([]),
+      render: () => (
+        <OptsFilter searchable opts={mgrOpts.map((m) => m.id)} sel={mgrSel}
+          onChange={setFMgrs} render={mgrLabel} />
+      ),
+    },
+    {
+      key: "lead", icon: Users, label: t("admin.ltasks.fLeader"),
+      active: leadSel.length > 0,
+      display: leadSel.length === 1 ? leadLabel(leadSel[0]) : String(leadSel.length),
+      onClear: () => setFLeads([]),
+      render: () => (
+        <OptsFilter searchable opts={leaderOpts.map((p) => p.id)} sel={leadSel}
+          onChange={setFLeads} render={leadLabel}
+          groupBy={(id) => {
+            const mid = leaderById.get(id)?.manager_id;
+            return mid ? mgrLabel(mid) : "—";
+          }} />
+      ),
+    },
+  ];
 
   const cellTask = cell && (tasks.find((task) => task.id === cell.tid) || {});
   const lcellTask = lcell && (tasks.find((task) => task.id === lcell.tid) || {});
@@ -424,7 +539,20 @@ export default function LeaderTasksAdmin() {
             <Button variant="ghost" size="sm" icon={<History size={14} />} onClick={() => setShowHistory(true)}>{t("admin.ltasks.history")}</Button>
           </div>
         } />
-        <div className="px-4 pt-3"><p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.desc")}</p></div>
+        <div className="px-4 pt-3 space-y-2.5">
+          <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.desc")}</p>
+          {/* FilterPanel must stay a DIRECT child of this row — its fit check
+              measures the row's own children to decide inline vs grouped. */}
+          <div className="flex items-center gap-2">
+            <FilterPanel sections={filterSections} />
+            <span className="ml-auto shrink-0 text-[11px] tabular-nums"
+              style={{ color: anyFilter ? "var(--brand-text)" : "var(--text-4)" }}>
+              {leadSel.length
+                ? t("admin.ltasks.fCountLead").replace("{l}", leaderRows).replace("{n}", rows.length)
+                : t("admin.ltasks.fCount").replace("{n}", rows.length).replace("{total}", managers.length)}
+            </span>
+          </div>
+        </div>
         {isLoading ? (
           <SkeletonMatrix rows={8} />
         ) : (
@@ -438,7 +566,7 @@ export default function LeaderTasksAdmin() {
                       {/* block, not inline-block: an inline button aligns on the baseline of its
                           LAST line, so one- vs two-line names staggered the whole header row. */}
                       <button type="button" title={tname(task)}
-                        onClick={() => { const f = getCell(managers[0]?.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, criteria: task.criteria || "", when: "now" }); }}
+                        onClick={() => { const f = getCell(rows[0]?.m.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, criteria: task.criteria || "", when: "now" }); }}
                         className="block w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
                         <span className="block font-bold leading-none">T{task.id}</span>
@@ -457,16 +585,30 @@ export default function LeaderTasksAdmin() {
                 </tr>
               </thead>
               <tbody>
-                {managers.map((m) => {
-                  const kids = leadersByMgr[m.id] || [];
-                  const isOpen = open.has(m.id);
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={tasks.length + 2} className="text-center py-8">
+                      <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.fNone")}</p>
+                      <Button variant="ghost" size="sm" className="mt-1.5" onClick={clearFilters}>
+                        {t("admin.ltasks.fClear")}
+                      </Button>
+                    </td>
+                  </tr>
+                )}
+                {rows.map(({ m, kids }) => {
+                  // A leader filter pins its brigadirs open: collapsing would
+                  // hide the very rows the filter selected, and the apply
+                  // button's promise ("these rows") would stop being visible.
+                  const pinned = leadSel.length > 0;
+                  const isOpen = pinned || open.has(m.id);
                   const childWarn = kids.some((p) => leaderSums[p.id] !== 100);
                   return (
                     <Fragment key={m.id}>
                       <tr>
                         <td className="pr-2 whitespace-nowrap sticky left-0 z-10" style={{ background: "var(--bg-card)" }}>
                           <span className="inline-flex items-center gap-1 max-w-full">
-                            <button type="button" onClick={() => toggleOpen(m.id)} disabled={!kids.length}
+                            <button type="button" onClick={() => toggleOpen(m.id)} disabled={!kids.length || pinned}
+                              title={pinned ? t("admin.ltasks.fPinned") : undefined}
                               className="p-0.5 -ml-1 rounded transition-opacity hover:opacity-70 disabled:opacity-30 flex-shrink-0" style={{ color: "var(--text-3)" }}>
                               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
@@ -591,11 +733,20 @@ export default function LeaderTasksAdmin() {
           <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
           <div className="space-y-2">
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.applyAll")}</p>
-            <p className="text-[11px]" style={{ color: C_WARN }}>{t("admin.ltasks.applyAllHint").replace("{n}", managers.length)}</p>
+            <p className="text-[11px]" style={{ color: C_WARN }}>{applyMsg()}</p>
             <FormField label={t("admin.ltasks.status")} required>{statusToggle(col.enabled, (v) => setCol((c) => ({ ...c, enabled: v })))}</FormField>
             {numField(t("admin.ltasks.minMedia"), col.min_media, (v) => setCol((c) => ({ ...c, min_media: v })), 20)}
             {numField(t("admin.ltasks.weight"), col.weight, (v) => setCol((c) => ({ ...c, weight: v })), 100)}
-            <Button size="sm" variant="secondary" onClick={() => askApplyAll({ task_id: col.tid, enabled: col.enabled, min_media: Number(col.min_media) || 0, weight: Number(col.weight) || 0, when: col.when })}>{t("admin.ltasks.applyAll")}</Button>
+            {/* The target rides along explicitly, so the write can never reach
+                past the matrix the admin is looking at. */}
+            <Button size="sm" variant="secondary" disabled={!applyN}
+              onClick={() => askApplyAll({
+                task_id: col.tid, enabled: col.enabled,
+                min_media: Number(col.min_media) || 0, weight: Number(col.weight) || 0,
+                when: col.when,
+                ...(applyScope.level === "leader"
+                  ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }),
+              })}>{applyLabel()}</Button>
           </div>
           <WhenBar when={col.when} setWhen={(v) => setCol((c) => ({ ...c, when: v }))} nextDate={nextDates["1"]} t={t} />
         </Modal>

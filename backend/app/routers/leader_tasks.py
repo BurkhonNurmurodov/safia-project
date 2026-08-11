@@ -232,30 +232,62 @@ def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(
 
 
 class ApplyAllIn(BaseModel):
+    """Column push. With neither id list the target is EVERY supervisor (the
+    historic behaviour); `manager_ids` / `leader_ids` narrow it to exactly the
+    rows the admin filtered the matrix down to, so the button can never write
+    more than the screen shows. An EMPTY list is a real answer ("nothing
+    matches") and is rejected — it must never widen back to everyone."""
     task_id: int
     enabled: bool
     min_media: int
     weight: int
     when: str = "now"
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
 
 
 @router.put("/admin/leader-tasks/apply-all")
 def put_apply_all(body: ApplyAllIn, db: Session = Depends(get_db),
                   admin: dict = Depends(verify_admin)):
-    """Push one task's enabled/photos/weight to EVERY supervisor. Decomposed
-    into a per-supervisor change each (shift-tagged) so a staged push flips at
-    each unit's own boundary; leader overrides are untouched."""
+    """Push one task's enabled/photos/weight to the targeted rows. Decomposed
+    into one change per row (shift-tagged) so a staged push flips at each
+    unit's own boundary.
+
+    Supervisor level leaves leader overrides untouched. Leader level is what a
+    leader-filtered matrix asks for: writing the parent supervisors instead
+    would move every OTHER leader under them, which is precisely the rows the
+    admin filtered out."""
     if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
     actor = _actor(admin)
-    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+
+    if body.leader_ids is not None:
+        ids = [i for (i,) in db.query(RoleProfile.id).filter(
+            RoleProfile.id.in_(body.leader_ids), RoleProfile.role == "leader").all()]
+        if not ids:
+            raise HTTPException(status_code=400, detail="no_rows")
+        for lid in ids:
+            payload = {"leader_id": lid, "task_id": body.task_id,
+                       "enabled": body.enabled, "min_media": body.min_media,
+                       "weight": body.weight, "names": None, "reset": False}
+            write_change(db, "leader", payload, body.when, actor)
+        return {"ok": True, "count": len(ids), "level": "leader",
+                "applied": body.when}
+
+    q = db.query(Manager).filter(Manager.archived.is_(False))
+    if body.manager_ids is not None:
+        q = q.filter(Manager.id.in_(body.manager_ids))
+    managers = q.all()
+    if not managers:
+        raise HTTPException(status_code=400, detail="no_rows")
     for m in managers:
         payload = {"manager_id": m.id, "cells": [{
             "task_id": body.task_id, "enabled": body.enabled,
             "min_media": body.min_media, "weight": body.weight, "names": None,
         }]}
         write_change(db, "supervisor", payload, body.when, actor)
-    return {"ok": True, "count": len(managers), "applied": body.when}
+    return {"ok": True, "count": len(managers), "level": "supervisor",
+            "applied": body.when}
 
 
 # Legacy column overwrite (old matrix UI). Retained so a stale client keeps
