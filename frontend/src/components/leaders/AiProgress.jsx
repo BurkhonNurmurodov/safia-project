@@ -255,13 +255,6 @@ export default function AiProgress({ showIdle = false }) {
           <span className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>
             {T.title}
           </span>
-          {p.scope && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded"
-              style={{ background: "var(--bg-inner)", color: "var(--text-3)", border: "1px solid var(--border)" }}>
-              {T.scope[p.scope] || p.scope}
-              {p.from || p.to ? ` · ${(p.from || "…").slice(5)}–${(p.to || "…").slice(5)}` : ""}
-            </span>
-          )}
           {/* Numbers first, percentage second: "1 129 of 1 174" answers "how
               much is left to pay for", which is the question quota makes you
               ask. The percentage alone never does. */}
@@ -296,6 +289,16 @@ export default function AiProgress({ showIdle = false }) {
           {p.pendingAll > p.pending && (
             <><span>·</span>
             <span>{fmt(T.outside, (p.pendingAll - p.pending).toLocaleString())}</span></>
+          )}
+          {/* Which slice the run covers — detail, not headline. As a chip in
+              the title row it was the line break that made this strip three
+              rows tall on a phone, ahead of the queue it announces. */}
+          {p.scope && (
+            <><span>·</span>
+            <span>
+              {T.scope[p.scope] || p.scope}
+              {p.from || p.to ? ` · ${(p.from || "…").slice(5)}–${(p.to || "…").slice(5)}` : ""}
+            </span></>
           )}
         </div>
       </div>

@@ -110,6 +110,9 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   // single step everybody understands.
   const [undoable, setUndoable] = useState(null);
   const zoomUrls = useRef({});
+  const gridRef = useRef(null);       // the three-pane grid — the phone scroll target
+  const activeRowRef = useRef(null);  // the rail row under the cursor
+  const firstShow = useRef(true);     // the initial render must not yank the page
 
   const f = useMemo(() => ({ ...EMPTY_FLT, ...(stored || {}) }), [stored]);
   const anyFlt = useMemo(
@@ -281,6 +284,24 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [move, dispatch, undo, zoomKey]);
 
+  // Follow the cursor. Desktop: J/K walks past the rail's own viewport, so the
+  // active row is kept in sight (block "nearest" — the page itself never
+  // jumps). Phone: the rail lives BELOW the card, so after a dispatch or a
+  // step the next item must come to the reader — scroll the card back under
+  // the thumb instead of leaving them staring at where the previous card's
+  // buttons used to be.
+  useEffect(() => {
+    if (!cur) { firstShow.current = true; return; }
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      activeRowRef.current?.scrollIntoView({ block: "nearest" });
+    } else if (!firstShow.current) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      gridRef.current?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    }
+    firstShow.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur?.ref]);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3">
@@ -332,33 +353,21 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
 
   return (
     <>
-      {/* ── row 1 · route and dispatch ──────────────────────────────────────
-          Bucket router. Technical failures are a SEPARATE queue on purpose —
-          an unreadable Drive link is the server's problem, and mixing it into a
-          discipline queue is how a reviewer learns to distrust the queue. */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <SegmentedToggle scrollable value={liveBucket} onChange={pickBucket} options={bucketOpts} />
-        <div className="flex-1" />
-        {actions}
-        {undoable && (
-          <Button size="lg" variant="secondary" tint icon={<Undo2 size={14} />} onClick={undo}>
-            {T.aiUndo}
-          </Button>
-        )}
-        <span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
-          {items.length ? `${ix + 1} / ${items.length}` : "0 / 0"}
-        </span>
-        <Button size="lg" variant="ghost" icon={<Keyboard size={15} />}
-          title={T.aiKeys} onClick={() => setKeysOpen((o) => !o)} />
-      </div>
-
-      {/* ── row 2 · scope ───────────────────────────────────────────────────
-          Period inline, everything else inside the ONE filter zone, chips
-          beside it. Its own row rather than sharing row 1: the dispatch cluster
-          already fills that line, and a scope control wrapped under the bucket
-          tabs reads as belonging to them. FilterPanel must stay a DIRECT child
-          of this flex row — it measures the row to decide whether to unfold. */}
+      {/* ── the toolbar: ONE row, 38px baseline ─────────────────────────────
+          Route → period → axes → actions, left to right, in the order the
+          reviewer narrows. This was two stacked rows (buckets+dispatch, then
+          scope), and with the tab strip and the progress bar above them the
+          photo started four bands down — on a phone, below the fold. Chrome
+          touched once a session must not out-rank the surface used hundreds
+          of times, so the rows share the line and wrap only when space runs
+          out. Buckets stay a control of their own, not a panel section:
+          technical failures are a SEPARATE queue on purpose — an unreadable
+          Drive link is the server's problem, and mixing it into a discipline
+          queue is how a reviewer learns to distrust the queue. FilterPanel
+          must stay a DIRECT child of this flex row — it measures the row's
+          children to decide whether to unfold. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <SegmentedToggle scrollable value={liveBucket} onChange={pickBucket} options={bucketOpts} />
         <DateRangePicker
           dateFrom={f.from} dateTo={f.to}
           setDateFrom={(v) => setF({ from: v || "" })}
@@ -433,6 +442,18 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
             },
           ]}
         />
+        <div className="flex-1" />
+        {actions}
+        {undoable && (
+          <Button size="lg" variant="secondary" tint icon={<Undo2 size={14} />} onClick={undo}>
+            {T.aiUndo}
+          </Button>
+        )}
+        {/* Shortcut chrome only exists where a keyboard does — on a phone this
+            button answered a question nobody there can act on. */}
+        <Button size="lg" variant="ghost" icon={<Keyboard size={15} />}
+          className="hidden lg:inline-flex" title={T.aiKeys}
+          onClick={() => setKeysOpen((o) => !o)} />
       </div>
 
       {/* Past the scan cap the counts stop being totals and become floors.
@@ -463,7 +484,8 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
             showUploadLink={false} height="h-64" />
         )
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3 items-start">
+        <div ref={gridRef} className="grid grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)_340px] gap-3 items-start"
+          style={{ scrollMarginTop: "calc(var(--tg-safe-top, 0px) + 8px)" }}>
           {/* ── the inbox ─────────────────────────────────────────────────── */}
           <Card className="order-3 lg:order-1">
             {/* «288 / 424» when the cap trimmed this bucket. A rail that shows
@@ -474,25 +496,39 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
                 {shown > items.length ? `${items.length} / ${shown}` : items.length}
               </span>} />
             <div className="overflow-y-auto" style={{ maxHeight: "min(62vh, 560px)" }}>
+              {/* Grouped by leader run. Forty flags from one person used to
+                  print the same name forty times, three lines per row — a rail
+                  that is 80% the same word reads as noise, not as a queue. The
+                  name is now a sticky group header (scrolling a long run you
+                  always know whose flags these are) and each row keeps only
+                  what varies: date, task, photo count, flags — one line. */}
               {items.map((it, k) => (
-                <button key={it.ref} onClick={() => { setI(k); setPhotoIx(0); }}
-                  aria-current={k === ix}
-                  className="w-full text-left px-3 py-2 flex flex-col gap-1 transition-colors"
-                  style={{
-                    borderBottom: "1px solid var(--border)",
-                    borderLeft: `3px solid ${k === ix ? "var(--brand)" : "transparent"}`,
-                    background: k === ix ? "var(--brand-bg)" : "transparent",
-                  }}>
-                  <span className="text-xs font-semibold truncate" style={{ color: "var(--text-1)" }}>
-                    {nm(it.leader)}
-                  </span>
-                  <span className="text-[11px] tabular-nums truncate" style={{ color: "var(--text-4)" }}>
-                    {ddmm(it.date)} · {T.task} {it.taskId} · {it.photos.length} {T.aiPhotoN}
-                  </span>
-                  <span className="flex gap-1 flex-wrap">
-                    {it.flags.map((f) => <FlagDot key={f} flag={f} />)}
-                  </span>
-                </button>
+                <div key={it.ref}>
+                  {(k === 0 || items[k - 1].leader !== it.leader) && (
+                    <div className="sticky top-0 z-[1] px-3 py-1.5 text-xs font-semibold truncate"
+                      style={{ background: "var(--bg-card)", color: "var(--text-1)",
+                               borderBottom: "1px solid var(--border)" }}>
+                      {nm(it.leader)}
+                    </div>
+                  )}
+                  <button onClick={() => { setI(k); setPhotoIx(0); }}
+                    ref={k === ix ? activeRowRef : undefined}
+                    aria-current={k === ix}
+                    className="w-full text-left px-3 py-2 flex items-center gap-2 transition-colors"
+                    style={{
+                      borderBottom: "1px solid var(--border)",
+                      borderLeft: `3px solid ${k === ix ? "var(--brand)" : "transparent"}`,
+                      background: k === ix ? "var(--brand-bg)" : "transparent",
+                    }}>
+                    <span className="text-[11px] tabular-nums truncate flex-1"
+                      style={{ color: k === ix ? "var(--text-2)" : "var(--text-4)" }}>
+                      {ddmm(it.date)} · {T.task} {it.taskId} · {it.photos.length} {T.aiPhotoN}
+                    </span>
+                    <span className="flex gap-1 flex-shrink-0">
+                      {it.flags.map((f) => <FlagDot key={f} flag={f} />)}
+                    </span>
+                  </button>
+                </div>
               ))}
             </div>
           </Card>
@@ -500,7 +536,23 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
           {/* ── the photo: the decision gets the pixels ───────────────────── */}
           <Card className="order-1 lg:order-2">
             <SectionHead icon={Sparkles} title={taskDetail(cur.taskId, lang).n || cur.taskLabel}
-              subtitle={`${nm(cur.leader)} · ${cur.supervisor} · ${ddmm(cur.date)}${cur.shift ? ` · ${cur.shift}-${T.shiftAbbr}` : ""}`} />
+              subtitle={`${nm(cur.leader)} · ${cur.supervisor} · ${ddmm(cur.date)}${cur.shift ? ` · ${cur.shift}-${T.shiftAbbr}` : ""}`}
+              right={
+                /* The cursor, ON the card it moves. On a phone this is the only
+                   way to walk the queue at all — the rail sits below the fold —
+                   and on desktop it is the mouse twin of J/K. The bare counter
+                   this replaces sat in the toolbar, a full pane away from the
+                   card it counted. */
+                <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+                  <Button size="sm" variant="ghost" icon={<ChevronLeft size={15} />}
+                    title={T.aiPrev} onClick={() => move(-1)} />
+                  <span className="text-[11px] tabular-nums px-1" style={{ color: "var(--text-4)" }}>
+                    {ix + 1} / {items.length}
+                  </span>
+                  <Button size="sm" variant="ghost" icon={<ChevronRight size={15} />}
+                    title={T.aiNext} onClick={() => move(1)} />
+                </span>
+              } />
             <div className="p-3 flex flex-col items-center gap-3">
               {cur.photos.length === 0 ? (
                 <p className="py-10 text-sm" style={{ color: "var(--text-4)" }}>{T.aiNoPhoto}</p>
@@ -532,7 +584,8 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
           {/* ── verdict + decision ────────────────────────────────────────── */}
           <Card className="order-2 lg:order-3">
             <Verdict item={cur} T={T} lang={lang} />
-            <Decide T={T} onAct={dispatch} busy={resolveMut.isPending} />
+            <Decide T={T} onAct={dispatch} busy={resolveMut.isPending}
+              onUndo={undoable ? undo : null} />
           </Card>
         </div>
       )}
@@ -752,11 +805,20 @@ const Lbl = ({ children }) => (
   </div>
 );
 
-/** The dispatch bar. On a phone it is the keyboard — fixed to the bottom, padded
- *  for Telegram's inset, targets at 44px. */
-function Decide({ T, onAct, busy }) {
+/** The dispatch bar — on a phone this IS the keyboard: 44px targets, and the
+ *  one place undo can reach a thumb. The toolbar's undo button is a full page
+ *  of scroll away once the card has been brought into view, and an undo nobody
+ *  can reach makes every one-tap decision feel unsafe. Desktop keeps the
+ *  toolbar button and the Z key, so this copy hides at lg. */
+function Decide({ T, onAct, onUndo, busy }) {
   return (
     <div className="p-3 flex flex-col gap-2" style={{ background: "var(--bg-inner)" }}>
+      {onUndo && (
+        <Button size="sm" variant="secondary" tint icon={<Undo2 size={14} />}
+          className="lg:hidden self-end" onClick={onUndo}>
+          {T.aiUndo}
+        </Button>
+      )}
       {["approved", "rejected", "requeried"].map((a) => {
         const { tone, Icon, key } = ACTS[a];
         return (
