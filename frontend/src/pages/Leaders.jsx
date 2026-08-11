@@ -101,7 +101,9 @@ const TXT = {
     thDate: "Sana", thLeader: "Lider", thScore: "Natija", thFailed: "Xatolar", thAction: "Harakat",
     thSubmitted: "Yuborilgan", lateTitle: "Hisobot kunidan keyin yuborilgan", dayAbbr: "kun", shiftAbbr: "smena",
     voidChip: "Vaqtdan tashqari",
-    voidTitle: "1-smena: hisobot o'z kunida 08:00–20:00 oralig'ida yuborilishi kerak — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
+    voidTitle: "Hisobot o'z smenasining oynasida yuborilishi kerak ({win}) — bu hisobot qabul qilinmadi va kun 0% hisoblanadi",
+    voidWin1: "1-smena: o'z kunida 08:00–20:00",
+    voidWin2: "2-smena: 21:00 dan ertasi kuni 09:00 gacha",
     aiTitle: "AI tekshiruvi",
     aiCheck: "Tekshirish",
     aiOk: "Tasdiqlandi",
@@ -217,7 +219,9 @@ const TXT = {
     thDate: "Сана", thLeader: "Лидер", thScore: "Натижа", thFailed: "Хатолар", thAction: "Ҳаракат",
     thSubmitted: "Юборилган", lateTitle: "Ҳисобот кунидан кейин юборилган", dayAbbr: "кун", shiftAbbr: "смена",
     voidChip: "Вақтдан ташқари",
-    voidTitle: "1-смена: ҳисобот ўз кунида 08:00–20:00 оралиғида юборилиши керак — бу ҳисобот қабул қилинмади ва кун 0% ҳисобланади",
+    voidTitle: "Ҳисобот ўз сменасининг ойнасида юборилиши керак ({win}) — бу ҳисобот қабул қилинмади ва кун 0% ҳисобланади",
+    voidWin1: "1-смена: ўз кунида 08:00–20:00",
+    voidWin2: "2-смена: 21:00 дан эртаси куни 09:00 гача",
     aiTitle: "AI текшируви",
     aiCheck: "Текшириш",
     aiOk: "Тасдиқланди",
@@ -333,7 +337,9 @@ const TXT = {
     thDate: "Дата", thLeader: "Лидер", thScore: "Балл", thFailed: "Пропущено", thAction: "Действие",
     thSubmitted: "Отправлено", lateTitle: "Отправлено позже отчётного дня", dayAbbr: "дн.", shiftAbbr: "смена",
     voidChip: "Вне окна",
-    voidTitle: "1-я смена: отчёт должен быть отправлен в свой день с 08:00 до 20:00 — этот отчёт не засчитан, день считается за 0%",
+    voidTitle: "Отчёт должен быть отправлен в окно своей смены ({win}) — этот отчёт не засчитан, день считается за 0%",
+    voidWin1: "1-я смена: в свой день с 08:00 до 20:00",
+    voidWin2: "2-я смена: с 21:00 до 09:00 следующего дня",
     aiTitle: "Проверка ИИ",
     aiCheck: "Проверить",
     aiOk: "Подтверждено",
@@ -449,7 +455,9 @@ const TXT = {
     thDate: "Date", thLeader: "Leader", thScore: "Score", thFailed: "Failed", thAction: "Action",
     thSubmitted: "Submitted", lateTitle: "Filed after the day it reports on", dayAbbr: "d", shiftAbbr: "shift",
     voidChip: "Out of window",
-    voidTitle: "Shift 1: a checklist must be filed on its own day between 08:00 and 20:00 — this one was not accepted, so the day scores 0%",
+    voidTitle: "A checklist must be filed inside its shift's window ({win}) — this one was not accepted, so the day scores 0%",
+    voidWin1: "shift 1: on its own day, 08:00–20:00",
+    voidWin2: "shift 2: 21:00 through 09:00 the next morning",
     aiTitle: "AI review",
     aiCheck: "Check now",
     aiOk: "Confirmed",
@@ -820,9 +828,11 @@ function LateChip({ days, T }) {
   );
 }
 
-// Where a row stands with the shift-1 submission window — one chip, four states,
+// Where a row stands with its shift's submission window — one chip, four states,
 // so the register never has to be read together with the «Kechikkanlar» tab to
-// know whether a day counts.
+// know whether a day counts. The tooltip names the window the row missed, which
+// is not the same one for both shifts: shift 1 files inside its own day
+// (08:00–20:00), shift 2 across midnight (21:00 → 09:00).
 //
 //   void / rejected — filed outside the window and not opened: the day scores 0.
 //                     Red, because that is what it costs, and the row's own score
@@ -839,7 +849,8 @@ function DayFlag({ row, T }) {
   const [Icon, label, title] =
     st === "approved" ? [ShieldCheck, T.lateOkChip, T.lateOkTitle.replace("{by}", row.late_by || "—")]
     : st === "pending" ? [Hourglass, T.pendChip, T.pendTitle]
-    : [Ban, T.voidChip, T.voidTitle];
+    : [Ban, T.voidChip,
+       T.voidTitle.replace("{win}", row.shift === 2 ? T.voidWin2 : T.voidWin1)];
   return (
     <span
       title={title}
