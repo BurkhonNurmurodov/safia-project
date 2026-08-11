@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -419,6 +419,30 @@ def _label(cfg, rev) -> str:
     return (_first_name(td) if td is not None else "") or f"#{rev.task_id}"
 
 
+def _sheet_scope(rows: list[LeaderAiReview]):
+    """SQL condition selecting the form rows behind `rows`, or None for none.
+
+    Matched on the ref's OWN handle — the submission id — and by date only for
+    the `sheetd:` refs that never had one. A row's date MOVES underneath a
+    verdict: `services/leader_tasks.filed_date` re-attributes a handover row to
+    the day it was actually worked, so a report filed at 20:43 dated tomorrow
+    lands back on today the next time the sheet syncs. A lookup scoped to the
+    review's SNAPSHOT date then finds nothing, and the card reads «0 photos»
+    about a report sitting one day over whose photos the reviewer had plainly
+    read — image date, verdict and all. The drain never had that blind spot
+    (`leader_ai._sheet_row` keys on the submission id alone), and the two
+    lookups have to agree about what a ref points at.
+    """
+    sids = {r.ref.split(":")[1] for r in rows if r.ref.startswith("sheet:")}
+    dates = {r.date for r in rows if not r.ref.startswith(("bot:", "sheet:"))}
+    conds = []
+    if sids:
+        conds.append(LeaderChecklist.submission_id.in_(sids))
+    if dates:
+        conds.append(LeaderChecklist.date.in_(dates))
+    return or_(*conds) if conds else None
+
+
 def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
     """(leader, supervisor, task label) per row — and NOTHING else.
 
@@ -447,12 +471,12 @@ def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
     # JSONB on these rows is the whole report and none of it is needed here.
     by_key: dict[tuple[str, str], tuple[str, str]] = {}
     by_sub: dict[str, tuple[str, str]] = {}
-    dates = {r.date for r in rows if not r.ref.startswith("bot:")}
-    if dates:
+    scope = _sheet_scope(rows)
+    if scope is not None:
         for d, ldr, sup, sub in db.query(
                 LeaderChecklist.date, LeaderChecklist.leader,
                 LeaderChecklist.supervisor, LeaderChecklist.submission_id
-        ).filter(LeaderChecklist.date.in_(dates)).all():
+        ).filter(scope).all():
             pair = (ldr, relabel_supervisor(sup))
             by_key[(d, (ldr or "").strip().lower()[:60])] = pair
             if sub:
@@ -514,12 +538,12 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
     days = {d.id: d for d in db.query(LeaderTaskDay)
             .filter(LeaderTaskDay.id.in_(day_ids)).all()} if day_ids else {}
 
-    # ── the sheet layer: one query for every date in the queue ───────────────
+    # ── the sheet layer: one query, keyed by ref handle — see _sheet_scope ────
     sheet_rows: dict[tuple[str, str], LeaderChecklist] = {}
     by_submission: dict[str, LeaderChecklist] = {}
-    dates = {r.date for r in rows if not r.ref.startswith("bot:")}
-    if dates:
-        for row in db.query(LeaderChecklist).filter(LeaderChecklist.date.in_(dates)).all():
+    scope = _sheet_scope(rows)
+    if scope is not None:
+        for row in db.query(LeaderChecklist).filter(scope).all():
             sheet_rows[(row.date, (row.leader or "").strip().lower()[:60])] = row
             if row.submission_id:
                 by_submission[row.submission_id] = row
@@ -587,6 +611,12 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             "leaderDone": task.get("done"),
             "leaderReason": task.get("reason"),
             "photos": photos,
+            # How many images the verdict was actually written from. When the
+            # list above comes back empty, this is the only thing that tells
+            # «the leader filed nothing» apart from «the report was deleted
+            # under a real verdict» — and a bare 0 told the first story about
+            # rows that were plainly the second.
+            "photosJudged": rev.photos or 0,
             "reviewedAt": rev.reviewed_at.isoformat() if rev.reviewed_at else None,
         })
     return out

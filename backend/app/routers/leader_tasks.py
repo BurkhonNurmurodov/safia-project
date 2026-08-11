@@ -22,14 +22,14 @@ from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
+    AppSetting, LeaderAiReview, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
     LeaderTaskSetting, Manager, RoleProfile,
 )
 from app.permissions import require_page
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
-from app.services import leader_bot
+from app.services import leader_ai, leader_bot
 from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
@@ -681,12 +681,27 @@ def delete_submissions(
         .filter(LeaderTaskDay.id.in_(day_ids))
         .delete(synchronize_session=False)
     )
+    # The AI verdicts of those entries go with them. A review points at its
+    # entry by id (`bot:<entry_id>`), so one left behind is a queue card with no
+    # photo, no answer and no report to open — it reads as "the leader filed
+    # nothing" when what happened is that an admin deleted the day underneath a
+    # finished verdict. Nothing else in the app deletes a LeaderAiReview, and
+    # discovery cannot re-create these (their source is gone), so this is the
+    # only place the orphan can be prevented.
+    n_rev = 0
+    if entry_ids:
+        n_rev = (
+            db.query(LeaderAiReview)
+            .filter(LeaderAiReview.ref.in_([leader_ai.bot_ref(i) for i in entry_ids]))
+            .delete(synchronize_session=False)
+        )
     db.commit()
     log.info(
-        "leader-tasks: %s deleted %d bot day(s), %d entries, %d media rows (ids=%s)",
-        _actor(admin), n_days, n_entries, n_media, day_ids,
+        "leader-tasks: %s deleted %d bot day(s), %d entries, %d media rows, "
+        "%d AI verdict(s) (ids=%s)",
+        _actor(admin), n_days, n_entries, n_media, n_rev, day_ids,
     )
-    return {"days": n_days, "entries": n_entries, "media": n_media}
+    return {"days": n_days, "entries": n_entries, "media": n_media, "reviews": n_rev}
 
 
 # ── Viewer: proof-photo streaming for the /leaders detail modal ───────────────

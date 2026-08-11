@@ -4,6 +4,7 @@ import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
   User, ShieldCheck, Layers, ClipboardCheck, Flag, SearchX, Settings2,
+  ImageOff,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -85,6 +86,15 @@ const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
 // "did the clock fall inside it", so the redundant year is dropped and the two
 // halves are shown as the times they are.
 const shortWin = (w) => (w || "").replace(/(\d{4})-(\d{2})-(\d{2})/g, (_, y, m, d) => `${d}.${m}`);
+
+/** The verdict exists but its photos no longer resolve — the report was deleted
+ *  underneath it. NOT the same as a report with no photos, which cannot reach
+ *  this queue at all: a review is only ever written from images it actually
+ *  read, so `photosJudged > 0` on an empty list means the source went away, not
+ *  that the leader filed nothing. Printing a bare «0 rasm» for that blamed the
+ *  leader for an admin's cleanup — the one reading the queue cannot tell the two
+ *  apart, and the wrong one is the one that gets someone's score rejected. */
+const srcLost = (it) => !!it && it.photos.length === 0 && (it.photosJudged || 0) > 0;
 
 /** `actions` — the «request a check» control, injected from Leaders.jsx so this
  *  component needs no overview query of its own. It belongs on THIS tab: it
@@ -539,7 +549,12 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
                     }}>
                     <span className="text-[11px] tabular-nums truncate flex-1"
                       style={{ color: k === ix ? "var(--text-2)" : "var(--text-4)" }}>
-                      {ddmm(it.date)} · {T.task} {it.taskId} · {it.photos.length} {T.aiPhotoN}
+                      {ddmm(it.date)} · {T.task} {it.taskId} ·{" "}
+                      {srcLost(it) ? (
+                        <span style={{ color: C_AI }}>{T.aiSrcLostShort}</span>
+                      ) : (
+                        `${it.photos.length} ${T.aiPhotoN}`
+                      )}
                     </span>
                     <span className="flex gap-1 flex-shrink-0">
                       {it.flags.map((f) => <FlagDot key={f} flag={f} />)}
@@ -572,7 +587,22 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
               } />
             <div className="p-3 flex flex-col items-center gap-3">
               {cur.photos.length === 0 ? (
-                <p className="py-10 text-sm" style={{ color: "var(--text-4)" }}>{T.aiNoPhoto}</p>
+                /* Two different failures wore the same sentence. «No photo
+                   found» is the truth only when there was never one to find;
+                   for a verdict written FROM photos it is a lie that reads as
+                   the leader's fault, so the source-lost case says what
+                   happened and how many images the verdict actually rests on. */
+                srcLost(cur) ? (
+                  <div className="py-9 px-4 flex flex-col items-center gap-2 text-center">
+                    <ImageOff size={22} style={{ color: C_AI }} />
+                    <p className="text-sm" style={{ color: "var(--text-2)" }}>{T.aiSrcLost}</p>
+                    <p className="text-[11px] max-w-xs" style={{ color: "var(--text-4)" }}>
+                      {(T.aiSrcLostHint || "").replace("{n}", cur.photosJudged)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="py-10 text-sm" style={{ color: "var(--text-4)" }}>{T.aiNoPhoto}</p>
+                )
               ) : (
                 /* `pIx`, not `photoIx`: moving from a 3-photo card to a 1-photo
                    one leaves the raw index out of range, and an undefined photo
