@@ -74,6 +74,14 @@ WINDOW = {
     1: (time(8, 0), time(20, 0), False),   # both ends inclusive: 20:00:00 counts
     2: (time(21, 0), time(9, 0), True),    # 21:00 → 09:00 next morning
 }
+# The CLOSE carries a wrap-up allowance; the open does not (user, 2026-08-11).
+# A leader filling the last answers as the shift hands over lands a minute or ten
+# past the hour — a real 20:09 report was voided for it — while a leader filing
+# BEFORE their shift opens has not done the work yet, which is the asymmetry the
+# user chose when shift 2 was kept strict at 21:00. Deliberately not folded into
+# WINDOW: 20:00 stays the deadline everyone is told, and this is the slack behind
+# it, not a later one to aim at.
+CLOSE_GRACE = timedelta(minutes=15)
 
 
 def _in_window(date_iso: str, shift: int | None,
@@ -90,7 +98,7 @@ def _in_window(date_iso: str, shift: int | None,
     except ValueError:
         return False
     start = day.replace(hour=opens.hour, minute=opens.minute)
-    end = day.replace(hour=closes.hour, minute=closes.minute)
+    end = day.replace(hour=closes.hour, minute=closes.minute) + CLOSE_GRACE
     if overnight:
         end += timedelta(days=1)
     return start <= submitted_at <= end
@@ -654,6 +662,7 @@ def get_late_queue(
             str(sh): {"from": WINDOW_FROM[sh],
                       "open": opens.strftime("%H:%M"),
                       "close": closes.strftime("%H:%M"),
+                      "grace_min": int(CLOSE_GRACE.total_seconds() // 60),
                       "overnight": overnight}
             for sh, (opens, closes, overnight) in WINDOW.items()
         },

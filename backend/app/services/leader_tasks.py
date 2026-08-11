@@ -253,6 +253,18 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
 # at 18:00 had it filed against a night that had not started.
 SHIFT2_START_HOUR = 21
 
+# The changeover: shift 1's own window shuts at 20:00 (WINDOW[1] in
+# routers/leaders.py — kept as a plain number here so the service does not
+# import the router), and the night crew is already on the floor before its
+# 21:00 opens. That hour between the two is why `filed_date` cannot read a
+# timestamp alone: 20:43 is either the end of one shift's paperwork or the start
+# of the next one's, and only the date the leader wrote says which.
+CHANGEOVER_HOUR = 20
+
+
+def _next_day(iso: str) -> str:
+    return (datetime.strptime(iso, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
 
 def day_of(when: datetime, shift: int | None) -> str:
     """The checklist date a Tashkent WALL-CLOCK moment belongs to.
@@ -286,8 +298,9 @@ def filed_date(sheet_date: str, shift: int | None,
                submitted_at: datetime | None) -> str:
     """Which checklist day a GOOGLE-FORM row reports on.
 
-    The form's «Дата» cell is the right answer for shift 1 and the wrong one for
-    shift 2 in BOTH directions. That shift files between 21:00 and 09:00, so its
+    The form's «Дата» cell is almost always the right answer for shift 1 (see the
+    handover exception below) and the wrong one for shift 2 in BOTH directions.
+    That shift files between 21:00 and 09:00, so its
     night carries two calendar dates and the cell holds whichever one the leader
     had in mind:
 
@@ -313,16 +326,39 @@ def filed_date(sheet_date: str, shift: int | None,
       later — and it stands. A row is therefore never pulled onto a night its
       own timestamp does not touch.
 
+    Plus the RUN-UP, which `day_of` alone gets wrong: a leader arriving for the
+    changeover files at 20:43 — seventeen minutes before their own shift opens,
+    so `day_of` reads that moment as still belonging to LAST night. The date they
+    wrote says otherwise: tomorrow's date is the coming night, not the one that
+    ended this morning. Only after the changeover (shift 1 has gone home) and
+    only for a row dated the morning that coming night ends, so the ambiguous
+    case — the same 20:43 stamp naming the night that just ENDED — is left
+    exactly where `day_of` puts it.
+
+    SHIFT 1 gets that one correction and nothing else: its calendar day is the
+    form's date, except for the leader who files as they hand over — after 20:00,
+    dated tomorrow. That row is the day they just WORKED, not the one starting
+    the next morning, and left uncorrected it was voided against a window twelve
+    hours in its future. Same clause as the shift-2 run-up, and the same
+    conservatism: a date more than a day off the stamp is one the leader chose.
+
     With no readable timestamp nothing is derived and the sheet's date stands.
     """
-    if shift != 2 or submitted_at is None:
+    if submitted_at is None or shift not in (1, 2):
         return sheet_date
+    claimed, stamped = str(sheet_date)[:10], submitted_at.strftime("%Y-%m-%d")
+    # Filed after the changeover, dated tomorrow: shift 1 means the day it just
+    # worked, shift 2 the night it is starting. Both are the stamp's own date.
+    handover = (submitted_at.hour >= CHANGEOVER_HOUR
+                and claimed == _next_day(stamped))
+    if shift == 1:
+        return stamped if handover else sheet_date
     night = day_of(submitted_at, 2)
-    ends = (datetime.strptime(night, "%Y-%m-%d")
-            + timedelta(days=1)).strftime("%Y-%m-%d")
-    if str(sheet_date)[:10] not in (submitted_at.strftime("%Y-%m-%d"), ends):
-        return sheet_date            # a date the leader chose — respect it
-    return night
+    if claimed in (stamped, _next_day(night)):
+        return night
+    if handover:
+        return stamped               # filed in the run-up to its own night
+    return sheet_date                # a date the leader chose — respect it
 
 
 # ── the submission deadline ──────────────────────────────────────────────────
