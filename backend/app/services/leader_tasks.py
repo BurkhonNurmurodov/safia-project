@@ -245,18 +245,64 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
     db.commit()
 
 
-def effective_date(shift: int | None = None, now: datetime | None = None) -> str:
-    """ISO date of the checklist day, per the leader's shift (Tashkent time):
+def day_of(when: datetime, shift: int | None) -> str:
+    """The checklist date a Tashkent WALL-CLOCK moment belongs to.
 
     * shift 1 (or unknown): the plain calendar day, 00:00 → 23:59.
     * shift 2: the day runs 17:00 → 16:59 next morning, so anything before
       17:00 belongs to the previous date (the night shift stays on its
       starting date).
+
+    Takes the moment already in Tashkent terms — naive or aware — because the
+    two callers hold it differently: the bot converts `now` from UTC, while a
+    Google-Form timestamp is the sheet's own naive Tashkent wall clock. Running
+    a naive value through `astimezone()` would read it as the SERVER's local
+    time, which on the VPS is UTC — five hours off, i.e. every submission
+    between 17:00 and 22:00 attributed to the wrong day.
     """
-    now = (now or datetime.now(timezone.utc)).astimezone(_TASHKENT)
-    if shift == 2 and now.hour < 17:
-        now -= timedelta(days=1)
-    return now.strftime("%Y-%m-%d")
+    if shift == 2 and when.hour < 17:
+        when -= timedelta(days=1)
+    return when.strftime("%Y-%m-%d")
+
+
+def effective_date(shift: int | None = None, now: datetime | None = None) -> str:
+    """ISO date of the checklist day happening RIGHT NOW, per the leader's
+    shift. The boundary itself is `day_of`."""
+    return day_of((now or datetime.now(timezone.utc)).astimezone(_TASHKENT), shift)
+
+
+def filed_date(sheet_date: str, shift: int | None,
+               submitted_at: datetime | None) -> str:
+    """Which checklist day a GOOGLE-FORM row reports on.
+
+    The form's «Дата» cell carries the submission's own calendar date, which is
+    the right answer for shift 1 and the wrong one for shift 2 every single
+    night: that shift files between 21:00 and 09:00, so the half of the crew
+    that fills the form after midnight stamps TOMORROW onto the night that
+    started yesterday. The row then lands on a day whose shift has not begun —
+    at 14:00 the register already showed "2-smena" reports for a shift opening
+    at 21:00 — while the night it actually reports on reads as unfiled, and the
+    bot day for the same (leader, date) no longer dedupes against it.
+
+    The correction is deliberately the narrowest one that fixes exactly that:
+
+    * shift 2 only — shift 1's calendar day is the form's date, full stop;
+    * only when the row claims the very date it was submitted on, i.e. the
+      stamp is the form's own "today" rather than a day the leader chose. A
+      leader who dates a row themselves — a backfill filed two days later —
+      keeps that date;
+    * only when `day_of` disagrees with it, which for a same-day stamp means
+      the submission landed before 17:00: BEFORE the claimed day's shift even
+      opens. A report cannot belong to a day that has not started.
+
+    With no readable timestamp nothing is derived and the sheet's date stands.
+    """
+    if shift != 2 or submitted_at is None:
+        return sheet_date
+    stamped = submitted_at.strftime("%Y-%m-%d")
+    if str(sheet_date)[:10] != stamped:
+        return sheet_date            # a date the leader chose — respect it
+    return day_of(submitted_at, 2)
 
 
 # ── the submission deadline ──────────────────────────────────────────────────

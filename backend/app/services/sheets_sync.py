@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -5,11 +6,16 @@ from app.models import (
     Cell, CellPerenaladka, Manager, ProductionData, HeadcountData, DowntimeData,
     LeaderChecklist, QualityComplaint, QualitySyncMeta,
 )
-from app.services.name_map import sheet_alias_map
+from app.services.leader_tasks import filed_date
+from app.services.name_map import (
+    relabel_supervisor, sheet_alias_map, supervisor_match,
+)
 from app.services.sheets_reader import (
     read_production_data, read_headcount_data, read_downtime_data, read_leader_data,
     read_quality_data, read_cell_perenaladka,
 )
+
+log = logging.getLogger(__name__)
 
 
 def sync_source_sheet(sheet_id: str, db: Session) -> dict:
@@ -151,15 +157,37 @@ def sync_cell_perenaladka(sheet_id: str, db: Session) -> dict:
 
 def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
     """Fetch leader checklist submissions from the leaders sheet and persist.
-    Wipe-and-reload, mirroring the other source syncs."""
+    Wipe-and-reload, mirroring the other source syncs.
+
+    The one thing NOT taken verbatim from the sheet is a shift-2 row's date:
+    the night shift files across midnight, so the form's own "today" stamp puts
+    half of every night on the wrong day. `filed_date` re-attributes exactly
+    those rows and leaves every other one alone. It is done at write time, not
+    per read, because the stored date is the join key — `/api/leaders` dedupes
+    a sheet row against the bot day for the same (leader, date), and the AI
+    reviewer looks its source row up by date. A correction applied in one
+    reader and not the others would just move the disagreement.
+    """
     rows = read_leader_data(sheet_id)
+
+    # Same resolution the dashboard does, for the same reason: the unit decides
+    # the shift, and the shift decides where midnight falls. Relabel first —
+    # some rows are tagged with a name that isn't the unit they belong to.
+    sup = supervisor_match(
+        db.query(Manager).all(),
+        {relabel_supervisor(r["supervisor"]) for r in rows if r.get("supervisor")},
+    )
 
     db.query(LeaderChecklist).delete()
 
-    count = 0
+    count = moved = 0
     for r in rows:
+        shift = (sup.get(relabel_supervisor(r["supervisor"])) or {}).get("shift")
+        date = filed_date(r["date"], shift, r["submitted_at"])
+        if date != r["date"]:
+            moved += 1
         db.add(LeaderChecklist(
-            date=r["date"],
+            date=date,
             supervisor=r["supervisor"],
             leader=r["leader"],
             completion=r["completion"],
@@ -170,7 +198,10 @@ def sync_leaders_sheet(sheet_id: str, db: Session) -> dict:
         count += 1
 
     db.commit()
-    return {"leader_rows": count}
+    if moved:
+        log.info("leaders sync: %s night row(s) re-dated to the shift they "
+                 "report on", moved)
+    return {"leader_rows": count, "night_rows_redated": moved}
 
 
 def sync_quality_sheet(sheet_id: str, db: Session) -> dict:

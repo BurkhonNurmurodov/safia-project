@@ -124,6 +124,11 @@ def bot_ref(entry_id: int) -> str:
 def sheet_ref(row: LeaderChecklist, task_id: int) -> str:
     if row.submission_id:
         return f"sheet:{row.submission_id}:{task_id}"
+    # The date fallback is for rows the form never gave a submission id. It is
+    # the one ref that moves when a night row is re-dated to the shift it
+    # reports on (services/leader_tasks.filed_date) — such a row is reviewed
+    # once more under its new key. Rows carrying a submission id, which is all
+    # of them since the form grew the column, are unaffected.
     who = (row.leader or "").strip().lower()[:60]
     return f"sheetd:{row.date}:{who}:{task_id}"
 
@@ -559,6 +564,22 @@ def discover(db: Session) -> int:
             added += 1
 
     # ── sheet layer ──────────────────────────────────────────────────────────
+    # A review's date and shift are a SNAPSHOT of its source row taken when it
+    # was first seen, and both can move underneath it: the leaders sheet re-dates
+    # a night row to the shift it reports on (services/leader_tasks.filed_date),
+    # and a unit can be switched between shifts in the Profiles tab. Either one
+    # leaves the verdict being judged against the wrong window — a shift-2 row
+    # stranded on tomorrow is checked against a window that has not opened, so
+    # every real photo in it reads as the wrong date. Re-stamping known refs
+    # below is what keeps the queue in step; verdicts already written are left
+    # alone (the recheck modal re-runs any slice on purpose).
+    drift = {
+        ref: (rid, date, sh) for rid, ref, date, sh in db.query(
+            LeaderAiReview.id, LeaderAiReview.ref,
+            LeaderAiReview.date, LeaderAiReview.shift,
+        ).filter(LeaderAiReview.source == "sheet").all()
+    }
+    fixed = 0
     if added < DISCOVER_CAP:
         rows_q = db.query(LeaderChecklist)
         if floor:
@@ -588,6 +609,18 @@ def discover(db: Session) -> int:
                         continue
                     ref = sheet_ref(r, int(tk.get("id") or 0))
                     if ref in known:
+                        # Known ref: nothing to queue, but re-stamp it if its
+                        # source row has moved day or unit shift since. Only
+                        # while the row still RESOLVES to a unit — a transient
+                        # name-matching miss must never rewrite a review's shift
+                        # to "unknown", which would re-judge a night photo
+                        # against shift 1's calendar day.
+                        was = drift.get(ref)
+                        if was and info.get("id") and (
+                                was[1] != r.date or was[2] != info.get("shift")):
+                            db.query(LeaderAiReview).filter_by(id=was[0]).update(
+                                {"date": r.date, "shift": info.get("shift")})
+                            fixed += 1
                         continue
                     db.add(LeaderAiReview(
                         ref=ref, source="sheet", date=r.date,
@@ -600,9 +633,13 @@ def discover(db: Session) -> int:
                     if added >= DISCOVER_CAP:
                         break
 
-    if added:
+    if added or fixed:
         db.commit()
+    if added:
         log.info("leader-ai: queued %s new review(s)", added)
+    if fixed:
+        log.info("leader-ai: re-stamped %s review(s) whose source row changed "
+                 "day or shift", fixed)
     return added
 
 
