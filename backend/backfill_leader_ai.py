@@ -217,7 +217,7 @@ def main() -> int:
         return 2
 
     if args.model:
-        settings.gemini_model = args.model
+        gemini.set_model_override(args.model)
 
     db = SessionLocal()
     holding = False
@@ -230,7 +230,7 @@ def main() -> int:
         keyless = "" if gemini.available() else st.red + "   (no GEMINI_API_KEY!)" + st.off
         stuck = f" ({counts['stuck']} out of retries)" if counts.get("stuck") else ""
         print(f"{st.bold}AI proof review — backfill{st.off}")
-        print(f"  model        {settings.gemini_model}{keyless}")
+        print(f"  model        {gemini.active_model()}{keyless}")
         print(f"  queue        {counts['pending']} pending · {counts['ok']} ok · "
               f"{counts['flagged']} flagged · {counts['error']} errors{stuck}")
         if args.stats:
@@ -307,7 +307,7 @@ def main() -> int:
             return 0
 
         if not args.yes and _TTY:
-            ans = input(f"\nReview {len(ids)} item(s) with {settings.gemini_model}? [y/N] ")
+            ans = input(f"\nReview {len(ids)} item(s) with {gemini.active_model()}? [y/N] ")
             if ans.strip().lower() not in ("y", "yes"):
                 print("Cancelled.")
                 return 1

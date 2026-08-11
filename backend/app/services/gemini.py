@@ -124,6 +124,92 @@ def available() -> bool:
     return bool(api_key())
 
 
+# ── which model ──────────────────────────────────────────────────────────────
+# Always a `-latest` ALIAS, never a pinned version: `gemini-2.5-flash` still
+# appears in ListModels but generateContent 404s it for keys created after it
+# was retired, and the same will happen to every pinned id eventually.
+#
+# Two, because they answer two different constraints and the binding one
+# changes: `flash` judges the "is this photo even about this task" question
+# better, `flash-lite` goes much further per day, which is what matters the
+# moment the account is on the free tier or near a spend cap. That is a
+# decision the person paying makes, on a day we cannot predict — so it is a
+# stored setting, not a constant they have to ask someone to push.
+MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
+
+MODEL_SETTING = "gemini_model"
+
+# NOTE the precedence is INVERTED versus the key, deliberately. For the key,
+# env wins so a value pinned by whoever has the box can never be overridden
+# from a web form — that is a security stance. A model name is not a secret and
+# `config.py` ALWAYS carries one, so if config won here the picker would be a
+# control that visibly does nothing. Ours ships a default; the operator's pick
+# beats it. `--model` on the backfill CLI beats both, per run and per process.
+_MODEL_TTL = 30.0
+_model_cache: tuple[float, str] = (0.0, "")
+_model_override: str = ""
+
+
+def set_model_override(name: str) -> None:
+    """Pin the model for THIS process only — `backfill_leader_ai.py --model`.
+
+    A run draining ten thousand rows on the cheap model must not rewrite what
+    the platform uses for the photo somebody checks from the page a minute
+    later, so the override lives in memory and dies with the process.
+    """
+    global _model_override
+    _model_override = (name or "").strip()
+
+
+def _stored_model() -> str:
+    """The admin-set model from app_settings, or "". Never raises: a failure
+    here has to fall back to the shipped default, not break every call."""
+    import time
+
+    global _model_cache
+    now = time.monotonic()
+    if now - _model_cache[0] < _MODEL_TTL:
+        return _model_cache[1]
+
+    val = ""
+    try:
+        from app.database import SessionLocal
+        from app.models import AppSetting
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter_by(key=MODEL_SETTING).first()
+            val = (row.value or "").strip() if row else ""
+        finally:
+            db.close()
+    except Exception:
+        log.exception("gemini: could not read the stored model")
+        val = ""
+
+    _model_cache = (now, val)
+    return val
+
+
+def invalidate_model_cache() -> None:
+    global _model_cache
+    _model_cache = (0.0, "")
+
+
+def active_model() -> str:
+    """THE resolver. Named `active_model` rather than `model` because every
+    call site here already has a `model` parameter that would shadow it."""
+    return (_model_override or _stored_model()
+            or (settings.gemini_model or "").strip() or MODELS[0])
+
+
+def model_source() -> str:
+    """Which of the three decided it — shown beside the picker so an operator
+    can see why their pick is not the one in use."""
+    if _model_override:
+        return "cli"
+    return "db" if _stored_model() else "config"
+
+
 def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
     """Downscale to `_MAX_EDGE` when Pillow is present. Falls back to the
     original bytes for anything Pillow can't open (and for animated/odd
@@ -163,7 +249,7 @@ def generate_json(
     key = api_key()
     if not key:
         raise GeminiError("GEMINI_API_KEY is not configured")
-    mdl = (model or settings.gemini_model or "gemini-2.5-flash").strip()
+    mdl = (model or "").strip() or active_model()
 
     parts: list[dict] = [{"text": prompt}]
     for raw, mime in images:

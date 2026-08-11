@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
-  User, ShieldCheck, Layers, ClipboardCheck, Flag, SearchX,
+  User, ShieldCheck, Layers, ClipboardCheck, Flag, SearchX, Settings2,
 } from "lucide-react";
 import Button from "../ui/Button";
+import Modal from "../ui/Modal";
+import StyledSelect from "../ui/StyledSelect";
 import SegmentedToggle from "../ui/SegmentedToggle";
 import DateRangePicker from "../ui/DateRangePicker";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
@@ -105,6 +107,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   const [photoIx, setPhotoIx] = useState(0);
   const [zoom, setZoom] = useState(null);       // object URL of the enlarged photo
   const [keysOpen, setKeysOpen] = useState(false);
+  const [cfgOpen, setCfgOpen] = useState(false);
   // The last dispatch, kept until the next one so Z can put it back. Only one
   // deep on purpose: an undo stack nobody can see is a worse promise than a
   // single step everybody understands.
@@ -449,6 +452,13 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
             {T.aiUndo}
           </Button>
         )}
+        {/* Key + model, reachable WITH a key configured. The setup card only
+            ever rendered in the disabled state, so once a key existed there
+            was no way to rotate it, clear it or see which one was in use —
+            and swapping to a different billing account is exactly the errand
+            an operator has when a spend cap stops the queue. */}
+        <Button size="lg" variant="ghost" icon={<Settings2 size={15} />}
+          title={T.aiSettings} onClick={() => setCfgOpen(true)} />
         {/* Shortcut chrome only exists where a keyboard does — on a phone this
             button answered a question nobody there can act on. */}
         <Button size="lg" variant="ghost" icon={<Keyboard size={15} />}
@@ -464,6 +474,13 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
       )}
 
       {keysOpen && <KeyLegend T={T} />}
+
+      {cfgOpen && (
+        <Modal open onClose={() => setCfgOpen(false)} title={T.aiSettings}
+          icon={Sparkles} maxWidth="max-w-lg">
+          <KeySetup T={T} qc={qc} embedded />
+        </Modal>
+      )}
 
       {!cur ? (
         /* Two different emptinesses, and reading one as the other is the
@@ -621,7 +638,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
  * SECRET_KEY, which lives in .env and never in the database, so a dbdump is
  * ciphertext) and afterwards will only ever say "configured", plus a
  * first4…last4 preview — enough to spot a bad paste, useless to a shoulder. */
-function KeySetup({ T, qc }) {
+function KeySetup({ T, qc, embedded = false }) {
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
   const { show: toast, node } = useToast({ position: "bottom" });
@@ -630,6 +647,26 @@ function KeySetup({ T, qc }) {
     queryKey: ["leader-ai-key"],
     queryFn: () => api.get("/api/leader-ai/key").then((r) => r.data),
   });
+
+  // The model is the other half of "what will this cost and how well will it
+  // judge", and which half binds flips with the billing account — free tier or
+  // a spent cap makes requests-per-day the constraint, and the cheap model
+  // suddenly beats the accurate one. It lived in config.py behind a push,
+  // which meant it needed repo access at the exact moment the quota ran out.
+  const setModel = useMutation({
+    mutationFn: (m) => api.post("/api/leader-ai/model", { model: m }).then((r) => r.data),
+    onSuccess: () => {
+      toast(T.aiModelSaved, "success");
+      qc.invalidateQueries({ queryKey: ["leader-ai-key"] });
+    },
+    onError: (e) => toast(e?.response?.data?.detail || String(e?.message || e), "error"),
+  });
+
+  const modelOpts = (st?.models || []).map((m) => ({
+    value: m,
+    label: m.includes("lite") ? T.aiModelLite : T.aiModelFlash,
+    title: m,
+  }));
 
   const save = useMutation({
     // The value is an ARGUMENT, not read from state: «Clear» sets the field
@@ -651,15 +688,13 @@ function KeySetup({ T, qc }) {
   // somebody type a value that silently never takes effect.
   const locked = st?.source === "env";
 
-  return (
-    <>
-      <div className="rounded-2xl overflow-hidden max-w-xl"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <SectionHead icon={Sparkles} title={T.aiOffTitle} />
-        <div className="p-4 flex flex-col gap-3">
-          <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
-            {T.aiOffBody}
-          </p>
+  const body = (
+    <div className={embedded ? "flex flex-col gap-3" : "p-4 flex flex-col gap-3"}>
+          {!embedded && (
+            <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {T.aiOffBody}
+            </p>
+          )}
 
           {locked ? (
             <p className="text-xs rounded-lg p-2.5"
@@ -705,8 +740,43 @@ function KeySetup({ T, qc }) {
               </p>
             </>
           )}
+
+          {/* The model. Shown even when the key is env-pinned — the two are
+              stored separately and a locked key is no reason to lock the
+              choice that decides how far the day's quota goes. */}
+          {!!modelOpts.length && (
+            <div className="flex flex-col gap-1.5 pt-1"
+              style={{ borderTop: "1px solid var(--border)" }}>
+              <label className="text-[11px] font-bold uppercase tracking-wide pt-2"
+                style={{ color: "var(--text-4)" }}>
+                {T.aiModelLabel}
+              </label>
+              <StyledSelect value={st?.model} options={modelOpts}
+                disabled={setModel.isPending}
+                onChange={(v) => v && v !== st?.model && setModel.mutate(v)} />
+              {/* The hint carries the consequence, at --text-3 rather than
+                  --text-4: this is the line that says which model to pick and
+                  why, and at the fainter weight the eye skips exactly it. */}
+              <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+                {T.aiModelHint}
+              </p>
+              <p className="text-[11px] font-mono" style={{ color: "var(--text-4)" }}>
+                {st?.model}{st?.modelSource === "config" ? ` · ${T.aiModelCfg}` : ""}
+              </p>
+            </div>
+          )}
+    </div>
+  );
+
+  return (
+    <>
+      {embedded ? body : (
+        <div className="rounded-2xl overflow-hidden max-w-xl"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <SectionHead icon={Sparkles} title={T.aiOffTitle} />
+          {body}
         </div>
-      </div>
+      )}
       {node}
     </>
   );

@@ -829,7 +829,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     for l in LANGS:
         setattr(rev, f"reason_{l}", (out.get(f"reason_{l}") or "").strip()[:1500] or None)
     rev.photos = len(images)
-    rev.model = settings.gemini_model
+    rev.model = gemini.active_model()
     rev.error = None
     rev.reviewed_at = datetime.now(timezone.utc)
     db.commit()
@@ -998,6 +998,7 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
                 "quota": False, "aborted": None, "runFinished": True}
     done = flagged = errors = 0
     quota = False
+    quota_msg = None
     aborted = None
     streak = 0  # consecutive API-level failures
     for rev in rows:
@@ -1006,6 +1007,11 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
         except gemini.GeminiQuotaError as exc:
             log.warning("leader-ai: quota reached, stopping drain (%s)", exc)
             quota = True
+            # Google's own words. A 429 is per-minute, per-day AND spend-cap all
+            # at once, and they want opposite things done about them: the first
+            # clears itself in a minute, the last does not clear this month. A
+            # label we author here has to guess which; this does not.
+            quota_msg = str(exc)[:300]
             break
         done += 1
         if rev.status == "flagged":
@@ -1024,7 +1030,7 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
                       streak, aborted)
             break
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
-            "quota": quota, "aborted": aborted}
+            "quota": quota, "quotaMsg": quota_msg, "aborted": aborted}
 
 
 def counts(db: Session) -> dict:
@@ -1252,8 +1258,8 @@ def run_async(discover_first: bool = True) -> None:
             log.info("leader-ai: drain finished %s", res)
             _beat(db, state="idle", startedAt=started,
                   done=res.get("done", 0), errors=res.get("errors", 0),
-                  quota=bool(res.get("quota")), aborted=res.get("aborted"),
-                  reason=res.get("reason"))
+                  quota=bool(res.get("quota")), quotaMsg=res.get("quotaMsg"),
+                  aborted=res.get("aborted"), reason=res.get("reason"))
         except Exception as exc:
             log.exception("leader-ai: drain crashed")
             # A crash used to be a log line on a box nobody can open. It is the

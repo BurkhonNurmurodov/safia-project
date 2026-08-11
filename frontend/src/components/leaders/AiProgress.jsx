@@ -42,7 +42,7 @@ const TXT = {
     coverage: "AI tekshiruvi qamrovi", unchecked: "tekshirilmagan", skipped: "o'tkazib yuborilgan", stuck: "xatolik",
     dRun: "tekshirilmoqda", dWait: "navbatda kutmoqda", dBusy: "boshqa tekshiruv ketmoqda",
     dNext: "{t} dan keyin avtomatik", dNow: "Hozir boshlash",
-    dQuota: "Kunlik AI limiti tugadi", dStall: "{t} dan beri javob yo'q",
+    dQuota: "AI limiti tugadi", dStall: "{t} dan beri javob yo'q",
     dErr: "AI xatoligi", ago: "{t} oldin", errN: "{n} ta xato",
   },
   uz_cyrl: {
@@ -60,7 +60,7 @@ const TXT = {
     coverage: "AI текшируви қамрови", unchecked: "текширилмаган", skipped: "ўтказиб юборилган", stuck: "хатолик",
     dRun: "текширилмоқда", dWait: "навбатда кутмоқда", dBusy: "бошқа текширув кетмоқда",
     dNext: "{t} дан кейин автоматик", dNow: "Ҳозир бошлаш",
-    dQuota: "Кунлик AI лимити тугади", dStall: "{t} дан бери жавоб йўқ",
+    dQuota: "AI лимити тугади", dStall: "{t} дан бери жавоб йўқ",
     dErr: "AI хатолиги", ago: "{t} олдин", errN: "{n} та хато",
   },
   ru: {
@@ -78,7 +78,7 @@ const TXT = {
     coverage: "Охват проверки ИИ", unchecked: "не проверено", skipped: "пропущено", stuck: "с ошибкой",
     dRun: "идёт проверка", dWait: "ожидает в очереди", dBusy: "идёт другая проверка",
     dNext: "автоматически через {t}", dNow: "Запустить сейчас",
-    dQuota: "Дневной лимит ИИ исчерпан", dStall: "нет ответа уже {t}",
+    dQuota: "Лимит ИИ исчерпан", dStall: "нет ответа уже {t}",
     dErr: "Ошибка ИИ", ago: "{t} назад", errN: "ошибок: {n}",
   },
   en: {
@@ -96,7 +96,7 @@ const TXT = {
     coverage: "AI review coverage", unchecked: "unchecked", skipped: "skipped", stuck: "errored",
     dRun: "reviewing", dWait: "queued, not started", dBusy: "another review is running",
     dNext: "auto-retry in {t}", dNow: "Start now",
-    dQuota: "Daily AI limit reached", dStall: "no response for {t}",
+    dQuota: "AI quota reached", dStall: "no response for {t}",
     dErr: "AI error", ago: "{t} ago", errN: "{n} failed",
   },
 };
@@ -150,8 +150,15 @@ function DrainLine({ p, T, kick }) {
 
   let tone = "var(--text-4)";
   let text = T.dWait;
-  if (d.error) { tone = "#ef4444"; text = `${T.dErr}: ${d.error}`; }
-  else if (d.quota) { tone = "#eab308"; text = T.dQuota; }
+  // The provider's own sentence goes on its own line rather than into the
+  // label: it runs to a paragraph, and a paragraph in the status line pushes
+  // the numbers and the button off the strip on a phone. Label scans, detail
+  // explains — the same split `FormField` uses for consequential copy.
+  let detail = null;
+  if (d.error) { tone = "#ef4444"; text = T.dErr; detail = d.error; }
+  // Google's words, not our guess: ours said "daily" for every 429, which reads
+  // as "wait until tomorrow" — and a spend cap does not clear tomorrow.
+  else if (d.quota) { tone = "#eab308"; text = T.dQuota; detail = d.quotaMsg; }
   else if (d.stalled) { tone = "#eab308"; text = fmt(T.dStall, dur(secs ?? 0, T)); }
   else if (live) {
     tone = BRAND;
@@ -184,6 +191,11 @@ function DrainLine({ p, T, kick }) {
           icon={<Play size={12} />} loading={kick.isPending} onClick={() => kick.mutate()}>
           {T.dNow}
         </Button>
+      )}
+      {detail && (
+        <span className="w-full break-words leading-snug" style={{ color: "var(--text-3)" }}>
+          {detail}
+        </span>
       )}
     </div>
   );

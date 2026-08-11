@@ -28,7 +28,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.database import get_db
 from app.models import (
     AppSetting, LeaderAiReview, LeaderChecklist, LeaderTaskDay, LeaderTaskDef,
@@ -125,7 +124,7 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
 
     return {
         "enabled": True,
-        "model": settings.gemini_model,
+        "model": gemini.active_model(),
         "counts": leader_ai.counts(db),
         "flags": flags,
         # How often the human agreed with the machine. For a pilot this is the
@@ -830,7 +829,54 @@ def get_key(_: dict = Depends(verify_admin)):
         "source": src,
         "editable": src != "env",
         "preview": f"{raw[:4]}…{raw[-4:]}" if len(raw) >= 12 else ("…" if raw else ""),
+        # The model rides along: it is the other half of "what will this cost
+        # and how well will it judge", and a second request for one string on a
+        # card that is already open is a round-trip for nothing.
+        "model": gemini.active_model(),
+        "modelSource": gemini.model_source(),
+        "models": list(gemini.MODELS),
     }
+
+
+class ModelIn(BaseModel):
+    model: str = Field(..., max_length=80)
+
+
+@router.post("/model")
+def set_model(body: ModelIn, db: Session = Depends(get_db),
+              admin: dict = Depends(verify_admin)):
+    """Choose which Gemini model the reviewer runs on.
+
+    The binding constraint moves and nobody can predict when: `flash` judges
+    the relevance question better, `flash-lite` goes several times further per
+    day, and which one is right flips the moment the account lands on the free
+    tier or runs into a spend cap. Until now that choice lived in `config.py`
+    and needed a push, which means it needed someone with repo access at the
+    exact moment the quota ran out — the same trap the API key was in.
+
+    Restricted to the curated aliases. A free-text field here is a way to type
+    a retired model id and get a 404 on every row until somebody notices, and
+    the two on offer are the two that are known to resolve.
+    """
+    name = (body.model or "").strip()
+    if name not in gemini.MODELS:
+        raise HTTPException(status_code=400,
+                            detail=f"Unknown model. Choose one of: "
+                                   f"{', '.join(gemini.MODELS)}")
+
+    row = db.query(AppSetting).filter_by(key=gemini.MODEL_SETTING).first()
+    if row is None:
+        db.add(AppSetting(key=gemini.MODEL_SETTING, value=name))
+    else:
+        row.value = name
+    db.commit()
+    # Same reason the key invalidates its cache: the next thing the operator
+    # does is press «Tekshirish» and expect the model they just picked.
+    gemini.invalidate_model_cache()
+    log.info("leader-ai: %s set the model to %s",
+             admin.get("telegram_id"), name)
+    return {"ok": True, "model": gemini.active_model(),
+            "modelSource": gemini.model_source()}
 
 
 @router.post("/key")
@@ -1172,6 +1218,11 @@ def _drain_state(db: Session) -> dict:
             "done": beat.get("done"),
             "errors": beat.get("errors"),
             "quota": bool(beat.get("quota")),
+            # The API's own sentence about WHICH limit. Ours said "daily" for
+            # every 429, which is a guess: a per-minute cap clears itself before
+            # the next timer firing, a spend cap does not clear this month, and
+            # those are opposite instructions to the person reading the strip.
+            "quotaMsg": beat.get("quotaMsg"),
             # Both are systemic — a retired model, a revoked key, a dead
             # network — and both are the answer to "why is it not moving".
             "error": beat.get("aborted") or beat.get("error"),
