@@ -245,22 +245,33 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
     db.commit()
 
 
+# Shift 2 works and files 21:00 → 09:00 next morning. ONE boundary, at the hour
+# the shift starts: the day a moment belongs to turns at 21:00, and the same
+# 21:00 opens the submission window that shuts at `deadline_hhmm` (09:00). The
+# earlier 17:00 attribution boundary is gone — it put the four hours before a
+# shift on the shift itself, so a leader still finishing last night's checklist
+# at 18:00 had it filed against a night that had not started.
+SHIFT2_START_HOUR = 21
+
+
 def day_of(when: datetime, shift: int | None) -> str:
     """The checklist date a Tashkent WALL-CLOCK moment belongs to.
 
     * shift 1 (or unknown): the plain calendar day, 00:00 → 23:59.
-    * shift 2: the day runs 17:00 → 16:59 next morning, so anything before
-      17:00 belongs to the previous date (the night shift stays on its
-      starting date).
+    * shift 2: the day runs 21:00 → 20:59 next evening, so anything before
+      21:00 belongs to the previous date (the night shift stays on its
+      starting date). Its window shuts at 09:00 — the twelve hours between are
+      a day that is over but not yet superseded, which is the stretch
+      `expired_through` exists to name.
 
     Takes the moment already in Tashkent terms — naive or aware — because the
     two callers hold it differently: the bot converts `now` from UTC, while a
     Google-Form timestamp is the sheet's own naive Tashkent wall clock. Running
     a naive value through `astimezone()` would read it as the SERVER's local
     time, which on the VPS is UTC — five hours off, i.e. every submission
-    between 17:00 and 22:00 attributed to the wrong day.
+    between 21:00 and 02:00 attributed to the wrong day.
     """
-    if shift == 2 and when.hour < 17:
+    if shift == 2 and when.hour < SHIFT2_START_HOUR:
         when -= timedelta(days=1)
     return when.strftime("%Y-%m-%d")
 
@@ -292,7 +303,7 @@ def filed_date(sheet_date: str, shift: int | None,
       leader who dates a row themselves — a backfill filed two days later —
       keeps that date;
     * only when `day_of` disagrees with it, which for a same-day stamp means
-      the submission landed before 17:00: BEFORE the claimed day's shift even
+      the submission landed before 21:00: BEFORE the claimed day's shift even
       opens. A report cannot belong to a day that has not started.
 
     With no readable timestamp nothing is derived and the sheet's date stands.
@@ -307,10 +318,10 @@ def filed_date(sheet_date: str, shift: int | None,
 
 # ── the submission deadline ──────────────────────────────────────────────────
 #
-# A day stops accepting entries BEFORE effective_date rolls over to the next
-# one. Shift 2 files 21:00 → 09:00 next morning, so its checklist dies at 09:00
-# while the attribution boundary above only turns at 17:00 — eight hours later.
-# Anything keyed to that boundary leaves a missed night editable all morning.
+# A day stops accepting entries long BEFORE effective_date rolls over to the
+# next one. Shift 2 files 21:00 → 09:00 next morning, so its checklist dies at
+# 09:00 while the attribution boundary above turns at 21:00 — twelve hours
+# later. Anything keyed to that boundary leaves a missed night editable all day.
 
 def deadline_hhmm(shift: int | None) -> str:
     """The clock time a day's checklist stops accepting entries. 24-hour, and
