@@ -79,6 +79,7 @@ try:
         migrate_user_capabilities,
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
+        purge_leader_ai_history,
     )
     from app.telegram_bot import setup_webhook
 
@@ -127,6 +128,7 @@ try:
     migrate_factories()
     repoint_shift_report_sheet()
     wipe_cell_perenaladka_history()
+    purge_leader_ai_history()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

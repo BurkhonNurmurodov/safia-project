@@ -8,7 +8,8 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import (
     Admin, AppSetting, Attendance, CellPerenaladka, Comment, DayApproval,
-    EditRequest, ExchangeTask, HrDocument, Language, LeaderConcern, LeaderTask,
+    EditRequest, ExchangeTask, HrDocument, Language, LeaderAiReview,
+    LeaderConcern, LeaderTask,
     LeaderTaskComment, Manager, RoleProfile, SheetSource,
     TelegramUser, TelegramUserRole,
 )
@@ -1551,6 +1552,45 @@ def wipe_cell_perenaladka_history() -> None:
     except Exception as exc:  # pragma: no cover — never block startup
         db.rollback()
         print(f"[startup] cell_perenaladka wipe skipped: {exc}")
+    finally:
+        db.close()
+
+
+LEADER_AI_PURGE_FLAG = "leader_ai_purged_pre_2026_08_10"
+
+
+def purge_leader_ai_history() -> None:
+    """One-shot purge of every AI proof-review verdict dated before 2026-08-10
+    (requested 2026-08-11): the historical backfill judged months of reports
+    under review criteria that have since been reworked, so the operator chose
+    to keep only 10 Aug onward. Pins the review floor (`leader_ai_floor`) to
+    the same date — discovery back-fills everything ever filed, and without the
+    floor the next drain pass would re-insert the deleted history as `pending`
+    and re-spend the Gemini quota on it. Flag-guarded: runs exactly once, so
+    verdicts the AI writes from the floor onward are never touched."""
+    from app.services.leader_ai import FLOOR_SETTING
+
+    FLOOR = "2026-08-10"
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_AI_PURGE_FLAG).first():
+            return
+
+        n = (db.query(LeaderAiReview)
+             .filter(LeaderAiReview.date < FLOOR)
+             .delete(synchronize_session=False))
+        row = db.query(AppSetting).filter_by(key=FLOOR_SETTING).first()
+        if row is None:
+            db.add(AppSetting(key=FLOOR_SETTING, value=FLOOR))
+        elif (row.value or "") < FLOOR:
+            row.value = FLOOR
+        db.add(AppSetting(key=LEADER_AI_PURGE_FLAG, value="1"))
+        db.commit()
+        if n:
+            print(f"[startup] leader_ai_reviews: purged {n} verdict(s) before {FLOOR}")
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader-ai purge skipped: {exc}")
     finally:
         db.close()
 

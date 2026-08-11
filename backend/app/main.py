@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         migrate_user_capabilities,
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
+        purge_leader_ai_history,
     )
     add_last_seen_column()
     add_tg_name_column()
@@ -119,6 +120,7 @@ async def lifespan(app: FastAPI):
     migrate_factories()
     repoint_shift_report_sheet()
     wipe_cell_perenaladka_history()
+    purge_leader_ai_history()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

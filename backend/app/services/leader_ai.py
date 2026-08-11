@@ -504,16 +504,36 @@ def _existing_refs(db: Session) -> set[str]:
     return {r[0] for r in db.query(LeaderAiReview.ref).all()}
 
 
+FLOOR_SETTING = "leader_ai_floor"
+
+
+def floor_date(db: Session) -> str | None:
+    """The first date AI review covers ("YYYY-MM-DD"), or None for everything.
+
+    Reports dated BEFORE the floor are out of scope: neither `discover()` nor
+    `queue_report()` will queue them. This is what makes a purge of old
+    verdicts permanent — discovery back-fills "everything ever filed", so
+    without the floor the next pass would re-insert every deleted row as
+    `pending` and the drain would re-spend the quota re-judging history nobody
+    wants judged. Set by the one-shot purge in app/startup.py.
+    """
+    row = db.query(AppSetting).filter_by(key=FLOOR_SETTING).first()
+    return row.value if row is not None and row.value else None
+
+
 def discover(db: Session) -> int:
     """Insert `pending` rows for every reviewable (report, task) not yet known.
     Reviewable = the leader answered YES and attached at least one photo; a
     "no" with a written reason has no image to judge."""
     known = _existing_refs(db)
+    floor = floor_date(db)
     added = 0
 
     # ── bot layer ────────────────────────────────────────────────────────────
-    days = {d.id: d for d in db.query(LeaderTaskDay)
-            .filter(LeaderTaskDay.closed_at.isnot(None)).all()}
+    days_q = db.query(LeaderTaskDay).filter(LeaderTaskDay.closed_at.isnot(None))
+    if floor:
+        days_q = days_q.filter(LeaderTaskDay.date >= floor)
+    days = {d.id: d for d in days_q.all()}
     if days:
         shifts = {m.id: m.shift for m in db.query(Manager).all()}
         with_media = {r[0] for r in db.query(LeaderTaskMedia.entry_id).distinct().all()}
@@ -540,7 +560,10 @@ def discover(db: Session) -> int:
 
     # ── sheet layer ──────────────────────────────────────────────────────────
     if added < DISCOVER_CAP:
-        rows = db.query(LeaderChecklist).order_by(LeaderChecklist.date.desc()).all()
+        rows_q = db.query(LeaderChecklist)
+        if floor:
+            rows_q = rows_q.filter(LeaderChecklist.date >= floor)
+        rows = rows_q.order_by(LeaderChecklist.date.desc()).all()
         if rows:
             managers = db.query(Manager).all()
             # Relabel BEFORE matching, exactly as /api/leaders does: the unit
@@ -592,6 +615,12 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     the background drain is for. Matching is done for this row alone — a single
     fuzzy match is cheap, it is the batch of thousands that is not.
     """
+    # Reports before the review floor are out of scope — see floor_date().
+    floor = floor_date(db)
+    when = day.date if day is not None else (row.date if row is not None else None)
+    if floor and when and when < floor:
+        return 0
+
     added = 0
     if day is not None:
         mgr = db.query(Manager).filter_by(id=day.manager_id).first()
