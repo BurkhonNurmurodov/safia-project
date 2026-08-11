@@ -298,6 +298,11 @@ export default function AiProgress({ showIdle = false }) {
             <span>
               {T.scope[p.scope] || p.scope}
               {p.from || p.to ? ` · ${(p.from || "…").slice(5)}–${(p.to || "…").slice(5)}` : ""}
+              {/* Whose rows, when the run was narrowed to a shift, a brigadir
+                  or a leader. Server-resolved names: without them a run over
+                  one unit is indistinguishable from one over the whole plant,
+                  and the only visible difference is a smaller total. */}
+              {p.narrow?.length ? ` · ${p.narrow.join(" · ")}` : ""}
             </span></>
           )}
         </div>

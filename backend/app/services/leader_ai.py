@@ -805,17 +805,20 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
 RUN_SETTING = "leader_ai_run"
 
 
-def _active_run_range(db: Session) -> tuple[str | None, str | None] | None:
-    """The dates an operator-started run is waiting on, or None for "anywhere".
+def _active_run_scope(db: Session) -> dict | None:
+    """The slice an operator-started run is waiting on, or None for "anywhere".
 
-    An operator who picks one day is asking for that day. Until this existed the
-    picker narrowed the progress bar's denominator and NOTHING else: the drain
-    took the newest pending row anywhere, so a one-day run quietly walked
-    backwards through the whole corpus spending quota on dates nobody asked
-    about, while the bar read "5 of 222 · 2%" beside "19,998 left".
+    An operator who picks one day — or one brigadir, or shift 2 — is asking for
+    that. Until this existed the pickers narrowed the progress bar's denominator
+    and NOTHING else: the drain took the newest pending row anywhere, so a
+    one-day run quietly walked backwards through the whole corpus spending quota
+    on dates nobody asked about, while the bar read "5 of 222 · 2%" beside
+    "19,998 left". The who-filters would land in exactly the same trap.
 
-    Returns None for a run carrying no dates (that IS the whole corpus) and for
-    one already drained, so a confinement can never outlive its work.
+    Returns `{"date_from","date_to","shift","manager_id","leader_id"}` with the
+    keys that are set, None for a run carrying no narrowing at all (that IS the
+    whole corpus) and for one already drained, so a confinement can never
+    outlive its work.
     """
     import json
 
@@ -828,8 +831,14 @@ def _active_run_range(db: Session) -> tuple[str | None, str | None] | None:
         return None            # a corrupt record is /progress's to clean up
     if run.get("drained_at"):
         return None
-    lo, hi = run.get("from"), run.get("to")
-    return (lo, hi) if (lo or hi) else None
+    # Records written before the who-filters existed carry only the dates; the
+    # missing keys read as "no narrowing", which is exactly what they meant.
+    scope = {
+        "date_from": run.get("from"), "date_to": run.get("to"),
+        "shift": run.get("shift"), "manager_id": run.get("manager"),
+        "leader_id": run.get("leader"),
+    }
+    return scope if any(v is not None and v != "" for v in scope.values()) else None
 
 
 def _release_run(db: Session) -> None:
@@ -863,9 +872,10 @@ def drain(db: Session, limit: int | None = None) -> dict:
     """Review up to `limit` pending rows, newest report first. Returns counts;
     `quota` marks a run cut short by the free tier so the UI can say so.
 
-    Confined to the active run's dates when there is one (`_active_run_range`).
-    EVERY caller drains through here, the timer included — a periodic firing
-    that ignored the confinement would undo it twenty minutes into the run.
+    Confined to the active run's slice when there is one (`_active_run_scope`)
+    — dates and, since the modal offers them, shift / brigadir / leader. EVERY
+    caller drains through here, the timer included: a periodic firing that
+    ignored the confinement would undo it twenty minutes into the run.
     """
     if not gemini.available():
         return {"ok": False, "reason": "no_key", "done": 0, "flagged": 0, "errors": 0}
@@ -875,26 +885,32 @@ def drain(db: Session, limit: int | None = None) -> dict:
         .filter(LeaderAiReview.status.in_(("pending", "error")),
                 LeaderAiReview.attempts < MAX_ATTEMPTS)
     )
-    rng = _active_run_range(db)
-    if rng:
-        lo, hi = rng
-        if lo:
-            q = q.filter(LeaderAiReview.date >= lo)
-        if hi:
-            q = q.filter(LeaderAiReview.date <= hi)
+    scope = _active_run_scope(db)
+    if scope:
+        if scope["date_from"]:
+            q = q.filter(LeaderAiReview.date >= scope["date_from"])
+        if scope["date_to"]:
+            q = q.filter(LeaderAiReview.date <= scope["date_to"])
+        if scope["shift"] is not None:
+            q = q.filter(LeaderAiReview.shift == scope["shift"])
+        if scope["manager_id"] is not None:
+            q = q.filter(LeaderAiReview.manager_id == scope["manager_id"])
+        if scope["leader_id"] is not None:
+            q = q.filter(LeaderAiReview.leader_id == scope["leader_id"])
     rows = (
         q.order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.asc())
         .limit(limit)
         .all()
     )
-    if rng and not rows:
-        # The run's dates are done. Release the confinement and stop for THIS
+    if scope and not rows:
+        # The run's slice is done. Release the confinement and stop for THIS
         # pass rather than rolling straight on: it leaves `/progress` a poll in
         # which to report the run finished, instead of the operator's one-day
         # run becoming twenty thousand rows in the same breath.
         _release_run(db)
-        log.info("leader-ai: run range %s..%s drained, backfill resumes next kick",
-                 rng[0] or "*", rng[1] or "*")
+        log.info("leader-ai: run slice %s drained, backfill resumes next kick",
+                 " ".join(f"{k}={v}" for k, v in scope.items() if v is not None)
+                 or "*")
         return {"ok": True, "done": 0, "flagged": 0, "errors": 0,
                 "quota": False, "aborted": None, "runFinished": True}
     done = flagged = errors = 0

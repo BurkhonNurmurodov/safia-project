@@ -5,6 +5,7 @@ import Modal from "../ui/Modal";
 import Button from "../ui/Button";
 import FormField from "../ui/FormField";
 import SegmentedToggle from "../ui/SegmentedToggle";
+import StyledSelect from "../ui/StyledSelect";
 import DateRangePicker from "../ui/DateRangePicker";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import { useToast } from "../ui/Toast";
@@ -62,6 +63,10 @@ const TXT = {
     scopeHint: "Odatda «Shubhali» yetarli: qat'iyroq tekshiruv ko'pincha o'zi shubhalangan rasmlar haqida fikrini o'zgartiradi.",
     range: "Sana oralig'i",
     rangeHint: "Bo'sh qoldirilsa — butun tarix.",
+    fShift: "Smena", fSup: "Brigadir", fLeader: "Lider",
+    allShifts: "Hammasi", allSups: "Barcha brigadirlar", allLeaders: "Barcha liderlar",
+    search: "Qidirish…",
+    slice: "Tanlangan",
     resolved: "Admin hukm chiqargan qatorlar tegilmaydi.",
     pace: "Tekshiruv navbat bilan, fonda bajariladi — darrov emas.",
     count: "{n} ta xulosa qayta tekshiriladi",
@@ -104,6 +109,10 @@ const TXT = {
     scopeHint: "Одатда «Шубҳали» етарли: қатъийроқ текширув кўпинча ўзи шубҳаланган расмлар ҳақида фикрини ўзгартиради.",
     range: "Сана оралиғи",
     rangeHint: "Бўш қолдирилса — бутун тарих.",
+    fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер",
+    allShifts: "Ҳаммаси", allSups: "Барча бригадирлар", allLeaders: "Барча лидерлар",
+    search: "Қидириш…",
+    slice: "Танланган",
     resolved: "Админ ҳукм чиқарган қаторлар тегилмайди.",
     pace: "Текширув навбат билан, фонда бажарилади — дарров эмас.",
     count: "{n} та хулоса қайта текширилади",
@@ -146,6 +155,10 @@ const TXT = {
     scopeHint: "Обычно достаточно «Подозрительных»: более строгая проверка чаще меняет мнение там, где уже сомневалась.",
     range: "Период",
     rangeHint: "Пусто — вся история.",
+    fShift: "Смена", fSup: "Бригадир", fLeader: "Лидер",
+    allShifts: "Все", allSups: "Все бригадиры", allLeaders: "Все лидеры",
+    search: "Поиск…",
+    slice: "Выбрано",
     resolved: "Строки с решением админа не затрагиваются.",
     pace: "Проверка идёт очередью в фоне — не мгновенно.",
     count: "Будет перепроверено: {n}",
@@ -188,6 +201,10 @@ const TXT = {
     scopeHint: "«Flagged» is usually enough: a stricter reviewer mostly changes its mind where it already had doubts.",
     range: "Date range",
     rangeHint: "Leave empty for all history.",
+    fShift: "Shift", fSup: "Supervisor", fLeader: "Leader",
+    allShifts: "Both", allSups: "All supervisors", allLeaders: "All leaders",
+    search: "Search…",
+    slice: "Selected",
     resolved: "Rows an admin has ruled on are never touched.",
     pace: "The re-check drains in the background, in batches — not instantly.",
     count: "{n} verdicts will be re-checked",
@@ -210,11 +227,11 @@ const TXT = {
 
 const fmt = (s, n) => String(s).replace("{n}", n);
 
-/* ══ what the selected range holds ════════════════════════════════════════════
+/* ══ what the selected slice holds ════════════════════════════════════════════
  *
  * The dry-run count answers "how much will this cost". It cannot answer "is
- * this the range I meant, and how much of it is already done" — a bare
- * "1 240 rows" has no denominator, so there is no way to tell a range that is
+ * this the slice I meant, and how much of it is already done" — a bare
+ * "1 240 rows" has no denominator, so there is no way to tell a slice that is
  * mostly unchecked from one that is nearly finished.
  *
  * Two units, kept separate because they are not interchangeable: REPORTS are
@@ -230,16 +247,7 @@ const SEG = {
   stuck:   "#eab308",
 };
 
-function RangeSummary({ T, from, to }) {
-  const { data, isFetching } = useQuery({
-    // Keyed by the range, so picking a new one refetches and nothing stale is
-    // ever shown next to a date the operator just changed.
-    queryKey: ["leader-ai-range", from || "", to || ""],
-    queryFn: () => api.get("/api/leader-ai/range", {
-      params: { date_from: from || undefined, date_to: to || undefined },
-    }).then((r) => r.data),
-  });
-
+function RangeSummary({ T, data, isFetching }) {
   const box = "mt-2 rounded-xl p-3";
   const boxStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)" };
 
@@ -338,13 +346,42 @@ export default function AiRecheck({ errorCount = 0 }) {
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState("flagged");
   const [range, setRange] = useState({ from: "", to: "" });
+  // WHO, beside WHEN. Kept as three plain values rather than one object so a
+  // pick clears independently — narrowing to a brigadir and then wanting their
+  // other shift must not mean starting the form again.
+  const [shift, setShift] = useState(null);
+  const [manager, setManager] = useState(null);   // Manager.id
+  const [leader, setLeader] = useState(null);     // RoleProfile.id
   const [confirm, setConfirm] = useState(null);   // { n } once the count is in
   const [confirmErr, setConfirmErr] = useState(null);
 
-  // The whole corpus: every verdict, no date bound. This is the one shape that
-  // earns a typed challenge — it is also the shape a hurried tap produces,
-  // since it is the state the form reaches by touching nothing but the scope.
-  const wholeCorpus = scope === "all" && !range.from && !range.to;
+  // What this slice actually holds, and the option lists for narrowing it —
+  // ONE request, keyed by every filter, so the summary can never describe a
+  // wider set than the button will queue and no option is ever a dead end.
+  const { data: slice, isFetching: sliceLoading } = useQuery({
+    queryKey: ["leader-ai-range", range.from || "", range.to || "",
+               shift ?? "", manager ?? "", leader ?? ""],
+    enabled: open,
+    queryFn: () => api.get("/api/leader-ai/range", {
+      params: {
+        date_from: range.from || undefined, date_to: range.to || undefined,
+        shift: shift ?? undefined,
+        manager_id: manager ?? undefined,
+        leader_id: leader ?? undefined,
+      },
+    }).then((r) => r.data),
+  });
+  const facets = slice?.facets || {};
+  // Whether the counts are an ANSWER yet. Before the first response every
+  // option list is empty, which is not the same fact as "nothing matches".
+  const counted = !!slice?.facets;
+
+  // The whole corpus: every verdict, no date bound, nobody singled out. This is
+  // the one shape that earns a typed challenge — it is also the shape a hurried
+  // tap produces, since it is the state the form reaches by touching nothing
+  // but the scope.
+  const wholeCorpus = scope === "all" && !range.from && !range.to
+    && shift == null && manager == null && leader == null;
   // `unchecked` only ADDS work — nothing is overwritten, so it earns none of
   // the destructive framing below: no typed challenge, no "cannot be undone",
   // and a verb that says what it does rather than what it replaces. Reusing one
@@ -355,7 +392,47 @@ export default function AiRecheck({ errorCount = 0 }) {
     scope,
     date_from: range.from || null,
     date_to: range.to || null,
-  }), [scope, range]);
+    shift, manager_id: manager, leader_id: leader,
+  }), [scope, range, shift, manager, leader]);
+
+  // Name of a pick, taken from the option list — and from `picked` when the
+  // other filters have starved it out of that list, so a selected brigadir is
+  // never shown as a blank trigger over a very much filtered set.
+  const nameOf = (dim, id) => (id == null ? null
+    : (facets[dim] || []).find((o) => o.v === id)?.label
+      || facets.picked?.[dim] || `#${id}`);
+  // A shift with no rows behind it is not offered — an option that can only
+  // ever return nothing is a dead end wearing a live control's clothes.
+  const shiftN = (s) => (facets.shift || []).find((o) => o.v === s)?.n;
+  const managerName = nameOf("manager", manager);
+  const leaderName = nameOf("leader", leader);
+
+  /** `[«All …», …live options]`, busiest first (the server sorts), with the
+   *  CURRENT pick forced in even at zero. A list that silently drops what is
+   *  selected leaves the control showing no selection, which reads as "no
+   *  filter" over a filtered set. */
+  const optList = (dim, allLabel, picked, pickedName) => {
+    const live = (facets[dim] || []).map((o) => ({
+      value: o.v, title: o.label,
+      label: `${o.label} · ${o.n.toLocaleString()}`,
+    }));
+    const missing = picked != null && !live.some((o) => o.value === picked);
+    return [
+      { value: null, label: allLabel },
+      ...(missing ? [{ value: picked, title: pickedName,
+                       label: `${pickedName} · 0` }] : []),
+      ...live,
+    ];
+  };
+
+  // The slice in words, for the last gate. The confirm printed a count and a
+  // warning but never WHAT it was about to re-check — and a narrowed run is
+  // exactly the case where "1 240 verdicts?" needs saying out loud.
+  const sliceBits = [
+    (range.from || range.to) ? `${range.from || "…"} – ${range.to || "…"}` : null,
+    shift != null ? `S${shift}` : null,
+    managerName, leaderName,
+  ].filter(Boolean);
 
   const countMut = useMutation({
     mutationFn: () => api.post("/api/leader-ai/recheck", { ...body, dry_run: true })
@@ -437,10 +514,53 @@ export default function AiRecheck({ errorCount = 0 }) {
               setDateTo={(v) => setRange((r) => ({ ...r, to: v || "" }))} />
           </FormField>
 
-          {/* What the chosen range actually holds. Sits directly under the
-              picker because that is where the doubt is: the dry-run count below
-              tells you the PRICE, this tells you what you are buying. */}
-          <RangeSummary T={T} from={range.from} to={range.to} />
+          {/* ── WHO, after WHEN ────────────────────────────────────────────────
+              A date range is the wrong axis for most real errands here: it is
+              one brigadir's unit photographing the wrong board, one shift
+              judged against the wrong window, one leader re-matched to a
+              profile. Without these the only way to re-check one leader was to
+              re-check everyone who filed on the same days and pay for all of
+              them.
+
+              Coarsest first — shift, then brigadir, then leader — the same
+              order the platform narrows in everywhere else. Each option carries
+              its row count from the same column the filter tests, so the number
+              beside a name IS what picking it will reach, and each list is
+              counted against the OTHER two: no option is a dead end. Every
+              control keeps a visible label, because a brigadir's name and a
+              leader's name look identical in a bare trigger. */}
+          <FormField label={T.fShift}>
+            <SegmentedToggle fill value={shift} onChange={setShift}
+              options={[
+                [null, T.allShifts],
+                // Both shifts stay on screen until the counts land — dropping
+                // them while the first request is in flight and popping them
+                // back a moment later is a control that rearranges itself under
+                // the thumb. Once the answer IS known, an empty shift goes.
+                ...[1, 2]
+                  .filter((s) => !counted || shiftN(s) || shift === s)
+                  .map((s) => [s, counted
+                    ? `S${s} · ${(shiftN(s) || 0).toLocaleString()}` : `S${s}`]),
+              ]} />
+          </FormField>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label={T.fSup}>
+              <StyledSelect searchable searchPlaceholder={T.search}
+                value={manager} onChange={setManager}
+                options={optList("manager", T.allSups, manager, managerName)} />
+            </FormField>
+            <FormField label={T.fLeader}>
+              <StyledSelect searchable searchPlaceholder={T.search}
+                value={leader} onChange={setLeader}
+                options={optList("leader", T.allLeaders, leader, leaderName)} />
+            </FormField>
+          </div>
+
+          {/* What the chosen slice actually holds. Sits directly under the
+              filters because that is where the doubt is: the dry-run count
+              below tells you the PRICE, this tells you what you are buying. */}
+          <RangeSummary T={T} data={slice} isFetching={sliceLoading} />
 
           <ul className="mt-1 flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-4)" }}>
             <li>· {T.resolved}</li>
@@ -475,8 +595,29 @@ export default function AiRecheck({ errorCount = 0 }) {
           open
           tone={additive ? undefined : "danger"}
           title={fmt(additive ? T.unConfirm : T.confirmTitle, confirm.n)}
-          message={additive ? T.unBody
-            : `${T.confirmBody}${wholeCorpus ? ` ${T.confirmAll}` : ""}`}
+          message={
+            <>
+              {additive ? T.unBody
+                : `${T.confirmBody}${wholeCorpus ? ` ${T.confirmAll}` : ""}`}
+              {/* WHAT it is about to run on, spelled out at the last gate. The
+                  dialog used to print a count and a warning and never the
+                  slice — and a narrowed run is exactly the case where the
+                  count alone cannot be checked against what was intended. */}
+              {sliceBits.length > 0 && (
+                <div className="mt-2 pt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1"
+                  style={{ borderTop: "1px solid var(--border)" }}>
+                  <span className="text-[11px] uppercase tracking-wider"
+                    style={{ color: "var(--text-4)" }}>{T.slice}</span>
+                  {sliceBits.map((b) => (
+                    <span key={b} className="px-1.5 py-0.5 rounded-md text-[11px] font-medium"
+                      style={{ background: "var(--bg-inner)", color: "var(--text-2)" }}>
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          }
           confirmLabel={additive ? T.unGo : T.go}
           cancelLabel={T.cancel}
           loading={runMut.isPending}

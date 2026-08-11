@@ -1125,14 +1125,22 @@ REPORT_SCAN_CAP = 20000
 @router.get("/range")
 def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
                   date_to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                  shift: int | None = Query(None, ge=1, le=2),
+                  manager_id: int | None = Query(None, ge=1),
+                  leader_id: int | None = Query(None, ge=1),
                   db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """What a date range actually holds, and how much of it is already checked.
+    """What the chosen SLICE actually holds, and how much of it is already
+    checked — plus the option lists for narrowing it further.
 
     Answers the question an operator has with their finger over a button that
-    spends metered quota: *is this the range I think it is, and how much of it
+    spends metered quota: *is this the slice I think it is, and how much of it
     is already done?* Until this existed the modal could only say how many rows
     a given scope would queue — a number with no denominator, which tells you
     the price but not what you are buying.
+
+    The slice is dates AND who (`shift` / `manager_id` / `leader_id`), because
+    that is what the modal now offers; every number below moves with all five,
+    so the summary can never describe a wider set than the button will queue.
 
     Two units, because both are real and they are not interchangeable:
 
@@ -1150,20 +1158,17 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     if not gemini.available():
         return {"enabled": False}
 
-    def _ranged(q):
-        if date_from:
-            q = q.filter(LeaderAiReview.date >= date_from)
-        if date_to:
-            q = q.filter(LeaderAiReview.date <= date_to)
-        return q
+    def _scoped(q):
+        return _narrow(q, date_from=date_from, date_to=date_to, shift=shift,
+                       manager_id=manager_id, leader_id=leader_id)
 
     # ── rows: exact, one aggregate ───────────────────────────────────────────
     by_status = dict(
-        _ranged(db.query(LeaderAiReview.status, func.count(LeaderAiReview.id)))
+        _scoped(db.query(LeaderAiReview.status, func.count(LeaderAiReview.id)))
         .group_by(LeaderAiReview.status).all()
     )
     judged = by_status.get("ok", 0) + by_status.get("flagged", 0)
-    stuck = _ranged(
+    stuck = _scoped(
         db.query(LeaderAiReview).filter(LeaderAiReview.status == "error",
                                         LeaderAiReview.attempts >= leader_ai.MAX_ATTEMPTS)
     ).count()
@@ -1180,13 +1185,13 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     }
     # What triage still owes on this range — the number that says whether the
     # human queue has work here, as opposed to the machine.
-    open_flags = _ranged(
+    open_flags = _scoped(
         db.query(LeaderAiReview).filter(LeaderAiReview.status == "flagged",
                                         LeaderAiReview.resolution.is_(None))
     ).count()
 
     # ── reports: group rows by the report they belong to ─────────────────────
-    refs = _ranged(
+    refs = _scoped(
         db.query(LeaderAiReview.ref, LeaderAiReview.status)
     ).limit(REPORT_SCAN_CAP + 1).all()
     approx = len(refs) > REPORT_SCAN_CAP
@@ -1226,11 +1231,79 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     return {
         "enabled": True,
         "from": date_from, "to": date_to,
+        "shift": shift, "managerId": manager_id, "leaderId": leader_id,
         "reports": {"total": len(per_report), "checked": checked,
                     "partial": partial, "unchecked": unchecked,
                     "approx": approx},
         "rows": rows,
         "openFlags": open_flags,
+        "facets": _range_facets(db, date_from, date_to, shift,
+                                manager_id, leader_id),
+    }
+
+
+def _range_facets(db: Session, date_from: str | None, date_to: str | None,
+                  shift: int | None, manager_id: int | None,
+                  leader_id: int | None) -> dict:
+    """Option lists for the shift / brigadir / leader pickers, with counts.
+
+    Three grouped aggregates, no projection pass: `shift`, `manager_id` and
+    `leader_id` are stamped on the row at discovery, so the count beside a name
+    is computed from the very column the filter tests. That self-consistency is
+    the point — the number the operator reads beside «Aripova M.» is exactly
+    how many proof rows picking her will reach, never an estimate from a
+    different resolution path.
+
+    Each dimension is counted against every OTHER active filter but not against
+    itself, the same rule the triage panel follows: counting a dimension
+    against its own pick would leave the leader list holding only the leader
+    already chosen, with no way back to anyone else short of clearing it.
+
+    NULLs are dropped rather than bucketed. A row whose match came back empty
+    belongs to no leader, and an option that cannot be named cannot be picked —
+    those rows stay reachable under «All», which is where they honestly are.
+
+    Options are sorted busiest first: an alphabetical list of ninety leaders
+    buries the one with work behind it.
+    """
+    def _tally(col, **fixed):
+        rows = (_narrow(db.query(col, func.count(LeaderAiReview.id)),
+                        date_from=date_from, date_to=date_to, **fixed)
+                .filter(col.isnot(None)).group_by(col).all())
+        return sorted(({"v": v, "n": n} for v, n in rows),
+                      key=lambda o: (-o["n"], str(o["v"])))
+
+    shifts = _tally(LeaderAiReview.shift,
+                    manager_id=manager_id, leader_id=leader_id)
+    mgrs = _tally(LeaderAiReview.manager_id, shift=shift, leader_id=leader_id)
+    ldrs = _tally(LeaderAiReview.leader_id, shift=shift, manager_id=manager_id)
+
+    # The CURRENT pick is looked up even when the other filters starved it to
+    # zero rows — a picker that cannot name what is selected shows an empty
+    # trigger over a very much filtered set.
+    mgr_ids = {o["v"] for o in mgrs} | ({manager_id} if manager_id else set())
+    ldr_ids = {o["v"] for o in ldrs} | ({leader_id} if leader_id else set())
+    mgr_names = dict(db.query(Manager.id, Manager.name)
+                     .filter(Manager.id.in_(mgr_ids)).all()) if mgr_ids else {}
+    ldr_names = dict(db.query(RoleProfile.id, RoleProfile.name)
+                     .filter(RoleProfile.id.in_(ldr_ids)).all()) if ldr_ids else {}
+
+    return {
+        "shift": shifts,
+        # Relabelled by the same map the register and the queue print, so one
+        # person is not two names across two screens.
+        "manager": [{**o, "label": relabel_supervisor(mgr_names.get(o["v"]))
+                     or f"#{o['v']}"} for o in mgrs],
+        "leader": [{**o, "label": ldr_names.get(o["v"]) or f"#{o['v']}"}
+                   for o in ldrs],
+        # Names for a pick that fell out of its own list, so the trigger can
+        # still say who is selected beside a count of zero.
+        "picked": {
+            "manager": (relabel_supervisor(mgr_names.get(manager_id))
+                        or f"#{manager_id}") if manager_id else None,
+            "leader": (ldr_names.get(leader_id) or f"#{leader_id}")
+            if leader_id else None,
+        },
     }
 
 
@@ -1304,15 +1377,16 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # run is real, it is what Stop would clear, and dropping it from the payload
     # would only move the surprise later.
     lo, hi = run.get("from"), run.get("to")
-    if lo or hi:
-        q = (db.query(LeaderAiReview)
-             .filter(LeaderAiReview.status.in_(("pending", "error")),
-                     LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS))
-        if lo:
-            q = q.filter(LeaderAiReview.date >= lo)
-        if hi:
-            q = q.filter(LeaderAiReview.date <= hi)
-        pending_run = q.count()
+    r_shift, r_mgr, r_ldr = (run.get("shift"), run.get("manager"),
+                             run.get("leader"))
+    if lo or hi or r_shift or r_mgr or r_ldr:
+        pending_run = _narrow(
+            db.query(LeaderAiReview)
+            .filter(LeaderAiReview.status.in_(("pending", "error")),
+                    LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS),
+            date_from=lo, date_to=hi, shift=r_shift,
+            manager_id=r_mgr, leader_id=r_ldr,
+        ).count()
     else:
         pending_run = pending
 
@@ -1335,6 +1409,9 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "scope": run.get("scope"),
         "from": run.get("from"),
         "to": run.get("to"),
+        # Whose rows this run covers, already resolved to names — the strip
+        # says what it is spending on, not just how many.
+        "narrow": run.get("narrow") or [],
         "by": run.get("by"),
     }
 
