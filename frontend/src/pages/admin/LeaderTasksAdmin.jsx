@@ -360,6 +360,15 @@ export default function LeaderTasksAdmin() {
   // Live task row behind the column modal — example ids must come from the
   // query (not the col draft) so an upload/delete re-renders the strip.
   const colTask = col && (tasks.find((task) => task.id === col.tid) || {});
+  // Column modal saves the way its cell twins do: ONE footer button, name and
+  // criteria routed to their own endpoints, each skipped when unchanged so a
+  // no-op save writes no history entry. «Apply to all» keeps its own inline
+  // button — it rewrites every leader and goes through a confirm.
+  const saveCol = () => {
+    saveCriteria(col.criteria, colTask.criteria, { task_id: col.tid });
+    if (LANGS.some((l) => (col.names?.[l] || "") !== (colTask.name?.[l] || "")))
+      taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when });
+  };
   const askDeleteExample = (id) => setConfirm({
     title: t("admin.ltasks.exampleDelTitle"), message: t("admin.ltasks.exampleDelMsg"),
     tone: "danger", confirmLabel: t("common.delete"),
@@ -554,7 +563,10 @@ export default function LeaderTasksAdmin() {
       {/* Column header: global rename (decoupled) + apply-to-all (confirmed) */}
       {col && (
         <Modal title={`${t("admin.ltasks.editTask")} — T${col.tid}`} icon={<ListChecks size={14} />} onClose={() => setCol(null)}
-          footer={<Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>}>
+          footer={<>
+            <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
+            <Button loading={taskMut.isPending || critMut.isPending} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
+          </>}>
           <div className="space-y-2">
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.rename")}</p>
             {LANGS.map((l) => (
@@ -562,7 +574,6 @@ export default function LeaderTasksAdmin() {
                 <input value={col.names?.[l] || ""} onChange={(e) => setCol((c) => ({ ...c, names: { ...c.names, [l]: e.target.value } }))} className={inputCls} style={inputStyle} />
               </FormField>
             ))}
-            <Button size="sm" loading={taskMut.isPending} onClick={() => taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when })}>{t("admin.ltasks.rename")}</Button>
           </div>
           <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
           {/* The GROUPED definition-of-done: every supervisor and leader who
@@ -572,10 +583,6 @@ export default function LeaderTasksAdmin() {
           <div className="space-y-2">
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.criteriaGlobal")}</p>
             {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
-            <Button size="sm" loading={critMut.isPending}
-              onClick={() => critMut.mutate({ task_id: col.tid, criteria: col.criteria || "" })}>
-              {t("admin.ltasks.save")}
-            </Button>
             <div className="pt-1">
               <TaskExamples ids={colTask.examples || []} busy={exAddMut.isPending}
                 onUpload={uploadExample} onAskDelete={askDeleteExample} t={t} />

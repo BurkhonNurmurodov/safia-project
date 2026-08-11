@@ -903,9 +903,70 @@ def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     return {"ok": True, "queued": added, "counts": leader_ai.counts(db)}
 
 
+def _narrow(q, *, date_from: str | None = None, date_to: str | None = None,
+            shift: int | None = None, manager_id: int | None = None,
+            leader_id: int | None = None):
+    """Apply the re-check modal's scope to a `LeaderAiReview` query.
+
+    ONE definition, used by every surface that has to agree about what a run
+    covers: the dry-run count, the range summary, the update that queues the
+    rows, the drain that spends on them and the progress bar that measures
+    them. Two copies would drift, and the shape they drift into is a bar
+    swearing it is honouring a filter the drain never saw.
+
+    `date` is a 'YYYY-MM-DD' string, so a lexical compare IS a date compare.
+    The other three are columns stamped at discovery (`services/leader_ai.py`),
+    which is what makes this filtering exact and free — no name matching, no
+    projection pass. A row whose fuzzy match came back empty carries NULL and
+    therefore belongs to no leader and no brigadir: it is reachable under «All»
+    and nowhere else, which is the honest answer rather than padding it onto
+    somebody who may not own it.
+    """
+    if date_from:
+        q = q.filter(LeaderAiReview.date >= date_from)
+    if date_to:
+        q = q.filter(LeaderAiReview.date <= date_to)
+    if shift is not None:
+        q = q.filter(LeaderAiReview.shift == shift)
+    if manager_id is not None:
+        q = q.filter(LeaderAiReview.manager_id == manager_id)
+    if leader_id is not None:
+        q = q.filter(LeaderAiReview.leader_id == leader_id)
+    return q
+
+
+def _narrow_labels(db: Session, shift: int | None, manager_id: int | None,
+                   leader_id: int | None) -> list[str]:
+    """Human names for an active narrowing, resolved ONCE when the run starts.
+
+    The progress strip has to say what a run covers, and it polls every few
+    seconds — re-resolving two names on every poll to print a caption is work
+    nobody asked for. Ids are stable; the name printed is the one that was true
+    when the operator picked it.
+    """
+    out: list[str] = []
+    if shift is not None:
+        out.append(f"S{shift}")
+    if manager_id is not None:
+        m = db.query(Manager.name).filter(Manager.id == manager_id).scalar()
+        out.append(relabel_supervisor(m) if m else f"#{manager_id}")
+    if leader_id is not None:
+        p = db.query(RoleProfile.name).filter(RoleProfile.id == leader_id).scalar()
+        out.append(p or f"#{leader_id}")
+    return out
+
+
 class RecheckIn(BaseModel):
     date_from: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     date_to: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    # WHO, alongside WHEN. A date range is the wrong axis for most of the real
+    # errands: "this brigadir's unit files photos of the wrong board", "shift 2
+    # was judged against the wrong window", "this leader was re-matched to a
+    # profile". Without these the only way to re-check one leader was to
+    # re-check every leader who filed on the same days and pay for all of them.
+    shift: int | None = Field(None, ge=1, le=2)
+    manager_id: int | None = Field(None, ge=1)
+    leader_id: int | None = Field(None, ge=1)
     # Which verdicts to throw away and re-earn. "flagged" is the cheap, useful
     # default: a stricter reviewer mostly changes its mind about rows it already
     # doubted, and re-running those costs a fraction of the corpus.
@@ -949,12 +1010,10 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
 
-    def _ranged(q):
-        if body.date_from:
-            q = q.filter(LeaderAiReview.date >= body.date_from)
-        if body.date_to:
-            q = q.filter(LeaderAiReview.date <= body.date_to)
-        return q
+    def _scoped(q):
+        return _narrow(q, date_from=body.date_from, date_to=body.date_to,
+                       shift=body.shift, manager_id=body.manager_id,
+                       leader_id=body.leader_id)
 
     # ── "catch up": never-judged rows only ───────────────────────────────────
     # Nothing is overwritten, so there is no verdict to lose and no confirm to
@@ -964,21 +1023,23 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
     # inserts `pending` rows — it spends no quota, the drain does that.
     if body.scope == "unchecked":
         found = leader_ai.discover(db)
-        n = _ranged(
+        n = _scoped(
             db.query(LeaderAiReview).filter(LeaderAiReview.status == "pending")
         ).count()
         if body.dry_run:
             return {"ok": True, "requeued": n, "found": found, "dryRun": True}
         _start_run(db, n, body, admin)
-        log.info("LEADER-AI catch-up by %s: %s pending (%s new) in %s..%s",
+        log.info("LEADER-AI catch-up by %s: %s pending (%s new) in %s..%s [%s]",
                  admin.get("telegram_id"), n, found,
-                 body.date_from or "*", body.date_to or "*")
+                 body.date_from or "*", body.date_to or "*",
+                 " · ".join(_narrow_labels(db, body.shift, body.manager_id,
+                                           body.leader_id)) or "all")
         leader_ai.run_async(discover_first=False)
         return {"ok": True, "requeued": n, "found": found,
                 "counts": leader_ai.counts(db)}
 
     # ── re-check: throw away a verdict and earn it again ─────────────────────
-    q = _ranged(db.query(LeaderAiReview).filter(
+    q = _scoped(db.query(LeaderAiReview).filter(
         LeaderAiReview.status.in_(("ok", "flagged")),
         LeaderAiReview.resolution.is_(None),
     ))
@@ -993,9 +1054,11 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
     n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
     db.commit()
     _start_run(db, n, body, admin)
-    log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s)",
+    log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s, %s)",
              admin.get("telegram_id"), n, body.scope,
-             body.date_from or "*", body.date_to or "*")
+             body.date_from or "*", body.date_to or "*",
+             " · ".join(_narrow_labels(db, body.shift, body.manager_id,
+                                       body.leader_id)) or "everyone")
     leader_ai.run_async(discover_first=False)
     return {"ok": True, "requeued": n, "counts": leader_ai.counts(db)}
 
@@ -1032,6 +1095,16 @@ def _start_run(db: Session, total: int, body: "RecheckIn", admin: dict) -> None:
         "scope": body.scope,
         "from": body.date_from,
         "to": body.date_to,
+        # The WHO of the run, by the same rule the dates already follow: the
+        # drain confines itself to this and `/progress` measures inside it, so
+        # a run started for one brigadir spends on that brigadir instead of
+        # walking the corpus behind a bar that claims otherwise. A record
+        # written before these existed simply has no keys — `.get` reads them
+        # as "no narrowing", which is what it was.
+        "shift": body.shift,
+        "manager": body.manager_id,
+        "leader": body.leader_id,
+        "narrow": _narrow_labels(db, body.shift, body.manager_id, body.leader_id),
         "by": (admin.get("full_name") or str(admin.get("telegram_id") or "admin"))[:120],
     })
     row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
