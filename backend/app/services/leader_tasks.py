@@ -286,34 +286,43 @@ def filed_date(sheet_date: str, shift: int | None,
                submitted_at: datetime | None) -> str:
     """Which checklist day a GOOGLE-FORM row reports on.
 
-    The form's «Дата» cell carries the submission's own calendar date, which is
-    the right answer for shift 1 and the wrong one for shift 2 every single
-    night: that shift files between 21:00 and 09:00, so the half of the crew
-    that fills the form after midnight stamps TOMORROW onto the night that
-    started yesterday. The row then lands on a day whose shift has not begun —
-    at 14:00 the register already showed "2-smena" reports for a shift opening
-    at 21:00 — while the night it actually reports on reads as unfiled, and the
-    bot day for the same (leader, date) no longer dedupes against it.
+    The form's «Дата» cell is the right answer for shift 1 and the wrong one for
+    shift 2 in BOTH directions. That shift files between 21:00 and 09:00, so its
+    night carries two calendar dates and the cell holds whichever one the leader
+    had in mind:
 
-    The correction is deliberately the narrowest one that fixes exactly that:
+    * after midnight the form's own "today" stamps TOMORROW onto the night that
+      started yesterday. The row lands on a day whose shift has not begun — at
+      14:00 the register showed "2-smena" reports for a shift opening at 21:00 —
+      while the night it reports on reads as unfiled, and the bot day for the
+      same (leader, date) no longer dedupes against it.
+    * before midnight the leader writes tomorrow HIMSELF: a night that runs
+      21:00 → 09:00 spends nine of its twelve hours on the next date and gets
+      called by it. A report filed at 22:26 on the 10th arrives dated the 11th —
+      a day whose filing window opens at 21:00 on the 11th, twenty-two hours
+      after it was written — so the submission window (routers/leaders.py) voided
+      a checklist that was in fact filed ninety minutes into its own shift.
+
+    `day_of` settles which night a timestamp falls in; it names that night by the
+    21:00 it started at. So both spellings above are the SAME night, and this
+    accepts either one, returning the date the rest of the app keys on:
 
     * shift 2 only — shift 1's calendar day is the form's date, full stop;
-    * only when the row claims the very date it was submitted on, i.e. the
-      stamp is the form's own "today" rather than a day the leader chose. A
-      leader who dates a row themselves — a backfill filed two days later —
-      keeps that date;
-    * only when `day_of` disagrees with it, which for a same-day stamp means
-      the submission landed before 21:00: BEFORE the claimed day's shift even
-      opens. A report cannot belong to a day that has not started.
+    * only the stamp's own date, or the morning that night ends on. Any other
+      date is one the leader deliberately chose — a backfill filed two days
+      later — and it stands. A row is therefore never pulled onto a night its
+      own timestamp does not touch.
 
     With no readable timestamp nothing is derived and the sheet's date stands.
     """
     if shift != 2 or submitted_at is None:
         return sheet_date
-    stamped = submitted_at.strftime("%Y-%m-%d")
-    if str(sheet_date)[:10] != stamped:
+    night = day_of(submitted_at, 2)
+    ends = (datetime.strptime(night, "%Y-%m-%d")
+            + timedelta(days=1)).strftime("%Y-%m-%d")
+    if str(sheet_date)[:10] not in (submitted_at.strftime("%Y-%m-%d"), ends):
         return sheet_date            # a date the leader chose — respect it
-    return day_of(submitted_at, 2)
+    return night
 
 
 # ── the submission deadline ──────────────────────────────────────────────────

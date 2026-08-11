@@ -53,7 +53,17 @@ const fmtDate = (iso, lang) => {
   if (lang === "ru") return `${d} ${mn} ${y}`;
   return `${d}-${mn}, ${y}`;
 };
-const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "—");
+// The clock a card prints is the moment the checklist was FILED, and that is not
+// always a moment on the day it reports on — a night filed at 10:00 the morning
+// after belongs to the night before. A bare "22:26" beside a shift-2 day whose
+// window opens at 21:00 then reads as impossible, which is exactly how a
+// correctly voided row gets mistaken for a bug. Print the date too whenever the
+// two disagree; numeric, so it needs no fifth translation of every month.
+const stamp = (ts, day) => {
+  if (!ts) return "—";
+  const on = String(ts).slice(0, 10), at = String(ts).slice(11, 16);
+  return on === String(day || "").slice(0, 10) ? at : `${on.slice(8, 10)}.${on.slice(5, 7)} ${at}`;
+};
 
 const TXT = {
   uz: {
@@ -398,7 +408,7 @@ export default function LateReports({ canDecide = false }) {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="inline-flex items-center gap-1 text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
-                          <Clock size={12} />{hhmm(it.submitted_at)}
+                          <Clock size={12} />{stamp(it.submitted_at, it.date)}
                         </span>
                         {/* grey while the day does not count, its real colour once it does */}
                         <span className="px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums"
