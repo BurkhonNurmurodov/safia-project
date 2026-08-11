@@ -69,12 +69,13 @@ function WhenBar({ when, setWhen, nextDate, t }) {
 // to the leader). Uploads apply at once, exactly like the criteria text; the
 // ids come from the live config query, so the strip re-renders on invalidate.
 const EXAMPLES_MAX = 3;
-function TaskExamples({ ids, busy, onUpload, onAskDelete, t }) {
+function TaskExamples({ ids, busy, note, onUpload, onAskDelete, t }) {
   const fileRef = useRef(null);
   const full = ids.length >= EXAMPLES_MAX;
   const T = { photoFailed: t("admin.ltasks.photoFailed"), retry: t("common.retry") };
   return (
-    <FormField label={t("admin.ltasks.examples")} hint={t("admin.ltasks.examplesHint")}>
+    <FormField label={t("admin.ltasks.examples")}
+      hint={note ? `${t("admin.ltasks.examplesHint")} ${note}` : t("admin.ltasks.examplesHint")}>
       <div className="space-y-2">
         {ids.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
@@ -489,10 +490,37 @@ export default function LeaderTasksAdmin() {
       : applyScope.level === "leader"
         ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }
   );
+  // Under a filter the modal WRITES the visible rows, so it must also SHOW
+  // those rows' current values — the numeric trio always seeded from the first
+  // visible row, but name/criteria seeded from the global layer, which a
+  // previous scoped save may have already diverged from. Reopening the modal
+  // then showed the old global text, which reads as "my edit was lost".
+  // names0/criteria0 keep the seed so Save can skip fields the admin left
+  // exactly as shown (unfiltered they are the global values, as before).
+  const openCol = (task) => {
+    const lead0 = applyScope.level === "leader" ? rows[0]?.kids[0] : null;
+    const f = lead0
+      ? leadEff(lead0.id, lead0.manager_id, task.id)
+      : getCell(rows[0]?.m.id, task.id);
+    const names0 = Object.fromEntries(LANGS.map((l) => [l,
+      (anyFilter && (lead0
+        ? getOv(lead0.id, task.id)?.names?.[l] || getCell(lead0.manager_id, task.id).names?.[l]
+        : getCell(rows[0]?.m.id, task.id).names?.[l]))
+      || task.name?.[l] || ""]));
+    const criteria0 = (anyFilter
+      ? (lead0
+        ? getOv(lead0.id, task.id)?.criteria || supCrit(lead0.manager_id, task.id)
+        : supCrit(rows[0]?.m.id, task.id))
+      : task.criteria) || "";
+    setCol({
+      tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
+      names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
+    });
+  };
   const saveCol = () => {
     const ids = colScope();
-    saveCriteria(col.criteria, colTask.criteria, { task_id: col.tid, ...ids });
-    if (LANGS.some((l) => (col.names?.[l] || "") !== (colTask.name?.[l] || "")))
+    saveCriteria(col.criteria, col.criteria0, { task_id: col.tid, ...ids });
+    if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
   const askDeleteExample = (id) => setConfirm({
@@ -577,7 +605,7 @@ export default function LeaderTasksAdmin() {
                       {/* block, not inline-block: an inline button aligns on the baseline of its
                           LAST line, so one- vs two-line names staggered the whole header row. */}
                       <button type="button" title={tname(task)}
-                        onClick={() => { const f = getCell(rows[0]?.m.id, task.id); setCol({ tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight, names: { ...task.name }, criteria: task.criteria || "", when: "now" }); }}
+                        onClick={() => openCol(task)}
                         className="block w-full px-1 py-1.5 rounded-lg transition-opacity hover:opacity-75"
                         style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--brand-text)" }}>
                         <span className="block font-bold leading-none">T{task.id}</span>
@@ -752,7 +780,11 @@ export default function LeaderTasksAdmin() {
             </p>
             {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
             <div className="pt-1">
+              {/* Examples are keyed per TASK — there is no per-row storage, so
+                  the filter genuinely cannot scope them. Say so rather than
+                  letting the scope banner above imply otherwise. */}
               <TaskExamples ids={colTask.examples || []} busy={exAddMut.isPending}
+                note={anyFilter ? t("admin.ltasks.examplesGlobalNote") : null}
                 onUpload={uploadExample} onAskDelete={askDeleteExample} t={t} />
             </div>
           </div>
