@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderChecklist, LeaderLateRequest, LeaderSyncMeta, Manager,
+    AppSetting, LeaderChecklist, LeaderLateRequest, LeaderSyncMeta,
+    LeaderTaskOverride, Manager,
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import require_page
@@ -376,7 +377,7 @@ def get_leaders(
     data = [r for r in sheet_data if (r["leader_id"], r["date"]) not in filed] + bot_rows
     data.sort(key=lambda r: str(r["date"]), reverse=True)
 
-    _apply_ai_rejections(db, data)
+    _apply_overlays(db, data)
 
     return {
         "role": role,
@@ -390,33 +391,46 @@ def get_leaders(
     }
 
 
-def _apply_ai_rejections(db: Session, data: list[dict]) -> None:
-    """Make a rejected proof cost the day its points, in place.
+def _apply_overlays(db: Session, data: list[dict]) -> None:
+    """Make every human ruling change the number it judged, in place.
 
-    An AI flag that a human upheld has to change a number, or the whole review
-    loop is theatre — the admin rules on a photo and the leaderboard goes on
-    showing the score the fake earned. Neither source can be written back
-    (the leaders sheet is wipe-and-reloaded, a closed bot day is immutable), so
-    the penalty is applied here, at read time, every time.
+    Two overlays, one pass. An upheld AI flag has to cost the day its points,
+    or the whole review loop is theatre — the admin rules on a photo and the
+    leaderboard goes on showing the score the fake earned. And an admin's own
+    done/not-done ruling (LeaderTaskOverride, set from the detail modal) has to
+    move the same number the same way. Neither source can be written back (the
+    leaders sheet is wipe-and-reloaded, a closed bot day is immutable), so both
+    are applied here, at read time, every time.
 
-    The rule is a DELTA, not a re-derivation: a report with no rejection is left
-    byte-for-byte as it was, and one with a rejection loses exactly that task's
-    share of its own answered weight. Re-deriving every completion from the task
-    list would silently restate the sheet's own arithmetic for thousands of rows
+    The rule is a DELTA, not a re-derivation: a report nobody ruled on is left
+    byte-for-byte as it was, and a ruling moves exactly that task's share of
+    its own answered weight. Re-deriving every completion from the task list
+    would silently restate the sheet's own arithmetic for thousands of rows
     that nobody ruled on.
+
+    Where both overlays hit one task, the admin override wins — it is the
+    explicit human statement of the task's state, and printing «AI dalili rad
+    etildi» beside an admin's «done» would be a contradiction on screen.
 
     Deliberately AFTER the merge and sort, so it sees the rows the client will
     actually score — a sheet row a bot day replaced must not be penalised for a
     verdict on a task nobody ends up reading.
     """
-    rejected = leader_ai.rejected_by_uid(db, {str(r["date"]) for r in data})
-    if not rejected:
+    dates = {str(r["date"]) for r in data}
+    rejected = leader_ai.rejected_by_uid(db, dates)
+    overrides: dict[str, dict[int, LeaderTaskOverride]] = {}
+    if dates:
+        for o in (db.query(LeaderTaskOverride)
+                  .filter(LeaderTaskOverride.date.in_(dates)).all()):
+            overrides.setdefault(o.uid, {})[o.task_id] = o
+    if not rejected and not overrides:
         return
     weights = leader_ai.task_weights(db)
 
     for row in data:
-        hit = rejected.get(row["uid"])
-        if not hit:
+        hit = rejected.get(row["uid"]) or set()
+        ovs = overrides.get(row["uid"]) or {}
+        if not hit and not ovs:
             continue
         tasks = row.get("tasks") or []
         # Denominator = the weight this report actually put in front of the
@@ -426,9 +440,24 @@ def _apply_ai_rejections(db: Session, data: list[dict]) -> None:
                     for t in tasks if t.get("answered") is not False)
         if total <= 0:
             continue
-        lost = 0
+        delta = 0
         for t in tasks:
             tid = int(t.get("id") or 0)
+            ov = ovs.get(tid)
+            # An unasked question was never the leader's to pass or fail, so it
+            # is not the admin's to rule on either — the modal offers no control
+            # there, and a stray API call must not mint weight out of thin air.
+            if ov is not None and t.get("answered") is not False:
+                # Stamped on the row so the modal can show the ruling, who made
+                # it and when — to the leader too, whose score it just moved.
+                t["admin_done"] = bool(ov.done)
+                t["admin_by"] = ov.set_by
+                t["admin_at"] = ov.set_at.isoformat() if ov.set_at else None
+                if ov.done and not t.get("done"):
+                    delta += weights.get(tid, 0)
+                elif not ov.done and t.get("done"):
+                    delta -= weights.get(tid, 0)
+                continue    # the override supersedes the AI ruling for this task
             if tid not in hit:
                 continue
             # Flagged on the row itself so the detail modal can say WHY the task
@@ -436,9 +465,62 @@ def _apply_ai_rejections(db: Session, data: list[dict]) -> None:
             t["ai_rejected"] = True
             # Only a task that was counting as done has anything to take away.
             if t.get("done"):
-                lost += weights.get(tid, 0)
-        if lost:
-            row["completion"] = max(0.0, row["completion"] - lost / total * 100)
+                delta -= weights.get(tid, 0)
+        if delta:
+            row["completion"] = min(100.0, max(0.0, row["completion"] + delta / total * 100))
+
+
+@router.post("/leaders/task-override")
+def set_task_override(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    """Record — or clear — an admin's done/not-done ruling on one task of one
+    report, from the detail modal. `done: null` deletes the override, which
+    restores the leader's own answer (and any AI ruling) on the next read.
+
+    Idempotent per (uid, task): re-ruling overwrites the previous row and
+    re-stamps the actor, so a correction is a normal action, not a DB edit.
+    """
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    uid = str(body.get("uid") or "").strip()
+    date = str(body.get("date") or "")[:10]
+    try:
+        task_id = int(body.get("task_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="task_id must be an integer")
+    if not uid or not date:
+        raise HTTPException(status_code=400, detail="uid and date are required")
+    done = body.get("done")
+    if done is not None and not isinstance(done, bool):
+        raise HTTPException(status_code=400, detail="done must be true, false or null")
+
+    who = (payload.get("full_name") or payload.get("username")
+           or str(payload.get("sub") or "admin"))[:160]
+    row = db.query(LeaderTaskOverride).filter_by(uid=uid, task_id=task_id).first()
+
+    if done is None:
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        logger.info("leader-override: %s cleared %s task %s", who, uid, task_id)
+        return {"ok": True, "override": None}
+
+    if row is None:
+        row = LeaderTaskOverride(uid=uid, task_id=task_id)
+        db.add(row)
+    row.date = date
+    row.leader = str(body.get("leader") or "").strip()[:160] or None
+    row.done = done
+    row.set_by = who
+    row.set_at = datetime.now(timezone.utc)
+    db.commit()
+    logger.info("leader-override: %s ruled task %s on %s -> %s",
+                who, task_id, uid, "done" if done else "not done")
+    return {"ok": True, "override": {"done": row.done, "by": row.set_by,
+                                     "at": row.set_at.isoformat()}}
 
 
 # ── «Late reports» — the review queue ────────────────────────────────────────

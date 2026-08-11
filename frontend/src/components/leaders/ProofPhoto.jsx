@@ -23,6 +23,11 @@ export function ProxyPhoto({
   // the whole frame (`contain`) — a cropped thumbnail is exactly where a corner
   // clock goes missing, and the corner clock is the thing being judged.
   fit = "cover", maxHeight = 240, onClick, onReady,
+  // Thumbnail mode: the photo fills its PARENT box (the caller sizes it, e.g.
+  // w-16 h-16) instead of running full-width — for surfaces where the photo is
+  // an index into a zoom view, not the evidence itself. The failed state
+  // shrinks to a bare retry so a dead photo can't outgrow its own cell.
+  thumb = false,
 }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
@@ -44,6 +49,17 @@ export function ProxyPhoto({
   }, [...deps, attempt]);
 
   if (failed) {
+    if (thumb) {
+      return (
+        <button type="button" onClick={() => setAttempt((a) => a + 1)}
+          title={`${T.photoFailed} — ${T.retry}`}
+          className={`${className} w-full h-full rounded-lg border flex flex-col items-center justify-center gap-1`}
+          style={{ borderColor: "var(--border)", background: "var(--bg-inner)" }}>
+          <ImageOff size={16} color="var(--text-4)" />
+          <RefreshCw size={12} color="var(--brand)" />
+        </button>
+      );
+    }
     return (
       <div className={`${className} w-full rounded-lg border flex flex-col items-center justify-center gap-2 py-6 px-3 text-center`}
         style={{ minHeight: 120, borderColor: "var(--border)", background: "var(--bg-inner)" }}>
@@ -57,12 +73,16 @@ export function ProxyPhoto({
       </div>
     );
   }
-  if (!url) return <SkeletonBlock className={`${className} w-full`} style={{ height: maxHeight }} />;
+  if (!url) {
+    return thumb
+      ? <SkeletonBlock className={`${className} w-full h-full`} style={{ height: "100%" }} />
+      : <SkeletonBlock className={`${className} w-full`} style={{ height: maxHeight }} />;
+  }
   return (
     <img src={url} alt="" loading="lazy"
       onClick={() => (onClick ? onClick(url) : window.open(href || url, "_blank"))}
-      className={`${className} w-full rounded-lg border cursor-zoom-in`}
-      style={{ maxHeight, objectFit: fit, borderColor: "var(--border)" }} />
+      className={`${className} w-full ${thumb ? "h-full" : ""} rounded-lg border cursor-zoom-in`}
+      style={{ objectFit: fit, borderColor: "var(--border)", ...(thumb ? {} : { maxHeight }) }} />
   );
 }
 

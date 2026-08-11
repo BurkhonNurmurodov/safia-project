@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -6,7 +7,7 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
-  ShieldCheck, Hourglass, Layers,
+  ShieldCheck, Hourglass, Layers, X,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -165,6 +166,9 @@ const TXT = {
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
     details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
+    fltIssues: "Muammolar", sumDone: "bajarildi", sumFailed: "bajarilmadi",
+    ovTitle: "Admin bahosi", ovDone: "Bajarildi", ovFail: "Bajarilmadi",
+    ovChip: "Admin", ovUndo: "Belgini olib tashlash — liderning o'z javobi qaytadi",
     missedDeadline: "Lider bu vazifani soat {time} gacha topshirmadi.",
     task: "Vazifa", noData: "Ma'lumot yo'q", taskInfoTitle: "Vazifalar mazmuni va talablari",
     taskDesc: "Vazifa tavsifi", taskWeight: "Vazni", taskNote: "Eslatma / Talablar",
@@ -278,6 +282,9 @@ const TXT = {
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
+    fltIssues: "Муаммолар", sumDone: "бажарилди", sumFailed: "бажарилмади",
+    ovTitle: "Админ баҳоси", ovDone: "Бажарилди", ovFail: "Бажарилмади",
+    ovChip: "Админ", ovUndo: "Белгини олиб ташлаш — лидернинг ўз жавоби қайтади",
     missedDeadline: "Лидер бу вазифани соат {time} гача топширмади.",
     task: "Вазифа", noData: "Маълумот йўқ", taskInfoTitle: "Вазифалар мазмуни ва талаблари",
     taskDesc: "Вазифа тавсифи", taskWeight: "Вазни", taskNote: "Эслатма / Талаблар",
@@ -391,6 +398,9 @@ const TXT = {
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
+    fltIssues: "Проблемы", sumDone: "выполнено", sumFailed: "не выполнено",
+    ovTitle: "Оценка админа", ovDone: "Выполнено", ovFail: "Не выполнено",
+    ovChip: "Админ", ovUndo: "Снять отметку — вернётся собственный ответ лидера",
     missedDeadline: "Лидер не отправил эту задачу до {time}.",
     task: "Задача", noData: "Нет данных", taskInfoTitle: "Содержание и требования задач",
     taskDesc: "Описание задачи", taskWeight: "Вес", taskNote: "Примечания / Требования",
@@ -504,6 +514,9 @@ const TXT = {
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
+    fltIssues: "Issues", sumDone: "done", sumFailed: "failed",
+    ovTitle: "Admin ruling", ovDone: "Done", ovFail: "Not done",
+    ovChip: "Admin", ovUndo: "Clear the ruling — the leader's own answer returns",
     missedDeadline: "The leader didn't submit this task before {time}.",
     task: "Task", noData: "No Data", taskInfoTitle: "Task Details & Requirements",
     taskDesc: "Task Description", taskWeight: "Weight", taskNote: "Notes / Requirements",
@@ -1698,6 +1711,49 @@ export default function Leaders() {
     aiCheckMut.mutate({ uid: detail.uid, task_id: taskId, force });
   };
 
+  // ── admin done/not-done override (the manual ruling the AI flow can't say) ──
+  // Same read-time overlay family as the AI rejection (`_apply_overlays` on the
+  // server), so the register row, the score pill and the open modal all move
+  // together off one refetch of ["leaders"].
+  const [mFlt, setMFlt] = useState("all");    // detail-modal task filter
+  const [zoom, setZoom] = useState(null);     // enlarged proof photo (object URL)
+  const [ovBusy, setOvBusy] = useState(null); // { id, btn } of the pressed button
+  const [ovErr, setOvErr] = useState(null);   // { id, msg } shown inside the strip
+  const ovMut = useMutation({
+    mutationFn: (p) => api.post("/api/leaders/task-override", p).then((r) => r.data),
+    // Returning the promise keeps the pressed button spinning until the refetch
+    // lands, so the card flips once, to the server's answer — never
+    // optimistically and back.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leaders"] }),
+    // The failure belongs to the card that was tapped, exactly like checkErr.
+    onError: (e, vars) => setOvErr({
+      id: vars.task_id,
+      msg: e?.response?.data?.detail || String(e?.message || e),
+    }),
+    onSettled: () => setOvBusy(null),
+  });
+  const setOverride = (taskId, done, btn) => {
+    setOvErr(null);
+    setOvBusy({ id: taskId, btn });
+    ovMut.mutate({ uid: detail.uid, task_id: taskId, done,
+      date: String(detail.date).slice(0, 10), leader: detail.leader });
+  };
+  // The open modal reads the LIVE row, not the snapshot it was opened with — an
+  // override invalidates ["leaders"], and the fresh score and task states must
+  // reach the modal that caused them.
+  const detailRow = useMemo(
+    () => (detail ? rows.find((r) => r.uid === detail.uid) || detail : null),
+    [rows, detail]);
+  const openDetail = (r) => {
+    // Land the admin on what needs them: a report with failures opens filtered
+    // to its problems, a clean one opens showing everything.
+    setMFlt(r._failed > 0 ? "issues" : "all");
+    setZoom(null);
+    setOvErr(null);
+    setCheckErr(null);
+    setDetail(r);
+  };
+
   const aiRunMut = useMutation({
     mutationFn: () => api.post("/api/leader-ai/run").then((r) => r.data),
     onSuccess: () => {
@@ -2185,7 +2241,11 @@ export default function Leaders() {
     let arr = filtered.map((r) => ({
       ...r,
       // an unasked question is not a missed one
-      _failed: (r.tasks || []).filter((tk) => tk.answered !== false && !tk.done).length,
+      // Effective failures: the admin's ruling beats the AI's, which beats the
+      // leader's own answer — the same precedence the score itself is built on,
+      // so this count can never disagree with the percentage beside it.
+      _failed: (r.tasks || []).filter((tk) =>
+        tk.answered !== false && !(tk.admin_done ?? (tk.done && !tk.ai_rejected))).length,
       _late: lateDays(r),
     }));
     if (q) arr = arr.filter((r) => `${tl(r.leader)} ${r.leader}`.toLowerCase().includes(q));
@@ -2770,7 +2830,7 @@ export default function Leaders() {
                       </td>
                       <td className="px-3 py-2" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => setDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                        <button onClick={() => openDetail(r)} className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
                           style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
                           {T.details}
                         </button>
@@ -2807,7 +2867,7 @@ export default function Leaders() {
                       <DayFlag row={r} T={T} />
                     </div>
                   )}
-                  <button onClick={() => setDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                  <button onClick={() => openDetail(r)} className="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
                     style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)", color: "var(--brand-text)" }}>
                     {T.details}
                   </button>
@@ -2818,80 +2878,171 @@ export default function Leaders() {
         </div>
       </>)}
 
-      {/* Detail modal */}
-      {detail && (
-        <Modal maxWidth="max-w-3xl" title={`${T.modalTitle}: ${nm(detail.leader)} (${fmtDate(detail.date, lang)})`}
-          subtitle={[
-            detail.submitted_at
-              ? `${T.submittedAt}: ${fmtDate(detail.submitted_at, lang)} ${hhmm(detail.submitted_at)}${lateDays(detail) > 0 ? ` (+${lateDays(detail)} ${T.dayAbbr})` : ""}`
-              : null,
-            // which collection layer this day came from — the sheet is silent
-            // history, the bot is the live one for shift 2
-            detail.source === "bot" ? T.srcBot : null,
-            // Why the day scored 0 despite the answers below being filled in —
-            // or, once it was opened, why it counts anyway. Spelled out in full
-            // here: the register's chip has room for a label, this is where
-            // somebody comes to argue with the number.
-            detail.late_state === "approved" ? T.lateOkTitle.replace("{by}", detail.late_by || "—")
-              : detail.late_state === "pending" ? T.pendTitle
-              : detail.late_state ? T.voidTitle
-              : null,
-            // the case the decision was made on, kept next to the day it opened
-            detail.late_reason ? `${T.reasonLbl}: “${detail.late_reason}”` : null,
-          ].filter(Boolean).join(" · ") || null}
+      {/* Detail modal — one report, summary first, then its tasks as compact
+          rows. Single column on purpose: the old two-up grid of photo-height
+          cards buried the two failed tasks an admin opens this for under a
+          metre of green ones. */}
+      {detail && detailRow && (() => {
+        const tasksAll = detailRow.tasks || [];
+        // Effective state, same precedence the score is built on: the admin's
+        // ruling beats the AI's, which beats the leader's own answer.
+        const effDoneOf = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
+        const asked = tasksAll.filter((tk) => tk.answered !== false);
+        const nDone = asked.filter(effDoneOf).length;
+        const nFail = asked.length - nDone;
+        // An "issue" is anything the admin may need to act on: an effective
+        // failure, or a task the AI still doubts.
+        const isIssue = (tk) => tk.answered !== false &&
+          (!effDoneOf(tk) || (aiOn && aiReport?.tasks?.[String(Number(tk.id))]?.status === "flagged"));
+        const nIssues = tasksAll.filter(isIssue).length;
+        // A filter that just emptied itself (the admin fixed the last issue)
+        // falls back to «all» instead of a blank list.
+        const flt = nIssues > 0 ? mFlt : "all";
+        const shown = flt === "issues" ? tasksAll.filter(isIssue) : tasksAll;
+        const late = lateDays(detailRow);
+        return (
+        <Modal maxWidth="max-w-2xl" icon={ListChecks}
+          title={nm(detailRow.leader)}
+          subtitle={`${T.modalTitle} · ${fmtDate(detailRow.date, lang)}`}
           onClose={() => setDetail(null)}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(detail.tasks || []).map((tk, i) => {
+
+          {/* summary band: the day's verdict before any of its evidence */}
+          <div className="flex items-center flex-wrap gap-2">
+            <span title={detailRow.rejected ? T.voidTitle : undefined}
+              className="inline-flex items-center px-3 py-1 rounded-xl text-base font-bold text-white tabular-nums"
+              style={{ background: detailRow.rejected ? C_FLAT : scoreColor(detailRow.completion) }}>
+              {Math.round(detailRow.completion)}%
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold tabular-nums"
+              style={{ background: hexA(C_GOOD, 0.12), color: C_GOOD, border: `1px solid ${hexA(C_GOOD, 0.3)}` }}>
+              <CheckCircle2 size={12} />{nDone}/{asked.length} {T.sumDone}
+            </span>
+            {nFail > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold tabular-nums"
+                style={{ background: hexA(C_BAD, 0.12), color: C_BAD, border: `1px solid ${hexA(C_BAD, 0.3)}` }}>
+                <XCircle size={12} />{nFail} {T.sumFailed}
+              </span>
+            )}
+            {aiOn && (aiFlags[detailRow.uid] || 0) > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold tabular-nums"
+                style={{ background: hexA(C_AI, 0.12), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
+                <Sparkles size={12} />{aiFlags[detailRow.uid]} {T.aiFlagsN}
+              </span>
+            )}
+            <span className="ml-auto inline-flex items-center flex-wrap gap-1.5 text-[11px]"
+              style={{ color: "var(--text-4)" }}>
+              {detailRow.submitted_at && (
+                <span className="inline-flex items-center gap-1 tabular-nums" title={T.submittedAt}>
+                  <Clock size={11} />{fmtDate(detailRow.submitted_at, lang)} {hhmm(detailRow.submitted_at)}
+                </span>
+              )}
+              {late > 0 && <LateChip days={late} T={T} />}
+              {detailRow.source === "bot" && <span>{T.srcBot}</span>}
+            </span>
+          </div>
+
+          {/* Why the day scored 0 despite the answers below being filled in —
+              or, once it was opened, why it counts anyway. A full-width band,
+              because this is where somebody comes to argue with the number and
+              the old truncating subtitle ate exactly this sentence. */}
+          {detailRow.late_state && (() => {
+            const st = detailRow.late_state;
+            const [ntone, NIcon, text] =
+              st === "approved" ? [C_GOOD, ShieldCheck, T.lateOkTitle.replace("{by}", detailRow.late_by || "—")]
+              : st === "pending" ? [C_AI, Hourglass, T.pendTitle]
+              : [C_BAD, Ban, T.voidTitle];
+            return (
+              <div className="rounded-lg px-3 py-2 text-xs leading-relaxed"
+                style={{ background: hexA(ntone, 0.09), border: `1px solid ${hexA(ntone, 0.25)}`, color: "var(--text-2)" }}>
+                <span className="flex items-start gap-1.5">
+                  <NIcon size={13} color={ntone} className="flex-shrink-0 mt-0.5" />
+                  <span>{text}</span>
+                </span>
+                {detailRow.late_reason && (
+                  <p className="mt-1" style={{ color: "var(--text-3)" }}>{T.reasonLbl}: «{detailRow.late_reason}»</p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* only when there is something to narrow to */}
+          {nIssues > 0 && (
+            <SegmentedToggle size="sm" value={flt} onChange={setMFlt}
+              options={[["all", `${T.bandAll} · ${tasksAll.length}`], ["issues", `${T.fltIssues} · ${nIssues}`]]} />
+          )}
+
+          <div className="space-y-2.5">
+            {shown.map((tk) => {
               const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
               const media = tk.media || [];
               const id = Number(tk.id);
               const desc = taskDetail(id, lang).n;
               // a question the form did not put to this leader — neither pass nor fail
               const unasked = tk.answered === false;
-              // A proof an admin rejected: the leader still answered «Ha», but
-              // the day no longer counts it. The card has to read as failed —
-              // otherwise the modal shows a green task next to a score that
-              // already deducted it, and nothing on screen explains the gap.
+              // A proof an admin rejected via the AI flow: the leader still
+              // answered «Ha», but the day no longer counts it.
               const voided = !!tk.ai_rejected;
-              const tone = unasked ? "#94a3b8" : (tk.done && !voided) ? C_GOOD : C_BAD;
+              const overridden = tk.admin_done != null;
+              const effDone = effDoneOf(tk);
+              const tone = unasked ? C_FLAT : effDone ? C_GOOD : C_BAD;
               const rev = aiOn ? aiReport?.tasks?.[String(id)] : null;
-              // Several photos side by side rather than stacked: a 3-photo task
-              // used to be a card taller than the modal, which buried the next
-              // task entirely. The AI strip sits below them either way.
+              const reason = showReason(tk.reason, T);
               const nPhotos = photos.length + media.length;
-              const grid = nPhotos > 1 ? "grid grid-cols-2 gap-2 mt-2" : "mt-2";
+              const busy = ovBusy?.id === id;
               return (
-                <div key={i} className="rounded-xl overflow-hidden flex flex-col"
-                  style={{ background: hexA(tone, 0.08), border: `1px solid ${hexA(tone, 0.25)}` }}>
-                  <div className="p-3 flex-1">
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
-                      <span className="flex items-center gap-1.5 flex-shrink-0">
-                        {/* The AI's doubt is stated next to the leader's own
-                            answer, not instead of it: a task can be genuinely
-                            done AND have a suspect photo, and the header has to
-                            show both at once. */}
-                        {rev?.status === "flagged" && !voided && <Sparkles size={13} color={C_AI} />}
-                        {unasked ? <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>
-                          : (tk.done && !voided) ? <CheckCircle2 size={16} color={C_GOOD} /> : <XCircle size={16} color={C_BAD} />}
-                      </span>
-                    </div>
-                    {/* Stated before the leader's own answer, because it is the
-                        reason that answer no longer stands. */}
-                    {voided && (
-                      <span className="inline-flex items-center gap-1 mb-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                        style={{ background: hexA(C_BAD, 0.14), color: C_BAD, border: `1px solid ${hexA(C_BAD, 0.3)}` }}>
-                        <Ban size={10} />{T.aiRejChip}
-                      </span>
-                    )}
-                    {desc && <p className="text-xs font-medium mb-1.5" style={{ color: "var(--text-1)" }}>{desc}</p>}
-                    {!unasked && <p className="text-xs mb-0" style={{ color: "var(--text-3)" }}>{showReason(tk.reason, T) || (tk.done ? T.noIssues : T.noReason)}</p>}
-                    {nPhotos > 0 && (
-                      <div className={grid}>
-                        {photos.map((p, pi) => <ReportPhoto key={pi} src={p} T={T} className="" />)}
-                        {media.map((mid) => <BotPhoto key={`m${mid}`} id={mid} T={T} className="" />)}
+                <div key={id} className="rounded-xl overflow-hidden"
+                  style={{ background: hexA(tone, 0.07), border: `1px solid ${hexA(tone, 0.22)}` }}>
+                  <div className="px-3 py-2.5">
+                    <div className="flex items-start gap-2.5">
+                      {unasked ? <Minus size={16} color={tone} className="flex-shrink-0 mt-0.5" />
+                        : effDone ? <CheckCircle2 size={16} color={tone} className="flex-shrink-0 mt-0.5" />
+                        : <XCircle size={16} color={tone} className="flex-shrink-0 mt-0.5" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                          <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
+                          {unasked && <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>}
+                          {/* the ruling that made the icon say what it says */}
+                          {overridden && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                              style={{ background: "var(--brand-bg)", color: "var(--brand-text)", border: "1px solid var(--brand-border)" }}>
+                              <ShieldCheck size={10} />{T.ovChip}
+                            </span>
+                          )}
+                          {voided && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                              style={{ background: hexA(C_BAD, 0.14), color: C_BAD, border: `1px solid ${hexA(C_BAD, 0.3)}` }}>
+                              <Ban size={10} />{T.aiRejChip}
+                            </span>
+                          )}
+                          {/* The AI's doubt is stated next to the leader's own
+                              answer, not instead of it: a task can be genuinely
+                              done AND have a suspect photo. */}
+                          {rev?.status === "flagged" && !voided && !overridden && <Sparkles size={13} color={C_AI} />}
+                        </div>
+                        {desc && <p className="text-xs font-medium mt-1" style={{ color: "var(--text-1)" }}>{desc}</p>}
+                        {/* The leader's own words only where they say something:
+                            the old card printed «no issues» under every green
+                            task, thirteen times per report. */}
+                        {!unasked && (reason
+                          ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{reason}</p>
+                          : !tk.done ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noReason}</p>
+                          : null)}
+                        {nPhotos > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {photos.map((p, pi) => (
+                              <div key={pi} className="w-16 h-16 flex-shrink-0">
+                                <ReportPhoto src={p} T={T} className="" thumb onClick={(u) => setZoom(u)} />
+                              </div>
+                            ))}
+                            {media.map((mid) => (
+                              <div key={`m${mid}`} className="w-16 h-16 flex-shrink-0">
+                                <BotPhoto id={mid} T={T} className="" thumb onClick={(u) => setZoom(u)} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                   <AiReview rev={rev} T={T} lang={lang}
                     // Only a task the leader answered YES to, with photos, has
@@ -2903,13 +3054,63 @@ export default function Leaders() {
                     checking={checkingTask === id}
                     error={checkErr?.id === id ? checkErr.msg : null}
                     onCheck={(force) => checkTask(id, force)} />
+                  {/* the admin's own ruling — pressing the active side takes it back */}
+                  {isAdmin && !unasked && (
+                    <div className="px-3 py-2 flex items-center flex-wrap gap-x-2 gap-y-1.5"
+                      style={{ borderTop: "1px solid var(--border)", background: "var(--bg-inner)" }}>
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide"
+                        style={{ color: "var(--text-3)" }}>
+                        <ShieldCheck size={12} />{T.ovTitle}
+                      </span>
+                      {overridden && (
+                        <span className="text-[10px] truncate" style={{ color: "var(--text-4)" }}>
+                          {tk.admin_by}{tk.admin_at ? ` · ${fmtDateTime(tk.admin_at)}` : ""}
+                        </span>
+                      )}
+                      <span className="ml-auto inline-flex items-center gap-1.5">
+                        <Button size="sm" variant="success" tint={tk.admin_done !== true}
+                          loading={busy && ovBusy.btn === "done"} disabled={ovMut.isPending}
+                          title={tk.admin_done === true ? T.ovUndo : T.ovDone}
+                          icon={<CheckCircle2 size={13} />}
+                          onClick={() => setOverride(id, tk.admin_done === true ? null : true, "done")}>
+                          {T.ovDone}
+                        </Button>
+                        <Button size="sm" variant="danger" tint={tk.admin_done !== false}
+                          loading={busy && ovBusy.btn === "fail"} disabled={ovMut.isPending}
+                          title={tk.admin_done === false ? T.ovUndo : T.ovFail}
+                          icon={<XCircle size={13} />}
+                          onClick={() => setOverride(id, tk.admin_done === false ? null : false, "fail")}>
+                          {T.ovFail}
+                        </Button>
+                      </span>
+                      {ovErr?.id === id && (
+                        <p className="basis-full text-[10px] mb-0" style={{ color: C_BAD }}>{ovErr.msg}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
-          {aiOn && <p className="text-[10px] mt-3" style={{ color: "var(--text-4)" }}>{T.aiNote}</p>}
+          {aiOn && <p className="text-[10px]" style={{ color: "var(--text-4)" }}>{T.aiNote}</p>}
         </Modal>
-      )}
+        );
+      })()}
+
+      {/* enlarged proof photo — above the detail modal, click anywhere closes.
+          Portaled to document.body like every full-screen overlay. */}
+      {zoom && createPortal(
+        <div role="dialog" aria-modal="true" onClick={() => setZoom(null)}
+          className="fixed inset-0 flex items-center justify-center p-4 cursor-zoom-out"
+          style={{ background: "rgba(0,0,0,0.88)", zIndex: 80,
+            paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)",
+            paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
+          <img src={zoom} alt="" className="max-w-full max-h-full rounded-xl" />
+          <Button size="sm" variant="secondary" className="absolute right-4"
+            style={{ top: "calc(var(--tg-safe-top, 0px) + 1rem)" }}
+            icon={<X size={15} />} onClick={() => setZoom(null)} />
+        </div>,
+        document.body)}
 
       {/* Task-info modal */}
       {standInfo && (

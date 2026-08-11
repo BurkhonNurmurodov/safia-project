@@ -1357,12 +1357,38 @@ class LeaderAiReview(Base):
     #   rejected   → the AI was right; the task stops counting toward the day
     #   requeried  → the leader was asked to re-file; no penalty yet
     # `rejected` is the only value that changes a number anywhere (see
-    # routers/leaders.py `_ai_penalties`), which is why it is stored as a
+    # routers/leaders.py `_apply_overlays`), which is why it is stored as a
     # decision and never inferred from `flags`.
     resolution      = Column(String(12), nullable=True, index=True)
     resolved_by     = Column(String(160), nullable=True)   # actor's display name
     resolved_at     = Column(DateTime(timezone=True), nullable=True)
     resolution_note = Column(Text, nullable=True)
+
+
+class LeaderTaskOverride(Base):
+    """An admin's manual ruling on ONE task of ONE report — done or not done,
+    regardless of what the leader answered or what the AI thought.
+
+    Keyed by the report uid /api/leaders prints (the form's submission id for a
+    sheet row, ``bot-{day_id}`` for a bot day) — the same identity the AI
+    overlay resolves its verdicts to, so both rulings land on the same card.
+    Neither source can be written back (the leaders sheet is wipe-and-reloaded,
+    a closed bot day is immutable), so this is a read-time overlay exactly like
+    the AI rejection in routers/leaders.py, and deleting the row restores the
+    leader's own answer. Where both exist for one task, this one wins: it is
+    the explicit human statement of the task's state.
+    """
+    __tablename__ = "leader_task_overrides"
+    __table_args__ = (UniqueConstraint("uid", "task_id", name="uq_leader_task_override"),)
+
+    id      = Column(Integer, primary_key=True, autoincrement=True)
+    uid     = Column(String, nullable=False, index=True)
+    task_id = Column(Integer, nullable=False)
+    date    = Column(String(10), nullable=False, index=True)  # narrows the read-time scan
+    leader  = Column(String(160), nullable=True)              # display/audit only
+    done    = Column(Boolean, nullable=False)
+    set_by  = Column(String(160), nullable=True)              # actor's display name
+    set_at  = Column(DateTime(timezone=True), nullable=True)
 
 
 class LeaderTaskPendingChange(Base):
