@@ -12,7 +12,7 @@ import Button from "../../components/ui/Button";
 import FormField from "../../components/ui/FormField";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import { SectionHead } from "../../components/ui/DataTable";
-import { SkeletonBlock } from "../../components/ui/Skeleton";
+import { SkeletonBlock, SkeletonMatrix } from "../../components/ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -335,7 +335,7 @@ export default function LeaderTasksAdmin() {
         } />
         <div className="px-4 pt-3"><p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.desc")}</p></div>
         {isLoading ? (
-          <div className="p-4 space-y-2">{[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-8 w-full" />)}</div>
+          <SkeletonMatrix rows={8} />
         ) : (
           <div className="p-4 overflow-x-auto">
             <table className="w-full text-xs" style={{ color: "var(--text-1)", borderCollapse: "separate", borderSpacing: 3, tableLayout: "fixed", minWidth: 640 }}>
@@ -544,7 +544,15 @@ export default function LeaderTasksAdmin() {
         <Modal title={t("admin.ltasks.history")} icon={<History size={14} />} maxWidth="max-w-2xl" onClose={() => setShowHistory(false)}
           footer={<Button variant="secondary" onClick={() => setShowHistory(false)}>{t("admin.broadcast.cancel")}</Button>}>
           {!audit ? (
-            [0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-8 w-full mb-1" />)
+            <div aria-hidden="true">
+              {["w-1/2", "w-2/5", "w-3/5", "w-1/3", "w-1/2"].map((w, i) => (
+                <div key={i} className="flex items-center gap-2 px-1 py-2" style={{ borderTop: "1px solid var(--border)" }}>
+                  <SkeletonBlock className="h-4 w-16" />
+                  <SkeletonBlock className={`h-3.5 ${w}`} />
+                  <SkeletonBlock className="h-3 w-24 ml-auto" />
+                </div>
+              ))}
+            </div>
           ) : !audit.length ? (
             <p className="text-sm text-center py-6" style={{ color: "var(--text-3)" }}>—</p>
           ) : (
