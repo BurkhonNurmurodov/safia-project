@@ -1908,8 +1908,8 @@ def _lt_autoclose(db, prof, shift: int) -> None:
     that one themselves.
 
     The cutoff is the WINDOW, not the shift boundary. Shift 2 files until 09:00
-    while effective_date only rolls at 17:00, so the old `date < today` test
-    left a missed night open — and editable — for the eight hours in between,
+    while effective_date only rolls at 21:00, so the old `date < today` test
+    left a missed night open — and editable — for the twelve hours in between,
     which is exactly the stretch nobody is at the factory to file it."""
     today = effective_date(shift)
     promote_due(db, shift, today)  # apply staged config due at this boundary

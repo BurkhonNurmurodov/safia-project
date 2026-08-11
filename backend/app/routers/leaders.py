@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from time import monotonic
 from urllib.parse import urlparse
 
@@ -42,46 +42,67 @@ logger = logging.getLogger(__name__)
 _relabel = relabel_supervisor
 
 
-# ── Shift-1 submission window ─────────────────────────────────────────────────
-# Policy (user, 2026-08-06): a shift-1 leader files the day's checklist DURING
-# that day, between 08:00 and 20:00. A row that arrives outside those hours — or
-# on a different date than the day it reports on, or with no readable timestamp
-# at all — is not a submission. It still travels to the page and still shows in
-# the register, flagged, but it scores as the missed day it is.
+# ── Submission windows ────────────────────────────────────────────────────────
+# Policy (user, 2026-08-06 for shift 1, 2026-08-11 for shift 2): a leader files
+# the day's checklist inside their own shift's hours. A row that arrives outside
+# them — or with no readable timestamp at all — is not a submission. It still
+# travels to the page and still shows in the register, flagged, but it scores as
+# the missed day it is.
+#
+#   * shift 1 files DURING the day it reports on, 08:00 → 20:00.
+#   * shift 2 works and files across midnight, 21:00 on its own day → 09:00 the
+#     next morning. Both dated halves are on time; 09:00 is the deadline, so a
+#     night report filed at 11:00 is late exactly like an 07:00 shift-1 one.
 #
 # Deliberately narrow, so the rule can only ever bite where it was meant to:
-#   * only days from WINDOW_FROM onwards — every earlier day keeps the score it
-#     has always had, whenever its row happens to have been filed;
-#   * only shift 1 — shift 2 files against a 17:00 → 16:59 day and has no window
-#     of its own yet;
-#   * only rows whose supervisor RESOLVED to a shift-1 unit. An unmatched name
-#     carries a null shift (see sup_shift below), and a name-matching miss must
-#     never cost a leader a day's score.
+#   * only days from that shift's WINDOW_FROM onwards — every earlier day keeps
+#     the score it has always had, whenever its row happens to have been filed;
+#   * only rows whose supervisor RESOLVED to a unit. An unmatched name carries a
+#     null shift (see sup_shift below), and a name-matching miss must never cost
+#     a leader a day's score.
 # The timestamp is the sheet's own wall clock — Tashkent, no DST — which is what
 # the leader who filed it and the brigadir reading it both see on the form.
-WINDOW_FROM = "2026-08-06"      # first REPORTED day the rule judges
-WINDOW_SHIFT = 1
-WINDOW_OPEN = time(8, 0)
-WINDOW_CLOSE = time(20, 0)      # both ends inclusive: 20:00:00 still counts
+#
+# The DAY a row belongs to is settled before this rule ever sees it, at sync
+# time, by services/leader_tasks.filed_date — a shift-2 row filed at 06:00 is
+# attributed to the night that started at 21:00, not to the calendar date the
+# form stamped on it. Lateness is judged against that day, never against the
+# stamp, or a report would be voided for the very thing it was re-dated for.
+WINDOW_FROM = {1: "2026-08-06", 2: "2026-08-11"}   # first REPORTED day judged
+WINDOW = {
+    # shift: (open, close, crosses_midnight)
+    1: (time(8, 0), time(20, 0), False),   # both ends inclusive: 20:00:00 counts
+    2: (time(21, 0), time(9, 0), True),    # 21:00 → 09:00 next morning
+}
 
 
-def _in_window(date_iso: str, submitted_at: datetime | None) -> bool:
-    """Did this row arrive on the day it reports on, inside 08:00–20:00?"""
+def _in_window(date_iso: str, shift: int | None,
+               submitted_at: datetime | None) -> bool:
+    """Did this row arrive inside its shift's filing window for the day it
+    reports on? For shift 2 that window ends on the NEXT calendar date, so the
+    comparison is made on the full timestamp rather than on a time-of-day inside
+    one date — a 02:00 report carries tomorrow's date and is still on time."""
     if submitted_at is None:
         return False
-    return (
-        submitted_at.strftime("%Y-%m-%d") == str(date_iso)[:10]
-        and WINDOW_OPEN <= submitted_at.time() <= WINDOW_CLOSE
-    )
+    opens, closes, overnight = WINDOW[shift]
+    try:
+        day = datetime.strptime(str(date_iso)[:10], "%Y-%m-%d")
+    except ValueError:
+        return False
+    start = day.replace(hour=opens.hour, minute=opens.minute)
+    end = day.replace(hour=closes.hour, minute=closes.minute)
+    if overnight:
+        end += timedelta(days=1)
+    return start <= submitted_at <= end
 
 
 def _rejected(date_iso: str, shift: int | None, submitted_at: datetime | None) -> bool:
     """Whether the window rule voids this row. False for every day, shift and
     unresolved unit the rule does not cover — so it can only ever subtract from
     what the page already scored, never rewrite history."""
-    if str(date_iso)[:10] < WINDOW_FROM or shift != WINDOW_SHIFT:
+    if shift not in WINDOW or str(date_iso)[:10] < WINDOW_FROM[shift]:
         return False
-    return not _in_window(date_iso, submitted_at)
+    return not _in_window(date_iso, shift, submitted_at)
 
 
 # ── Opening a voided day (supervisor requests → admin approves) ───────────────
@@ -626,7 +647,16 @@ def get_late_queue(
             if (i["state"] == "pending" and i["can_decide"])
             or (i["state"] == "void" and i["can_request"] and not i["can_decide"])
         ),
-        "window": {"from": WINDOW_FROM, "open": "08:00", "close": "20:00"},
+        # Per shift, because they are different windows and the tab now holds
+        # both: a shift-2 supervisor reading "08:00–20:00" would be told their
+        # night was late against hours it was never meant to be filed in.
+        "windows": {
+            str(sh): {"from": WINDOW_FROM[sh],
+                      "open": opens.strftime("%H:%M"),
+                      "close": closes.strftime("%H:%M"),
+                      "overnight": overnight}
+            for sh, (opens, closes, overnight) in WINDOW.items()
+        },
     }
 
 

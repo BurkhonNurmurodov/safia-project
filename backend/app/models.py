@@ -1240,7 +1240,8 @@ class LeaderTaskDay(Base):
     surfaces on the /leaders dashboard — where a Google-Sheet row for the same
     (leader, date) still wins over this one. The `date` follows the leader's
     shift boundary (services/leader_tasks.effective_date): shift 1 is the plain
-    calendar day, shift 2 runs 17:00 → 16:59 next morning."""
+    calendar day, shift 2 turns at 21:00 — the hour that shift starts, and the
+    hour its 21:00 → 09:00 filing window opens."""
     __tablename__ = "leader_task_days"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
@@ -1399,7 +1400,7 @@ class LeaderTaskPendingChange(Base):
     day boundary, when the first bot request that observes the new date
     promotes it (services.leader_tasks.promote_due, lazy: there is no
     scheduler). `shift` tags which day boundary applies — a supervisor/leader
-    change carries its unit's shift (1 = midnight, 2 = 17:00) so it flips
+    change carries its unit's shift (1 = midnight, 2 = 21:00) so it flips
     exactly at that shift's rollover; a global_task change (names / default
     weight, cosmetic or rarely-governing) is shift-agnostic (NULL) and promotes
     at the first crossing. One pending change per target — re-staging the same

@@ -221,11 +221,12 @@ def date_window(date: str, shift: int | None) -> tuple[str, str]:
     """(from, to) as "YYYY-MM-DD HH:MM" for the checklist day.
 
     Shift 2 leaders submit between 21:00 and 09:00 the next morning, so their
-    window is that submission window — NOT the full 17:00 → 16:59 day that
-    services/leader_tasks.effective_date attributes a submission to. The
-    attribution day is deliberately the wider of the two: a 21:00 or an 02:00
-    photo lands on the same checklist date either way, but only the narrower
-    window is what a leader was actually asked to file inside.
+    window is that submission window — NOT the full 21:00 → 20:59 day that
+    services/leader_tasks.effective_date attributes a submission to. Both open
+    at 21:00; the attribution day then runs on for another twelve hours, so a
+    report filed at noon still lands on the night it reports on (and is voided
+    as late by routers/leaders._rejected), while only the narrower window is
+    what a leader was actually asked to photograph inside.
 
     An unknown shift is treated as shift 1: the strict reading, and
     unknown-shift rows are rare.
