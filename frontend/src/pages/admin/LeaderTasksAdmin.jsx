@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, Calendar, CheckCircle, ChevronDown, ChevronRight, History,
-  ListChecks, Radio, RotateCcw, X,
+  ImagePlus, ListChecks, Radio, RotateCcw, Trash2, X,
 } from "lucide-react";
 import Modal from "../../components/ui/Modal";
+import { ProxyPhoto } from "../../components/leaders/ProofPhoto";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Toast, { useToast } from "../../components/ui/Toast";
@@ -59,6 +60,46 @@ function WhenBar({ when, setWhen, nextDate, t }) {
         {when === "next_day" ? t("admin.ltasks.timingNext").replace("{date}", nextDate || "") : t("admin.ltasks.timingNow")}
       </p>
     </div>
+  );
+}
+
+// Optional EXAMPLE proof photos for one task — reference images the AI
+// reviewer receives beside the written criteria (global per task, never shown
+// to the leader). Uploads apply at once, exactly like the criteria text; the
+// ids come from the live config query, so the strip re-renders on invalidate.
+const EXAMPLES_MAX = 3;
+function TaskExamples({ ids, busy, onUpload, onAskDelete, t }) {
+  const fileRef = useRef(null);
+  const full = ids.length >= EXAMPLES_MAX;
+  const T = { photoFailed: t("admin.ltasks.photoFailed"), retry: t("common.retry") };
+  return (
+    <FormField label={t("admin.ltasks.examples")} hint={t("admin.ltasks.examplesHint")}>
+      <div className="space-y-2">
+        {ids.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {ids.map((id) => (
+              <div key={id} className="relative">
+                <ProxyPhoto T={T} deps={[id]} className="h-20" maxHeight={80}
+                  load={() => api.get(`/admin/leader-tasks/examples/${id}`, { responseType: "blob" })} />
+                <button type="button" aria-label={t("admin.ltasks.exampleDelTitle")}
+                  onClick={() => onAskDelete(id)}
+                  className="absolute top-1 right-1 w-6 h-6 rounded-md grid place-items-center"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input ref={fileRef} type="file" className="hidden"
+          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onUpload(f); }} />
+        <Button size="sm" tint icon={<ImagePlus size={13} />} loading={busy} disabled={full}
+          onClick={() => fileRef.current?.click()}>
+          {full ? t("admin.ltasks.examplesFull") : t("admin.ltasks.exampleAdd")}
+        </Button>
+      </div>
+    </FormField>
   );
 }
 
@@ -127,6 +168,35 @@ export default function LeaderTasksAdmin() {
   // leader sees in the bot, so it applies at once and never joins the
   // "from next day" staging the other fields go through.
   const critMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/criteria", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // Example proof photos live beside the criteria: instant like it (nothing
+  // the leader sees changes), ids come from the live config so an upload or
+  // delete re-renders the strip through the same invalidate.
+  const exAddMut = useMutation({
+    mutationFn: ({ taskId, file }) => {
+      const fd = new FormData();
+      fd.append("task_id", taskId);
+      fd.append("file", file);
+      return api.post("/admin/leader-tasks/examples", fd);
+    },
+    onSuccess: () => { invalidate(); ping(); },
+    onError: (e) => {
+      const d = e?.response?.data?.detail;
+      toast2.error(d === "examples_full" ? t("admin.ltasks.examplesFull")
+        : d === "photo_too_large" ? t("profile.photoTooLarge")
+        : d === "invalid_image" ? t("profile.photoInvalid")
+        : (typeof d === "string" && d) || t("admin.ltasks.fail"));
+    },
+  });
+  const exDelMut = useMutation({
+    mutationFn: (id) => api.delete(`/admin/leader-tasks/examples/${id}`),
+    onSuccess: () => { invalidate(); setConfirm(null); ping(); },
+    // The confirm dialog must stay standing with the reason on it, so the
+    // failure lands in the dialog's own error slot rather than a toast.
+    onError: (e) => {
+      const d = e?.response?.data?.detail;
+      setConfirm((c) => (c ? { ...c, error: (typeof d === "string" && d) || t("admin.ltasks.fail") } : c));
+    },
+  });
 
   const tasks = data?.tasks ?? [];
   const managers = data?.managers ?? [];
@@ -287,6 +357,18 @@ export default function LeaderTasksAdmin() {
 
   const cellTask = cell && (tasks.find((task) => task.id === cell.tid) || {});
   const lcellTask = lcell && (tasks.find((task) => task.id === lcell.tid) || {});
+  // Live task row behind the column modal — example ids must come from the
+  // query (not the col draft) so an upload/delete re-renders the strip.
+  const colTask = col && (tasks.find((task) => task.id === col.tid) || {});
+  const askDeleteExample = (id) => setConfirm({
+    title: t("admin.ltasks.exampleDelTitle"), message: t("admin.ltasks.exampleDelMsg"),
+    tone: "danger", confirmLabel: t("common.delete"),
+    onConfirm: () => exDelMut.mutate(id),
+  });
+  const uploadExample = (file) => {
+    if (file.size > 10 * 1024 * 1024) { toast2.error(t("profile.photoTooLarge")); return; }
+    exAddMut.mutate({ taskId: col.tid, file });
+  };
   const cellNext = cell && nextForShift(managers.find((m) => m.id === cell.mid)?.shift);
   const lcellNext = lcell && nextForShift(managers.find((m) => m.id === lcell.mid)?.shift);
 
@@ -494,6 +576,10 @@ export default function LeaderTasksAdmin() {
               onClick={() => critMut.mutate({ task_id: col.tid, criteria: col.criteria || "" })}>
               {t("admin.ltasks.save")}
             </Button>
+            <div className="pt-1">
+              <TaskExamples ids={colTask.examples || []} busy={exAddMut.isPending}
+                onUpload={uploadExample} onAskDelete={askDeleteExample} t={t} />
+            </div>
           </div>
           <div style={{ borderTop: "1px solid var(--border)" }} className="my-3" />
           <div className="space-y-2">
@@ -572,8 +658,8 @@ export default function LeaderTasksAdmin() {
 
       {confirm && (
         <ConfirmDialog open tone={confirm.tone} title={confirm.title} message={confirm.message}
-          confirmLabel={confirm.confirmLabel} cancelLabel={t("admin.broadcast.cancel")}
-          loading={cancelMut.isPending || revertMut.isPending || leaderMut.isPending || applyMut.isPending}
+          confirmLabel={confirm.confirmLabel} cancelLabel={t("admin.broadcast.cancel")} error={confirm.error}
+          loading={cancelMut.isPending || revertMut.isPending || leaderMut.isPending || applyMut.isPending || exDelMut.isPending}
           onCancel={() => setConfirm(null)} onConfirm={confirm.onConfirm} />
       )}
 

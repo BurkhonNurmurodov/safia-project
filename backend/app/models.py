@@ -1214,6 +1214,24 @@ class LeaderTaskLeaderSetting(Base):
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
 
+class LeaderTaskExample(Base):
+    """An admin-uploaded EXAMPLE proof photo for one checklist task — "a correct
+    proof looks like this". Global per task like `note_*` (no supervisor/leader
+    chain to walk), optional, capped at a few per task. Read by the AI proof
+    reviewer as reference images beside the written criteria; never shown to the
+    leader in the bot. Bytes live in the DB for the same reason ProfilePhoto's
+    do — a row survives deploys, restores and the dbdump tab — and are
+    re-encoded to a ≤1280px JPEG before landing here, the exact size the Gemini
+    request would shrink them to anyway."""
+    __tablename__ = "leader_task_examples"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    task_id    = Column(Integer, ForeignKey("leader_task_defs.id"), nullable=False, index=True)
+    mime       = Column(String, nullable=False, default="image/jpeg")
+    data       = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class LeaderTaskDay(Base):
     """One leader's in-bot checklist day. Created lazily on the first saved
     task; closed_at set by «KUNNI YOPISH», or auto-set when a bygone open day

@@ -53,6 +53,7 @@ from app.models import (
     LeaderTaskDay,
     LeaderTaskDef,
     LeaderTaskEntry,
+    LeaderTaskExample,
     LeaderTaskLeaderSetting,
     LeaderTaskMedia,
     LeaderTaskSetting,
@@ -195,6 +196,20 @@ def task_note(db: Session, task_id: int) -> str:
     return (td.note_ru or td.note_uz or td.note_en or "").strip()
 
 
+def task_examples(db: Session, task_id: int) -> list[tuple[bytes, str]]:
+    """Admin-uploaded EXAMPLE proof photos — "a correct proof looks like this".
+
+    Global per task, like `note_*`. Already stored at the edge size the Gemini
+    request shrinks to, so sending them costs no extra processing. They ride in
+    FRONT of the proof photos on every review of the task; the prompt tells the
+    model they are reference-only (see `_prompt`), most importantly that their
+    own — old by definition — timestamps are exempt from the date question.
+    """
+    rows = (db.query(LeaderTaskExample).filter_by(task_id=task_id)
+            .order_by(LeaderTaskExample.id).all())
+    return [(r.data, r.mime or "image/jpeg") for r in rows]
+
+
 # ── the expected date window ─────────────────────────────────────────────────
 
 def date_window(date: str, shift: int | None) -> tuple[str, str]:
@@ -220,7 +235,7 @@ def date_window(date: str, shift: int | None) -> tuple[str, str]:
 
 
 def _prompt(*, task: str, note: str, criteria: str, date: str, shift: int | None,
-            n_images: int, omitted: int) -> str:
+            n_images: int, omitted: int, n_examples: int = 0) -> str:
     lo, hi = date_window(date, shift)
     # Shift 2's window crosses midnight, so it is spelled out as two concrete
     # dated halves rather than left as a range. Given only "21:00 → 09:00 next
@@ -264,21 +279,59 @@ def _prompt(*, task: str, note: str, criteria: str, date: str, shift: int | None
         "bo'lsa-yu sifatsiz, chala yoki to'liq bo'lmasa — bu MAVZU muammosi "
         "EMAS, buni keyingi savolda ayt."
     )
-    done_block = (
-        "3) ISBOT. Quyida vazifa qanday bajarilgan hisoblanishi yozilgan. "
-        "Rasm(lar) shu talabni bajarilganini KO'RSATyaptimi?\n"
-        f"TALAB: {criteria}\n"
-        "Agar rasm talabga aloqador bo'lmasa, yarim bajarilgan bo'lsa, bo'sh "
-        "shakl/jadval ko'rsatsa yoki talabni tasdiqlamasa — proves_done=false."
-        if criteria else
-        "3) ISBOT. Bu vazifa uchun yozma talab kiritilmagan, shuning uchun "
-        "BAJARILGANLIK darajasini baholama: yuqoridagi mavzu mosligi tekshiruvi "
-        "o'tgan bo'lsa — proves_done=true qo'y."
-    )
+    if criteria:
+        done_block = (
+            "3) ISBOT. Quyida vazifa qanday bajarilgan hisoblanishi yozilgan. "
+            "Rasm(lar) shu talabni bajarilganini KO'RSATyaptimi?\n"
+            f"TALAB: {criteria}\n"
+            "Agar rasm talabga aloqador bo'lmasa, yarim bajarilgan bo'lsa, bo'sh "
+            "shakl/jadval ko'rsatsa yoki talabni tasdiqlamasa — proves_done=false."
+        )
+    elif n_examples:
+        # No written requirement, but examples exist — they ARE the requirement:
+        # an admin who uploaded a reference photo without authoring text has
+        # still said what done looks like, and the question can run against it.
+        done_block = (
+            "3) ISBOT. Bu vazifa uchun yozma talab kiritilmagan, lekin NAMUNA "
+            "rasm(lar) berilgan. Tekshirilayotgan rasm(lar) namunadagidek "
+            "bajarilgan ishni ko'rsatsa — proves_done=true; bo'sh, chala yoki "
+            "namunadagidan butunlay boshqa holat ko'rinsa — proves_done=false."
+        )
+    else:
+        done_block = (
+            "3) ISBOT. Bu vazifa uchun yozma talab kiritilmagan, shuning uchun "
+            "BAJARILGANLIK darajasini baholama: yuqoridagi mavzu mosligi tekshiruvi "
+            "o'tgan bo'lsa — proves_done=true qo'y."
+        )
+    # Example reference images ride in FRONT of the proof photos. The model has
+    # to be told the order and — critically — that an example's own timestamp is
+    # exempt from question 1: an example is an old photo by definition, and
+    # without the carve-out the date check would flag every proof against the
+    # example's clock.
+    if n_examples:
+        intro = (
+            f"Senga avval {n_examples} ta NAMUNA rasm, keyin {n_images} ta "
+            f"TEKSHIRILADIGAN isbot rasmi berilgan.\n"
+            f"NAMUNA rasmlar — to'g'ri topshirilgan isbot qanday ko'rinishini "
+            f"ko'rsatadigan eski misollar. Ular BAHOLANMAYDI: ulardagi sana, soat "
+            f"va qiymatlar tekshirilmaydi (eski bo'lishi tabiiy), ular faqat "
+            f"taqqoslash uchun berilgan. Quyidagi BARCHA savollar FAQAT oxirgi "
+            f"{n_images} ta TEKSHIRILADIGAN rasmga tegishli."
+        )
+        ex_date = ("\n- NAMUNA rasmlardagi sana-vaqtni image_date ga YOZMA va "
+                   "tekshiruvda ishlatma — faqat TEKSHIRILADIGAN rasmlarnikini o'qi.")
+        match_block += (
+            "\nNAMUNA rasm(lar) shu vazifa uchun to'g'ri isbot qanday "
+            "ko'rinishini ko'rsatadi — tekshirilayotgan rasmni ularga solishtir: "
+            "mazmuni o'xshash bo'lishi kutiladi, sanasi va qiymatlari farq "
+            "qilishi tabiiy.")
+    else:
+        intro = f"Senga bitta vazifa uchun {n_images} ta isbot rasmi berilgan."
+        ex_date = ""
     omit = (f"\nEslatma: bu vazifada ko'proq rasm bor, faqat birinchi "
             f"{n_images} tasi yuborildi ({omitted} tasi yuborilmadi).") if omitted else ""
     return f"""Sen zavod liderlarining kunlik hisobotlarini tekshiruvchi auditorsan.
-Senga bitta vazifa uchun {n_images} ta isbot rasmi berilgan.
+{intro}
 
 VAZIFA: {task}
 {note_line}HISOBOT SANASI: {date}
@@ -321,7 +374,7 @@ avgust).
 - Biror rasmning sana-vaqti yuqorida ruxsat etilgan oraliqlardan tashqarida
   bo'lsa — date_ok=false.
 - Hammasi ruxsat etilgan oraliqlar ichida bo'lsa — date_ok=true, sanasi hisobot
-  sanasidan farq qilgan taqdirda ham.
+  sanasidan farq qilgan taqdirda ham.{ex_date}
 
 Sababda sanani QAYERDAN o'qiganingni ayt (masalan: «Windows soati», «macOS
 menyu satri», «kamera muhri»).
@@ -665,15 +718,16 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         db.commit()
         return "image"
 
+    examples = task_examples(db, rev.task_id)
     prompt = _prompt(
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
         note=task_note(db, rev.task_id),
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
         date=rev.date, shift=rev.shift,
-        n_images=len(images), omitted=omitted,
+        n_images=len(images), omitted=omitted, n_examples=len(examples),
     )
     try:
-        out = gemini.generate_json(prompt, images, _SCHEMA)
+        out = gemini.generate_json(prompt, examples + images, _SCHEMA)
     except gemini.GeminiQuotaError:
         # Leave it pending and give the attempt back — the row never got a
         # verdict, and a capped queue head would strand the whole backlog.

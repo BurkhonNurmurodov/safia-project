@@ -9,10 +9,12 @@ for the /leaders detail modal — page-access gated with the same row scoping as
 /api/leaders (supervisor → own unit, leader → own rows).
 """
 import logging
+from io import BytesIO
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
+from PIL import Image, ImageOps
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,10 +23,11 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     AppSetting, LeaderTaskDay, LeaderTaskDef, LeaderTaskEntry,
-    LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting, Manager,
-    RoleProfile,
+    LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
+    LeaderTaskSetting, Manager, RoleProfile,
 )
 from app.permissions import require_page
+from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import leader_bot
 from app.services.leader_tasks import (
@@ -63,6 +66,12 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         .all()
     )
     overrides = leader_overrides(db, [p.id for p in leaders])
+    # Example-proof photo ids per task — ids only, the bytes stream from
+    # /admin/leader-tasks/examples/{id} when the modal actually shows them.
+    examples: dict[int, list[int]] = {}
+    for eid, tid in (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id)
+                     .order_by(LeaderTaskExample.id).all()):
+        examples.setdefault(tid, []).append(eid)
     return {
         "tasks": [
             {
@@ -72,6 +81,7 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # Global "definition of done" for the AI proof reviewer;
                 # supervisors and leaders may override it in their own cells.
                 "criteria": td.criteria or "",
+                "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
             for td in defs
@@ -300,6 +310,75 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Unknown leader")
     set_criteria(db, task_id=body.task_id, criteria=body.criteria,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
+# ── Admin: example proof photos (AI reference images) ────────────────────────
+# Optional per-task EXAMPLES of a correct proof, shown to the AI reviewer
+# beside the written criteria (services/leader_ai.py sends them in front of the
+# proof photos). Global per task like note_*, never shown to the leader, and —
+# like criteria — they apply at once: nothing the leader sees changes, so
+# nothing here stages.
+
+_EXAMPLE_MAX_BYTES = 10 * 1024 * 1024
+_EXAMPLES_PER_TASK = 3
+# Matches services/gemini's request-side shrink, so what is stored is exactly
+# what the model receives — keeping more would be dead weight in every dump.
+_EXAMPLE_EDGE = 1280
+
+
+@router.get("/admin/leader-tasks/examples/{example_id}")
+def get_example(example_id: int, db: Session = Depends(get_db),
+                _: dict = Depends(verify_admin)):
+    row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No example")
+    # Rows are insert/delete only, so a given id's bytes never change.
+    return Response(
+        content=row.data,
+        media_type=row.mime or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
+@router.post("/admin/leader-tasks/examples")
+def post_example(task_id: int = Form(...), file: UploadFile = File(...),
+                 db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+    if not td:
+        raise HTTPException(status_code=404, detail="Unknown task")
+    if db.query(LeaderTaskExample).filter_by(task_id=task_id).count() >= _EXAMPLES_PER_TASK:
+        raise HTTPException(status_code=400, detail="examples_full")
+    content = file.file.read(_EXAMPLE_MAX_BYTES + 1)
+    if len(content) > _EXAMPLE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="photo_too_large")
+    validate_avatar(file, content)
+    try:
+        img = Image.open(BytesIO(content))
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_image")
+    # Downscale only — no square crop, unlike avatars: examples are screenshots
+    # and wide shop-floor photos, and cropping is exactly how a corner clock or
+    # a table edge would go missing from the reference.
+    img.thumbnail((_EXAMPLE_EDGE, _EXAMPLE_EDGE), Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=85)
+    row = LeaderTaskExample(task_id=task_id, mime="image/jpeg", data=buf.getvalue())
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}
+
+
+@router.delete("/admin/leader-tasks/examples/{example_id}")
+def delete_example(example_id: int, db: Session = Depends(get_db),
+                   _: dict = Depends(verify_admin)):
+    row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No example")
+    db.delete(row)
+    db.commit()
     return {"ok": True}
 
 
