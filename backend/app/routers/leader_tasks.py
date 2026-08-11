@@ -214,18 +214,69 @@ def put_supervisor_batch(body: SupervisorBatchIn, db: Session = Depends(get_db),
 
 class TaskIn(BaseModel):
     """Global task definition edit — names / notes / default weight. Touches
-    only LeaderTaskDef, never a supervisor row (decoupled from the bulk push)."""
+    only LeaderTaskDef, never a supervisor row (decoupled from the bulk push).
+
+    `manager_ids` / `leader_ids` turn it into a SCOPED rename: the global
+    definition is left alone and the name lands as a per-row override on
+    exactly those rows. Without this a filtered matrix could still rename the
+    task for the shifts it had filtered out — the global name is what every
+    row without an override displays. An empty list is rejected."""
     task_id: int
     names: dict[str, str | None] | None = None
     note: dict[str, str | None] | None = None
     default_weight: int | None = None
     when: str = "now"
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+def _scoped_rename(db: Session, body: "TaskIn", actor: str) -> dict:
+    """Write the name as a per-row override on the filtered rows. The numeric
+    config rides along UNCHANGED — both writers take a whole cell, and a
+    rename must never silently reset a row's weight or photo count."""
+    if body.leader_ids is not None:
+        ids = [i for (i,) in db.query(RoleProfile.id).filter(
+            RoleProfile.id.in_(body.leader_ids), RoleProfile.role == "leader").all()]
+        if not ids:
+            raise HTTPException(status_code=400, detail="no_rows")
+        cur = {r.leader_id: r for r in db.query(LeaderTaskLeaderSetting).filter(
+            LeaderTaskLeaderSetting.leader_id.in_(ids),
+            LeaderTaskLeaderSetting.task_id == body.task_id).all()}
+        for lid in ids:
+            row = cur.get(lid)
+            write_change(db, "leader", {
+                "leader_id": lid, "task_id": body.task_id,
+                "enabled": row.enabled if row else None,
+                "min_media": row.min_media if row else None,
+                "weight": row.weight if row else None,
+                "names": body.names, "reset": False,
+            }, body.when, actor)
+        return {"ok": True, "count": len(ids), "level": "leader",
+                "applied": body.when}
+
+    ids = [i for (i,) in db.query(Manager.id).filter(
+        Manager.id.in_(body.manager_ids), Manager.archived.is_(False)).all()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="no_rows")
+    for mid in ids:
+        eff = effective_settings(db, mid).get(body.task_id, {})
+        write_change(db, "supervisor", {"manager_id": mid, "cells": [{
+            "task_id": body.task_id,
+            "enabled": eff.get("enabled", True),
+            "min_media": eff.get("min_media", 1),
+            "weight": eff.get("weight", 0),
+            "names": body.names,
+        }]}, body.when, actor)
+    return {"ok": True, "count": len(ids), "level": "supervisor",
+            "applied": body.when}
 
 
 @router.put("/admin/leader-tasks/task")
 def put_task(body: TaskIn, db: Session = Depends(get_db), admin: dict = Depends(verify_admin)):
     if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
+    if body.manager_ids is not None or body.leader_ids is not None:
+        return _scoped_rename(db, body, _actor(admin))
     payload = {"task_id": body.task_id, "names": body.names, "note": body.note,
                "default_weight": body.default_weight}
     return write_change(db, "global_task", payload, body.when, _actor(admin))
@@ -319,11 +370,17 @@ def put_column(col: ColumnIn, db: Session = Depends(get_db), _: dict = Depends(v
 
 class CriteriaIn(BaseModel):
     """One level of the definition-of-done chain. `manager_id`/`leader_id`
-    absent = the global (column) level, which every unit inherits."""
+    absent = the global (column) level, which every unit inherits.
+
+    `manager_ids`/`leader_ids` write the same text onto each of those rows
+    instead of the global level — the scoped twin of the column edit, for a
+    matrix that has been filtered down. An empty list is rejected."""
     task_id: int
     criteria: str = ""
     manager_id: int | None = None
     leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
 
 
 @router.put("/admin/leader-tasks/criteria")
@@ -334,6 +391,29 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
     next drain re-reads it — verdicts already written are NOT recomputed."""
     if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
+    # Scoped fan-out: the filtered rows each get their own copy of the text,
+    # leaving the global level (and therefore every row outside the filter)
+    # exactly as it was.
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_criteria(db, task_id=body.task_id, criteria=body.criteria,
+                             leader_id=lid)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_criteria(db, task_id=body.task_id, criteria=body.criteria,
+                             manager_id=mid)
+        return {"ok": True, "count": len(ids)}
     if body.manager_id is not None and not db.query(Manager).filter_by(
             id=body.manager_id).first():
         raise HTTPException(status_code=404, detail="Unknown supervisor")

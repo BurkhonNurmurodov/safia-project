@@ -479,10 +479,21 @@ export default function LeaderTasksAdmin() {
   // criteria routed to their own endpoints, each skipped when unchanged so a
   // no-op save writes no history entry. «Apply to all» keeps its own inline
   // button — it rewrites every leader and goes through a confirm.
+  // A filtered matrix scopes the WHOLE modal, not just the numeric push. The
+  // name and the definition-of-done live at the GLOBAL level, which is exactly
+  // what every row without an override displays — writing them there would
+  // reach straight past the filter into the shifts it excluded. Scoped, they
+  // land as per-row overrides on the filtered rows instead.
+  const colScope = () => (
+    !anyFilter ? {}
+      : applyScope.level === "leader"
+        ? { leader_ids: applyScope.ids } : { manager_ids: applyScope.ids }
+  );
   const saveCol = () => {
-    saveCriteria(col.criteria, colTask.criteria, { task_id: col.tid });
+    const ids = colScope();
+    saveCriteria(col.criteria, colTask.criteria, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (colTask.name?.[l] || "")))
-      taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when });
+      taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
   const askDeleteExample = (id) => setConfirm({
     title: t("admin.ltasks.exampleDelTitle"), message: t("admin.ltasks.exampleDelMsg"),
@@ -707,8 +718,21 @@ export default function LeaderTasksAdmin() {
         <Modal title={`${t("admin.ltasks.editTask")} — T${col.tid}`} icon={<ListChecks size={14} />} onClose={() => setCol(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={taskMut.isPending || critMut.isPending} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
+            {/* Filtered down to nothing: there is no row for a name or a
+                definition-of-done to land on, so Save has no target. */}
+            <Button loading={taskMut.isPending || critMut.isPending}
+              disabled={anyFilter && !applyN} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
           </>}>
+          {/* One scope statement for the whole modal — every field below it
+              writes to the same rows, so it is said once, at the top, before
+              anything is typed. */}
+          {anyFilter && (
+            <div className="rounded-xl px-3 py-2 mb-1 text-[11px] leading-snug"
+              style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+              {(applyScope.level === "leader"
+                ? t("admin.ltasks.colScopedLead") : t("admin.ltasks.colScopedMgr")).replace("{n}", applyN)}
+            </div>
+          )}
           <div className="space-y-2">
             <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.rename")}</p>
             {LANGS.map((l) => (
@@ -723,7 +747,9 @@ export default function LeaderTasksAdmin() {
               is how the whole platform's answer to "what counts as done" is
               set in one place. */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>{t("admin.ltasks.criteriaGlobal")}</p>
+            <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>
+              {anyFilter ? t("admin.ltasks.criteriaScoped") : t("admin.ltasks.criteriaGlobal")}
+            </p>
             {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
             <div className="pt-1">
               <TaskExamples ids={colTask.examples || []} busy={exAddMut.isPending}
