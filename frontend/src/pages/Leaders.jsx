@@ -1030,16 +1030,20 @@ function AiChip({ n, T }) {
 // and this page is read inside Telegram on a phone, where nothing hovers.
 // Label → value → what is LEFT, in that order: the value answers "how much",
 // the sub-line answers the only follow-up anyone has, "how much isn't".
-function RegStat({ label, value, sub, tone, onClick, title }) {
+function RegStat({ label, value, sub, tone, onClick }) {
   const Tag = onClick ? "button" : "div";
   return (
-    <Tag {...(onClick ? { type: "button", onClick } : {})} title={title}
-      className={`px-3 py-2 text-left min-w-0 ${onClick ? "cursor-pointer transition-opacity hover:opacity-80" : ""}`}
+    <Tag {...(onClick ? { type: "button", onClick } : {})}
+      className={`px-3 py-2 text-left min-w-0 ${onClick
+        // Inset ring, same stance as .nav-item: a cell sits flush against its
+        // neighbours, and an outset ring would be clipped by the one beside it.
+        ? "cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--brand-ring)]"
+        : ""}`}
       style={{ background: "var(--bg-inner)" }}>
-      <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+      <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
         {label}
       </div>
-      <div className="text-[15px] font-bold tabular-nums leading-tight mt-0.5"
+      <div className="text-base font-bold tabular-nums leading-tight mt-0.5"
         style={{ color: tone || "var(--text-1)" }}>
         {value}
       </div>
@@ -3055,12 +3059,17 @@ export default function Leaders() {
                 // the one case that matters.
                 tone={!regStats.reviewable ? "var(--text-3)"
                   : regStats.checked < regStats.reviewable ? C_AI : C_GOOD}
-                sub={!regStats.reviewable ? T.regNothingToCheck
-                  : regStats.errors
-                    ? T.regErrN.replace("{n}", regStats.errors.toLocaleString())
-                  : regStats.checked < regStats.reviewable
-                    ? T.regLeftN.replace("{n}", (regStats.reviewable - regStats.checked).toLocaleString())
-                    : T.regAllChecked} />
+                // Whole sentences joined by a separator, never assembled from
+                // words: an unreadable proof is ALSO an unchecked one, so the
+                // remainder is stated first and the technical failure qualifies
+                // it — «17 not checked yet · 3 could not be read».
+                sub={[
+                  !regStats.reviewable ? T.regNothingToCheck
+                    : regStats.checked < regStats.reviewable
+                      ? T.regLeftN.replace("{n}", (regStats.reviewable - regStats.checked).toLocaleString())
+                      : T.regAllChecked,
+                  regStats.errors ? T.regErrN.replace("{n}", regStats.errors.toLocaleString()) : null,
+                ].filter(Boolean).join(" · ")} />
             )}
             {aiOn && (
               /* The one cell that is a door: a flag is work, and the queue is
@@ -3070,7 +3079,6 @@ export default function Leaders() {
               <RegStat label={T.regFlagged} value={regStats.flagged.toLocaleString()}
                 tone={regStats.open ? C_AI : regStats.flagged ? "var(--text-1)" : "var(--text-3)"}
                 onClick={regStats.open ? () => setTab("ai") : undefined}
-                title={regStats.open ? T.aiRowBadge : undefined}
                 sub={!regStats.flagged ? T.regClean
                   : regStats.open
                     ? T.regOpenN.replace("{n}", regStats.open.toLocaleString())

@@ -1333,8 +1333,7 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
     q = (db.query(LeaderAiReview.ref.label("ref"),
                   LeaderAiReview.status.label("status"),
                   LeaderAiReview.resolution.label("resolution"),
-                  func.count(LeaderAiReview.id).label("n"),
-                  func.coalesce(func.sum(LeaderAiReview.photos), 0).label("imgs"))
+                  func.count(LeaderAiReview.id).label("n"))
          .group_by(LeaderAiReview.ref, LeaderAiReview.status,
                    LeaderAiReview.resolution))
     if dates is not None:
@@ -1350,12 +1349,11 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
         if not uid:
             continue
         s = out.setdefault(uid, {"checked": 0, "flagged": 0, "open": 0,
-                                 "pending": 0, "error": 0, "images": 0})
+                                 "pending": 0, "error": 0})
         if r.status in ("ok", "flagged"):
             # A verdict exists either way — "checked" is the machine's work,
             # not its opinion, so a clean pass counts exactly like a flag.
             s["checked"] += r.n
-            s["images"] += int(r.imgs or 0)
         if r.status == "flagged":
             s["flagged"] += r.n
             # Still owed a human decision. `flagged` only grows; this is the
