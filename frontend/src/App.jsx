@@ -57,6 +57,7 @@ const Leaders = lazyWithReload(() => import("./pages/Leaders"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
+const WorkerConcerns = lazyWithReload(() => import("./pages/WorkerConcerns"));
 const Concerns = lazyWithReload(() => import("./pages/Concerns"));
 const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
@@ -395,6 +396,7 @@ function AppWithLang() {
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />
+            <Route path="/worker-concerns" element={<AuthGate><RequirePage page="worker-concerns"><WorkerConcerns /></RequirePage></AuthGate>} />
             <Route path="/tasks" element={<AuthGate><RequirePage page="tasks"><Tasks /></RequirePage></AuthGate>} />
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />

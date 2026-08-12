@@ -31,7 +31,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -116,29 +116,35 @@ def _apply_scope_and_filters(
         manager_id = [payload.get("role_id")]
     elif role == "leader" and not page_scope_is_all(db, payload, PAGE_KEY):
         own = _leader_lock_names(db, payload)
-        query = query.filter(WorkerConcern.reg_leader.in_(own or ["\x00none"]))
+        query = query.filter(WorkerConcern.reg_leader.in_(own) if own else false())
 
     fac = resolve_factory(db, payload, factory)
     if fac is not None:
         names = [n for n, m in sup.items() if fac_of.get(m["id"]) == fac]
         # Rows whose brigadir resolves to no unit are reachable only under
         # «All factories» — never padded onto a plant they may not belong to.
-        query = query.filter(WorkerConcern.reg_brigadir.in_(names or ["\x00none"]))
+        query = query.filter(WorkerConcern.reg_brigadir.in_(names) if names else false())
 
     if manager_id:
         wanted = set(manager_id)
         names = [n for n, m in sup.items() if m["id"] in wanted]
-        query = query.filter(WorkerConcern.reg_brigadir.in_(names or ["\x00none"]))
+        query = query.filter(WorkerConcern.reg_brigadir.in_(names) if names else false())
     if leader:
         query = query.filter(WorkerConcern.reg_leader.in_(leader))
     if cell:
         query = query.filter(WorkerConcern.reg_cell.in_(cell))
     if status:
         query = query.filter(WorkerConcern.status.in_([s for s in status if s in STATUSES]))
+    # Rows with an unparseable filing date (date=None) PASS the range filter:
+    # each consumer decides — the register shows them (sorted last, "—"), while
+    # stats/leaders exclude them from a date-bound window and report the count.
+    # Filtering them out here would make them undiscoverable forever.
     if date_from:
-        query = query.filter(WorkerConcern.date >= date_from)
+        query = query.filter(or_(WorkerConcern.date >= date_from,
+                                 WorkerConcern.date.is_(None)))
     if date_to:
-        query = query.filter(WorkerConcern.date <= date_to)
+        query = query.filter(or_(WorkerConcern.date <= date_to,
+                                 WorkerConcern.date.is_(None)))
     if q:
         like = f"%{q.strip()}%"
         query = query.filter(or_(
@@ -269,18 +275,22 @@ def get_stats(
     cells: dict[str, dict] = {}
     undated = 0
 
+    ranged = bool(lo or hi)
     for d, st, owner, b, c, l in rows:
         # Daily series: the widened window, dated rows only.
         if d is not None:
             day = daily.setdefault(d, {s: 0 for s in STATUSES})
             day[st] += 1
+        if ranged and d is None:
+            # In people-scope but with an unusable filing date: excluded from
+            # the date-bound KPIs, counted so the page can say so.
+            undated += 1
+            continue
         if not in_exact(d):
             continue
         kpi[st] += 1
         if owner:
             workers.add(" ".join(owner.lower().split()))
-        if d is None:
-            undated += 1
         bd = brig.setdefault(b or "", {s: 0 for s in STATUSES})
         bd[st] += 1
         cd = cells.setdefault(c or "", {**{s: 0 for s in STATUSES}, "leader": l or ""})
@@ -340,12 +350,19 @@ def get_leaders(
     query, sup = _apply_scope_and_filters(db, payload, **flt)
     rows = query.with_entities(
         WorkerConcern.reg_leader, WorkerConcern.reg_brigadir, WorkerConcern.reg_cell,
-        WorkerConcern.status,
+        WorkerConcern.status, WorkerConcern.date,
     ).all()
 
+    ranged = bool(flt["date_from"] or flt["date_to"])
     groups: dict[str, dict] = {}
     unassigned = {s: 0 for s in STATUSES}
-    for leader, b, c, st in rows:
+    undated = 0
+    for leader, b, c, st, d in rows:
+        # A date-bound KPI must not absorb rows whose filing date is unusable —
+        # they are counted and reported instead (same rule as /stats).
+        if ranged and d is None:
+            undated += 1
+            continue
         if not leader:
             unassigned[st] += 1
             continue
@@ -379,6 +396,7 @@ def get_leaders(
         "bands": get_bands(db),
         "min_ranked": MIN_RANKED,
         "unassigned": {**unassigned, "total": ua_total} if ua_total else None,
+        "undated": undated,
     }
 
 

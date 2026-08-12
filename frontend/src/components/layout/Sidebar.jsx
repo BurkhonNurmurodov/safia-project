@@ -11,7 +11,7 @@ import {
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
-  Grid3x3, TestTubes,
+  Grid3x3, TestTubes, Megaphone,
 } from "lucide-react";
 import api from "../../utils/api";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
@@ -45,6 +45,7 @@ const ALL_LINKS = [
   { to: "/quality", page: "quality", key: "nav.quality", icon: MessageSquareWarning, group: "quality" },
   { to: "/concerns", page: "concerns", key: "nav.concerns", icon: ShieldAlert, group: "quality" },
   { to: "/tasks", page: "tasks", key: "nav.tasks", icon: ListTodo, group: "leaders" },
+  { to: "/worker-concerns", page: "worker-concerns", key: "nav.workerConcerns", icon: Megaphone, group: "leaders" },
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer, group: "lab" },

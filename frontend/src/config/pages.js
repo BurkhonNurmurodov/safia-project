@@ -42,6 +42,7 @@ export const PAGES = [
   { key: "kaizen", route: "/kaizen", labelKey: "nav.kaizen" },
   { key: "quality", route: "/quality", labelKey: "nav.quality" },
   { key: "concerns", route: "/concerns", labelKey: "nav.concerns" },
+  { key: "worker-concerns", route: "/worker-concerns", labelKey: "nav.workerConcerns" },
   { key: "tasks", route: "/tasks", labelKey: "nav.tasks" },
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
@@ -73,6 +74,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // Leader concerns ("Xavotirlar") — role-scoped: leaders their own rows,
   // supervisors their unit, shift-managers their shift, top-managers read-only all.
   concerns: ["top-manager", "shift-manager", "supervisor", "leader"],
+  // Worker-concerns KPI («Ishchi havotirlari») — synced from the per-cell sheets;
+  // supervisors see their unit, leaders their own numbers (server-scoped).
+  "worker-concerns": ["supervisor", "leader"],
   tasks: ["supervisor", "leader"], // Leader tasks ("DAILY протокол") — supervisors assign, leaders execute
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled

@@ -181,6 +181,7 @@ const t = {
     "cellAtt.cfgLeaveHint":    "{n} ta yacheyka o'zgartirildi, lekin saqlanmadi. Chiqilsa, ular yo'qoladi.",
     "cellAtt.cfgLeaveConfirm": "Saqlamasdan chiqish",
     "nav.concerns":        "Xavotirlar",
+    "nav.workerConcerns":  "Ishchi havotirlari",
     "nav.tasks":           "Vazifalar",
 
     "tasks.title":           "Vazifalar",
@@ -2909,6 +2910,7 @@ const t = {
     "cellAtt.cfgLeaveHint":    "{n} та ячейка ўзгартирилди, лекин сақланмади. Чиқилса, улар йўқолади.",
     "cellAtt.cfgLeaveConfirm": "Сақламасдан чиқиш",
     "nav.concerns":        "Хавотирлар",
+    "nav.workerConcerns":  "Ишчи ҳавотирлари",
     "nav.tasks":           "Вазифалар",
 
     "tasks.title":           "Вазифалар",
@@ -5637,6 +5639,7 @@ const t = {
     "cellAtt.cfgLeaveHint":    "Изменено ячеек: {n}, но не сохранено. При выходе они пропадут.",
     "cellAtt.cfgLeaveConfirm": "Выйти без сохранения",
     "nav.concerns":        "Обеспокоенности",
+    "nav.workerConcerns":  "Хавотиры работников",
     "nav.tasks":           "Задачи",
 
     "tasks.title":           "Задачи",
@@ -8365,6 +8368,7 @@ const t = {
     "cellAtt.cfgLeaveHint":    "{n} cell(s) changed but not saved. Leaving drops them.",
     "cellAtt.cfgLeaveConfirm": "Leave without saving",
     "nav.concerns":        "Concerns",
+    "nav.workerConcerns":  "Worker concerns",
     "nav.tasks":           "Tasks",
 
     "tasks.title":           "Tasks",
