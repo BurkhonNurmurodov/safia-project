@@ -54,10 +54,16 @@ const OTHER_KEY = "__other__";
 // viewer's language, falling back to the sheet's own cell_name and then the raw
 // code. cellMap comes from the /api/quality payload's `cells` object.
 const CELL_LANGS = ["ru", "uz", "uz_cyrl", "en"];
+// The registry's workshop name in the viewer's language, straight off a cell
+// entry — a cell the leader roster names without a single record behind it has
+// no row to be read through, so the lookup can't start from one.
+const cellLabelOf = (c, lang) => {
+  if (c) for (const l of [lang, ...CELL_LANGS]) if (c[l]) return c[l];
+  return "";
+};
 const cellNameOf = (r, cellMap, lang) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
-  if (c) for (const l of [lang, ...CELL_LANGS]) if (c[l]) return c[l];
-  return r?.cn || r?.fc || "";
+  return cellLabelOf(c, lang) || r?.cn || r?.fc || "";
 };
 
 const TYPE_COLORS = {
@@ -87,6 +93,9 @@ const OPEN_STATES = ["open", "waiting", "repeat"];
 // and they trail the list in this fixed order.
 const F_NOLEAD = "__nolead__", F_NOCELL = "__nocell__";
 const FOLDS = [F_NOLEAD, F_NOCELL];
+// A nameless bucket reads as muted italic at every depth of the matrix, so it is
+// never mistaken for a person.
+const foldStyle = (s) => (s?.fold ? { color: "var(--text-4)", fontStyle: "italic" } : undefined);
 
 // THE place a status becomes a column. Every level of the «status by supervisor»
 // table goes through it — the whole-register split, one supervisor's row, and
@@ -194,7 +203,8 @@ const TXT = {
     secCells: "Aybdor yacheykalar", cellsSub: "ishlab chiqarish nomuvofiqliklari",
     secAcc: "Mas’uliyat va bartaraf etish", accBrig: "Brigadirlar/TM", accMgr: "Rahbarlar",
     accSub: "chora talab etilgan yozuvlar; % — bartaraf etilgan ulushi",
-    secSupStatus: "Brigadirlar bo‘yicha holat",
+    secSupStatus: "Brigadirlar bo‘yicha holat", secLeadStatus: "Liderlar bo‘yicha holat",
+    tglBrig: "Brigadir", tglLead: "Lider",
     supStatusSub: "korrektiv choralarning yopilish foizi",
     secMyClosure: "Korrektiv choralarning yopilishi", myClosureSub: "sizning yozuvlaringiz bo‘yicha",
     secAging: "Yopilmagan choralar yoshi", agingSub: "ochiq yozuvlar qancha vaqtdan beri turibdi",
@@ -250,7 +260,8 @@ const TXT = {
     secCells: "Айбдор ячейкалар", cellsSub: "ишлаб чиқариш номувофиқликлари",
     secAcc: "Масъулият ва бартараф этиш", accBrig: "Бригадирлар/ТМ", accMgr: "Раҳбарлар",
     accSub: "чора талаб этилган ёзувлар; % — бартараф этилган улуши",
-    secSupStatus: "Бригадирлар бўйича ҳолат",
+    secSupStatus: "Бригадирлар бўйича ҳолат", secLeadStatus: "Лидерлар бўйича ҳолат",
+    tglBrig: "Бригадир", tglLead: "Лидер",
     supStatusSub: "корректив чораларнинг ёпилиш фоизи",
     secMyClosure: "Корректив чораларнинг ёпилиши", myClosureSub: "сизнинг ёзувларингиз бўйича",
     secAging: "Ёпилмаган чоралар ёши", agingSub: "очиқ ёзувлар қанча вақтдан бери турибди",
@@ -306,7 +317,8 @@ const TXT = {
     secCells: "Виновные ячейки", cellsSub: "несоответствия производства",
     secAcc: "Ответственность и устранение", accBrig: "Бригадиры/ТМ", accMgr: "Руководители",
     accSub: "записи, требующие меры; % — доля устранённых",
-    secSupStatus: "Статусы по бригадирам",
+    secSupStatus: "Статусы по бригадирам", secLeadStatus: "Статусы по лидерам",
+    tglBrig: "Бригадир", tglLead: "Лидер",
     supStatusSub: "процент закрытия корректирующих мер",
     secMyClosure: "Закрытие корректирующих мер", myClosureSub: "по вашим записям",
     secAging: "Возраст незакрытых мер", agingSub: "сколько времени записи остаются открытыми",
@@ -362,7 +374,8 @@ const TXT = {
     secCells: "Cells at fault", cellsSub: "production non-conformances",
     secAcc: "Accountability & resolution", accBrig: "Brigadirs/TM", accMgr: "Managers",
     accSub: "records needing action; % = share resolved",
-    secSupStatus: "Status by supervisor",
+    secSupStatus: "Status by supervisor", secLeadStatus: "Status by leader",
+    tglBrig: "Brigadir", tglLead: "Leader",
     supStatusSub: "corrective action closure rate",
     secMyClosure: "Corrective action closure", myClosureSub: "across your own findings",
     secAging: "Age of unresolved actions", agingSub: "how long open findings have been sitting",
@@ -527,6 +540,13 @@ export default function Quality() {
   const [topMode, setTopMode] = usePersistentState("quality_top_mode", "product");
   const [accMode, setAccMode] = usePersistentState("quality_acc_mode", "brig");
   const [supStatMode, setSupStatMode] = usePersistentState("quality_sup_stat_mode", "count");
+  // Whose table it is: the responsible brigadir (default, today's behaviour) or
+  // the leader who owns the faulting cell. The SAME records either way — same
+  // four columns, same grand total — so the switch changes who is named on the
+  // left and nothing else. It can never be read as a different number of
+  // problems, which is the one thing a dimension switch must never do.
+  const [supStatDim, setSupStatDim] = usePersistentState("quality_sup_stat_dim", "brigadir");
+  const isLeadDim = supStatDim === "leader";
   // Which brigadir rows are expanded, and what their children are grouped by.
   // Both persist with the rest of the page's view state: coming back to a page
   // that forgot what you had open is the same as never having opened it.
@@ -818,6 +838,34 @@ export default function Quality() {
     return { labels, colTotals, matrix };
   }, [rows, view, matchesFilters, seasonMode, seasonYear, dateFrom, dateTo, MONTHS]);
 
+  // ── the leader roster ─────────────────────────────────────────────────────
+  // Leader rows are seeded from the CELLS REGISTRY, never from the records: a
+  // leader whose window is clean has no record to be derived from, and a table
+  // built only out of complaints quietly answers «who had a problem» while
+  // looking like it answers «how is each leader doing». So every leader who owns
+  // a cell gets a row, zeros included.
+  //
+  // ORG-level filters — plant, shift, brigadir, leader, cell — narrow the roster,
+  // because a leader outside them was never in scope: listing them at 0/0/0/0
+  // would read as a clean record when it actually means «not this shift». RECORD
+  // filters (period, status, type, category, source…) deliberately do NOT narrow
+  // it — a leader with nothing in the window is exactly the zero row worth
+  // seeing. `mid/sup/sh/fi` ride each cell in the payload for precisely this.
+  const leadRoster = useMemo(() => {
+    if (!isProd || !isLeadDim) return null;
+    const out = {};
+    for (const c of Object.values(cellMap)) {
+      if (!c?.leader) continue;
+      if (factory != null && c.fi !== factory) continue;
+      if (shiftSel.length && !shiftSel.includes(String(c.sh || ""))) continue;
+      if (brigSel.length && !brigSel.includes(c.sup)) continue;
+      if (leadSel.length && !leadSel.includes(c.leader)) continue;
+      if (cellSel.length && !cellSel.includes(`c${c.id}`)) continue;
+      (out[c.leader] || (out[c.leader] = [])).push(c);
+    }
+    return out;
+  }, [cellMap, isProd, isLeadDim, factory, shiftSel, brigSel, leadSel, cellSel]);
+
   // Brigadirs tab — per-supervisor resolution matrix for the status table that
   // sits under the KPI strip. The four actionable statuses map one-to-one onto
   // the four columns the table shows (done → resolved, open → not solved,
@@ -825,17 +873,37 @@ export default function Quality() {
   // excluded, as everywhere resolution is measured. The four status columns are
   // non-overlapping and sum to Total. Rows are alphabetical by the platform
   // (transliterated) name.
+  //
+  // In Leader mode the same records are re-cut by the leader who owns the
+  // FAULTING CELL — the only leader link a record has. Nothing is re-scoped and
+  // nothing is added: the four columns and the grand total are identical in both
+  // modes, only the name on the left changes. Records whose cell resolves to no
+  // leader (store / warehouse codes, cells nobody holds) collect in one trailing
+  // «leader unknown» row rather than vanishing, so the columns still sum to the
+  // KPI strip above.
   const supStatus = useMemo(() => {
     if (!isProd) return [];
     const map = {};
+    // Roster first: a leader with a clean window holds their place in the
+    // alphabet instead of appearing only on the days something went wrong.
+    if (leadRoster) for (const name of Object.keys(leadRoster))
+      map[name] = { name, label: tl(name), fold: false, ...emptySplit() };
     for (const r of filtered) {
-      const k = who(r);
-      if (!k || !ACTIONABLE.includes(r.st)) continue;
-      const m = map[k] || (map[k] = { name: k, ...emptySplit() });
+      if (!who(r) || !ACTIONABLE.includes(r.st)) continue;
+      const ld = isLeadDim ? leaderOf(r) : who(r);
+      const k = isLeadDim && !ld ? F_NOLEAD : ld;
+      const m = map[k] || (map[k] = {
+        name: k, fold: k === F_NOLEAD,
+        label: k === F_NOLEAD ? T.brkNoLead : tl(k),
+        ...emptySplit(),
+      });
       bumpStatus(m, r.st);
     }
-    return Object.values(map).sort((a, b) => tl(a.name).localeCompare(tl(b.name)));
-  }, [filtered, isProd, tl]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Alphabetical, so the table doubles as a register you can look a name up
+    // in; the nameless bucket trails.
+    return Object.values(map).sort((a, b) =>
+      (a.fold ? 1 : 0) - (b.fold ? 1 : 0) || a.label.localeCompare(b.label));
+  }, [filtered, isProd, isLeadDim, leadRoster, cellMap, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── what sits UNDER an expanded brigadir row ──────────────────────────────
   // The record's own «Aybdor yacheyka» code IS the grouping — who owns that cell
@@ -851,17 +919,36 @@ export default function Quality() {
   // Only two things have no name to show: a blank code (27 rows in the whole
   // register), and, in leader mode, a cell no leader is registered against. They
   // trail the list so the children still sum to the «Jami» directly above.
+  //
+  // Under a LEADER row the children are always that leader's cells — a leader
+  // owns cells, so there is no second dimension to offer and the header's
+  // leader/cell toggle steps aside. Every cell they own is seeded at zero first,
+  // so an expanded leader shows their whole workshop rather than only the corner
+  // of it that generated a complaint.
   const breakdown = useMemo(() => {
     if (!isProd) return {};
     const out = {};
+    const bucket = (k) => out[k] || (out[k] = { kids: {}, rows: [] });
+
+    if (isLeadDim && leadRoster) {
+      for (const [name, cells] of Object.entries(leadRoster)) {
+        const b = bucket(name);
+        for (const c of cells) {
+          const key = `c${c.id}`;
+          b.kids[key] = { key, fold: false, ...emptySplit(),
+            label: cellLabelOf(c, lang) || c.verifix_code || "" };
+        }
+      }
+    }
+
     for (const r of filtered) {
-      const nm = who(r);
-      if (!nm || !ACTIONABLE.includes(r.st)) continue;
-      const b = out[nm] || (out[nm] = { kids: {}, rows: [] });
+      if (!who(r) || !ACTIONABLE.includes(r.st)) continue;
+      const nm = isLeadDim ? (leaderOf(r) || F_NOLEAD) : who(r);
+      const b = bucket(nm);
       const c = r.ci != null ? cellMap[r.ci] : null;
 
       let key, label;
-      if (brkDim === "cell") {
+      if (isLeadDim || brkDim === "cell") {
         label = cellNameOf(r, cellMap, lang);
         // Registry hit → key by cell id, so two spellings of one cell merge.
         // Otherwise the code stands on its own.
@@ -887,13 +974,13 @@ export default function Quality() {
       delete b.kids;
     }
     return out;
-  }, [filtered, isProd, brkDim, cellMap, lang, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, isProd, isLeadDim, leadRoster, brkDim, cellMap, lang, tl, T]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Anything with records has a breakdown now, so the chevron simply follows the
   // row's total — it can't appear and vanish as the reader flips leader ⇄ cell.
   const canOpen = (name) => (breakdown[name]?.rows.length || 0) > 0;
-  // The header's leader/cell toggle governs open rows only, so it appears only
-  // while at least one row that can actually open IS open.
+  // Is anything actually expanded — the signal the header's leader/cell toggle
+  // and the export's dimension caption both hang off.
   const anyOpen = supStatus.some((s) => openSup.includes(s.name) && canOpen(s.name));
 
   // ── table ─────────────────────────────────────────────────────────────────
@@ -1462,20 +1549,21 @@ export default function Quality() {
       kpis,
 
       sup_status: isProd && !lockOwn && supStatus.length ? {
-        title: T.secSupStatus, subtitle: T.supStatusSub, mode: supStatMode,
-        columns: [T.colBrig, T.stResolved, T.stNotSolved, T.stRecurring, T.stWaiting, T.stTotal],
-        // The export mirrors the screen: a brigadir whose row is expanded brings
-        // its children along, indented, in the dimension currently on display.
-        // A workbook that silently flattened them would disagree with the table
-        // it was exported from.
+        title: isLeadDim ? T.secLeadStatus : T.secSupStatus, subtitle: T.supStatusSub, mode: supStatMode,
+        columns: [isLeadDim ? T.fLead : T.colBrig,
+                  T.stResolved, T.stNotSolved, T.stRecurring, T.stWaiting, T.stTotal],
+        // The export mirrors the screen: whichever dimension is on display, and a
+        // row that is expanded brings its children along, indented. A workbook
+        // that silently flattened them — or that ignored the switch and always
+        // shipped brigadirs — would disagree with the table it came from.
         rows: supStatus.flatMap((s) => [
-          { name: tl(s.name), values: statRow(s) },
+          { name: s.label, values: statRow(s) },
           ...(openSup.includes(s.name) && canOpen(s.name)
             ? (breakdown[s.name]?.rows || []).map((k) => ({ name: k.label, values: statRow(k), child: true }))
             : []),
         ]),
         total: { name: T.stTotal, values: statRow(grand) },
-        dim: anyOpen ? (brkDim === "cell" ? T.brkByCell : T.brkByLead) : null,
+        dim: anyOpen ? (isLeadDim || brkDim === "cell" ? T.brkByCell : T.brkByLead) : null,
       } : null,
 
       closure: lockOwn && myClosure ? {
@@ -1767,16 +1855,18 @@ export default function Quality() {
           {isProd && !lockOwn && (
             <TableCard
               icon={ShieldCheck}
-              title={T.secSupStatus}
+              title={isLeadDim ? T.secLeadStatus : T.secSupStatus}
               subtitle={T.supStatusSub}
               right={
-                <div className="flex items-center gap-2">
-                  {anyOpen && (
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  {anyOpen && !isLeadDim && (
                     <div className="brk-in">
                       <SegmentedToggle size="sm" value={brkDim} onChange={setBrkDim}
                         options={[["leader", T.fLead], ["cell", T.fCell]]} />
                     </div>
                   )}
+                  <SegmentedToggle size="sm" value={supStatDim} onChange={setSupStatDim}
+                    options={[["brigadir", T.tglBrig], ["leader", T.tglLead]]} />
                   <SegmentedToggle size="sm" value={supStatMode} onChange={setSupStatMode}
                     options={[["count", T.tglCount], ["pct", T.tglPct]]} />
                 </div>
@@ -1784,7 +1874,7 @@ export default function Quality() {
             >
               <thead className="sticky top-0 z-10" style={{ background: "var(--bg-inner)" }}>
                 <tr>
-                  <Th label={T.colBrig} k="sup" />
+                  <Th label={isLeadDim ? T.fLead : T.colBrig} k="sup" />
                   <Th label={T.stResolved} align="right" />
                   <Th label={T.stNotSolved} align="right" />
                   <Th label={T.stRecurring} align="right" />
@@ -1845,13 +1935,13 @@ export default function Quality() {
                             >
                               <ChevronRight size={13} className="flex-shrink-0 transition-transform duration-150"
                                 style={{ color: "var(--brand-text)", transform: open ? "rotate(90deg)" : "none" }} />
-                              <span className="truncate" title={tl(s.name)}>{tl(s.name)}</span>
+                              <span className="truncate" style={foldStyle(s)} title={s.label}>{s.label}</span>
                             </button>
                           ) : (
                             // No own workshop behind this name (a technologist, a
                             // store, an unmatched spelling) — nothing to open, so
                             // no chevron promising otherwise.
-                            <span className="block truncate pl-[19px]" title={tl(s.name)}>{tl(s.name)}</span>
+                            <span className="block truncate pl-[19px]" style={foldStyle(s)} title={s.label}>{s.label}</span>
                           )}
                         </td>
                         {statCells(s, false)}

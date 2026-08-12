@@ -82,12 +82,34 @@ def get_quality(
     fac_of_manager = factory_of_managers(db)
     cell_owner = {c.id: c.manager_id for c in db.query(Cell.id, Cell.manager_id).all()}
 
-    matched: dict[int, dict] = {}
+    # ── the cells registry, whole ─────────────────────────────────────────────
+    # Ships EVERY registered cell, not only the codes some record happened to
+    # hit. The «status by leader» table lists every leader who owns a cell, and a
+    # leader whose window is clean is precisely the row that cannot be derived
+    # from the records — a table built only from complaints quietly answers "who
+    # had a problem" while looking like it answers "how is each leader doing".
+    #
+    # Each entry carries the brigadir who owns the cell (mid/sup) plus that
+    # unit's shift and factory, so the page can narrow the roster by plant /
+    # shift / brigadir exactly the way it narrows the records. ~100 cells against
+    # ~12k rows — the payload doesn't notice.
+    mgr_by_id = {m.id: m for m in managers}
+    registry: dict[int, dict] = {}
+    for c in cells_tbl.values():
+        if c["id"] in registry:      # zero-stripped aliases point at the same dict
+            continue
+        owner = mgr_by_id.get(cell_owner.get(c["id"]))
+        registry[c["id"]] = {
+            **c,
+            "mid": owner.id if owner else None,
+            "sup": owner.name if owner else "",
+            "sh": owner.shift if owner else None,
+            "fi": fac_of_manager.get(owner.id) if owner else None,
+        }
+
     out_rows = []
     for r in rows:
         cell = resolve_verifix(cells_tbl, r.fault_code)
-        if cell:
-            matched[cell["id"]] = cell
         sup_row = sup.get(r.brigadir) or {}
         fi = fac_of_manager.get(sup_row.get("id"))
         if fi is None and cell:
@@ -121,10 +143,12 @@ def get_quality(
         # already gated to admin / top- / shift-manager by the page-access
         # matrix, none of whom are ever locked.
         "locked_factory_id": viewer_factory_id(db, payload),
-        # id → {verifix_code, sap_code, per-language workshop names, leader} for
-        # every cell any row resolved to; the frontend renders the name in the
-        # viewer's language and falls back to the sheet cell_name / raw code.
-        "cells": matched,
+        # id → {verifix_code, sap_code, per-language workshop names, leader,
+        # mid/sup/sh/fi of the owning brigadir unit} for EVERY registered cell,
+        # not just the ones a row resolved to (see the registry block above).
+        # The frontend renders the name in the viewer's language and falls back
+        # to the sheet cell_name / raw code.
+        "cells": registry,
         # Short keys: this array carries ~12k rows.
         # sup / sh = the matched supervisor unit and its shift (absent when the
         # responsible person isn't a supervisor).
