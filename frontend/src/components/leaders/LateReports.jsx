@@ -12,6 +12,7 @@ import SearchInput from "../ui/SearchInput";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
+import ScopeNotice from "./ScopeNotice";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import api from "../../utils/api";
@@ -222,7 +223,26 @@ function StateChip({ state, T }) {
   );
 }
 
-export default function LateReports({ canDecide = false }) {
+/** Normalised name compare — the queue, the dashboard and the bot register all
+ *  print the same person, and only casing and stray spacing ever differ. */
+const same = (a, b) =>
+  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+
+/** Does this row survive the PAGE scope bar (period · shift · supervisor ·
+ *  leader)? The queue is a list of (leader, day) rows, so the page's scope
+ *  means exactly what it means on the dashboard next door. */
+const inScope = (it, s) => {
+  if (!s) return true;
+  const d = String(it.date || "").slice(0, 10);
+  if (s.from && d < s.from) return false;
+  if (s.to && d > s.to) return false;
+  if (s.shift != null && it.shift !== s.shift) return false;
+  if (s.supervisor && !same(it.supervisor, s.supervisor)) return false;
+  if (s.leader && !same(it.leader, s.leader)) return false;
+  return true;
+};
+
+export default function LateReports({ canDecide = false, scope, onClearScope }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
@@ -239,7 +259,13 @@ export default function LateReports({ canDecide = false }) {
     queryKey: ["leaders-late"],
     queryFn: () => api.get("/api/leaders/late").then((r) => r.data),
   });
-  const items = data?.items ?? [];
+  // The endpoint deliberately ships the WHOLE queue — a decision waiting on you
+  // must not depend on a period. The page scope narrows what is listed, and
+  // whatever it leaves out is counted and printed above the list rather than
+  // dropped (see ScopeNotice): the row an admin came here for is, by
+  // definition, the one on a date nobody expected.
+  const all = useMemo(() => data?.items ?? [], [data]);
+  const items = useMemo(() => all.filter((it) => inScope(it, scope)), [all, scope]);
 
   // Both the dashboard feed and this queue move on every decision — a day that
   // starts counting has to change the standings behind the other tab too.
@@ -292,6 +318,13 @@ export default function LateReports({ canDecide = false }) {
     pending: items.filter((i) => i.state === "pending").length,
     done: items.filter((i) => ["approved", "rejected"].includes(i.state)).length,
   }), [items]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // What the page scope is holding back — and how much of it is this viewer's
+  // turn, which is what turns the line amber.
+  const out = useMemo(() => {
+    const rest = all.filter((it) => !inScope(it, scope));
+    return { hidden: rest.length, todo: rest.filter(needsMe).length };
+  }, [all, scope]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const segLabel = (label, n) => (
     <span className="inline-flex items-center gap-1.5">
@@ -350,7 +383,12 @@ export default function LateReports({ canDecide = false }) {
         </div>
       </div>
 
-      {/* Toolbar: search left, state filter right — the page's standard row. */}
+      {/* What the page scope bar is keeping off this list. Above the toolbar,
+          because it explains the list that follows before it is read. */}
+      {!isLoading && <ScopeNotice hidden={out.hidden} todo={out.todo} onClear={onClearScope} />}
+
+      {/* Toolbar: search left, state filter right — the page's standard row.
+          Only the axes the PAGE bar does not own: which state, and free text. */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex-1 min-w-[180px] max-w-sm">
           <SearchInput value={q} onChange={setQ} placeholder={T.searchPh} />
@@ -372,7 +410,11 @@ export default function LateReports({ canDecide = false }) {
         <div className="space-y-2">
           {[0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-24 rounded-2xl" />)}
         </div>
-      ) : !items.length ? (
+      ) : !all.length ? (
+        /* Truly nothing late — praise, and only ever printed when the WHOLE
+           queue is empty. An empty list under a narrow scope is «nothing
+           matched», a dead end, and reading one as the other tells an admin
+           the work is done when it is merely filtered away. */
         <div className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <EmptyState title={T.emptyT} message={T.emptyM} showUploadLink={false} />
         </div>

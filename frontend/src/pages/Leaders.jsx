@@ -2402,6 +2402,98 @@ export default function Leaders() {
       </div>
   );
 
+  // ── the page scope ─────────────────────────────────────────────────────────
+  // ONE answer to "which days, which shift, whose rows", read by every tab.
+  // The tabs are VIEWS of the same universe — the dashboard, the late queue,
+  // the AI queue and the bot register all describe (leader, day) checklist
+  // rows — so scoping each one separately meant setting the same period three
+  // times and, worse, reading a leader's dashboard beside an AI queue silently
+  // pointed somewhere else. Names, not ids: every one of these surfaces keys
+  // people by the same relabelled supervisor / profile name.
+  const scope = useMemo(() => ({
+    from: startDate || "",
+    to: endDate || "",
+    shift: fShift,                                   // null | 1 | 2
+    supervisor: fSup === "All" ? null : fSup,
+    leader: fLeader === "All" ? null : fLeader,
+  }), [startDate, endDate, fShift, fSup, fLeader]);
+
+  // Handed to every scoped list, so the control that hid a row is always one
+  // tap from the row it hid (see ScopeNotice). Both date edges go OPEN rather
+  // than back to the 7-day default: "show all" has to mean all, and the
+  // dashboard already reads an open edge as "the span the data itself covers".
+  const clearScope = useCallback(() => {
+    setStartDate("");
+    setEndDate("");
+    setFShift(null);
+    setFSup("All");
+    setFLeader("All");
+  }, [setStartDate, setEndDate, setFShift, setFSup, setFLeader]);
+
+  // ONE-ROW scope bar: period inline; shift / supervisor / leader live in the
+  // consolidated panel (role-scoped) and surface as chips when active. It sits
+  // ABOVE the tab strip because it belongs to the page, not to a view — a
+  // control that outranks the tabs has to be drawn above them, or every tab
+  // switch reads as "these filters probably reset".
+  // `mb-4` against everything else's `mb-3`: with three equal gaps the scope
+  // bar reads as just more chrome between the title and the tabs. The wider
+  // step below it is what says «page → scope | these are its views».
+  const scopeBar = (
+    <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <DateRangePicker
+        dateFrom={startDate}
+        dateTo={endDate}
+        setDateFrom={setStartDate}
+        setDateTo={setEndDate}
+        compactLabel
+        triggerClassName="px-3 py-2 text-sm"
+      />
+      {(!isLeader) && (
+        <FilterPanel
+          sections={[
+            // Shift — hidden for supervisors (locked to their unit/shift).
+            ...(!isSupervisor ? [{
+              key: "shift", icon: Layers, label: T.shift,
+              active: fShift != null,
+              display: fShift != null ? `S${fShift}` : "",
+              onClear: () => { setFShift(null); setFSup("All"); setFLeader("All"); },
+              render: () => (
+                <SegmentedToggle fill value={fShift}
+                  onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
+                  options={[[null, T.bandAll], [1, "S1"], [2, "S2"]]} />
+              ),
+            }] : []),
+            // Supervisor — shift-managers / admins only.
+            ...(!isSupervisor ? [{
+              key: "supervisor", icon: ShieldCheck, label: T.supervisor,
+              active: fSup !== "All",
+              display: fSup !== "All" ? nm(fSup) : "",
+              onClear: () => { setFSup("All"); setFLeader("All"); },
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close}
+                  opts={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s), title: nm(s) }))]}
+                  value={fSup}
+                  onChange={(v) => { setFSup(v); setFLeader("All"); }} />
+              ),
+            }] : []),
+            {
+              key: "leader", icon: User, label: T.leader,
+              active: fLeader !== "All",
+              display: fLeader !== "All" ? nm(fLeader) : "",
+              onClear: () => setFLeader("All"),
+              render: ({ close } = {}) => (
+                <PickFilter searchable close={close}
+                  opts={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l), title: nm(l) }))]}
+                  value={fLeader}
+                  onChange={setFLeader} />
+              ),
+            },
+          ]}
+        />
+      )}
+    </div>
+  );
+
   const tabsBar = (showClearTab || showLateTab) ? (
     <div className="mb-3">
       {/* No `scrollable` here: it makes the track w-full, and inside a block
@@ -2450,6 +2542,7 @@ export default function Leaders() {
   // unless a run is live, so it costs the other tabs no space.
   const pageChrome = (
     <>
+      {scopeBar}
       {tabsBar}
       {isAdmin && <AiProgress showIdle={tab === "ai"} />}
     </>
@@ -2460,7 +2553,7 @@ export default function Leaders() {
       <Layout title={pageTitle}>
         {headerBar}
         {pageChrome}
-        <BotDataClear />
+        <BotDataClear scope={scope} onClearScope={clearScope} />
       </Layout>
     );
   }
@@ -2470,7 +2563,8 @@ export default function Leaders() {
       <Layout title={pageTitle}>
         {headerBar}
         {pageChrome}
-        <LateReports canDecide={!!lateData?.can_decide} />
+        <LateReports canDecide={!!lateData?.can_decide}
+          scope={scope} onClearScope={clearScope} />
       </Layout>
     );
   }
@@ -2484,6 +2578,7 @@ export default function Leaders() {
             It stays in the register header too — that is where you notice a
             suspect row — but this tab is where you come to run one. */}
         <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm}
+          scope={scope} onClearScope={clearScope}
           actions={<AiRecheck errorCount={aiData?.counts?.error || 0} />} />
       </Layout>
     );
@@ -2493,62 +2588,6 @@ export default function Leaders() {
     <Layout title={pageTitle}>
       {headerBar}
       {pageChrome}
-
-      {/* ONE-ROW filter bar: period inline; shift / supervisor / leader live in
-          the consolidated panel (role-scoped) and surface as chips when active. */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <DateRangePicker
-          dateFrom={startDate}
-          dateTo={endDate}
-          setDateFrom={setStartDate}
-          setDateTo={setEndDate}
-          compactLabel
-          triggerClassName="px-3 py-2 text-sm"
-        />
-        {(!isLeader) && (
-          <FilterPanel
-            sections={[
-              // Shift — hidden for supervisors (locked to their unit/shift).
-              ...(!isSupervisor ? [{
-                key: "shift", icon: Layers, label: T.shift,
-                active: fShift != null,
-                display: fShift != null ? `S${fShift}` : "",
-                onClear: () => { setFShift(null); setFSup("All"); setFLeader("All"); },
-                render: () => (
-                  <SegmentedToggle fill value={fShift}
-                    onChange={(v) => { setFShift(v); setFSup("All"); setFLeader("All"); }}
-                    options={[[null, T.bandAll], [1, "S1"], [2, "S2"]]} />
-                ),
-              }] : []),
-              // Supervisor — shift-managers / admins only.
-              ...(!isSupervisor ? [{
-                key: "supervisor", icon: ShieldCheck, label: T.supervisor,
-                active: fSup !== "All",
-                display: fSup !== "All" ? nm(fSup) : "",
-                onClear: () => { setFSup("All"); setFLeader("All"); },
-                render: ({ close } = {}) => (
-                  <PickFilter searchable close={close}
-                    opts={[{ value: "All", label: T.allSups }, ...supervisors.map((s) => ({ value: s, label: nm(s), title: nm(s) }))]}
-                    value={fSup}
-                    onChange={(v) => { setFSup(v); setFLeader("All"); }} />
-                ),
-              }] : []),
-              {
-                key: "leader", icon: User, label: T.leader,
-                active: fLeader !== "All",
-                display: fLeader !== "All" ? nm(fLeader) : "",
-                onClear: () => setFLeader("All"),
-                render: ({ close } = {}) => (
-                  <PickFilter searchable close={close}
-                    opts={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l), title: nm(l) }))]}
-                    value={fLeader}
-                    onChange={setFLeader} />
-                ),
-              },
-            ]}
-          />
-        )}
-      </div>
 
       {refreshMut.isError && (
         <div className="rounded-2xl p-3 text-xs mb-3" style={{ background: "var(--bg-card)", border: "1px solid #ef4444", color: "#ef4444" }}>

@@ -3,14 +3,13 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
-  User, ShieldCheck, Layers, ClipboardCheck, Flag, SearchX, Settings2,
+  ClipboardCheck, Flag, SearchX, Settings2,
   ImageOff,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import StyledSelect from "../ui/StyledSelect";
 import SegmentedToggle from "../ui/SegmentedToggle";
-import DateRangePicker from "../ui/DateRangePicker";
 import { FilterPanel, PickFilter } from "../ui/ColumnFilter";
 import { SectionHead } from "../ui/DataTable";
 import EmptyState from "../ui/EmptyState";
@@ -70,15 +69,23 @@ const ACTS = {
  * Batch on any one of them and the reviewer holds ONE context for a run of
  * cards, which is where the speed actually comes from.
  *
+ * Four of those axes are now the PAGE's, not this tab's: period, leader,
+ * supervisor and shift arrive as `scope` from the bar above the tab strip, and
+ * every other leaders tab reads the same values. They were duplicated here
+ * before — the same five controls on two tabs, each remembering its own
+ * answer, so an admin narrowing the dashboard to one brigadir came to a queue
+ * still pointed at the whole factory and had no way to tell. What stays local
+ * is what only exists HERE: the task and the flag, dimensions the dashboard
+ * has no notion of.
+ *
  * Every dimension is evaluated SERVER-side. Filtering the page the browser
  * happens to hold would answer "Sevara's flags" with "Sevara's flags among the
  * 300 that fit", and on an older date it would answer "none" for a day holding
  * forty. The option lists come back from the same pass, each counted against
  * the other active filters, so no option in the panel is ever a dead end.
  */
-const EMPTY_FLT = {
-  from: "", to: "", leader: null, supervisor: null, task: null, shift: null, flag: null,
-};
+const EMPTY_FLT = { task: null, flag: null };
+const EMPTY_SCOPE = { from: "", to: "", leader: null, supervisor: null, shift: null };
 const FLAGS = ["off_topic", "not_proven", "date_mismatch", "no_date", "unreadable"];
 
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
@@ -101,7 +108,7 @@ const srcLost = (it) => !!it && it.photos.length === 0 && (it.photosJudged || 0)
  *  used to live only in the register header on Monitoring, gated on the feature
  *  being enabled, so the admin who came to the AI tab to start a check found no
  *  way to start one. */
-export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
+export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onClearScope }) {
   const qc = useQueryClient();
   // `position="bottom"`: this is a dense editing surface and the eye lives at
   // the decision bar, not the page head.
@@ -112,7 +119,10 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   // interrupted, and coming back to "all 337" after narrowing to one leader
   // means re-doing the narrowing every time. Merged over EMPTY_FLT so a stored
   // shape written before a dimension existed cannot arrive missing a key.
-  const [stored, setStored] = usePersistentState("leaders.ai.flt", EMPTY_FLT);
+  // Key bumped when period/leader/supervisor/shift moved up to the page bar:
+  // a blob written under the old shape would keep re-applying a leader nobody
+  // can see a control for.
+  const [stored, setStored] = usePersistentState("leaders.ai.flt2", EMPTY_FLT);
   const [i, setI] = useState(0);
   const [photoIx, setPhotoIx] = useState(0);
   const [zoom, setZoom] = useState(null);       // object URL of the enlarged photo
@@ -128,10 +138,18 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   const firstShow = useRef(true);     // the initial render must not yank the page
 
   const f = useMemo(() => ({ ...EMPTY_FLT, ...(stored || {}) }), [stored]);
-  const anyFlt = useMemo(
+  const sc = useMemo(() => ({ ...EMPTY_SCOPE, ...(scope || {}) }), [scope]);
+  const anyLocal = useMemo(
     () => Object.keys(EMPTY_FLT).some((k) => f[k] !== EMPTY_FLT[k]),
     [f],
   );
+  const anyScope = useMemo(
+    () => Object.keys(EMPTY_SCOPE).some((k) => sc[k] !== EMPTY_SCOPE[k]),
+    [sc],
+  );
+  // «Nothing matched» has to hand back EVERY control that could have caused it,
+  // and after the move most of them are the page's, not this tab's.
+  const anyFlt = anyLocal || anyScope;
   // Patching, not replacing — and both cursors go home, because the row under
   // the old index belongs to a queue that no longer exists.
   const setF = useCallback((patch) => {
@@ -144,18 +162,18 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   // queue back optimistically has to use this exact key — a bare
   // ["leader-ai-queue"] would write a cache entry nothing renders, and the
   // dispatched card would sit on screen until the next refetch.
-  const qkey = useMemo(() => ["leader-ai-queue", f], [f]);
+  const qkey = useMemo(() => ["leader-ai-queue", sc, f], [sc, f]);
 
   const { data, isLoading } = useQuery({
     queryKey: qkey,
     queryFn: () => api.get("/api/leader-ai/queue", {
       params: {
-        date_from: f.from || undefined,
-        date_to: f.to || undefined,
-        leader: f.leader ?? undefined,
-        supervisor: f.supervisor ?? undefined,
+        date_from: sc.from || undefined,
+        date_to: sc.to || undefined,
+        leader: sc.leader ?? undefined,
+        supervisor: sc.supervisor ?? undefined,
+        shift: sc.shift ?? undefined,
         task_id: f.task ?? undefined,
-        shift: f.shift ?? undefined,
         flag: f.flag ?? undefined,
       },
     }).then((r) => r.data),
@@ -367,13 +385,16 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
   return (
     <>
       {/* ── the toolbar: ONE row, 38px baseline ─────────────────────────────
-          Route → period → axes → actions, left to right, in the order the
-          reviewer narrows. This was two stacked rows (buckets+dispatch, then
-          scope), and with the tab strip and the progress bar above them the
-          photo started four bands down — on a phone, below the fold. Chrome
-          touched once a session must not out-rank the surface used hundreds
-          of times, so the rows share the line and wrap only when space runs
-          out. Buckets stay a control of their own, not a panel section:
+          Route → axes → actions, left to right, in the order the reviewer
+          narrows. WHO and WHEN are no longer here at all — they are the page
+          scope bar above the tab strip, shared with every other tab — so this
+          row is down to what only this queue knows: which task, which flag.
+          This was two stacked rows (buckets+dispatch, then scope), and with
+          the tab strip and the progress bar above them the photo started four
+          bands down — on a phone, below the fold. Chrome touched once a
+          session must not out-rank the surface used hundreds of times, so the
+          rows share the line and wrap only when space runs out. Buckets stay
+          a control of their own, not a panel section:
           technical failures are a SEPARATE queue on purpose — an unreadable
           Drive link is the server's problem, and mixing it into a discipline
           queue is how a reviewer learns to distrust the queue. FilterPanel
@@ -381,33 +402,8 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
           children to decide whether to unfold. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <SegmentedToggle scrollable value={liveBucket} onChange={pickBucket} options={bucketOpts} />
-        <DateRangePicker
-          dateFrom={f.from} dateTo={f.to}
-          setDateFrom={(v) => setF({ from: v || "" })}
-          setDateTo={(v) => setF({ to: v || "" })}
-          compactLabel triggerClassName="px-3 py-2 text-sm" />
         <FilterPanel
           sections={[
-            {
-              key: "leader", icon: User, label: T.leader,
-              active: !!f.leader, display: f.leader ? nm(f.leader) : "",
-              onClear: () => setF({ leader: null }),
-              render: ({ close } = {}) => (
-                <PickFilter searchable close={close} value={f.leader}
-                  opts={optList("leader", T.allLeaders, nm)}
-                  onChange={(v) => setF({ leader: v })} />
-              ),
-            },
-            {
-              key: "supervisor", icon: ShieldCheck, label: T.supervisor,
-              active: !!f.supervisor, display: f.supervisor ? nm(f.supervisor) : "",
-              onClear: () => setF({ supervisor: null }),
-              render: ({ close } = {}) => (
-                <PickFilter searchable close={close} value={f.supervisor}
-                  opts={optList("supervisor", T.allSups, nm)}
-                  onChange={(v) => setF({ supervisor: v })} />
-              ),
-            },
             {
               key: "task", icon: ClipboardCheck, label: T.task,
               active: f.task != null, display: f.task != null ? taskName(f.task) : "",
@@ -416,20 +412,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
                 <PickFilter searchable close={close} value={f.task}
                   opts={optList("task", T.aiFAllTasks, taskName)}
                   onChange={(v) => setF({ task: v })} />
-              ),
-            },
-            {
-              key: "shift", icon: Layers, label: T.shift,
-              active: f.shift != null, display: f.shift != null ? `S${f.shift}` : "",
-              onClear: () => setF({ shift: null }),
-              render: () => (
-                <SegmentedToggle fill value={f.shift}
-                  onChange={(v) => setF({ shift: v })}
-                  options={[
-                    [null, T.bandAll],
-                    ...[1, 2].filter((s) => facetN("shift", s) || f.shift === s)
-                      .map((s) => [s, `S${s} · ${facetN("shift", s) || 0}`]),
-                  ]} />
               ),
             },
             {
@@ -502,7 +484,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions }) {
             showUploadLink={false} height="h-64"
             action={
               <Button size="lg" variant="secondary" tint
-                onClick={() => setF(EMPTY_FLT)}>
+                onClick={() => { setF(EMPTY_FLT); onClearScope?.(); }}>
                 {T.aiClearFlt}
               </Button>
             } />

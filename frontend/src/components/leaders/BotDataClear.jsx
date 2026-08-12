@@ -2,8 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2, AlertTriangle, ShieldAlert } from "lucide-react";
 import TableCard, { Th } from "../ui/DataTable";
-import StyledSelect from "../ui/StyledSelect";
-import DateRangePicker from "../ui/DateRangePicker";
 import SearchInput from "../ui/SearchInput";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -11,6 +9,7 @@ import Pagination from "../ui/Pagination";
 import EmptyState from "../ui/EmptyState";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { useToast } from "../ui/Toast";
+import ScopeNotice from "./ScopeNotice";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -117,17 +116,40 @@ const hhmm = (ts) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-export default function BotDataClear() {
+/** Normalised name compare — this register, the dashboard and the late queue
+ *  all print the same person from the same profile row; only casing and stray
+ *  spacing ever differ between them. */
+const same = (a, b) =>
+  String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+
+/** Does this submitted day survive the PAGE scope bar? Same (leader, day)
+ *  universe as every other tab, so the page's period / shift / supervisor /
+ *  leader mean exactly what they mean there. */
+const inScope = (r, s) => {
+  if (!s) return true;
+  const d = String(r.date || "").slice(0, 10);
+  if (s.from && d < s.from) return false;
+  if (s.to && d > s.to) return false;
+  if (s.shift != null && r.shift !== s.shift) return false;
+  if (s.supervisor && !same(r.supervisor, s.supervisor)) return false;
+  if (s.leader && !same(r.leader, s.leader)) return false;
+  return true;
+};
+
+export default function BotDataClear({ scope, onClearScope }) {
   const { lang } = useLang();
   const { tl } = useTranslit();
   const T = TXT[lang] || TXT.uz;
   const toast = useToast({ position: "bottom" });
   const qc = useQueryClient();
 
-  const [from, setFrom] = usePersistentState("ltclear_from", "");
-  const [to, setTo] = usePersistentState("ltclear_to", "");
-  const [fSup, setFSup] = usePersistentState("ltclear_sup", "All");
-  const [fLeader, setFLeader] = usePersistentState("ltclear_leader", "All");
+  // Period / supervisor / leader are the PAGE's now — the same three controls
+  // used to sit in this toolbar with their own memory, so an admin who had
+  // narrowed the dashboard to one brigadir opened this tab onto a register
+  // still scoped to whatever they picked here weeks ago. What a delete would
+  // take is exactly what is listed, and what is listed must be explained by a
+  // control on screen; the bar above the tabs is that control, and everything
+  // it holds back is counted in the notice below.
   const [q, setQ] = usePersistentState("ltclear_q", "");
   const [sort, setSort] = usePersistentState("ltclear_sort", { key: "date", dir: "desc" });
   const [page, setPage] = usePersistentState("ltclear_page", 1);
@@ -140,27 +162,17 @@ export default function BotDataClear() {
     queryKey: ["leader-bot-submissions"],
     queryFn: () => api.get("/admin/leader-tasks/submissions").then((r) => r.data),
   });
-  const rows = data?.rows ?? [];
-  const sups = data?.supervisors ?? [];
+  const rows = useMemo(() => data?.rows ?? [], [data]);
 
-  // The leader picker follows the supervisor picker, so it can never offer a
-  // leader whose days are already filtered out.
-  const leaderOpts = useMemo(() => {
-    const ids = new Set(
-      rows
-        .filter((r) => fSup === "All" || String(r.manager_id) === String(fSup))
-        .map((r) => r.leader_id)
-    );
-    return (data?.leaders ?? []).filter((l) => ids.has(l.id));
-  }, [rows, data, fSup]);
+  // Scoped first, searched second — the notice counts what the PAGE hid, not
+  // what the operator's own search term hid, and conflating the two would put
+  // an amber "12 hidden" line under every half-typed name.
+  const scoped = useMemo(() => rows.filter((r) => inScope(r, scope)), [rows, scope]);
+  const hidden = rows.length - scoped.length;
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const out = rows.filter((r) =>
-      (!from || r.date >= from) &&
-      (!to || r.date <= to) &&
-      (fSup === "All" || String(r.manager_id) === String(fSup)) &&
-      (fLeader === "All" || String(r.leader_id) === String(fLeader)) &&
+    const out = scoped.filter((r) =>
       (!needle ||
         tl(r.leader).toLowerCase().includes(needle) ||
         tl(r.supervisor).toLowerCase().includes(needle))
@@ -174,7 +186,7 @@ export default function BotDataClear() {
       if (av > bv) return dir;
       return String(a.leader).localeCompare(String(b.leader));
     });
-  }, [rows, from, to, fSup, fLeader, q, sort, tl]);
+  }, [scoped, q, sort, tl]);
 
   // What a delete would actually take. Rows outside the current filter stay
   // out of it even if they were ticked before the filter narrowed.
@@ -237,26 +249,6 @@ export default function BotDataClear() {
   const toolbar = (
     <>
       <SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={T.searchPh} />
-      <DateRangePicker
-        dateFrom={from} dateTo={to}
-        setDateFrom={(v) => { setFrom(v); setPage(1); }}
-        setDateTo={(v) => { setTo(v); setPage(1); }}
-        triggerClassName="px-3 py-2 text-sm"
-      />
-      <StyledSelect
-        value={fSup}
-        onChange={(v) => { setFSup(v); setFLeader("All"); setPage(1); }}
-        options={[{ value: "All", label: T.allSups },
-                  ...sups.map((s) => ({ value: String(s.id), label: tl(s.name) }))]}
-        triggerClassName="px-3 py-2 text-sm"
-      />
-      <StyledSelect
-        value={fLeader}
-        onChange={(v) => { setFLeader(v); setPage(1); }}
-        options={[{ value: "All", label: T.allLeaders },
-                  ...leaderOpts.map((l) => ({ value: String(l.id), label: tl(l.name) }))]}
-        triggerClassName="px-3 py-2 text-sm"
-      />
       <div className="ml-auto flex items-center gap-2">
         {armed.length > 0 && (
           <>
@@ -289,6 +281,11 @@ export default function BotDataClear() {
         </span>
         <p className="text-xs leading-relaxed" style={{ color: "var(--text-2)" }}>{T.warn}</p>
       </div>
+
+      {/* On a delete surface this line is not a nicety: the day worth deleting
+          is usually the one filed on a date nobody expected, so a period
+          picked for the dashboard is exactly what would hide it. */}
+      {!isLoading && <ScopeNotice hidden={hidden} onClear={onClearScope} />}
 
       {isError && (
         <div className="rounded-2xl p-3 text-xs mb-3"
