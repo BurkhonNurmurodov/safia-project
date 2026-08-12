@@ -614,7 +614,8 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
 
 
 def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
-                   type: str = "info", exclude_account: int | None = None) -> None:
+                   type: str = "info", exclude_account: int | None = None,
+                   skip_accounts: set[int] | None = None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -631,24 +632,34 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     ``exclude_account`` suppresses the DM to the account that triggered the
     event (no "you did this" buzz) while STILL writing the profile's bell row,
     so the person's colleagues are not silenced by the actor's own action.
+
+    ``skip_accounts`` suppresses the DM to accounts already DMed about the SAME
+    event through another profile — one person may hold two of the profiles an
+    event addresses (a leader who also stands in as their unit's brigadir). The
+    return value is the set of accounts this call DMed, so a caller notifying
+    several profiles about one event accumulates it and passes it back in.
     """
     if notifications_suppressed() or not profile:
-        return
+        return set()
     from app.identity import profile_holders
 
     holder_ids = profile_holders(db, profile)
     if not holder_ids:
         # unclaimed profile → queue the bell row only; no account to DM yet
         _notify(db, None, nkey=nkey, params=params, type=type, profile=profile)
-        return
+        return set()
     # one profile-addressed bell row (DMs handled per-holder below) …
     _notify(db, holder_ids[0], nkey=nkey, params=params, type=type, dm=False,
             profile=profile)
     # … then a DM to each holder in their own language (HTML variant when the
     # notification defines one, e.g. the call-forecast blockquote)
     from app.telegram_bot import send_tg_notification
+    skip = set(skip_accounts or ())
+    if exclude_account is not None:
+        skip.add(exclude_account)
+    dmed: set[int] = set()
     for tid in holder_ids:
-        if exclude_account is not None and tid == exclude_account:
+        if tid in skip:
             continue
         lang = _get_user_lang(db, tid)
         title, body = _mk_notif(nkey, params, lang)
@@ -657,6 +668,8 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
             send_tg_notification(tid, title, body, html=html)
         except Exception:
             pass
+        dmed.add(tid)
+    return dmed
 
 
 def _notify_supervisor_all(db: Session, manager_id: int, nkey: str,

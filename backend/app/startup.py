@@ -772,6 +772,38 @@ def add_concern_done_at() -> None:
         db.close()
 
 
+def backfill_concern_units() -> None:
+    """Anchor concerns raised by an admin or a shift-manager to the unit of the
+    cell they are about.
+
+    Those two roles don't sit on a unit, so creation left brigadir_manager_id
+    NULL — and that column is what puts a concern in front of the cell's
+    brigadir (the supervisor scope filter), inside a factory, and on the
+    receiving end of a step down to the supervisor level. The rows were
+    therefore invisible to the very person running the cell. Creation now
+    stamps it; this fills in the rows written before that. Resolution matches
+    _cell_manager_id: the cell's leader's unit, else the cell's own unit."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "UPDATE leader_concerns lc "
+            "SET brigadir_manager_id = m.id, "
+            "    brigadir_name = COALESCE(lc.brigadir_name, m.name) "
+            "FROM cells c "
+            "LEFT JOIN role_profiles rp ON rp.id = c.leader_id AND rp.role = 'leader' "
+            "JOIN managers m ON m.id = COALESCE(rp.manager_id, c.manager_id) "
+            "WHERE lc.brigadir_manager_id IS NULL "
+            "  AND lc.cell_code IS NOT NULL "
+            "  AND btrim(lc.cell_code) = c.verifix_code"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] concern unit backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_concern_level_columns() -> None:
     """Concern escalation rollout: ``level`` is who currently holds the concern
     (leader → supervisor → shift-manager → top-manager; every existing row is a

@@ -220,7 +220,7 @@ export default function WorkerConcerns() {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.ru;
   const stL = (k) => (ST_LBL[k] || ST_LBL.other)[LI[lang] ?? LI.ru];
-  const tl = useTranslit();
+  const { tl } = useTranslit();
   const toast = useToast();
   const qc = useQueryClient();
   const { chartTheme, cardBg, gridColor, labelColor, legendColor } = useChartTheme();

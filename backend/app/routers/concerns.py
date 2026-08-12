@@ -33,9 +33,13 @@ profile identity (owner_role + owner_profile_id) and resolved to the current
 profile name at view time; concern_owner keeps a name snapshot as a fallback
 (legacy rows: whatever free text was typed, without a position).
 
-Every new concern notifies the leader's brigadir (the approved supervisor of
-the leader's unit) and the leader themself via the bell + a Telegram DM —
-whoever of them isn't the author (unregistered leaders are skipped silently).
+Every new concern notifies three people via the bell + a Telegram DM: whoever
+HOLDS it at the step it opened on, the BRIGADIR of the cell's unit — always,
+even when an admin or a shift-manager raises it straight to a level above them
+— and the LEADER the cell belongs to ("a concern was added for you"). Each is
+addressed as a profile, so the DM reaches every account holding it and an
+unclaimed profile inherits the bell row on registration; the author is never
+notified about their own action and no account is DMed twice.
 Access is gated by the ``concerns`` page in the access matrix.
 """
 from datetime import date, datetime, timezone
@@ -52,13 +56,11 @@ from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
 from app.services.factory_scope import factory_manager_ids, resolve_factory
-# Reuse the shared notification helpers: _find_supervisor resolves the brigadir
-# for a unit, _notify writes the bell row (rendered per-viewer) + Telegram DM.
+# Reuse the shared notification helpers: notify_profile addresses a PERSON (one
+# bell row on the profile + a DM to every account holding it), _notify is the
+# single-account fallback for legacy rows that resolve to no profile.
 from app import identity
-from app.routers.staff import (
-    _find_supervisor, _get_user_lang, _mk_notif, _mk_notif_tg, _notify,
-    _profile_key,
-)
+from app.routers.staff import _notify, _profile_key, notify_profile
 
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
 
@@ -146,6 +148,29 @@ def _cell_leader_recipient(db: Session, cell_code: str):
     # an unrelated leader — or nothing at all. Resolve through the profile.
     holders = identity.profile_holders(db, _profile_key("leader", leader_id))
     return (holders, _profile_key("leader", leader_id), leader_name or "")
+
+
+def _cell_manager_id(db: Session, cell_code: str) -> Optional[int]:
+    """The UNIT a cell belongs to — its leader's unit, falling back to the cell's
+    own owning unit for leaderless cells (the same resolution _cell_leaders uses
+    for the displayed supervisor name).
+
+    Every concern names a cell, so this is what anchors the row to a brigadir:
+    it fills brigadir_manager_id for the creators who don't sit on a unit
+    themselves (admin, shift-manager). Without it the row has no unit, which
+    means the cell's brigadir cannot see it on the page, no factory filter
+    matches it, and a step down to the supervisor level lands on nobody."""
+    code = (cell_code or "").strip()
+    if not code:
+        return None
+    row = (
+        db.query(func.coalesce(RoleProfile.manager_id, Cell.manager_id))
+        .outerjoin(RoleProfile, and_(RoleProfile.id == Cell.leader_id,
+                                     RoleProfile.role == "leader"))
+        .filter(Cell.verifix_code == code)
+        .first()
+    )
+    return row[0] if row else None
 
 
 def _level(c: LeaderConcern) -> str:
@@ -920,6 +945,17 @@ def create_concern(
     # Where the concern lands (level + who holds it) is derived from the
     # creator's role; the Owner column identity is the creator themselves.
     tgt = _resolve_target(payload, body, db)
+    # Anchor the concern to the cell's UNIT when the creator doesn't sit on one
+    # (admin, shift-manager — they raise it straight to a level above the
+    # brigadir). brigadir_manager_id is what makes the row visible to the cell's
+    # brigadir, places it in a factory, and gives a step down to the supervisor
+    # level somebody to land on; leaving it NULL orphans all three.
+    if not tgt.get("brigadir_manager_id"):
+        mid = _cell_manager_id(db, cell)
+        if mid:
+            mgr = db.query(Manager).filter_by(id=mid).first()
+            tgt["brigadir_manager_id"] = mid
+            tgt["brigadir_name"] = mgr.name if mgr else None
     owner_role, owner_profile_id, owner_snapshot = _creator_identity(db, payload)
     entry = body.entry_date or date.today()
 
@@ -956,63 +992,47 @@ def create_concern(
         alert_grant_use(db, payload, page_cap("concerns"), "concern.created",
                         details=alert_details, native=False)
 
-    # Tell whoever now holds the concern (the responsible person at its level),
-    # skipping the author and never DM'ing one account twice. Unclaimed profiles
-    # queue a bell row (tg None → no DM) inherited on registration.
+    # Who hears about a new concern: the person who now HOLDS it (the responsible
+    # one at its level), the brigadir of the cell's unit — always, whichever step
+    # the concern opened at — and the leader the cell belongs to. The author is
+    # never notified about their own action and no account is DMed twice.
     author = int(payload["sub"])
     snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+    rec = _cell_leader_recipient(db, c.cell_code)
     dmed: set[int] = set()
-    sent = False
-    for tg, prof_key in _level_recipients(db, c, _level(c)):
-        if tg == author:
-            continue
-        dm = tg is not None and tg not in dmed
-        if dm:
-            dmed.add(tg)
-        _notify(
-            db, tg, type="info", dm=dm, nkey="concern_created",
-            params={
-                "leader_name": c.leader_name or "",
-                "owner": c.concern_owner,
-                "date": entry,
-                "concern": snippet,
-                "concern_level": _level(c),
-            },
-            profile=prof_key,
-        )
-        sent = True
+
+    created = _level_recipients(db, c, _level(c))
+    # The brigadir is a recipient in their own right: a concern raised by an
+    # admin or a shift-manager lands ABOVE them, so the level step alone never
+    # reaches the person running the unit the concern is about.
+    sup_key = _profile_key("supervisor", c.brigadir_manager_id)
+    if sup_key and sup_key not in {k for _, k in created}:
+        created.append((None, sup_key))
+    sent = _notify_recipients(
+        db, created, "concern_created",
+        {
+            "leader_name": c.leader_name or (rec[2] if rec else "") or "",
+            "owner": c.concern_owner,
+            "date": entry,
+            "concern": snippet,
+            "concern_level": _level(c),
+        },
+        author, dmed,
+    )
 
     # Also tell the leader this concern is *about* — the owner of the cell it
-    # was logged against ("a concern was added for you"). Skip the author (a
-    # leader logging on their own cell) and never DM one account twice.
-    rec = _cell_leader_recipient(db, c.cell_code)
+    # was logged against ("a concern was added for you").
     if rec is not None:
-        holders, prof_key, _ = rec
-        if author not in holders:
-            params = {
+        sent |= _notify_recipients(
+            db, [(None, rec[1])], "concern_assigned",
+            {
                 "actor_name": payload.get("full_name") or "",
                 "owner": c.concern_owner,
                 "date": entry,
                 "concern": snippet,
-            }
-            # One bell row on the leader's profile; a DM to each account working
-            # as them (queued for an unclaimed profile), skipping any account
-            # already DMed about this concern.
-            _notify(db, holders[0] if holders else None, type="info", dm=False,
-                    nkey="concern_assigned", params=params, profile=prof_key)
-            for tg in holders:
-                if tg == author or tg in dmed:
-                    continue
-                dmed.add(tg)
-                lang = _get_user_lang(db, tg)
-                title, body_txt = _mk_notif("concern_assigned", params, lang)
-                try:
-                    from app.telegram_bot import send_tg_notification
-                    send_tg_notification(tg, title, body_txt,
-                                         html=_mk_notif_tg("concern_assigned", params, lang))
-                except Exception:
-                    pass
-            sent = True
+            },
+            author, dmed,
+        )
 
     if sent:
         db.commit()
@@ -1076,19 +1096,49 @@ def _esc_counts_for(db: Session, concern_id: int) -> dict:
     return {concern_id: n}
 
 
+def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
+                       author: int, dmed: set[int]) -> bool:
+    """Deliver one concern event to a list of (telegram_id, profile_key) targets.
+    Returns True when anything was written (the caller commits).
+
+    Each target is notified as a PERSON: notify_profile writes ONE bell row on
+    the profile and DMs EVERY approved holder. Resolving a single registration
+    instead (the old path) meant a unit whose brigadir registered twice, or
+    handed the post over without the old row being revoked, had its DM sent to
+    one arbitrary account — usually the one that left — while the bell row still
+    showed up correctly for the person actually doing the job.
+
+    ``dmed`` accumulates across calls so one account never gets the same concern
+    twice however many of the addressed profiles it holds. A profile whose only
+    holder is the actor is skipped entirely: no "you did this" bell either."""
+    sent = False
+    for tg, prof_key in recipients:
+        if prof_key:
+            holders = identity.profile_holders(db, prof_key)
+            if holders and not (set(holders) - {author}):
+                continue
+            dmed |= notify_profile(db, prof_key, nkey=nkey, params=params,
+                                   exclude_account=author, skip_accounts=dmed)
+            sent = True
+        elif tg is not None and tg != author:
+            # Legacy row that resolves to no profile — the claiming account only.
+            dm = tg not in dmed
+            if dm:
+                dmed.add(tg)
+            _notify(db, tg, type="info", dm=dm, nkey=nkey, params=params)
+            sent = True
+    return sent
+
+
 def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[Optional[int], Optional[str]]]:
     """(telegram_id, profile_key) pairs for whoever holds ``level`` on this
-    concern. telegram_id None = the profile is unclaimed — the bell row queues
-    on the profile (no DM) and is inherited when the profile is claimed."""
+    concern — ONE pair per profile, never one per holder: the profile is the
+    person, and _notify_recipients fans the DM out to every account holding it.
+    The telegram_id is only read for legacy pairs that carry no profile key."""
     out: list[tuple[Optional[int], Optional[str]]] = []
     if level == "leader":
-        # One pair per PROFILE, not per holder: the bell row is profile-keyed, so
-        # every account working as this leader sees it (a pair each would post the
-        # same notification twice). Unclaimed profile → tg None, bell only.
         if c.leader_profile_id:
-            key = _profile_key("leader", c.leader_profile_id)
-            holders = identity.profile_holders(db, key)
-            out.append((holders[0] if holders else None, key))
+            out.append((None, _profile_key("leader", c.leader_profile_id)))
         elif c.leader_role_ref:
             # Legacy row with no profile match — notify the claiming account.
             row = db.query(TelegramUserRole).filter_by(
@@ -1098,36 +1148,20 @@ def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[O
                 out.append((row.telegram_id, None))
     elif level == "supervisor":
         if c.brigadir_manager_id:
-            sup = _find_supervisor(db, c.brigadir_manager_id)
-            out.append((sup.telegram_id if sup else None,
-                        _profile_key("supervisor", c.brigadir_manager_id)))
+            out.append((None, _profile_key("supervisor", c.brigadir_manager_id)))
     elif level == "shift-manager":
         if c.shift_manager_profile_id:
             # The specifically picked shift-manager holds it.
-            row = db.query(TelegramUserRole).filter_by(
-                role="shift-manager", role_id=c.shift_manager_profile_id, status="approved",
-            ).first()
-            out.append((row.telegram_id if row else None,
-                        _profile_key("shift-manager", c.shift_manager_profile_id)))
+            out.append((None, _profile_key("shift-manager", c.shift_manager_profile_id)))
         elif c.brigadir_manager_id:
             # Legacy rows without a picked holder: everyone on the unit's shift.
             mgr = db.query(Manager).filter_by(id=c.brigadir_manager_id).first()
             if mgr:
-                claimed = {
-                    r.role_id: r.telegram_id
-                    for r in db.query(TelegramUserRole).filter_by(
-                        role="shift-manager", status="approved",
-                    ).all()
-                }
                 for p in db.query(RoleProfile).filter_by(role="shift-manager", shift=mgr.shift).all():
-                    out.append((claimed.get(p.id), _profile_key("shift-manager", p.id)))
+                    out.append((None, _profile_key("shift-manager", p.id)))
     elif level == "top-manager":
         if c.top_manager_profile_id:
-            row = db.query(TelegramUserRole).filter_by(
-                role="top-manager", role_id=c.top_manager_profile_id, status="approved",
-            ).first()
-            out.append((row.telegram_id if row else None,
-                        _profile_key("top-manager", c.top_manager_profile_id)))
+            out.append((None, _profile_key("top-manager", c.top_manager_profile_id)))
     return out
 
 
@@ -1235,27 +1269,18 @@ def escalate_concern(
     snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
     reason_snip = reason if len(reason) <= 160 else reason[:157] + "…"
     nkey = "concern_escalated" if body.direction == "up" else "concern_returned"
-    dmed: set[int] = set()
-    sent = False
-    for tg, prof_key in _level_recipients(db, c, new_level):
-        if tg == author:
-            continue
-        dm = tg is not None and tg not in dmed
-        if dm:
-            dmed.add(tg)
-        _notify(
-            db, tg, type="info", dm=dm, nkey=nkey,
-            params={
-                "actor_name": payload.get("full_name") or "",
-                "leader_name": c.leader_name,
-                "date": c.entry_date,
-                "reason": reason_snip,
-                "concern": snippet,
-                "concern_level": new_level,
-            },
-            profile=prof_key,
-        )
-        sent = True
+    sent = _notify_recipients(
+        db, _level_recipients(db, c, new_level), nkey,
+        {
+            "actor_name": payload.get("full_name") or "",
+            "leader_name": c.leader_name,
+            "date": c.entry_date,
+            "reason": reason_snip,
+            "concern": snippet,
+            "concern_level": new_level,
+        },
+        author, set(),
+    )
     if sent:
         db.commit()
 

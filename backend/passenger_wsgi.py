@@ -65,6 +65,7 @@ try:
         add_concern_profile_columns, add_concern_done_at, add_concern_level_columns,
         add_concern_shift_manager, add_concern_category,
         backfill_concern_profiles, add_concern_owner_columns, backfill_concern_owner,
+        backfill_concern_units,
         add_task_comment_author_ref, add_notification_recipient_profile,
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column, add_pp_product_op,
@@ -132,6 +133,8 @@ try:
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()
+    # After the cell + manager seeds — it reads both to resolve a concern's unit.
+    backfill_concern_units()
     backfill_role_profile_keys()
     backfill_task_profiles()
     backfill_comment_profiles()

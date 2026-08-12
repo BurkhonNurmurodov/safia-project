@@ -1157,13 +1157,28 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
     # WebApp button picks up label changes without the user re-running /start.
     # _set_menu_button guards its own errors, so this can't block the DM.
     _set_menu_button(telegram_id, _get_lang(telegram_id))
+    msg = f"🔔 *{title}*\n{body}"
     try:
         if html is not None:
             _send_html_message(telegram_id, html)
         else:
-            bot.send_message(telegram_id, f"🔔 *{title}*\n{body}", parse_mode="Markdown")
+            bot.send_message(telegram_id, msg, parse_mode="Markdown")
         return True
     except Exception as e:
+        # Legacy Markdown rejects the WHOLE message over a single unbalanced
+        # *, _, ` or [ — and notification bodies interpolate free text the user
+        # typed (a concern's own words, an escalation reason). Losing the DM to
+        # somebody's punctuation is far worse than losing the bold title, so
+        # resend once unformatted. Only on a parse error: a blocked bot or an
+        # unknown chat must fail on the first attempt, not be retried.
+        if html is None and "parse" in str(e).lower():
+            try:
+                bot.send_message(telegram_id, msg)
+                logger.warning("Telegram notification to %s sent unformatted "
+                               "(Markdown rejected): %s", telegram_id, e)
+                return True
+            except Exception as e2:
+                e = e2
         logger.warning("Telegram notification to %s failed: %s", telegram_id, e)
         return False
 
