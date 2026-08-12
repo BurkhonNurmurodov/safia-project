@@ -241,7 +241,12 @@ export function RngFilter({ minV, maxV, onMin, onMax }) {
 // opts: [{ value, label, title? }] — `label` may be a node; `title` (or a
 // string label) feeds search. The empty/default option belongs IN `opts`
 // (e.g. «All supervisors») so the list always shows where "off" is.
-export function PickFilter({ opts, value, onChange, searchable = false, close }) {
+// `note` explains WHY the list is this short — a level of a cascade that another
+// filter narrowed says so at 11px/--text-3 above the list, because a silently
+// shortened list reads as missing data. `empty` replaces the generic "nothing
+// here" when the narrowing itself emptied it, so the page can offer the way out
+// (clear the parent) right where the dead end is.
+export function PickFilter({ opts, value, onChange, searchable = false, close, note = null, empty = null }) {
   const { t } = useLang();
   const [q, setQ] = useState("");
   const label = (o) => o.title ?? (typeof o.label === "string" ? o.label : String(o.value ?? ""));
@@ -250,6 +255,9 @@ export function PickFilter({ opts, value, onChange, searchable = false, close })
     : opts;
   return (
     <div>
+      {note && (
+        <p className="text-[11px] leading-snug mb-1.5" style={{ color: "var(--text-3)" }}>{note}</p>
+      )}
       {searchable && (
         <input
           value={q} onChange={e => setQ(e.target.value)}
@@ -260,7 +268,12 @@ export function PickFilter({ opts, value, onChange, searchable = false, close })
       )}
       <div className="max-h-52 overflow-y-auto space-y-0.5">
         {shown.length === 0 && (
-          <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
+          // A search that matched nothing is the user's own doing — it always
+          // gets the plain message. `empty` is for a list that had nothing to
+          // show in the first place.
+          empty && !q.trim()
+            ? <div className="py-1">{empty}</div>
+            : <p className="text-xs text-center py-2" style={{ color: "var(--text-4)" }}>{t("staff.noOptionsShort")}</p>
         )}
         {shown.map(o => {
           const sel = o.value === value;
@@ -289,7 +302,12 @@ export function PickFilter({ opts, value, onChange, searchable = false, close })
 // Table-toolbar filters, driven by a declarative `sections` list so the same
 // filter content renders in every surface:
 //   { key, icon, label, active, display, render: ({close}) => <control/>,
-//     onClear?, static? }
+//     onClear?, static?, group? }
+// `group` (a translated caption) splits the collapsed surfaces into labelled
+// blocks in first-appearance order — a page with a scope CHAIN (plant → shift →
+// brigadir → leader → cell) and a set of record filters reads as two short
+// lists instead of one anonymous stack of ten. Sections without a `group` keep
+// the flat list, so nothing changes for pages that don't set it.
 // Three surfaces by available space:
 //   · wide screens where the whole toolbar row fits on ONE line — each filter
 //     unfolds into its own dropdown control;
@@ -305,6 +323,32 @@ export function PickFilter({ opts, value, onChange, searchable = false, close })
 // filter without opening anything. Tapping the chip body opens the panel. A
 // `static: true` section (a locked viewer's plant) is an inert chip: always
 // visible, never counted, never clearable, absent from the panel itself.
+
+// Sections bucketed by `group`, groups in the order they first appear. One
+// bucket with an empty caption = the flat list every existing page renders.
+function groupSections(list) {
+  const out = [];
+  const seen = new Map();
+  for (const s of list) {
+    const g = s.group || "";
+    let bucket = seen.get(g);
+    if (!bucket) { bucket = { key: g || "_", label: g, items: [] }; seen.set(g, bucket); out.push(bucket); }
+    bucket.items.push(s);
+  }
+  return out;
+}
+
+// Caption over a block of filters. Sits one step above the per-filter labels
+// (11px vs 10px, --text-3 vs --text-4) so the eye reads "group, then filters".
+function GroupCaption({ label, first }) {
+  if (!label) return null;
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-wider"
+      style={{ color: "var(--text-3)", marginTop: first ? 0 : 4 }}>
+      {label}
+    </p>
+  );
+}
 
 function CountBadge({ n }) {
   return (
@@ -435,18 +479,30 @@ function FilterSheet({ sections, anyActive, onClearAll, onClose }) {
           </div>
         </div>
         <div style={{ overflowY: "auto", flex: 1 }}>
-          {sections.map(s => (
-            <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{s.label}</p>
-                {s.active && s.onClear && (
-                  <button onClick={s.onClear} className="text-[10px] flex items-center gap-0.5"
-                    style={{ color: "var(--text-4)" }}>
-                    <X size={10} /> {t("staff.clearAll")}
-                  </button>
-                )}
-              </div>
-              {s.render({ close: () => {} })}
+          {groupSections(sections).map((g, gi) => (
+            <div key={g.key}>
+              {/* No border of its own — the previous section's bottom rule is
+                  already there, and two hairlines meeting read as a defect. The
+                  extra top padding is what separates one group from the next. */}
+              {g.label && (
+                <div className={`px-4 pb-1 ${gi ? "pt-5" : "pt-4"}`}>
+                  <GroupCaption label={g.label} first />
+                </div>
+              )}
+              {g.items.map(s => (
+                <div key={s.key} className="py-3 px-4" style={{ borderBottom: "1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-4)" }}>{s.label}</p>
+                    {s.active && s.onClear && (
+                      <button onClick={s.onClear} className="text-[10px] flex items-center gap-0.5"
+                        style={{ color: "var(--text-4)" }}>
+                        <X size={10} /> {t("staff.clearAll")}
+                      </button>
+                    )}
+                  </div>
+                  {s.render({ close: () => {} })}
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -730,9 +786,14 @@ export function FilterPanel({ sections, activeCount, anyActive, onClearAll, forc
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
-                  {real.map(s => (
-                    <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}
-                      renderContent={({ close }) => s.render({ close })} />
+                  {groupSections(real).map((g, gi) => (
+                    <div key={g.key} className="flex flex-col gap-2">
+                      <GroupCaption label={g.label} first={gi === 0} />
+                      {g.items.map(s => (
+                        <PanelField key={s.key} icon={s.icon} label={s.label} active={s.active} display={s.display}
+                          renderContent={({ close }) => s.render({ close })} />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </div>,

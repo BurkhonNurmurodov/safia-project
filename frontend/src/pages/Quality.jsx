@@ -228,6 +228,8 @@ const TXT = {
     close: "Yopish", detail: "Nomuvofiqlik", otherWord: "Boshqalar",
     fShift: "Smena", shift: "Smena", shiftAll: "Barchasi", allBrig: "Barcha brigadirlar", mSheetName: "Jadvaldagi ism",
     fLead: "Lider", fCell: "Yacheyka", allLead: "Barcha liderlar", allCell: "Barcha yacheykalar",
+    grpWho: "Kim va qayerda", grpWhat: "Nima bo‘ldi",
+    narrowedBy: "«{x}» bo‘yicha toraytirildi", noneInScope: "Bu tanlovda variant yo‘q",
     brkByLead: "Liderlar bo‘yicha", brkByCell: "Yacheykalar bo‘yicha",
     brkNoCell: "Yacheyka kodi yo‘q", brkNoLead: "Lider noma’lum",
     brkOpen: "Taqsimotni ochish", brkClose: "Taqsimotni yopish",
@@ -285,6 +287,8 @@ const TXT = {
     close: "Ёпиш", detail: "Номувофиқлик", otherWord: "Бошқалар",
     fShift: "Смена", shift: "Смена", shiftAll: "Барчаси", allBrig: "Барча бригадирлар", mSheetName: "Жадвалдаги исм",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Барча лидерлар", allCell: "Барча ячейкалар",
+    grpWho: "Ким ва қаерда", grpWhat: "Нима бўлди",
+    narrowedBy: "«{x}» бўйича торайтирилди", noneInScope: "Бу танловда вариант йўқ",
     brkByLead: "Лидерлар бўйича", brkByCell: "Ячейкалар бўйича",
     brkNoCell: "Ячейка коди йўқ", brkNoLead: "Лидер номаълум",
     brkOpen: "Тақсимотни очиш", brkClose: "Тақсимотни ёпиш",
@@ -342,6 +346,8 @@ const TXT = {
     close: "Закрыть", detail: "Несоответствие", otherWord: "Прочие",
     fShift: "Смена", shift: "Смена", shiftAll: "Все", allBrig: "Все бригадиры", mSheetName: "Имя в таблице",
     fLead: "Лидер", fCell: "Ячейка", allLead: "Все лидеры", allCell: "Все ячейки",
+    grpWho: "Кто и где", grpWhat: "Что произошло",
+    narrowedBy: "Сужено по «{x}»", noneInScope: "В этом выборе вариантов нет",
     brkByLead: "По лидерам", brkByCell: "По ячейкам",
     brkNoCell: "Код ячейки не указан", brkNoLead: "Лидер неизвестен",
     brkOpen: "Показать разбивку", brkClose: "Скрыть разбивку",
@@ -399,6 +405,8 @@ const TXT = {
     close: "Close", detail: "Non-conformance", otherWord: "Other",
     fShift: "Shift", shift: "Shift", shiftAll: "All", allBrig: "All brigadirs", mSheetName: "Name in the sheet",
     fLead: "Leader", fCell: "Cell", allLead: "All leaders", allCell: "All cells",
+    grpWho: "Who & where", grpWhat: "What happened",
+    narrowedBy: "Narrowed by “{x}”", noneInScope: "Nothing in this scope",
     brkByLead: "By leader", brkByCell: "By cell",
     brkNoCell: "No cell code", brkNoLead: "Leader unknown",
     brkOpen: "Show breakdown", brkClose: "Hide breakdown",
@@ -613,10 +621,12 @@ export default function Quality() {
       for (const r of scope) { const k = fn(r); if (k) c[k] = (c[k] || 0) + 1; }
       return Object.keys(c).sort((a, b) => c[b] - c[a]);
     };
+    // Brigadir and shift are NOT here: they are levels of the org chain below,
+    // built under the levels above them. One source per dimension, or the two
+    // lists drift apart.
     return {
       src: uniq("s"), type: byCount((r) => r.t), cat: byCount((r) => r.c), status: uniq("st"),
-      brig: byCount(who), mgr: byCount((r) => r.m),
-      shift: [...new Set(scope.map((r) => r.sh).filter(Boolean))].sort(),
+      mgr: byCount((r) => r.m),
     };
   }, [rows, view]);
 
@@ -1043,91 +1053,146 @@ export default function Quality() {
     optFilter({ label: T.fCat, opts: opts.cat, render: (k) => L("cat", k), dot: (k) => CAT_COLORS[k] || C_NA }, catSel, setCatSel, "cat", Bug),
     optFilter({ label: T.fStatus, opts: opts.status, render: (k) => L("st", k), dot: (k) => STATUS_COLORS[k] || C_NA }, statusSel, setStatusSel, "status", CircleDot),
     optFilter({ label: T.fRet, opts: ["yes", "no"], render: (k) => (k === "yes" ? T.yes : T.no) }, retSel, setRetSel, "ret", Undo2),
-    // Brigadir lives in the panel on Overall; the Production tab surfaces it as a
-    // standalone supervisor dropdown on the toolbar (scoped to the shift), so drop
-    // it here alongside the shift filter.
-    ...(!isProd ? [optFilter({ label: T.fBrig, opts: opts.brig, render: (k) => tl(k) }, brigSel, setBrigSel, "brig", Wrench)] : []),
-    ...(!isProd ? [optFilter({ label: T.fShift, opts: opts.shift.map(String), render: (k) => `${T.shift} ${k}` }, shiftSel, setShiftSel, "shift", Layers)] : []),
-    optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog),
   ];
-  // The Production tab's shift control: a 3-way All / Shift 1 / Shift 2 toggle that
-  // drives the same shiftSel state the panel filter uses on Overall.
+  // «Руководитель» is a person the sheet names on the record, not a level of the
+  // org chain — it narrows nothing below it and nothing above narrows it. It
+  // still belongs among the people: somebody hunting for a name looks there.
+  const mgrSection = optFilter({ label: T.fMgr, opts: opts.mgr, render: (k) => tl(k) }, mgrSel, setMgrSel, "mgr", UserCog);
+
+  // ── the org chain: plant → shift → brigadir → leader → cell ─────────────────
+  // ONE chain, identical on both tabs (Overall used to carry its own checkbox
+  // copies of shift + brigadir, so the same dimension looked like two different
+  // filters depending on which tab you were on). Each level is built UNDER the
+  // levels above it and nothing below, so a pick can never name a combination
+  // the plant does not have — the Lider list under a brigadir holds that
+  // brigadir's leaders, not all ninety of them.
+  //
+  // Levels are single-pick: with more than one parent selected there is no
+  // honest way to say what the child list is scoped to, and the whole point of
+  // the chain is that the note above each list can name its parent.
   const shiftTab = shiftSel.length === 1 && ["1", "2"].includes(shiftSel[0]) ? shiftSel[0] : "all";
+  const brigPick = brigSel[0] || "";
+  const leadPick = leadSel[0] || "";
+  // A multi-pick left over from the old checkbox controls can't be expressed by
+  // the pickers — they'd show the first value while the page filtered by all of
+  // them. Collapse it once at mount to what the control actually displays.
+  useEffect(() => {
+    if (shiftSel.length > 1) setShiftSel([]);
+    if (brigSel.length > 1) setBrigSel(brigSel.slice(0, 1));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Supervisor → shift is 1:1 (a unit sits on one shift). Map it once so the
-  // toolbar dropdown can scope itself to the picked shift, and so a stale pick
-  // from the other shift can be dropped.
-  const supShift = useMemo(() => {
-    const m = {};
-    for (const r of rows) if (r.sup) m[who(r)] = String(r.sh ?? "");
-    return m;
-  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Does a row sit under the chain levels ABOVE the one being built? (The plant
+  // is already gone from `rows`, so it never appears here.)
+  const inShift = (r) => shiftTab === "all" || String(r.sh ?? "") === shiftTab;
+  const inBrig = (r) => !brigPick || who(r) === brigPick;
+  const inLead = (r) => !leadPick || leaderOf(r) === leadPick;
 
-  // Supervisors available in the Production dropdown, most-active first and
-  // narrowed to the selected shift (All = every matched supervisor).
-  const supOpts = useMemo(() => {
+  // BRIGADIR — everyone the active tab holds responsible, inside the picked
+  // shift, most-affected first. On Production `inView` keeps this to matched
+  // supervisor units; on Overall it also carries the register's non-supervisor
+  // responsibles (торговая точка, IT, technologists), who exist there and must
+  // stay pickable.
+  const brigOpts = useMemo(() => {
     const c = {};
     for (const r of rows) {
-      if (!r.sup) continue;
-      if (shiftTab !== "all" && String(r.sh ?? "") !== shiftTab) continue;
+      if (!inView(r) || !inShift(r)) continue;
       const k = who(r);
       if (k) c[k] = (c[k] || 0) + 1;
     }
     return Object.keys(c).sort((a, b) => c[b] - c[a]);
-  }, [rows, shiftTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, view, shiftTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Switching shift strands a supervisor pick from the other shift (0 rows, and it
-  // vanishes from the scoped dropdown) — drop it when it no longer fits the shift.
-  useEffect(() => {
-    if (!isProd || shiftTab === "all" || !brigSel.length) return;
-    const kept = brigSel.filter((b) => supShift[b] === shiftTab);
-    if (kept.length !== brigSel.length) setBrigSel(kept);
-  }, [shiftTab, isProd]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Same for the plant: a supervisor picked in factory A works nowhere in
-  // factory B, so the pick is dropped instead of silently zeroing the page.
-  useEffect(() => {
-    if (factory == null || !brigSel.length) return;
-    const live = new Set(rows.map((r) => who(r)));
-    const kept = brigSel.filter((b) => live.has(b));
-    if (kept.length !== brigSel.length) setBrigSel(kept);
-  }, [factory]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Leaders present in the rows the active tab can show, most-affected first.
+  // LEADER — every leader the in-scope RECORDS blame, and, once a brigadir is
+  // picked, that brigadir's whole team from the CELLS REGISTRY. Both halves are
+  // needed and neither is right alone:
+  //  · records only would drop a leader whose window is clean — the register's
+  //    own leader roster lists them at zero for exactly that reason, and a
+  //    filter that cannot reach a row the page shows is broken;
+  //  · registry only would drop a leader whose cell was blamed by a record
+  //    filed against a DIFFERENT brigadir's unit — the faulting cell and the
+  //    responsible person need not belong together.
+  // The registry half joins only under a brigadir, so narrowing can never make
+  // this list longer than the unnarrowed one. Ordered by what each leader
+  // carries in the current scope, zero-record leaders last, alphabetically.
   const leadOpts = useMemo(() => {
-    const c = {};
-    for (const r of rows) {
-      if (!inView(r)) continue;
-      const k = leaderOf(r);
-      if (k) c[k] = (c[k] || 0) + 1;
+    const inScope = new Set();
+    if (brigPick) {
+      for (const c of Object.values(cellMap)) {
+        if (!c?.leader || c.sup !== brigPick) continue;
+        if (factory != null && c.fi !== factory) continue;
+        if (shiftTab !== "all" && String(c.sh ?? "") !== shiftTab) continue;
+        inScope.add(c.leader);
+      }
     }
-    return Object.keys(c).sort((a, b) => c[b] - c[a]);
-  }, [rows, view, cellMap]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cells, narrowed to the picked leader — a leader owns cells, so listing the
-  // other 100 under their name would be noise. Labelled «code · workshop name»
-  // (the same form the «Виновные ячейки» chart uses) so searching by the bare
-  // code the QA sheet carries still finds the cell.
-  const cellOpts = useMemo(() => {
-    const c = {};
+    const n = {};
     for (const r of rows) {
-      if (!inView(r)) continue;
-      if (leadSel.length && !leadSel.includes(leaderOf(r))) continue;
+      if (!inView(r) || !inShift(r) || !inBrig(r)) continue;
+      const k = leaderOf(r);
+      if (!k) continue;
+      n[k] = (n[k] || 0) + 1;
+      inScope.add(k);
+    }
+    return [...inScope].sort(
+      (a, b) => (n[b] || 0) - (n[a] || 0) || tl(a).localeCompare(tl(b))
+    );
+  }, [rows, view, cellMap, factory, shiftTab, brigPick, tl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // CELL — the same shape one level down: every code the in-scope records blame
+  // (including the ones the registry never heard of — store and warehouse codes,
+  // which have no owner and so drop out the moment a person is picked), plus,
+  // under a picked person, the cells that person owns even where nothing was
+  // filed against them. Labelled «code · workshop name» — the form the «Виновные
+  // ячейки» chart uses — so searching the bare code from the QA sheet finds it.
+  const cellOpts = useMemo(() => {
+    const acc = {};
+    const put = (key, label) => acc[key] || (acc[key] = { value: key, label, n: 0 });
+    if (brigPick || leadPick) {
+      for (const c of Object.values(cellMap)) {
+        if (!c?.id) continue;
+        if (factory != null && c.fi !== factory) continue;
+        if (shiftTab !== "all" && String(c.sh ?? "") !== shiftTab) continue;
+        if (brigPick && c.sup !== brigPick) continue;
+        if (leadPick && c.leader !== leadPick) continue;
+        const nm = cellLabelOf(c, lang);
+        put(`c${c.id}`, c.verifix_code && c.verifix_code !== nm ? `${c.verifix_code} · ${nm}` : (nm || c.verifix_code || ""));
+      }
+    }
+    for (const r of rows) {
+      if (!inView(r) || !inShift(r) || !inBrig(r) || !inLead(r)) continue;
       const k = cellKey(r);
       if (!k) continue;
       const nm = cellNameOf(r, cellMap, lang) || r.fc || "";
-      const e = c[k] || (c[k] = { value: k, label: r.fc && r.fc !== nm ? `${r.fc} · ${nm}` : nm, n: 0 });
-      e.n++;
+      put(k, r.fc && r.fc !== nm ? `${r.fc} · ${nm}` : nm).n++;
     }
-    return Object.values(c).sort((a, b) => b.n - a.n);
-  }, [rows, view, leadSel, cellMap, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+    return Object.values(acc).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+  }, [rows, view, cellMap, lang, factory, shiftTab, brigPick, leadPick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Switching leader strands a cell pick from another leader (0 rows, and it
-  // vanishes from the scoped dropdown) — drop it instead of leaving the page blank.
+  // Narrowing a level strands the picks below it — a brigadir from the other
+  // shift, a leader from the other brigadir, a cell from the other leader. Each
+  // one would leave the page blank while its own control still displayed a
+  // perfectly reasonable-looking name, so a pick that its own list no longer
+  // offers is dropped as the level above it changes. Nothing runs before the
+  // register has loaded: with `rows` still empty every list is empty, and a
+  // remembered pick would be wiped on the way in.
+  const chainReady = !!data && !isLoading;
   useEffect(() => {
-    if (!cellSel.length) return;
+    if (!chainReady || !brigSel.length) return;
+    const ok = new Set(brigOpts);
+    const kept = brigSel.filter((b) => ok.has(b));
+    if (kept.length !== brigSel.length) setBrigSel(kept);
+  }, [brigOpts, chainReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!chainReady || !leadSel.length) return;
+    const ok = new Set(leadOpts);
+    const kept = leadSel.filter((l) => ok.has(l));
+    if (kept.length !== leadSel.length) setLeadSel(kept);
+  }, [leadOpts, chainReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!chainReady || !cellSel.length) return;
     const ok = new Set(cellOpts.map((o) => o.value));
     const kept = cellSel.filter((k) => ok.has(k));
     if (kept.length !== cellSel.length) setCellSel(kept);
-  }, [leadSel, view]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cellOpts, chainReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clearAllFilters = () => {
     setSrcSel([]); setTypeSel([]); setCatSel([]); setStatusSel([]); setRetSel([]); setBrigSel([]); setShiftSel([]); setMgrSel([]);
@@ -1135,13 +1200,42 @@ export default function Quality() {
   };
 
   // ── one consolidated filter zone ───────────────────────────────────────────
-  // Plant / shift / supervisor / leader / cell join the panel ahead of the
-  // register filters, so the whole page narrows from ONE control and every
-  // active narrowing surfaces as a chip on the bar.
+  // Two groups, in the order a person actually narrows a register: «who and
+  // where» — the org chain, plant → shift → brigadir → leader → cell, each level
+  // scoping the next — then «what happened», the record filters. Ten anonymous
+  // rows in one stack was the thing that made this panel hard to hold: nothing
+  // said which controls were related, so the chain read as ten independent
+  // dropdowns and the Lider list looked broken when it listed the whole plant.
+  //
+  // Every list a level above it narrowed says so above itself (`note`), and a
+  // level narrowed down to nothing offers the way back out instead of an empty
+  // box (`empty`) — a short list must never be mistaken for missing data.
+  //
+  // A list is scoped by the WHOLE chain above it, but the note names only the
+  // NEAREST narrowing level: that is the control the user has to touch to get a
+  // missing name back, and one short line beats a recital of the chain.
+  const shiftLabel = shiftTab === "all" ? null : `${T.shift} ${shiftTab}`;
+  const chainNote = (parents, n) => {
+    const p = parents.filter(Boolean).pop();
+    return p ? `${T.narrowedBy.replace("{x}", p)} · ${n}` : null;
+  };
+  const widenTo = (label, onClick) => (
+    <div className="text-center py-1">
+      <p className="text-xs mb-2" style={{ color: "var(--text-3)" }}>{T.noneInScope}</p>
+      <Button size="sm" variant="secondary" onClick={onClick}>{label}</Button>
+    </div>
+  );
+  const clearShift = () => widenTo(T.shiftAll, () => setShiftSel([]));
+  const clearBrig = () => widenTo(T.allBrig, () => setBrigSel([]));
+  const clearLead = () => widenTo(T.allLead, () => setLeadSel([]));
+
   const pageSections = [
-    ...(factorySection ? [factorySection] : []),
-    ...(isProd && !lockOwn ? [{
-      key: "shiftTab", icon: Layers, label: T.fShift,
+    ...(factorySection ? [{ ...factorySection, group: T.grpWho }] : []),
+    // Shift and brigadir are the same two controls on both tabs — the register
+    // they narrow is the same register, and a dimension that changes shape when
+    // you switch view has to be re-learned every time.
+    ...(!lockOwn ? [{
+      key: "shiftTab", icon: Layers, label: T.fShift, group: T.grpWho,
       active: shiftTab !== "all",
       display: shiftTab !== "all" ? `${T.shift} ${shiftTab}` : "",
       onClear: () => setShiftSel([]),
@@ -1151,43 +1245,51 @@ export default function Quality() {
           options={[["all", T.shiftAll], ["1", `${T.shift} 1`], ["2", `${T.shift} 2`]]} />
       ),
     }, {
-      key: "brigPick", icon: Wrench, label: T.fBrig,
-      active: brigSel.length > 0,
-      display: brigSel.length === 1 ? tl(brigSel[0]) : (brigSel.length ? `${brigSel.length} ${t("filter.selected2")}` : ""),
+      key: "brigPick", icon: Wrench, label: T.fBrig, group: T.grpWho,
+      active: !!brigPick,
+      display: brigPick ? shortName(brigPick) : "",
       onClear: () => setBrigSel([]),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          opts={[{ value: "", label: T.allBrig }, ...supOpts.map((s) => ({ value: s, label: tl(s), title: tl(s) }))]}
-          value={brigSel[0] || ""}
+          note={chainNote([shiftLabel], brigOpts.length)}
+          empty={shiftLabel ? clearShift() : null}
+          // Surname + initials: three-word passport names truncate to nothing
+          // useful in a 300px panel, and the full name still rides the tooltip.
+          opts={[{ value: "", label: T.allBrig }, ...brigOpts.map((s) => ({ value: s, label: shortName(s), title: tl(s) }))]}
+          value={brigPick}
           onChange={(v) => setBrigSel(v ? [v] : [])} />
       ),
-    }] : []),
-    ...(!lockOwn ? [{
-      key: "leadPick", icon: UserRound, label: T.fLead,
-      active: leadSel.length > 0,
-      display: leadSel.length === 1 ? tl(leadSel[0]) : (leadSel.length ? `${leadSel.length} ${t("filter.selected2")}` : ""),
+    }, {
+      key: "leadPick", icon: UserRound, label: T.fLead, group: T.grpWho,
+      active: !!leadPick,
+      display: leadPick ? shortName(leadPick) : "",
       onClear: () => setLeadSel([]),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
-          opts={[{ value: "", label: T.allLead }, ...leadOpts.map((s) => ({ value: s, label: tl(s), title: tl(s) }))]}
-          value={leadSel[0] || ""}
+          note={chainNote([shiftLabel, brigPick && shortName(brigPick)], leadOpts.length)}
+          empty={brigPick ? clearBrig() : shiftLabel ? clearShift() : null}
+          opts={[{ value: "", label: T.allLead }, ...leadOpts.map((s) => ({ value: s, label: shortName(s), title: tl(s) }))]}
+          value={leadPick}
           onChange={(v) => setLeadSel(v ? [v] : [])} />
       ),
     }, {
-      key: "cellPick", icon: Boxes, label: T.fCell,
+      key: "cellPick", icon: Boxes, label: T.fCell, group: T.grpWho,
       active: cellSel.length > 0,
-      display: cellSel.length === 1
+      display: cellSel.length
         ? (cellOpts.find((o) => o.value === cellSel[0])?.label || cellSel[0])
-        : (cellSel.length ? `${cellSel.length} ${t("filter.selected2")}` : ""),
+        : "",
       onClear: () => setCellSel([]),
       render: ({ close } = {}) => (
         <PickFilter searchable close={close}
+          note={chainNote([shiftLabel, brigPick && shortName(brigPick), leadPick && shortName(leadPick)], cellOpts.length)}
+          empty={leadPick ? clearLead() : brigPick ? clearBrig() : null}
           opts={[{ value: "", label: T.allCell }, ...cellOpts.map((o) => ({ value: o.value, label: o.label, title: o.label }))]}
           value={cellSel[0] || ""}
           onChange={(v) => setCellSel(v ? [v] : [])} />
       ),
     }] : []),
-    ...filterSections,
+    { ...mgrSection, group: T.grpWho },
+    ...filterSections.map((s) => ({ ...s, group: T.grpWhat })),
   ];
 
   // ── charts ────────────────────────────────────────────────────────────────
@@ -1476,7 +1578,7 @@ export default function Quality() {
         : []),
       { label: T.xView, value: lockOwn ? tl(myName) : isProd ? T.vSup : T.vOverall },
       { label: T.xHair, value: hairMode === "without" ? T.hairWithout : T.hairWith },
-      ...(isProd && !lockOwn
+      ...(!lockOwn
         ? [{ label: T.fShift, value: shiftTab === "all" ? T.shiftAll : `${T.shift} ${shiftTab}` }]
         : []),
       ...(!lockOwn ? [{ label: T.fBrig, value: pick(brigSel, tl) || T.allBrig }] : []),
