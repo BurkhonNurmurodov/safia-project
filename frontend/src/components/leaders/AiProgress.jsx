@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, CheckCircle2, XCircle, Trash2, Play } from "lucide-react";
 import Button from "../ui/Button";
@@ -26,10 +26,26 @@ import api from "../../utils/api";
 const BRAND = "#C8973F";
 const GOOD = "#22c55e";
 
+/* ── one sentence per language, never words glued in place ────────────────────
+ *
+ * The counters used to be assembled positionally — `{done} {of} {total}
+ * {checked}` — which is the order English and Russian happen to use. Uzbek puts
+ * the total FIRST and hangs the ablative off it ("597 тадан 2 таси
+ * текширилди"), so the same three slots rendered "2 дан 597 текширилди": the
+ * "дан" attached to the number it does not belong to, in the two languages most
+ * of this factory actually reads. A word fragment can only be reordered by the
+ * layout, and layout is not where grammar lives.
+ *
+ * So every counter is a WHOLE sentence keyed per language, with `{n}` (total)
+ * and `{d}` (done) free to sit wherever that language needs them. `fill()`
+ * renders it as nodes rather than a string, so the emphasis on `{d}` travels
+ * with the number instead of staying pinned to the first slot.
+ */
 const TXT = {
   uz: {
-    title: "AI tekshiruvi ketmoqda", of: "dan", checked: "tekshirildi",
-    left: "qoldi", eta: "taxminan {t} qoldi", etaSoon: "tugay deb qoldi",
+    title: "AI tekshiruvi ketmoqda",
+    count: "{n} tadan {d} tasi tekshirildi",
+    nLeft: "{n} ta qoldi", eta: "taxminan {t} qoldi", etaSoon: "tugay deb qoldi",
     outside: "oraliqdan tashqarida {n}",
     stop: "To'xtatish", done: "Tekshiruv tugadi",
     doneN: "{n} ta xulosa yozildi", hide: "Yopish",
@@ -39,7 +55,9 @@ const TXT = {
     cGo: "Ha, tozalansin", cCancel: "Yo'q, davom etsin",
     scope: { unchecked: "Tekshirilmaganlar", flagged: "Shubhalilar", clean: "Tozalar", all: "Hammasi" },
     h: "s", m: "daq", d: "kun", sec: "sek",
-    coverage: "AI tekshiruvi qamrovi", unchecked: "tekshirilmagan", skipped: "o'tkazib yuborilgan", stuck: "xatolik",
+    coverage: "AI tekshiruvi qamrovi",
+    nUnchecked: "{n} tasi tekshirilmagan", nSkipped: "{n} tasi o'tkazib yuborilgan",
+    nStuck: "{n} tasida xatolik",
     dRun: "tekshirilmoqda", dWait: "navbatda kutmoqda", dBusy: "boshqa tekshiruv ketmoqda",
     dNext: "{t} dan keyin avtomatik", dNow: "Hozir boshlash",
     dQuota: "AI limiti tugadi", dStall: "{t} dan beri javob yo'q",
@@ -48,8 +66,9 @@ const TXT = {
     dFor: "{t} dan beri ketmoqda", byWho: "boshlagan: {t}", byAuto: "o'zi boshladi (har 20 daqiqada)",
   },
   uz_cyrl: {
-    title: "AI текшируви кетмоқда", of: "дан", checked: "текширилди",
-    left: "қолди", eta: "тахминан {t} қолди", etaSoon: "тугай деб қолди",
+    title: "AI текшируви кетмоқда",
+    count: "{n} тадан {d} таси текширилди",
+    nLeft: "{n} та қолди", eta: "тахминан {t} қолди", etaSoon: "тугай деб қолди",
     outside: "оралиқдан ташқарида {n}",
     stop: "Тўхтатиш", done: "Текширув тугади",
     doneN: "{n} та хулоса ёзилди", hide: "Ёпиш",
@@ -59,7 +78,9 @@ const TXT = {
     cGo: "Ҳа, тозалансин", cCancel: "Йўқ, давом этсин",
     scope: { unchecked: "Текширилмаганлар", flagged: "Шубҳалилар", clean: "Тозалар", all: "Ҳаммаси" },
     h: "с", m: "дақ", d: "кун", sec: "сек",
-    coverage: "AI текшируви қамрови", unchecked: "текширилмаган", skipped: "ўтказиб юборилган", stuck: "хатолик",
+    coverage: "AI текшируви қамрови",
+    nUnchecked: "{n} таси текширилмаган", nSkipped: "{n} таси ўтказиб юборилган",
+    nStuck: "{n} тасида хатолик",
     dRun: "текширилмоқда", dWait: "навбатда кутмоқда", dBusy: "бошқа текширув кетмоқда",
     dNext: "{t} дан кейин автоматик", dNow: "Ҳозир бошлаш",
     dQuota: "AI лимити тугади", dStall: "{t} дан бери жавоб йўқ",
@@ -68,8 +89,9 @@ const TXT = {
     dFor: "{t} дан бери кетмоқда", byWho: "бошлаган: {t}", byAuto: "ўзи бошлади (ҳар 20 дақиқада)",
   },
   ru: {
-    title: "Идёт проверка ИИ", of: "из", checked: "проверено",
-    left: "осталось", eta: "осталось примерно {t}", etaSoon: "почти готово",
+    title: "Идёт проверка ИИ",
+    count: "проверено {d} из {n}",
+    nLeft: "осталось {n}", eta: "осталось примерно {t}", etaSoon: "почти готово",
     outside: "вне периода: {n}",
     stop: "Остановить", done: "Проверка завершена",
     doneN: "Записано выводов: {n}", hide: "Закрыть",
@@ -79,7 +101,9 @@ const TXT = {
     cGo: "Да, очистить", cCancel: "Нет, продолжить",
     scope: { unchecked: "Непроверенные", flagged: "Сомнительные", clean: "Чистые", all: "Все" },
     h: "ч", m: "мин", d: "дн.", sec: "сек",
-    coverage: "Охват проверки ИИ", unchecked: "не проверено", skipped: "пропущено", stuck: "с ошибкой",
+    coverage: "Охват проверки ИИ",
+    nUnchecked: "не проверено {n}", nSkipped: "пропущено {n}",
+    nStuck: "с ошибкой: {n}",
     dRun: "идёт проверка", dWait: "ожидает в очереди", dBusy: "идёт другая проверка",
     dNext: "автоматически через {t}", dNow: "Запустить сейчас",
     dQuota: "Лимит ИИ исчерпан", dStall: "нет ответа уже {t}",
@@ -88,8 +112,9 @@ const TXT = {
     dFor: "идёт уже {t}", byWho: "запустил: {t}", byAuto: "запустилась сама (каждые 20 мин)",
   },
   en: {
-    title: "AI review running", of: "of", checked: "checked",
-    left: "left", eta: "about {t} left", etaSoon: "almost done",
+    title: "AI review running",
+    count: "{d} of {n} checked",
+    nLeft: "{n} left", eta: "about {t} left", etaSoon: "almost done",
     outside: "{n} outside this range",
     stop: "Stop", done: "Review finished",
     doneN: "{n} verdicts written", hide: "Dismiss",
@@ -99,7 +124,9 @@ const TXT = {
     cGo: "Yes, clear", cCancel: "No, keep going",
     scope: { unchecked: "Unchecked", flagged: "Flagged", clean: "Clean", all: "All" },
     h: "h", m: "min", d: "d", sec: "s",
-    coverage: "AI review coverage", unchecked: "unchecked", skipped: "skipped", stuck: "errored",
+    coverage: "AI review coverage",
+    nUnchecked: "{n} unchecked", nSkipped: "{n} skipped",
+    nStuck: "{n} errored",
     dRun: "reviewing", dWait: "queued, not started", dBusy: "another review is running",
     dNext: "auto-retry in {t}", dNow: "Start now",
     dQuota: "AI quota reached", dStall: "no response for {t}",
@@ -109,7 +136,16 @@ const TXT = {
   },
 };
 
-const fmt = (s, v) => String(s).replace("{n}", v).replace("{t}", v);
+const fmt = (s, v) => String(s).replace(/\{n\}/g, v).replace(/\{t\}/g, v);
+
+/** The same substitution, but returning NODES — so a template whose emphasised
+ *  number sits in the middle in one language and at the front in another keeps
+ *  its `<b>` attached to the number rather than to a position. */
+const fill = (s, vars) =>
+  String(s).split(/(\{\w+\})/g).map((piece, i) => {
+    const k = /^\{(\w+)\}$/.exec(piece)?.[1];
+    return <Fragment key={i}>{k ? vars[k] : piece}</Fragment>;
+  });
 
 /** Remaining time from the rate actually observed, not a guess. Null until
  *  enough has happened to mean anything — an ETA off the first verdict swings
@@ -324,8 +360,10 @@ export default function AiProgress({ showIdle = false }) {
             {T.coverage}
           </span>
           <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-            <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>
-            {" "}{T.of}{" "}{cov.known.toLocaleString()} {T.checked}
+            {fill(T.count, {
+              d: <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>,
+              n: cov.known.toLocaleString(),
+            })}
           </span>
           {/* Queued work exists with no run behind it — the timer drain and a
               sheet Refresh both queue rows nobody started from this page. "Stop
@@ -348,15 +386,15 @@ export default function AiProgress({ showIdle = false }) {
         <div className="flex items-center gap-2 mt-1.5 text-[11px] tabular-nums flex-wrap"
           style={{ color: "var(--text-4)" }}>
           <span>{pctIdle}%</span>
-          {left > 0 && <><span>·</span><span>{left.toLocaleString()} {T.unchecked}</span></>}
-          {cov.skipped > 0 && <><span>·</span><span>{cov.skipped.toLocaleString()} {T.skipped}</span></>}
+          {left > 0 && <><span>·</span><span>{fmt(T.nUnchecked, left.toLocaleString())}</span></>}
+          {cov.skipped > 0 && <><span>·</span><span>{fmt(T.nSkipped, cov.skipped.toLocaleString())}</span></>}
           {/* Stuck rows are the one number worth colouring: they will never
               drain on their own, and the fix (Retry) lives in the re-check
               modal. Amber + a word, never colour alone. */}
           {cov.stuck > 0 && (
             <><span>·</span>
             <span style={{ color: "#eab308", fontWeight: 600 }}>
-              {cov.stuck.toLocaleString()} {T.stuck}
+              {fmt(T.nStuck, cov.stuck.toLocaleString())}
             </span></>
           )}
         </div>
@@ -405,8 +443,10 @@ export default function AiProgress({ showIdle = false }) {
               much is left to pay for", which is the question quota makes you
               ask. The percentage alone never does. */}
           <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-            <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>
-            {" "}{T.of}{" "}{p.total.toLocaleString()} {T.checked}
+            {fill(T.count, {
+              d: <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>,
+              n: p.total.toLocaleString(),
+            })}
           </span>
           <Button size="sm" variant="secondary" tint icon={<XCircle size={13} />}
             loading={stop.isPending} onClick={() => setConfirm(true)}>
@@ -425,7 +465,7 @@ export default function AiProgress({ showIdle = false }) {
           style={{ color: "var(--text-4)" }}>
           <span>{pct}%</span>
           <span>·</span>
-          <span>{p.pending.toLocaleString()} {T.left}</span>
+          <span>{fmt(T.nLeft, p.pending.toLocaleString())}</span>
           {eta && <><span>·</span><span>{eta}</span></>}
           {/* Queued rows on dates this run does not cover. The bar is scoped to
               the run now, which is the only way its percentage and its ETA can
