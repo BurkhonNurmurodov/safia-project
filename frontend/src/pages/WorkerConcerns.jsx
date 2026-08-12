@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import ReactApexChart from "react-apexcharts";
 import {
   RefreshCw, CalendarClock, AlertTriangle, ClipboardList, ShieldCheck,
-  Loader, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
+  Loader, Loader2, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
   LayoutGrid, UserRound, CircleDot,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -562,12 +562,28 @@ export default function WorkerConcerns() {
     <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
       icon={!(running || refreshMut.isPending) ? <RefreshCw size={14} /> : null}
       onClick={() => refreshMut.mutate()}>
-      <span className="hidden sm:inline">
-        {running
-          ? `${T.refreshing} ${sync?.progress_done ?? 0}/${sync?.progress_total || "…"}`
-          : T.refresh}
-      </span>
+      {/* Button hides its children while `loading` (overlay spinner keeps the
+          width stable), so the crawl progress lives in the sync pill instead. */}
+      <span className="hidden sm:inline">{T.refresh}</span>
     </Button>
+  );
+
+  // The last-synced pill doubles as the live progress feed during the crawl —
+  // a 2–4 minute background job with nothing but a spinner reads as frozen.
+  const syncPill = running ? (
+    <>
+      <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+      {T.refreshing}
+      <span className="tabular-nums" style={{ color: "var(--text-2)" }}>
+        {sync?.progress_done ?? 0}/{sync?.progress_total || "…"}
+      </span>
+      {T.syncSheets}
+    </>
+  ) : (
+    <>
+      <CalendarClock size={14} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
+      {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+    </>
   );
 
   const Kpi = ({ icon: Icon, color, label, value, hint }) => (
@@ -648,14 +664,12 @@ export default function WorkerConcerns() {
           <h2 className="text-lg sm:text-xl font-bold leading-tight" style={{ color: "var(--text-1)" }}>{T.title}</h2>
           <p className="text-xs sm:text-sm mt-0.5" style={{ color: "var(--text-3)" }}>{T.sub}</p>
           <p className="sm:hidden text-[11px] mt-1 inline-flex items-center gap-1" style={{ color: "var(--text-4)" }}>
-            <CalendarClock size={12} style={{ color: "var(--brand-text)" }} />
-            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+            {syncPill}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
-            <CalendarClock size={14} style={{ color: "var(--brand-text)" }} />
-            {T.lastSynced}: <span style={{ color: "var(--text-3)" }}>{lastSynced || T.never}</span>
+            {syncPill}
           </span>
           {refreshBtn}
         </div>
