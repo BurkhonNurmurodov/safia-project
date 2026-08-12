@@ -974,10 +974,13 @@ def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
     except Exception:
         log.exception("leader-ai: could not arm the periodic drain")
 
-    # Queue anything unreviewed now that the feature can actually run — the
-    # backlog is the whole reason somebody just turned this on.
+    # Drain what is ALREADY queued, nothing more. Setting a key used to back-fill
+    # the entire corpus — one form submit, thousands of rows and a quota bill
+    # nobody chose. Turning the feature on and deciding what it should read are
+    # two different acts; the backlog is one «Tekshirish» away in the re-check
+    # modal, which shows the count first and asks.
     try:
-        leader_ai.run_async(discover_first=True)
+        leader_ai.run_async(discover_first=False)
     except Exception:
         log.exception("leader-ai: could not kick a drain after the key was set")
     return {"ok": True, "configured": True, "source": "db"}

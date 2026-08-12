@@ -1938,7 +1938,9 @@ def _lt_autoclose(db, prof, shift: int) -> None:
     db.commit()
     if stale:
         # Auto-closed bygone days are submissions too — queue their photos.
-        leader_ai.run_async()
+        # Explicit now that `run_async` no longer discovers by default: this is
+        # the ONE path left that still submits in bulk on its own.
+        leader_ai.run_async(discover_first=True)
 
 
 def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):

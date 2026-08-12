@@ -1409,13 +1409,20 @@ def _db_unlock(db: Session) -> None:
         log.debug("leader-ai: advisory unlock failed", exc_info=True)
 
 
-def run_async(discover_first: bool = True) -> None:
-    """Fire a discovery + drain on a daemon thread.
+def run_async(discover_first: bool = False) -> None:
+    """Fire a drain — and, only if asked, a discovery first — on a daemon thread.
 
-    Called from the sheet Refresh and from the bot's day-close, neither of
-    which may block on a minutes-long queue. Passenger can reap the process
-    mid-drain; that costs nothing, because unfinished rows are still `pending`
-    and the next kick picks them up.
+    Called from request paths and bot callbacks, none of which may block on a
+    minutes-long queue. Passenger can reap the process mid-drain; that costs
+    nothing, because unfinished rows are still `pending` and the next kick picks
+    them up.
+
+    `discover_first` DEFAULTS TO FALSE, and the default is the point. Discovery
+    walks the corpus and submits every unreviewed report to the AI; that is a
+    decision with a quota bill behind it, and it was removed from the sheet
+    Refresh, the periodic drain and the key form precisely so it stops happening
+    to people. A caller that wants it says so out loud — forgetting the kwarg
+    now costs nothing instead of silently reinstating a bulk submit.
     """
     if not gemini.available():
         return
@@ -1483,11 +1490,18 @@ DRAIN_EVERY_MIN = 20
 def register_drain_job() -> None:
     """Put the drain on the scheduler at boot.
 
-    Until the platform grew a scheduler this feature had NO periodic trigger:
-    the queue only moved when somebody hit the sheet Refresh or a leader closed
-    a bot day, so a report nobody touched stayed unreviewed indefinitely and
-    "N pending" was a number that could sit still for a week. That gap was known
-    and accepted at the time; it does not have to be any more.
+    It DRAINS ONLY — `discover_first=False`. The timer used to walk the whole
+    corpus every 20 minutes, which made it a bulk submitter: any report that
+    reached the platform, from any source, was queued and judged without anyone
+    asking for it. Submission is now a decision somebody makes (the sheet
+    Refresh, a bot day-close, the re-check modal, «Tekshirish»), and this job
+    only finishes work those actions already queued.
+
+    That still closes the gap it was built for. A drain can die mid-batch —
+    Passenger reaps the process, the unit restarts, a kick is swallowed — and
+    its unfinished rows stay `pending` with nothing behind them; without a timer
+    they wait for the next person to press something. What the timer no longer
+    does is decide, on its own, that a report should be reviewed at all.
 
     Safe as an in-process timer for the same reason the broadcast fan-out is:
     the drain claims a Postgres advisory lock before doing any work, so even if
@@ -1498,6 +1512,6 @@ def register_drain_job() -> None:
         log.info("leader-ai: no API key, periodic drain not scheduled")
         return
     from app.scheduler import schedule_interval
-    schedule_interval("leader-ai-drain", lambda: run_async(discover_first=True),
+    schedule_interval("leader-ai-drain", lambda: run_async(discover_first=False),
                       minutes=DRAIN_EVERY_MIN)
     log.info("leader-ai: periodic drain scheduled every %s min", DRAIN_EVERY_MIN)

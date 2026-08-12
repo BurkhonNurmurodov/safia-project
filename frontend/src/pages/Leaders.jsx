@@ -3221,8 +3221,11 @@ export default function Leaders() {
         const flt = nIssues > 0 ? mFlt : "all";
         const shown = flt === "issues" ? tasksAll.filter(isIssue) : tasksAll;
         const late = lateDays(detailRow);
+        // Wider than a plain form modal: this one is read as evidence — the
+        // proof photos below carry the ruling, and every extra pixel of card
+        // is a pixel of photo.
         return (
-        <Modal maxWidth="max-w-2xl" icon={ListChecks}
+        <Modal maxWidth="max-w-3xl" icon={ListChecks}
           title={nm(detailRow.leader)}
           subtitle={`${T.modalTitle} · ${fmtDate(detailRow.date, lang)}`}
           onClose={() => setDetail(null)}>
@@ -3348,16 +3351,29 @@ export default function Leaders() {
                           ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{reason}</p>
                           : !tk.done ? <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>{T.noReason}</p>
                           : null)}
+                        {/* The photo IS the evidence on this card — an admin
+                            rules on what the frame shows and on the clock in
+                            its corner, so it renders big enough to read
+                            WITHOUT opening the zoom overlay (the old 64px
+                            square was an index into that overlay, nothing
+                            more). A square box with `contain` keeps the whole
+                            frame whichever way the phone was held — `cover`
+                            crops exactly the edge the timestamp sits on —
+                            and one column on a phone, two from sm up, keeps
+                            every photo at the widest size its surface has.
+                            Clicking still opens the full-resolution view. */}
                         {nPhotos > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                             {photos.map((p, pi) => (
-                              <div key={pi} className="w-16 h-16 flex-shrink-0">
-                                <ReportPhoto src={p} T={T} className="" thumb onClick={(u) => setZoom(u)} />
+                              <div key={pi} className="aspect-square rounded-lg overflow-hidden"
+                                style={{ background: "var(--bg-inner)" }}>
+                                <ReportPhoto src={p} T={T} className="" thumb fit="contain" onClick={(u) => setZoom(u)} />
                               </div>
                             ))}
                             {media.map((mid) => (
-                              <div key={`m${mid}`} className="w-16 h-16 flex-shrink-0">
-                                <BotPhoto id={mid} T={T} className="" thumb onClick={(u) => setZoom(u)} />
+                              <div key={`m${mid}`} className="aspect-square rounded-lg overflow-hidden"
+                                style={{ background: "var(--bg-inner)" }}>
+                                <BotPhoto id={mid} T={T} className="" thumb fit="contain" onClick={(u) => setZoom(u)} />
                               </div>
                             ))}
                           </div>

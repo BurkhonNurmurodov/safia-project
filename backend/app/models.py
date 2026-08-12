@@ -1888,3 +1888,60 @@ class CapabilityUse(Base):
     details     = Column(JSONB, nullable=True)
     changes     = Column(JSONB, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class WorkerConcern(Base):
+    """One worker-submitted concern («хавотир»), synced from the 180 per-cell
+    Google spreadsheets linked off the «Liderlar Havotirlar» registry tab.
+
+    The per-cell sheets are the ONLY place resolution status lives (the master
+    «Umumiy» tab has an always-empty Status column), so the sync crawls each
+    linked sheet and stores per-row status here. The registry row's (brigadir,
+    leader, cell) triple is stamped onto every row of its sheet as ``reg_*`` —
+    that is the attribution the business's own monthly KPI uses (the sheet's
+    IMPORTRANGE summaries credit the whole cell to its registered leader), and
+    it is spelling-stable where the free-typed per-row names are not. The raw
+    per-row leader/owner spellings are kept for the register view.
+
+    ``date`` is the FILING date (ISO) and is None when the sheet's value can't
+    be parsed or falls outside the plausible window — those rows still count in
+    people-keyed KPIs but are excluded from date-bound charts, and the sync
+    reports how many (never silently dropped). «Дата завершения» in the sheets
+    is garbage (years like 1912) and is deliberately not imported: resolution
+    TIME cannot be measured until the source records it honestly."""
+    __tablename__ = "worker_concerns"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    sheet_id     = Column(String, nullable=False, index=True)  # source spreadsheet (wipe-replace key)
+    reg_cell     = Column(String, index=True)    # registry «Новая кодировка» cell code
+    reg_brigadir = Column(String, index=True)    # registry brigadir (canonical-ish spelling)
+    reg_leader   = Column(String, index=True)    # registry leader; "" when the cell has none
+    row_leader   = Column(String)                # the row's own «Лидер» free-text spelling
+    owner        = Column(String)                # «Хавотир эгаси» — the worker who submitted
+    text         = Column(Text)                  # «Хавотир» free text
+    date         = Column(String(10), index=True, nullable=True)  # ISO filing date; None = unparseable
+    date_raw     = Column(String, nullable=True)                  # sheet spelling, kept for the register
+    status       = Column(String, index=True)    # todo | doing | done | deferred | other
+    status_raw   = Column(String, nullable=True) # sheet spelling when status == other
+
+
+class WorkerConcernSyncMeta(Base):
+    """Singleton row (id=1) tracking the worker-concerns crawl across the ~180
+    per-cell sheets. Doubles as the progress feed the page polls while a
+    refresh runs and as the claim that keeps two refreshes from overlapping
+    (``running`` + ``heartbeat``; a heartbeat older than the stale window may
+    be taken over — the previous process died mid-crawl)."""
+    __tablename__ = "worker_concern_sync"
+
+    id            = Column(Integer, primary_key=True)
+    last_synced   = Column(DateTime(timezone=True), nullable=True)
+    ok            = Column(Boolean, default=True)
+    message       = Column(Text, nullable=True)
+    row_count     = Column(Integer, default=0)
+    invalid_dates = Column(Integer, default=0)   # rows kept with date=None
+    failed_sheets = Column(Integer, default=0)   # sheets that kept stale rows this run
+    running       = Column(Boolean, default=False, nullable=False)
+    progress_done  = Column(Integer, default=0)
+    progress_total = Column(Integer, default=0)
+    started_at    = Column(DateTime(timezone=True), nullable=True)
+    heartbeat     = Column(DateTime(timezone=True), nullable=True)
