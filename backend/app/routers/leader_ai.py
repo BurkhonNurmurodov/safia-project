@@ -21,7 +21,7 @@ only grew. `resolve` is what empties the queue, and `rejected` is the one
 decision that changes a score anywhere.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -127,6 +127,11 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "model": gemini.active_model(),
         "counts": leader_ai.counts(db),
         "flags": flags,
+        # Where review begins. Every "why has this old day never been checked"
+        # question has this as its answer, and until it shipped in a payload the
+        # only place it existed was a settings row nobody can read.
+        "floor": leader_ai.floor_date(db),
+        "defaultFloor": leader_ai.DEFAULT_FLOOR,
         # How often the human agreed with the machine. For a pilot this is the
         # actual deliverable: at 40% agreement on `not_proven` the criteria text
         # is wrong, not the leaders — and that is a conclusion no amount of
@@ -1689,6 +1694,241 @@ def cancel_run(db: Session = Depends(get_db), admin: dict = Depends(verify_admin
              admin.get("telegram_id"), deleted, restored)
     return {"ok": True, "deleted": deleted, "restored": restored,
             "cleared": deleted + restored, "counts": leader_ai.counts(db)}
+
+
+class ClearIn(BaseModel):
+    """The slice of AI history to delete, plus where review should resume."""
+    date_from: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_to: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    shift: int | None = Field(None, ge=1, le=2)
+    manager_id: int | None = Field(None, ge=1)
+    leader_id: int | None = Field(None, ge=1)
+    # Which verdicts to throw away. `all` is the honest default for "clear the
+    # history": a wipe that quietly spared the flagged rows would leave the
+    # triage queue full of decisions about photos whose verdicts no longer
+    # exist anywhere else.
+    scope: str = Field("all", pattern="^(all|flagged|clean|unjudged)$")
+    # Resolved rows carry a HUMAN ruling. Deleting one throws away work a person
+    # did, and it is never the thing somebody means by "clear the AI history",
+    # so it takes its own deliberate tick.
+    include_resolved: bool = False
+    # Where review resumes. Sent explicitly (never derived from the range),
+    # because the floor is what makes a wipe permanent: discovery back-fills
+    # everything ever filed, so without it the next drain re-inserts exactly
+    # what was just deleted and re-spends the quota judging it. "" lifts the
+    # floor entirely — the one shape that re-opens all history.
+    floor: str | None = Field(None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    set_floor: bool = True
+    dry_run: bool = False
+
+
+@router.post("/history/clear")
+def clear_history(body: ClearIn, db: Session = Depends(get_db),
+                  admin: dict = Depends(verify_admin)):
+    """Delete AI verdicts and set where review starts again.
+
+    **Why this is a button and not a migration.** The reviewer's criteria get
+    reworked, and every verdict written under the old ones is an answer to a
+    question nobody asks any more — not corrupt data, just stale, and
+    indistinguishable from a live verdict on the page. Until now the only cure
+    was a flag-guarded purge in `app/startup.py`, i.e. a code push plus a
+    restart, performed by someone with repo access at the moment the operator
+    noticed. The people who run the plant have neither.
+
+    **Deleting without moving the floor is a no-op with a bill attached.**
+    `discover()` back-fills every report ever filed, so a wipe alone is undone
+    on the next pass — and then re-judged, at quota. That is why `floor` rides
+    in the same request and defaults to on: one action, one outcome.
+
+    Two protections, both deliberate:
+
+    * **Admin-only, never grantable.** `verify_admin` tests the JWT role
+      itself, so this sits outside the per-profile capability system exactly
+      like the DB restore does. Everything else on this router is already
+      admin-only; this is the one that cannot be widened later by a grant.
+    * **Resolved rows survive by default.** A resolution is a person's ruling,
+      and the calibration stats measure human-vs-machine agreement over
+      precisely those rows. Taking them needs `include_resolved`.
+
+    `dry_run` counts without touching anything — a confirm that cannot say how
+    much it is about to destroy is a confirm nobody can answer.
+    """
+    def _scoped(q):
+        return _narrow(q, date_from=body.date_from, date_to=body.date_to,
+                       shift=body.shift, manager_id=body.manager_id,
+                       leader_id=body.leader_id)
+
+    q = _scoped(db.query(LeaderAiReview))
+    if body.scope == "flagged":
+        q = q.filter(LeaderAiReview.status == "flagged")
+    elif body.scope == "clean":
+        q = q.filter(LeaderAiReview.status == "ok")
+    elif body.scope == "unjudged":
+        # Queue debris — never judged, so nothing is lost and discovery re-finds
+        # it. The cheap way out of "40 rows have been stuck for a week".
+        q = q.filter(LeaderAiReview.status.in_(("pending", "error", "skipped")))
+
+    resolved_hit = q.filter(LeaderAiReview.resolution.isnot(None)).count()
+    if not body.include_resolved:
+        q = q.filter(LeaderAiReview.resolution.is_(None))
+
+    n = q.count()
+    if body.dry_run:
+        return {"ok": True, "deleted": n, "resolved": resolved_hit,
+                "dryRun": True, "floor": leader_ai.floor_date(db)}
+
+    n = q.delete(synchronize_session=False)
+    db.commit()
+
+    floor = leader_ai.floor_date(db)
+    if body.set_floor:
+        floor = leader_ai.set_floor(db, body.floor)
+
+    who = (admin.get("full_name") or admin.get("username")
+           or str(admin.get("telegram_id") or "admin"))
+    log.info("LEADER-AI history cleared by %s: %s row(s) (scope=%s, %s..%s, %s, "
+             "resolved=%s) floor=%s",
+             who, n, body.scope, body.date_from or "*", body.date_to or "*",
+             " · ".join(_narrow_labels(db, body.shift, body.manager_id,
+                                       body.leader_id)) or "everyone",
+             "included" if body.include_resolved else "kept", floor or "none")
+    return {"ok": True, "deleted": n, "floor": floor,
+            "counts": leader_ai.counts(db)}
+
+
+# How many finished verdicts the detail view hands over. The feed answers "what
+# has it been doing", which is a question about the recent past — a thousand
+# rows would not make it a better answer, only a slower one.
+ACTIVITY_CAP = 200
+
+
+@router.get("/activity")
+def activity(limit: int = Query(60, ge=1, le=ACTIVITY_CAP),
+             since: str | None = Query(None),
+             db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """WHOSE data has been reviewed, and what came of it.
+
+    The progress strip could only ever report arithmetic: a percentage, a
+    remainder, an ETA. None of that answers the question anybody actually has
+    while quota is being spent — *whose reports are being judged right now, and
+    what is it deciding about them?* This is the payload behind tapping it.
+
+    Three readings of the same set, because they answer different questions:
+
+    * `people` — one row per leader, so "has this unit been covered" is a look
+      rather than a scroll through a feed.
+    * `recent` — the newest verdicts in order, which is the only view where a
+      run that has gone wrong (every row flagged, every row errored) is
+      obvious.
+    * `totals` — what the window holds overall.
+
+    `since` defaults to the active run's start, so the view is scoped to what is
+    happening now; with no run it falls back to the last 24 hours, which is the
+    window "what did it do overnight" asks about. Rows are keyed off
+    `reviewed_at`, so this is strictly what the MACHINE did — a human resolution
+    does not put a row back in the feed.
+    """
+    import json
+
+    if not gemini.available():
+        return {"enabled": False, "people": [], "recent": [], "totals": {}}
+
+    started = None
+    run = None
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is not None:
+        try:
+            run = json.loads(row.value)
+            started = run.get("started_at")
+        except Exception:
+            run = None
+    if since:
+        started = since
+    try:
+        cutoff = (datetime.fromisoformat(started) if started
+                  else datetime.now(timezone.utc) - timedelta(hours=24))
+    except Exception:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    judged = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.reviewed_at.isnot(None),
+                LeaderAiReview.reviewed_at >= cutoff)
+        .order_by(LeaderAiReview.reviewed_at.desc())
+        .limit(ACTIVITY_CAP)
+        .all()
+    )
+
+    # Names resolved by the SAME projection the triage queue uses, so one person
+    # is never two names across two screens. Light pass — no photos, no report
+    # JSON: this view is polled while a run is live.
+    proj = _project(db, judged)
+
+    people: dict[tuple, dict] = {}
+    recent: list[dict] = []
+    totals = {"judged": 0, "flagged": 0, "clean": 0, "errors": 0}
+    for rev in judged:
+        p = proj[rev.ref]
+        clean = rev.status == "ok"
+        bad = rev.status == "flagged"
+        totals["judged"] += 1
+        totals["flagged"] += bad
+        totals["clean"] += clean
+        totals["errors"] += rev.status == "error"
+
+        key = (rev.leader_id, p["leader"])
+        slot = people.setdefault(key, {
+            "leaderId": rev.leader_id, "leader": p["leader"],
+            "supervisor": p["supervisor"], "shift": rev.shift,
+            "rows": 0, "flagged": 0, "clean": 0, "errors": 0,
+            "days": set(), "lastAt": None,
+        })
+        slot["rows"] += 1
+        slot["flagged"] += bad
+        slot["clean"] += clean
+        slot["errors"] += rev.status == "error"
+        slot["days"].add(rev.date)
+        at = rev.reviewed_at.isoformat() if rev.reviewed_at else None
+        if at and (slot["lastAt"] is None or at > slot["lastAt"]):
+            slot["lastAt"] = at
+
+        if len(recent) < limit:
+            recent.append({
+                "ref": rev.ref, "leader": p["leader"],
+                "supervisor": p["supervisor"], "taskLabel": p["task"],
+                "taskId": rev.task_id, "date": rev.date, "shift": rev.shift,
+                "source": rev.source, "status": rev.status,
+                "flags": rev.flags or [], "error": rev.error,
+                "reviewedAt": at,
+                # A ruling already taken on this verdict, so the feed does not
+                # present a decided flag as if it still needed deciding.
+                "resolution": rev.resolution,
+            })
+
+    rows = sorted(
+        ({**v, "days": len(v["days"])} for v in people.values()),
+        # Most flags first, then most rows: the unit worth opening is the one
+        # with the decisions behind it, and an alphabetical list buries it.
+        key=lambda r: (-r["flagged"], -r["rows"], str(r["leader"])),
+    )
+
+    return {
+        "enabled": True,
+        "model": gemini.active_model(),
+        "since": cutoff.isoformat(),
+        # Whether this window IS the run, or the fallback 24h — the caption over
+        # the list says which, and guessing wrong makes "0 reviewed" read as
+        # "broken" when it means "nothing has run since yesterday".
+        "scoped": bool(started),
+        "run": {"scope": run.get("scope"), "from": run.get("from"),
+                "to": run.get("to"), "narrow": run.get("narrow") or [],
+                "by": run.get("by")} if run else None,
+        "floor": leader_ai.floor_date(db),
+        "totals": totals,
+        "people": rows,
+        "recent": recent,
+        "capped": len(judged) >= ACTIVITY_CAP,
+    }
 
 
 @router.post("/retry")

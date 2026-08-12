@@ -2278,10 +2278,36 @@ def _lt_callback(call: types.CallbackQuery):
             day.closed_at = datetime.now(timezone.utc)
             day.completion = compute_completion(cfg, list(entries.values()))
             db.commit()
-            # The day is now a submission, so its proof photos become reviewable.
+            # ── shift 2's automatic review starts HERE ────────────────────────
+            # Shift 2 files through the bot, so closing the day IS the moment
+            # this leader's proofs become reviewable — there is no sheet Refresh
+            # behind them and nothing else in the system marks the submission.
+            #
+            # THIS day is queued directly rather than through a full discovery
+            # pass: `queue_report` matches one report (and honours the review
+            # floor), where `discover()` walks every report ever filed. The
+            # leader is holding an open callback, and the difference is a scan
+            # of the corpus against a handful of inserts.
+            #
+            # Wrapped: an AI hiccup must never leave the day looking unclosed to
+            # the person who just closed it. The 20-minute drain picks up
+            # anything this misses.
+            try:
+                n = leader_ai.queue_report(db, day=day)
+                if n:
+                    # Same record the re-check modal writes, so the admin page
+                    # shows this hand-off with a bar, an ETA and the detail
+                    # view instead of a queue that silently grew. Named after
+                    # the leader — «started by Aripova M.» is what a shift-2
+                    # close looks like from the page.
+                    leader_ai.note_auto_run(db, n, prof.name)
+            except Exception:
+                logger.exception("leader-tasks: could not queue day %s for AI review",
+                                 day.id)
+                db.rollback()
             # Daemon thread: the leader is waiting on this callback, and a
             # review round-trip is seconds per photo.
-            leader_ai.run_async()
+            leader_ai.run_async(discover_first=False)
             bot.answer_callback_query(call.id, _lt(lang, "closed_done").format(
                 score=round(float(day.completion))))
             _lt_menu(db, tid, pid, lang, chat_id, msg_id)

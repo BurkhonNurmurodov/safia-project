@@ -512,6 +512,13 @@ def _existing_refs(db: Session) -> set[str]:
 
 FLOOR_SETTING = "leader_ai_floor"
 
+# Where AI review begins when nobody has moved it. 11 Aug 2026 is the first day
+# the reworked criteria were in force, for BOTH shifts — everything before it
+# was judged under questions the system no longer asks, so it was purged rather
+# than left to look like evidence. The startup migration pins this; the admin
+# «Tarixni tozalash» form can move it afterwards.
+DEFAULT_FLOOR = "2026-08-11"
+
 
 def floor_date(db: Session) -> str | None:
     """The first date AI review covers ("YYYY-MM-DD"), or None for everything.
@@ -521,10 +528,35 @@ def floor_date(db: Session) -> str | None:
     verdicts permanent — discovery back-fills "everything ever filed", so
     without the floor the next pass would re-insert every deleted row as
     `pending` and the drain would re-spend the quota re-judging history nobody
-    wants judged. Set by the one-shot purge in app/startup.py.
+    wants judged. Set by the one-shot purge in app/startup.py and, since the
+    history can now be cleared from the page, by `set_floor` below.
     """
     row = db.query(AppSetting).filter_by(key=FLOOR_SETTING).first()
     return row.value if row is not None and row.value else None
+
+
+def set_floor(db: Session, date: str | None) -> str | None:
+    """Move (or lift) the review floor. Returns what it now is.
+
+    Deliberately allows LOWERING it as well as raising it: an operator who
+    cleared too much has to be able to widen the window again, and the only
+    cost of a lower floor is that discovery re-finds the reports below it —
+    which is exactly what they would be asking for.
+    """
+    row = db.query(AppSetting).filter_by(key=FLOOR_SETTING).first()
+    value = (date or "").strip()
+    if not value:
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        return None
+    if row is None:
+        db.add(AppSetting(key=FLOOR_SETTING, value=value))
+    else:
+        row.value = value
+    db.commit()
+    log.info("leader-ai: review floor set to %s", value)
+    return value
 
 
 def discover(db: Session) -> int:
@@ -962,6 +994,66 @@ def _active_run_scope(db: Session) -> dict | None:
         "leader_id": run.get("leader"),
     }
     return scope if any(v is not None and v != "" for v in scope.values()) else None
+
+
+def note_auto_run(db: Session, queued: int, by: str) -> bool:
+    """Record an AUTOMATIC queueing as a run, so the progress strip shows it.
+
+    Shift 1's proofs enter the platform on the sheet Refresh and shift 2's when
+    a leader closes their bot day. Both have always kicked a drain, and both did
+    it invisibly: the rows were queued, the quota was spent, and the page showed
+    nothing until somebody opened the AI tab. A hand-off nobody can see is one
+    nobody trusts — the operator's only evidence was that a number eventually
+    changed.
+
+    Writing the same record `_start_run` writes gives those events the bar, the
+    ETA, the Stop button and the detail view for free, because everything that
+    reads progress reads this one row.
+
+    **Never displaces a live run.** An operator-started re-check owns the strip
+    and, through `_active_run_scope`, the drain's confinement: overwriting it
+    would silently widen a run somebody deliberately narrowed to one brigadir.
+    A finished record (`drained_at`) is fair game — that run is over.
+
+    Carries no narrowing on purpose, so the drain stays unconfined and works the
+    whole queue, oldest debt included.
+    """
+    import json
+
+    if queued <= 0:
+        return False
+    row = db.query(AppSetting).filter_by(key=RUN_SETTING).first()
+    if row is not None:
+        try:
+            cur = json.loads(row.value) or {}
+        except Exception:
+            cur = {}
+        if not cur.get("drained_at"):
+            return False
+    # The bar measures the whole QUEUE, not just the rows this event added: the
+    # run carries no narrowing, so the drain works through everything waiting
+    # and ends only when nothing is left. A total of "12 new" beside a drain
+    # chewing through 500 is a bar that hits 100% and keeps going.
+    total = max(queued, (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status.in_(("pending", "error")),
+                LeaderAiReview.attempts < MAX_ATTEMPTS)
+        .count()
+    ))
+    payload = json.dumps({
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "total": total,
+        "scope": "unchecked",
+        "from": None, "to": None,
+        "shift": None, "manager": None, "leader": None,
+        "narrow": [], "by": (by or "")[:120] or None,
+    })
+    if row is None:
+        db.add(AppSetting(key=RUN_SETTING, value=payload))
+    else:
+        row.value = payload
+    db.commit()
+    return True
 
 
 def _release_run(db: Session) -> None:

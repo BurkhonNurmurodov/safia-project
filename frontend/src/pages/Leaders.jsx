@@ -27,6 +27,7 @@ import LateReports from "../components/leaders/LateReports";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
 import AiRecheck from "../components/leaders/AiRecheck";
 import AiProgress from "../components/leaders/AiProgress";
+import AiClearHistory from "../components/leaders/AiClearHistory";
 import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
@@ -124,6 +125,7 @@ const TXT = {
     aiRunning: "Tekshirilmoqda…",
     aiFlagsN: "shubhali",
     aiPendingN: "navbatda",
+    aiQueuedN: "{n} ta yangi dalil AI tekshiruviga yuborildi",
     aiNote: "AI xulosasi — yordamchi belgi, yakuniy hukm emas.",
     tabAi: "AI tekshiruvi",
     aiBall: "Hammasi", aiB_forged: "Soxta dalil", aiB_undone: "Bajarilmagan",
@@ -250,6 +252,7 @@ const TXT = {
     aiRunning: "Текширилмоқда…",
     aiFlagsN: "шубҳали",
     aiPendingN: "навбатда",
+    aiQueuedN: "{n} та янги далил AI текширувига юборилди",
     aiNote: "AI хулосаси — ёрдамчи белги, якуний ҳукм эмас.",
     tabAi: "AI текшируви",
     aiBall: "Ҳаммаси", aiB_forged: "Сохта далил", aiB_undone: "Бажарилмаган",
@@ -376,6 +379,7 @@ const TXT = {
     aiRunning: "Проверяется…",
     aiFlagsN: "сомнительных",
     aiPendingN: "в очереди",
+    aiQueuedN: "Новых подтверждений отправлено на проверку ИИ: {n}",
     aiNote: "Вывод ИИ — подсказка, а не окончательное решение.",
     tabAi: "Проверка ИИ",
     aiBall: "Все", aiB_forged: "Подделка", aiB_undone: "Не выполнено",
@@ -502,6 +506,7 @@ const TXT = {
     aiRunning: "Reviewing…",
     aiFlagsN: "flagged",
     aiPendingN: "queued",
+    aiQueuedN: "{n} new proofs sent to AI review",
     aiNote: "The AI verdict is a hint, not a final ruling.",
     tabAi: "AI review",
     aiBall: "All", aiB_forged: "Forged", aiB_undone: "Not done",
@@ -1701,12 +1706,25 @@ export default function Leaders() {
   // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
   const qc = useQueryClient();
   const [justSynced, setJustSynced] = useState(false);
+  // How many new proof rows this Refresh handed to the AI. Shift 1 files through
+  // the Google form, so Refresh IS the moment their photos become reviewable —
+  // the queueing has always happened here, silently, which left "12 new reports
+  // went to review" indistinguishable from "the reviewer is not running".
+  const [aiQueued, setAiQueued] = useState(null);
   const refreshMut = useMutation({
     mutationFn: () => api.post("/admin/refresh-sheet/leaders").then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["leaders"] });
       setJustSynced(true);
       setTimeout(() => setJustSynced(false), 2500);
+      if (d?.ai_queued > 0) {
+        setAiQueued(d.ai_queued);
+        // The progress strip is where the work becomes visible from here on —
+        // light it up now rather than on its next poll.
+        qc.invalidateQueries({ queryKey: ["leader-ai-progress"] });
+        qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+        setTimeout(() => setAiQueued(null), 8000);
+      }
     },
   });
 
@@ -2544,6 +2562,19 @@ export default function Leaders() {
     <>
       {scopeBar}
       {tabsBar}
+      {/* Shift 1's automatic hand-off, reported at the moment it happens. It
+          sits directly above the progress strip because that strip is what
+          carries the work from here — the note says «12 went in», the bar
+          underneath shows them being judged. Transient by design: it is
+          feedback for a press, not a standing statistic. */}
+      {isAdmin && aiQueued > 0 && (
+        <div className="mb-3 rounded-xl px-3 py-2 flex items-center gap-2 text-xs"
+          style={{ background: "var(--brand-bg)", border: "1px solid var(--brand-border)",
+                   color: "var(--brand-text)" }} role="status">
+          <Sparkles size={14} className="flex-shrink-0" />
+          <span className="tabular-nums">{T.aiQueuedN.replace("{n}", aiQueued.toLocaleString())}</span>
+        </div>
+      )}
       {isAdmin && <AiProgress showIdle={tab === "ai"} />}
     </>
   );
@@ -2579,7 +2610,17 @@ export default function Leaders() {
             suspect row — but this tab is where you come to run one. */}
         <AiTriage T={T} lang={lang} taskDetail={taskDetail} nm={nm}
           scope={scope} onClearScope={clearScope}
-          actions={<AiRecheck errorCount={aiData?.counts?.error || 0} />} />
+          actions={
+            <>
+              <AiRecheck errorCount={aiData?.counts?.error || 0} />
+              {/* Destructive, so it lives ONLY here — the AI tab is where an
+                  admin comes to work on the reviewer itself. Deliberately not
+                  in the register toolbar beside «Tekshirish»: a wipe has no
+                  business one tap away from the button people press daily. */}
+              <AiClearHistory floor={aiData?.floor}
+                defaultFloor={aiData?.defaultFloor} />
+            </>
+          } />
       </Layout>
     );
   }

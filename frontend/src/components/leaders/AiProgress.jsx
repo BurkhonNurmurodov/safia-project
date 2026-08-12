@@ -1,8 +1,9 @@
 import { useState, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, CheckCircle2, XCircle, Trash2, Play } from "lucide-react";
+import { Sparkles, CheckCircle2, XCircle, Trash2, Play, ChevronRight } from "lucide-react";
 import Button from "../ui/Button";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import AiActivity from "./AiActivity";
 import { useLang } from "../../context/LangContext";
 import api from "../../utils/api";
 
@@ -64,6 +65,7 @@ const TXT = {
     dErr: "AI xatoligi", ago: "{t} oldin", errN: "{n} ta xato",
     dJoined: "Bu tekshiruv allaqachon ketmoqda — bosganingiz shunga qo'shildi. Bir qator uchun ikki marta to'lanmaydi.",
     dFor: "{t} dan beri ketmoqda", byWho: "boshlagan: {t}", byAuto: "o'zi boshladi (har 20 daqiqada)",
+    details: "Tafsilotlar — kimning ma'lumoti tekshirildi",
   },
   uz_cyrl: {
     title: "AI текшируви кетмоқда",
@@ -87,6 +89,7 @@ const TXT = {
     dErr: "AI хатолиги", ago: "{t} олдин", errN: "{n} та хато",
     dJoined: "Бу текширув аллақачон кетмоқда — босганингиз шунга қўшилди. Бир қатор учун икки марта тўланмайди.",
     dFor: "{t} дан бери кетмоқда", byWho: "бошлаган: {t}", byAuto: "ўзи бошлади (ҳар 20 дақиқада)",
+    details: "Тафсилотлар — кимнинг маълумоти текширилди",
   },
   ru: {
     title: "Идёт проверка ИИ",
@@ -110,6 +113,7 @@ const TXT = {
     dErr: "Ошибка ИИ", ago: "{t} назад", errN: "ошибок: {n}",
     dJoined: "Эта проверка уже идёт — ваш запуск присоединён к ней. За одну строку дважды не платится.",
     dFor: "идёт уже {t}", byWho: "запустил: {t}", byAuto: "запустилась сама (каждые 20 мин)",
+    details: "Подробности — чьи данные проверены",
   },
   en: {
     title: "AI review running",
@@ -133,6 +137,7 @@ const TXT = {
     dErr: "AI error", ago: "{t} ago", errN: "{n} failed",
     dJoined: "This review is already running — your start joined it. No row is ever paid for twice.",
     dFor: "running for {t}", byWho: "started by {t}", byAuto: "started itself (every 20 min)",
+    details: "Details — whose data was checked",
   },
 };
 
@@ -275,6 +280,24 @@ function DrainLine({ p, T, kick }) {
   );
 }
 
+/* ── the strip is a door ──────────────────────────────────────────────────────
+ *
+ * Everything left of the action buttons opens the detail view: the title, the
+ * counters, the chevron. A real <button> rather than a click handler on the
+ * card, because the card already holds Stop and Start-now and a button inside a
+ * button is neither valid nor operable by keyboard — this way the informational
+ * half is one tab stop and the actions keep their own.
+ */
+const OpenDetails = ({ onClick, title, children }) => (
+  <button type="button" onClick={onClick} title={title} aria-label={title}
+    className="group flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-lg
+               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">
+    {children}
+    <ChevronRight size={14} className="flex-shrink-0 transition-transform group-hover:translate-x-0.5"
+      style={{ color: "var(--text-4)" }} aria-hidden="true" />
+  </button>
+);
+
 /** `showIdle` — also render the standing "how much is checked" bar when no run
  *  is going. True on the AI tab, where that is the subject; false elsewhere,
  *  where a permanent statistic would just be chrome. A LIVE run renders on
@@ -285,6 +308,10 @@ export default function AiProgress({ showIdle = false }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // The detail view behind the strip: whose reports have been judged, and what
+  // the verdicts were. Held here rather than inside the strip's two branches —
+  // both the idle bar and the live bar open the same door.
+  const [details, setDetails] = useState(false);
 
   const { data: p } = useQuery({
     queryKey: ["leader-ai-progress"],
@@ -355,16 +382,19 @@ export default function AiProgress({ showIdle = false }) {
       <div className="mb-3 rounded-xl px-3 py-2.5"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex items-center gap-2.5 flex-wrap mb-2">
-          <Sparkles size={15} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
-          <span className="text-[13px] font-semibold" style={{ color: "var(--text-2)" }}>
-            {T.coverage}
-          </span>
-          <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-            {fill(T.count, {
-              d: <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>,
-              n: cov.known.toLocaleString(),
-            })}
-          </span>
+          <OpenDetails onClick={() => setDetails(true)} title={T.details}>
+            <Sparkles size={15} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+            <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
+              style={{ color: "var(--text-2)" }}>
+              {T.coverage}
+            </span>
+            <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
+              {fill(T.count, {
+                d: <b style={{ color: "var(--text-1)" }}>{cov.judged.toLocaleString()}</b>,
+                n: cov.known.toLocaleString(),
+              })}
+            </span>
+          </OpenDetails>
           {/* Queued work exists with no run behind it — the timer drain and a
               sheet Refresh both queue rows nobody started from this page. "Stop
               it" has to reach that too, or the only clearable queue is the one
@@ -405,6 +435,7 @@ export default function AiProgress({ showIdle = false }) {
         {p.pending > 0 && <DrainLine p={p} T={T} kick={kick} />}
       </div>
       {confirmDialog}
+      <AiActivity open={details} onClose={() => setDetails(false)} progress={p} />
       </>
     );
   }
@@ -413,17 +444,24 @@ export default function AiProgress({ showIdle = false }) {
 
   if (finished) {
     return (
+      <>
       <div className="mb-3 rounded-xl px-3 py-2 flex items-center gap-2.5 flex-wrap"
         style={{ background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.30)" }}
         role="status">
-        <CheckCircle2 size={15} color={GOOD} className="flex-shrink-0" />
-        <span className="text-[13px] font-semibold" style={{ color: GOOD }}>{T.done}</span>
-        <span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
-          {fmt(T.doneN, p.done ?? 0)}
-        </span>
-        <Button size="sm" variant="ghost" className="ml-auto"
-          onClick={() => setDismissed(true)}>{T.hide}</Button>
+        {/* "It finished — what did it decide?" is the moment the detail view is
+            most wanted, so the finished banner is a door too. */}
+        <OpenDetails onClick={() => setDetails(true)} title={T.details}>
+          <CheckCircle2 size={15} color={GOOD} className="flex-shrink-0" />
+          <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
+            style={{ color: GOOD }}>{T.done}</span>
+          <span className="text-xs tabular-nums" style={{ color: "var(--text-4)" }}>
+            {fmt(T.doneN, p.done ?? 0)}
+          </span>
+        </OpenDetails>
+        <Button size="sm" variant="ghost" onClick={() => setDismissed(true)}>{T.hide}</Button>
       </div>
+      <AiActivity open={details} onClose={() => setDetails(false)} progress={p} />
+      </>
     );
   }
 
@@ -435,19 +473,22 @@ export default function AiProgress({ showIdle = false }) {
       <div className="mb-3 rounded-xl px-3 py-2.5"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="flex items-center gap-2.5 flex-wrap mb-2">
-          <Sparkles size={15} color={BRAND} className="flex-shrink-0" />
-          <span className="text-[13px] font-semibold" style={{ color: "var(--text-1)" }}>
-            {T.title}
-          </span>
-          {/* Numbers first, percentage second: "1 129 of 1 174" answers "how
-              much is left to pay for", which is the question quota makes you
-              ask. The percentage alone never does. */}
-          <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
-            {fill(T.count, {
-              d: <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>,
-              n: p.total.toLocaleString(),
-            })}
-          </span>
+          <OpenDetails onClick={() => setDetails(true)} title={T.details}>
+            <Sparkles size={15} color={BRAND} className="flex-shrink-0" />
+            <span className="text-[13px] font-semibold group-hover:underline underline-offset-2"
+              style={{ color: "var(--text-1)" }}>
+              {T.title}
+            </span>
+            {/* Numbers first, percentage second: "1 129 of 1 174" answers "how
+                much is left to pay for", which is the question quota makes you
+                ask. The percentage alone never does. */}
+            <span className="text-xs tabular-nums ml-auto" style={{ color: "var(--text-3)" }}>
+              {fill(T.count, {
+                d: <b style={{ color: "var(--text-1)" }}>{p.done.toLocaleString()}</b>,
+                n: p.total.toLocaleString(),
+              })}
+            </span>
+          </OpenDetails>
           <Button size="sm" variant="secondary" tint icon={<XCircle size={13} />}
             loading={stop.isPending} onClick={() => setConfirm(true)}>
             {T.stop}
@@ -497,6 +538,7 @@ export default function AiProgress({ showIdle = false }) {
       </div>
 
       {confirmDialog}
+      <AiActivity open={details} onClose={() => setDetails(false)} progress={p} />
     </>
   );
 }

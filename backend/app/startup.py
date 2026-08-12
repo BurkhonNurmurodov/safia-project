@@ -1556,21 +1556,33 @@ def wipe_cell_perenaladka_history() -> None:
         db.close()
 
 
-LEADER_AI_PURGE_FLAG = "leader_ai_purged_pre_2026_08_10"
+# One flag per floor date. Bumping the date needs a NEW key: the old flag says
+# "the 10 Aug purge already ran", which is true and must stay true, while the
+# 11 Aug purge has not. Reusing the key would make the new floor a no-op on
+# every box that had already booted once.
+LEADER_AI_PURGE_FLAG = "leader_ai_purged_pre_2026_08_11"
 
 
 def purge_leader_ai_history() -> None:
-    """One-shot purge of every AI proof-review verdict dated before 2026-08-10
-    (requested 2026-08-11): the historical backfill judged months of reports
-    under review criteria that have since been reworked, so the operator chose
-    to keep only 10 Aug onward. Pins the review floor (`leader_ai_floor`) to
-    the same date — discovery back-fills everything ever filed, and without the
-    floor the next drain pass would re-insert the deleted history as `pending`
-    and re-spend the Gemini quota on it. Flag-guarded: runs exactly once, so
-    verdicts the AI writes from the floor onward are never touched."""
-    from app.services.leader_ai import FLOOR_SETTING
+    """One-shot purge of every AI proof-review verdict dated before the review
+    floor (`services.leader_ai.DEFAULT_FLOOR`, 11 Aug 2026 — the first day the
+    reworked criteria were in force for BOTH shifts).
 
-    FLOOR = "2026-08-10"
+    The historical backfill judged months of reports under questions the system
+    no longer asks, so those verdicts are not data to repair: they are answers
+    to a retired question, and nothing on the page can tell the two apart by
+    looking. Pins the review floor to the same date — discovery back-fills
+    everything ever filed, and without the floor the next drain pass would
+    re-insert the deleted history as `pending` and re-spend the Gemini quota on
+    it.
+
+    Flag-guarded per date, so verdicts written from the floor onward are never
+    touched, and an admin who later moves the floor from the page (see
+    `POST /api/leader-ai/history/clear`) is not overruled on the next boot.
+    """
+    from app.services.leader_ai import DEFAULT_FLOOR, FLOOR_SETTING
+
+    FLOOR = DEFAULT_FLOOR
     db = SessionLocal()
     try:
         if db.query(AppSetting).filter_by(key=LEADER_AI_PURGE_FLAG).first():

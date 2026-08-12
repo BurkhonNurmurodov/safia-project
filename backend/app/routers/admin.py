@@ -337,7 +337,7 @@ def update_sheet_source(
 def refresh_sheet(
     name: str,
     db: Session = Depends(get_db),
-    _: dict = Depends(verify_refresh_access),
+    caller: dict = Depends(verify_refresh_access),
 ):
     src = db.query(SheetSource).filter(SheetSource.name == name).first()
     if not src:
@@ -364,12 +364,39 @@ def refresh_sheet(
             meta.message = None
             meta.row_count = result.get("leader_rows", 0)
             db.commit()
-            # Newly arrived reports are queued for AI proof review and the
-            # backlog drains a slice at a time. Fire-and-forget on a daemon
-            # thread: a first-run backfill is far longer than any request, and
-            # nothing here may make Refresh feel slower than it did.
-            leader_ai.run_async()
-            return {"status": "ok", "sheet": name, **result}
+            # ── shift 1's automatic review starts HERE ────────────────────────
+            # Shift 1 files through the Google form, so the sheet Refresh is the
+            # moment their reports enter the platform — and therefore the moment
+            # their proof photos become reviewable. Discovery runs INLINE and
+            # its count ships in the response: the drain has always been kicked
+            # here, but silently, so an operator pressing Refresh had no way to
+            # tell "12 new reports went to review" from "the AI is not running".
+            #
+            # Inline is affordable because it is bounded on both sides: only
+            # reports at or after the review floor are considered
+            # (`services.leader_ai.floor_date` — 11 Aug 2026 by default), and
+            # only ones with no verdict yet. Nothing already checked is re-read
+            # and nothing before the floor is touched.
+            #
+            # The spending still happens on the daemon thread: a backfill is far
+            # longer than any request may be, and nothing here may make Refresh
+            # feel slower than it did.
+            queued = None
+            try:
+                queued = leader_ai.discover(db)
+                if queued:
+                    # Give the hand-off the progress strip: the bar, the ETA,
+                    # the Stop button and the detail view all read this one
+                    # record. It never displaces a run an operator started.
+                    leader_ai.note_auto_run(
+                        db, queued,
+                        caller.get("full_name") or caller.get("username")
+                        or "Refresh")
+            except Exception:
+                log.exception("leaders refresh: AI discovery failed")
+                db.rollback()
+            leader_ai.run_async(discover_first=queued is None)
+            return {"status": "ok", "sheet": name, "ai_queued": queued, **result}
 
         if name == "quality":
             result = sync_quality_sheet(src.sheet_id, db)
