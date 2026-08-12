@@ -28,7 +28,7 @@ from app.config import assert_secure_config, settings as cfg
 from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -153,6 +153,10 @@ async def lifespan(app: FastAPI):
     # queue drains itself (mirrored in passenger_wsgi.py).
     from app.services.leader_ai import register_drain_job
     register_drain_job()
+    # Worker-concerns nightly sheet crawl + first-boot fill (mirrored in
+    # passenger_wsgi.py).
+    from app.services.worker_concerns import register_boot_jobs as register_wc_jobs
+    register_wc_jobs()
     yield
     shutdown_scheduler()
 
@@ -344,6 +348,7 @@ app.include_router(tasks.router)
 app.include_router(profiles.router)
 app.include_router(leaderboard.router)
 app.include_router(quality.router)
+app.include_router(worker_concerns.router)
 app.include_router(boot.router)
 app.include_router(ui_prefs.router)
 # Factories: reading the tab strip is open to any approved session (every

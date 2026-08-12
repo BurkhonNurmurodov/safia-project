@@ -163,6 +163,10 @@ try:
     # The AI proof reviewer's queue drains itself (mirrored in app/main.py).
     from app.services.leader_ai import register_drain_job
     register_drain_job()
+    # Worker-concerns nightly sheet crawl + first-boot fill (mirrored in
+    # app/main.py).
+    from app.services.worker_concerns import register_boot_jobs as register_wc_jobs
+    register_wc_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.
