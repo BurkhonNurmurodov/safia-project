@@ -26,7 +26,7 @@ Scoping (page-access matrix opens the page to supervisor + leader by default):
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -40,7 +40,7 @@ from app.permissions import require_page
 from app.capabilities import page_scope_is_all
 from app.services.factory_scope import factory_of_managers, resolve_factory, viewer_factory_id
 from app.services.name_map import leader_is, supervisor_match
-from app.services.worker_concerns import start_sync_thread
+from app.services.worker_concerns import STALE_AFTER, start_sync_thread
 
 router = APIRouter(prefix="/api/worker-concerns", tags=["worker-concerns"])
 
@@ -170,6 +170,21 @@ def _filter_params(
             "manager_id": manager_id, "leader": leader, "cell": cell, "status": status}
 
 
+def _live(meta: Optional[WorkerConcernSyncMeta]) -> bool:
+    """Is a crawl ACTUALLY running? The stored flag alone lies after a process
+    death — a dead crawl can't flip it back, and reporting it as running gave
+    the page an eternal spinner with a Refresh button nobody could press. A
+    claim without a fresh heartbeat is a dead claim."""
+    if not (meta and meta.running):
+        return False
+    hb = meta.heartbeat
+    if hb is None:
+        return False
+    if hb.tzinfo is None:
+        hb = hb.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - hb) < STALE_AFTER
+
+
 def _sync_state(meta: Optional[WorkerConcernSyncMeta]) -> dict:
     return {
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
@@ -178,7 +193,7 @@ def _sync_state(meta: Optional[WorkerConcernSyncMeta]) -> dict:
         "row_count": meta.row_count if meta else 0,
         "invalid_dates": meta.invalid_dates if meta else 0,
         "failed_sheets": meta.failed_sheets if meta else 0,
-        "running": bool(meta and meta.running),
+        "running": _live(meta),
         "progress_done": meta.progress_done if meta else 0,
         "progress_total": meta.progress_total if meta else 0,
     }
@@ -446,9 +461,7 @@ def refresh(
     min). Offered to every profile that can open the page; the meta poll below
     is the progress feed."""
     meta = db.query(WorkerConcernSyncMeta).filter_by(id=1).first()
-    if meta and meta.running and meta.heartbeat and (
-        datetime.now(meta.heartbeat.tzinfo) - meta.heartbeat
-    ).total_seconds() < 180:
+    if _live(meta):
         raise HTTPException(status_code=409, detail="Sync is already running")
     if not start_sync_thread():
         raise HTTPException(status_code=409, detail="Sync is already running")

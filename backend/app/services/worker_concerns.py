@@ -35,12 +35,13 @@ import threading
 import time
 from datetime import date as date_cls, datetime, timedelta, timezone
 
+import gspread
+from google.oauth2.service_account import Credentials
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import WorkerConcern, WorkerConcernSyncMeta
-from app.services.sheets_reader import get_client
 
 log = logging.getLogger(__name__)
 
@@ -53,18 +54,45 @@ REGISTRY_TAB_GID = 2069492854
 # date=None so date-bound charts exclude them — and the sync counts them.
 DATE_MIN = date_cls(2025, 9, 1)  # workbook was created 2025-09-23
 
-# Pacing between sheet reads. The Sheets API allows ~60 reads/min per user;
-# ~180 sheets at this pace is a 2–4 minute crawl, which is why it runs as a
-# background thread with a progress feed rather than inside a request.
-_SHEET_PAUSE = 0.4
-_RATE_RETRIES = 3
-_RATE_SLEEP = 30
+# Pacing. Each sheet costs ~2 Sheets-API reads and the per-user quota is ~60
+# reads/min; 2.5s between sheets keeps the whole crawl comfortably UNDER the
+# quota (~45 reads/min) instead of slamming into sustained 429s from mid-crawl
+# on — which is what the first prod run did at 0.4s. ~180 sheets ≈ 10–12 min,
+# which is why this runs as a background thread with a progress feed.
+_SHEET_PAUSE = 2.5
+_RATE_RETRIES = 4
+_RATE_SLEEP = 65          # quota windows are per-minute — sleep past a full one
+# Every HTTP call gets a hard timeout: gspread ships with NONE, and one stalled
+# socket froze the first prod crawl mid-run with the progress counter standing
+# still. A timed-out sheet is retried, then failed and skipped — never hung on.
+_HTTP_TIMEOUT = 60
 
 # A refresh whose heartbeat is older than this is a dead process's claim and
-# may be taken over.
+# may be taken over. Backoff sleeps above touch the heartbeat first, so a live
+# crawl waiting out a quota window never looks dead.
 STALE_AFTER = timedelta(minutes=3)
 
+# Errors worth retrying: quota answers and transient transport failures.
+# Anything else fails the sheet immediately (kept rows stay, sheet is counted).
+_RETRYABLE = ("429", "RESOURCE_EXHAUSTED", "Quota", "quota",
+              "timed out", "timeout", "Connection", "connection")
+
 _thread_lock = threading.Lock()
+
+
+def _crawl_client() -> gspread.Client:
+    """A DEDICATED gspread client for the crawl, with a per-request timeout.
+
+    Deliberately not the shared ``sheets_reader.get_client()``: setting a
+    timeout there would silently change every other sheet sync's behavior,
+    and this crawl is the only minutes-long, hundreds-of-requests consumer."""
+    creds = Credentials.from_service_account_file(
+        settings.google_credentials_file,
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    )
+    gc = gspread.authorize(creds)
+    gc.set_timeout(_HTTP_TIMEOUT)
+    return gc
 
 # Normalized header → field. Headers are matched by NAME, never by offset —
 # these sheets get reshuffled (see sheets_reader._shift_layout for the history
@@ -246,7 +274,7 @@ def run_sync() -> dict:
     try:
         if not _claim(db):
             return {"status": "already_running"}
-        gc = get_client()
+        gc = _crawl_client()
         today = datetime.now(timezone.utc).date()
         try:
             registry = read_registry(gc)
@@ -263,6 +291,14 @@ def run_sync() -> dict:
         meta.progress_total = len(registry)
         db.commit()
 
+        def _touch():
+            """Keep the claim visibly alive — called before every long sleep so
+            a crawl waiting out a quota window is never mistaken for a dead one
+            (and taken over, doubling the crawl)."""
+            m = _get_meta(db)
+            m.heartbeat = datetime.now(timezone.utc)
+            db.commit()
+
         invalid_total, failed = 0, []
         for i, entry in enumerate(registry, 1):
             rows = None
@@ -272,13 +308,16 @@ def run_sync() -> dict:
                     break
                 except Exception as exc:
                     msg = str(exc)
-                    # Quota answers (429 / RESOURCE_EXHAUSTED) deserve a pause
-                    # and another try; anything else fails this sheet outright.
-                    if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "Quota" in msg:
-                        log.warning("worker-concerns sync: rate-limited on %s, retrying", entry["cell"])
+                    # Quota answers and transient transport errors (incl. the
+                    # per-request timeout) deserve a pause and another try;
+                    # anything else fails this sheet outright.
+                    if any(t in msg for t in _RETRYABLE) and attempt < _RATE_RETRIES - 1:
+                        log.warning("worker-concerns sync: retryable error on %s (%s), waiting %ss",
+                                    entry["cell"], msg[:120], _RATE_SLEEP)
+                        _touch()
                         time.sleep(_RATE_SLEEP)
                         continue
-                    log.warning("worker-concerns sync: cell %s failed: %s", entry["cell"], msg)
+                    log.warning("worker-concerns sync: cell %s failed: %s", entry["cell"], msg[:300])
                     break
             if rows is None:
                 failed.append(entry["cell"])
@@ -371,18 +410,18 @@ def register_boot_jobs() -> None:
     try:
         empty = db.query(WorkerConcern.id).first() is None
         meta = db.query(WorkerConcernSyncMeta).filter_by(id=1).first()
-        stale_claim = bool(
-            meta and meta.running and meta.heartbeat
-            and (datetime.now(timezone.utc) - meta.heartbeat) >= STALE_AFTER
-        )
-        if stale_claim:
-            # The previous process died mid-crawl; release the claim so the
-            # page's Refresh button isn't dead until someone notices.
+        if meta and meta.running:
+            # Whatever crawl the previous process was running died with it —
+            # release the claim so the page's Refresh button isn't dead.
             meta.running = False
             db.commit()
-        if empty:
+        # Catch-up crawl when the FIRST crawl never completed (empty table, or
+        # a mid-crawl death left rows but no last_synced). A crawl that died
+        # after at least one full success is left to the nightly job — data is
+        # stale but usable, and re-crawling on every deploy would thrash.
+        if empty or not (meta and meta.last_synced):
             schedule_at("worker-concerns-initial",
                         datetime.now(timezone.utc) + timedelta(seconds=90), run_sync)
-            log.info("worker-concerns: table empty, initial sync scheduled")
+            log.info("worker-concerns: no completed sync yet, catch-up crawl scheduled")
     finally:
         db.close()
