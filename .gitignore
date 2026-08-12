@@ -98,3 +98,6 @@ apps-script
 
 # –– graphify knowledge graph (generated, 5+ MB) ––––––––––
 graphify-out/
+
+# Antigravity
+.agents/
