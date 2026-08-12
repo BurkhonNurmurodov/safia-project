@@ -882,6 +882,52 @@ def _beat(db: Session, **fields) -> None:
         log.debug("leader-ai: heartbeat write failed", exc_info=True)
 
 
+def _note_refused(db: Session, state: str) -> None:
+    """Record a kick that lost the race WITHOUT erasing the run that won it.
+
+    `_beat` replaces the row whole, and that is correct for the drain's own
+    writes. It was wrong here. A losing kick wrote `state="busy"` over the live
+    drain's `running`, over its `done`, its `errors` and its pulse timestamp —
+    so pressing "Start now" during a run destroyed the only record of that run,
+    and the strip could then answer only "another review is running", with no
+    numbers, no age and no owner. Pressing the button for information was the
+    one action that removed it, until the winner's next per-verdict beat
+    rebuilt it up to three minutes later.
+
+    So: merge the refusal in BESIDE the live record. Only the refusal keys
+    move; the winner keeps `at`, and with it the seconds-since counter that is
+    the strip's only proof of life. The next real beat replaces the row whole
+    and drops the note, which is right — a refusal is news for one pulse.
+    """
+    import json
+
+    try:
+        row = db.query(AppSetting).filter_by(key=HEARTBEAT_SETTING).first()
+        cur: dict = {}
+        if row is not None:
+            try:
+                cur = json.loads(row.value) or {}
+            except Exception:
+                cur = {}
+        now = datetime.now(timezone.utc).isoformat()
+        # Nothing live to protect: the lock is held by a drain this process
+        # never saw — another worker, or one whose record predates it. Then the
+        # refusal IS the whole story and stands on its own.
+        if cur.get("state") != "running":
+            _beat(db, state=state, startedAt=now)
+            return
+        cur["refusedAt"] = now
+        cur["refusedState"] = state
+        row.value = json.dumps(cur)
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.debug("leader-ai: refusal note failed", exc_info=True)
+
+
 def _active_run_scope(db: Session) -> dict | None:
     """The slice an operator-started run is waiting on, or None for "anywhere".
 
@@ -1243,12 +1289,12 @@ def run_async(discover_first: bool = True) -> None:
             got = _lock.acquire(blocking=False)
             if not got:
                 log.debug("leader-ai: drain already running in this worker")
-                _beat(db, state="busy", startedAt=started)
+                _note_refused(db, "busy")
                 return
             holding = _try_db_lock(db)
             if not holding:
                 log.debug("leader-ai: another worker is draining, skipping kick")
-                _beat(db, state="locked", startedAt=started)
+                _note_refused(db, "locked")
                 return
             _beat(db, state="running", startedAt=started, done=0, errors=0)
             if discover_first:

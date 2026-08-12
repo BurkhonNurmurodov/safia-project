@@ -1241,10 +1241,33 @@ def _drain_state(db: Session) -> dict:
             except Exception:
                 secs = None
         state = beat.get("state") or "never"
+
+        def _ago(iso):
+            """Seconds since an ISO stamp, or None. Shared by the two questions
+            the strip could not answer: how long this drain has been spending,
+            and whether the press that got refused was just now."""
+            if not iso:
+                return None
+            try:
+                return max(0, int((datetime.now(timezone.utc)
+                                   - datetime.fromisoformat(iso)).total_seconds()))
+            except Exception:
+                return None
+
         out = {
             "state": state,
             "at": at,
             "secondsSince": secs,
+            # How long the drain holding the queue has been at it. `at` is the
+            # last PULSE — it ticks, so it can only ever say "alive", never
+            # "alive and forty minutes deep". Quota is spent per verdict over
+            # that whole span, so this is the number the person paying asks for.
+            "runningForS": _ago(beat.get("startedAt")),
+            # A kick that lost the race to this drain. Written beside the live
+            # record rather than over it, so "Start now" can report what it did
+            # instead of blanking the run it collided with.
+            "refusedAgoS": _ago(beat.get("refusedAt")),
+            "refusedState": beat.get("refusedState"),
             "done": beat.get("done"),
             "errors": beat.get("errors"),
             "quota": bool(beat.get("quota")),

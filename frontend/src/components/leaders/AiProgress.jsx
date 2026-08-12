@@ -44,6 +44,8 @@ const TXT = {
     dNext: "{t} dan keyin avtomatik", dNow: "Hozir boshlash",
     dQuota: "AI limiti tugadi", dStall: "{t} dan beri javob yo'q",
     dErr: "AI xatoligi", ago: "{t} oldin", errN: "{n} ta xato",
+    dJoined: "Bu tekshiruv allaqachon ketmoqda — bosganingiz shunga qo'shildi. Bir qator uchun ikki marta to'lanmaydi.",
+    dFor: "{t} dan beri ketmoqda", byWho: "boshlagan: {t}", byAuto: "o'zi boshladi (har 20 daqiqada)",
   },
   uz_cyrl: {
     title: "AI текшируви кетмоқда", of: "дан", checked: "текширилди",
@@ -62,6 +64,8 @@ const TXT = {
     dNext: "{t} дан кейин автоматик", dNow: "Ҳозир бошлаш",
     dQuota: "AI лимити тугади", dStall: "{t} дан бери жавоб йўқ",
     dErr: "AI хатолиги", ago: "{t} олдин", errN: "{n} та хато",
+    dJoined: "Бу текширув аллақачон кетмоқда — босганингиз шунга қўшилди. Бир қатор учун икки марта тўланмайди.",
+    dFor: "{t} дан бери кетмоқда", byWho: "бошлаган: {t}", byAuto: "ўзи бошлади (ҳар 20 дақиқада)",
   },
   ru: {
     title: "Идёт проверка ИИ", of: "из", checked: "проверено",
@@ -80,6 +84,8 @@ const TXT = {
     dNext: "автоматически через {t}", dNow: "Запустить сейчас",
     dQuota: "Лимит ИИ исчерпан", dStall: "нет ответа уже {t}",
     dErr: "Ошибка ИИ", ago: "{t} назад", errN: "ошибок: {n}",
+    dJoined: "Эта проверка уже идёт — ваш запуск присоединён к ней. За одну строку дважды не платится.",
+    dFor: "идёт уже {t}", byWho: "запустил: {t}", byAuto: "запустилась сама (каждые 20 мин)",
   },
   en: {
     title: "AI review running", of: "of", checked: "checked",
@@ -98,6 +104,8 @@ const TXT = {
     dNext: "auto-retry in {t}", dNow: "Start now",
     dQuota: "AI quota reached", dStall: "no response for {t}",
     dErr: "AI error", ago: "{t} ago", errN: "{n} failed",
+    dJoined: "This review is already running — your start joined it. No row is ever paid for twice.",
+    dFor: "running for {t}", byWho: "started by {t}", byAuto: "started itself (every 20 min)",
   },
 };
 
@@ -163,13 +171,43 @@ function DrainLine({ p, T, kick }) {
   else if (live) {
     tone = BRAND;
     text = T.dRun + (secs != null && secs > 4 ? ` · ${fmt(T.ago, dur(secs, T))}` : "…");
-  } else if (d.state === "busy" || d.state === "locked") text = T.dBusy;
+    // The press that lost the race, reported where the press was made. Saying
+    // nothing is what made "Start now" read as broken and as evidence of some
+    // unreachable second process: it did the only useful thing available — the
+    // run it would have started was already going, and the advisory lock is
+    // precisely what stops the same row being paid for twice.
+    if (d.refusedAgoS != null && d.refusedAgoS < 180) detail = T.dJoined;
+  } else if (d.state === "busy" || d.state === "locked") {
+    // Amber, not the grey of "queued": nothing pressed right now will start
+    // anything, and a state you cannot act on must not look like a resting one.
+    tone = "#eab308";
+    text = T.dBusy + (secs != null && secs > 4 ? ` · ${fmt(T.ago, dur(secs, T))}` : "");
+  }
 
   return (
     <div className="flex items-center gap-2 mt-1.5 text-[11px] flex-wrap">
       <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0${live ? " animate-pulse" : ""}`}
         style={{ background: tone }} />
       <span style={{ color: tone, fontWeight: tone === "var(--text-4)" ? 400 : 600 }}>{text}</span>
+      {/* WHO is spending, and for how long it has been spending. Both facts
+          were already in the payload and neither was ever rendered — which is
+          exactly how a drain nobody started reads as a process nobody can
+          reach. It is this queue, worked by the 20-minute timer unless a
+          person put their name on a run. `at` only ever proves the thing is
+          alive; `runningForS` is the span quota is charged across, so it is
+          the number the person paying for it asks for. */}
+      {live && (
+        <><span style={{ color: "var(--text-4)" }}>·</span>
+        <span style={{ color: "var(--text-3)" }}>
+          {p.by ? fmt(T.byWho, p.by) : T.byAuto}
+        </span></>
+      )}
+      {live && d.runningForS > 60 && (
+        <><span style={{ color: "var(--text-4)" }}>·</span>
+        <span className="tabular-nums" style={{ color: "var(--text-3)" }}>
+          {fmt(T.dFor, dur(d.runningForS, T))}
+        </span></>
+      )}
       {/* Failed rows, in the one place they explain something: a batch that
           errors on every row leaves `done` at 0, and without this the operator
           reads "nothing happened" when in fact everything did and failed. */}
