@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, CheckCircle2, XCircle, Trash2, Play, ChevronRight } from "lucide-react";
 import Button from "../ui/Button";
@@ -336,8 +336,22 @@ export default function AiProgress({ showIdle = false }) {
       setConfirm(false);
       qc.invalidateQueries({ queryKey: ["leader-ai-progress"] });
       qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+      qc.invalidateQueries({ queryKey: ["leaders"] });
     },
   });
+
+  // A finished drain changed what the register says about its own rows — the
+  // summary strip under the filters counts verdicts per report, and those
+  // arrive with the register payload. THE choke point for it: this component
+  // renders on every tab and is the only thing watching the queue, so «run»,
+  // «re-check» and «retry» are all covered here rather than each remembering
+  // to refresh a table it does not own. Once per finish, not once per poll —
+  // a whole register refetch every 4 seconds during a run is not a price the
+  // bar filling in smoothly is worth.
+  const runEnded = !!p?.justFinished;
+  useEffect(() => {
+    if (runEnded) qc.invalidateQueries({ queryKey: ["leaders"] });
+  }, [runEnded, qc]);
 
   // The run finished while this page was open: say so, once, then get out of
   // the way. `justFinished` only comes back on the poll that observes the

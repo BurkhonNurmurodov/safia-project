@@ -949,15 +949,24 @@ function KeyLegend({ T }) {
   );
 }
 
-/** Agreement rate — for a pilot, the number that actually decides its future. */
+/** Agreement rate — for a pilot, the number that actually decides its future.
+ *
+ *  Prints its own noun. This used to render «100% · 3», with what the percent
+ *  was OF and what the 3 counted available only in a hover title, on a page
+ *  read inside Telegram on a phone. The sample size stays visible beside the
+ *  rate on purpose: 100% of three rulings is not a measurement, and a reader
+ *  who cannot see the denominator has no way to know that. */
 export function AiCalibration({ cal, T }) {
   if (!cal || !cal.resolved) return null;
   const tone = cal.rate >= 70 ? C_GOOD : cal.rate >= 40 ? C_AI : C_BAD;
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tabular-nums"
-      title={T.aiCalTip} style={{ color: tone }}>
-      <Gauge size={13} />
-      {cal.rate}% · {cal.resolved}
+    <span className="inline-flex items-center gap-1.5 text-[11px]" title={T.aiCalTip}>
+      <Gauge size={13} style={{ color: tone }} className="flex-shrink-0" />
+      <span style={{ color: "var(--text-3)" }}>{T.aiCalLabel}</span>
+      <b className="font-bold tabular-nums" style={{ color: tone }}>{cal.rate}%</b>
+      <span className="tabular-nums" style={{ color: "var(--text-4)" }}>
+        {T.aiCalOf.replace("{n}", cal.resolved)}
+      </span>
     </span>
   );
 }

@@ -124,7 +124,6 @@ const TXT = {
     aiRecheckOne: "Bu vazifani qaytadan tekshirish",
     aiRunning: "Tekshirilmoqda…",
     aiFlagsN: "shubhali",
-    aiPendingN: "navbatda",
     aiQueuedN: "{n} ta yangi dalil AI tekshiruviga yuborildi",
     aiNote: "AI xulosasi — yordamchi belgi, yakuniy hukm emas.",
     tabAi: "AI tekshiruvi",
@@ -174,7 +173,23 @@ const TXT = {
     aiKeyEnvPinned: "Kalit serverdagi backend/.env faylida belgilangan — u ustun turadi va faqat o'sha yerda o'zgartiriladi.",
     aiOffBody: "Bu bo'lim ishlashi uchun Gemini API kaliti kerak. Kalitni Google AI Studio'dan oling va shu yerga qo'ying — u shifrlangan holda saqlanadi va boshqa hech qachon ko'rsatilmaydi.",
     aiCalTip: "AI bilan rozilik darajasi: siz tasdiqlagan belgilar ulushi va ko'rib chiqilgan belgilar soni",
+    aiCalLabel: "AI bilan rozilik",
+    aiCalOf: "{n} ta hukmdan",
     aiRejChip: "AI dalili rad etildi",
+    regShown: "Ko'rsatilgan hisobotlar",
+    regPhotos: "Dalil rasmlari",
+    regProofsN: "{n} ta vazifa dalilida",
+    regNoPhotos: "Bu hisobotlarda rasm yo'q",
+    regChecked: "AI tekshirgan dalil",
+    regLeftN: "{n} tasi hali tekshirilmagan",
+    regAllChecked: "Hammasi tekshirildi",
+    regNothingToCheck: "Tekshiriladigan dalil yo'q",
+    regErrN: "{n} tasini o'qib bo'lmadi",
+    regFlagged: "Shubhali dalil",
+    regOpenN: "{n} tasi hal qilinmagan",
+    regAllRuled: "Hammasi hal qilindi",
+    regClean: "Shubhali dalil yo'q",
+    regGlobalN: "Butun platforma bo'yicha {n} ta dalil navbatda",
     notAsked: "So'ralmagan", submittedAt: "Yuborilgan",
     details: "Batafsil", missed: "ta vazifa bajarilmadi", modalTitle: "Hisobot tafsilotlari",
     noIssues: "Muammo aniqlanmadi.", noReason: "Xatolik sababi ko'rsatilmagan.",
@@ -251,7 +266,6 @@ const TXT = {
     aiRecheckOne: "Бу вазифани қайтадан текшириш",
     aiRunning: "Текширилмоқда…",
     aiFlagsN: "шубҳали",
-    aiPendingN: "навбатда",
     aiQueuedN: "{n} та янги далил AI текширувига юборилди",
     aiNote: "AI хулосаси — ёрдамчи белги, якуний ҳукм эмас.",
     tabAi: "AI текшируви",
@@ -301,7 +315,23 @@ const TXT = {
     aiKeyEnvPinned: "Калит сервердаги backend/.env файлида белгиланган — у устун туради ва фақат ўша ерда ўзгартирилади.",
     aiOffBody: "Бу бўлим ишлаши учун Gemini API калити керак. Калитни Google AI Studio'дан олинг ва шу ерга қўйинг — у шифрланган ҳолда сақланади ва бошқа ҳеч қачон кўрсатилмайди.",
     aiCalTip: "AI билан розилик даражаси: сиз тасдиқлаган белгилар улуши ва кўриб чиқилган белгилар сони",
+    aiCalLabel: "AI билан розилик",
+    aiCalOf: "{n} та ҳукмдан",
     aiRejChip: "AI далили рад этилди",
+    regShown: "Кўрсатилган ҳисоботлар",
+    regPhotos: "Далил расмлари",
+    regProofsN: "{n} та вазифа далилида",
+    regNoPhotos: "Бу ҳисоботларда расм йўқ",
+    regChecked: "AI текширган далил",
+    regLeftN: "{n} таси ҳали текширилмаган",
+    regAllChecked: "Ҳаммаси текширилди",
+    regNothingToCheck: "Текшириладиган далил йўқ",
+    regErrN: "{n} тасини ўқиб бўлмади",
+    regFlagged: "Шубҳали далил",
+    regOpenN: "{n} таси ҳал қилинмаган",
+    regAllRuled: "Ҳаммаси ҳал қилинди",
+    regClean: "Шубҳали далил йўқ",
+    regGlobalN: "Бутун платформа бўйича {n} та далил навбатда",
     notAsked: "Сўралмаган", submittedAt: "Юборилган",
     details: "Батафсил", missed: "та вазифа бажарилмади", modalTitle: "Ҳисобот тафсилотлари",
     noIssues: "Муаммо аниқланмади.", noReason: "Хатолик сабаби кўрсатилмаган.",
@@ -378,7 +408,6 @@ const TXT = {
     aiRecheckOne: "Проверить эту задачу заново",
     aiRunning: "Проверяется…",
     aiFlagsN: "сомнительных",
-    aiPendingN: "в очереди",
     aiQueuedN: "Новых подтверждений отправлено на проверку ИИ: {n}",
     aiNote: "Вывод ИИ — подсказка, а не окончательное решение.",
     tabAi: "Проверка ИИ",
@@ -428,7 +457,23 @@ const TXT = {
     aiKeyEnvPinned: "Ключ задан в backend/.env на сервере — он имеет приоритет и меняется только там.",
     aiOffBody: "Для работы раздела нужен API-ключ Gemini. Получите его в Google AI Studio и вставьте здесь — он сохранится в зашифрованном виде и больше нигде не показывается.",
     aiCalTip: "Согласие с ИИ: доля подтверждённых вами меток и число разобранных меток",
+    aiCalLabel: "Согласие с ИИ",
+    aiCalOf: "из {n} решений",
     aiRejChip: "Подтверждение отклонено",
+    regShown: "Показано отчётов",
+    regPhotos: "Фото-доказательства",
+    regProofsN: "в {n} подтверждениях задач",
+    regNoPhotos: "В этих отчётах нет фото",
+    regChecked: "Проверено ИИ",
+    regLeftN: "Ещё не проверено: {n}",
+    regAllChecked: "Проверено всё",
+    regNothingToCheck: "Проверять нечего",
+    regErrN: "Не удалось прочитать: {n}",
+    regFlagged: "Сомнительных",
+    regOpenN: "Не разобрано: {n}",
+    regAllRuled: "Все разобраны",
+    regClean: "Сомнительных нет",
+    regGlobalN: "По всей платформе в очереди {n} подтверждений",
     notAsked: "Не задавалась", submittedAt: "Отправлено",
     details: "Детали", missed: "задач пропущено", modalTitle: "Детали отчёта",
     noIssues: "Проблем не выявлено.", noReason: "Причина не указана.",
@@ -505,7 +550,6 @@ const TXT = {
     aiRecheckOne: "Re-check this task",
     aiRunning: "Reviewing…",
     aiFlagsN: "flagged",
-    aiPendingN: "queued",
     aiQueuedN: "{n} new proofs sent to AI review",
     aiNote: "The AI verdict is a hint, not a final ruling.",
     tabAi: "AI review",
@@ -555,7 +599,23 @@ const TXT = {
     aiKeyEnvPinned: "A key is pinned in backend/.env on the server — it takes precedence and can only be changed there.",
     aiOffBody: "This section needs a Gemini API key. Get one from Google AI Studio and paste it here — it is stored encrypted and never shown again.",
     aiCalTip: "Agreement with the AI: the share of flags you upheld, and how many you have ruled on",
+    aiCalLabel: "Agreement with AI",
+    aiCalOf: "of {n} rulings",
     aiRejChip: "Proof rejected",
+    regShown: "Reports shown",
+    regPhotos: "Proof photos",
+    regProofsN: "across {n} task proofs",
+    regNoPhotos: "No photos in these reports",
+    regChecked: "Proofs AI checked",
+    regLeftN: "{n} not checked yet",
+    regAllChecked: "All checked",
+    regNothingToCheck: "Nothing to check",
+    regErrN: "{n} could not be read",
+    regFlagged: "Flagged proofs",
+    regOpenN: "{n} awaiting your decision",
+    regAllRuled: "All resolved",
+    regClean: "None flagged",
+    regGlobalN: "{n} proofs queued platform-wide",
     notAsked: "Not asked", submittedAt: "Submitted",
     details: "Details", missed: "tasks missed", modalTitle: "Submission Details",
     noIssues: "No issues reported.", noReason: "No reason provided for failure.",
@@ -959,6 +1019,34 @@ function AiChip({ n, T }) {
       style={{ background: hexA(C_AI, 0.14), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
       <Sparkles size={11} />{n}
     </span>
+  );
+}
+
+// One cell of the register's summary strip.
+//
+// Every cell states its own unit in the label and its own remainder in the
+// sub-line, because the strip this replaced was four bare numbers («101
+// shubhali · 888 navbatda · 100% · 3») whose nouns lived in a hover title —
+// and this page is read inside Telegram on a phone, where nothing hovers.
+// Label → value → what is LEFT, in that order: the value answers "how much",
+// the sub-line answers the only follow-up anyone has, "how much isn't".
+function RegStat({ label, value, sub, tone, onClick, title }) {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag {...(onClick ? { type: "button", onClick } : {})} title={title}
+      className={`px-3 py-2 text-left min-w-0 ${onClick ? "cursor-pointer transition-opacity hover:opacity-80" : ""}`}
+      style={{ background: "var(--bg-inner)" }}>
+      <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+        {label}
+      </div>
+      <div className="text-[15px] font-bold tabular-nums leading-tight mt-0.5"
+        style={{ color: tone || "var(--text-1)" }}>
+        {value}
+      </div>
+      {sub && (
+        <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }}>{sub}</div>
+      )}
+    </Tag>
   );
 }
 
@@ -1753,6 +1841,10 @@ export default function Leaders() {
         tasks: { ...(old?.tasks || {}), [String(vars.task_id)]: res.task },
       }));
       qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
+      // One more proof judged — the register's own summary counts verdicts per
+      // report, so it has to hear about it too. This one bypasses the drain
+      // (and therefore AiProgress, which refreshes the register on a finish).
+      qc.invalidateQueries({ queryKey: ["leaders"] });
     },
     // The failure belongs to the card that was tapped, so it is shown there —
     // a toast for a per-card action would leave the card looking untouched.
@@ -2330,6 +2422,51 @@ export default function Leaders() {
     return arr;
   }, [filtered, tSearch, tBand, tSort, tl]);
 
+  // What the rows ON SCREEN contain — the register's summary strip.
+  //
+  // Derived from `displayRows`, so every filter above it (period, shift,
+  // supervisor, leader, the search box, the score band) moves these numbers.
+  // The header used to print platform-wide AI totals here: they sat beside a
+  // filtered table, never moved when the filter did, and so read as a claim
+  // about rows they had nothing to do with.
+  //
+  // Photos and proofs are counted from the tasks the row already carries;
+  // `r.ai` is what the reviewer has done to that report (see
+  // services/leader_ai.stats_by_uid). Two sources, but they count different
+  // things — the row knows what was FILED, only the server knows what was
+  // JUDGED — so neither can be derived from the other.
+  const regStats = useMemo(() => {
+    let photos = 0, proofs = 0, reviewable = 0;
+    let checked = 0, flagged = 0, open = 0, errors = 0;
+    for (const r of displayRows) {
+      for (const tk of r.tasks || []) {
+        const n = (tk.photo || "").split(",")
+          .filter((p) => p.trim().includes("http")).length + (tk.media || []).length;
+        if (!n) continue;
+        photos += n;
+        proofs += 1;
+        // The reviewer's own definition of reviewable: answered «Ha», with at
+        // least one photo. Anything else has nothing for the AI to look at.
+        if (tk.answered !== false && tk.done) reviewable += 1;
+      }
+      const a = r.ai;
+      if (!a) continue;
+      checked += a.checked || 0;
+      flagged += a.flagged || 0;
+      open    += a.open || 0;
+      errors  += a.error || 0;
+    }
+    return {
+      shown: displayRows.length, total: filtered.length,
+      photos, proofs,
+      // A verdict can outlive the answer it judged (an admin flipped the task
+      // to «not done» after the photo was checked). Never print 9/7: the
+      // denominator gives way, because the count of judgements is the fact.
+      reviewable: Math.max(reviewable, checked),
+      checked, flagged, open, errors,
+    };
+  }, [displayRows, filtered.length]);
+
   const toggleSort = (key) => setTSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
   // colored score-band chips, matching the badge palette
   const BANDS = [
@@ -2612,6 +2749,11 @@ export default function Leaders() {
           scope={scope} onClearScope={clearScope}
           actions={
             <>
+              {/* Moved off the register header, where it was «100% · 3» with
+                  its only explanation in a hover title — and a phone does not
+                  hover. It belongs to the reviewer's own work, so it lives on
+                  the tab where that work is done, spelled out. */}
+              <AiCalibration cal={aiData?.calibration} T={T} />
               <AiRecheck errorCount={aiData?.counts?.error || 0} />
               {/* Destructive, so it lives ONLY here — the AI tab is where an
                   admin comes to work on the reviewer itself. Deliberately not
@@ -2855,27 +2997,11 @@ export default function Leaders() {
 
         {/* Recent submissions */}
         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          {/* Actions only. The counts moved OUT of this row and under the
+              filters, where they can describe the rows the filters left. */}
           <SectionHead icon={ListChecks} title={T.tableTitle}
             right={aiOn ? (
-              /* Queue state for the pilot. Without it "no flags" is ambiguous —
-                 it reads the same whether nothing is suspect or nothing has
-                 been reviewed yet. The counts say which. */
               <span className="flex items-center gap-2">
-                {/* OPEN, not lifetime-flagged: the strip is a to-do, and the
-                    tab beside it is where the doing happens. */}
-                {aiTodo > 0 && (
-                  <button onClick={() => setTab("ai")}
-                    className="text-[11px] font-semibold tabular-nums hover:underline underline-offset-2"
-                    style={{ color: C_AI }}>
-                    {aiTodo} {T.aiFlagsN}
-                  </button>
-                )}
-                {!!(aiData?.counts?.pending || aiData?.counts?.error) && (
-                  <span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                    {(aiData.counts.pending || 0) + (aiData.counts.error || 0)} {T.aiPendingN}
-                  </span>
-                )}
-                <AiCalibration cal={aiData?.calibration} T={T} />
                 <Button size="sm" variant="secondary" tint loading={aiRunMut.isPending}
                   icon={<Sparkles size={13} />} onClick={() => aiRunMut.mutate()}>
                   {aiRunMut.isPending ? T.aiRunning : T.aiRun}
@@ -2901,6 +3027,70 @@ export default function Leaders() {
               options={BANDS.map((b) => [b.id, b.label])}
             />
           </div>
+
+          {/* ── what you are looking at ──────────────────────────────────────
+              Below the filters on purpose: this band is the RESULT of them, so
+              it reads top-down as «narrow it → here is what is left». Every
+              figure is summed over the rows on screen. Two cells for everyone
+              (what is here), two more for an admin with the reviewer on (what
+              the machine has done to it). */}
+          <div className={`grid gap-px ${aiOn ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2"}`}
+            style={{ background: "var(--border)", borderBottom: "1px solid var(--border)" }}>
+            <RegStat label={T.regShown}
+              value={regStats.shown === regStats.total
+                ? regStats.total.toLocaleString()
+                : `${regStats.shown.toLocaleString()} / ${regStats.total.toLocaleString()}`} />
+            <RegStat label={T.regPhotos} value={regStats.photos.toLocaleString()}
+              sub={regStats.proofs
+                ? T.regProofsN.replace("{n}", regStats.proofs.toLocaleString())
+                : T.regNoPhotos} />
+            {aiOn && (
+              <RegStat label={T.regChecked}
+                value={regStats.reviewable
+                  ? `${regStats.checked.toLocaleString()} / ${regStats.reviewable.toLocaleString()}`
+                  : "—"}
+                // Amber only while work is outstanding: a fully-checked scope
+                // is not an achievement to celebrate in colour, it is the
+                // normal state, and colouring it would train the eye to skip
+                // the one case that matters.
+                tone={!regStats.reviewable ? "var(--text-3)"
+                  : regStats.checked < regStats.reviewable ? C_AI : C_GOOD}
+                sub={!regStats.reviewable ? T.regNothingToCheck
+                  : regStats.errors
+                    ? T.regErrN.replace("{n}", regStats.errors.toLocaleString())
+                  : regStats.checked < regStats.reviewable
+                    ? T.regLeftN.replace("{n}", (regStats.reviewable - regStats.checked).toLocaleString())
+                    : T.regAllChecked} />
+            )}
+            {aiOn && (
+              /* The one cell that is a door: a flag is work, and the queue is
+                 the next tab. Only clickable while something is actually
+                 owed — a button that lands you on an empty queue is a lie
+                 about there being something to do. */
+              <RegStat label={T.regFlagged} value={regStats.flagged.toLocaleString()}
+                tone={regStats.open ? C_AI : regStats.flagged ? "var(--text-1)" : "var(--text-3)"}
+                onClick={regStats.open ? () => setTab("ai") : undefined}
+                title={regStats.open ? T.aiRowBadge : undefined}
+                sub={!regStats.flagged ? T.regClean
+                  : regStats.open
+                    ? T.regOpenN.replace("{n}", regStats.open.toLocaleString())
+                    : T.regAllRuled} />
+            )}
+          </div>
+
+          {/* The queue the «AI tekshiruvi» button actually drains is the whole
+              platform's, not this filter's — said out loud, and labelled as
+              such, because it used to sit unlabelled beside the numbers above
+              and was read as one of them. */}
+          {aiOn && (aiData?.counts?.pending || 0) > 0 && (
+            <div className="px-3 py-1.5 flex items-center gap-1.5 text-[11px]"
+              style={{ color: "var(--text-4)", borderBottom: "1px solid var(--border)" }}>
+              <Sparkles size={11} className="flex-shrink-0" />
+              <span className="tabular-nums">
+                {T.regGlobalN.replace("{n}", aiData.counts.pending.toLocaleString())}
+              </span>
+            </div>
+          )}
 
           {displayRows.length === 0 ? (
             <div className="p-8 text-center text-sm" style={{ color: "var(--text-4)" }}>{T.noMatch}</div>

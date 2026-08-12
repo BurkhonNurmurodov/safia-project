@@ -408,6 +408,17 @@ def get_leaders(
 
     _apply_overlays(db, data)
 
+    # Admin-only: what the AI has done to each report, so the register header
+    # can count the rows actually on screen. Stamped on the row rather than
+    # fetched beside it — the header's numbers and the table's rows then come
+    # out of one read and cannot describe different sets.
+    if role == "admin":
+        ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
+        for row in data:
+            hit = ai_stats.get(row["uid"])
+            if hit:
+                row["ai"] = hit
+
     return {
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,

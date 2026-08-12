@@ -1314,6 +1314,61 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
     return out
 
 
+def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[str, int]]:
+    """report uid → what the reviewer has actually done to THAT report.
+
+    The register header used to print platform-wide totals beside a filtered
+    table: «101 flagged · 888 queued» never moved when the filter did, and read
+    as a description of rows it had nothing to do with. Per-report counts let
+    the client sum exactly the rows on screen, which is the only figure a
+    reader can check against what they can see.
+
+    Aggregated in SQL and scoped to the dates the register is shipping, so this
+    map can never outgrow the row set it annotates. The pending queue is a
+    backfill of everything ever filed — it must never be walked row by row for
+    a header.
+    """
+    if dates is not None and not dates:
+        return {}
+    q = (db.query(LeaderAiReview.ref.label("ref"),
+                  LeaderAiReview.status.label("status"),
+                  LeaderAiReview.resolution.label("resolution"),
+                  func.count(LeaderAiReview.id).label("n"),
+                  func.coalesce(func.sum(LeaderAiReview.photos), 0).label("imgs"))
+         .group_by(LeaderAiReview.ref, LeaderAiReview.status,
+                   LeaderAiReview.resolution))
+    if dates is not None:
+        q = q.filter(LeaderAiReview.date.in_(dates))
+    rows = q.all()
+    if not rows:
+        return {}
+
+    uids = uid_map(db, rows)                # Row carries `.ref`, like a verdict
+    out: dict[str, dict[str, int]] = {}
+    for r in rows:
+        uid = uids.get(r.ref)
+        if not uid:
+            continue
+        s = out.setdefault(uid, {"checked": 0, "flagged": 0, "open": 0,
+                                 "pending": 0, "error": 0, "images": 0})
+        if r.status in ("ok", "flagged"):
+            # A verdict exists either way — "checked" is the machine's work,
+            # not its opinion, so a clean pass counts exactly like a flag.
+            s["checked"] += r.n
+            s["images"] += int(r.imgs or 0)
+        if r.status == "flagged":
+            s["flagged"] += r.n
+            # Still owed a human decision. `flagged` only grows; this is the
+            # one that can reach zero, so it is what the header calls a to-do.
+            if r.resolution is None:
+                s["open"] += r.n
+        elif r.status == "pending":
+            s["pending"] += r.n
+        elif r.status == "error":
+            s["error"] += r.n
+    return out
+
+
 def task_weights(db: Session) -> dict[int, int]:
     """task_id → the catalog weight, for the rejection deduction.
 

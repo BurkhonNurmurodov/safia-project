@@ -116,17 +116,23 @@ function clockOutMin(clock) {
   return parseHHMM(parts[parts.length - 1]);
 }
 
+// The ROLE half of the load rule — mirrors CALC_ROWS_FILTER in backend
+// /api/workers. Kept separate from the attendance half so the «counted in
+// zagruzka» card can divide by the people the load counts, not by everyone on
+// the day: a denominator of all rows compares 48 confectioners against 80
+// bodies of every trade and reads as a shortfall that isn't one.
+function isZagruzkaCalcRole(worker) {
+  const title = String(worker.job_title ?? "").trim();
+  if (title.startsWith(ZAGRUZKA_ROLE_PREFIX) || ZAGRUZKA_ROLE_EXACT.has(title)) return true;
+  // A blank title only joins the load when the row carries hours — there is
+  // nothing else to attribute it to.
+  const hours = Number(worker.hours_worked);
+  return isBlankText(title) && Number.isFinite(hours) && hours > 0;
+}
+
 function isZagruzkaCalcWorker(worker) {
   // Must have actually come to work (valid clock + hours > 0)
-  if (!hasWorked(worker)) return false;
-  // Mirrors CALC_ROWS_FILTER in backend /api/workers.
-  const title = String(worker.job_title ?? "").trim();
-  const hours = Number(worker.hours_worked);
-  const hasHours = Number.isFinite(hours) && hours > 0;
-  const titleMissing = isBlankText(title);
-  return title.startsWith(ZAGRUZKA_ROLE_PREFIX)
-    || ZAGRUZKA_ROLE_EXACT.has(title)
-    || (titleMissing && hasHours);
+  return hasWorked(worker) && isZagruzkaCalcRole(worker);
 }
 
 
@@ -512,6 +518,12 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
     [allWorkers]
   );
   const zagruzkaCount    = zagruzkaWorkers.length;
+  // Denominator for the load card: everyone in a load role on the day, present
+  // or not — the same population the numerator is drawn from.
+  const zagruzkaRoleTotal = useMemo(
+    () => allWorkers.filter(isZagruzkaCalcRole).length,
+    [allWorkers]
+  );
   const totalWorkedHours = useMemo(() => sumHours(zagruzkaWorkers), [zagruzkaWorkers]);
   const avgWorkedHours   = zagruzkaCount ? totalWorkedHours / zagruzkaCount : null;
 
@@ -633,7 +645,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
           <KPICard
             label={t("staff.kpiCountedZagruzka")}
             value={zagruzkaCount}
-            sub={`${t("staff.of")} ${totalWorkers} ${t("staff.total")}`}
+            sub={`${t("staff.of")} ${zagruzkaRoleTotal} ${t("staff.total")}`}
           />
           <KPICard
             label={t("staff.kpiTotalHours")}
@@ -944,9 +956,12 @@ export function CellDayView({ date, cellSel, hasCellData }) {
   const cameRatio = allRows.length ? worked.length / allRows.length : null;
   // The load slice by the by-cell rule: the cell must be ticked on the
   // /cell-attendance «Sozlash» tab AND the row must hold a load role.
-  const zagRows = cellInfo?.in_load === true
+  const zagAll  = cellInfo?.in_load === true
     ? allRows.filter(r => LOAD_ROLE_RE.test(r.job_title || ""))
     : [];
+  // Counted = a load role that also showed up; `zagAll` is the population it is
+  // measured against, so the card never divides load roles by every trade.
+  const zagRows = zagAll.filter(r => r.status === "worked");
   const totalH = zagRows.reduce((s, r) => s + (r.hours_worked || 0), 0);
   const avgH   = zagRows.length ? totalH / zagRows.length : null;
 
@@ -981,7 +996,7 @@ export function CellDayView({ date, cellSel, hasCellData }) {
           <KPICard
             label={t("staff.kpiCountedZagruzka")}
             value={zagRows.length}
-            sub={`${t("staff.of")} ${allRows.length} ${t("staff.total")}`}
+            sub={`${t("staff.of")} ${zagAll.length} ${t("staff.total")}`}
           />
           <KPICard
             label={t("staff.kpiTotalHours")}
