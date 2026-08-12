@@ -64,8 +64,8 @@ STATUS_COLOR = {
 
 FONT = "Segoe UI"
 NUM = "#,##0"
+PCT0 = '0"%"'
 PCT1 = '0.0"%"'
-PCT2 = '0.00"%"'
 
 
 def _fill(color: str) -> PatternFill:
@@ -288,7 +288,7 @@ def _overview(wb: Workbook, p: dict) -> None:
                 last = j == len(vals) - 1
                 color = INK if last else (colors[j] if v else INK_FAINT)
                 _block(ws, row, c, row, c + 1, v, fill=bg, border=BOX, align=RIGHT,
-                       fmt=(NUM if last or not pct else PCT2),
+                       fmt=(NUM if last or not pct else PCT0),
                        font=Font(name=FONT, size=9 if child else 10,
                                  bold=not child, color=color))
             row += 1
@@ -302,7 +302,7 @@ def _overview(wb: Workbook, p: dict) -> None:
             for j, v in enumerate(total.get("values") or []):
                 c = C1 + 2 + j * 2
                 _block(ws, row, c, row, c + 1, v, fill=_fill(BRAND_SOFT), border=top, align=RIGHT,
-                       fmt=(NUM if j == len(total["values"]) - 1 or not pct else PCT2),
+                       fmt=(NUM if j == len(total["values"]) - 1 or not pct else PCT0),
                        font=Font(name=FONT, size=10, bold=True, color=INK))
             row += 1
         ws.freeze_panes = ws.cell(first, C1)

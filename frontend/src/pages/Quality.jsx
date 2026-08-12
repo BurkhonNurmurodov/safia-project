@@ -110,6 +110,25 @@ const bumpStatus = (m, st) => {
   m.total++;
 };
 
+// The same four buckets as WHOLE percentages, in column order. Two decimals
+// across four columns is precision nobody acts on — «71.43%» is read as «71».
+// Rounding each cell on its own, though, lets a row come to 99% or 101%, which
+// breaks the one thing the columns promise: they are one row's own 100%. So the
+// points are handed out by largest remainder — floors first, the leftovers to
+// the biggest fractions — and the row still sums to exactly 100.
+const pctSplit = (m) => {
+  const vals = [m.resolved, m.notSolved, m.recurring, m.waiting];
+  if (!m.total) return vals.map(() => 0);
+  const raw = vals.map((v) => (v / m.total) * 100);
+  const out = raw.map((r) => Math.floor(r));
+  let left = Math.round(raw.reduce((a, b) => a + b, 0)) - out.reduce((a, b) => a + b, 0);
+  raw
+    .map((r, i) => [i, r - Math.floor(r)])
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([i]) => { if (left > 0) { out[i]++; left--; } });
+  return out;
+};
+
 // One brigadir's corrective-action split — the four buckets of the «status by
 // supervisor» table. Reused for the supervisor closure ribbon (current window)
 // and its previous-window twin that the ribbon's deltas are measured against.
@@ -1625,7 +1644,6 @@ export default function Quality() {
 
     // The status matrix honours the card's Кол-во/% toggle, exactly as displayed.
     const asPct = supStatMode === "pct";
-    const share = (v, tot) => (tot ? Math.round((v / tot) * 10000) / 100 : 0);
     const grand = supStatus.reduce(
       (a, s) => ({
         resolved: a.resolved + s.resolved, notSolved: a.notSolved + s.notSolved,
@@ -1633,8 +1651,10 @@ export default function Quality() {
       }),
       { resolved: 0, notSolved: 0, recurring: 0, waiting: 0, total: 0 }
     );
+    // Same whole-percent split the cells use — a workbook that carried two
+    // decimals would disagree with the table it was exported from.
     const statRow = (s) => (asPct
-      ? [share(s.resolved, s.total), share(s.notSolved, s.total), share(s.recurring, s.total), share(s.waiting, s.total), s.total]
+      ? [...pctSplit(s), s.total]
       : [s.resolved, s.notSolved, s.recurring, s.waiting, s.total]);
 
     return {
@@ -1998,27 +2018,30 @@ export default function Quality() {
                   const kidId = (i) => `${rowId}-${i}`;
                   // One cell renderer for both depths: `m` is whichever split owns
                   // the row, so percentages are always that row's own 100%.
-                  const cell = (m, v, color, child) => {
-                    const text = supStatMode === "pct"
-                      ? `${m.total ? ((v / m.total) * 100).toFixed(2) : "0.00"}%`
-                      : v.toLocaleString("ru-RU");
+                  // `p` is the row's whole-percent split (null in count mode), so
+                  // the four cells share ONE allocation and cannot disagree.
+                  const cell = (p, i, v, color, child) => {
+                    const text = p ? `${p[i]}%` : v.toLocaleString("ru-RU");
                     return (
                       <td className={`px-3 py-2 text-right tabular-nums font-semibold ${child ? "text-[12px]" : ""}`}
                         style={{ color: v === 0 ? "var(--text-4)" : color, opacity: child ? 0.92 : 1 }}>{text}</td>
                     );
                   };
-                  const statCells = (m, child) => (
-                    <>
-                      {cell(m, m.resolved, C_DONE, child)}
-                      {cell(m, m.notSolved, C_OPEN, child)}
-                      {cell(m, m.recurring, C_REPEAT, child)}
-                      {cell(m, m.waiting, C_WAITCOL, child)}
-                      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${child ? "text-[12px]" : ""}`}
-                        style={{ color: child ? "var(--text-2)" : "var(--text-1)" }}>
-                        {m.total.toLocaleString("ru-RU")}
-                      </td>
-                    </>
-                  );
+                  const statCells = (m, child) => {
+                    const p = supStatMode === "pct" ? pctSplit(m) : null;
+                    return (
+                      <>
+                        {cell(p, 0, m.resolved, C_DONE, child)}
+                        {cell(p, 1, m.notSolved, C_OPEN, child)}
+                        {cell(p, 2, m.recurring, C_REPEAT, child)}
+                        {cell(p, 3, m.waiting, C_WAITCOL, child)}
+                        <td className={`px-3 py-2 text-right tabular-nums font-semibold ${child ? "text-[12px]" : ""}`}
+                          style={{ color: child ? "var(--text-2)" : "var(--text-1)" }}>
+                          {m.total.toLocaleString("ru-RU")}
+                        </td>
+                      </>
+                    );
+                  };
                   return (
                     <Fragment key={s.name}>
                       <tr style={open ? { background: "var(--bg-inner)" } : undefined}>
