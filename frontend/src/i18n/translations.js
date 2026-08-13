@@ -11,7 +11,7 @@ const t = {
     "nav.support":         "Qo'llab-quvvatlash bilan bog'lanish",
     "nav.staff":           "Verifix to'g'irlash",
     "nav.daily":           "Kunlik",
-    "nav.production":      "Ishlab chiqarish",
+    "nav.production":      "Ishlab chiqarish fayli",
     "nav.trudoyomkost":    "Plan Prognoz",
     "nav.leaders":         "Lider nazorati",
     "nav.cells":           "Yacheykalar",
@@ -2485,7 +2485,7 @@ const t = {
     "admin.tr.noKeys":        "Kalitlar yo'q.",
 
     // ── Production (Ishlab chiqarish) ────────────────────────────────────────
-    "production.title":            "Ishlab chiqarish",
+    "production.title":            "Ishlab chiqarish fayli",
     "production.prevDay":          "Oldingi kun",
     "production.nextDay":          "Keyingi kun",
     "production.today":            "Bugun",
@@ -2768,7 +2768,7 @@ const t = {
     "nav.support":         "Қўллаб-қувватлаш билан боғланиш",
     "nav.staff":           "Verifix тўғрилаш",
     "nav.daily":           "Кунлик",
-    "nav.production":      "Ишлаб чиқариш",
+    "nav.production":      "Ишлаб чиқариш файли",
     "nav.trudoyomkost":    "План Прогноз",
     "nav.leaders":         "Лидер назорати",
     "nav.cells":           "Ячейкалар",
@@ -5242,7 +5242,7 @@ const t = {
     "admin.tr.noKeys":        "Калитлар йўқ.",
 
     // ── Production (Ишлаб чиқариш) ───────────────────────────────────────────
-    "production.title":            "Ишлаб чиқариш",
+    "production.title":            "Ишлаб чиқариш файли",
     "production.prevDay":          "Олдинги кун",
     "production.nextDay":          "Кейинги кун",
     "production.today":            "Бугун",
@@ -5525,7 +5525,7 @@ const t = {
     "nav.support":         "Связаться с поддержкой",
     "nav.staff":           "Verifix правка",
     "nav.daily":           "Ежедневно",
-    "nav.production":      "Производство",
+    "nav.production":      "Производственный файл",
     "nav.trudoyomkost":    "Прогноз плана",
     "nav.leaders":         "Контроль лидеров",
     "nav.cells":           "Ячейки",
@@ -7999,7 +7999,7 @@ const t = {
     "admin.tr.noKeys":        "Нет ключей.",
 
     // ── Production (Производство) ────────────────────────────────────────────
-    "production.title":            "Производство",
+    "production.title":            "Производственный файл",
     "production.prevDay":          "Предыдущий день",
     "production.nextDay":          "Следующий день",
     "production.today":            "Сегодня",
@@ -8282,7 +8282,7 @@ const t = {
     "nav.support":         "Contact support",
     "nav.staff":           "Verifix edit",
     "nav.daily":           "Daily",
-    "nav.production":      "Production",
+    "nav.production":      "Workload file",
     "nav.trudoyomkost":    "Plan Forecasting",
     "nav.leaders":         "Leader Monitoring",
     "nav.cells":           "Cells",
@@ -10756,7 +10756,7 @@ const t = {
     "admin.tr.noKeys":        "No keys.",
 
     // ── Production ───────────────────────────────────────────────────────────
-    "production.title":            "Production",
+    "production.title":            "Workload file",
     "production.prevDay":          "Previous day",
     "production.nextDay":          "Next day",
     "production.today":            "Today",
