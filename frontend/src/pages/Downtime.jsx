@@ -255,6 +255,19 @@ export default function Downtime() {
   const donutColors = filterActive
     ? CAT_COLORS.map((c, i) => (selectedCats.includes(catNames[i]) ? c : `${c}33`))
     : CAT_COLORS;
+  // The centre counts whatever the doughnut is currently ABOUT. Desktop gets the
+  // per-slice number from hover; a phone has no hover, so a selection that leaves
+  // the fleet total sitting in the middle reads as "nothing happened" — the centre
+  // must name the selection and total only it.
+  const selectedTotal = catNames.reduce(
+    (s, cat, i) => (selectedCats.includes(cat) ? s + catTotals[i] : s),
+    0
+  );
+  const donutCenterLabel = filterActive
+    ? (selectedCats.length === 1
+        ? selectedCats[0]
+        : `${selectedCats.length} ${t("filter.selected2")}`)
+    : t("downtime.donutCenter");
   // Zero-minute categories keep their legend entry, but clicking one would only
   // strike through a slice that isn't drawn — make those labels inert. Legend
   // items are focusable buttons (tabindex + "press Enter to toggle" hint), so
@@ -303,7 +316,7 @@ export default function Downtime() {
             show: true,
             name: { color: "var(--text-2, #6b7280)", fontSize: "11px" },
             value: { color: "var(--text-1, #1f2937)", fontSize: "16px", fontWeight: 700, formatter: (val) => fmt(Number(val)) },
-            total: { show: true, label: t("downtime.donutCenter"), color: "var(--text-2, #6b7280)", fontSize: "11px", formatter: () => fmt(totalDowntime) },
+            total: { show: true, label: donutCenterLabel, color: "var(--text-2, #6b7280)", fontSize: "11px", formatter: () => fmt(filterActive ? selectedTotal : totalDowntime) },
           },
         },
       },
