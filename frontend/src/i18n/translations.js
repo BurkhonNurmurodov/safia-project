@@ -2,7 +2,7 @@ const t = {
   uz: {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Umumiy ko'rinish",
-    "nav.zagruzka":        "Zagruzka",
+    "nav.zagruzka":        "Zagruzka foizi",
     "nav.leaderboard":     "Liderlar",
     "nav.workers":         "Odam Soni",
     "nav.planFulfillment": "Plan Bajarish",
@@ -810,8 +810,8 @@ const t = {
     "fm.planOnlyNote":              "Faqat rejaga bog'liq — haqiqiy ishlab chiqarish formulada qisqaradi.",
 
     // ── Zagruzka ──────────────────────────────────────────────────────────────
-    "zagruzka.title":      "Zagruzka",
-    "zagruzka.subtitle":   "Yuk % · Zagruzka",
+    "zagruzka.title":      "Zagruzka foizi",
+    "zagruzka.subtitle":   "Zagruzka foizi",
     "leaderboard.subtitle": "Brigadirlar reytingi",
     "leaderboard.period.week": "Hafta",
     "leaderboard.period.month": "Oy",
@@ -2759,7 +2759,7 @@ const t = {
   uz_cyrl: {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Умумий кўриниш",
-    "nav.zagruzka":        "Загрузка",
+    "nav.zagruzka":        "Загрузка фоизи",
     "nav.leaderboard":     "Лидерлар",
     "nav.workers":         "Одам Сони",
     "nav.planFulfillment": "План Бажариш",
@@ -3567,8 +3567,8 @@ const t = {
     "fm.planOnlyNote":              "Фақат режага боғлиқ — ҳақиқий ишлаб чиқариш формулада қисқаради.",
 
     // ── Zagruzka ──────────────────────────────────────────────────────────────
-    "zagruzka.title":      "Загрузка",
-    "zagruzka.subtitle":   "Юк % · Загрузка",
+    "zagruzka.title":      "Загрузка фоизи",
+    "zagruzka.subtitle":   "Загрузка фоизи",
     "leaderboard.subtitle": "Бригадирлар рейтинги",
     "leaderboard.period.week": "Ҳафта",
     "leaderboard.period.month": "Ой",
@@ -5516,7 +5516,7 @@ const t = {
   ru: {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Обзор",
-    "nav.zagruzka":        "Загрузка",
+    "nav.zagruzka":        "Процент загрузки",
     "nav.leaderboard":     "Лидеры",
     "nav.workers":         "Сотрудники",
     "nav.planFulfillment": "Выполнение плана",
@@ -6324,8 +6324,8 @@ const t = {
     "fm.planOnlyNote":              "Зависит только от плана — фактический выпуск сокращается.",
 
     // ── Zagruzka ──────────────────────────────────────────────────────────────
-    "zagruzka.title":      "Загрузка",
-    "zagruzka.subtitle":   "Нагрузка % · Загрузка",
+    "zagruzka.title":      "Процент загрузки",
+    "zagruzka.subtitle":   "Процент загрузки",
     "leaderboard.subtitle": "Рейтинг бригадиров",
     "leaderboard.period.week": "Неделя",
     "leaderboard.period.month": "Месяц",
@@ -8273,7 +8273,7 @@ const t = {
   en: {
     // ── Nav ──────────────────────────────────────────────────────────────────
     "nav.overview":        "Overview",
-    "nav.zagruzka":        "Zagruzka",
+    "nav.zagruzka":        "Workload percentage",
     "nav.leaderboard":     "Leaderboard",
     "nav.workers":         "Workers",
     "nav.planFulfillment": "Plan Fulfillment",
@@ -9081,8 +9081,8 @@ const t = {
     "fm.planOnlyNote":              "Depends only on the plan — actual output cancels out.",
 
     // ── Zagruzka ──────────────────────────────────────────────────────────────
-    "zagruzka.title":      "Zagruzka",
-    "zagruzka.subtitle":   "Workload % · Zagruzka",
+    "zagruzka.title":      "Workload percentage",
+    "zagruzka.subtitle":   "Workload percentage",
     "leaderboard.subtitle": "Brigadir Leaderboard",
     "leaderboard.period.week": "Week",
     "leaderboard.period.month": "Month",
