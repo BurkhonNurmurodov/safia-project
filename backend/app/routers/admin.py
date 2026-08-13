@@ -13,7 +13,6 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app import identity
@@ -548,8 +547,8 @@ def add_user_role(
 ):
     """Admin-create an extra role for an existing Telegram user, approved
     immediately. Mirrors the role_id/full_name derivation the bot uses on
-    self-registration; respects the (telegram_id, role, role_id) uniqueness
-    constraint by re-activating a previously rejected/pending instance."""
+    self-registration; respects one-registration-per-PROFILE uniqueness by
+    re-activating a previously rejected/pending instance."""
     user = db.query(TelegramUser).filter(TelegramUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -594,17 +593,11 @@ def add_user_role(
     # Leaders share role_id (the unit) across every leader profile in it, so a
     # (telegram_id, role, role_id) lookup would collide with a DIFFERENT leader
     # profile the user already holds — 409ing, or silently re-pointing that
-    # registration and stripping the first profile of its holder. Match the
-    # profile itself.
-    q = db.query(TelegramUserRole).filter_by(
-        telegram_id=user.telegram_id, role=payload.role, role_id=role_id,
-    )
-    if payload.role == "leader":
-        existing = q.filter(or_(TelegramUserRole.profile_key == pkey,
-                                and_(TelegramUserRole.profile_key.is_(None),
-                                     TelegramUserRole.full_name == full_name))).first()
-    else:
-        existing = q.first()
+    # registration and stripping the first profile of its holder. find_role_row
+    # matches the profile itself (and the table's uniqueness follows it too, so
+    # the insert below no longer hits uq_user_role_instance).
+    existing = identity.find_role_row(db, user.telegram_id, payload.role, role_id,
+                                      key=pkey, name=full_name)
 
     if existing:
         if existing.status == "approved":

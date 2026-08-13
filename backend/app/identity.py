@@ -109,15 +109,29 @@ def viewer_profile_key(db: Session, payload: dict) -> Optional[str]:
     if role in _DIRECT_ROLES:
         return profile_key(role, payload.get("role_id"))
     if role == "leader":
-        # Prefer the stamped registration — survives a profile rename, which the
-        # name match below does not.
-        row = db.query(TelegramUserRole).filter(
+        # A leader's role_id is the UNIT, and one account may hold SEVERAL leader
+        # profiles in one unit — so the unit alone no longer says who the viewer
+        # is. The JWT names the exact registration it was issued for (role_ref);
+        # anything less could answer with the colleague's profile and hand this
+        # session their rows.
+        rows = db.query(TelegramUserRole).filter(
             TelegramUserRole.telegram_id == int(payload["sub"]),
             TelegramUserRole.role == "leader",
             TelegramUserRole.role_id == payload.get("role_id"),
             TelegramUserRole.status == "approved",
             TelegramUserRole.profile_key.isnot(None),
-        ).first()
+        ).all()
+        # Stamped registrations first — they survive a profile rename, which the
+        # name match does not.
+        ref = payload.get("role_ref")
+        row = next((r for r in rows if ref and r.id == ref), None)
+        if not row:
+            row = next((r for r in rows
+                        if r.full_name == payload.get("full_name")), None)
+        # A token predating role_ref, in a unit where this account holds exactly
+        # one leader profile: no ambiguity to resolve.
+        if not row and len(rows) == 1:
+            row = rows[0]
         if row:
             return row.profile_key
         prof = db.query(RoleProfile).filter_by(
@@ -236,6 +250,45 @@ def owns(db: Session, payload: dict, owner_key: Optional[str],
         return int(legacy_account_id) == int(payload.get("sub"))
     except (TypeError, ValueError):
         return False
+
+
+def find_role_row(db: Session, telegram_id: int, role: Optional[str],
+                  role_id: Optional[int], key: Optional[str] = None,
+                  name: Optional[str] = None,
+                  exclude_id: Optional[int] = None) -> Optional[TelegramUserRole]:
+    """This account's existing registration for THIS profile, or None.
+
+    THE lookup behind "does this person already hold this profile" — asked by
+    every path that creates or re-points a role row. It is not
+    ``(telegram_id, role, role_id)``: a leader's role_id is the UNIT, shared by
+    every leader profile in it, so that query answers "already held" for a
+    DIFFERENT colleague's profile. It cost the same bug three times over — the
+    bot refused the second leader claim of a unit with "already approved" and
+    wrote nothing, and the admin paths adopted the other profile's row, renaming
+    it and stripping the first profile of its holder.
+
+    Unstamped legacy leader rows are still matched by name, exactly as
+    :func:`profile_holders` does — dropping that fallback would read a claimed
+    profile as free and let a second row be filed against it.
+
+    ``exclude_id`` skips one row — for callers re-pointing a row and asking
+    whether the destination is already occupied by a DIFFERENT one.
+    """
+    q = db.query(TelegramUserRole).filter(
+        TelegramUserRole.telegram_id == telegram_id,
+        TelegramUserRole.role == role,
+        TelegramUserRole.role_id == role_id,
+    )
+    if exclude_id is not None:
+        q = q.filter(TelegramUserRole.id != exclude_id)
+    if role != "leader":
+        return q.first()
+    return next(
+        (r for r in q.all()
+         if (r.profile_key == key if r.profile_key
+             else bool(name) and r.full_name == name)),
+        None,
+    )
 
 
 def stamp_role_row(db: Session, r: TelegramUserRole,

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, LargeBinary, Text, ForeignKey, func, UniqueConstraint
+from sqlalchemy import Column, Index, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, LargeBinary, Text, ForeignKey, func, text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -326,8 +326,24 @@ class TelegramUserRole(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
 
+    # One registration per (account, profile) — but "profile" is not role_id for
+    # leaders: theirs is the UNIT, shared by every leader profile in it, so a
+    # single (telegram_id, role, role_id) key allowed an account exactly ONE
+    # leader profile per unit and silently swallowed the second claim. Leaders
+    # are keyed on the profile they claimed; everyone else keeps the old key
+    # (their role_id IS the profile). Live DBs get the same shape from
+    # startup.migrate_leader_role_uniqueness.
+    # Both predicates are given per dialect: a dialect that drops the WHERE turns
+    # a partial index into a full one, i.e. back into the cap this removes.
     __table_args__ = (
-        UniqueConstraint("telegram_id", "role", "role_id", name="uq_user_role_instance"),
+        Index("uq_user_role_instance_nonleader", "telegram_id", "role", "role_id",
+              unique=True,
+              postgresql_where=text("role <> 'leader'"),
+              sqlite_where=text("role <> 'leader'")),
+        Index("uq_user_role_leader_profile", "telegram_id", "profile_key",
+              unique=True,
+              postgresql_where=text("role = 'leader' AND profile_key IS NOT NULL"),
+              sqlite_where=text("role = 'leader' AND profile_key IS NOT NULL")),
     )
 
 

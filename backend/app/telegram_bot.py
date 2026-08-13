@@ -17,6 +17,7 @@ from sqlalchemy import and_, or_, text
 
 from app.config import settings
 from app.database import SessionLocal
+from app.identity import find_role_row
 from app.models import (
     Admin, BroadcastDraft, LeaderTaskCapture, LeaderTaskDay, LeaderTaskEntry,
     LeaderTaskMedia, Manager, RegistrationNotice, RoleProfile, TelegramUser,
@@ -110,6 +111,17 @@ _MESSAGES = {
             "✅ Siz allaqachon tasdiqlangansiz!\n"
             "Dashboardni ochish uchun tugmani bosing:"
         ),
+        "profile_already_yours": (
+            "✅ «{name}» profili allaqachon sizda — u ilovadagi profillar "
+            "ro'yxatida turadi.\n"
+            "Boshqa profil qo'shish uchun /register buyrug'ini yuboring."
+        ),
+        "claim_failed": (
+            "❌ Bu profilni topib bo'lmadi, shuning uchun so'rov "
+            "yuborilmadi.\n"
+            "Ro'yxat o'zgargan bo'lishi mumkin — /register buyrug'ini qayta "
+            "yuboring va profilni ro'yxatdan tanlang."
+        ),
         "admin_welcome":     "👑 Admin paneliga xush kelibsiz!",
         "admin_role_added":  "✅ Yangi rol qo'shildi va tasdiqlandi. Web ilovada profilni almashtirib turing.",
         "add_role_hint":     "➕ Yana bir rol qo'shmoqchimisiz? Quyidagi tugma orqali yangi rol uchun ro'yxatdan o'ting.",
@@ -184,6 +196,16 @@ _MESSAGES = {
         "already_approved":  (
             "✅ Сиз аллақачон тасдиқлангансиз!\n"
             "Дашбордни очиш учун тугмани босинг:"
+        ),
+        "profile_already_yours": (
+            "✅ «{name}» профили аллақачон сизда — у иловадаги профиллар "
+            "рўйхатида туради.\n"
+            "Бошқа профил қўшиш учун /register буйруғини юборинг."
+        ),
+        "claim_failed": (
+            "❌ Бу профилни топиб бўлмади, шунинг учун сўров юборилмади.\n"
+            "Рўйхат ўзгарган бўлиши мумкин — /register буйруғини қайта "
+            "юборинг ва профилни рўйхатдан танланг."
         ),
         "admin_welcome":     "👑 Админ панелига хуш келибсиз!",
         "admin_role_added":  "✅ Янги рол қўшилди ва тасдиқланди. Web иловада профилни алмаштириб туринг.",
@@ -260,6 +282,16 @@ _MESSAGES = {
             "✅ Вы уже подтверждены!\n"
             "Нажмите кнопку для открытия дашборда:"
         ),
+        "profile_already_yours": (
+            "✅ Профиль «{name}» уже у вас — он есть в списке профилей в "
+            "приложении.\n"
+            "Чтобы добавить другой профиль, отправьте команду /register."
+        ),
+        "claim_failed": (
+            "❌ Этот профиль не найден, поэтому заявка не отправлена.\n"
+            "Список мог измениться — отправьте /register снова и выберите "
+            "профиль из списка."
+        ),
         "admin_welcome":     "👑 Добро пожаловать в панель администратора!",
         "admin_role_added":  "✅ Новая роль добавлена и подтверждена. Переключайте профиль в веб-приложении.",
         "add_role_hint":     "➕ Хотите добавить ещё одну роль? Зарегистрируйтесь на новую роль с помощью кнопки ниже.",
@@ -334,6 +366,16 @@ _MESSAGES = {
         "already_approved":  (
             "✅ You're already approved!\n"
             "Press the button to open the dashboard:"
+        ),
+        "profile_already_yours": (
+            "✅ The «{name}» profile is already yours — it's in the app's "
+            "profile list.\n"
+            "To add a different profile, send /register."
+        ),
+        "claim_failed": (
+            "❌ That profile could not be found, so no request was filed.\n"
+            "The list may have changed — send /register again and pick the "
+            "profile from the list."
         ),
         "admin_welcome":     "👑 Welcome to the admin panel!",
         "admin_role_added":  "✅ New role added and approved. Switch between profiles in the web app.",
@@ -772,19 +814,24 @@ def _webapp_data(message: types.Message):
     is_admin = tid in _admin_ids()
     new_status = "approved" if is_admin else "pending"
 
+    def _unresolved():
+        """The claim named a profile that no longer resolves — the picker offers
+        only real ones, so it is a stale page (a rename since it opened) or a
+        forged payload. Either way SAY so: this used to `return` mutely, and a
+        registration that answers with nothing reads as one that was filed."""
+        bot.send_message(tid, _msg(lang, "claim_failed"))
+
     with SessionLocal() as db:
         user = db.query(TelegramUser).filter_by(telegram_id=tid).first()
 
         # Resolve role_id — registration only binds a pre-created profile now.
-        # A name that matches no profile is dropped silently: the pickers only
-        # offer real profiles, so this can only be a stale/forged payload.
         role_id = None
         leader_profile_id = None
         if role == "supervisor":
             mgr = db.query(Manager).filter(Manager.name == full_name,
                                            Manager.archived.is_(False)).first()
             if not mgr:
-                return
+                return _unresolved()
             role_id = mgr.id
         elif role == "leader":
             # A leader picks their supervisor's unit, then one of that unit's
@@ -792,17 +839,17 @@ def _webapp_data(message: types.Message):
             mgr = db.query(Manager).filter(Manager.name == supervisor,
                                            Manager.archived.is_(False)).first()
             if not mgr:
-                return
+                return _unresolved()
             lp = db.query(RoleProfile).filter_by(role="leader", manager_id=mgr.id,
                                                  name=full_name).first()
             if not lp:
-                return
+                return _unresolved()
             role_id = mgr.id
             leader_profile_id = lp.id   # the claimed profile — stamped on the role row
         elif role == "shift-manager":
             p = db.query(RoleProfile).filter_by(role="shift-manager", name=full_name).first()
             if not p:
-                return
+                return _unresolved()
             role_id = p.id
         elif role == "guest":
             # Guests are the one self-created identity: the profile row is made
@@ -839,7 +886,7 @@ def _webapp_data(message: types.Message):
                 except (TypeError, ValueError):
                     p = None
                 if not p:
-                    return
+                    return _unresolved()
                 # The picker only offers unassigned profiles, but the profile
                 # may have been approved for someone else in the meantime —
                 # pending claims race and the first approval wins
@@ -887,16 +934,26 @@ def _webapp_data(message: types.Message):
         else:  # top-manager — also a pre-created profile now
             p = db.query(RoleProfile).filter_by(role="top-manager", name=full_name).first()
             if not p:
-                return
+                return _unresolved()
             role_id = p.id
 
-        # A user may hold several roles, but only one instance of the exact
-        # same (role, role_id). A rejected instance can be re-requested.
-        existing = db.query(TelegramUserRole).filter_by(
-            telegram_id=tid, role=role, role_id=role_id,
-        ).first()
+        # A user may hold several roles, but only one instance of the exact same
+        # PROFILE. A rejected instance can be re-requested. Asked through
+        # find_role_row because a leader's role_id is the unit: the old
+        # (telegram_id, role, role_id) lookup matched a DIFFERENT leader profile
+        # of the same brigadir and turned the claim away as "already approved",
+        # so nobody could hold two leader profiles under one unit.
+        existing = find_role_row(
+            db, tid, role, role_id,
+            key=f"leader:{leader_profile_id}" if leader_profile_id else None,
+            name=full_name,
+        )
         if existing and existing.status == "approved":
-            bot.send_message(tid, _msg(lang, "already_approved"), reply_markup=_dashboard_kb(lang))
+            # Names the profile: the old generic "you are already approved" was
+            # indistinguishable from a successful claim, so a refusal read as a
+            # profile that had been added and then failed to appear in the app.
+            bot.send_message(tid, _msg(lang, "profile_already_yours").format(name=full_name),
+                             reply_markup=_dashboard_kb(lang))
             return
         if existing and existing.status == "pending" and not is_admin:
             bot.send_message(tid, _msg(lang, "already_pending"))

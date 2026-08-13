@@ -51,6 +51,7 @@ try:
         seed_admins, seed_languages, backfill_day_approvals, backfill_day_closures,
         backfill_deletion_batch_ids, seed_managers_and_sources, seed_exchange_tasks,
         add_edit_requests_batch_id, add_last_seen_column, migrate_multi_roles,
+        migrate_leader_role_uniqueness,
         add_notification_template_columns, add_admin_language_column, add_tg_name_column,
         seed_production_pilot, resync_production_catalog, backfill_pp_actual_from_deliv,
         relax_pp_upload_manager, rescale_pp_efficiency_base,
@@ -120,6 +121,8 @@ try:
     add_activity_profile_key()
     add_web_credential_password_enc()
     migrate_multi_roles()
+    # After migrate_multi_roles — it owns the table's columns; this re-keys it.
+    migrate_leader_role_uniqueness()
     backfill_leader_page_access()
     seed_admins()
     seed_languages()

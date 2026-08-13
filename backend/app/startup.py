@@ -1137,6 +1137,48 @@ def migrate_multi_roles() -> None:
         db.close()
 
 
+def migrate_leader_role_uniqueness() -> None:
+    """Re-key the registrations table off (telegram_id, role, role_id).
+
+    That key is wrong for leaders — their role_id is the UNIT, shared by every
+    leader profile in it — so ``uq_user_role_instance`` let one Telegram account
+    hold exactly ONE leader profile per unit. A person claiming a second leader
+    profile under the same brigadir got "already approved" from the bot and no
+    row, and the admin grant path hit an IntegrityError on the insert; either
+    way the profile never reached the account's profile switcher.
+
+    Uniqueness now follows the claimed PROFILE for leaders and stays on
+    (role, role_id) for every other role, whose role_id already IS the profile.
+    Idempotent, and atomic: if the new indexes cannot be built (a duplicate this
+    was protecting against) the old constraint is rolled back into place rather
+    than left dropped."""
+    db = SessionLocal()
+    try:
+        # create_all builds it as a table CONSTRAINT; a hand-made copy on an
+        # older DB may be a plain unique INDEX. Drop whichever exists.
+        db.execute(text("ALTER TABLE telegram_user_roles "
+                        "DROP CONSTRAINT IF EXISTS uq_user_role_instance"))
+        db.execute(text("DROP INDEX IF EXISTS uq_user_role_instance"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_role_instance_nonleader "
+            "ON telegram_user_roles (telegram_id, role, role_id) "
+            "WHERE role <> 'leader'"
+        ))
+        # Unstamped legacy leader rows stay unconstrained here — they were filed
+        # under the old constraint, so no unit can hold two of them anyway.
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_role_leader_profile "
+            "ON telegram_user_roles (telegram_id, profile_key) "
+            "WHERE role = 'leader' AND profile_key IS NOT NULL"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader role uniqueness migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 LEADER_PAGE_ACCESS_FLAG = "leader_page_access_backfilled"
 
 

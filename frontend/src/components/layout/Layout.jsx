@@ -94,12 +94,18 @@ function UserProfile() {
 
       {open && (
         <div
-          className="absolute right-0 mt-2 z-50 rounded-xl overflow-hidden"
+          className="absolute right-0 mt-2 z-50 rounded-xl"
           style={{
             background: "var(--bg-card)",
             border: "1px solid var(--border)",
             boxShadow: "0 8px 24px rgba(0,0,0,.15)",
             minWidth: 220,
+            // An account may hold many profiles, and the popover is anchored in a
+            // header the page cannot scroll: past ~4 rows the tail (sign out
+            // included) fell off the bottom of a phone screen unreachable.
+            maxHeight: "min(72vh, 560px)",
+            overflowX: "hidden",
+            overflowY: "auto",
           }}
         >
           {/* Active profile at top */}

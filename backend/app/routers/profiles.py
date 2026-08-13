@@ -47,7 +47,8 @@ from app.capabilities import CAP_CELLS_MANAGE, CAP_PROFILES_MANAGE, require_cap
 from app.config import settings
 from app.database import get_db
 from app.identity import (
-    parse_profile_key, profile_display_name, profile_holders, viewer_profile_key,
+    find_role_row, parse_profile_key, profile_display_name, profile_holders,
+    viewer_profile_key,
 )
 from app.permissions import require_page
 from app.models import (
@@ -1090,20 +1091,22 @@ class SwitchRolePayload(BaseModel):
 
 def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
                       new_role_id: int, new_profile_id: int | None = None) -> None:
-    """Re-point one binding at the profile's new role. If the user already
-    holds exactly that binding (uq_user_role_instance), keep the stronger row
-    and drop the other.
+    """Re-point one binding at the profile's new role. If the user already holds
+    exactly that binding, keep the stronger row and drop the other.
+
+    "Exactly that binding" is the PROFILE, not (role, role_id): a leader's
+    role_id is the unit, so a unit-wide match would delete this holder's OTHER
+    leader profile as a phantom duplicate.
 
     The profile key moves with the binding — a stale key would leave the holder
     attached to the profile's OLD identity, i.e. invisible under the new one."""
-    dup = (
-        db.query(TelegramUserRole)
-        .filter(TelegramUserRole.telegram_id == row.telegram_id,
-                TelegramUserRole.role == new_role,
-                TelegramUserRole.role_id == new_role_id,
-                TelegramUserRole.id != row.id)
-        .first()
-    )
+    # None for a leader with no known profile id: "leader:<unit>" is not a key
+    # any row carries, and passing it could collide with a leader PROFILE whose
+    # id happens to equal the unit id.
+    new_key = (f"{new_role}:{new_profile_id}" if new_profile_id
+               else (f"{new_role}:{new_role_id}" if new_role != "leader" else None))
+    dup = find_role_row(db, row.telegram_id, new_role, new_role_id,
+                        key=new_key, name=row.full_name, exclude_id=row.id)
     if dup:
         if row.status == "approved" and dup.status != "approved":
             _remove_role_row(db, dup)
@@ -1113,8 +1116,7 @@ def _migrate_role_row(db: Session, row: TelegramUserRole, new_role: str,
         db.flush()  # the DELETE must land before the UPDATE re-uses the unique key
     row.role = new_role
     row.role_id = new_role_id
-    row.profile_key = (f"{new_role}:{new_profile_id}" if new_profile_id
-                       else (f"{new_role}:{new_role_id}" if new_role != "leader" else None))
+    row.profile_key = new_key
 
 
 @router.post("/admin/switch-role")
@@ -1282,19 +1284,21 @@ def admin_switch_role(payload: SwitchRolePayload, db: Session = Depends(get_db),
                                     role=new_role, role_id=target_role_id,
                                     status="approved", language=a.language or "uz")
                 db.add(user)
-            row = (
-                db.query(TelegramUserRole)
-                .filter_by(telegram_id=a.telegram_id, role=new_role, role_id=target_role_id)
-                .first()
-            )
+            pkey = (f"{new_role}:"
+                    f"{target_role_id if new_role == 'supervisor' else target_profile.id}")
+            # By profile, not by (role, role_id): a unit-wide match would adopt
+            # this holder's OTHER leader profile row and rename it to this one.
+            row = find_role_row(db, a.telegram_id, new_role, target_role_id,
+                                key=pkey, name=name)
             if row:
                 row.full_name = name
+                row.profile_key = pkey
                 if row.status != "approved":
                     row.status, row.approved_at = "approved", now
             else:
                 row = TelegramUserRole(telegram_id=a.telegram_id, role=new_role,
                                        role_id=target_role_id, full_name=name,
-                                       profile_key=f"{new_role}:{target_role_id if new_role == 'supervisor' else target_profile.id}",
+                                       profile_key=pkey,
                                        status="approved", approved_at=now)
                 db.add(row)
             db.flush()
