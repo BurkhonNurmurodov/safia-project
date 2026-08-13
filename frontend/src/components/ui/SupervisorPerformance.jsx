@@ -111,7 +111,7 @@ const WORKLOAD_FORMULAS = {
 const STAT_TIPS = {
   "Trudoyomkost": "Actual production output — the real work completed by the team.",
   "Verifix Time": "Reported working hours from Verifix × 60 × 0.85 efficiency coefficient.",
-  "Difference":   "Verifix Time minus Trudoyomkost. Positive = Verifix reported more time than production used.",
+  "Difference":   "Verifix Time minus Labor hours. Positive = Verifix reported more time than production used.",
   "Reported HC":  "Official headcount as recorded in the Verifix attendance file.",
   "Verifix HC":   "Effective headcount derived from Verifix labor hours. ⚠ if difference > 2 persons.",
 };
@@ -225,7 +225,7 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
 
   const trendSeries = {
     workload: [
-      { name: "Trudoyomkost (Plan)", data: daily.map(d => d.prod_plan),    color: "#6b7280", dashed: true },
+      { name: "Labor hours (Plan)",  data: daily.map(d => d.prod_plan),    color: "#6b7280", dashed: true },
       { name: "Verifix Time",        data: daily.map(d => d.verifix_labor), color: "#3b82f6" },
     ],
     headcount: [
@@ -304,7 +304,7 @@ export default function SupervisorPerformance({ managerId, date, unit = "min" })
                   <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{t("profile.diff")}</span>
                   <button className="text-xs font-mono font-bold hover:underline underline-offset-2"
                     style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: latest?.difference_hrs > 0 ? "#f97316" : latest?.difference_hrs < 0 ? "#22c55e" : "var(--text-3)" }}
-                    onClick={() => setFormulaModal({ title: t("profile.diff"), value: diffValue, formula: differenceNumbers(latest) || "Difference = Verifix Time − Trudoyomkost", inputs: differenceInputs(latest, t) })}>
+                    onClick={() => setFormulaModal({ title: t("profile.diff"), value: diffValue, formula: differenceNumbers(latest) || "Difference = Verifix Time − Labor hours", inputs: differenceInputs(latest, t) })}>
                     {diffValue}
                   </button>
                   {STAT_TIPS["Difference"] && <Tooltip text={STAT_TIPS["Difference"]} />}

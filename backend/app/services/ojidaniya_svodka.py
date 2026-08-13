@@ -180,7 +180,7 @@ L = {
         "sec_meth": "Method & notes",
         "m1": "Numbers come from the “cell stopped” half of the shift report.",
         "m2": "A report is flagged (“50+”) when the day's total waiting exceeds 50 minutes.",
-        "m3_kpi": "Categories are those counted by the zagruzka KPIs (the “Counted on zagruzka” mode).",
+        "m3_kpi": "Categories are those counted by the workload KPIs (the “Counted on workload” mode).",
         "m3_all": "Every category of the shift report is included (the “All” mode).",
         "m4": "Detailed charts live on the Idle Time page; send /ojidaniya to the bot for today's numbers.",
         "footer": "Source: Safia Dashboard — Idle Time page",

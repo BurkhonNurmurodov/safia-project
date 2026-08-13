@@ -304,7 +304,7 @@ export default function Login() {
         {/* Header */}
         <div className="mb-5">
           <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "var(--brand-text)" }}>
-            Zagruzka
+            {t("login.brand")}
           </div>
           <h1 className="text-lg font-semibold" style={{ color: "var(--text-1)" }}>
             {step === "confirm" ? t("login.confirmTitle")

@@ -21,7 +21,7 @@ const BASE_LANGS = ["uz", "uz_cyrl", "ru", "en"];
 // Nice display names for the key-prefix groups (pages). Anything not listed
 // falls back to a capitalised prefix.
 const GROUP_LABELS = {
-  nav: "Navigation", filter: "Filters", overview: "Overview", zagruzka: "Zagruzka",
+  nav: "Navigation", filter: "Filters", overview: "Overview", zagruzka: "Workload",
   workers: "Workers", plan: "Plan Fulfillment", downtime: "Idle Time", profile: "Brigadir Profile",
   attendance: "Attendance", login: "Login", auth: "Auth", admin: "Admin Panel",
   staff: "Staff", daily: "Daily", approvals: "Approvals", comment: "Comments",

@@ -352,13 +352,13 @@ export default function Overview() {
     if (diffUnit === "pct") {
       return {
         title, value,
-        formula: `${differencePctNumbers(b, approx) || "Diff % = (Verifix Time − Trudoyomkost) ÷ Verifix Time × 100"}\n${t("fm.diffPctNote")}${avgNote}`,
+        formula: `${differencePctNumbers(b, approx) || "Diff % = (Verifix Time − Labor hours) ÷ Verifix Time × 100"}\n${t("fm.diffPctNote")}${avgNote}`,
         inputs: differenceInputs(b, t),
       };
     }
     return {
       title, value,
-      formula: `${differenceNumbers(b, approx) || "Diff = Verifix Time − Trudoyomkost"}\n${t("fm.diffNote")}${avgNote}`,
+      formula: `${differenceNumbers(b, approx) || "Diff = Verifix Time − Labor hours"}\n${t("fm.diffNote")}${avgNote}`,
       inputs: differenceInputs(b, t),
     };
   }

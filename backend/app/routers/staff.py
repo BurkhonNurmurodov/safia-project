@@ -399,7 +399,7 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
                "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!"),
         "en": ("Staff call forecast:",
                "👤 Supervisor: {name}\n📅 Date: {date}\n📊 Load percentage: {eff}%\n🧑‍🍳 Recommended to call: {count} workers\n⚠️ Maximum: {max} workers\n\n"
-               "The numbers shown are the count of workers included in the Zagruzka (load) calculation — not the total number of all workers.\n\n"
+               "The numbers shown are the count of workers included in the Workload calculation — not the total number of all workers.\n\n"
                "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!"),
     },
@@ -533,7 +533,7 @@ _NOTIF_TG_HTML = {
                "Поэтому, учитывая текущую ситуацию и другие факторы, просим вызвать необходимое количество людей!</blockquote>"),
         "en": ("<b>Staff call forecast:</b>\n\n"
                "👤 <b>Supervisor:</b> {name}\n📅 <b>Date:</b> {date}\n📊 <b>Load percentage:</b> {eff}%\n🧑‍🍳 <b>Recommended to call:</b> {count} workers\n⚠️ <b>Maximum:</b> {max} workers\n\n"
-               "<blockquote>The numbers shown are the count of workers included in the Zagruzka (load) calculation — not the total number of all workers.\n\n"
+               "<blockquote>The numbers shown are the count of workers included in the Workload calculation — not the total number of all workers.\n\n"
                "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!</blockquote>"),
     },

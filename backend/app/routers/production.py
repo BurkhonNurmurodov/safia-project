@@ -1574,10 +1574,12 @@ def trudoyomkost_export(
     rkey = "row_total" if mode == "total" else "row_avg"
     summary_label = "Jami" if mode == "total" else "O'rtacha"
     unit_label = "norm-soat" if unit == "hrs" else "min"
+    # Report name follows the caller's language — English never shows «Trudoyomkost».
+    report_name = {"en": "Labor hours", "ru": "Трудоёмкость", "uz_cyrl": "Трудоёмкость"}.get(lang, "Trudoyomkost")
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Trudoyomkost"
+    ws.title = report_name
 
     gold = PatternFill("solid", fgColor="C8973F")
     head_font = Font(color="FFFFFF", bold=True)
@@ -1585,7 +1587,7 @@ def trudoyomkost_export(
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     center = Alignment(horizontal="center", vertical="center")
 
-    ws.append([f"Trudoyomkost — {summary_label} ({unit_label})  ·  {d_from.isoformat()} → {d_to.isoformat()}"])
+    ws.append([f"{report_name} — {summary_label} ({unit_label})  ·  {d_from.isoformat()} → {d_to.isoformat()}"])
     ws.append([f"Brigadir"] + labels + [summary_label])
     for c in ws[2]:
         c.fill, c.font, c.alignment, c.border = gold, head_font, center, border
@@ -1616,7 +1618,7 @@ def trudoyomkost_export(
     bio.seek(0)
     fname = f"trudoyomkost_{d_from.isoformat()}_{d_to.isoformat()}.xlsx"
     if send:
-        caption = f"📊 Trudoyomkost — {summary_label} ({unit_label})  •  {d_from.isoformat()} → {d_to.isoformat()}"
+        caption = f"📊 {report_name} — {summary_label} ({unit_label})  •  {d_from.isoformat()} → {d_to.isoformat()}"
         try:
             return deliver_xlsx(request, payload, fname, bio.read(), caption)
         except HTTPException:

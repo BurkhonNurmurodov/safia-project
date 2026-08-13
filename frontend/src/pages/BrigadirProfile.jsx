@@ -45,9 +45,9 @@ const WORKLOAD_BAR_DEFS = [
 
 const STAT_TIPS = {
   "Prod. Plan":     "Total planned production time for the brigadir's team in the selected period (minutes or hours).",
-  "Trudoyomkost":   "Actual production output — the real work completed by the team (Trudoyomkost = labor intensity in Russian).",
+  "Trudoyomkost":   "Actual production output — the real work completed by the team.",
   "Verifix Time":   "Reported working hours from Verifix × 60 × 0.85 efficiency coefficient. Represents effective labor minutes.",
-  "Difference":     "Verifix Time minus Trudoyomkost. Positive = Verifix reported more time than production used (possible over-reporting).",
+  "Difference":     "Verifix Time minus Labor hours. Positive = Verifix reported more time than production used (possible over-reporting).",
   "Reported HC":    "Official headcount as recorded in the Verifix attendance file.",
   "Verifix HC":     "Effective headcount derived from Verifix labor hours. Δ = difference vs official headcount. ⚠ if difference > 2 persons.",
   "Idle Time":      "Total equipment downtime recorded for this supervisor's team in the selected period.",
@@ -274,7 +274,7 @@ export default function BrigadirProfile() {
 
   const trendSeries = {
     workload: [
-      { name: "Trudoyomkost (Plan)", data: daily.map((d) => d.prod_plan),     color: "#6b7280", dashed: true },
+      { name: "Labor hours (Plan)",  data: daily.map((d) => d.prod_plan),     color: "#6b7280", dashed: true },
       { name: "Verifix Time",        data: daily.map((d) => d.verifix_labor),  color: "#3b82f6" },
     ],
     headcount: [
@@ -437,7 +437,7 @@ export default function BrigadirProfile() {
                     onClick={() => setFormulaModal({
                       title: t("fm.diffVerifixTrudo"),
                       value: diffValue,
-                      formula: `${differenceNumbers(latest) || "Difference = Verifix Time − Trudoyomkost"}\n${t("fm.diffPositiveShort")}`,
+                      formula: `${differenceNumbers(latest) || "Difference = Verifix Time − Labor hours"}\n${t("fm.diffPositiveShort")}`,
                       inputs: differenceInputs(latest, t),
                     })}
                   >
