@@ -1968,3 +1968,18 @@ class WorkerConcernSyncMeta(Base):
     progress_total = Column(Integer, default=0)
     started_at    = Column(DateTime(timezone=True), nullable=True)
     heartbeat     = Column(DateTime(timezone=True), nullable=True)
+
+
+class WorkerConcernSheetState(Base):
+    """Per-sheet incremental-sync baseline: the Drive ``modifiedTime`` each
+    per-cell sheet had when it was last crawled SUCCESSFULLY. A refresh skips
+    sheets whose current Drive time still equals this value — their committed
+    rows already ARE the content of exactly that revision. The row is written
+    only on success, inside the same transaction as the sheet's wipe-replace,
+    so a failed or interrupted crawl can never mark a sheet clean; any doubt
+    (no row, no Drive answer, a mismatch) falls back to crawling the sheet."""
+    __tablename__ = "worker_concern_sheet_state"
+
+    sheet_id      = Column(String, primary_key=True)
+    modified_time = Column(String, nullable=True)  # Drive RFC3339 string, compared verbatim
+    crawled_at    = Column(DateTime(timezone=True), nullable=True)

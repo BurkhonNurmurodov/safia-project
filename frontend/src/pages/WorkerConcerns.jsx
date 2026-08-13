@@ -307,10 +307,16 @@ export default function WorkerConcerns() {
     }
   }, [filterSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── refresh (the 180-sheet crawl, minutes — progress polled via meta) ─────
+  // ── refresh (incremental crawl — usually seconds, progress polled via meta) ─
   const refreshMut = useMutation({
     mutationFn: () => api.post("/api/worker-concerns/refresh").then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["wc-meta"] }),
+    onSuccess: () => {
+      // An incremental sync can finish INSIDE one meta-poll interval, so
+      // `running` may never be observed true — arm the finish detector by
+      // hand or a fast sync would end with no toast and stale tables.
+      prevRunning.current = true;
+      qc.invalidateQueries({ queryKey: ["wc-meta"] });
+    },
     onError: (e) => toast.error(`${T.syncFailedT}: ${e?.response?.data?.detail || e?.message || ""}`),
   });
   const prevRunning = useRef(false);
@@ -324,7 +330,9 @@ export default function WorkerConcerns() {
       else toast.success(T.syncDone);
     }
     prevRunning.current = running;
-  }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
+    // last_synced flips at completion — it re-runs this effect even when the
+    // sync was too fast for `running` to ever render as true.
+  }, [running, sync?.last_synced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── filter sections ───────────────────────────────────────────────────────
   const supers = useFactorySupervisors(meta?.supervisors || [], mgrSel, (kept) => setMgrSel(kept || []), "id");

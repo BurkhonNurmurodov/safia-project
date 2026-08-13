@@ -457,9 +457,10 @@ def refresh(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_page(PAGE_KEY)),
 ):
-    """Re-crawl the registry + all ~180 cell sheets in the background (2–4
-    min). Offered to every profile that can open the page; the meta poll below
-    is the progress feed."""
+    """Re-crawl the registry + the cell sheets whose Drive modifiedTime moved
+    since their last successful crawl, in the background (usually seconds; a
+    full first crawl runs ~4–5 min). Offered to every profile that can open
+    the page; the meta poll below is the progress feed."""
     meta = db.query(WorkerConcernSyncMeta).filter_by(id=1).first()
     if _live(meta):
         raise HTTPException(status_code=409, detail="Sync is already running")

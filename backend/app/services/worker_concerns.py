@@ -18,6 +18,16 @@ already-committed sheet stays consistent and the next run simply re-crawls.
 A sheet that fails to read keeps its previous rows (counted, reported, never
 silently dropped).
 
+The crawl is INCREMENTAL by default: one Drive-metadata sweep (a separate,
+far larger quota than Sheets reads) fetches every sheet's ``modifiedTime``,
+and a sheet still at the modifiedTime of its last successful crawl is skipped
+outright — the usual refresh touches a handful of sheets and finishes in
+seconds, and a crawl that dies mid-run resumes almost for free because the
+sheets it already committed carry fresh baselines. ``full=True`` (the nightly
+job) re-reads everything regardless, as a safety net against the baseline
+ever drifting; if Drive is unreachable (API not enabled, scope refused) the
+sweep degrades to crawling everything — never to failing or skipping.
+
 Two KPI-critical data facts baked in here (this feeds a real leaders' KPI):
 
   * per-cell sheets are PRE-SEEDED with thousands of template rows whose
@@ -41,7 +51,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import WorkerConcern, WorkerConcernSyncMeta
+from app.models import WorkerConcern, WorkerConcernSheetState, WorkerConcernSyncMeta
 
 log = logging.getLogger(__name__)
 
@@ -54,12 +64,15 @@ REGISTRY_TAB_GID = 2069492854
 # date=None so date-bound charts exclude them — and the sync counts them.
 DATE_MIN = date_cls(2025, 9, 1)  # workbook was created 2025-09-23
 
-# Pacing. Each sheet costs ~2 Sheets-API reads and the per-user quota is ~60
-# reads/min; 2.5s between sheets keeps the whole crawl comfortably UNDER the
-# quota (~45 reads/min) instead of slamming into sustained 429s from mid-crawl
-# on — which is what the first prod run did at 0.4s. ~180 sheets ≈ 10–12 min,
-# which is why this runs as a background thread with a progress feed.
-_SHEET_PAUSE = 2.5
+# Pacing. Each CRAWLED sheet costs exactly ONE Sheets-API read (the sheet-less
+# values_get in _read_cell_sheet; open_by_key + worksheets() used to burn two
+# extra metadata reads per sheet) and the per-user quota is ~60 reads/min;
+# 1.2s between sheets keeps a full crawl at ~50 reads/min — under the quota
+# with margin (the first prod run at 0.4s hit sustained 429s from mid-crawl
+# on). Full crawl of ~180 sheets ≈ 4–5 min; the usual incremental refresh
+# crawls only the sheets whose Drive modifiedTime moved and finishes in
+# seconds. Still a background thread with a progress feed either way.
+_SHEET_PAUSE = 1.2
 _RATE_RETRIES = 4
 _RATE_SLEEP = 65          # quota windows are per-minute — sleep past a full one
 # Every HTTP call gets a hard timeout: gspread ships with NONE, and one stalled
@@ -88,7 +101,12 @@ def _crawl_client() -> gspread.Client:
     and this crawl is the only minutes-long, hundreds-of-requests consumer."""
     creds = Credentials.from_service_account_file(
         settings.google_credentials_file,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+            # Drive METADATA only — each sheet's modifiedTime, so an unchanged
+            # sheet can be skipped without spending a Sheets read on it.
+            "https://www.googleapis.com/auth/drive.metadata.readonly",
+        ],
     )
     gc = gspread.authorize(creds)
     gc.set_timeout(_HTTP_TIMEOUT)
@@ -184,10 +202,18 @@ def read_registry(gc) -> list[dict]:
 
 
 def _read_cell_sheet(gc, entry: dict, today: date_cls) -> tuple[list[WorkerConcern], int]:
-    """One per-cell spreadsheet → its concern rows. Returns (rows, invalid_dates)."""
-    sub = gc.open_by_key(entry["sheet_id"])
-    ws = sub.worksheets()[0]
-    values = ws.get_all_values()
+    """One per-cell spreadsheet → its concern rows. Returns (rows, invalid_dates).
+
+    ONE values read per sheet: a sheet-less A1 range addresses the first
+    VISIBLE tab directly, where open_by_key + worksheets()[0] burned two extra
+    metadata reads per sheet — 3× the Sheets quota for the same values. The
+    trade: worksheets()[0] counted hidden tabs too, so if a cell sheet ever
+    hides its first tab the header check below fails loudly and the sheet is
+    reported as failed rather than silently misread."""
+    resp = gc.http_client.values_get(entry["sheet_id"], "A1:ZZ")
+    # values.get trims trailing empty cells/rows (get_all_values padded them);
+    # the index-guarded cell_at below is already ragged-row-safe.
+    values = resp.get("values", [])
 
     hdr_i, cols = None, {}
     for i, row in enumerate(values[:10]):
@@ -243,6 +269,62 @@ def _read_cell_sheet(gc, entry: dict, today: date_cls) -> tuple[list[WorkerConce
     return out, invalid
 
 
+_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+
+
+def _drive_modified_times(gc, sheet_ids: list[str], touch) -> dict[str, str] | None:
+    """sheet_id → current Drive ``modifiedTime`` for every reachable sheet.
+
+    Drive metadata is a SEPARATE (and far larger) quota than Sheets reads, so
+    asking "which of the ~180 sheets changed?" costs one or two listing calls
+    instead of 180 paced Sheets reads. Sheets the listing can't see (link-
+    shared rather than shared with the service account) are fetched one by
+    one — quick, and still off the Sheets quota. An id that stays unresolved
+    is simply absent from the map, which the caller treats as "changed".
+
+    Returns None when Drive is unavailable altogether (API not enabled on the
+    project, scope refused, network down) — the caller then crawls everything,
+    i.e. exactly the pre-incremental behavior. This sweep must only ever make
+    the sync cheaper, never fail it and never skip a sheet on a guess."""
+    times: dict[str, str] = {}
+    try:
+        page_token = None
+        while True:
+            params = {
+                "q": "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+                "fields": "nextPageToken,files(id,modifiedTime)",
+                "pageSize": 1000,
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            data = gc.http_client.request("get", _DRIVE_FILES_URL, params=params).json()
+            for f in data.get("files", []):
+                if f.get("modifiedTime"):
+                    times[f["id"]] = f["modifiedTime"]
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as exc:
+        log.warning("worker-concerns sync: Drive sweep unavailable (%s) — crawling all sheets",
+                    str(exc)[:200])
+        return None
+    missing = [sid for sid in sheet_ids if sid not in times]
+    for i, sid in enumerate(missing, 1):
+        try:
+            data = gc.http_client.request(
+                "get", f"{_DRIVE_FILES_URL}/{sid}",
+                params={"fields": "modifiedTime", "supportsAllDrives": "true"}).json()
+            if data.get("modifiedTime"):
+                times[sid] = data["modifiedTime"]
+        except Exception:
+            pass  # stays absent → crawled this run, asked about again next run
+        if i % 25 == 0:
+            touch()  # keep the claim's heartbeat fresh through a long fallback loop
+    return times
+
+
 def _get_meta(db: Session) -> WorkerConcernSyncMeta:
     meta = db.query(WorkerConcernSyncMeta).filter_by(id=1).first()
     if not meta:
@@ -267,9 +349,11 @@ def _claim(db: Session) -> bool:
     return True
 
 
-def run_sync() -> dict:
-    """Crawl the registry + every per-cell sheet. Blocking (minutes) — call via
-    :func:`start_sync_thread` or the scheduler, never from a request handler."""
+def run_sync(full: bool = False) -> dict:
+    """Crawl the registry + the per-cell sheets that changed since their last
+    successful crawl (EVERY sheet when ``full`` — the nightly safety net).
+    Blocking (seconds to a few minutes) — call via :func:`start_sync_thread`
+    or the scheduler, never from a request handler."""
     db = SessionLocal()
     try:
         if not _claim(db):
@@ -287,10 +371,6 @@ def run_sync() -> dict:
             log.exception("worker-concerns sync: registry read failed")
             return {"status": "error", "detail": str(exc)}
 
-        meta = _get_meta(db)
-        meta.progress_total = len(registry)
-        db.commit()
-
         def _touch():
             """Keep the claim visibly alive — called before every long sleep so
             a crawl waiting out a quota window is never mistaken for a dead one
@@ -299,8 +379,33 @@ def run_sync() -> dict:
             m.heartbeat = datetime.now(timezone.utc)
             db.commit()
 
+        # One Drive-metadata sweep decides what actually needs crawling. The
+        # sweep runs even for full=True so every successful crawl refreshes
+        # its baseline; ``full`` only disables the skip decision below.
+        mtimes = _drive_modified_times(gc, [e["sheet_id"] for e in registry], _touch)
+        baseline: dict[str, str | None] = {}
+        if mtimes is not None:
+            baseline = {s.sheet_id: s.modified_time
+                        for s in db.query(WorkerConcernSheetState).all()}
+
+        to_crawl, skipped = [], 0
+        for entry in registry:
+            mt = (mtimes or {}).get(entry["sheet_id"])
+            entry["mtime"] = mt
+            # Skip only on positive proof: a known current revision equal to
+            # the revision whose rows are already committed. No Drive answer,
+            # no baseline row, or any mismatch → the sheet is crawled.
+            if not full and mt and baseline.get(entry["sheet_id"]) == mt:
+                skipped += 1
+            else:
+                to_crawl.append(entry)
+
+        meta = _get_meta(db)
+        meta.progress_total = len(to_crawl)
+        db.commit()
+
         invalid_total, failed = 0, []
-        for i, entry in enumerate(registry, 1):
+        for i, entry in enumerate(to_crawl, 1):
             rows = None
             for attempt in range(_RATE_RETRIES):
                 try:
@@ -328,11 +433,21 @@ def run_sync() -> dict:
                 db.query(WorkerConcern).filter(
                     WorkerConcern.sheet_id == entry["sheet_id"]).delete()
                 db.add_all(rows)
+                if entry["mtime"] is not None:
+                    # The skip baseline rides in the SAME transaction as the
+                    # rows: a stored modifiedTime always means "the committed
+                    # rows are exactly this revision". Sweep-time is stamped
+                    # (not re-fetched), so an edit landing mid-crawl reads as
+                    # a mismatch next run — the safe direction.
+                    db.merge(WorkerConcernSheetState(
+                        sheet_id=entry["sheet_id"], modified_time=entry["mtime"],
+                        crawled_at=datetime.now(timezone.utc)))
             meta = _get_meta(db)
             meta.progress_done = i
             meta.heartbeat = datetime.now(timezone.utc)
             db.commit()
-            time.sleep(_SHEET_PAUSE)
+            if i < len(to_crawl):
+                time.sleep(_SHEET_PAUSE)
 
         total = db.query(WorkerConcern).count()
         meta = _get_meta(db)
@@ -348,9 +463,11 @@ def run_sync() -> dict:
                  + ("…" if len(failed) > 12 else "")
         )
         db.commit()
-        log.info("worker-concerns sync: %s rows from %s sheets (%s failed, %s invalid dates)",
-                 total, len(registry), len(failed), invalid_total)
+        log.info("worker-concerns sync: %s rows from %s sheets (%s crawled, %s skipped unchanged, "
+                 "%s failed, %s invalid dates)",
+                 total, len(registry), len(to_crawl), skipped, len(failed), invalid_total)
         return {"status": "ok", "rows": total, "sheets": len(registry),
+                "crawled": len(to_crawl), "skipped": skipped,
                 "failed": len(failed), "invalid_dates": invalid_total}
     except Exception as exc:
         # Belt-and-braces: never leave the claim stuck on an unexpected error.
@@ -401,6 +518,9 @@ def register_boot_jobs() -> None:
         get_scheduler().add_job(
             run_sync,
             trigger=CronTrigger(hour=3, minute=30, timezone=SCHEDULER_TZ),
+            # Nightly is the FULL crawl — the safety net that re-reads every
+            # sheet so the incremental baselines can never drift unnoticed.
+            kwargs={"full": True},
             id="worker-concerns-nightly", replace_existing=True,
         )
     except Exception:
