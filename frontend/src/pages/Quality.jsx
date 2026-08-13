@@ -65,6 +65,17 @@ const cellNameOf = (r, cellMap, lang) => {
   const c = r?.ci != null ? cellMap[r.ci] : null;
   return cellLabelOf(c, lang) || r?.cn || r?.fc || "";
 };
+// The drill-down rows under an expanded name identify a cell by its VERIFIX
+// CODE, not its workshop name: the code is what the QA sheet, the «Виновная
+// ячейка» column and the brigadirs themselves say, and it fits the 240px column
+// without truncating — «Участок приготов. кекс. №2.1» does not. The name is kept
+// as the row's tooltip so nothing is lost.
+const cellCodeOf = (r, cellMap) => {
+  const c = r?.ci != null ? cellMap[r.ci] : null;
+  return c?.verifix_code || r?.fc || r?.cn || "";
+};
+// code · workshop name, collapsing to one when the row has only the code.
+const brkTitle = (k) => (k.name && k.name !== k.label ? `${k.label} · ${k.name}` : k.label);
 
 const TYPE_COLORS = {
   risk: "#ef4444", foreign: "#22c55e", storage: "#3b82f6", sanitation: "#eab308",
@@ -965,7 +976,8 @@ export default function Quality() {
         for (const c of cells) {
           const key = `c${c.id}`;
           b.kids[key] = { key, fold: false, ...emptySplit(),
-            label: cellLabelOf(c, lang) || c.verifix_code || "" };
+            label: c.verifix_code || cellLabelOf(c, lang) || "",
+            name: cellLabelOf(c, lang) };
         }
       }
     }
@@ -976,20 +988,22 @@ export default function Quality() {
       const b = bucket(nm);
       const c = r.ci != null ? cellMap[r.ci] : null;
 
-      let key, label;
+      let key, label, name = "";
       if (isLeadDim || brkDim === "cell") {
-        label = cellNameOf(r, cellMap, lang);
+        // Shown as the code, hovered as the workshop name.
+        label = cellCodeOf(r, cellMap);
+        name = cellNameOf(r, cellMap, lang);
         // Registry hit → key by cell id, so two spellings of one cell merge.
         // Otherwise the code stands on its own.
         key = c ? `c${c.id}` : `raw:${label}`;
-        if (!label) { key = F_NOCELL; label = T.brkNoCell; }
+        if (!label) { key = F_NOCELL; label = T.brkNoCell; name = ""; }
       } else if (c?.leader) {
         key = `l${c.leader}`; label = tl(c.leader);
       } else {
         key = F_NOLEAD; label = T.brkNoLead;
       }
 
-      const kid = b.kids[key] || (b.kids[key] = { key, label, fold: FOLDS.includes(key), ...emptySplit() });
+      const kid = b.kids[key] || (b.kids[key] = { key, label, name, fold: FOLDS.includes(key), ...emptySplit() });
       bumpStatus(kid, r.st);
     }
     for (const b of Object.values(out)) {
@@ -2082,7 +2096,7 @@ export default function Quality() {
                               <span className="truncate text-[12px]"
                                 style={{ color: k.fold ? "var(--text-4)" : "var(--text-3)",
                                          fontStyle: k.fold ? "italic" : "normal" }}
-                                title={k.label}>{k.label}</span>
+                                title={brkTitle(k)}>{k.label}</span>
                             </span>
                           </td>
                           {statCells(k, true)}
@@ -2194,7 +2208,7 @@ export default function Quality() {
                         return (
                           <div key={k.key}>
                             <div className="flex items-baseline justify-between gap-3 mb-1.5">
-                              <span className="text-[12px] truncate min-w-0" title={k.label}
+                              <span className="text-[12px] truncate min-w-0" title={brkTitle(k)}
                                 style={{ color: k.fold ? "var(--text-4)" : "var(--text-2)",
                                          fontStyle: k.fold ? "italic" : "normal" }}>
                                 {k.label}
