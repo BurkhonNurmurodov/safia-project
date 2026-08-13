@@ -2048,10 +2048,31 @@ def _lt_autoclose(db, prof, shift: int) -> None:
         day.completion = compute_completion(cfg, list(_lt_entries(db, day).values()))
     db.commit()
     if stale:
-        # Auto-closed bygone days are submissions too — queue their photos.
-        # Explicit now that `run_async` no longer discovers by default: this is
-        # the ONE path left that still submits in bulk on its own.
-        leader_ai.run_async(discover_first=True)
+        # Auto-closed bygone days are submissions too — queue their photos, and
+        # ONLY theirs: one `queue_report` per day just closed, for this leader,
+        # exactly the rule the manual close uses.
+        #
+        # This used to call `discover()`, which walks every report ever filed.
+        # The caller is `/tasks`, so one leader opening their checklist with a
+        # forgotten day re-queued the WHOLE corpus — thousands of rows belonging
+        # to other leaders and other days — and the drain then spent quota
+        # re-judging them. Submitting your own day must cost your own day.
+        #
+        # Wrapped: an AI hiccup must never leave a day looking unclosed to the
+        # leader who is one line away from seeing the menu.
+        try:
+            n = 0
+            for day in stale:
+                n += leader_ai.queue_report(db, day=day)
+            if n:
+                # Same record the manual close writes, so the hand-off gets the
+                # bar and the detail view instead of a queue that silently grew.
+                leader_ai.note_auto_run(db, n, prof.name)
+        except Exception:
+            logger.exception("leader-tasks: could not queue auto-closed days "
+                             "for AI review (leader %s)", prof.id)
+            db.rollback()
+        leader_ai.run_async(discover_first=False)
 
 
 def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None):
