@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
   Plus, Pencil, Trash2, AlertTriangle, Loader2, ClipboardList,
-  ChevronDown, Check, MessageSquare, Send,
+  ChevronDown, Check, MessageSquare,
   CalendarClock, UserCheck, ShieldCheck, FileText, CircleDot, Hash,
-  TrendingUp, PieChart, XCircle, ArrowLeft, Layers, UserRound,
+  TrendingUp, PieChart, ArrowLeft, Layers, UserRound,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -18,6 +18,7 @@ import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th } from "../components/ui/DataTable";
+import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -58,12 +59,6 @@ const fmtDate = (iso, lang) => {
   if (lang === "en" || lang === "ru") return `${d} ${mn} ${y}`;
   return `${d}-${mn}, ${y}`;
 };
-const fmtTime = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
-
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -287,171 +282,6 @@ function ActionBtn({ icon: Icon, label, color, onClick }) {
   );
 }
 
-
-// ── chat-style comments modal ─────────────────────────────────────────────────
-function CommentsModal({ task, canComment, onClose }) {
-  const { auth } = useAuth();
-  const { t, lang } = useLang();
-  const { tl } = useTranslit();
-  const qc = useQueryClient();
-  const myId = auth?.telegram_id ? String(auth.telegram_id) : null;
-  const [text, setText] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editText, setEditText] = useState("");
-  const listEndRef = useRef(null);
-  const qKey = ["task-comments", task.id];
-
-  const { data: comments = [], isLoading } = useQuery({
-    queryKey: qKey,
-    queryFn: () => api.get(`/api/tasks/${task.id}/comments`).then((r) => r.data),
-  });
-
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: qKey });
-    qc.invalidateQueries({ queryKey: ["leader-tasks"] });   // comment_count on the row
-  };
-
-  const addMutation = useMutation({
-    mutationFn: () => api.post(`/api/tasks/${task.id}/comments`, { text }),
-    onSuccess: () => { setText(""); invalidate(); },
-  });
-  const editMutation = useMutation({
-    mutationFn: (id) => api.put(`/api/tasks/${task.id}/comments/${id}`, { text: editText }),
-    onSuccess: () => { setEditingId(null); setEditText(""); invalidate(); },
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`/api/tasks/${task.id}/comments/${id}`),
-    onSuccess: invalidate,
-  });
-
-  // Keep the newest message in view when the thread loads or grows.
-  useEffect(() => {
-    listEndRef.current?.scrollIntoView({ block: "end" });
-  }, [comments.length, isLoading]);
-
-  // Server-resolved: ownership is per-profile (one account can hold several
-  // profiles). Fallback for responses cached before is_own existed.
-  const isOwn = (c) => c.is_own ?? (myId && String(c.author_telegram_id) === myId);
-
-  function send() {
-    if (!text.trim() || addMutation.isPending) return;
-    addMutation.mutate();
-  }
-
-  return (
-    <Modal
-      onClose={onClose}
-      maxWidth="max-w-md"
-      icon={<MessageSquare size={15} className="flex-shrink-0 text-[var(--brand-text)]" />}
-      title={t("tasks.commentsTitle")}
-      subtitle={tl(task.task_text)}
-      bodyClassName="p-0 flex flex-col"
-    >
-        {/* Thread */}
-        <div className="overflow-y-auto px-4 py-3 space-y-2.5" style={{ flex: "1 1 auto", minHeight: 160 }}>
-          {isLoading ? (
-            <div className="space-y-2.5">
-              <SkeletonBlock className="h-14 w-3/4" />
-              <SkeletonBlock className="h-14 w-3/4 ml-auto" />
-              <SkeletonBlock className="h-14 w-2/3" />
-            </div>
-          ) : comments.length === 0 ? (
-            <div className="text-xs text-center py-8" style={{ color: "var(--text-4)" }}>{t("tasks.noComments")}</div>
-          ) : (
-            comments.map((c) => {
-              const own = isOwn(c);
-              return (
-                <div key={c.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className="max-w-[85%] rounded-xl px-3 py-2"
-                    style={own
-                      ? { background: "var(--brand-bg)", border: "1px solid var(--brand-border)" }
-                      : { background: "var(--bg-inner)", border: "1px solid var(--border)" }}
-                  >
-                    <div className="text-[10px] font-semibold mb-0.5" style={{ color: "var(--brand-text)" }}>
-                      {tl(c.author_name) || "—"}
-                    </div>
-                    {editingId === c.id ? (
-                      <div>
-                        <textarea
-                          value={editText}
-                          onChange={(e) => setEditText(e.target.value)}
-                          rows={2}
-                          autoFocus
-                          className="w-full rounded-lg px-2 py-1.5 text-xs outline-none resize-none"
-                          style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-1)", minWidth: 180 }}
-                        />
-                        <div className="flex gap-2 mt-1.5">
-                          <button
-                            onClick={() => editMutation.mutate(c.id)}
-                            disabled={!editText.trim() || editMutation.isPending}
-                            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-[var(--brand)] text-white disabled:opacity-40"
-                          >
-                            {editMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-                            {t("tasks.save")}
-                          </button>
-                          <button onClick={() => { setEditingId(null); setEditText(""); }} className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px]" style={{ color: "var(--text-3)" }}>
-                            <XCircle size={11} /> {t("tasks.cancel")}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-xs whitespace-pre-wrap break-words" style={{ color: "var(--text-1)" }}>{c.text}</div>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px]" style={{ color: "var(--text-4)" }}>
-                        {fmtDate(c.created_at, lang)} · {fmtTime(c.created_at)}
-                        {c.edited_at && <> · {t("tasks.edited")}</>}
-                      </span>
-                      {own && editingId !== c.id && (
-                        <span className="flex items-center gap-1.5 ml-auto">
-                          <button onClick={() => { setEditingId(c.id); setEditText(c.text); }} style={{ color: "var(--text-4)" }} className="hover:text-[var(--brand-text)] transition-colors">
-                            <Pencil size={11} />
-                          </button>
-                          <button
-                            onClick={() => deleteMutation.mutate(c.id)}
-                            disabled={deleteMutation.isPending}
-                            style={{ color: "var(--text-4)" }}
-                            className="hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-          <div ref={listEndRef} />
-        </div>
-
-        {/* Composer */}
-        {canComment && (
-          <div className="px-4 py-3 flex items-end gap-2 flex-shrink-0" style={{ borderTop: "1px solid var(--border)" }}>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder={t("tasks.commentPlaceholder")}
-              rows={2}
-              className="flex-1 rounded-xl px-3 py-2 text-sm outline-none resize-none"
-              style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-1)" }}
-            />
-            <button
-              onClick={send}
-              disabled={!text.trim() || addMutation.isPending}
-              className="flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 bg-[var(--brand)] hover:bg-[var(--brand-text)] text-white disabled:opacity-40 transition-colors"
-              aria-label={t("tasks.commentPlaceholder")}
-            >
-              {addMutation.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-            </button>
-          </div>
-        )}
-    </Modal>
-  );
-}
 
 const emptyForm = () => ({
   id: null,
@@ -1092,15 +922,11 @@ export default function Tasks() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
+                          <CommentsButton
+                            count={r.comment_count}
+                            label={t("tasks.commentsTitle")}
                             onClick={() => setCommentsTask(r)}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--brand)]"
-                            style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: r.comment_count ? "var(--brand-text)" : "var(--text-3)" }}
-                          >
-                            <MessageSquare size={12} />
-                            <span className="tabular-nums">{r.comment_count || 0}</span>
-                          </button>
+                          />
                         </td>
                       </tr>
                       {expanded && (
@@ -1209,7 +1035,11 @@ export default function Tasks() {
       {/* Chat-style comments */}
       {commentsTask && (
         <CommentsModal
-          task={commentsTask}
+          endpoint={`/api/tasks/${commentsTask.id}/comments`}
+          queryKey={["task-comments", commentsTask.id]}
+          refreshKeys={[["leader-tasks"]]}   // comment_count on the row
+          title={t("tasks.commentsTitle")}
+          subtitle={tl(commentsTask.task_text)}
           canComment={canMutateStatus}
           onClose={() => setCommentsTask(null)}
         />

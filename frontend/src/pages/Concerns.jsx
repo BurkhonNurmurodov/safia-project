@@ -8,6 +8,7 @@ import {
   CalendarClock, UserRound, UserCheck, ShieldCheck, FileText, CircleDot, Clock,
   Hourglass, Gauge, TrendingUp, PieChart, Timer,
   Layers, ArrowUp, ArrowDown, ArrowRight, ArrowLeftRight, History, LayoutGrid, Tag,
+  MessageSquare,
   Wrench, Boxes, Warehouse, Refrigerator, ShoppingCart, Truck, MonitorCog,
   Droplets, CalendarRange, Users, FlaskConical, Wheat,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import Button from "../components/ui/Button";
 import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
+import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
@@ -549,6 +551,7 @@ export default function Concerns() {
   const [escError, setEscError] = useState("");
   const [historyRow, setHistoryRow] = useState(null);   // row whose escalation trail is open
   const [viewRow, setViewRow] = useState(null);         // row open in the read-only detail modal
+  const [commentsRow, setCommentsRow] = useState(null); // row whose comment thread is open
   // Inline "done" needs a resolution note first — this holds the row whose pill
   // was flipped to done until the note is entered.
   const [resolveRow, setResolveRow] = useState(null);
@@ -1025,12 +1028,14 @@ export default function Concerns() {
         case "resolution": return resolutionMinutes(r);
         case "status":   return STATUSES.indexOf(r.status);
         case "level":    return LEVELS.indexOf(r.level || "supervisor");
+        case "comments": return r.comment_count || 0;
         default:         return "";
       }
     };
     const dir = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const va = val(a), vb = val(b);
+      if (sort.key === "comments") return (va - vb) * dir;
       if (sort.key === "deadline" || sort.key === "resolution") {   // blanks always sink
         const an = va == null, bn = vb == null;
         if (an && bn) return 0;
@@ -1711,8 +1716,16 @@ export default function Concerns() {
             </div>
 
             {/* explicit actions affordance — the whole card toggles too, but
-                older users need a button that says so */}
-            <div className="flex justify-end pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+                older users need a button that says so. The thread sits on the
+                same row: the phone has no Comments column to carry it. */}
+            <div className="flex items-center justify-between gap-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+              <span onClick={(e) => e.stopPropagation()}>
+                <CommentsButton
+                  count={r.comment_count}
+                  label={t("concerns.commentsTitle")}
+                  onClick={() => setCommentsRow(r)}
+                />
+              </span>
               <span
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
                 style={{ background: "var(--bg-card)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}
@@ -2012,18 +2025,19 @@ export default function Concerns() {
                   <Th icon={Layers}        label={t("concerns.colLevel")}    k="level"    sort={sort} onSort={onSort} />
                   <Th icon={Clock}         label={t("concerns.colDeadline")} k="deadline" sort={sort} onSort={onSort} align="center" />
                   <Th icon={Timer}         label={t("concerns.colResolution")} k="resolution" sort={sort} onSort={onSort} align="center" />
+                  <Th icon={MessageSquare} label={t("concerns.colComments")} k="comments" sort={sort} onSort={onSort} align="center" />
                 </tr>
               </thead>
               <tbody>
                 {isLoading && Array.from({ length: 6 }).map((_, i) => (
                   <tr key={`sk-${i}`}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))}
                 {!isLoading && sorted.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  <tr><td colSpan={10} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                     {t("concerns.empty")}
                   </td></tr>
                 )}
@@ -2031,7 +2045,7 @@ export default function Concerns() {
                   const expanded = expandedId === r.id;
                   // Every row is expandable — the action bar always carries at
                   // least «Ko'rish», even for a viewer with no rights over it.
-                  const colSpan = 9;
+                  const colSpan = 10;
                   // Overdue = still open and past entry_date + deadline_days
                   // (same convention as the mobile card and the charts).
                   const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
@@ -2115,6 +2129,15 @@ export default function Concerns() {
                             no done_at timestamp show "—". */}
                         <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
                           {fmtResolution(resolutionMinutes(r))}
+                        </td>
+                        {/* Thread — its own column so the badge is readable at a
+                            glance; the click must not toggle the row open. */}
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <CommentsButton
+                            count={r.comment_count}
+                            label={t("concerns.commentsTitle")}
+                            onClick={() => setCommentsRow(r)}
+                          />
                         </td>
                       </tr>
                       {expanded && (
@@ -2615,6 +2638,21 @@ export default function Concerns() {
         tone="danger"
         loading={deleteMutation.isPending}
       />
+
+      {/* Chat-style comments — everyone who can SEE a concern may write in its
+          thread (the backend gates it the same way): the discussion is how the
+          cell's leader, the brigadir and the current holder talk about a row
+          without any of them having to own it. */}
+      {commentsRow && (
+        <CommentsModal
+          endpoint={`/api/concerns/${commentsRow.id}/comments`}
+          queryKey={["concern-comments", commentsRow.id]}
+          refreshKeys={[["concerns"]]}   // comment_count on the row
+          title={t("concerns.commentsTitle")}
+          subtitle={tl(commentsRow.concern_text)}
+          onClose={() => setCommentsRow(null)}
+        />
+      )}
     </Layout>
   );
 }

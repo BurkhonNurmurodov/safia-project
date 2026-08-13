@@ -352,6 +352,12 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} вернул(а) вам опасение", "Уровень: {level_label} | Лидер: {leader_name} | Дата: {date}\nПричина: {reason}\n{concern}"),
         "en": ("{actor_name} returned a concern to you", "Level: {level_label} | Leader: {leader_name} | Date: {date}\nReason: {reason}\n{concern}"),
     },
+    "concern_comment": {
+        "uz": ("{author_name} xavotirga izoh qoldirdi", "{comment}\nXavotir: {concern}"),
+        "uz_cyrl": ("{author_name} хавотирга изоҳ қолдирди", "{comment}\nХавотир: {concern}"),
+        "ru": ("{author_name} оставил(а) комментарий к опасению", "{comment}\nОпасение: {concern}"),
+        "en": ("{author_name} commented on a concern", "{comment}\nConcern: {concern}"),
+    },
     "task_created": {
         "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
         "uz_cyrl": ("Янги вазифа: {creator_name}", "Муддат: {date}\n{task}"),

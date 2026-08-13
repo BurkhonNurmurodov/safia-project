@@ -1608,6 +1608,28 @@ class ConcernEscalation(Base):
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class LeaderConcernComment(Base):
+    """Chat-style comment thread on a concern — the discussion between the
+    people a concern passes through (its cell's leader, the unit brigadir and
+    whoever holds it now). Same shape and ownership rule as
+    ``LeaderTaskComment``: editable/deletable only by the authoring PROFILE
+    (enforced in routers/concerns.py)."""
+    __tablename__ = "leader_concern_comments"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    concern_id         = Column(Integer, nullable=False, index=True)   # leader_concerns.id
+    author_telegram_id = Column(BigInteger, nullable=False)
+    # telegram_user_roles.id of the authoring PROFILE (0 = admin sentinel), kept
+    # for parity with the task thread; ``author_profile`` below is THE ownership
+    # key — any account holding the authoring profile may edit or delete.
+    author_role_ref    = Column(Integer, nullable=True)
+    author_profile     = Column(String, nullable=True, index=True)     # "role:id"
+    author_name        = Column(String, nullable=True)                 # snapshot of the author's display name
+    text               = Column(Text, nullable=False)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    edited_at          = Column(DateTime(timezone=True), nullable=True)  # set on every edit
+
+
 class LeaderTask(Base):
     """A supervisor→leader assignment (the "DAILY протокол" board that used to
     live in Google Sheets). ``priority`` is the per-leader queue position over

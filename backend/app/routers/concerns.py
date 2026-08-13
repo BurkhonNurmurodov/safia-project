@@ -51,7 +51,10 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Admin, Cell, ConcernEscalation, LeaderConcern, Manager, RoleProfile, TelegramUserRole
+from app.models import (
+    Admin, Cell, ConcernEscalation, LeaderConcern, LeaderConcernComment,
+    Manager, RoleProfile, TelegramUserRole,
+)
 from app.capabilities import page_cap, page_scope_is_all
 from app.capability_alerts import alert_grant_use, page_grant_used
 from app.permissions import require_page
@@ -60,6 +63,7 @@ from app.services.factory_scope import factory_manager_ids, resolve_factory
 # bell row on the profile + a DM to every account holding it), _notify is the
 # single-account fallback for legacy rows that resolve to no profile.
 from app import identity
+from app.routers.auth import ADMIN_ROLE_REF
 from app.routers.staff import _notify, _profile_key, notify_profile
 
 router = APIRouter(prefix="/api/concerns", tags=["concerns"])
@@ -207,6 +211,7 @@ def _serialize(
     sm_names: Optional[dict] = None,
     owner_names: Optional[dict] = None,
     cell_leaders: Optional[dict] = None,
+    comment_counts: Optional[dict] = None,
 ) -> dict:
     resolution_days = None
     if c.completion_date and c.entry_date:
@@ -273,6 +278,8 @@ def _serialize(
         "shift_manager_name": c.shift_manager_name,
         "responsible_name": responsible,
         "escalation_count": (esc_counts or {}).get(c.id, 0),
+        # Size of the discussion thread — the badge on the Comments column.
+        "comment_count": (comment_counts or {}).get(c.id, 0),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
     # Per-row rights, computed for the requesting viewer (see _can_edit):
@@ -751,12 +758,17 @@ def list_concerns(
     sm_names = _sm_names(db)
     owner_names = _owner_names(db, rows)
     cell_leaders = _cell_leaders(db)
+    comment_counts = _comment_counts(db, ids)
     return {
         "role": role,
         "picker": picker,
         "read_only": role == "top-manager",
         "can_pick_leader": picker is not None,
-        "data": [_serialize(r, ctx, esc_counts, sm_names, owner_names, cell_leaders) for r in rows],
+        "data": [
+            _serialize(r, ctx, esc_counts, sm_names, owner_names, cell_leaders,
+                       comment_counts)
+            for r in rows
+        ],
     }
 
 
@@ -1052,7 +1064,8 @@ def create_concern(
         db.commit()
 
     return _serialize(c, _viewer_ctx(db, payload), sm_names=_sm_names(db),
-                      owner_names=_owner_names(db, [c]), cell_leaders=_cell_leaders(db))
+                      owner_names=_owner_names(db, [c]), cell_leaders=_cell_leaders(db),
+                      comment_counts=_comment_counts(db, [c.id]))
 
 
 @router.put("/{concern_id}")
@@ -1130,7 +1143,8 @@ def update_concern(
         db.commit()
 
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
-                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db))
+                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db),
+                      _comment_counts(db, [c.id]))
 
 
 def _esc_counts_for(db: Session, concern_id: int) -> dict:
@@ -1138,6 +1152,22 @@ def _esc_counts_for(db: Session, concern_id: int) -> dict:
         ConcernEscalation.concern_id == concern_id
     ).scalar() or 0
     return {concern_id: n}
+
+
+def _comment_counts(db: Session, ids) -> dict:
+    """concern_id → thread size, in one query. Every endpoint that returns a
+    serialized concern feeds this in: a row re-serialized after a status change
+    or an escalation would otherwise come back with an empty badge and blank the
+    count the client already had."""
+    ids = list(ids)
+    if not ids:
+        return {}
+    return dict(
+        db.query(LeaderConcernComment.concern_id, func.count(LeaderConcernComment.id))
+        .filter(LeaderConcernComment.concern_id.in_(ids))
+        .group_by(LeaderConcernComment.concern_id)
+        .all()
+    )
 
 
 def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
@@ -1354,7 +1384,20 @@ def escalate_concern(
         db.commit()
 
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
-                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db))
+                      _sm_names(db), _owner_names(db, [c]), _cell_leaders(db),
+                      _comment_counts(db, [c.id]))
+
+
+def _visible_concern(concern_id: int, payload: dict, db: Session) -> LeaderConcern:
+    """The concern as the caller may SEE it (scope-filtered, not edit-gated) —
+    what the read-side sub-resources (history, comments) hang off. A row outside
+    the caller's scope is a 404, never a 403: they must not learn it exists."""
+    c = _scope_query(
+        db.query(LeaderConcern).filter(LeaderConcern.id == concern_id), payload, db,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Concern not found")
+    return c
 
 
 @router.get("/{concern_id}/history")
@@ -1365,11 +1408,7 @@ def concern_history(
 ):
     """Escalation trail for the history modal, newest first — readable by
     anyone who can SEE the concern (scope-filtered, not edit-gated)."""
-    c = _scope_query(
-        db.query(LeaderConcern).filter(LeaderConcern.id == concern_id), payload, db,
-    ).first()
-    if not c:
-        raise HTTPException(status_code=404, detail="Concern not found")
+    _visible_concern(concern_id, payload, db)
     rows = db.query(ConcernEscalation).filter_by(concern_id=concern_id).order_by(
         ConcernEscalation.id.desc()
     ).all()
@@ -1401,5 +1440,158 @@ def delete_concern(
     if payload.get("role") == "leader":
         raise HTTPException(status_code=403, detail="Leaders cannot delete concerns")
     _assert_can_edit(payload, c, db)
+    # The thread has no meaning without the concern it hangs off, and the id is
+    # reusable — an orphaned row would surface under a future concern.
+    db.query(LeaderConcernComment).filter(
+        LeaderConcernComment.concern_id == c.id
+    ).delete(synchronize_session=False)
+    db.delete(c)
+    db.commit()
+
+
+# ── comments ─────────────────────────────────────────────────────────────────
+# A chat thread on a concern, same shape as the one on a leader task: anyone who
+# can SEE the concern may write in it (a comment changes nothing about the row,
+# and the value of the thread is exactly that the people around a concern — the
+# cell's leader, the brigadir, whoever holds it now, a watching top-manager —
+# can ask and answer without owning it), while editing and deleting a message
+# stay with the PROFILE that wrote it.
+
+
+def _profile_ref(payload: dict) -> Optional[int]:
+    """Stable id of the acting profile: telegram_user_roles.id of the active
+    role, or the admin sentinel (admin JWTs carry role_ref=None)."""
+    return ADMIN_ROLE_REF if payload.get("role") == "admin" else payload.get("role_ref")
+
+
+def _is_comment_author(c: LeaderConcernComment, payload: dict, db: Session) -> bool:
+    """Ownership is per-PROFILE, not per-account: any account working as the
+    authoring profile may edit or delete the message — a successor after a
+    handover included — while the same account switched into another profile may
+    not. Rows without a profile key fall back to the (account + role row) pair."""
+    if c.author_profile:
+        return identity.same_profile(c.author_profile,
+                                     identity.viewer_profile_key(db, payload))
+    if c.author_telegram_id != int(payload["sub"]):
+        return False
+    return c.author_role_ref is None or c.author_role_ref == _profile_ref(payload)
+
+
+def _serialize_comment(c: LeaderConcernComment, payload: dict, db: Session) -> dict:
+    return {
+        "id": c.id,
+        "concern_id": c.concern_id,
+        "author_telegram_id": c.author_telegram_id,
+        "author_role_ref": c.author_role_ref,
+        "author_profile": c.author_profile,
+        "author_name": c.author_name,
+        "text": c.text,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "edited_at": c.edited_at.isoformat() if c.edited_at else None,
+        # Edit/delete rights of the CALLER, resolved server-side so the client
+        # never has to re-derive the profile-ownership rule.
+        "is_own": _is_comment_author(c, payload, db),
+    }
+
+
+class CommentIn(BaseModel):
+    text: str
+
+
+@router.get("/{concern_id}/comments")
+def list_concern_comments(
+    concern_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    _visible_concern(concern_id, payload, db)
+    rows = (
+        db.query(LeaderConcernComment)
+        .filter(LeaderConcernComment.concern_id == concern_id)
+        .order_by(LeaderConcernComment.created_at, LeaderConcernComment.id)
+        .all()
+    )
+    return [_serialize_comment(c, payload, db) for c in rows]
+
+
+@router.post("/{concern_id}/comments")
+def add_concern_comment(
+    concern_id: int,
+    body: CommentIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    if not (body.text or "").strip():
+        raise HTTPException(status_code=400, detail="Comment text is required")
+    c = _visible_concern(concern_id, payload, db)
+    author = int(payload["sub"])
+    row = LeaderConcernComment(
+        concern_id=c.id,
+        author_telegram_id=author,
+        author_role_ref=_profile_ref(payload),
+        author_profile=identity.viewer_profile_key(db, payload),
+        author_name=payload.get("full_name"),
+        text=body.text.strip(),
+    )
+    db.add(row)
+
+    # Everyone who tracks this concern hears the message — the holder at its
+    # current level, the unit's brigadir and the cell's leader — minus the
+    # author's own account (_notify_recipients handles the dedupe).
+    _notify_recipients(
+        db, _interested(db, c), "concern_comment",
+        {
+            "author_name": payload.get("full_name") or "",
+            "comment": _snippet(body.text),
+            "concern": _snippet(c.concern_text),
+        },
+        author, set(),
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_comment(row, payload, db)
+
+
+def _own_comment(concern_id: int, comment_id: int, payload: dict,
+                 db: Session) -> LeaderConcernComment:
+    c = db.query(LeaderConcernComment).filter(
+        LeaderConcernComment.id == comment_id,
+        LeaderConcernComment.concern_id == concern_id,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if not _is_comment_author(c, payload, db):
+        raise HTTPException(status_code=403, detail="Only the author profile can modify a comment")
+    return c
+
+
+@router.put("/{concern_id}/comments/{comment_id}")
+def edit_concern_comment(
+    concern_id: int,
+    comment_id: int,
+    body: CommentIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    if not (body.text or "").strip():
+        raise HTTPException(status_code=400, detail="Comment text is required")
+    _visible_concern(concern_id, payload, db)
+    c = _own_comment(concern_id, comment_id, payload, db)
+    c.text = body.text.strip()
+    c.edited_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    return _serialize_comment(c, payload, db)
+
+
+@router.delete("/{concern_id}/comments/{comment_id}", status_code=204)
+def delete_concern_comment(
+    concern_id: int,
+    comment_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("concerns")),
+):
+    _visible_concern(concern_id, payload, db)
+    c = _own_comment(concern_id, comment_id, payload, db)
     db.delete(c)
     db.commit()
