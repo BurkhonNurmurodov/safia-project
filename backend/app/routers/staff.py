@@ -28,8 +28,8 @@ from app.capability_alerts import alert_grant_use, tv, unit_name
 from app.capabilities import (
     CAP_ATTENDANCE_DELETE, CAP_ATTENDANCE_EDIT, CAP_CLEANUP, CAP_DAY_REOPEN,
     CAP_DOCUMENTS_APPROVE, CAP_REQUESTS_APPROVE,
-    cap_scope, capability_pages, has_cap, page_scope_is_all, profile_unit_ids,
-    scope_is_all,
+    cap_scope, capability_pages, caller_denied_pages, has_cap, page_scope_is_all,
+    profile_unit_ids, scope_is_all,
 )
 from app.config import settings
 from app.database import get_db
@@ -127,7 +127,7 @@ def _require_staff(caller=Depends(_get_caller), db: Session = Depends(get_db)):
     # capability grant unlocks one of them, so a granted approver can reach the
     # queue they were given without opening /staff for their whole role.
     if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
-                           capability_pages(db, caller)):
+                           capability_pages(db, caller), caller_denied_pages(db, caller)):
         raise HTTPException(status_code=403, detail="Access denied")
     return caller
 
@@ -981,7 +981,7 @@ def list_supervisors(caller=Depends(_get_caller), db: Session = Depends(get_db))
     sees_all_units = _staff_sees_all(db, caller)
     if cleanup_scope is None and not sees_all_units:
         if not role_can_access(caller.get("role"), ["staff", "daily"], get_page_access(db),
-                               capability_pages(db, caller)):
+                               capability_pages(db, caller), caller_denied_pages(db, caller)):
             raise HTTPException(status_code=403, detail="Access denied")
         if caller.get("role") not in ("admin", "shift-manager"):
             raise HTTPException(status_code=403, detail="Admin or shift-manager only")

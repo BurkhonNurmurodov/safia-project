@@ -106,6 +106,16 @@ export function groupProfileNodes(role, nodes, t, tl) {
   return nodes;
 }
 
+// Key namespace for a PROFILE target leaf. Prefixed so it can never collide
+// with a telegram_id, and so a caller can tell the two kinds of selected key
+// apart with a plain startsWith — the Permissions tab sends profiles and
+// accounts to different halves of one payload.
+export const PROFILE_TARGET_PREFIX = "profile:";
+export const isProfileTarget = (key) => String(key).startsWith(PROFILE_TARGET_PREFIX);
+export const profileTargetKey = (profileKey) => `${PROFILE_TARGET_PREFIX}${profileKey}`;
+export const profileKeyOf = (targetKey) =>
+  String(targetKey).slice(PROFILE_TARGET_PREFIX.length);
+
 /**
  * Turn the /api/broadcast/recipients tree into CheckboxTree `groups`:
  * role ▸ [shift [▸ supervisor]] ▸ profile ▸ Telegram user. A user leaf is keyed
@@ -118,24 +128,42 @@ export function groupProfileNodes(role, nodes, t, tl) {
  *   leafHint     – optional (user) => string|undefined; when given, its return
  *                  rides each USER leaf as a right-aligned chip (the Permissions
  *                  picker shows the count of grants that account holds)
+ *   profileLeaf  – optional (profile) => { label, hint } | null. When given, the
+ *                  PROFILE itself becomes a selectable leaf, listed first among
+ *                  its own accounts. Broadcast leaves this off — you cannot DM a
+ *                  position, only a person — but permissions can be attached to
+ *                  one, and must be: a profile exists before anybody registers,
+ *                  so without this an unclaimed profile is a dead row nothing
+ *                  can be done to. Turning it on also means an unclaimed profile
+ *                  stops being a disabled leaf and becomes a branch holding just
+ *                  its own target, so the tree keeps one shape throughout.
  */
-export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint) {
+export function buildRecipientGroups(tree, t, tl, noUsersLabel, leafHint, profileLeaf) {
   return (tree || []).map((block) => {
     const meta = ROLE_SECTIONS[block.role] || {};
     const profiles = (block.profiles || []).map((p) => {
       const pos = { shift: p.shift, unit: p.unit, unitId: p.unit_id };
-      return p.users && p.users.length
-        ? {
-            ...pos,
-            key: p.key,
-            label: tl(p.name),
-            children: p.users.map((u) => ({
-              key: String(u.telegram_id),
-              label: u.name, // live getChat full name — kept verbatim
-              sub: u.username ? `@${u.username}` : undefined,
-              hint: leafHint ? leafHint(u) : undefined,
-            })),
-          }
+      const users = (p.users || []).map((u) => ({
+        key: String(u.telegram_id),
+        label: u.name, // live getChat full name — kept verbatim
+        sub: u.username ? `@${u.username}` : undefined,
+        hint: leafHint ? leafHint(u) : undefined,
+      }));
+      const self = profileLeaf ? profileLeaf(p) : null;
+      if (self) {
+        return {
+          ...pos,
+          key: p.key,
+          label: tl(p.name),
+          children: [
+            { key: profileTargetKey(p.key), label: self.label, hint: self.hint,
+              sub: users.length ? undefined : noUsersLabel },
+            ...users,
+          ],
+        };
+      }
+      return users.length
+        ? { ...pos, key: p.key, label: tl(p.name), children: users }
         : { ...pos, key: p.key, label: tl(p.name), disabled: true, hint: noUsersLabel };
     });
     return {

@@ -1831,6 +1831,10 @@ class ProfileCapability(Base):
     ``migrate_user_capabilities`` startup fan-out that seeds UserCapability from
     them; nothing writes here anymore. Kept so that migration is re-runnable and
     the history is not destroyed.
+
+    NOT to be confused with :class:`ProfilePermission`, the LIVE profile-level
+    table: this one is a frozen pre-rollout snapshot, that one holds pending
+    grants and permanent page denies written by the Permissions tab today.
     """
     __tablename__ = "profile_capabilities"
 
@@ -1843,6 +1847,52 @@ class ProfileCapability(Base):
 
     __table_args__ = (
         UniqueConstraint("profile_key", "capability", name="uq_profile_capability"),
+    )
+
+
+class ProfilePermission(Base):
+    """One permission entry attached to a PROFILE instead of to a login.
+
+    :class:`UserCapability` answers "what may this Telegram ACCOUNT do". This
+    answers the two questions an account-keyed table structurally cannot:
+
+      * **mode="grant" — a PENDING grant.** What the NEXT account to claim this
+        profile starts with. A profile exists before anybody registers (see
+        `pre-created profiles`), so an admin can equip a position in advance
+        instead of waiting for the person to appear and then remembering to go
+        back. Never consulted by a guard: it is COPIED into a real
+        :class:`UserCapability` row when a future holder first signs in, and the
+        row is consumed. Accounts that already held the profile when the entry
+        was written are deliberately untouched — the pending entry is about who
+        comes next, and an admin editing a position's defaults must never
+        silently re-open something a current holder had revoked.
+
+      * **mode="deny" — a PERMANENT page block.** The one subtractive entry in
+        the whole permission system: it CLOSES a page the profile's role opens
+        on the Access matrix, for every account holding the profile, now and
+        forever after. Never copied, never consumed — "this position does not
+        see /staff" has to stay true when the person filling it changes. Only
+        the ``page.view.*`` family may be denied; role-native ACTIONS stay
+        purely additive, so no hardcoded authority check has to consult a deny
+        list.
+
+    Resolution, most specific first (mirrored in ``capabilities.page_allowed``):
+    the account's own entry decides if it has one, else a profile deny closes
+    the page, else the role × page matrix. An account-level grant is therefore
+    the escape hatch from a profile deny for exactly one login.
+    """
+    __tablename__ = "profile_permissions"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    profile_key = Column(String, nullable=False, index=True)       # "role:id"
+    capability  = Column(String, nullable=False)
+    mode        = Column(String, nullable=False, default="grant")  # grant | deny
+    scope       = Column(String, nullable=False, default="own")    # own | all (grant only)
+    granted_by  = Column(String, nullable=True)                    # admin's display name
+    granted_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("profile_key", "capability", name="uq_profile_permission"),
     )
 
 
@@ -1870,12 +1920,20 @@ class UserCapability(Base):
     account may be given a page its role was never ticked for on the Access
     matrix, and — on the pages whose data narrows to the viewer — ``scope`` says
     whether it reads only its own rows or the whole factory.
+
+    ``mode`` is "grant" for every row the system ever wrote before the deny
+    rollout, and stays the default. "deny" CLOSES a ``page.view.*`` page for
+    this one login — the account-level counterpart of a
+    :class:`ProfilePermission` deny, and the more specific of the two, so it
+    also overrides a deny (or an opening) inherited from the profile. Only the
+    page family may carry it; an action capability is either granted or absent.
     """
     __tablename__ = "user_capabilities"
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, nullable=False, index=True)
     capability  = Column(String, nullable=False)
+    mode        = Column(String, nullable=False, default="grant")  # grant | deny
     scope       = Column(String, nullable=False, default="own")   # own | all
     granted_by  = Column(String, nullable=True)                   # admin's display name
     granted_at  = Column(DateTime(timezone=True), server_default=func.now())

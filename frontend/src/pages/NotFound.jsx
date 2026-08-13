@@ -26,9 +26,9 @@ export default function NotFound() {
   const { pathname } = useLocation();
   const { auth } = useAuth();
   const { access } = usePageAccess();
-  const { capPages } = useCapabilities();
+  const { capPages, deniedPages } = useCapabilities();
 
-  const home = firstAccessibleRoute(auth?.role, access, capPages) || "/";
+  const home = firstAccessibleRoute(auth?.role, access, capPages, deniedPages) || "/";
 
   return (
     <Layout title={t("notFound.title")}>

@@ -19,13 +19,16 @@ from app import identity
 from app.capability_alerts import alert_grant_use, tv
 from app.capabilities import (
     CAP_CELLS_MANAGE, CAP_CLEANUP, CAP_PROFILES_MANAGE, CAP_USERS_MANAGE,
-    CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, SCOPES, UNGRANTABLE_ROLES,
-    apply_caps, cap_scope, profile_unit_ids, require_cap,
+    CAPABILITIES, CAPABILITY_GROUPS, CAPABILITY_KEYS, DENIABLE_KEYS, MODE_DENY,
+    SCOPES, UNGRANTABLE_ROLES,
+    apply_caps, apply_profile_perms, cap_scope, caller_denied_pages,
+    capability_pages, profile_unit_ids, require_cap,
 )
 from app.config import settings
 from app.database import get_db
 from app.models import (
-    Admin, Manager, Attendance, CapabilityAudit, CapabilityUse, UserCapability,
+    Admin, Manager, Attendance, CapabilityAudit, CapabilityUse, ProfilePermission,
+    UserCapability,
     RoleProfile, SheetSource, AppSetting, TelegramUser, TelegramUserRole,
     EditRequest, HrDocument, DayApproval, DailySubmission, LeaderSyncMeta,
     Cell, CellAttendance,
@@ -72,7 +75,9 @@ def verify_refresh_access(
     role = payload.get("role")
     if role == "admin":
         return payload
-    if name == "leaders" and role_can_access(role, ["leaders"], get_page_access(db)):
+    if name == "leaders" and role_can_access(role, ["leaders"], get_page_access(db),
+                                             capability_pages(db, payload),
+                                             caller_denied_pages(db, payload)):
         return payload
     raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -767,20 +772,45 @@ def admin_update_page_access(
 
 @router.get("/capabilities")
 def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """The catalog plus every grant, keyed by Telegram account, as a
-    role ▸ profile ▸ user tree.
+    """The catalog plus every entry, as a role ▸ profile ▸ user tree.
 
-    Capabilities are granted per ACCOUNT now, so the picker descends past the
+    Capabilities are granted per ACCOUNT, so the picker descends past the
     profile to the individual logins that hold it — the same tree the Broadcast
-    recipient picker builds. Admin profiles are omitted (those accounts already
-    hold the whole catalog), and a profile nobody has claimed simply shows no
-    users to grant, since a grant needs a login to attach to."""
+    recipient picker builds. Admin profiles are omitted; those accounts already
+    hold the whole catalog.
+
+    Each profile ALSO carries its own entries under ``perms``, because a profile
+    is a target in its own right: it exists before anyone registers, so a
+    position can be equipped (a PENDING grant, inherited by the next account to
+    claim it) or have a page closed (a PERMANENT deny binding every holder)
+    while `users` is still empty. That is the case the old per-account-only tree
+    could not express at all — an unclaimed profile was a dead row with a "not
+    registered" chip and nothing an admin could do about it."""
     from app.routers.broadcast import _profile_holders, _stored_names
 
     grants: dict[int, dict[str, str]] = {}
+    denies: dict[int, list[str]] = {}
     for row in db.query(UserCapability).all():
-        if row.capability in CAPABILITY_KEYS:
+        if row.capability not in CAPABILITY_KEYS:
+            continue
+        if row.mode == MODE_DENY:
+            denies.setdefault(row.telegram_id, []).append(row.capability)
+        else:
             grants.setdefault(row.telegram_id, {})[row.capability] = (
+                row.scope if row.scope in SCOPES else "own")
+
+    # One sweep, not one query per profile: the tree carries every profile in the
+    # company (~150), and per-row lookups would turn opening the tab into 150
+    # round-trips for a table that fits in memory many times over.
+    p_grants: dict[str, dict[str, str]] = {}
+    p_denies: dict[str, list[str]] = {}
+    for row in db.query(ProfilePermission).all():
+        if row.capability not in CAPABILITY_KEYS:
+            continue
+        if row.mode == MODE_DENY:
+            p_denies.setdefault(row.profile_key, []).append(row.capability)
+        else:
+            p_grants.setdefault(row.profile_key, {})[row.capability] = (
                 row.scope if row.scope in SCOPES else "own")
 
     # Reuse the Broadcast recipient structure (role → profile → holder ids) and
@@ -796,6 +826,7 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
             "name":        names.get(tid) or f"#{tid}",
             "username":    u.username if u else None,
             "caps":        grants.get(tid, {}),
+            "denies":      sorted(denies.get(tid, [])),
         }
 
     # `shift` / `unit` stay structured rather than a pre-joined caption, so the
@@ -808,6 +839,8 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
         for p in b["profiles"]:
             node = {k: p[k] for k in ("key", "name", "shift", "unit", "unit_id") if k in p}
             node["users"] = [user_node(t) for t in p["user_ids"]]
+            node["caps"] = p_grants.get(p["key"], {})
+            node["denies"] = sorted(p_denies.get(p["key"], []))
             profiles.append(node)
         tree.append({"role": b["role"], "profiles": profiles})
 
@@ -815,14 +848,17 @@ def admin_list_capabilities(db: Session = Depends(get_db), _: dict = Depends(ver
         "capabilities": CAPABILITIES,
         "groups":       CAPABILITY_GROUPS,
         "scopes":       list(SCOPES),
+        "deniable":     sorted(DENIABLE_KEYS),
         "tree":         tree,
     }
 
 
 class CapabilitiesPayload(BaseModel):
-    keys:    list[int]            # telegram ids to apply the change to
-    grants:  dict[str, str] = {}  # {capability: "own" | "all"} to add / rescope
-    revokes: list[str] = []       # capabilities to remove
+    keys:     list[int] = []       # telegram ids to apply the change to
+    profiles: list[str] = []       # profile keys ("supervisor:42") to apply it to
+    grants:   dict[str, str] = {}  # {capability: "own" | "all"} to add / rescope
+    denies:   list[str] = []       # page capabilities to BLOCK
+    revokes:  list[str] = []       # entries to clear back to "inherit"
 
 
 @router.put("/capabilities")
@@ -831,29 +867,57 @@ def admin_set_capabilities(
     db: Session = Depends(get_db),
     admin_payload: dict = Depends(verify_admin),
 ):
-    """Apply one capability DIFF to one or many Telegram accounts.
+    """Apply one permission DIFF to any mix of Telegram accounts and PROFILES.
 
     A diff rather than a whole-set replace because the Permissions tab selects
-    several accounts at once and they rarely hold the same grants — replacing
+    several targets at once and they rarely hold the same entries — replacing
     would wipe whatever the admin wasn't looking at. Granting an admin account
     is a harmless no-op (they already hold everything via the role check), so no
-    special rejection is needed here."""
-    if not payload.keys:
+    special rejection is needed here.
+
+    The same three directions apply to both kinds of target, but they land
+    differently and the tab says so: on an ACCOUNT a grant takes effect on that
+    login's next request, while on a PROFILE it waits for the next account to
+    claim it. A deny is immediate either way."""
+    if not payload.keys and not payload.profiles:
         raise HTTPException(status_code=400, detail="No users selected")
 
     if any(tid <= 0 for tid in payload.keys):
         raise HTTPException(status_code=400, detail="Invalid telegram id")
 
-    unknown = [k for k in list(payload.grants) + payload.revokes if k not in CAPABILITY_KEYS]
+    unknown = [k for k in list(payload.grants) + payload.revokes + payload.denies
+               if k not in CAPABILITY_KEYS]
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown capability: {unknown[0]}")
 
-    caps = apply_caps(
-        db, payload.keys, payload.grants, payload.revokes,
-        actor_name=admin_payload.get("full_name"),
-        actor_telegram_id=int(admin_payload["sub"]),
-    )
-    return {"status": "ok", "caps": caps}
+    # Only pages may be denied — an action's authority is checked by hardcoded
+    # rules that never consult a deny list, so accepting one here would store a
+    # block that silently does nothing. Rejected loudly rather than dropped.
+    bad_deny = [k for k in payload.denies if k not in DENIABLE_KEYS]
+    if bad_deny:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only page access can be denied, not: {bad_deny[0]}")
+
+    if any(":" not in key for key in payload.profiles):
+        raise HTTPException(status_code=400, detail="Invalid profile key")
+
+    actor_name = admin_payload.get("full_name")
+    actor_id = int(admin_payload["sub"])
+
+    caps: dict = {}
+    if payload.keys:
+        caps = apply_caps(
+            db, payload.keys, payload.grants, payload.revokes, payload.denies,
+            actor_name=actor_name, actor_telegram_id=actor_id,
+        )
+    profile_caps: dict = {}
+    if payload.profiles:
+        profile_caps = apply_profile_perms(
+            db, payload.profiles, payload.grants, payload.revokes, payload.denies,
+            actor_name=actor_name, actor_telegram_id=actor_id,
+        )
+    return {"status": "ok", "caps": caps, "profiles": profile_caps}
 
 
 @router.get("/capabilities/audit")
@@ -865,8 +929,12 @@ def admin_capability_audit(
     """Newest-first grant/revoke history. Survives the grant itself: a revoked
     capability deletes its UserCapability row but never its audit trail.
 
-    Each row's target account is resolved to a display name; pre-rollout rows
-    carry a ``profile_key`` instead of a ``telegram_id`` and fall back to it."""
+    Each row's target is resolved to a display name. A row carrying a
+    ``profile_key`` instead of a ``telegram_id`` targeted a PROFILE — either a
+    pre-rollout grant or one of today's profile-level entries — and is flagged
+    ``is_profile`` so the log can say which of the two kinds of target a change
+    was aimed at. A profile name that no longer resolves falls back to the raw
+    key rather than disappearing."""
     rows = (db.query(CapabilityAudit)
               .order_by(CapabilityAudit.id.desc())
               .limit(max(1, min(limit, 1000))).all())
@@ -878,14 +946,20 @@ def admin_capability_audit(
             names[u.telegram_id] = (
                 u.tg_name or u.full_name or (f"@{u.username}" if u.username else "") or f"#{u.telegram_id}")
 
+    profile_names: dict[str, str] = {}
+    for key in {r.profile_key for r in rows if r.profile_key and not r.telegram_id}:
+        profile_names[key] = identity.profile_display_name(db, key) or key
+
     def target_name(r) -> str:
         if r.telegram_id:
             return names.get(r.telegram_id) or f"#{r.telegram_id}"
-        return r.profile_key or "—"
+        return profile_names.get(r.profile_key) or r.profile_key or "—"
 
     return [{
         "id":          r.id,
         "telegram_id": r.telegram_id,
+        "profile_key": r.profile_key,
+        "is_profile":  bool(r.profile_key and not r.telegram_id),
         "target_name": target_name(r),
         "capability":  r.capability,
         "action":      r.action,

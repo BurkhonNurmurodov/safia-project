@@ -2692,7 +2692,7 @@ def _caller_shift(db, payload: dict) -> int | None:
 
 @bot.message_handler(commands=["ojidaniya"])
 def _ojidaniya_cmd(message: types.Message):
-    from app.capabilities import capability_pages
+    from app.capabilities import capability_pages, caller_denied_pages
     from app.permissions import get_page_access, role_can_access
     from app.services.downtime_card import CardError, render_downtime_card
 
@@ -2723,7 +2723,8 @@ def _ojidaniya_cmd(message: types.Message):
                 bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
                 return
             if not role_can_access(payload["role"], ["downtime"],
-                                   get_page_access(db), capability_pages(db, payload)):
+                                   get_page_access(db), capability_pages(db, payload),
+                                   caller_denied_pages(db, payload)):
                 bot.send_message(message.chat.id, _msg(lang, "shot_no_access"))
                 return
             shift = _caller_shift(db, payload)

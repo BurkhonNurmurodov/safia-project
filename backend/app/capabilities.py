@@ -13,21 +13,49 @@ The platform has two independent permission axes:
 
 THE RULES, in one place:
 
-1. **Additive, never subtractive.** Every hardcoded authority check keeps
-   working exactly as before — admins do everything, shift-managers still
-   approve edit-requests, the receiving supervisor still approves a transfer
-   addressed to their unit. A capability only ever *widens* the set of people
-   who may act, so nothing breaks on deploy and a grant is a deliberate
-   exception rather than a migration.
+1. **Additive for ACTIONS; pages may also be subtracted.** Every hardcoded
+   authority check keeps working exactly as before — admins do everything,
+   shift-managers still approve edit-requests, the receiving supervisor still
+   approves a transfer addressed to their unit. An action capability only ever
+   *widens* the set of people who may act, so nothing breaks on deploy and a
+   grant is a deliberate exception rather than a migration.
 
-2. **Keyed by the Telegram ACCOUNT.** A grant belongs to one ``telegram_id``
-   (the JWT ``sub``), so two accounts holding the same profile can differ — one
-   supervisor login can be made the transfer handler without the other getting
-   it. This is the deliberate exception to "a profile is the person"
-   (``app/identity.py``): identity, data ownership and notifications still key
-   off the profile, but the power to ACT is handed out per login. ``scope``
-   "own" is still resolved from the profile the account is acting as, so the
-   rows a grant reaches never drift from what the account could already see.
+   PAGE access is the one place a subtraction exists: a ``page.view.*`` entry
+   may carry ``mode="deny"``, which CLOSES a page the person's role opens on
+   the Access matrix. It is deliberately confined to the page family, because a
+   page is gated in exactly two places (``require_page`` here, ``canAccessPage``
+   on the client) while a role-native action is gated by hardcoded checks
+   scattered across every router — a deny list those checks never consult would
+   be a lie. To take an ACTION away, revoke the grant or change the profile's
+   role.
+
+2. **Keyed by the Telegram ACCOUNT, with a PROFILE-level layer underneath.** A
+   grant belongs to one ``telegram_id`` (the JWT ``sub``), so two accounts
+   holding the same profile can differ — one supervisor login can be made the
+   transfer handler without the other getting it. This is the deliberate
+   exception to "a profile is the person" (``app/identity.py``): identity, data
+   ownership and notifications still key off the profile, but the power to ACT
+   is handed out per login. ``scope`` "own" is still resolved from the profile
+   the account is acting as, so the rows a grant reaches never drift from what
+   the account could already see.
+
+   What an account-keyed table cannot express is a profile **nobody has claimed
+   yet** — and profiles are created before their people register. So
+   :class:`~app.models.ProfilePermission` adds a second layer, keyed by
+   ``profile_key``, holding two kinds of entry:
+
+     * a PENDING grant — what the NEXT account to claim this profile starts
+       with. Never consulted by a guard; :func:`materialize_pending` copies it
+       into a real per-account row when a future holder first signs in, and
+       consumes it. Accounts that already held the profile are untouched.
+     * a permanent page DENY — applies to every holder of the profile, now and
+       future, and is never consumed. "This position does not see /staff" stays
+       true when the person filling it changes.
+
+   Resolution is most-specific-first (:func:`page_allowed`): the account's own
+   entry decides if it has one, else a profile deny closes the page, else the
+   role × page matrix. An account-level grant is therefore the escape hatch
+   from a profile deny for exactly one login.
 
 3. **Read live.** Guards look grants up per request, so a grant — and, more
    importantly, a REVOKE — takes effect on the person's next page load with no
@@ -67,8 +95,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.identity import parse_profile_key, role_row_profile_key
-from app.models import CapabilityAudit, Manager, RoleProfile, TelegramUserRole, UserCapability
+from app.identity import parse_profile_key, role_row_profile_key, viewer_profile_key
+from app.models import (
+    CapabilityAudit, Manager, ProfilePermission, RoleProfile, TelegramUserRole,
+    UserCapability,
+)
 from app.permissions import PAGE_KEYS
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/webapp")
@@ -155,6 +186,18 @@ CAPABILITY_GROUPS = ["pages", "requests", "attendance", "identity"]
 SCOPES = ("own", "all")
 DEFAULT_SCOPE = "own"
 
+# An entry's direction. "grant" is every row the system wrote before denies
+# existed and stays the default, so an un-migrated row can never read as a
+# block. "deny" closes a page — see rule 1: only the page family may carry it.
+MODE_GRANT = "grant"
+MODE_DENY = "deny"
+MODES = (MODE_GRANT, MODE_DENY)
+
+# The capabilities a deny is accepted for. Confining it to the page family is
+# what keeps every hardcoded action check honest: those never consult a deny
+# list, so a denied ACTION would silently keep working.
+DENIABLE_KEYS = frozenset(c["key"] for c in CAPABILITIES if c["page"])
+
 # Roles that may never be granted anything: admins already have everything, so
 # a row for them would be a confusing no-op.
 UNGRANTABLE_ROLES = ("admin",)
@@ -163,16 +206,82 @@ UNGRANTABLE_ROLES = ("admin",)
 # ── reading grants ────────────────────────────────────────────────────────────
 
 def caps_for_user(db: Session, telegram_id: Optional[int]) -> dict[str, str]:
-    """``{capability: scope}`` granted to one Telegram account. Unknown
+    """``{capability: scope}`` GRANTED to one Telegram account. Unknown
     capability keys (catalog entries removed in code) are dropped rather than
-    returned, so a stale row can never authorize anything."""
+    returned, so a stale row can never authorize anything.
+
+    Deny rows live in the same table and are excluded here — this is the
+    positive set every guard asks about, and a block that read back as a grant
+    would invert the meaning of every call site at once. Ask
+    :func:`denied_pages_for_user` for the other direction."""
     if not telegram_id:
         return {}
     rows = db.query(UserCapability).filter(UserCapability.telegram_id == telegram_id).all()
     return {
         r.capability: (r.scope if r.scope in SCOPES else DEFAULT_SCOPE)
-        for r in rows if r.capability in CAPABILITY_KEYS
+        for r in rows if r.capability in CAPABILITY_KEYS and r.mode != MODE_DENY
     }
+
+
+def denied_pages_for_user(db: Session, telegram_id: Optional[int]) -> set[str]:
+    """Page keys this ACCOUNT is explicitly blocked from, whatever its role
+    says. The account level is the most specific one, so these survive every
+    profile-level entry underneath."""
+    if not telegram_id:
+        return set()
+    rows = db.query(UserCapability).filter(
+        UserCapability.telegram_id == telegram_id,
+        UserCapability.mode == MODE_DENY,
+    ).all()
+    return {c["page"] for c in CAPABILITIES if c["page"]
+            and c["key"] in {r.capability for r in rows}}
+
+
+def denied_pages_for_profile(db: Session, key: Optional[str]) -> set[str]:
+    """Page keys blocked for EVERY holder of a profile — the permanent half of
+    :class:`~app.models.ProfilePermission`. Unlike a pending grant this is read
+    live on every request and is never consumed, so it keeps applying to whoever
+    fills the position next."""
+    if not key:
+        return set()
+    rows = db.query(ProfilePermission).filter(
+        ProfilePermission.profile_key == key,
+        ProfilePermission.mode == MODE_DENY,
+    ).all()
+    return {c["page"] for c in CAPABILITIES if c["page"]
+            and c["key"] in {r.capability for r in rows}}
+
+
+def caller_denied_pages(db: Session, payload: dict) -> list[str]:
+    """Pages closed for the caller right now, most-specific-first.
+
+    An account-level entry always wins: a deny on the login blocks the page, and
+    a GRANT on the login re-opens a page the profile denies — that is the escape
+    hatch for one person in a position that is otherwise blocked. Admins are
+    never denied; they are the baseline the whole system imitates and locking
+    one out of a page would leave nobody able to lift it."""
+    if not payload or payload.get("role") == "admin":
+        return []
+    try:
+        telegram_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        return []
+
+    denied = denied_pages_for_user(db, telegram_id)
+
+    # This runs on EVERY request through require_page, and resolving the active
+    # profile costs real joins. Almost no installation denies anything, so one
+    # indexed existence probe buys the common path out of that work entirely.
+    any_profile_deny = db.query(ProfilePermission.id).filter(
+        ProfilePermission.mode == MODE_DENY).first() is not None
+    profile_denied = (denied_pages_for_profile(db, viewer_profile_key(db, payload))
+                      if any_profile_deny else set())
+    if profile_denied:
+        # Only the pages this account does NOT hold a personal grant for.
+        held = caller_caps(db, payload)
+        granted = {c["page"] for c in CAPABILITIES if c["page"] and c["key"] in held}
+        denied = denied | (profile_denied - granted)
+    return sorted(denied)
 
 
 def caller_caps(db: Session, payload: dict) -> dict[str, str]:
@@ -265,6 +374,7 @@ def users_with_cap(db: Session, capability: str) -> list[int]:
     fans out to alongside the admins who already get it."""
     rows = db.query(UserCapability).filter(
         UserCapability.capability == capability,
+        UserCapability.mode != MODE_DENY,
     ).all()
     return sorted({r.telegram_id for r in rows if r.telegram_id})
 
@@ -335,29 +445,47 @@ def cap_recipients(db: Session, capability: str, *manager_ids: Optional[int]) ->
 
 # ── writing grants ────────────────────────────────────────────────────────────
 
+def _clean_diff(grants: dict[str, str] | None,
+                denies: list[str] | None,
+                revokes: list[str] | None) -> tuple[dict[str, str], list[str], list[str]]:
+    """Normalise one edit into (grants, denies, revokes) with no key in two of
+    them. A key can't be granted and denied in the same save; the GRANT wins,
+    because that is the direction an admin has to act deliberately to reach and
+    a malformed payload must never silently close a page."""
+    clean = {
+        k: ("all" if k in UNSCOPED_CAPABILITIES else (v if v in SCOPES else DEFAULT_SCOPE))
+        for k, v in (grants or {}).items() if k in CAPABILITY_KEYS
+    }
+    block = [k for k in (denies or []) if k in DENIABLE_KEYS and k not in clean]
+    drop = [k for k in (revokes or [])
+            if k in CAPABILITY_KEYS and k not in clean and k not in block]
+    return clean, block, drop
+
+
 def apply_caps(db: Session, telegram_ids: list[int],
                grants: dict[str, str] | None = None,
                revokes: list[str] | None = None,
+               denies: list[str] | None = None,
                actor_name: str | None = None,
                actor_telegram_id: int | None = None) -> dict[int, dict[str, str]]:
-    """Apply a DIFF — grant/rescope ``grants``, revoke ``revokes`` — to every
-    listed Telegram account, leaving their other capabilities untouched.
+    """Apply a DIFF — grant/rescope ``grants``, block ``denies``, clear
+    ``revokes`` — to every listed Telegram account, leaving their other
+    capabilities untouched.
 
     Deliberately a diff and not a whole-set replace: the Permissions tab can
     select several accounts at once, and those accounts rarely hold the same
     grants. Replacing would silently wipe whatever the admin wasn't looking at.
     With a diff, ticking one box for five people means exactly that.
 
+    The three directions are the row's three states: a grant row, a deny row, or
+    no row at all ("inherit" — the role × page matrix decides). ``revokes``
+    therefore clears a deny just as it clears a grant; which one it was is what
+    the audit action records.
+
     Returns the resulting {telegram_id: {capability: scope}}. The audit log
     records each capability separately, so history reads as individual grants
     rather than "someone saved the form"."""
-    clean = {
-        k: ("all" if k in UNSCOPED_CAPABILITIES else (v if v in SCOPES else DEFAULT_SCOPE))
-        for k, v in (grants or {}).items() if k in CAPABILITY_KEYS
-    }
-    # A capability can't be granted and revoked in one call; the grant wins so
-    # a malformed payload can never leave the account half-changed.
-    drop = [k for k in (revokes or []) if k in CAPABILITY_KEYS and k not in clean]
+    clean, block, drop = _clean_diff(grants, denies, revokes)
 
     def _audit(tid: int, capability: str, action: str, scope: str | None) -> None:
         db.add(CapabilityAudit(
@@ -374,22 +502,210 @@ def apply_caps(db: Session, telegram_ids: list[int],
             if row is None:
                 db.add(UserCapability(
                     telegram_id=tid, capability=capability, scope=scope,
-                    granted_by=actor_name,
+                    mode=MODE_GRANT, granted_by=actor_name,
                 ))
+                _audit(tid, capability, "granted", scope)
+            elif row.mode == MODE_DENY:
+                # Lifting a block and granting in its place is ONE decision to
+                # the admin, but two facts in the trail — a later reader must be
+                # able to see that the page had been closed.
+                row.mode, row.scope, row.granted_by = MODE_GRANT, scope, actor_name
+                _audit(tid, capability, "undenied", None)
                 _audit(tid, capability, "granted", scope)
             elif row.scope != scope:
                 row.scope = scope
                 row.granted_by = actor_name
                 _audit(tid, capability, "rescoped", scope)
 
+        for capability in block:
+            row = existing.get(capability)
+            if row is None:
+                db.add(UserCapability(
+                    telegram_id=tid, capability=capability, scope=DEFAULT_SCOPE,
+                    mode=MODE_DENY, granted_by=actor_name,
+                ))
+                _audit(tid, capability, "denied", None)
+            elif row.mode != MODE_DENY:
+                row.mode, row.granted_by = MODE_DENY, actor_name
+                _audit(tid, capability, "revoked", None)
+                _audit(tid, capability, "denied", None)
+
         for capability in drop:
             row = existing.get(capability)
             if row is not None:
+                was_deny = row.mode == MODE_DENY
                 db.delete(row)
-                _audit(tid, capability, "revoked", None)
+                _audit(tid, capability, "undenied" if was_deny else "revoked", None)
 
     db.commit()
     return {tid: caps_for_user(db, tid) for tid in telegram_ids}
+
+
+# ── the profile layer ─────────────────────────────────────────────────────────
+
+def perms_for_profile(db: Session, key: Optional[str]) -> dict[str, dict]:
+    """``{capability: {"mode": …, "scope": …}}`` stored on one PROFILE.
+
+    What the Permissions tab reads back to render a profile target. Both kinds
+    of entry come back together because they occupy the same row and the same
+    three-state control — the difference is what saving one means, which the tab
+    spells out rather than hiding."""
+    if not key:
+        return {}
+    rows = db.query(ProfilePermission).filter(ProfilePermission.profile_key == key).all()
+    return {
+        r.capability: {
+            "mode":  r.mode if r.mode in MODES else MODE_GRANT,
+            "scope": r.scope if r.scope in SCOPES else DEFAULT_SCOPE,
+        }
+        for r in rows if r.capability in CAPABILITY_KEYS
+    }
+
+
+def apply_profile_perms(db: Session, profile_keys: list[str],
+                        grants: dict[str, str] | None = None,
+                        revokes: list[str] | None = None,
+                        denies: list[str] | None = None,
+                        actor_name: str | None = None,
+                        actor_telegram_id: int | None = None) -> dict[str, dict]:
+    """The :func:`apply_caps` diff, applied to PROFILES instead of accounts.
+
+    Same three directions, two different meanings — see
+    :class:`~app.models.ProfilePermission`: a grant here is PENDING (it waits
+    for the next account to claim the profile and touches nobody who already
+    holds it), a deny here is PERMANENT (it applies to every holder immediately
+    and is never consumed).
+
+    Audit rows carry ``profile_key`` instead of ``telegram_id`` — the same
+    column the pre-rollout history used — so the trail says plainly whether a
+    change was aimed at a position or at a login."""
+    clean, block, drop = _clean_diff(grants, denies, revokes)
+
+    def _audit(key: str, capability: str, action: str, scope: str | None) -> None:
+        db.add(CapabilityAudit(
+            profile_key=key, capability=capability, action=action, scope=scope,
+            actor_name=actor_name, actor_telegram_id=actor_telegram_id,
+        ))
+
+    for key in profile_keys:
+        existing = {r.capability: r for r in db.query(ProfilePermission).filter(
+            ProfilePermission.profile_key == key).all()}
+
+        for capability, scope in clean.items():
+            row = existing.get(capability)
+            if row is None:
+                db.add(ProfilePermission(
+                    profile_key=key, capability=capability, scope=scope,
+                    mode=MODE_GRANT, granted_by=actor_name,
+                ))
+                _audit(key, capability, "granted", scope)
+            elif row.mode == MODE_DENY:
+                row.mode, row.scope, row.granted_by = MODE_GRANT, scope, actor_name
+                _audit(key, capability, "undenied", None)
+                _audit(key, capability, "granted", scope)
+            elif row.scope != scope:
+                row.scope = scope
+                row.granted_by = actor_name
+                _audit(key, capability, "rescoped", scope)
+
+        for capability in block:
+            row = existing.get(capability)
+            if row is None:
+                db.add(ProfilePermission(
+                    profile_key=key, capability=capability, scope=DEFAULT_SCOPE,
+                    mode=MODE_DENY, granted_by=actor_name,
+                ))
+                _audit(key, capability, "denied", None)
+            elif row.mode != MODE_DENY:
+                row.mode, row.granted_by = MODE_DENY, actor_name
+                _audit(key, capability, "revoked", None)
+                _audit(key, capability, "denied", None)
+
+        for capability in drop:
+            row = existing.get(capability)
+            if row is not None:
+                was_deny = row.mode == MODE_DENY
+                db.delete(row)
+                _audit(key, capability, "undenied" if was_deny else "revoked", None)
+
+    db.commit()
+    return {key: perms_for_profile(db, key) for key in profile_keys}
+
+
+def materialize_pending(db: Session, telegram_id: Optional[int]) -> int:
+    """Hand an account the PENDING grants waiting on the profiles it claimed.
+
+    Called when a session is established (see ``routers/auth.py``) rather than
+    from each of the half-dozen places that can approve a registration: an
+    account has to sign in before any grant could matter, and one funnel cannot
+    drift out of sync the way six hooks would. "First claimer" therefore means
+    the first future holder who actually shows up — an account that registers
+    and never opens the app does not burn the entry.
+
+    A holder counts as FUTURE only if it joined the profile strictly after the
+    entry was written, so equipping a position that is already filled never
+    silently re-opens something the current holder had revoked. Rows with no
+    timestamp to compare are left alone for the same reason. Consumed entries
+    are deleted: they were a starting point, not a standing rule — a standing
+    rule is a deny.
+
+    Returns how many entries were consumed. Never raises: a failure here must
+    not cost anyone their login."""
+    if not telegram_id:
+        return 0
+    try:
+        rows = db.query(TelegramUserRole).filter(
+            TelegramUserRole.telegram_id == telegram_id,
+            TelegramUserRole.status == "approved",
+        ).all()
+        joined: dict[str, object] = {}
+        for r in rows:
+            key = r.profile_key or role_row_profile_key(db, r, heal=False)
+            when = r.approved_at or r.created_at
+            if not key or not when:
+                continue
+            if key not in joined or when < joined[key]:
+                joined[key] = when
+        if not joined:
+            return 0
+
+        pending = db.query(ProfilePermission).filter(
+            ProfilePermission.profile_key.in_(list(joined)),
+            ProfilePermission.mode == MODE_GRANT,
+        ).all()
+        if not pending:
+            return 0
+
+        held = {r.capability for r in db.query(UserCapability).filter(
+            UserCapability.telegram_id == telegram_id).all()}
+        taken = 0
+        for p in pending:
+            if not p.granted_at:
+                continue
+            try:
+                if joined[p.profile_key] <= p.granted_at:
+                    continue          # already held the profile — not a future holder
+            except TypeError:         # naive/aware mismatch — cannot prove it is future
+                continue
+            if p.capability in CAPABILITY_KEYS and p.capability not in held:
+                db.add(UserCapability(
+                    telegram_id=telegram_id, capability=p.capability,
+                    scope=p.scope if p.scope in SCOPES else DEFAULT_SCOPE,
+                    mode=MODE_GRANT, granted_by=p.granted_by,
+                ))
+                db.add(CapabilityAudit(
+                    telegram_id=telegram_id, capability=p.capability,
+                    action="granted", scope=p.scope, actor_name=p.granted_by,
+                ))
+                held.add(p.capability)
+            db.delete(p)
+            taken += 1
+        if taken:
+            db.commit()
+        return taken
+    except Exception:   # pragma: no cover — never block a login
+        db.rollback()
+        return 0
 
 
 # ── FastAPI guards ────────────────────────────────────────────────────────────

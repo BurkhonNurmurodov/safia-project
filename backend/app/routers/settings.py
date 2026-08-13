@@ -2,7 +2,9 @@ import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.capabilities import caller_caps, capability_pages, capability_tabs, page_scopes
+from app.capabilities import (
+    caller_caps, caller_denied_pages, capability_pages, capability_tabs, page_scopes,
+)
 from app.database import get_db
 from app.models import AppSetting
 from app.permissions import get_page_access, PAGE_KEYS, TOGGLEABLE_ROLES
@@ -73,10 +75,16 @@ def my_capabilities(db: Session = Depends(get_db), caller: dict = Depends(requir
     page-view grant, whether the person sees only their own rows ("own") or the
     whole factory ("all") — the flag a page reads before pinning a supervisor
     to their unit.
+
+    `denied_pages` is the subtractive half: pages CLOSED for this person even
+    though their role opens them. The client needs it to keep the nav honest —
+    a link that 403s when tapped is worse than no link — but it is only a
+    rendering aid, since `require_page` refuses the data with or without it.
     """
     return {
-        "caps":        caller_caps(db, caller),
-        "pages":       capability_pages(db, caller),
-        "tabs":        capability_tabs(db, caller),
-        "page_scopes": page_scopes(db, caller),
+        "caps":         caller_caps(db, caller),
+        "pages":        capability_pages(db, caller),
+        "tabs":         capability_tabs(db, caller),
+        "page_scopes":  page_scopes(db, caller),
+        "denied_pages": caller_denied_pages(db, caller),
     }

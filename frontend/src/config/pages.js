@@ -92,16 +92,25 @@ export const DEFAULT_PAGE_ACCESS = {
 // capability implies page access, so a grant is never dead — and unlike ticking
 // the matrix, it opens the page for that one profile, not for every peer
 // holding the same role.
-export function canAccessPage(role, pageKey, access, capPages) {
+//
+// `deniedPages` is the subtractive half (useCapabilities → deniedPages,
+// mirroring app/capabilities.caller_denied_pages): pages closed for THIS person
+// even though their role opens them. Checked first, so neither the role matrix
+// nor a capability can re-open one — the only way back in is an account-level
+// grant, which the backend has already removed from the list. This is a
+// rendering aid only; require_page refuses the data either way, and a nav link
+// that 403s when tapped is worse than no link at all.
+export function canAccessPage(role, pageKey, access, capPages, deniedPages) {
   if (role === "admin") return true;
+  if ((deniedPages ?? []).includes(pageKey)) return false;
   const allowed = access?.[pageKey] ?? DEFAULT_PAGE_ACCESS[pageKey] ?? [];
   return allowed.includes(role) || (capPages ?? []).includes(pageKey);
 }
 
 // Returns the route of the first page this role may access, or null if none.
-export function firstAccessibleRoute(role, access, capPages) {
+export function firstAccessibleRoute(role, access, capPages, deniedPages) {
   for (const p of PAGES) {
-    if (canAccessPage(role, p.key, access, capPages)) return p.route;
+    if (canAccessPage(role, p.key, access, capPages, deniedPages)) return p.route;
   }
   return null;
 }

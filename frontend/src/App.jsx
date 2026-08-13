@@ -321,10 +321,12 @@ function NoAccess() {
 function RequirePage({ page, children }) {
   const { auth } = useAuth();
   const { access, isLoading } = usePageAccess();
-  const { capPages, isLoading: capsLoading } = useCapabilities();
+  const { capPages, deniedPages, isLoading: capsLoading } = useCapabilities();
   if (isLoading || capsLoading) return <PageLoader />;
-  if (canAccessPage(auth?.role, page, access, capPages)) return children;
-  const dest = firstAccessibleRoute(auth?.role, access, capPages);
+  if (canAccessPage(auth?.role, page, access, capPages, deniedPages)) return children;
+  // The redirect target has to respect the denies too, or a person blocked from
+  // their role's first page is bounced straight back into it and loops.
+  const dest = firstAccessibleRoute(auth?.role, access, capPages, deniedPages);
   if (!dest || dest === window.location.pathname) return <NoAccess />;
   return <Navigate to={dest} replace />;
 }

@@ -2190,6 +2190,32 @@ def migrate_user_capabilities() -> None:
         db.close()
 
 
+def migrate_permission_modes() -> None:
+    """2026-08-13: permission entries gain a DIRECTION.
+
+    Until now every row in ``user_capabilities`` meant "granted"; a page could be
+    opened for one person but never closed for one person, so taking a page away
+    from a single supervisor meant taking it from every supervisor. ``mode``
+    adds "deny" beside "grant" (see app/capabilities.py rule 1 — pages only).
+
+    Idempotent, and deliberately backfilled to 'grant' with a NOT NULL default:
+    a row that read as NULL would be ambiguous exactly where ambiguity is most
+    expensive, and every row that exists today IS a grant. The
+    ``profile_permissions`` table itself comes from Base.metadata.create_all."""
+    db = SessionLocal()
+    try:
+        for table in ("user_capabilities", "profile_permissions"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                "mode VARCHAR NOT NULL DEFAULT 'grant'"))
+        db.commit()
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] permission mode migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_worker_concern_failures_column() -> None:
     """2026-08-13: the worker-concerns sync records WHY each unreadable sheet was
     left stale, not just which cell it was. Existing rows stay NULL until the

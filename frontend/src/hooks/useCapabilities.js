@@ -29,6 +29,12 @@ export function useCapabilities() {
     // check so a granted approver can reach the queue they were given without
     // the page being opened for every peer holding their role.
     capPages: data?.pages ?? [],
+    // Pages CLOSED for this person specifically, even though their role opens
+    // them — the one subtractive entry in the system (a per-profile or
+    // per-account deny). Empty while the query is in flight, which reads as
+    // "nothing denied": the nav may show a link for a moment, but the page
+    // itself is refused by the backend, so a slow response never leaks data.
+    deniedPages: data?.denied_pages ?? [],
     // Admin-panel tabs a non-admin grantee may open.
     capTabs: data?.tabs ?? [],
     // {page: "own" | "all"} for the personal page-view grants this person holds.

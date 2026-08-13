@@ -168,7 +168,8 @@ def set_page_access(db: Session, matrix: dict) -> dict:
 
 
 def role_can_access(role: str | None, pages: list[str], access: dict,
-                    cap_pages: list[str] | None = None) -> bool:
+                    cap_pages: list[str] | None = None,
+                    denied_pages: list[str] | None = None) -> bool:
     """True if the role may access at least one of the given pages. Admin is
     always allowed.
 
@@ -177,19 +178,32 @@ def role_can_access(role: str | None, pages: list[str], access: dict,
     access, so a grant is never dead — and unlike ticking the page in the
     role × page matrix, it opens the page for that ONE profile instead of for
     every peer holding the same role. Callers that have no payload at hand may
-    omit it and keep the pure role check."""
+    omit it and keep the pure role check.
+
+    ``denied_pages`` are the pages this ONE person is blocked from
+    (``app/capabilities.caller_denied_pages``) — the single subtractive entry in
+    the system, used to close a page the role opens for everyone else. A denied
+    page is dropped before either check, so neither the role matrix nor a
+    capability can re-open it; the way back in is an account-level grant, which
+    ``caller_denied_pages`` has already removed from this list. Shared endpoints
+    pass several pages and keep OR semantics: denying one of them still leaves
+    the endpoint reachable through another the caller holds."""
     if role == "admin":
         return True
-    if any(role in access.get(p, []) for p in pages):
+    live = [p for p in pages if p not in (denied_pages or ())]
+    if not live:
+        return False
+    if any(role in access.get(p, []) for p in live):
         return True
-    return any(p in (cap_pages or []) for p in pages)
+    return any(p in (cap_pages or []) for p in live)
 
 
 def require_page(*pages: str):
     """FastAPI dependency factory. Allows the request if the caller's role can
     access at least one of ``pages`` (admin always passes), or if a personal
-    capability grant unlocks one of them. Shared endpoints pass several page
-    keys (OR semantics)."""
+    capability grant unlocks one of them — unless that page is denied for this
+    person specifically. Shared endpoints pass several page keys (OR
+    semantics)."""
     page_list = list(pages)
 
     def _dep(
@@ -204,10 +218,11 @@ def require_page(*pages: str):
         # Imported lazily: capabilities.py imports identity/models only, but
         # keeping the import local documents that page access is the older,
         # standalone axis and never depends on a grant existing.
-        from app.capabilities import capability_pages
+        from app.capabilities import capability_pages, caller_denied_pages
 
         if not role_can_access(payload.get("role"), page_list, get_page_access(db),
-                               capability_pages(db, payload)):
+                               capability_pages(db, payload),
+                               caller_denied_pages(db, payload)):
             raise HTTPException(status_code=403, detail="You don't have access to this page")
         return payload
 

@@ -101,7 +101,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
   const { access } = usePageAccess();
   // Personal capability grants unlock nav entries too — a granted approver
   // needs the /staff link to reach the queue they were given.
-  const { capPages, capTabs } = useCapabilities();
+  const { capPages, capTabs, deniedPages } = useCapabilities();
   const isAdmin  = auth?.role === "admin";
   // A grantee holding a panel-tab capability needs the entry point too — the
   // panel itself then shows only the tabs they were granted.
@@ -120,7 +120,7 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
 
   const withSearch = (path) => `${path}${location.search}`;
   const links = ALL_LINKS.filter(l =>
-    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages));
+    l.adminOnly ? isAdmin : canAccessPage(auth?.role, l.page, access, capPages, deniedPages));
 
   // Grouped mode only past the threshold — grouping helps a 20-row register,
   // it would just add chrome to a supervisor's 6 links.

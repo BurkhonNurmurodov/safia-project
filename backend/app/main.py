@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         add_leader_ai_resolution,
         add_web_credential_password_enc,
         add_worker_concern_failures_column,
+        migrate_permission_modes,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
@@ -137,6 +138,7 @@ async def lifespan(app: FastAPI):
     backfill_task_profiles()
     backfill_comment_profiles()
     migrate_user_capabilities()
+    migrate_permission_modes()
     seed_exchange_tasks()
     seed_production_pilot()
     seed_setup_times()
