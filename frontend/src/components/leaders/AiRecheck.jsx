@@ -50,8 +50,10 @@ const TXT = {
     scAll: "Hammasi",
     rsReports: "hisobot", rsChecked: "tekshirilgan", rsPartial: "qisman", rsUnchecked: "tekshirilmagan",
     rsRows: "dalil rasmi", rsJudged: "xulosa bor", rsQueued: "navbatda", rsStuck: "xatolik",
+    rsNew: "tekshirilmagan",
     rsFlagged: "{n} ta shubhali", rsOpen: "{n} tasi hali ko'rilmagan",
     rsEmpty: "Bu oraliqda dalil rasmi yo'q.",
+    unWill: "Bosilganda {n} ta qator tekshiriladi",
     rsApprox: "Hisobot soni taxminiy — oraliq juda katta. Qatorlar soni aniq.",
     scUnchecked: "Tekshirilmagan",
     unWhy: "Hali tekshirilmagan hisobotlarni navbatga qo'yadi. Hech qanday xulosa o'chirilmaydi.",
@@ -96,8 +98,10 @@ const TXT = {
     scAll: "Ҳаммаси",
     rsReports: "ҳисобот", rsChecked: "текширилган", rsPartial: "қисман", rsUnchecked: "текширилмаган",
     rsRows: "далил расми", rsJudged: "хулоса бор", rsQueued: "навбатда", rsStuck: "хатолик",
+    rsNew: "текширилмаган",
     rsFlagged: "{n} та шубҳали", rsOpen: "{n} таси ҳали кўрилмаган",
     rsEmpty: "Бу оралиқда далил расми йўқ.",
+    unWill: "Босилганда {n} та қатор текширилади",
     rsApprox: "Ҳисобот сони тахминий — оралиқ жуда катта. Қаторлар сони аниқ.",
     scUnchecked: "Текширилмаган",
     unWhy: "Ҳали текширилмаган ҳисоботларни навбатга қўяди. Ҳеч қандай хулоса ўчирилмайди.",
@@ -142,8 +146,10 @@ const TXT = {
     scAll: "Все",
     rsReports: "отчётов", rsChecked: "проверено", rsPartial: "частично", rsUnchecked: "не проверено",
     rsRows: "фото-подтверждений", rsJudged: "с выводом", rsQueued: "в очереди", rsStuck: "с ошибкой",
+    rsNew: "не проверено",
     rsFlagged: "сомнительных: {n}", rsOpen: "не разобрано: {n}",
     rsEmpty: "В этом диапазоне нет фото-подтверждений.",
+    unWill: "По нажатию будет проверено строк: {n}",
     rsApprox: "Число отчётов приблизительное — диапазон слишком большой. Число строк точное.",
     scUnchecked: "Непроверенные",
     unWhy: "Ставит в очередь отчёты, которые ещё не проверялись. Ни один вывод не удаляется.",
@@ -188,8 +194,10 @@ const TXT = {
     scAll: "All",
     rsReports: "reports", rsChecked: "checked", rsPartial: "partial", rsUnchecked: "unchecked",
     rsRows: "proof rows", rsJudged: "judged", rsQueued: "queued", rsStuck: "errored",
+    rsNew: "never checked",
     rsFlagged: "{n} flagged", rsOpen: "{n} not yet reviewed",
     rsEmpty: "No proof photos in this range.",
+    unWill: "Pressing it checks {n} rows",
     rsApprox: "The report count is approximate — the range is very large. Row counts are exact.",
     scUnchecked: "Unchecked",
     unWhy: "Queues reports that have never been checked. No verdict is deleted.",
@@ -243,11 +251,17 @@ const fmt = (s, n) => String(s).replace("{n}", n);
  */
 const SEG = {
   judged:  "#22c55e",
-  pending: "#94a3b8",
+  // Two greys, because they are two different facts and only one of them is
+  // this modal's business: `pending` rows are already queued and the drain
+  // clears them on its own timer, `new` rows have never been seen by anything
+  // and wait for somebody to press the button. The legend labels carry the
+  // distinction — the colours only have to stay apart.
+  pending: "#64748b",
+  new:     "#94a3b8",
   stuck:   "#eab308",
 };
 
-function RangeSummary({ T, data, isFetching }) {
+function RangeSummary({ T, data, isFetching, additive }) {
   const box = "mt-2 rounded-xl p-3";
   const boxStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)" };
 
@@ -272,7 +286,8 @@ function RangeSummary({ T, data, isFetching }) {
 
   const pct = (n) => (n / r.total) * 100;
   const segs = [
-    ["judged", r.judged], ["pending", r.pending + r.skipped], ["stuck", r.stuck],
+    ["judged", r.judged], ["pending", r.pending + r.skipped],
+    ["new", r.new || 0], ["stuck", r.stuck],
   ].filter(([, n]) => n > 0);
 
   return (
@@ -308,8 +323,20 @@ function RangeSummary({ T, data, isFetching }) {
         <span>{r.total.toLocaleString()} {T.rsRows}</span>
         <Legend c={SEG.judged} n={r.judged} label={T.rsJudged} />
         <Legend c={SEG.pending} n={r.pending + r.skipped} label={T.rsQueued} />
+        <Legend c={SEG.new} n={r.new || 0} label={T.rsNew} />
         <Legend c={SEG.stuck} n={r.stuck} label={T.rsStuck} />
       </div>
+
+      {/* The «Tekshirilmagan» scope's whole question is "how much would this
+          press do", and the answer was buried in a bar that only counted rows
+          somebody had already queued. Printed by the SERVER, by the same rule
+          the dry run counts with, so this line and the confirm agree. */}
+      {additive && (
+        <p className="text-xs font-medium mt-2 tabular-nums"
+          style={{ color: r.catchUp > 0 ? "var(--text-1)" : "var(--text-4)" }}>
+          {r.catchUp > 0 ? fmt(T.unWill, r.catchUp.toLocaleString()) : T.unNone}
+        </p>
+      )}
 
       {(r.flagged > 0 || data.openFlags > 0) && (
         <p className="text-[11px] tabular-nums mt-1.5" style={{ color: "var(--text-4)" }}>
@@ -437,7 +464,16 @@ export default function AiRecheck({ errorCount = 0 }) {
   const countMut = useMutation({
     mutationFn: () => api.post("/api/leader-ai/recheck", { ...body, dry_run: true })
       .then((r) => r.data),
-    onSuccess: (d) => setConfirm({ n: d.requeued }),
+    // Nothing to do is an ANSWER, not a question: asking «check 0 rows?» and
+    // then running an empty job is how a confirm becomes something people tap
+    // through without reading.
+    onSuccess: (d) => {
+      if (!d.requeued) {
+        showToast(additive ? T.unNone : T.countNone, "info");
+        return;
+      }
+      setConfirm({ n: d.requeued });
+    },
     onError: (e) => showToast(e?.response?.data?.detail || String(e?.message || e), "error"),
   });
 
@@ -560,7 +596,8 @@ export default function AiRecheck({ errorCount = 0 }) {
           {/* What the chosen slice actually holds. Sits directly under the
               filters because that is where the doubt is: the dry-run count
               below tells you the PRICE, this tells you what you are buying. */}
-          <RangeSummary T={T} data={slice} isFetching={sliceLoading} />
+          <RangeSummary T={T} data={slice} isFetching={sliceLoading}
+            additive={additive} />
 
           <ul className="mt-1 flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-4)" }}>
             <li>· {T.resolved}</li>

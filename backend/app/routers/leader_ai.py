@@ -1342,6 +1342,12 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
     verdict. Half-judged reports are their own bucket rather than being rounded
     into either — "68% checked" hiding a pile of half-done days is exactly the
     kind of number that stops being trusted.
+
+    Both units count work that has NO review row yet (`rows.new`, and reports
+    made only of such rows). Discovery is not automatic, so those reports are
+    the ones a person came here to start — counting only what is already in
+    `leader_ai_reviews` made this box answer "no proof photos in this range"
+    about a range full of unchecked reports.
     """
     if not gemini.available():
         return {"enabled": False}
@@ -1397,14 +1403,30 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
 
     per_report: dict[str, list[str]] = {}
     for ref, status in refs:
-        if ref.startswith("bot:"):
-            day = day_of.get(int(ref.split(":")[1]))
-            key = f"bot:{day}" if day else ref     # orphan entry: its own report
-        else:
-            parts = ref.split(":")
-            # drop the trailing task id — what remains identifies the report
-            key = ":".join(parts[:-1]) if len(parts) > 2 else ref
-        per_report.setdefault(key, []).append(status)
+        per_report.setdefault(leader_ai.report_key(ref, day_of), []).append(status)
+
+    # ── the work that has no row at all ──────────────────────────────────────
+    # Discovery is not automatic, so "never checked" reports are invisible to
+    # every query above — they have no review row to be counted by. Reading only
+    # `leader_ai_reviews` made this box answer "no proof photos in this range"
+    # for a range full of reports nobody had pressed anything for yet, which is
+    # the one range «Tekshirilmagan» is FOR. Counted from the source, by
+    # discovery's own rule, and kept in its own bucket: `pending` rows drain by
+    # themselves on the timer, these wait for someone to press the button.
+    census = leader_ai.undiscovered(db, date_from=date_from, date_to=date_to)
+    fresh = _who(census["rows"], shift=shift, manager_id=manager_id,
+                 leader_id=leader_id)
+    for key, *_ in fresh:
+        per_report.setdefault(key, []).append("new")
+    rows["new"] = len(fresh)
+    rows["total"] += len(fresh)
+    approx = approx or census["approx"]
+    # What the «Tekshirilmagan» run would queue, by that run's OWN definition:
+    # rows already pending plus the ones discovery is about to insert. Defined
+    # here rather than added up in the UI so the number under the bar and the
+    # number in the confirm cannot drift apart — a summary promising 40 and a
+    # confirm asking about 37 is a summary nobody reads twice.
+    rows["catchUp"] = by_status.get("pending", 0) + len(fresh)
 
     checked = partial = unchecked = 0
     for statuses in per_report.values():
@@ -1426,13 +1448,36 @@ def range_summary(date_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{
         "rows": rows,
         "openFlags": open_flags,
         "facets": _range_facets(db, date_from, date_to, shift,
-                                manager_id, leader_id),
+                                manager_id, leader_id, census["rows"]),
     }
+
+
+def _who(census_rows, *, shift=None, manager_id=None, leader_id=None,
+         skip: str | None = None):
+    """Narrow census rows by unit/leader/shift, optionally ignoring ONE
+    dimension.
+
+    `skip` is what lets a picker count itself out, the same rule the SQL facets
+    follow: counting the leader list against the leader already chosen leaves it
+    holding only that leader, with no way back to anyone else short of clearing
+    the filter.
+    """
+    out = []
+    for row in census_rows:
+        sh, mgr, ldr = row[1], row[2], row[3]
+        if shift is not None and skip != "shift" and sh != shift:
+            continue
+        if manager_id is not None and skip != "manager" and mgr != manager_id:
+            continue
+        if leader_id is not None and skip != "leader" and ldr != leader_id:
+            continue
+        out.append(row)
+    return out
 
 
 def _range_facets(db: Session, date_from: str | None, date_to: str | None,
                   shift: int | None, manager_id: int | None,
-                  leader_id: int | None) -> dict:
+                  leader_id: int | None, census_rows) -> dict:
     """Option lists for the shift / brigadir / leader pickers, with counts.
 
     Three grouped aggregates, no projection pass: `shift`, `manager_id` and
@@ -1454,17 +1499,31 @@ def _range_facets(db: Session, date_from: str | None, date_to: str | None,
     Options are sorted busiest first: an alphabetical list of ninety leaders
     buries the one with work behind it.
     """
-    def _tally(col, **fixed):
+    # Never-queued work counts toward a picker exactly as a judged row does.
+    # Leaving it out made every list empty on a range nobody had discovered yet
+    # — dead controls over a set the summary was, by then, correctly reporting
+    # as full of unchecked reports.
+    IDX = {"shift": 1, "manager": 2, "leader": 3}
+
+    def _tally(col, dim, **fixed):
         rows = (_narrow(db.query(col, func.count(LeaderAiReview.id)),
                         date_from=date_from, date_to=date_to, **fixed)
                 .filter(col.isnot(None)).group_by(col).all())
-        return sorted(({"v": v, "n": n} for v, n in rows),
+        n_by_v = {v: n for v, n in rows}
+        for row in _who(census_rows, shift=shift, manager_id=manager_id,
+                        leader_id=leader_id, skip=dim):
+            v = row[IDX[dim]]
+            if v is not None:
+                n_by_v[v] = n_by_v.get(v, 0) + 1
+        return sorted(({"v": v, "n": n} for v, n in n_by_v.items()),
                       key=lambda o: (-o["n"], str(o["v"])))
 
-    shifts = _tally(LeaderAiReview.shift,
+    shifts = _tally(LeaderAiReview.shift, "shift",
                     manager_id=manager_id, leader_id=leader_id)
-    mgrs = _tally(LeaderAiReview.manager_id, shift=shift, leader_id=leader_id)
-    ldrs = _tally(LeaderAiReview.leader_id, shift=shift, manager_id=manager_id)
+    mgrs = _tally(LeaderAiReview.manager_id, "manager",
+                  shift=shift, leader_id=leader_id)
+    ldrs = _tally(LeaderAiReview.leader_id, "leader",
+                  shift=shift, manager_id=manager_id)
 
     # The CURRENT pick is looked up even when the other filters starved it to
     # zero rows — a picker that cannot name what is selected shows an empty

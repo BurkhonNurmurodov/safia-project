@@ -133,6 +133,26 @@ def sheet_ref(row: LeaderChecklist, task_id: int) -> str:
     return f"sheetd:{row.date}:{who}:{task_id}"
 
 
+def report_key(ref: str, day_of: dict[int, int] | None = None) -> str:
+    """The REPORT a `(report, task)` ref belongs to.
+
+    A ref names one task's photos; a report is a leader's day, which is the unit
+    the register lists and the unit the range summary counts in. Sheet refs
+    carry the report in the ref itself (drop the trailing task id); a bot ref
+    names an ENTRY, whose report is that entry's day — hence `day_of`, a bulk
+    `entry_id → day_id` lookup the caller does once.
+
+    ONE definition because two surfaces group by it — the reviews already
+    written and the census of what was never queued — and they are merged into
+    a single tally. Two spellings of "same report" would count one report twice.
+    """
+    if ref.startswith("bot:"):
+        day = (day_of or {}).get(int(ref.split(":")[1]))
+        return f"bot:{day}" if day else ref     # orphan entry: its own report
+    parts = ref.split(":")
+    return ":".join(parts[:-1]) if len(parts) > 2 else ref
+
+
 def row_uid(row: LeaderChecklist) -> str:
     """The uid /api/leaders prints for this sheet row — the key the page groups
     its verdicts by. Must stay in step with routers/leaders.py."""
@@ -674,6 +694,123 @@ def discover(db: Session) -> int:
         log.info("leader-ai: re-stamped %s review(s) whose source row changed "
                  "day or shift", fixed)
     return added
+
+
+# Source rows walked by the census below. Every other number in the range
+# summary is an exact aggregate over `leader_ai_reviews`; this one reads the two
+# COLLECTION layers, and the sheet layer keeps its tasks in JSON, so it is
+# bounded and says when the bound was hit rather than becoming the slowest read
+# on the platform.
+CENSUS_CAP = 20000
+
+
+def undiscovered(db: Session, *, date_from: str | None = None,
+                 date_to: str | None = None) -> dict:
+    """Reviewable proof rows that have NEVER been queued, one tuple each.
+
+    Discovery is deliberately not automatic (see `register_drain_job`): a report
+    only gets a `leader_ai_reviews` row when somebody presses something. So the
+    work that has never been checked is precisely the work that has no row at
+    all — and a summary reading only that table answers "no proof photos in this
+    range" for the exact range «Tekshirilmagan» exists to fix. That answer is
+    never true, and it is the one the operator sees when they most need a
+    number.
+
+    This finds what `discover()` WOULD insert without inserting it: the same
+    reviewability rule (the leader answered yes and attached a photo), the same
+    floor, the same unit/leader resolution. A census taken by a looser rule
+    would promise rows the button then never queues.
+
+    Narrowed by DATE only. Each row comes back carrying its own
+    `(report_key, shift, manager_id, leader_id)`, so the caller narrows by WHO
+    in memory and tallies the very same rows per dimension for the pickers —
+    one scan, and no way for the summary and the option lists to disagree about
+    what is out there.
+
+    Returns `{"rows": [(key, shift, manager_id, leader_id), …], "approx": bool}`.
+    """
+    floor = floor_date(db)
+    known = _existing_refs(db)
+    out: list[tuple[str, int | None, int | None, int | None]] = []
+    approx = False
+
+    # ── bot layer ────────────────────────────────────────────────────────────
+    # Unit and leader are stamped on the day row, so nothing here needs matching.
+    days_q = db.query(LeaderTaskDay.id, LeaderTaskDay.manager_id,
+                      LeaderTaskDay.leader_id).filter(
+        LeaderTaskDay.closed_at.isnot(None))
+    if floor:
+        days_q = days_q.filter(LeaderTaskDay.date >= floor)
+    if date_from:
+        days_q = days_q.filter(LeaderTaskDay.date >= date_from)
+    if date_to:
+        days_q = days_q.filter(LeaderTaskDay.date <= date_to)
+    days = {d: (m, l) for d, m, l in days_q.all()}
+
+    if days:
+        # A day's shift is its unit's shift — the rule discovery stamps with.
+        shifts = dict(db.query(Manager.id, Manager.shift).all())
+        entries = (
+            db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
+            .filter(LeaderTaskEntry.day_id.in_(
+                        days_q.with_entities(LeaderTaskDay.id).scalar_subquery()),
+                    LeaderTaskEntry.done.is_(True),
+                    LeaderTaskEntry.id.in_(
+                        db.query(LeaderTaskMedia.entry_id).scalar_subquery()))
+            .limit(CENSUS_CAP + 1).all()
+        )
+        if len(entries) > CENSUS_CAP:
+            approx = True
+            entries = entries[:CENSUS_CAP]
+        for eid, day_id in entries:
+            if bot_ref(eid) in known:
+                continue
+            mgr, ldr = days.get(day_id, (None, None))
+            out.append((f"bot:{day_id}", shifts.get(mgr), mgr, ldr))
+
+    # ── sheet layer ──────────────────────────────────────────────────────────
+    rows_q = db.query(LeaderChecklist)
+    if floor:
+        rows_q = rows_q.filter(LeaderChecklist.date >= floor)
+    if date_from:
+        rows_q = rows_q.filter(LeaderChecklist.date >= date_from)
+    if date_to:
+        rows_q = rows_q.filter(LeaderChecklist.date <= date_to)
+    rows = (rows_q.order_by(LeaderChecklist.date.desc())
+            .limit(CENSUS_CAP + 1).all())
+    if len(rows) > CENSUS_CAP:
+        approx = True
+        rows = rows[:CENSUS_CAP]
+
+    if rows:
+        # WHO on a sheet row is a NAME. Matched once for the whole scan, and
+        # relabelled BEFORE matching exactly as discovery does it: the unit
+        # decides the shift, so a mismatched unit files the row under the wrong
+        # one. A name that matches nothing carries NULL and belongs to no unit
+        # and no leader — reachable under «All» and nowhere else, which is the
+        # honest answer rather than padding it onto somebody who may not own it.
+        sup = supervisor_match(
+            db.query(Manager).all(),
+            {relabel_supervisor(r.supervisor) for r in rows if r.supervisor},
+        )
+        lead = leader_match(
+            db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+            {(r.leader, (sup.get(relabel_supervisor(r.supervisor)) or {}).get("id"))
+             for r in rows if r.leader},
+        )
+        for r in rows:
+            info = sup.get(relabel_supervisor(r.supervisor)) or {}
+            who = lead.get((r.leader, info.get("id"))) or {}
+            for tk in (r.tasks or []):
+                if not tk.get("done") or not _sheet_photos(tk):
+                    continue
+                ref = sheet_ref(r, int(tk.get("id") or 0))
+                if ref in known:
+                    continue
+                out.append((report_key(ref), info.get("shift"),
+                            info.get("id"), who.get("id")))
+
+    return {"rows": out, "approx": approx}
 
 
 def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
