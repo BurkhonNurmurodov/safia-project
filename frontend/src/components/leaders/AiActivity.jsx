@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Sparkles, CheckCircle2, AlertTriangle, XCircle, CalendarRange, Clock, User,
@@ -57,9 +57,21 @@ const TXT = {
     by: "boshlagan: {t}", byAuto: "o'zi boshladi",
     scope: { unchecked: "Tekshirilmaganlar", flagged: "Shubhalilar", clean: "Tozalar", all: "Hammasi" },
     stChecked: "Tekshirildi", stClean: "Toza", stFlagged: "Shubhali", stErr: "Xatolik",
-    tabWho: "Kimlar", tabWhat: "Xulosalar",
+    stQueued: "Navbatda",
+    tabWho: "Kimlar", tabWhat: "Xulosalar", tabQueued: "Navbatda",
     thLeader: "Lider", thSup: "Brigadir", thShift: "Smena", thDays: "Kun",
     thRows: "Tekshirildi", thClean: "Toza", thFlag: "Shubhali", thLast: "Oxirgi",
+    thTasks: "Vazifa", thReports: "Hisobot", thRange: "Sanalar",
+    thQueued: "Navbatga qo'yilgan", thDate: "Sana", thLeaders: "Lider",
+    qWhen: "Qachon navbatga qo'yilgan",
+    qWhenHint: "Bir daqiqada minglab qator paydo bo'lsa — bu bitta tugma bosilgani. Kun bo'yi bittalab kelsa — hisobotlar odatdagidek kelmoqda.",
+    qCounts: "{n} ta vazifa · {r} ta hisobot · {l} ta lider",
+    qTotals: "{n} ta vazifa · {r} ta hisobot · {l} ta lider · {s} ta brigadir",
+    qRange: "Hisobot sanalari: {a} — {b}",
+    qWho: "Kimlar", qDates: "Sanalar",
+    qEmpty: "Navbat bo'sh",
+    qEmptyBody: "Hozir AI ga yuborilgan, lekin hali tekshirilmagan hisobot yo'q.",
+    qCapped: "Faqat oxirgi {n} ta qator ko'rsatilyapti — navbat bundan uzunroq.",
     emptyTitle: "Hali hech narsa tekshirilmagan",
     emptyBody: "Bu oraliqda AI hech qanday xulosa yozmagan. Hisobotlar kelganda tekshiruv o'zi boshlanadi.",
     capped: "Faqat oxirgi {n} ta xulosa ko'rsatilyapti.",
@@ -81,9 +93,21 @@ const TXT = {
     by: "бошлаган: {t}", byAuto: "ўзи бошлади",
     scope: { unchecked: "Текширилмаганлар", flagged: "Шубҳалилар", clean: "Тозалар", all: "Ҳаммаси" },
     stChecked: "Текширилди", stClean: "Тоза", stFlagged: "Шубҳали", stErr: "Хатолик",
-    tabWho: "Кимлар", tabWhat: "Хулосалар",
+    stQueued: "Навбатда",
+    tabWho: "Кимлар", tabWhat: "Хулосалар", tabQueued: "Навбатда",
     thLeader: "Лидер", thSup: "Бригадир", thShift: "Смена", thDays: "Кун",
     thRows: "Текширилди", thClean: "Тоза", thFlag: "Шубҳали", thLast: "Охирги",
+    thTasks: "Вазифа", thReports: "Ҳисобот", thRange: "Саналар",
+    thQueued: "Навбатга қўйилган", thDate: "Сана", thLeaders: "Лидер",
+    qWhen: "Қачон навбатга қўйилган",
+    qWhenHint: "Бир дақиқада минглаб қатор пайдо бўлса — бу битта тугма босилгани. Кун бўйи биттадан келса — ҳисоботлар одатдагидек келмоқда.",
+    qCounts: "{n} та вазифа · {r} та ҳисобот · {l} та лидер",
+    qTotals: "{n} та вазифа · {r} та ҳисобот · {l} та лидер · {s} та бригадир",
+    qRange: "Ҳисобот саналари: {a} — {b}",
+    qWho: "Кимлар", qDates: "Саналар",
+    qEmpty: "Навбат бўш",
+    qEmptyBody: "Ҳозир AI га юборилган, лекин ҳали текширилмаган ҳисобот йўқ.",
+    qCapped: "Фақат охирги {n} та қатор кўрсатиляпти — навбат бундан узунроқ.",
     emptyTitle: "Ҳали ҳеч нарса текширилмаган",
     emptyBody: "Бу оралиқда AI ҳеч қандай хулоса ёзмаган. Ҳисоботлар келганда текширув ўзи бошланади.",
     capped: "Фақат охирги {n} та хулоса кўрсатиляпти.",
@@ -105,9 +129,21 @@ const TXT = {
     by: "запустил: {t}", byAuto: "запустилась сама",
     scope: { unchecked: "Непроверенные", flagged: "Сомнительные", clean: "Чистые", all: "Все" },
     stChecked: "Проверено", stClean: "Чисто", stFlagged: "Сомнительно", stErr: "Ошибки",
-    tabWho: "Кого проверили", tabWhat: "Заключения",
+    stQueued: "В очереди",
+    tabWho: "Кого проверили", tabWhat: "Заключения", tabQueued: "В очереди",
     thLeader: "Лидер", thSup: "Бригадир", thShift: "Смена", thDays: "Дней",
     thRows: "Проверено", thClean: "Чисто", thFlag: "Сомнительно", thLast: "Последняя",
+    thTasks: "Задач", thReports: "Отчётов", thRange: "Даты",
+    thQueued: "Поставлено", thDate: "Дата", thLeaders: "Лидеров",
+    qWhen: "Когда поставлено в очередь",
+    qWhenHint: "Тысячи строк за одну минуту — это одно нажатие кнопки. Единицы в течение дня — отчёты приходят как обычно.",
+    qCounts: "задач: {n} · отчётов: {r} · лидеров: {l}",
+    qTotals: "задач: {n} · отчётов: {r} · лидеров: {l} · бригадиров: {s}",
+    qRange: "Даты отчётов: {a} — {b}",
+    qWho: "Кого", qDates: "Даты",
+    qEmpty: "Очередь пуста",
+    qEmptyBody: "Сейчас нет отчётов, отправленных ИИ и ещё не проверенных.",
+    qCapped: "Показаны только последние {n} строк — очередь длиннее.",
     emptyTitle: "Пока ничего не проверено",
     emptyBody: "За этот период ИИ не записал ни одного заключения. Проверка запускается сама, когда приходят отчёты.",
     capped: "Показаны только последние {n} заключений.",
@@ -129,9 +165,21 @@ const TXT = {
     by: "started by {t}", byAuto: "started itself",
     scope: { unchecked: "Unchecked", flagged: "Flagged", clean: "Clean", all: "All" },
     stChecked: "Checked", stClean: "Clean", stFlagged: "Flagged", stErr: "Errors",
-    tabWho: "Who was checked", tabWhat: "Verdicts",
+    stQueued: "Queued",
+    tabWho: "Who was checked", tabWhat: "Verdicts", tabQueued: "Queued",
     thLeader: "Leader", thSup: "Supervisor", thShift: "Shift", thDays: "Days",
     thRows: "Checked", thClean: "Clean", thFlag: "Flagged", thLast: "Last",
+    thTasks: "Tasks", thReports: "Reports", thRange: "Dates",
+    thQueued: "Queued at", thDate: "Date", thLeaders: "Leaders",
+    qWhen: "When it was queued",
+    qWhenHint: "Thousands of rows in one minute is one press of one button. Ones and twos across the day is reports arriving normally.",
+    qCounts: "{n} tasks · {r} reports · {l} leaders",
+    qTotals: "{n} tasks · {r} reports · {l} leaders · {s} supervisors",
+    qRange: "Report dates: {a} — {b}",
+    qWho: "Who", qDates: "Dates",
+    qEmpty: "The queue is empty",
+    qEmptyBody: "Nothing has been sent to the AI and left unchecked.",
+    qCapped: "Only the newest {n} rows are shown — the queue is longer.",
     emptyTitle: "Nothing checked yet",
     emptyBody: "The AI has written no verdicts in this window. Review starts by itself as reports arrive.",
     capped: "Only the latest {n} verdicts are shown.",
@@ -145,12 +193,33 @@ const TXT = {
 };
 
 const fmt = (s, v) => String(s).replace(/\{[nt]\}/g, v);
+/** Multi-slot version: every language puts these counts in its own order, so
+ *  they are named rather than positional. */
+const tpl = (s, vars) =>
+  String(s).replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? "").toLocaleString());
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
 const hhmm = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "—"
     : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+/** Day AND time. A queue can hold rows submitted a week apart, so the bare
+ *  clock face `hhmm` prints would make two different days look like one. */
+const dtm = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const p = (x) => String(x).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+/** "12.08 — 13.08", or one date when the range is a single day. */
+const span = (a, b) => (a && b ? (a === b ? ddmm(a) : `${ddmm(a)} — ${ddmm(b)}`) : "—");
+
+const TILE_COLS = {
+  3: "grid-cols-3",
+  4: "grid-cols-2 sm:grid-cols-4",
+  5: "grid-cols-2 sm:grid-cols-5",
 };
 
 /** One number and what it means. Four of these are the whole answer to "how did
@@ -187,6 +256,13 @@ export default function AiActivity({ open, onClose, progress }) {
   const { lang } = useLang();
   const T = TXT[lang] || TXT.ru;
   const [tab, setTab] = useState("who");
+  // Once the operator picks a tab it is theirs. Without this the auto-landing
+  // below would drag them back to «Navbatda» on every poll.
+  const [tabPicked, setTabPicked] = useState(false);
+  // Inside the queue tab: the same set read by person or by report date. Both
+  // are asked ("whose data went in" and "which days went in") and neither is a
+  // filter on the other, so they are two readings rather than one table.
+  const [qView, setQView] = useState("who");
 
   const live = !!progress?.active;
 
@@ -201,12 +277,42 @@ export default function AiActivity({ open, onClose, progress }) {
     refetchInterval: open && live ? 5000 : false,
   });
 
+  /* ── the queue, read from the other end ────────────────────────────────────
+   * Everything above is keyed off `reviewed_at` — what the reviewer has already
+   * DECIDED. That leaves the most expensive thing on the screen invisible: the
+   * work already submitted and not yet paid for. Fetched only when the tab is
+   * opened, because it walks the whole queue rather than counting it. */
+  const { data: q, isLoading: qLoading } = useQuery({
+    queryKey: ["leader-ai-queue"],
+    queryFn: () => api.get("/api/leader-ai/activity/queue").then((r) => r.data),
+    enabled: open && tab === "queued",
+    refetchInterval: open && tab === "queued" && live ? 10000 : false,
+  });
+
+  // Land on the tab that has something to say. A window with no verdicts and a
+  // queue of thousands opened on «Kimlar» — an empty table — which reads as
+  // "the AI has done nothing", the opposite of what is happening.
+  const noVerdicts = !!data && !data.recent?.length;
+  const hasQueue = (data?.queuedCount || 0) > 0;
+  useEffect(() => {
+    if (open && !tabPicked && noVerdicts && hasQueue) setTab("queued");
+  }, [open, tabPicked, noVerdicts, hasQueue]);
+  // Reopening asks the question again from the top.
+  useEffect(() => { if (!open) { setTabPicked(false); setTab("who"); } }, [open]);
+
   if (!open) return null;
 
   const totals = data?.totals || {};
   const people = data?.people || [];
   const recent = data?.recent || [];
-  const nothing = !isLoading && !recent.length;
+  const queuedN = data?.queuedCount || 0;
+  const qTot = q?.totals || {};
+  const qGroups = q?.groups || [];
+  const qDates = q?.dates || [];
+  const qBursts = q?.bursts || [];
+  // A queue with nothing judged yet is exactly the state worth opening this
+  // for, so an empty verdict feed must not blank the whole modal.
+  const nothing = !isLoading && !recent.length && !queuedN;
 
   const p = progress;
   const pct = live && p?.total
@@ -267,12 +373,21 @@ export default function AiActivity({ open, onClose, progress }) {
 
       {/* What the window came to. Errors only when there are some — a standing
           «0 errors» makes a clean run look like it has a problem to read. */}
-      <div className={`grid gap-2 ${totals.errors ? "grid-cols-4" : "grid-cols-3"}`}>
+      {/* Class strings spelled out rather than built, so Tailwind's scanner can
+          see them. Two columns on a phone once there are more than three. */}
+      <div className={`grid gap-2 ${
+        TILE_COLS[3 + (totals.errors ? 1 : 0) + (queuedN ? 1 : 0)]}`}>
         <Tile icon={Sparkles} label={T.stChecked} value={totals.judged || 0} tone="var(--text-1)" />
         <Tile icon={CheckCircle2} label={T.stClean} value={totals.clean || 0} tone={GOOD} />
         <Tile icon={AlertTriangle} label={T.stFlagged} value={totals.flagged || 0} tone={BAD} />
         {!!totals.errors && (
           <Tile icon={XCircle} label={T.stErr} value={totals.errors} tone={WARN} />
+        )}
+        {/* The tile the other four could not show: work SUBMITTED, not yet
+            judged. It is the number quota will be spent on next, and it was the
+            one figure this view had no way to state. */}
+        {!!queuedN && (
+          <Tile icon={Clock} label={T.stQueued} value={queuedN} tone={BRAND} />
         )}
       </div>
 
@@ -286,10 +401,12 @@ export default function AiActivity({ open, onClose, progress }) {
       {!isLoading && !nothing && (
         <>
           <div>
-            <SegmentedToggle asTabs ariaLabel={T.title} value={tab} onChange={setTab}
+            <SegmentedToggle asTabs scrollable ariaLabel={T.title} value={tab}
+              onChange={(v) => { setTabPicked(true); setTab(v); }}
               options={[
                 { value: "who", label: `${T.tabWho} · ${people.length}` },
                 { value: "what", label: `${T.tabWhat} · ${recent.length}` },
+                { value: "queued", label: `${T.tabQueued} · ${queuedN.toLocaleString()}` },
               ]} />
           </div>
 
@@ -395,8 +512,153 @@ export default function AiActivity({ open, onClose, progress }) {
             </div>
           )}
 
+          {/* ── QUEUED ─────────────────────────────────────────────────────────
+              What has been SENT and not yet judged. The two tabs above read
+              `reviewed_at`, so between them they can describe every verdict
+              already paid for and not one row of the bill still coming. This is
+              that bill, named: whose reports are in it, which report dates it
+              covers, and — first, because it is the question a queue nobody
+              expected actually raises — the minute each batch was queued. */}
+          {tab === "queued" && (
+            <>
+              {qLoading && <SkeletonBlock className="h-64 rounded-2xl" />}
+
+              {!qLoading && !qGroups.length && (
+                <EmptyState icon={Clock} title={T.qEmpty} message={T.qEmptyBody}
+                  showUploadLink={false} />
+              )}
+
+              {!qLoading && !!qGroups.length && (
+                <>
+                  {/* WHEN. A submission is a spike in `created_at`: one minute
+                      holding two thousand rows is one press, and no other view
+                      on this platform can tell that from a normal day's
+                      arrivals. It goes first because it is the only line here
+                      that explains the rest. */}
+                  <div className="rounded-xl px-3 py-2.5"
+                    style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Clock size={12} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider"
+                        style={{ color: "var(--text-4)" }}>{T.qWhen}</span>
+                    </div>
+                    {qBursts.map((b) => (
+                      <div key={b.at} className="flex items-baseline gap-2 flex-wrap text-[11px] py-0.5">
+                        <span className="tabular-nums font-semibold" style={{ color: "var(--text-1)" }}>
+                          {dtm(b.at)}
+                        </span>
+                        <span style={{ color: "var(--text-3)" }}>
+                          {tpl(T.qCounts, { n: b.tasks, r: b.reports, l: b.leaders })}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-[11px] mt-1.5 leading-snug" style={{ color: "var(--text-3)" }}>
+                      {T.qWhenHint}
+                    </p>
+                  </div>
+
+                  <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap text-[11px]">
+                    <span style={{ color: "var(--text-2)" }}>
+                      {tpl(T.qTotals, { n: qTot.tasks, r: qTot.reports,
+                                        l: qTot.leaders, s: qTot.supervisors })}
+                    </span>
+                    <span className="sm:ml-auto tabular-nums" style={{ color: "var(--text-4)" }}>
+                      {tpl(T.qRange, { a: ddmm(qTot.from), b: ddmm(qTot.to) })}
+                    </span>
+                  </div>
+
+                  <div>
+                    <SegmentedToggle size="sm" asTabs ariaLabel={T.tabQueued}
+                      value={qView} onChange={setQView}
+                      options={[
+                        { value: "who", label: `${T.qWho} · ${qGroups.length}` },
+                        { value: "dates", label: `${T.qDates} · ${qDates.length}` },
+                      ]} />
+                  </div>
+
+                  {/* Supervisor FIRST. A leader name alone does not tell an
+                      admin which brigadir's plant just went into the reviewer,
+                      and that is the level the question is asked at. */}
+                  {qView === "who" && (
+                    <TableCard maxHeight="38vh">
+                      <thead>
+                        <tr>
+                          <Th label={T.thSup} icon={User} />
+                          <Th label={T.thLeader} />
+                          <Th label={T.thShift} align="center" />
+                          <Th label={T.thReports} align="right" />
+                          <Th label={T.thTasks} align="right" />
+                          <Th label={T.thRange} align="right" cls="hidden sm:table-cell" />
+                          <Th label={T.thQueued} align="right" cls="hidden sm:table-cell" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qGroups.map((r, i) => (
+                          <tr key={`${r.supervisor}-${r.leader}-${r.leaderId || i}`}>
+                            <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{r.supervisor}</td>
+                            <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>{r.leader}</td>
+                            <td className="px-3 py-2 text-center tabular-nums" style={{ color: "var(--text-3)" }}>
+                              {r.shift ? `S${r.shift}` : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>
+                              {r.reports.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums font-semibold"
+                              style={{ color: "var(--text-1)" }}>{r.tasks.toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell"
+                              style={{ color: "var(--text-3)" }}>{span(r.from, r.to)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell"
+                              style={{ color: "var(--text-4)" }}>{dtm(r.queuedLast)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </TableCard>
+                  )}
+
+                  {/* The literal "which dates" answer — report dates, newest
+                      first. A submission that reached back a year says so here
+                      and nowhere else. */}
+                  {qView === "dates" && (
+                    <TableCard maxHeight="38vh">
+                      <thead>
+                        <tr>
+                          <Th label={T.thDate} icon={CalendarRange} />
+                          <Th label={T.thLeaders} align="right" />
+                          <Th label={T.thReports} align="right" />
+                          <Th label={T.thTasks} align="right" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {qDates.map((d) => (
+                          <tr key={d.date}>
+                            <td className="px-3 py-2 tabular-nums font-medium"
+                              style={{ color: "var(--text-1)" }}>{d.date}</td>
+                            <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>
+                              {d.leaders.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums" style={{ color: "var(--text-3)" }}>
+                              {d.reports.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums font-semibold"
+                              style={{ color: "var(--text-1)" }}>{d.tasks.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </TableCard>
+                  )}
+
+                  {q?.capped && (
+                    <p className="text-[11px]" style={{ color: "#eab308" }}>
+                      {fmt(T.qCapped, (q.cap || 0).toLocaleString())}
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
           {/* Said out loud rather than silently truncated. */}
-          {data?.capped && (
+          {tab !== "queued" && data?.capped && (
             <p className="text-[11px] mt-2" style={{ color: "var(--text-4)" }}>
               {fmt(T.capped, recent.length)}
             </p>

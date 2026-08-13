@@ -9,11 +9,19 @@ Verdicts are read in three shapes:
 * `overview` — flag counts per report uid, for the register's row badge. Small
   by design, so it stays cheap over years of reports.
 * `report` — every verdict of ONE report, fetched when its detail modal opens.
-* `queue` — the triage feed: one flat, severity-ordered list of everything a
-  human still has to decide, with the photos, the window and the criteria all
-  inlined. This is what makes review a queue instead of a hunt through the
-  register, and it is the only read that carries enough to decide without a
-  second request.
+* `queue` — the review feed: one flat list of every JUDGED proof in the chosen
+  period — flagged and clean, decided and undecided — with the photos, the
+  window and the criteria all inlined. This is what makes review a queue
+  instead of a hunt through the register, and it is the only read that carries
+  enough to decide without a second request.
+
+  It was once the *unresolved flags* alone, which made the tab a worklist and
+  nothing else: a proof the AI cleared, and a flag somebody had already ruled
+  on, both vanished the moment they stopped being work. "Was this day even
+  looked at", "what did I decide last week", "show me a leader's actual
+  photos" had no answer anywhere in the app. So the feed now carries the whole
+  judged set and `state` narrows it back down — `state=open` is exactly the
+  old queue, one pick away.
 
 A verdict now has a TERMINAL state (`resolution`). Before that, "12 suspect"
 meant "12 ever" — the admin re-read the same flags every session and the number
@@ -26,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.database import get_db
 from app.models import (
@@ -47,12 +55,21 @@ log = logging.getLogger(__name__)
 # actually looking.
 FLAG_MAP_CAP = 4000
 
-# How much of the queue one read hands over. The triage screen shows ONE item at
-# a time and the rail scrolls, so this is about how far ahead an admin can work
-# before a refetch — not about what fits on screen. Generous enough that a day's
-# flags always arrive whole; bounded so a first-ever backfill cannot ship
-# thousands of rows with their photo lists attached.
-QUEUE_CAP = 300
+# How far the queue's own scan reaches. Bigger than the badge map because it no
+# longer walks flags alone: a clean verdict is a row too, and a factory filing
+# ~13 tasks × ~90 leaders puts a thousand rows in a single day. The pass over
+# these is column-projected (see `_scan`) precisely so the ceiling could be
+# raised — carrying four languages of verdict prose through 12 000 rows to
+# count facets is what made 4 000 the old limit.
+SCAN_CAP = 12000
+
+# How much of the queue one read hands over. The rail is a continuous list an
+# admin walks with J/K, so this is a first helping, not a page: «Ko'proq» asks
+# for another `PAGE` on top and the whole thing stays ONE list under one cursor.
+# A pager would have been cheaper and wrong — J stopping dead at row 150 breaks
+# the only interaction this screen exists for.
+PAGE = 150
+QUEUE_CAP = 1200
 
 
 def _bot_uid_map(db: Session, entry_ids: set[int]) -> dict[int, str]:
@@ -146,6 +163,13 @@ def _calibration(db: Session) -> dict:
     `agreed` = the reviewer confirmed the AI (rejected the proof or asked for a
     new one); `overruled` = the reviewer approved a photo the AI doubted. Only
     RESOLVED rows count — an unread flag is not evidence either way.
+
+    **FLAGGED rows only, and that is not an oversight.** Rulings on clean rows
+    are now possible (the review tab shows them), but the sense of every verb
+    above inverts there: on a clean verdict it is APPROVE that agrees with the
+    machine and REJECT that overrules it. Pouring both through one rule would
+    score every confirmed-clean proof as a disagreement and quietly halve the
+    rate. If clean rows are ever to count, they need their own arm, not this one.
     """
     rows = (
         db.query(LeaderAiReview.flags, LeaderAiReview.resolution)
@@ -191,6 +215,18 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     return {"enabled": True, "tasks": out}
 
 
+# ── buckets ──────────────────────────────────────────────────────────────────
+# The queue's own bucket set: the four flag bands, plus `clean` for a verdict
+# that found nothing wrong. `bucket_of` cannot answer for a clean row — it reads
+# FLAGS, and an empty flag list falls through its last branch to «undone», which
+# would file every clean proof on the page under "not done".
+QUEUE_BUCKETS = (*leader_ai.BUCKETS, "clean")
+
+
+def _bucket(rev: LeaderAiReview) -> str:
+    return "clean" if rev.status == "ok" else leader_ai.bucket_of(rev.flags)
+
+
 # ── the filter dimensions ────────────────────────────────────────────────────
 # ONE table, read by both the predicate and the facet pass, so "what a leader
 # filter means" cannot come to differ between the rows that survive a filter and
@@ -201,6 +237,17 @@ _DIMS = {
     "task":       lambda rev, p: rev.task_id,
     "shift":      lambda rev, p: rev.shift,
     "flag":       lambda rev, p: rev.flags or [],
+    # The tab strip is a filter like any other, evaluated in the same pass. It
+    # used to be applied in the BROWSER, over whatever the page cap happened to
+    # ship — so the cap had to hand every band a guaranteed share or a tab
+    # reading «3» opened onto an empty rail. Server-side, a tab is simply its
+    # own query, and that whole balancing act is gone.
+    "bucket":     lambda rev, p: _bucket(rev),
+    # What the HUMAN said, as opposed to what the AI said. A rejected fake is
+    # both `forged` and `rejected`, so the two can never share one control.
+    # NULL reads as «open» so the dimension has a value on every row — a facet
+    # is a count, and a None option is one nobody can pick.
+    "state":      lambda rev, p: rev.resolution or "open",
 }
 
 
@@ -212,7 +259,9 @@ def _dim_ok(dim: str, want, rev, p) -> bool:
 
 
 @router.get("/queue")
-def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
+def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
+          offset: int = Query(0, ge=0),
+          sort: str = Query("new", pattern="^(new|severity)$"),
           date_from: str | None = Query(None),
           date_to: str | None = Query(None),
           leader: str | None = Query(None),
@@ -220,48 +269,67 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
           task_id: int | None = Query(None),
           shift: int | None = Query(None),
           flag: str | None = Query(None),
+          bucket: str | None = Query(None),
+          state: str | None = Query(None),
           db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """The triage feed — everything still awaiting a human decision, ordered by
-    how much that decision is worth, with enough context inlined to make it.
+    """The review feed — every judged proof in the period, with enough context
+    inlined to rule on it.
 
     One request, no follow-ups: the reviewer's whole job is "look at the photo,
     compare its clock to the window, decide", and every one of those needs to be
     on screen at once. Splitting the criteria or the leader's own answer into a
     second call is what turned the old flow into a hunt.
 
+    **Scope is `flagged` + `ok` — judged rows.** `pending` and `error` are
+    deliberately absent: they have no verdict to read, so a card for one would
+    be a photo under four empty questions, and the three decision buttons would
+    be recording an opinion about an answer nobody has given yet. The progress
+    bar above the tab already reports them as a number, which is the honest
+    shape for work that has not happened.
+
     **Filtering is server-side, and it has to be.** The page ships at most
     `limit` rows out of a set that can run to thousands, so a filter applied to
-    what the browser happens to hold would answer "this leader's flags" with
-    "this leader's flags among the ones that fit" — and on an old date it would
+    what the browser happens to hold would answer "this leader's proofs" with
+    "this leader's proofs among the ones that fit" — and on an old date it would
     answer "none" for a day with forty. Every dimension is therefore evaluated
-    over the whole unresolved set, and the bucket tallies are recomputed inside
-    it: a tab reading «333» beside a four-row rail is not a filter, it is a bug.
+    over the whole scanned set, tab strip included.
 
     `facets` ships the option lists with counts, each dimension tallied against
     every OTHER active filter. Picking a leader narrows the task list to that
-    leader's tasks, so no option in the panel is ever a dead end.
+    leader's tasks, so no option in the panel is ever a dead end — and because
+    `bucket` is one of those dimensions, the tab counts come from the same pass:
+    a tab reading «333» beside a four-row rail is not a filter, it is a bug.
     """
     if not gemini.available():
         return {"enabled": False, "items": [], "buckets": {}, "facets": {}}
 
     q = (
         db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status == "flagged",
-                LeaderAiReview.resolution.is_(None))
+        .filter(LeaderAiReview.status.in_(("flagged", "ok")))
+        # Column-projected: this pass exists to COUNT, and the four language
+        # columns of verdict prose are the heaviest thing on the row. The page
+        # slice re-reads its own rows whole (`_full`).
+        .options(load_only(
+            LeaderAiReview.ref, LeaderAiReview.date, LeaderAiReview.task_id,
+            LeaderAiReview.leader_id, LeaderAiReview.manager_id,
+            LeaderAiReview.shift, LeaderAiReview.status, LeaderAiReview.flags,
+            LeaderAiReview.resolution,
+        ))
     )
     # `date` is a 'YYYY-MM-DD' string, so a lexical compare IS a date compare —
-    # and it narrows BEFORE the scan cap, which is the point: the newest 4 000
-    # flags of the chosen days, not the chosen days out of the newest 4 000.
+    # and it narrows BEFORE the scan cap, which is the point: the newest rows of
+    # the chosen days, not the chosen days out of the newest 12 000.
     if date_from:
         q = q.filter(LeaderAiReview.date >= date_from)
     if date_to:
         q = q.filter(LeaderAiReview.date <= date_to)
     rows = (q.order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.desc())
-            .limit(FLAG_MAP_CAP).all())
+            .limit(SCAN_CAP).all())
 
     proj = _project(db, rows)
     picked = {"leader": leader, "supervisor": supervisor,
-              "task": task_id, "shift": shift, "flag": flag}
+              "task": task_id, "shift": shift, "flag": flag,
+              "bucket": bucket, "state": state}
 
     facets: dict[str, dict] = {d: {} for d in _DIMS}
     task_labels: dict[int, str] = {}
@@ -286,12 +354,19 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
                     continue
                 facets[d][v] = facets[d].get(v, 0) + 1
 
-    # Tallies over the FILTERED set — the tabs label the rail beneath them.
-    buckets: dict[str, int] = {b: 0 for b in leader_ai.BUCKETS}
-    for r in kept:
-        buckets[leader_ai.bucket_of(r.flags)] += 1
+    # The tab strip reads its numbers out of the facet pass, NOT out of `kept` —
+    # `bucket` is a filter now, so counting the survivors would leave every tab
+    # but the open one reading zero, and the strip would stop being a way back.
+    buckets: dict[str, int] = {b: facets["bucket"].get(b, 0) for b in QUEUE_BUCKETS}
 
-    page = _fair_slice(kept, limit)
+    # Severity is no longer the only order. Newest-first is the default because
+    # the feed is now a register as much as a worklist — "what came in today"
+    # is the question you arrive with — and severity stays one pick away for the
+    # triage run, where working the worst rows first is the whole point.
+    if sort == "severity":
+        # Stable, so the newest-first order inside each band survives.
+        kept.sort(key=lambda r: leader_ai.bucket_rank(_bucket(r)))
+    page = kept[offset:offset + limit]
 
     def _opts(dim: str) -> list[dict]:
         """Busiest first — the option worth picking is the one with the work
@@ -302,63 +377,45 @@ def queue(limit: int = Query(QUEUE_CAP, ge=1, le=QUEUE_CAP),
 
     return {
         "enabled": True,
-        "items": _hydrate(db, page),
+        "items": _hydrate(db, _full(db, page)),
         "buckets": buckets,
         "total": len(kept),
-        "capped": len(kept) > len(page),
+        # The rail asks for more of the SAME list rather than turning a page, so
+        # what it needs to know is only whether the list has run out.
+        "hasMore": offset + len(page) < len(kept),
         "facets": {
-            **{d: _opts(d) for d in ("leader", "supervisor", "shift", "flag")},
+            **{d: _opts(d) for d in ("leader", "supervisor", "shift", "flag", "state")},
             # The label a task carries can differ per unit (a supervisor may
             # rename it), so the option is keyed by id and labelled with the
             # first wording seen — newest report first.
             "task": [{**o, "label": task_labels.get(o["v"], f"#{o['v']}")}
                      for o in _opts("task")],
         },
-        # Said out loud rather than silently truncated: past this many flags the
+        # Said out loud rather than silently truncated: past this many rows the
         # scan itself is capped, so the counts become a floor.
-        "scanCapped": len(rows) >= FLAG_MAP_CAP,
+        "scanCapped": len(rows) >= SCAN_CAP,
     }
 
 
-def _fair_slice(rows: list[LeaderAiReview], limit: int) -> list[LeaderAiReview]:
-    """Trim to `limit` WITHOUT ever emptying a bucket.
+def _full(db: Session, rows: list[LeaderAiReview]) -> list[LeaderAiReview]:
+    """Re-read the page's rows with every column loaded, order preserved.
 
-    A plain severity sort followed by `rows[:limit]` spends the whole cap on the
-    most serious band and hands the tail nothing: with 424 `date` flags against a
-    300 cap, `tech` — last by severity — shipped zero items while its tab still
-    read "3", because the tallies count the whole unresolved set. A tab that says
-    three and then shows an empty queue reads as a broken screen, and the flags it
-    hides are the ones nobody can reach by scrolling either.
+    The scan above is column-projected — it walks up to `SCAN_CAP` rows to build
+    the facet counts, and dragging four languages of verdict prose through that
+    pass is exactly what kept the old ceiling at 4 000. Only the page needs the
+    whole record, and the page is at most `limit` rows.
 
-    So every non-empty bucket is guaranteed an equal floor first, and only the
-    REMAINDER is handed out by severity. Order is unchanged — buckets emitted
-    most-serious-first, newest report at the head of each band.
-
-    An under-cap list runs the same path rather than short-circuiting: returning
-    it untouched would hand back DB order (date desc), and the queue's whole
-    premise is that the most expensive decision sits at the top.
+    `populate_existing` is not optional: these objects are already in the
+    session's identity map with their text columns deferred, so a plain re-query
+    hands back the same half-loaded instances and every `reason_*` read after it
+    becomes a lazy round-trip per row.
     """
     if not rows:
         return []
-
-    by_bucket: dict[str, list[LeaderAiReview]] = {b: [] for b in leader_ai.BUCKETS}
-    for r in rows:                       # already newest-first
-        by_bucket[leader_ai.bucket_of(r.flags)].append(r)
-
-    live = sorted((b for b in leader_ai.BUCKETS if by_bucket[b]),
-                  key=leader_ai.bucket_rank)
-    share = limit // len(live)
-    taken = {b: by_bucket[b][:share] for b in live}
-
-    spare = limit - sum(len(v) for v in taken.values())
-    for b in live:
-        if spare <= 0:
-            break
-        extra = by_bucket[b][len(taken[b]):len(taken[b]) + spare]
-        taken[b].extend(extra)
-        spare -= len(extra)
-
-    return [r for b in live for r in taken[b]]
+    refs = [r.ref for r in rows]
+    full = {r.ref: r for r in db.query(LeaderAiReview)
+            .filter(LeaderAiReview.ref.in_(refs)).populate_existing().all()}
+    return [full[ref] for ref in refs if ref in full]
 
 
 # ── the task-config chain ────────────────────────────────────────────────────
@@ -605,7 +662,15 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             "leader": leader or "—",
             "supervisor": supervisor or "—",
             "flags": rev.flags or [],
-            "bucket": leader_ai.bucket_of(rev.flags),
+            "status": rev.status,
+            "bucket": _bucket(rev),
+            # The human ruling rides along with the verdict now that the feed
+            # carries decided rows: the card has to open showing what was
+            # decided, by whom and when, or re-deciding one is a blind edit.
+            "resolution": rev.resolution,
+            "resolvedBy": rev.resolved_by,
+            "resolvedAt": rev.resolved_at.isoformat() if rev.resolved_at else None,
+            "resolutionNote": rev.resolution_note,
             "imageDate": rev.image_date,
             "expected": f"{lo} — {hi}",
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
@@ -659,9 +724,16 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
     rev = db.query(LeaderAiReview).filter_by(ref=body.ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Unknown verdict")
-    if rev.status != "flagged":
+    # A CLEAN verdict is rulable too. The machine finding nothing wrong is a
+    # recommendation, not a finding of fact — an admin who can see a photo the
+    # model was happy with must be able to reject it, or the AI's clean pass
+    # becomes the last word on a leader's score. What stays unrulable is a row
+    # with no verdict at all: `pending` and `error` have nothing to agree or
+    # disagree with, and a `rejected` written onto one would dock a day on the
+    # strength of a judgement nobody has made.
+    if rev.status not in ("flagged", "ok"):
         raise HTTPException(status_code=400,
-                            detail="Only a flagged verdict can be resolved")
+                            detail="Only a judged verdict can be resolved")
 
     who = (admin.get("full_name") or admin.get("username")
            or str(admin.get("telegram_id") or "admin"))[:160]
@@ -988,14 +1060,32 @@ def set_key(body: ApiKeyIn, db: Session = Depends(get_db),
 
 @router.post("/run")
 def run(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """Queue anything new and start draining. Returns immediately — a backlog
-    takes far longer than a request may — so the page polls `overview`."""
+    """Drain what is already queued. Queues NOTHING.
+
+    This was the last bulk submitter on the platform. It ran a full
+    `discover()` — a walk of every report ever filed — behind a button captioned
+    «AI tekshiruvi», with no count shown first and no confirm: one press turned
+    thousands of never-asked-for reports into a queue, the 20-minute drain then
+    spent quota on all of them, and because this endpoint writes no run record
+    the progress strip could only report the queue as something that had started
+    itself. Three separate automatic submitters were removed (the timer's
+    discovery, the sheet Refresh, setting the API key); this one survived
+    because it was behind a press, which is not the same thing as being asked
+    for.
+
+    Submission now has exactly one door: «Tekshirish» → scope «Tekshirilmagan»,
+    which counts the work first, shows the number, and asks. The endpoint stays,
+    drain-only, so a cached client pressing an old button moves the queue
+    instead of growing it.
+
+    Returns immediately — a backlog takes far longer than a request may — so the
+    page polls `progress`.
+    """
     if not gemini.available():
         raise HTTPException(status_code=400,
                             detail="GEMINI_API_KEY is not set on the server")
-    added = leader_ai.discover(db)
     leader_ai.run_async(discover_first=False)
-    return {"ok": True, "queued": added, "counts": leader_ai.counts(db)}
+    return {"ok": True, "queued": 0, "counts": leader_ai.counts(db)}
 
 
 def _narrow(q, *, date_from: str | None = None, date_to: str | None = None,
@@ -1990,6 +2080,185 @@ def activity(limit: int = Query(60, ge=1, le=ACTIVITY_CAP),
         "people": rows,
         "recent": recent,
         "capped": len(judged) >= ACTIVITY_CAP,
+        # The other half of the answer, as one cheap COUNT: work SUBMITTED and
+        # not yet judged. Everything above reads `reviewed_at`, so a queue
+        # nobody chose to submit is invisible here — and that is the queue
+        # somebody wants named. The census itself is one tab away rather than
+        # in this payload, because this one is polled every few seconds.
+        "queuedCount": (
+            db.query(LeaderAiReview)
+            .filter(LeaderAiReview.status.in_(("pending", "error")),
+                    LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS)
+            .count()
+        ),
+    }
+
+
+# One read of the queue, bounded. Newest-queued first, so what the cap drops is
+# the oldest debt and never the submission somebody is standing here asking
+# about.
+QUEUE_SCAN_CAP = 8000
+
+
+@router.get("/activity/queue")
+def activity_queue(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
+    """WHOSE work is queued for review but not yet judged — and when it was sent.
+
+    `/activity` answers what the reviewer has DECIDED. It reads `reviewed_at`,
+    so a queue of two thousand rows nobody meant to submit does not appear in it
+    at all: the operator watching quota drain gets a percentage and a list of
+    finished verdicts, and cannot name one report that is about to be paid for.
+    That is exactly the view wanted when a submission looks larger than anyone
+    intended — by the time a row reaches `recent`, its quota is already spent.
+
+    So this is the same table read from the other end: `pending` rows and
+    `error` rows with retries left, grouped by the person whose data it is,
+    carrying the report dates covered and the moment each was queued.
+
+    `bursts` is the forensic half, and the reason this endpoint exists. Every
+    row stamps `created_at` when it is discovered, so a bulk submit is a SPIKE:
+    one minute holding two thousand rows is one press of one button, and the
+    timestamp names it. Reports arriving normally are ones and twos spread
+    across a day. Without this the only evidence of what happened is the size of
+    the queue — the one fact that cannot tell those two apart.
+    """
+    if not gemini.available():
+        return {"enabled": False, "groups": [], "bursts": [], "dates": [],
+                "totals": {}}
+
+    rows = (
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status.in_(("pending", "error")),
+                LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS)
+        .order_by(LeaderAiReview.id.desc())
+        .limit(QUEUE_SCAN_CAP + 1)
+        .all()
+    )
+    capped = len(rows) > QUEUE_SCAN_CAP
+    rows = rows[:QUEUE_SCAN_CAP]
+    if not rows:
+        return {"enabled": True, "groups": [], "bursts": [], "dates": [],
+                "totals": {"tasks": 0, "reports": 0, "leaders": 0,
+                           "supervisors": 0}, "capped": False}
+
+    # Same name resolution as every other AI surface, so one person is never two
+    # names across two screens.
+    proj = _project(db, rows)
+
+    # A bot ref names an ENTRY; the report it belongs to is that entry's day.
+    day_of: dict[int, int] = {}
+    entry_ids = {int(r.ref.split(":")[1]) for r in rows if r.ref.startswith("bot:")}
+    if entry_ids:
+        day_of = dict(
+            db.query(LeaderTaskEntry.id, LeaderTaskEntry.day_id)
+            .filter(LeaderTaskEntry.id.in_(entry_ids)).all()
+        )
+
+    groups: dict[tuple, dict] = {}
+    bursts: dict[str, dict] = {}
+    dates: dict[str, dict] = {}
+    all_reports: set[str] = set()
+    first_at = last_at = None
+
+    for rev in rows:
+        p = proj[rev.ref]
+        rk = leader_ai.report_key(rev.ref, day_of)
+        all_reports.add(rk)
+        at = rev.created_at.isoformat() if rev.created_at else None
+        if at:
+            if first_at is None or at < first_at:
+                first_at = at
+            if last_at is None or at > last_at:
+                last_at = at
+
+        # ── per person ───────────────────────────────────────────────────────
+        key = (p["supervisor"], p["leader"], rev.leader_id, rev.shift)
+        g = groups.setdefault(key, {
+            "supervisor": p["supervisor"], "leader": p["leader"],
+            "leaderId": rev.leader_id, "shift": rev.shift,
+            "tasks": 0, "errors": 0, "bot": 0, "sheet": 0,
+            "_reports": set(), "_days": set(),
+            "from": None, "to": None, "queuedFirst": None, "queuedLast": None,
+        })
+        g["tasks"] += 1
+        g["errors"] += rev.status == "error"
+        g["bot" if rev.source == "bot" else "sheet"] += 1
+        g["_reports"].add(rk)
+        g["_days"].add(rev.date)
+        if g["from"] is None or rev.date < g["from"]:
+            g["from"] = rev.date
+        if g["to"] is None or rev.date > g["to"]:
+            g["to"] = rev.date
+        if at:
+            if g["queuedFirst"] is None or at < g["queuedFirst"]:
+                g["queuedFirst"] = at
+            if g["queuedLast"] is None or at > g["queuedLast"]:
+                g["queuedLast"] = at
+
+        # ── per minute queued: the spike that names the trigger ──────────────
+        if at:
+            # Keyed by the minute, but carrying a WHOLE timestamp for display:
+            # `created_at` is timezone-aware, and an ISO string sliced to
+            # "…T09:32" has lost its offset — the browser would then read a UTC
+            # stamp as local and print a burst five hours off, which is the one
+            # number in this view that has to be exact.
+            minute = at[:16]
+            b = bursts.setdefault(minute, {
+                "at": at, "tasks": 0, "_reports": set(), "_leaders": set()})
+            b["tasks"] += 1
+            b["_reports"].add(rk)
+            b["_leaders"].add(p["leader"])
+
+        # ── per REPORT date: the literal "which dates" answer ────────────────
+        d = dates.setdefault(rev.date, {"date": rev.date, "tasks": 0,
+                                        "_reports": set(), "_leaders": set()})
+        d["tasks"] += 1
+        d["_reports"].add(rk)
+        d["_leaders"].add(p["leader"])
+
+    def _shed(rec: dict, **counts) -> dict:
+        out = {k: v for k, v in rec.items() if not k.startswith("_")}
+        out.update(counts)
+        return out
+
+    group_rows = sorted(
+        (_shed(g, reports=len(g["_reports"]), days=len(g["_days"]))
+         for g in groups.values()),
+        # Biggest first: the point of the list is which unit the submission
+        # actually landed on, and an alphabetical one buries it.
+        key=lambda r: (-r["tasks"], str(r["supervisor"]), str(r["leader"])),
+    )
+    burst_rows = sorted(
+        (_shed(b, reports=len(b["_reports"]), leaders=len(b["_leaders"]))
+         for b in bursts.values()),
+        key=lambda r: -r["tasks"],
+    )[:8]
+    date_rows = sorted(
+        (_shed(d, reports=len(d["_reports"]), leaders=len(d["_leaders"]))
+         for d in dates.values()),
+        key=lambda r: r["date"], reverse=True,
+    )
+
+    return {
+        "enabled": True,
+        "totals": {
+            "tasks": len(rows),
+            "reports": len(all_reports),
+            "leaders": len({g["leader"] for g in groups.values()}),
+            "supervisors": len({g["supervisor"] for g in groups.values()}),
+            "days": len(dates),
+            "from": min(dates) if dates else None,
+            "to": max(dates) if dates else None,
+            "queuedFirst": first_at,
+            "queuedLast": last_at,
+        },
+        "groups": group_rows,
+        "bursts": burst_rows,
+        "dates": date_rows,
+        # Said out loud. A census that silently stops at 8 000 reads as "that is
+        # the whole queue", which is the one thing it must not do here.
+        "capped": capped,
+        "cap": QUEUE_SCAN_CAP,
     }
 
 

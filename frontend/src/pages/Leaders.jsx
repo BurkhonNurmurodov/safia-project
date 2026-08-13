@@ -1911,15 +1911,6 @@ export default function Leaders() {
     setDetail(r);
   };
 
-  const aiRunMut = useMutation({
-    mutationFn: () => api.post("/api/leader-ai/run").then((r) => r.data),
-    onSuccess: () => {
-      // The drain is asynchronous; the counts here only move once it has done
-      // some work, so re-read shortly after rather than pretending it is done.
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }), 4000);
-    },
-  });
-
   // Daraja cutoffs. One global row, so every viewer grades on the same scale;
   // the server decides who may write it back rather than the client's own role.
   const { data: tierData } = useQuery({
@@ -3005,16 +2996,14 @@ export default function Leaders() {
               filters, where they can describe the rows the filters left. */}
           <SectionHead icon={ListChecks} title={T.tableTitle}
             right={aiOn ? (
-              <span className="flex items-center gap-2">
-                <Button size="sm" variant="secondary" tint loading={aiRunMut.isPending}
-                  icon={<Sparkles size={13} />} onClick={() => aiRunMut.mutate()}>
-                  {aiRunMut.isPending ? T.aiRunning : T.aiRun}
-                </Button>
-                {/* Its sibling: «run» judges what has never been judged,
-                    «re-check» re-earns answers the reviewer already gave under
-                    questions it no longer asks. Both used to be shell work. */}
-                <AiRecheck errorCount={aiData?.counts?.error || 0} />
-              </span>
+              /* ONE door into the reviewer, and it counts before it spends.
+                 «AI tekshiruvi» used to sit here beside this: a press ran a
+                 full discovery over every report ever filed, queued thousands
+                 of them without showing a number or asking, and left the drain
+                 to spend quota on the lot. «Tekshirish» → «Tekshirilmagan» does
+                 the same job the way it should always have been done — dry-run
+                 count first, the figure on screen, then a confirm. */
+              <AiRecheck errorCount={aiData?.counts?.error || 0} />
             ) : undefined} />
 
           {/* table-level filters: leader search + score-band chips */}

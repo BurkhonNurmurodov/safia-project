@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
-  ChevronLeft, ChevronRight, Undo2, Keyboard, X, Gauge,
-  ClipboardCheck, Flag, SearchX, Settings2,
+  ChevronLeft, ChevronRight, ChevronDown, Undo2, Keyboard, X, Gauge,
+  ClipboardCheck, Flag, SearchX, Settings2, Gavel, RotateCcw,
   ImageOff,
 } from "lucide-react";
 import Button from "../ui/Button";
@@ -19,7 +19,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { QueuePhoto } from "./ProofPhoto";
 import api from "../../utils/api";
 
-/* ══ AI proof triage ══════════════════════════════════════════════════════════
+/* ══ AI proof review ══════════════════════════════════════════════════════════
  *
  * The register badge told an admin a report was suspect; finding out WHY meant
  * opening the report, scrolling to the right task card and reading a 10px strip
@@ -37,6 +37,23 @@ import api from "../../utils/api";
  *
  * One keystroke dispatches. Undo is not a nicety: without it a one-key decision
  * makes people hesitate, and hesitation costs more than the keystroke saves.
+ *
+ * ── it is now a REGISTER as well as a queue ──────────────────────────────────
+ * It used to show unresolved flags and nothing else, which made it a worklist
+ * that erased its own history: a proof the AI cleared never appeared, and a
+ * flag somebody had ruled on vanished at the keystroke. So «has this day been
+ * looked at», «what did I decide last week» and «show me this leader's actual
+ * photos» had no answer anywhere in the app, and the emptied queue looked
+ * identical to a period nobody had ever checked.
+ *
+ * Now the feed carries every JUDGED proof — flagged and clean, decided and
+ * undecided — newest first, and «Holat → Ko'rilmagan» is the old queue one pick
+ * away. Two consequences run through everything below:
+ *   · a decision no longer removes the card, it re-badges it, so the cursor has
+ *     to advance by itself or the triage rhythm dies at the first row;
+ *   · every row is rulable, clean ones included — the machine finding nothing
+ *     is a recommendation, and an admin who can see the photo must be able to
+ *     overrule it in the same keystroke as everywhere else.
  */
 
 const C_AI = "#eab308";      // amber — needs a look, not a failure
@@ -84,9 +101,17 @@ const ACTS = {
  * forty. The option lists come back from the same pass, each counted against
  * the other active filters, so no option in the panel is ever a dead end.
  */
-const EMPTY_FLT = { task: null, flag: null };
+const EMPTY_FLT = { task: null, flag: null, bucket: null, state: null };
 const EMPTY_SCOPE = { from: "", to: "", leader: null, supervisor: null, shift: null };
 const FLAGS = ["off_topic", "not_proven", "date_mismatch", "no_date", "unreadable"];
+// What the HUMAN said. A separate axis from the buckets — a rejected fake is
+// `forged` AND `rejected` — so it gets a panel section, never a tab.
+const STATES = ["open", "approved", "rejected", "requeried"];
+const BUCKETS = ["forged", "undone", "date", "tech", "clean"];
+// One helping of the rail, matching the server's own PAGE. «Ko'proq» asks for
+// another on top of it rather than turning a page: the rail is one list under
+// one J/K cursor, and a page boundary is exactly where that cursor would die.
+const PAGE = 150;
 
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : "—");
 // The queue is a work surface, not a register: a window is only useful here as
@@ -114,15 +139,22 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // the decision bar, not the page head.
   const { show: showToast, hide: hideToast, node: toastNode } = useToast({ position: "bottom" });
 
-  const [bucket, setBucket] = useState("all");
   // Persisted like every other page's filters: a triage session gets
   // interrupted, and coming back to "all 337" after narrowing to one leader
   // means re-doing the narrowing every time. Merged over EMPTY_FLT so a stored
-  // shape written before a dimension existed cannot arrive missing a key.
+  // shape written before a dimension existed cannot arrive missing a key —
+  // which is why `bucket` and `state` could join it without a key bump.
   // Key bumped when period/leader/supervisor/shift moved up to the page bar:
   // a blob written under the old shape would keep re-applying a leader nobody
   // can see a control for.
   const [stored, setStored] = usePersistentState("leaders.ai.flt2", EMPTY_FLT);
+  // Order is remembered but is NOT a filter — it hides nothing, so «clear
+  // filters» must not touch it and an empty rail is never its fault.
+  const [sort, setSort] = usePersistentState("leaders.ai.sort", "new");
+  // How many helpings of the rail have been asked for. Part of the query key,
+  // so «Ko'proq» is a refetch of one longer list rather than a second list to
+  // stitch — which is what keeps the optimistic writes below single-target.
+  const [pages, setPages] = useState(1);
   const [i, setI] = useState(0);
   const [photoIx, setPhotoIx] = useState(0);
   const [zoom, setZoom] = useState(null);       // object URL of the enlarged photo
@@ -151,20 +183,31 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // and after the move most of them are the page's, not this tab's.
   const anyFlt = anyLocal || anyScope;
   // Patching, not replacing — and both cursors go home, because the row under
-  // the old index belongs to a queue that no longer exists.
+  // the old index belongs to a queue that no longer exists. The rail goes back
+  // to one helping too: a narrowed set may be shorter than what was already
+  // loaded, and re-asking for 1 200 rows to show forty is pure waste.
   const setF = useCallback((patch) => {
     setStored((p) => ({ ...EMPTY_FLT, ...(p || {}), ...patch }));
     setI(0);
     setPhotoIx(0);
+    setPages(1);
   }, [setStored]);
+
+  // Same reasoning for the PAGE's scope, which arrives as a prop and so cannot
+  // go through `setF`. An effect is safe for this one piece of state and not
+  // for the cursors below: `pages` only decides how much to ask the server for,
+  // so a frame rendered against the previous value shows a longer list, never
+  // somebody else's photo.
+  const scopeKey = JSON.stringify(sc);
+  useEffect(() => { setPages(1); }, [scopeKey]);
 
   // The filters are PART of the cache key, so every mutation that writes the
   // queue back optimistically has to use this exact key — a bare
   // ["leader-ai-queue"] would write a cache entry nothing renders, and the
   // dispatched card would sit on screen until the next refetch.
-  const qkey = useMemo(() => ["leader-ai-queue", sc, f], [sc, f]);
+  const qkey = useMemo(() => ["leader-ai-queue", sc, f, sort, pages], [sc, f, sort, pages]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: qkey,
     queryFn: () => api.get("/api/leader-ai/queue", {
       params: {
@@ -175,6 +218,10 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
         shift: sc.shift ?? undefined,
         task_id: f.task ?? undefined,
         flag: f.flag ?? undefined,
+        bucket: f.bucket ?? undefined,
+        state: f.state ?? undefined,
+        sort,
+        limit: PAGE * pages,
       },
     }).then((r) => r.data),
     refetchOnWindowFocus: true,
@@ -184,17 +231,14 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
     placeholderData: keepPreviousData,
   });
 
-  const all = useMemo(() => data?.items ?? [], [data]);
+  // The rail IS what the server sent. The tab strip used to filter this list in
+  // the browser, which is why the page slice had to hand every bucket a
+  // guaranteed share — a tab reading «3» over an empty rail. `bucket` is a
+  // server-side dimension now, counted in the same pass as every other filter,
+  // so the tab numbers and the rows under them cannot disagree.
+  const items = useMemo(() => data?.items ?? [], [data]);
   const facets = data?.facets || {};
   const buckets = data?.buckets || {};
-  // A narrowed set may hold nothing of the bucket that was open. Derived, not
-  // reset from an effect: an unselected segment on a tab strip reads as a
-  // broken screen, and «all» is always a live answer.
-  const liveBucket = bucket === "all" || buckets[bucket] ? bucket : "all";
-  const items = useMemo(
-    () => (liveBucket === "all" ? all : all.filter((x) => x.bucket === liveBucket)),
-    [all, liveBucket],
-  );
   // Both cursors are CLAMPED during render rather than reset from an effect.
   // A dispatch shortens the list under the index and a new item may carry fewer
   // photos than the last — resetting those in effects meant a frame rendered
@@ -210,7 +254,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // item's image — and no reset pass is needed when the card changes.
   const zoomKey = cur ? `${cur.ref}:${pIx}` : "";
 
-  const pickBucket = useCallback((b) => { setBucket(b); setI(0); setPhotoIx(0); }, []);
+  const pickBucket = useCallback((b) => setF({ bucket: b === "all" ? null : b }), [setF]);
 
   const move = useCallback((d) => {
     setI((p) => {
@@ -221,18 +265,49 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
     setPhotoIx(0);
   }, [items.length]);
 
+  /** Does this ruling take the row OUT of what is on screen?
+   *
+   *  Only ever true inside a state filter the new ruling contradicts — reading
+   *  «Ko'rilmagan» and approving something. Everywhere else the row belongs to
+   *  the view it is already in, and removing it would be a lie: the feed shows
+   *  decided work now, so a decision changes the badge, not the membership. */
+  const leaves = useCallback(
+    (resolution) => f.state != null && f.state !== resolution,
+    [f.state],
+  );
+
   const resolveMut = useMutation({
     mutationFn: ({ ref, resolution }) =>
       api.post("/api/leader-ai/resolve", { ref, resolution }).then((r) => r.data),
     // Optimistic: the whole point is a 5-second loop, and waiting ~400ms for a
     // round-trip before the next card appears is what turns a rhythm back into
     // a series of clicks. A failure puts the item back and says so.
-    onMutate: async ({ ref }) => {
+    //
+    // No invalidation on success either, for the same reason — a triage run is
+    // five decisions in five seconds, and each one refetching a 150-row payload
+    // would spend the whole session re-downloading the list being worked.
+    onMutate: async ({ ref, resolution, bucket }) => {
       await qc.cancelQueries({ queryKey: ["leader-ai-queue"] });
       const prev = qc.getQueryData(qkey);
+      const gone = leaves(resolution);
+      const res = resolution === "open" ? null : resolution;
       qc.setQueryData(qkey, (old) => old && ({
         ...old,
-        items: old.items.filter((x) => x.ref !== ref),
+        items: gone
+          ? old.items.filter((x) => x.ref !== ref)
+          : old.items.map((x) => (x.ref === ref
+            ? { ...x, resolution: res, resolutionNote: null,
+                // The server stamps the real actor; this is only what the card
+                // shows for the second before the next read confirms it.
+                resolvedBy: res ? T.aiYou : null,
+                resolvedAt: res ? new Date().toISOString() : null }
+            : x)),
+        // The counters the row just left. Patched rather than refetched, and
+        // floored: a tab counting below zero is worse than one running stale.
+        total: gone ? Math.max(0, (old.total || 1) - 1) : old.total,
+        buckets: gone && bucket
+          ? { ...old.buckets, [bucket]: Math.max(0, (old.buckets?.[bucket] || 1) - 1) }
+          : old.buckets,
       }));
       return { prev };
     },
@@ -251,37 +326,47 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
 
   const dispatch = useCallback((resolution) => {
     if (!cur) return;
+    // The item as it stood BEFORE the ruling — including whatever it was
+    // decided as last time. That snapshot is what undo restores, so undoing a
+    // correction puts back the original decision rather than clearing it.
     setUndoable({ item: cur, resolution });
     showToast(
       `${T[`aiAct_${resolution}`]} — ${nm(cur.leader)}, ${T.task} ${cur.taskId}`,
       resolution === "rejected" ? "warning" : "success",
     );
-    resolveMut.mutate({ ref: cur.ref, resolution });
-  }, [cur, resolveMut, showToast, T, nm]);
+    resolveMut.mutate({ ref: cur.ref, resolution, bucket: cur.bucket });
+    // The card no longer disappears out from under the cursor, so the cursor
+    // has to move by itself. Without this a decision looks like nothing
+    // happened and every second keystroke has to be a J — which is precisely
+    // the rhythm the one-key dispatch exists to buy.
+    if (!leaves(resolution)) move(1);
+  }, [cur, resolveMut, showToast, T, nm, leaves, move]);
 
   const undo = useCallback(() => {
     if (!undoable) return;
     const { item } = undoable;
-    // `open` CLEARS the ruling — it does not record a different one. Writing
-    // "approved" here would have put the item back on screen while telling the
-    // server a human had cleared it, and the calibration stats count exactly
-    // that. The row goes back to unresolved, which is what undo means.
-    api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: "open" })
-      .then(() => {
-        qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
-        // The optimistic re-insert puts the row at the head of whatever queue
-        // is on screen — which, if the scope changed between the dispatch and
-        // the undo, is a queue it does not belong to. Re-reading settles it:
-        // the server decides where an unresolved row lands, not this component.
-        qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
-      })
+    // Restore what the row WAS — `open` when nobody had ruled on it, the
+    // previous ruling when this was a correction. Undoing by writing
+    // "approved" would have been a lie in the first case: "nobody has looked at
+    // this yet" and "somebody looked and cleared it" are different facts, and
+    // the calibration stats read exactly that difference.
+    const back = item.resolution || "open";
+    api.post("/api/leader-ai/resolve", { ref: item.ref, resolution: back })
+      .then(() => qc.invalidateQueries({ queryKey: ["leader-ai-overview"] }))
+      // Only a FAILED undo needs the server's word for where the row belongs.
       .catch(() => qc.invalidateQueries({ queryKey: ["leader-ai-queue"] }));
+    // Patch in place while the row is still on screen; only one the ruling
+    // actually removed comes back at the head — and only then does the cursor
+    // go home to it. Moving the cursor for a row that never left would yank the
+    // reader back up the rail from wherever they had got to.
+    const here = (qc.getQueryData(qkey)?.items || []).some((x) => x.ref === item.ref);
     qc.setQueryData(qkey, (old) => old && ({
       ...old,
-      items: [item, ...old.items.filter((x) => x.ref !== item.ref)],
+      items: here ? old.items.map((x) => (x.ref === item.ref ? item : x))
+        : [item, ...old.items],
     }));
     setUndoable(null);
-    setI(0);
+    if (!here) setI(0);
     setPhotoIx(0);
     hideToast();
   }, [undoable, qc, qkey, hideToast]);
@@ -345,17 +430,19 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
 
   if (data && !data.enabled) return <KeySetup T={T} qc={qc} />;
 
-  // Every tab counts the WHOLE unresolved set inside the current filters,
-  // «all» included — mixing a true per-bucket tally with a page length made the
-  // tabs sum to more than «all».
-  const total = data?.total ?? all.length;
-  // What the cap actually delivered for the current tab, against what exists.
-  const shown = liveBucket === "all" ? total : (buckets[liveBucket] ?? items.length);
+  // Every tab counts the whole scanned set inside the OTHER filters — the
+  // strip's own pick excluded — so the tabs stay a way back out of a narrow
+  // one instead of collapsing to it. `total` is what the current tab holds.
+  const total = data?.total ?? items.length;
+  const bucketAll = BUCKETS.reduce((n, b) => n + (buckets[b] || 0), 0);
   const bucketOpts = [
-    { value: "all", label: `${T.aiBall} ${total}` },
-    ...["forged", "undone", "date", "tech"]
-      .filter((b) => buckets[b])
-      .map((b) => ({ value: b, label: `${T[`aiB_${b}`]} ${buckets[b]}`, title: T[`aiBt_${b}`] })),
+    { value: "all", label: `${T.aiBall} ${f.bucket ? bucketAll : total}` },
+    // A tab that has run to zero under the other filters stays visible while it
+    // is the one selected — dropping it would leave the strip with nothing
+    // selected over a rail that is very much narrowed.
+    ...BUCKETS
+      .filter((b) => buckets[b] || f.bucket === b)
+      .map((b) => ({ value: b, label: `${T[`aiB_${b}`]} ${buckets[b] || 0}`, title: T[`aiBt_${b}`] })),
   ];
 
   // Options come from the server's facet pass, so a name only appears while it
@@ -401,9 +488,30 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
           must stay a DIRECT child of this flex row — it measures the row's
           children to decide whether to unfold. */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <SegmentedToggle scrollable value={liveBucket} onChange={pickBucket} options={bucketOpts} />
+        <SegmentedToggle scrollable value={f.bucket || "all"} onChange={pickBucket} options={bucketOpts} />
         <FilterPanel
           sections={[
+            {
+              // FIRST, because it is the one that turns a register back into a
+              // worklist: «Ko'rilmagan» is the queue this tab used to be, and
+              // an admin coming here to work rather than to look reaches for it
+              // before anything else.
+              key: "state", icon: Gavel, label: T.aiState,
+              active: f.state != null, display: f.state ? T[`aiSt_${f.state}`] : "",
+              onClear: () => setF({ state: null }),
+              render: ({ close } = {}) => (
+                <PickFilter close={close} value={f.state}
+                  opts={[
+                    { value: null, label: T.aiStAll },
+                    ...STATES.filter((k) => facetN("state", k) || f.state === k)
+                      .map((k) => ({
+                        value: k, title: T[`aiSt_${k}`],
+                        label: `${T[`aiSt_${k}`]} · ${facetN("state", k) || 0}`,
+                      })),
+                  ]}
+                  onChange={(v) => setF({ state: v })} />
+              ),
+            },
             {
               key: "task", icon: ClipboardCheck, label: T.task,
               active: f.task != null, display: f.task != null ? taskName(f.task) : "",
@@ -437,6 +545,17 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
             },
           ]}
         />
+        {/* Order. Newest-first is the default because the feed answers «what
+            came in» as often as «what is left»; severity is what a triage run
+            wants, worst decision first, and it is one tap away rather than the
+            only behaviour. Not a FilterPanel section: it hides nothing, so it
+            must never appear among the chips that explain an empty rail. */}
+        <SegmentedToggle value={sort}
+          onChange={(v) => { setSort(v); setPages(1); setI(0); setPhotoIx(0); }}
+          options={[
+            { value: "new", label: T.aiSortNew, title: T.aiSortTipNew },
+            { value: "severity", label: T.aiSortSev, title: T.aiSortTipSev },
+          ]} />
         <div className="flex-1" />
         {actions}
         {undoable && (
@@ -475,11 +594,22 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
       )}
 
       {!cur ? (
-        /* Two different emptinesses, and reading one as the other is the
-           trap: an emptied queue is the goal and reads as praise, while
-           "nothing matched" is a dead end that has to hand back the control
-           that caused it. */
-        anyFlt ? (
+        /* THREE different emptinesses, and reading one as another is the trap.
+           An emptied worklist is the goal and reads as praise — but only under
+           «Ko'rilmagan», which is the only filter that makes "nothing left"
+           mean "nothing left to decide". Without it an empty rail means the
+           period holds no judged proof at all, which is a fact about the data,
+           not an achievement. And "nothing matched" is neither: a dead end that
+           has to hand back the control that caused it. */
+        f.state === "open" ? (
+          <EmptyState icon={Inbox} title={T.aiDoneTitle} message={T.aiDoneBody}
+            showUploadLink={false} height="h-64"
+            action={
+              <Button size="lg" variant="secondary" tint onClick={() => setF({ state: null })}>
+                {T.aiShowAll}
+              </Button>
+            } />
+        ) : anyFlt ? (
           <EmptyState icon={SearchX} title={T.aiNoMatchTitle} message={T.aiNoMatchBody}
             showUploadLink={false} height="h-64"
             action={
@@ -489,7 +619,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
               </Button>
             } />
         ) : (
-          <EmptyState icon={Inbox} title={T.aiDoneTitle} message={T.aiDoneBody}
+          <EmptyState icon={Inbox} title={T.aiNoRowsTitle} message={T.aiNoRowsBody}
             showUploadLink={false} height="h-64" />
         )
       ) : (
@@ -497,12 +627,12 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
           style={{ scrollMarginTop: "calc(var(--tg-safe-top, 0px) + 8px)" }}>
           {/* ── the inbox ─────────────────────────────────────────────────── */}
           <Card className="order-3 lg:order-1">
-            {/* «288 / 424» when the cap trimmed this bucket. A rail that shows
-                fewer rows than its own tab claims has to say so — otherwise the
-                missing ones look resolved. */}
+            {/* «150 / 1 204» while the rest is still one button away. A rail
+                that holds fewer rows than the tab above it claims has to say
+                so — otherwise the ones it has not fetched read as resolved. */}
             <SectionHead icon={Inbox} title={T.aiQueue}
               right={<span className="text-[11px] tabular-nums" style={{ color: "var(--text-4)" }}>
-                {shown > items.length ? `${items.length} / ${shown}` : items.length}
+                {total > items.length ? `${items.length} / ${total}` : items.length}
               </span>} />
             <div className="overflow-y-auto" style={{ maxHeight: "min(62vh, 560px)" }}>
               {/* Grouped by leader run. Forty flags from one person used to
@@ -528,6 +658,11 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
                       borderBottom: "1px solid var(--border)",
                       borderLeft: `3px solid ${k === ix ? "var(--brand)" : "transparent"}`,
                       background: k === ix ? "var(--brand-bg)" : "transparent",
+                      // Decided rows recede. With the whole judged set in one
+                      // rail the only thing worth finding at a glance is what
+                      // still has no ruling, and dimming does that without
+                      // hiding anything or costing a column.
+                      opacity: it.resolution && k !== ix ? 0.5 : 1,
                     }}>
                     <span className="text-[11px] tabular-nums truncate flex-1"
                       style={{ color: k === ix ? "var(--text-2)" : "var(--text-4)" }}>
@@ -538,13 +673,33 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
                         `${it.photos.length} ${T.aiPhotoN}`
                       )}
                     </span>
-                    <span className="flex gap-1 flex-shrink-0">
-                      {it.flags.map((f) => <FlagDot key={f} flag={f} />)}
+                    <span className="flex items-center gap-1 flex-shrink-0">
+                      {/* What the AI said… */}
+                      {it.flags.length
+                        ? it.flags.map((fl) => <FlagDot key={fl} flag={fl} />)
+                        : <FlagDot flag="clean" title={T.aiB_clean} />}
+                      {/* …and, when there is one, what a person said after it.
+                          Both, never one instead of the other: a rejected fake
+                          that stops showing its flags loses the reason it was
+                          rejected. */}
+                      {it.resolution && <ResIcon res={it.resolution} T={T} />}
                     </span>
                   </button>
                 </div>
               ))}
             </div>
+            {/* One list, one cursor: this asks for more of the SAME rail rather
+                than turning a page, so J keeps walking straight through the
+                join. */}
+            {data?.hasMore && (
+              <div className="p-2" style={{ borderTop: "1px solid var(--border)" }}>
+                <Button size="sm" variant="secondary" tint className="w-full"
+                  icon={<ChevronDown size={14} />} loading={isFetching}
+                  onClick={() => setPages((p) => p + 1)}>
+                  {T.aiMore}
+                </Button>
+              </div>
+            )}
           </Card>
 
           {/* ── the photo: the decision gets the pixels ───────────────────── */}
