@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive, ArchiveRestore, ArrowLeft, Ban, Camera, Check, Clock, Copy, Eye, EyeOff,
+  Archive, ArchiveRestore, ArrowLeft, Ban, BellOff, Camera, Check, Clock, Copy, Eye, EyeOff,
   Factory as FactoryIcon, Flag, Globe, Hash, IdCard, KeyRound, Languages,
   LayoutGrid, Link2, LogOut, Pencil, Plus, RotateCcw, Shield, Star, Trash2,
   UserCog, UserRound, Users, X,
@@ -114,17 +114,22 @@ function StatusTag({ color, children }) {
   );
 }
 
-function HolderChip({ b, meLabel, onUnassign, disabled }) {
+function HolderChip({ b, meLabel, onUnassign, disabled, dmTip }) {
   const label = b.tg_name || b.user_name || (b.username ? `@${b.username}` : b.telegram_id);
   const pending = b.status === "pending";
+  // Assigned but undeliverable — see the same chip on the Profiles tab.
+  const unreachable = !pending && b.dm_ok === false;
   return (
     <span
       className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap"
       style={pending
         ? { background: "rgba(234,179,8,0.12)", color: "#eab308", border: "1px solid rgba(234,179,8,0.25)" }
-        : { background: "rgba(34,197,94,0.10)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
-      title={b.username ? `@${b.username}` : String(b.telegram_id)}
+        : unreachable
+          ? { background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }
+          : { background: "rgba(34,197,94,0.10)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.22)" }}
+      title={unreachable && dmTip ? dmTip : (b.username ? `@${b.username}` : String(b.telegram_id))}
     >
+      {unreachable && <BellOff size={10} className="flex-shrink-0" />}
       {label}
       {b.is_me && meLabel && <span className="opacity-75">· {meLabel}</span>}
       {pending && meLabel === undefined && <span className="opacity-80">…</span>}
@@ -576,7 +581,8 @@ function MyProfile() {
             {(me?.holders?.length ?? 0) > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {me.holders.map((b) => (
-                  <HolderChip key={b.telegram_id} b={b} meLabel={t("profile.you")} />
+                  <HolderChip key={b.telegram_id} b={b} meLabel={t("profile.you")}
+                              dmTip={t("admin.profiles.dmBlockedTip")} />
                 ))}
               </div>
             ) : (
@@ -1420,6 +1426,7 @@ function HoldersCard({ ptype, item, onDone }) {
         <div className="flex flex-wrap gap-1.5">
           {item.bindings.map((b, i) => (
             <HolderChip key={i} b={b}
+                        dmTip={t("admin.profiles.dmBlockedTip")}
                         disabled={unassignMut.isPending}
                         onUnassign={b.role_ref != null
                           ? () => { setActionError(""); setConfirmUnassign(b); }

@@ -213,7 +213,16 @@ def _rename_profile(db: Session, ptype: str, pid: int, new_name: str) -> str:
 def _user_info(db: Session) -> dict[int, dict]:
     return {
         u.telegram_id: {"full_name": u.full_name, "username": u.username,
-                        "phone": u.phone, "tg_name": u.tg_name}
+                        "phone": u.phone, "tg_name": u.tg_name,
+                        # Can the bot DM this account? Stamped by the notifier
+                        # when Telegram refuses permanently and cleared by the
+                        # next delivered message (see telegram_bot
+                        # _record_dm_outcome). An approved holder the bot cannot
+                        # reach receives NOTHING while the app looks healthy —
+                        # the Profiles tab is where that becomes visible.
+                        "dm_ok": u.dm_failed_at is None,
+                        "dm_error": u.dm_error,
+                        "dm_failed_at": u.dm_failed_at.isoformat() if u.dm_failed_at else None}
         for u in db.query(TelegramUser).all()
     }
 
@@ -290,6 +299,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
             "user_name":   info.get("full_name"),
             "username":    info.get("username"),
             "tg_name":     info.get("tg_name"),
+            "dm_ok":       info.get("dm_ok", True),
+            "dm_error":    info.get("dm_error"),
+            "dm_failed_at": info.get("dm_failed_at"),
         }
 
     role_rows = db.query(TelegramUserRole).order_by(TelegramUserRole.id).all()
@@ -379,7 +391,9 @@ def admin_list_profiles(db: Session = Depends(get_db),
             item["bindings"] = [{
                 "role_ref": None, "telegram_id": a.telegram_id, "status": "approved",
                 "user_name": info.get("full_name"), "username": info.get("username"),
-                "tg_name": info.get("tg_name"),
+                "tg_name": info.get("tg_name"), "dm_ok": info.get("dm_ok", True),
+                "dm_error": info.get("dm_error"),
+                "dm_failed_at": info.get("dm_failed_at"),
             }] if a else []
             # pending /adminreg requests for this profile
             item["bindings"] += [
@@ -2072,6 +2086,10 @@ def my_profile_details(caller: dict = Depends(_caller), db: Session = Depends(ge
             "tg_name": users[tid].tg_name if tid in users else None,
             "username": users[tid].username if tid in users else None,
             "is_me": tid == me,
+            # Same reachability flag the Profiles tab shows — a person sharing a
+            # profile can see that their colleague's account gets no DMs.
+            "dm_ok": users[tid].dm_failed_at is None if tid in users else True,
+            "status": "approved",
         } for tid in holder_ids]
 
     cred = db.query(WebCredential).filter_by(profile_key=key).first()

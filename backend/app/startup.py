@@ -772,6 +772,27 @@ def add_concern_done_at() -> None:
         db.close()
 
 
+def add_dm_reachability_columns() -> None:
+    """Per-account "can the bot reach this person" state. A DM Telegram refuses
+    permanently (never started the bot, blocked it, deleted account) used to be
+    swallowed into the server log; these two columns carry it to the Profiles
+    tab, where an admin can see WHY someone says they got no notification."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS dm_failed_at TIMESTAMPTZ"
+        ))
+        db.execute(text(
+            "ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS dm_error VARCHAR"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] dm reachability columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def backfill_concern_units() -> None:
     """Anchor concerns raised by an admin or a shift-manager to the unit of the
     cell they are about.

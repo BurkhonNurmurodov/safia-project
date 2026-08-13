@@ -150,6 +150,20 @@ def _cell_leader_recipient(db: Session, cell_code: str):
     return (holders, _profile_key("leader", leader_id), leader_name or "")
 
 
+def _cell_leader_name(db: Session, cell_code: str) -> str:
+    """Display name of the leader owning a cell — the {leader_name} a
+    notification names when the concern row itself carries no snapshot (admin
+    and shift-manager creations don't set one)."""
+    rec = _cell_leader_recipient(db, cell_code)
+    return (rec[2] if rec else "") or ""
+
+
+def _snippet(text: str) -> str:
+    """Concern/reason text trimmed to one notification line."""
+    text = text or ""
+    return text if len(text) <= 160 else text[:157] + "…"
+
+
 def _cell_manager_id(db: Session, cell_code: str) -> Optional[int]:
     """The UNIT a cell belongs to — its leader's unit, falling back to the cell's
     own owning unit for leaderless cells (the same resolution _cell_leaders uses
@@ -984,7 +998,7 @@ def create_concern(
     # Concern creation is gated by the page alone, so a personal page grant is
     # the only non-native way in — its use warns the admins.
     if page_grant_used(db, payload, "concerns"):
-        text = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+        text = _snippet(c.concern_text)
         alert_details = [("cell", c.cell_code), ("category", c.category),
                          ("date", str(entry)), ("text", text)]
         if c.deadline_days is not None:
@@ -997,7 +1011,7 @@ def create_concern(
     # the concern opened at — and the leader the cell belongs to. The author is
     # never notified about their own action and no account is DMed twice.
     author = int(payload["sub"])
-    snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
+    snippet = _snippet(c.concern_text)
     rec = _cell_leader_recipient(db, c.cell_code)
     dmed: set[int] = set()
 
@@ -1058,6 +1072,12 @@ def update_concern(
     if body.status != c.status and not _can_set_status(_viewer_ctx(db, payload), c):
         raise HTTPException(status_code=403, detail="Only the responsible person can change the status")
 
+    # What the edit actually changed, captured before the mutation: the page
+    # sends a FULL row on an inline status change, so comparing the payload to
+    # itself would announce an "edit" every time somebody ticked a checkbox.
+    was_status, was_text = c.status, c.concern_text
+    was_deadline = c.deadline_days
+
     # Ownership (leader/brigadir) and the creator identity are never reassigned
     # on edit — only the concern fields change. Cell + category are only touched
     # when the payload carries a value, so the minimal inline status-change PUT
@@ -1085,6 +1105,30 @@ def update_concern(
 
     db.commit()
     db.refresh(c)
+
+    # Tell the parties tracking this concern what happened to it. A status flip
+    # is the headline: when an edit rides along with one, it stays unmentioned
+    # rather than sending the same people two DMs about one save.
+    if c.status == "done" and was_status != "done":
+        nkey = "concern_resolved"
+    elif was_status == "done" and c.status != "done":
+        nkey = "concern_reopened"
+    elif c.concern_text != was_text or c.deadline_days != was_deadline:
+        nkey = "concern_edited"
+    else:
+        nkey = None
+    if nkey and _notify_recipients(
+        db, _interested(db, c), nkey,
+        {
+            "actor_name": payload.get("full_name") or "",
+            "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
+            "date": c.entry_date,
+            "concern": _snippet(c.concern_text),
+        },
+        int(payload["sub"]), set(),
+    ):
+        db.commit()
+
     return _serialize(c, _viewer_ctx(db, payload), _esc_counts_for(db, c.id),
                       _sm_names(db), _owner_names(db, [c]), _cell_leaders(db))
 
@@ -1128,6 +1172,25 @@ def _notify_recipients(db: Session, recipients, nkey: str, params: dict,
             _notify(db, tg, type="info", dm=dm, nkey=nkey, params=params)
             sent = True
     return sent
+
+
+def _interested(db: Session, c: LeaderConcern) -> list[tuple[Optional[int], Optional[str]]]:
+    """Everyone who tracks a concern, deduped by profile: whoever HOLDS it at
+    its current level, the BRIGADIR of the cell's unit and the cell's LEADER.
+
+    The three roles that must not lose sight of a row — the person answering for
+    it, the person running the place it is about, and the person it is about.
+    Level alone is not enough: a concern raised to shift-manager or resolved by
+    a top-manager would otherwise never be heard of again down at the cell."""
+    out = _level_recipients(db, c, _level(c))
+    seen = {k for _, k in out if k}
+    rec = _cell_leader_recipient(db, c.cell_code)
+    for key in (_profile_key("supervisor", c.brigadir_manager_id),
+                rec[1] if rec else None):
+        if key and key not in seen:
+            seen.add(key)
+            out.append((None, key))
+    return out
 
 
 def _level_recipients(db: Session, c: LeaderConcern, level: str) -> list[tuple[Optional[int], Optional[str]]]:
@@ -1266,20 +1329,26 @@ def escalate_concern(
     # view time (concern_level param), the actor is never notified, and one
     # account never gets the DM twice however many profiles it holds.
     author = int(payload["sub"])
-    snippet = c.concern_text if len(c.concern_text) <= 160 else c.concern_text[:157] + "…"
-    reason_snip = reason if len(reason) <= 160 else reason[:157] + "…"
+    params = {
+        "actor_name": payload.get("full_name") or "",
+        "leader_name": c.leader_name or _cell_leader_name(db, c.cell_code),
+        "date": c.entry_date,
+        "reason": _snippet(reason),
+        "concern": _snippet(c.concern_text),
+        "concern_level": new_level,
+    }
     nkey = "concern_escalated" if body.direction == "up" else "concern_returned"
-    sent = _notify_recipients(
-        db, _level_recipients(db, c, new_level), nkey,
-        {
-            "actor_name": payload.get("full_name") or "",
-            "leader_name": c.leader_name,
-            "date": c.entry_date,
-            "reason": reason_snip,
-            "concern": snippet,
-            "concern_level": new_level,
-        },
-        author, set(),
+    dmed: set[int] = set()
+    receiving = _level_recipients(db, c, new_level)
+    sent = _notify_recipients(db, receiving, nkey, params, author, dmed)
+
+    # The step moves the concern away from the people who stay responsible for
+    # the place it is about — the unit's brigadir and the cell's leader. They
+    # get the move as news ("moved to X"), not as a handover addressed to them.
+    held = {k for _, k in receiving if k}
+    sent |= _notify_recipients(
+        db, [r for r in _interested(db, c) if r[1] and r[1] not in held],
+        "concern_moved", params, author, dmed,
     )
     if sent:
         db.commit()

@@ -298,6 +298,13 @@ class TelegramUser(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True), nullable=True)
     last_seen = Column(DateTime(timezone=True), nullable=True)
+    # Can the bot actually DM this account? Set when Telegram permanently
+    # refuses a notification (never pressed /start, blocked the bot, account
+    # deleted) and cleared by the next delivered one. Without it a bell row
+    # with no DM behind it is invisible — the failure only ever reached the
+    # server log, which nobody reads (see routers/profiles.py "DM" column).
+    dm_failed_at = Column(DateTime(timezone=True), nullable=True)
+    dm_error     = Column(String, nullable=True)
 
 
 class TelegramUserRole(Base):

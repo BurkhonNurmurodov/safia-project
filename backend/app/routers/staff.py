@@ -312,6 +312,34 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} добавил(а) опасение на ваше имя", "Владелец: {owner} | Дата: {date}\n{concern}"),
         "en": ("{actor_name} added a concern for you", "Owner: {owner} | Date: {date}\n{concern}"),
     },
+    # A concern's level changed and the reader is NOT the receiving handler —
+    # the brigadir of the unit it is about, and the cell's leader, stay in the
+    # loop instead of watching it vanish upwards. The receiving handler gets
+    # concern_escalated / concern_returned ("… to you") instead.
+    "concern_moved": {
+        "uz": ("Xavotir {level_label} darajasiga o'tdi", "{actor_name} | Lider: {leader_name} | Sana: {date}\nSabab: {reason}\n{concern}"),
+        "uz_cyrl": ("Хавотир {level_label} даражасига ўтди", "{actor_name} | Лидер: {leader_name} | Сана: {date}\nСабаб: {reason}\n{concern}"),
+        "ru": ("Опасение передано на уровень «{level_label}»", "{actor_name} | Лидер: {leader_name} | Дата: {date}\nПричина: {reason}\n{concern}"),
+        "en": ("A concern moved to {level_label}", "{actor_name} | Leader: {leader_name} | Date: {date}\nReason: {reason}\n{concern}"),
+    },
+    "concern_resolved": {
+        "uz": ("{actor_name} xavotirni hal qildi", "Lider: {leader_name} | Sana: {date}\n{concern}"),
+        "uz_cyrl": ("{actor_name} хавотирни ҳал қилди", "Лидер: {leader_name} | Сана: {date}\n{concern}"),
+        "ru": ("{actor_name} закрыл(а) опасение", "Лидер: {leader_name} | Дата: {date}\n{concern}"),
+        "en": ("{actor_name} resolved a concern", "Leader: {leader_name} | Date: {date}\n{concern}"),
+    },
+    "concern_reopened": {
+        "uz": ("{actor_name} xavotirni qayta ochdi", "Lider: {leader_name} | Sana: {date}\n{concern}"),
+        "uz_cyrl": ("{actor_name} хавотирни қайта очди", "Лидер: {leader_name} | Сана: {date}\n{concern}"),
+        "ru": ("{actor_name} переоткрыл(а) опасение", "Лидер: {leader_name} | Дата: {date}\n{concern}"),
+        "en": ("{actor_name} reopened a concern", "Leader: {leader_name} | Date: {date}\n{concern}"),
+    },
+    "concern_edited": {
+        "uz": ("{actor_name} xavotirni tahrirladi", "Lider: {leader_name} | Sana: {date}\n{concern}"),
+        "uz_cyrl": ("{actor_name} хавотирни таҳрирлади", "Лидер: {leader_name} | Сана: {date}\n{concern}"),
+        "ru": ("{actor_name} изменил(а) опасение", "Лидер: {leader_name} | Дата: {date}\n{concern}"),
+        "en": ("{actor_name} edited a concern", "Leader: {leader_name} | Date: {date}\n{concern}"),
+    },
     "concern_escalated": {
         "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "Daraja: {level_label} | Lider: {leader_name} | Sana: {date}\nSabab: {reason}\n{concern}"),
         "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "Даража: {level_label} | Лидер: {leader_name} | Сана: {date}\nСабаб: {reason}\n{concern}"),

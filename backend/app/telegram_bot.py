@@ -1203,6 +1203,42 @@ def _send_html_message(chat_id: int, html_text: str) -> None:
         bot.send_message(chat_id, stripped, parse_mode="HTML")
 
 
+# Telegram refusals that mean "this account can never be DMed as things stand"
+# — as opposed to a rate limit, a network blip or a markup error, which say
+# nothing about reachability and must not be recorded as one.
+_DM_DEAD_ENDS = (
+    "bot was blocked", "user is deactivated", "chat not found",
+    "bot can't initiate conversation", "have no rights to send",
+    "user is deleted", "peer_id_invalid", "forbidden",
+)
+
+
+def _record_dm_outcome(telegram_id: int, error: str | None) -> None:
+    """Remember whether the bot can reach this account, for the Profiles tab's
+    "DM" column. Writes only on a CHANGE (unreachable → reachable or back), so
+    the common case costs one indexed read. Own session: this must never join,
+    or roll back with, the request transaction that triggered the DM."""
+    if error is not None and not any(s in error.lower() for s in _DM_DEAD_ENDS):
+        return          # transient — leave whatever we knew before untouched
+    try:
+        with SessionLocal() as db:
+            u = db.query(TelegramUser).filter_by(telegram_id=telegram_id).first()
+            if not u:
+                return
+            if error is None:
+                if u.dm_failed_at is None:
+                    return
+                u.dm_failed_at, u.dm_error = None, None
+            else:
+                if u.dm_failed_at is not None and u.dm_error == error[:255]:
+                    return
+                u.dm_failed_at = datetime.now(timezone.utc)
+                u.dm_error = error[:255]
+            db.commit()
+    except Exception:
+        pass        # bookkeeping must never break the notification itself
+
+
 def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
@@ -1220,6 +1256,7 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
             _send_html_message(telegram_id, html)
         else:
             bot.send_message(telegram_id, msg, parse_mode="Markdown")
+        _record_dm_outcome(telegram_id, None)
         return True
     except Exception as e:
         # Legacy Markdown rejects the WHOLE message over a single unbalanced
@@ -1233,10 +1270,12 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
                 bot.send_message(telegram_id, msg)
                 logger.warning("Telegram notification to %s sent unformatted "
                                "(Markdown rejected): %s", telegram_id, e)
+                _record_dm_outcome(telegram_id, None)
                 return True
             except Exception as e2:
                 e = e2
         logger.warning("Telegram notification to %s failed: %s", telegram_id, e)
+        _record_dm_outcome(telegram_id, str(e))
         return False
 
 
