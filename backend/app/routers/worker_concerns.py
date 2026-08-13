@@ -35,7 +35,8 @@ from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AppSetting, Cell, Manager, RoleProfile, WorkerConcern, WorkerConcernSyncMeta
+from app.models import (AppSetting, Cell, Manager, RoleProfile, WorkerConcern,
+                        WorkerConcernSheetState, WorkerConcernSyncMeta)
 from app.permissions import require_page
 from app.capabilities import page_scope_is_all
 from app.services.factory_scope import factory_of_managers, resolve_factory, viewer_factory_id
@@ -185,7 +186,51 @@ def _live(meta: Optional[WorkerConcernSyncMeta]) -> bool:
     return (datetime.now(timezone.utc) - hb) < STALE_AFTER
 
 
-def _sync_state(meta: Optional[WorkerConcernSyncMeta]) -> dict:
+_SHEET_URL = "https://docs.google.com/spreadsheets/d/{}"
+
+
+def _failures(db: Session, meta: Optional[WorkerConcernSyncMeta]) -> list[dict]:
+    """The last run's unreadable sheets, each carrying what to DO about it.
+
+    A cell code on its own is not a diagnosis — it was, and the actual reason
+    only ever reached ``app.log`` on the server, which the people who own these
+    sheets cannot open. So each entry ships the classified cause, a link
+    straight to the offending spreadsheet, and ``stale_since``: the moment that
+    sheet was last read successfully, i.e. how old the numbers the page is
+    showing for that cell really are.
+
+    ``crawled_at`` is stamped only when Drive answered with a modifiedTime, so a
+    missing one means "unknown", NOT "never" — ``has_rows`` separates the two:
+    no timestamp but committed rows = read before, date unknown; neither = the
+    cell has never made it into the page at all."""
+    rows = (meta.failures if meta else None) or []
+    ids = [r.get("sheet_id") for r in rows if r.get("sheet_id")]
+    crawled, with_rows = {}, set()
+    if ids:
+        crawled = {
+            st.sheet_id: st.crawled_at
+            for st in db.query(WorkerConcernSheetState).filter(
+                WorkerConcernSheetState.sheet_id.in_(ids)).all()
+        }
+        with_rows = {
+            sid for (sid,) in db.query(WorkerConcern.sheet_id).filter(
+                WorkerConcern.sheet_id.in_(ids)).distinct().all()
+        }
+    out = []
+    for r in rows:
+        at = crawled.get(r.get("sheet_id"))
+        out.append({
+            "cell": r.get("cell") or "",
+            "code": r.get("code") or "other",
+            "detail": r.get("detail") or "",
+            "url": _SHEET_URL.format(r["sheet_id"]) if r.get("sheet_id") else None,
+            "stale_since": at.isoformat() if at else None,
+            "has_rows": r.get("sheet_id") in with_rows,
+        })
+    return out
+
+
+def _sync_state(db: Session, meta: Optional[WorkerConcernSyncMeta]) -> dict:
     return {
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "ok": meta.ok if meta else None,
@@ -193,6 +238,7 @@ def _sync_state(meta: Optional[WorkerConcernSyncMeta]) -> dict:
         "row_count": meta.row_count if meta else 0,
         "invalid_dates": meta.invalid_dates if meta else 0,
         "failed_sheets": meta.failed_sheets if meta else 0,
+        "failures": _failures(db, meta),
         "running": _live(meta),
         "progress_done": meta.progress_done if meta else 0,
         "progress_total": meta.progress_total if meta else 0,
@@ -230,7 +276,7 @@ def get_meta(
     sees_all = page_scope_is_all(db, payload, PAGE_KEY)
     return {
         "can_refresh": True,
-        "sync": _sync_state(meta),
+        "sync": _sync_state(db, meta),
         "bands": get_bands(db),
         "min_ranked": MIN_RANKED,
         "is_admin": role == "admin",
@@ -475,7 +521,7 @@ def refresh_status(
     _: dict = Depends(require_page(PAGE_KEY)),
 ):
     meta = db.query(WorkerConcernSyncMeta).filter_by(id=1).first()
-    return _sync_state(meta)
+    return _sync_state(db, meta)
 
 
 class BandsBody(BaseModel):

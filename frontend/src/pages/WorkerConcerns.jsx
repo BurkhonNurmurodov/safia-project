@@ -4,7 +4,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   RefreshCw, CalendarClock, AlertTriangle, ClipboardList, ShieldCheck,
   Loader, Loader2, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
-  LayoutGrid, UserRound, CircleDot,
+  LayoutGrid, UserRound, CircleDot, ExternalLink,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -26,6 +26,7 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import { useFactorySection } from "../components/ui/FactorySelect";
 import { useFactoryParams, useFactorySupervisors } from "../context/FactoryContext";
 import { padChartFrom, listChartDays } from "../utils/chartRange";
+import { inTelegram } from "../utils/session";
 
 // ── status palette ───────────────────────────────────────────────────────────
 // Statuses are SEMANTIC (traffic-light), not categorical: done green, doing
@@ -87,6 +88,16 @@ const TXT = {
     vObzor: "Obzor", vLeaders: "Liderlar KPI", vRegister: "Reyestr",
     refresh: "Yangilash", refreshing: "Yangilanmoqda…", lastSynced: "Oxirgi sinxron", never: "hech qachon",
     syncSheets: "varaq", syncDone: "Ma'lumotlar yangilandi", syncFailedT: "Sinxronlashda xatolik",
+    syncFailHead: "{n} ta varaq o'qilmadi — bu yacheykalar eski ma'lumotni ko'rsatmoqda",
+    syncStaleSince: "ma'lumot {d} dan", syncNeverRead: "hech qachon o'qilmagan",
+    syncWhy: {
+      header: "Birinchi varaqda «Хавотир» + «Статус» sarlavha qatori yo'q — yangi varaq qo'shilgan yoki sarlavha o'zgartirilgan",
+      permission: "Kirish yopilgan — jadvalni servis akkauntiga qayta ulashing",
+      missing: "Jadval topilmadi — o'chirilgan yoki reyestrdagi havola noto'g'ri",
+      quota: "Google so'rovlar chegarasiga yetildi — keyingi sinxronda o'zi tuzaladi",
+      network: "Aloqa uzildi — qayta urinib ko'ring",
+      other: "Noma'lum xatolik",
+    },
     loadFailed: "Ma'lumotlarni yuklab bo'lmadi", retry: "Qayta urinish",
     emptyTitle: "Hali ma'lumot yo'q", emptyNote: "Google Sheets'dan birinchi sinxronlashni ishga tushiring — ~180 varaq, 2–4 daqiqa.",
     kTotal: "Jami havotirlar", kResolved: "Hal bo'lgan", kDoing: "Jarayonda",
@@ -120,6 +131,16 @@ const TXT = {
     vObzor: "Обзор", vLeaders: "Лидерлар KPI", vRegister: "Реестр",
     refresh: "Янгилаш", refreshing: "Янгиланмоқда…", lastSynced: "Охирги синхрон", never: "ҳеч қачон",
     syncSheets: "варақ", syncDone: "Маълумотлар янгиланди", syncFailedT: "Синхронлашда хатолик",
+    syncFailHead: "{n} та варақ ўқилмади — бу ячейкалар эски маълумотни кўрсатмоқда",
+    syncStaleSince: "маълумот {d} дан", syncNeverRead: "ҳеч қачон ўқилмаган",
+    syncWhy: {
+      header: "Биринчи варақда «Хавотир» + «Статус» сарлавҳа қатори йўқ — янги варақ қўшилган ёки сарлавҳа ўзгартирилган",
+      permission: "Кириш ёпилган — жадвални сервис аккаунтига қайта улашинг",
+      missing: "Жадвал топилмади — ўчирилган ёки реестрдаги ҳавола нотўғри",
+      quota: "Google сўровлар чегарасига етилди — кейинги синхронда ўзи тузалади",
+      network: "Алоқа узилди — қайта уриниб кўринг",
+      other: "Номаълум хатолик",
+    },
     loadFailed: "Маълумотларни юклаб бўлмади", retry: "Қайта уриниш",
     emptyTitle: "Ҳали маълумот йўқ", emptyNote: "Google Sheets'дан биринчи синхронлашни ишга туширинг — ~180 варақ, 2–4 дақиқа.",
     kTotal: "Жами ҳавотирлар", kResolved: "Ҳал бўлган", kDoing: "Жараёнда",
@@ -153,6 +174,16 @@ const TXT = {
     vObzor: "Обзор", vLeaders: "KPI лидеров", vRegister: "Реестр",
     refresh: "Обновить", refreshing: "Обновление…", lastSynced: "Последняя синхронизация", never: "никогда",
     syncSheets: "листов", syncDone: "Данные обновлены", syncFailedT: "Ошибка синхронизации",
+    syncFailHead: "Не удалось прочитать листов: {n} — эти ячейки показывают прежние данные",
+    syncStaleSince: "данные от {d}", syncNeverRead: "ни разу не прочитан",
+    syncWhy: {
+      header: "На первом листе нет строки заголовков «Хавотир» + «Статус» — добавлен новый лист или переименован заголовок",
+      permission: "Нет доступа — откройте таблицу сервисному аккаунту заново",
+      missing: "Таблица не найдена — удалена или ссылка в реестре неверна",
+      quota: "Достигнут лимит запросов Google — исправится при следующей синхронизации",
+      network: "Сбой связи — попробуйте обновить ещё раз",
+      other: "Неизвестная ошибка",
+    },
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     emptyTitle: "Данных пока нет", emptyNote: "Запустите первую синхронизацию из Google Sheets — ~180 листов, 2–4 минуты.",
     kTotal: "Всего хавотиров", kResolved: "Решено", kDoing: "В работе",
@@ -186,6 +217,16 @@ const TXT = {
     vObzor: "Overview", vLeaders: "Leaders KPI", vRegister: "Register",
     refresh: "Refresh", refreshing: "Refreshing…", lastSynced: "Last synced", never: "never",
     syncSheets: "sheets", syncDone: "Data refreshed", syncFailedT: "Sync failed",
+    syncFailHead: "{n} sheet(s) could not be read — these cells still show earlier data",
+    syncStaleSince: "data from {d}", syncNeverRead: "never read",
+    syncWhy: {
+      header: "The first tab has no «Хавотир» + «Статус» header row — a new tab was added or the header renamed",
+      permission: "Access denied — re-share the spreadsheet with the service account",
+      missing: "Spreadsheet not found — deleted, or the registry link is wrong",
+      quota: "Google request quota reached — the next sync should recover on its own",
+      network: "Connection failed — try refreshing again",
+      other: "Unknown error",
+    },
     loadFailed: "Failed to load data", retry: "Retry",
     emptyTitle: "No data yet", emptyNote: "Run the first sync from Google Sheets — ~180 sheets, 2–4 minutes.",
     kTotal: "Total concerns", kResolved: "Resolved", kDoing: "In progress",
@@ -326,8 +367,15 @@ export default function WorkerConcerns() {
       qc.invalidateQueries({ queryKey: ["wc-stats"] });
       qc.invalidateQueries({ queryKey: ["wc-leaders"] });
       qc.invalidateQueries({ queryKey: ["wc-list"] });
-      if (sync?.ok === false) toast.error(`${T.syncFailedT}: ${sync?.message || ""}`);
-      else toast.success(T.syncDone);
+      // The banner below carries the per-sheet causes; the toast just says how
+      // many cells stayed behind, in the viewer's language rather than the
+      // backend's English fallback string.
+      const failed = sync?.failures || [];
+      if (sync?.ok === false) {
+        toast.error(failed.length
+          ? T.syncFailHead.replace("{n}", failed.length)
+          : `${T.syncFailedT}: ${sync?.message || ""}`);
+      } else toast.success(T.syncDone);
     }
     prevRunning.current = running;
     // last_synced flips at completion — it re-runs this effect even when the
@@ -566,6 +614,17 @@ export default function WorkerConcerns() {
 
   // ── shared bits ───────────────────────────────────────────────────────────
   const lastSynced = fmtDateTime(sync?.last_synced);
+  // Sheets the last crawl could not read. Each one is a cell whose numbers on
+  // this page are older than the rest — never a silent drop, so it renders.
+  const failures = sync?.failures || [];
+  // Telegram's WebView swallows target=_blank; openLink hands the sheet to the
+  // real browser. In a desktop browser the plain <a> is already correct.
+  const openSheet = (e, url) => {
+    const tg = window?.Telegram?.WebApp;
+    if (!url || !inTelegram() || !tg?.openLink) return;
+    e.preventDefault();
+    try { tg.openLink(url); } catch { window.open(url, "_blank", "noopener"); }
+  };
   const refreshBtn = (
     <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
       icon={!(running || refreshMut.isPending) ? <RefreshCw size={14} /> : null}
@@ -685,15 +744,55 @@ export default function WorkerConcerns() {
 
       {/* sync problems / load failures — before anything else, with a way out */}
       {(sync?.ok === false || loadError) && (
-        <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"
+        <div className="rounded-2xl px-4 py-3 text-xs mb-4"
           style={{ background: hexA(C_OPEN, 0.1), color: C_OPEN, border: `1px solid ${hexA(C_OPEN, 0.33)}` }}>
-          <span className="inline-flex items-center gap-1.5 min-w-0">
-            <AlertTriangle size={14} className="flex-shrink-0" />
-            <span className="min-w-0">
-              {loadError ? T.loadFailed : `${T.syncFailedT}: ${sync?.message || ""}`}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <AlertTriangle size={14} className="flex-shrink-0" />
+              <span className="min-w-0">
+                {loadError ? T.loadFailed
+                  : failures.length ? T.syncFailHead.replace("{n}", failures.length)
+                  : `${T.syncFailedT}: ${sync?.message || ""}`}
+              </span>
             </span>
-          </span>
-          {loadError && <Button size="sm" variant="secondary" onClick={() => metaQ.refetch()}>{T.retry}</Button>}
+            {loadError && <Button size="sm" variant="secondary" onClick={() => metaQ.refetch()}>{T.retry}</Button>}
+          </div>
+          {/* One line per unreadable sheet: WHICH cell, WHY, how stale its data
+              now is, and a link to the sheet — every cause is fixed in the
+              sheet itself, and a bare cell code told nobody which one it was. */}
+          {!loadError && failures.length > 0 && (
+            <ul className="mt-2 space-y-1.5 max-h-44 overflow-y-auto">
+              {failures.map((f, i) => (
+                <li key={`${f.cell}-${i}`} className="flex items-start gap-2 leading-snug">
+                  <span className="font-semibold flex-shrink-0">
+                    {f.url ? (
+                      <a href={f.url} target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => openSheet(e, f.url)}
+                        className="inline-flex items-center gap-1 underline underline-offset-2">
+                        {f.cell}<ExternalLink size={11} className="flex-shrink-0" />
+                      </a>
+                    ) : f.cell}
+                  </span>
+                  <span className="min-w-0" style={{ color: "var(--text-2)" }}>
+                    {T.syncWhy[f.code] || T.syncWhy.other}
+                    {f.code === "other" && f.detail ? ` — ${f.detail}` : ""}
+                    {/* Age of what the page IS showing for this cell. No
+                        timestamp + no rows = never imported; no timestamp WITH
+                        rows means the date is unknown, which is not the same
+                        claim, so it says nothing rather than guessing. */}
+                    {(f.stale_since || !f.has_rows) && (
+                      <span style={{ color: "var(--text-3)" }}>
+                        {" · "}
+                        {f.stale_since
+                          ? T.syncStaleSince.replace("{d}", fmtDateTime(f.stale_since))
+                          : T.syncNeverRead}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

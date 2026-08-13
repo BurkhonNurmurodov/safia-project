@@ -90,6 +90,32 @@ STALE_AFTER = timedelta(minutes=3)
 _RETRYABLE = ("429", "RESOURCE_EXHAUSTED", "Quota", "quota",
               "timed out", "timeout", "Connection", "connection")
 
+# Failure cause → a code the page turns into a sentence in the viewer's own
+# language. Classified HERE because the raw Google error is an English (often
+# HTML) blob that no brigadir can act on, while the cause maps onto exactly one
+# thing to go and do: fix the tab, re-share the sheet, fix the registry link.
+# First match wins, so the specific patterns precede the generic ones.
+_FAILURE_CODES = (
+    # Our own header check — the sheet was READ fine, its first visible tab just
+    # isn't a concerns tab (renamed header, rows above it, or a new first tab).
+    ("header",     ("no header row",)),
+    ("permission", ("PERMISSION_DENIED", "403", "does not have permission",
+                    "The caller does not have permission")),
+    ("missing",    ("404", "not found", "NOT_FOUND", "Requested entity was not found",
+                    "SpreadsheetNotFound")),
+    ("quota",      ("429", "RESOURCE_EXHAUSTED", "Quota", "quota")),
+    ("network",    ("timed out", "timeout", "Connection", "connection", "SSL",
+                    "500", "502", "503")),
+)
+
+
+def _classify_failure(msg: str) -> str:
+    for code, needles in _FAILURE_CODES:
+        if any(n in msg for n in needles):
+            return code
+    return "other"
+
+
 _thread_lock = threading.Lock()
 
 
@@ -404,15 +430,15 @@ def run_sync(full: bool = False) -> dict:
         meta.progress_total = len(to_crawl)
         db.commit()
 
-        invalid_total, failed = 0, []
+        invalid_total, failures = 0, []
         for i, entry in enumerate(to_crawl, 1):
-            rows = None
+            rows, err = None, ""
             for attempt in range(_RATE_RETRIES):
                 try:
                     rows, invalid = _read_cell_sheet(gc, entry, today)
                     break
                 except Exception as exc:
-                    msg = str(exc)
+                    msg = err = str(exc)
                     # Quota answers and transient transport errors (incl. the
                     # per-request timeout) deserve a pause and another try;
                     # anything else fails this sheet outright.
@@ -425,7 +451,15 @@ def run_sync(full: bool = False) -> dict:
                     log.warning("worker-concerns sync: cell %s failed: %s", entry["cell"], msg[:300])
                     break
             if rows is None:
-                failed.append(entry["cell"])
+                # The cell alone was never actionable — carry the classified
+                # cause and the raw text, since the log this used to be the only
+                # copy of lives on the server, out of reach of the page.
+                failures.append({
+                    "cell": entry["cell"],
+                    "sheet_id": entry["sheet_id"],
+                    "code": _classify_failure(err),
+                    "detail": err[:300],
+                })
             else:
                 invalid_total += invalid
                 # Wipe-and-replace THIS sheet only, one transaction — a crash
@@ -453,22 +487,28 @@ def run_sync(full: bool = False) -> dict:
         meta = _get_meta(db)
         meta.running = False
         meta.last_synced = datetime.now(timezone.utc)
-        meta.ok = not failed
+        meta.ok = not failures
         meta.row_count = total
         meta.invalid_dates = invalid_total
-        meta.failed_sheets = len(failed)
+        meta.failed_sheets = len(failures)
+        meta.failures = failures or None
+        # The page renders ``failures`` itself, cause and all; this stays the
+        # plain-language fallback for anything that only has the string. Naming
+        # the cells AFTER the word "cells" so a lone code («4613») can no longer
+        # be read as a row count, which is what the old wording did.
+        cells = ", ".join(f["cell"] for f in failures[:12])
         meta.message = (
-            None if not failed
-            else f"{len(failed)} sheet(s) kept previous rows: {', '.join(failed[:12])}"
-                 + ("…" if len(failed) > 12 else "")
+            None if not failures
+            else f"{len(failures)} sheet(s) could not be re-read and still show "
+                 f"earlier data — cells: {cells}" + ("…" if len(failures) > 12 else "")
         )
         db.commit()
         log.info("worker-concerns sync: %s rows from %s sheets (%s crawled, %s skipped unchanged, "
                  "%s failed, %s invalid dates)",
-                 total, len(registry), len(to_crawl), skipped, len(failed), invalid_total)
+                 total, len(registry), len(to_crawl), skipped, len(failures), invalid_total)
         return {"status": "ok", "rows": total, "sheets": len(registry),
                 "crawled": len(to_crawl), "skipped": skipped,
-                "failed": len(failed), "invalid_dates": invalid_total}
+                "failed": len(failures), "invalid_dates": invalid_total}
     except Exception as exc:
         # Belt-and-braces: never leave the claim stuck on an unexpected error.
         try:
@@ -477,6 +517,10 @@ def run_sync(full: bool = False) -> dict:
             meta.running = False
             meta.ok = False
             meta.message = str(exc)[:500]
+            # The run died wholesale (no registry, no client): the previous
+            # run's per-sheet list describes sheets this run never opened, so
+            # keeping it would blame cells for a failure that wasn't theirs.
+            meta.failures = None
             db.commit()
         except Exception:
             pass

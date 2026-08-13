@@ -1953,7 +1953,18 @@ class WorkerConcernSyncMeta(Base):
     per-cell sheets. Doubles as the progress feed the page polls while a
     refresh runs and as the claim that keeps two refreshes from overlapping
     (``running`` + ``heartbeat``; a heartbeat older than the stale window may
-    be taken over — the previous process died mid-crawl)."""
+    be taken over — the previous process died mid-crawl).
+
+    ``failures`` is WHY the run left rows stale — one entry per sheet that could
+    not be read: ``{cell, sheet_id, code, detail}``. Without it the page could
+    only name the cell, and the cause lived exclusively in ``app.log`` on the
+    server, where the people who own these sheets cannot reach it — so every
+    failure looked identical and none of them was actionable. ``code`` is the
+    classified cause (the page translates it into a sentence); ``detail`` is the
+    truncated raw error, shown only as a fallback. The list is rewritten whole
+    each run: a sheet that failed is always re-crawled next run (a failure never
+    writes a skip baseline), so "failed in the last run" and "still broken" are
+    the same set."""
     __tablename__ = "worker_concern_sync"
 
     id            = Column(Integer, primary_key=True)
@@ -1963,6 +1974,7 @@ class WorkerConcernSyncMeta(Base):
     row_count     = Column(Integer, default=0)
     invalid_dates = Column(Integer, default=0)   # rows kept with date=None
     failed_sheets = Column(Integer, default=0)   # sheets that kept stale rows this run
+    failures      = Column(JSONB, nullable=True) # [{cell, sheet_id, code, detail}] of the last run
     running       = Column(Boolean, default=False, nullable=False)
     progress_done  = Column(Integer, default=0)
     progress_total = Column(Integer, default=0)

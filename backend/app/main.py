@@ -74,6 +74,7 @@ async def lifespan(app: FastAPI):
         add_leader_task_setting_names, add_leader_task_criteria,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
+        add_worker_concern_failures_column,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
@@ -113,6 +114,7 @@ async def lifespan(app: FastAPI):
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
+    add_worker_concern_failures_column()
     migrate_multi_roles()
     # After migrate_multi_roles — it owns the table's columns; this re-keys it.
     migrate_leader_role_uniqueness()

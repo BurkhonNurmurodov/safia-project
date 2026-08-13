@@ -2188,3 +2188,20 @@ def migrate_user_capabilities() -> None:
         print(f"[startup] user-capabilities backfill skipped: {exc}")
     finally:
         db.close()
+
+
+def add_worker_concern_failures_column() -> None:
+    """2026-08-13: the worker-concerns sync records WHY each unreadable sheet was
+    left stale, not just which cell it was. Existing rows stay NULL until the
+    next crawl rewrites the list — nothing is back-derived, because the reason a
+    past run failed is not recoverable from anything but its log line."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE worker_concern_sync ADD COLUMN IF NOT EXISTS failures JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] worker-concern failures column migration skipped: {exc}")
+    finally:
+        db.close()
