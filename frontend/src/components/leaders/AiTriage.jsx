@@ -434,9 +434,12 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // strip's own pick excluded — so the tabs stay a way back out of a narrow
   // one instead of collapsing to it. `total` is what the current tab holds.
   const total = data?.total ?? items.length;
+  // «Hammasi» counts the strip, not the rail: with a tab open, `total` is that
+  // tab's own length, and printing it beside «Hammasi» would tell the reader
+  // the whole set had shrunk to the one band they are standing in.
   const bucketAll = BUCKETS.reduce((n, b) => n + (buckets[b] || 0), 0);
   const bucketOpts = [
-    { value: "all", label: `${T.aiBall} ${f.bucket ? bucketAll : total}` },
+    { value: "all", label: `${T.aiBall} ${bucketAll}` },
     // A tab that has run to zero under the other filters stays visible while it
     // is the one selected — dropping it would leave the strip with nothing
     // selected over a rail that is very much narrowed.
@@ -768,7 +771,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
           {/* ── verdict + decision ────────────────────────────────────────── */}
           <Card className="order-2 lg:order-3">
             <Verdict item={cur} T={T} lang={lang} />
-            <Decide T={T} onAct={dispatch} busy={resolveMut.isPending}
+            <Decide T={T} item={cur} onAct={dispatch} busy={resolveMut.isPending}
               onUndo={undoable ? undo : null} />
           </Card>
         </div>
@@ -957,16 +960,30 @@ const Card = ({ children, className = "" }) => (
 );
 
 // Colour alone never carries the meaning — every dot has a title, and the panel
-// beside it spells the same flags out in words.
-const FLAG_TONE = { off_topic: C_BAD, not_proven: C_BAD, date_mismatch: C_AI, no_date: C_AI, unreadable: C_FLAT };
-const FlagDot = ({ flag }) => (
-  <i className="inline-block w-1.5 h-1.5 rounded-full"
+// beside it spells the same flags out in words. `clean` is a dot too rather than
+// an absence: a row with nothing on its right edge reads as a row still
+// loading, and "the AI looked and found nothing" is a real answer that has to
+// look like one.
+const FLAG_TONE = {
+  off_topic: C_BAD, not_proven: C_BAD, date_mismatch: C_AI, no_date: C_AI,
+  unreadable: C_FLAT, clean: C_GOOD,
+};
+const FlagDot = ({ flag, title }) => (
+  <i className="inline-block w-1.5 h-1.5 rounded-full" title={title}
     style={{ background: FLAG_TONE[flag] || C_FLAT }} />
 );
+
+/** The human ruling, at rail size. Icon + colour, no text: the row is one line
+ *  and the words for these live in the panel beside it. */
+const ResIcon = ({ res, T }) => {
+  const { tone, Icon } = ACTS[res] || {};
+  return Icon ? <Icon size={12} color={tone} title={T[`aiSt_${res}`]} /> : null;
+};
 
 /** The questions as a checklist, prose second. People triage on glyphs. */
 function Verdict({ item, T, lang }) {
   const f = new Set(item.flags);
+  const bTone = item.bucket === "clean" ? C_GOOD : C_AI;
   const reason = item.reason?.[lang] || item.reason?.ru || item.reason?.en || "";
   const rows = [
     { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
@@ -985,11 +1002,38 @@ function Verdict({ item, T, lang }) {
         <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
           {T.aiTitle}
         </span>
+        {/* A clean verdict is not a warning, so it does not wear the warning
+            colour — the badge carries the bucket's own tone. */}
         <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded"
-          style={{ background: hexA(C_AI, 0.15), color: C_AI }}>
+          style={{ background: hexA(bTone, 0.15), color: bTone }}>
           {T[`aiB_${item.bucket}`]}
         </span>
       </div>
+
+      {/* Already decided? Say so ABOVE the verdict, not below it. The reader
+          arrives to judge a photo, and "somebody already ruled on this" changes
+          what they are doing — printing it after the four questions means they
+          have formed the opinion before learning it was not needed. */}
+      {item.resolution && (
+        <div className="px-3 py-2 flex items-center gap-2 flex-wrap"
+          style={{ borderBottom: "1px solid var(--border)",
+                   background: hexA(ACTS[item.resolution]?.tone || C_FLAT, 0.1) }}>
+          <ResIcon res={item.resolution} T={T} />
+          <span className="text-xs font-semibold"
+            style={{ color: ACTS[item.resolution]?.tone || C_FLAT }}>
+            {T[`aiSt_${item.resolution}`]}
+          </span>
+          <span className="ml-auto text-[10px] truncate" style={{ color: "var(--text-4)" }}>
+            {[item.resolvedBy, item.resolvedAt && ddmm(item.resolvedAt.slice(0, 10))]
+              .filter(Boolean).join(" · ")}
+          </span>
+          {item.resolutionNote && (
+            <p className="w-full text-[11px] leading-relaxed" style={{ color: "var(--text-3)" }}>
+              {item.resolutionNote}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="px-3 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="flex flex-col gap-2">
@@ -1050,8 +1094,17 @@ const Lbl = ({ children }) => (
  *  one place undo can reach a thumb. The toolbar's undo button is a full page
  *  of scroll away once the card has been brought into view, and an undo nobody
  *  can reach makes every one-tap decision feel unsafe. Desktop keeps the
- *  toolbar button and the Z key, so this copy hides at lg. */
-function Decide({ T, onAct, onUndo, busy }) {
+ *  toolbar button and the Z key, so this copy hides at lg.
+ *
+ *  Every button stays live on a row that already carries a ruling, and on a
+ *  CLEAN row that the AI never flagged. A decision here is a judgement call,
+ *  and a judgement call you cannot revise is not one — the standing ruling is
+ *  shown filled instead, so re-deciding is a visible correction rather than a
+ *  blind second press. «Qaytarib ochish» is the way back to no ruling at all,
+ *  which is a different fact from "somebody approved it" and the one the
+ *  calibration stats read. */
+function Decide({ T, item, onAct, onUndo, busy }) {
+  const cur = item?.resolution || null;
   return (
     <div className="p-3 flex flex-col gap-2" style={{ background: "var(--bg-inner)" }}>
       {onUndo && (
@@ -1062,12 +1115,15 @@ function Decide({ T, onAct, onUndo, busy }) {
       )}
       {["approved", "rejected", "requeried"].map((a) => {
         const { tone, Icon, key } = ACTS[a];
+        const on = cur === a;
         return (
           <button key={a} onClick={() => onAct(a)} disabled={busy}
+            aria-pressed={on}
             className="w-full flex items-center gap-2.5 px-3 rounded-xl text-[13px] font-semibold transition-colors disabled:opacity-50"
             style={{
               minHeight: 44, color: tone,
-              background: hexA(tone, 0.11), border: `1px solid ${hexA(tone, 0.34)}`,
+              background: hexA(tone, on ? 0.24 : 0.11),
+              border: `1px solid ${hexA(tone, on ? 0.75 : 0.34)}`,
             }}>
             <Icon size={17} className="flex-shrink-0" />
             {T[`aiAct_${a}`]}
@@ -1078,6 +1134,12 @@ function Decide({ T, onAct, onUndo, busy }) {
           </button>
         );
       })}
+      {cur && (
+        <Button size="sm" variant="secondary" tint icon={<RotateCcw size={14} />}
+          disabled={busy} onClick={() => onAct("open")}>
+          {T.aiReopen}
+        </Button>
+      )}
       <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-4)" }}>{T.aiActHint}</p>
     </div>
   );
