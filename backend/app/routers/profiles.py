@@ -1847,16 +1847,27 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         .all()
     )
     mgr_names = {m.id: m.name for m in managers}
-    leaders: dict[str, list[str]] = {}
-    for p in (
-        db.query(RoleProfile)
+    mgr_shifts = {m.id: m.shift for m in managers}
+
+    # archived units keep their leaders out of the picker
+    leader_profiles = [
+        p for p in db.query(RoleProfile)
         .filter(RoleProfile.role == "leader")
-        .order_by(RoleProfile.name)
-        .all()
-    ):
-        sup = mgr_names.get(p.manager_id)
-        if sup:  # archived units keep their leaders out of the picker
-            leaders.setdefault(sup, []).append(p.name)
+        .order_by(RoleProfile.name).all()
+        if p.manager_id in mgr_names
+    ]
+    leaders: dict[str, list[str]] = {}
+    for p in leader_profiles:
+        leaders.setdefault(mgr_names[p.manager_id], []).append(p.name)
+
+    top_profiles = (
+        db.query(RoleProfile).filter(RoleProfile.role == "top-manager")
+        .order_by(RoleProfile.name).all()
+    )
+    shift_profiles = (
+        db.query(RoleProfile).filter(RoleProfile.role == "shift-manager")
+        .order_by(RoleProfile.shift, RoleProfile.name).all()
+    )
 
     # Guest profiles without an approved holder are offered for re-claiming in
     # the registration picker. Guest names are NOT unique — a typed name always
@@ -1865,29 +1876,107 @@ def registration_options(payload: RegistrationOptionsPayload, db: Session = Depe
         db.query(RoleProfile).filter(RoleProfile.role == "guest")
         .order_by(RoleProfile.name).all()
     )
-    approved_guest_ids = {
-        r.role_id for r in db.query(TelegramUserRole)
-        .filter(TelegramUserRole.role == "guest",
-                TelegramUserRole.status == "approved").all()
-    }
+
+    # Every approved holder in ONE scan. profile_holders() is the canonical
+    # predicate but costs a query or two per profile — a few hundred
+    # round-trips here — so its rules are reproduced in bulk below.
+    approved = (
+        db.query(TelegramUserRole)
+        .filter(TelegramUserRole.status == "approved").all()
+    )
+    approved_guest_ids = {r.role_id for r in approved if r.role == "guest"}
+    held_direct: set[tuple[str, int]] = set()
+    held_leader_keys: set[str] = set()
+    held_leader_named: set[tuple[int, str]] = set()
+    for r in approved:
+        if r.role == "leader":
+            # A leader row's role_id is the BRIGADIR's unit, shared by every
+            # leader in it, so the profile is named by the stamped key — or,
+            # on unstamped legacy rows, by full_name.
+            if r.profile_key:
+                held_leader_keys.add(r.profile_key)
+            elif r.full_name:
+                held_leader_named.add((r.role_id, r.full_name))
+        elif r.role_id is not None:
+            key = f"{r.role}:{r.role_id}"
+            if not r.profile_key or r.profile_key == key:
+                held_direct.add((r.role, r.role_id))
+
+    # Per-language spellings, so the search matches whatever script is typed.
+    # role_profiles carry name_* columns; managers have none, so a supervisor's
+    # other spellings live only in the legacy name.<canonical> overrides.
+    canonicals = ({m.name for m in managers} |
+                  {p.name for p in leader_profiles + top_profiles + shift_profiles})
+    tr_names: dict[str, dict[str, str]] = {}
+    if canonicals:
+        tr_keys = {f"name.{n}": n for n in canonicals}
+        for t in db.query(Translation).filter(Translation.key.in_(list(tr_keys))).all():
+            val = (t.value or "").strip()
+            if val and t.lang in ("uz_cyrl", "ru", "en"):
+                tr_names.setdefault(tr_keys[t.key], {})[t.lang] = val
+
+    def _names(canonical: str, prof: Optional[RoleProfile] = None) -> dict[str, str]:
+        """Columns first, legacy translation overrides second — the same
+        resolution order tl() renders by."""
+        out: dict[str, str] = {}
+        if prof is not None:
+            for lang, col in (("uz_cyrl", prof.name_uz_cyrl),
+                              ("ru", prof.name_ru), ("en", prof.name_en)):
+                if col and col.strip():
+                    out[lang] = col.strip()
+        for lang, val in tr_names.get(canonical, {}).items():
+            out.setdefault(lang, val)
+        return out
+
+    # The name-first catalogue: one flat row per claimable profile. The page
+    # searches names instead of asking for a role first, so somebody who
+    # cannot name their own role can no longer file under the wrong one —
+    # their name simply does not exist under any other role. Guests are
+    # deliberately absent: that path is for people who are NOT staff.
+    entries = [
+        {
+            "key": f"supervisor:{m.id}", "role": "supervisor", "name": m.name,
+            "names": _names(m.name), "shift": m.shift, "supervisor": None,
+            "taken": ("supervisor", m.id) in held_direct,
+        }
+        for m in managers
+    ] + [
+        {
+            "key": f"leader:{p.id}", "role": "leader", "name": p.name,
+            "names": _names(p.name, p), "shift": mgr_shifts.get(p.manager_id),
+            "supervisor": mgr_names.get(p.manager_id),
+            "taken": (f"leader:{p.id}" in held_leader_keys
+                      or (p.manager_id, p.name) in held_leader_named),
+        }
+        for p in leader_profiles
+    ] + [
+        {
+            "key": f"shift-manager:{p.id}", "role": "shift-manager", "name": p.name,
+            "names": _names(p.name, p), "shift": p.shift, "supervisor": None,
+            "taken": ("shift-manager", p.id) in held_direct,
+        }
+        for p in shift_profiles
+    ] + [
+        {
+            "key": f"top-manager:{p.id}", "role": "top-manager", "name": p.name,
+            "names": _names(p.name, p), "shift": None, "supervisor": None,
+            "taken": ("top-manager", p.id) in held_direct,
+        }
+        for p in top_profiles
+    ]
 
     return {
-        "top_managers": [
-            p.name for p in db.query(RoleProfile)
-            .filter(RoleProfile.role == "top-manager").order_by(RoleProfile.name).all()
-        ],
-        "shift_managers": [
-            {"name": p.name, "shift": p.shift}
-            for p in db.query(RoleProfile)
-            .filter(RoleProfile.role == "shift-manager")
-            .order_by(RoleProfile.shift, RoleProfile.name).all()
-        ],
+        # Legacy per-role lists — kept so a cached older bundle still renders
+        # during the seconds between the static swap and the backend restart.
+        "top_managers": [p.name for p in top_profiles],
+        "shift_managers": [{"name": p.name, "shift": p.shift} for p in shift_profiles],
         "supervisors": [{"name": m.name, "shift": m.shift} for m in managers],
         "leaders": leaders,
         "guests": [
             {"id": p.id, "name": p.name}
             for p in guest_profiles if p.id not in approved_guest_ids
         ],
+        "entries": entries,
     }
 
 
