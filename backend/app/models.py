@@ -1183,6 +1183,12 @@ class LeaderTaskDef(Base):
     # prompt material, not UI copy. Blank ⇒ the task is not reviewable, and its
     # photos are left unjudged rather than measured against nothing.
     criteria     = Column(Text, nullable=True)
+    # When a proof photo for THIS task may have been taken, "HH:MM" wall clock.
+    # Either end NULL = fall back to the shift default (services/leader_ai.py
+    # SHIFT_WINDOW: shift 1 07:00–20:00, shift 2 17:00–09:00), resolved per
+    # field, so a task can narrow only its opening or only its deadline.
+    win_from     = Column(String(5), nullable=True)
+    win_to       = Column(String(5), nullable=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1209,6 +1215,10 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "definition of done" for the AI reviewer. NULL = inherit
     # the global LeaderTaskDef.criteria.
     criteria     = Column(Text, nullable=True)
+    # Per-supervisor proof-photo window. NULL = inherit the global one (and
+    # through it the shift default). Each end inherits on its own.
+    win_from     = Column(String(5), nullable=True)
+    win_to       = Column(String(5), nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
 
@@ -1233,6 +1243,10 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "definition of done" for the AI reviewer. NULL = inherit the
     # supervisor's effective criteria.
     criteria     = Column(Text, nullable=True)
+    # Per-leader proof-photo window. NULL = inherit the supervisor's effective
+    # one, per field.
+    win_from     = Column(String(5), nullable=True)
+    win_to       = Column(String(5), nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
@@ -2058,6 +2072,15 @@ class WorkerConcernSyncMeta(Base):
     running       = Column(Boolean, default=False, nullable=False)
     progress_done  = Column(Integer, default=0)
     progress_total = Column(Integer, default=0)
+    # Why the run cost what it cost. ``skipped_sheets`` is the incremental
+    # saving actually realised; ``sweep_error`` is set when the Drive
+    # modifiedTime sweep could not run at all, in which case NOTHING can be
+    # skipped and the crawl is a full one. That distinction used to exist only
+    # as a log warning on the server — so a permanently disabled Drive API was
+    # indistinguishable, from the page, from an optimisation that simply never
+    # helped. It is state, not a log line: it belongs here.
+    skipped_sheets = Column(Integer, default=0)
+    sweep_error    = Column(Text, nullable=True)
     started_at    = Column(DateTime(timezone=True), nullable=True)
     heartbeat     = Column(DateTime(timezone=True), nullable=True)
 

@@ -16,6 +16,10 @@ from app.models import (
     LeaderTaskLeaderSetting, LeaderTaskPendingChange, LeaderTaskSetting,
     Manager, RoleProfile,
 )
+# The photo window's shape, defaults and re-derivation live with the reviewer
+# that reads them — this module only stores and displays them. Safe as a
+# top-level import: leader_ai names this module in comments only.
+from app.services import leader_ai
 
 CHANNEL_SETTING_KEY = "leader_tasks_channel"
 
@@ -129,6 +133,10 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             # RAW like `names`: None = inherit the global definition-of-done.
             # The AI reviewer reads this chain (services/leader_ai.criteria_for).
             "criteria": (s.criteria if s else None) or None,
+            # RAW too, and each end on its own: None = inherit, and at the
+            # global level that lands on the shift default.
+            "win_from": (s.win_from if s else None) or None,
+            "win_to": (s.win_to if s else None) or None,
         }
     return out
 
@@ -152,15 +160,23 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "weight": r.weight,
             "names": _row_names(r),
             "criteria": r.criteria or None,
+            "win_from": r.win_from or None,
+            "win_to": r.win_to or None,
         }
     return out
 
 
-def effective_leader_config(db: Session, prof) -> dict[int, dict]:
-    """task_id → {enabled, min_media, weight, names} fully RESOLVED for one
-    leader (RoleProfile): global catalog → supervisor override → leader
+def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict[int, dict]:
+    """task_id → {enabled, min_media, weight, names, window} fully RESOLVED for
+    one leader (RoleProfile): global catalog → supervisor override → leader
     override, field by field. `names` here are the final display names per
-    language. This is what the bot's /tasks flow and day scoring run on."""
+    language. This is what the bot's /tasks flow and day scoring run on.
+
+    `window` is the (from, to) clock a proof photo for that task must fall in —
+    resolved the same way, then defaulted by SHIFT, which is why the caller may
+    pass one. Callers that only score a day can leave it out; the bot passes the
+    shift it already computed, because that window is printed to the leader.
+    """
     defs = ensure_task_defs(db)
     sup = {
         s.task_id: s
@@ -192,6 +208,7 @@ def effective_leader_config(db: Session, prof) -> dict[int, dict]:
         out[td.id] = {
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
+            "window": leader_ai.resolve_window(shift, r, s, td),
         }
     return out
 
@@ -245,20 +262,90 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
     db.commit()
 
 
-# Shift 2 works and files 21:00 → 09:00 next morning. ONE boundary, at the hour
-# the shift starts: the day a moment belongs to turns at 21:00, and the same
-# 21:00 opens the submission window that shuts at `deadline_hhmm` (09:00). The
-# earlier 17:00 attribution boundary is gone — it put the four hours before a
-# shift on the shift itself, so a leader still finishing last night's checklist
-# at 18:00 had it filed against a night that had not started.
-SHIFT2_START_HOUR = 21
+def set_window(db: Session, *, task_id: int, win_from: str | None,
+               win_to: str | None, manager_id: int | None = None,
+               leader_id: int | None = None, rejudge: bool = True) -> None:
+    """Write the proof-photo window at one level of the chain. A blank end
+    clears that end alone and falls back to the level above (and, at the global
+    level, to the shift default) — which is why both inputs are optional.
 
-# The changeover: shift 1's own window shuts at 20:00 (WINDOW[1] in
+    Not stageable through the "apply from next day" machinery, for the same
+    reason `set_criteria` is not: the window changes how already-collected
+    photos are JUDGED, not what the leader is asked to do, so deferring it to a
+    shift boundary would be a delay with no meaning. (The bot does show the
+    window on the photo prompt now — but it reads the live value, so a mid-shift
+    edit and the judgement it causes always agree.)
+
+    When a level has no row yet, the row is materialised with the values that
+    level already resolves to, so writing a window can never silently change
+    what the task requires.
+    """
+    lo, hi = leader_ai.hhmm(win_from), leader_ai.hhmm(win_to)
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if lo is None and hi is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if lo is None and hi is None:
+                return
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+    else:
+        row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not row:
+            return
+    row.win_from, row.win_to = lo, hi
+    db.commit()
+    # Verdicts already written for this task were judged against the OLD window.
+    # Re-deriving them costs nothing (the clock the model read is stored on the
+    # row) and is the difference between an edit that fixes the queue and one
+    # that only fixes reports filed after it.
+    #
+    # `rejudge=False` is for a fan-out over many supervisors/leaders: the pass
+    # is per TASK, so doing it inside the loop would re-scan the same rows once
+    # per row written. The caller runs it once when the loop is done.
+    if rejudge:
+        leader_ai.rewindow(db, [task_id])
+
+
+# ONE boundary, at the hour the night crew actually starts work: the day a
+# moment belongs to turns at 17:00, and the day it belongs to dies at
+# `deadline_hhmm` (09:00) — the twelve hours between are a day that is over but
+# not yet superseded, which is what `expired_through` names.
+#
+# 17:00 → 21:00 → 17:00 (user, 2026-08-14). It was moved to 21:00 on 2026-08-11
+# to stop a leader finishing LAST night's checklist at 18:00 from filing it
+# against a night that had not started — but that reasoning was already obsolete
+# when it shipped: the 09:00 deadline means last night's checklist is closed
+# long before 18:00, so the case it protected against cannot occur. What 21:00
+# did instead was lock the real night crew out of the first four hours of their
+# own shift — at 18:00 `effective_date` named a night that `expired_through` had
+# already buried, so /tasks refused the entry outright.
+SHIFT2_START_HOUR = 17
+
+# The changeover: shift 1's own filing window shuts at 20:00 (WINDOW[1] in
 # routers/leaders.py — kept as a plain number here so the service does not
-# import the router), and the night crew is already on the floor before its
-# 21:00 opens. That hour between the two is why `filed_date` cannot read a
-# timestamp alone: 20:43 is either the end of one shift's paperwork or the start
-# of the next one's, and only the date the leader wrote says which.
+# import the router). That hour is why `filed_date` cannot read a timestamp
+# alone: 20:43 is either the end of one shift's paperwork or the start of the
+# next one's, and only the date the leader wrote says which.
+#
+# With the boundary back at 17:00 this only bites for SHIFT 1 — `day_of` already
+# puts a 20:43 stamp on the night it starts, so the shift-2 clause below agrees
+# with it instead of correcting it. Kept as written rather than deleted: it is
+# the constants, not the logic, that decide which of the two is doing the work,
+# and they have now moved twice.
 CHANGEOVER_HOUR = 20
 
 
@@ -270,9 +357,9 @@ def day_of(when: datetime, shift: int | None) -> str:
     """The checklist date a Tashkent WALL-CLOCK moment belongs to.
 
     * shift 1 (or unknown): the plain calendar day, 00:00 → 23:59.
-    * shift 2: the day runs 21:00 → 20:59 next evening, so anything before
-      21:00 belongs to the previous date (the night shift stays on its
-      starting date). Its window shuts at 09:00 — the twelve hours between are
+    * shift 2: the day runs 17:00 → 16:59 next afternoon, so anything before
+      17:00 belongs to the previous date (the night shift stays on its
+      starting date). Its window shuts at 09:00 — the eight hours between are
       a day that is over but not yet superseded, which is the stretch
       `expired_through` exists to name.
 

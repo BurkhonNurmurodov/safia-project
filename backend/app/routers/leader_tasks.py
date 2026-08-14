@@ -34,7 +34,7 @@ from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, revert_audit,
-    set_criteria, write_change,
+    set_criteria, set_window, write_change,
 )
 
 router = APIRouter(tags=["leader-tasks"])
@@ -81,6 +81,11 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # Global "definition of done" for the AI proof reviewer;
                 # supervisors and leaders may override it in their own cells.
                 "criteria": td.criteria or "",
+                # Global proof-photo window; blank at either end = that end
+                # falls through to the shift default, which the UI shows as the
+                # placeholder rather than pretending the field is empty.
+                "win_from": td.win_from or "",
+                "win_to": td.win_to or "",
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
@@ -101,6 +106,10 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
             for lid, by_task in overrides.items()
         },
         "channel": {"chat_id": channel_chat_id(db) or ""},
+        # What a BLANK window end falls back to, per shift — sent rather than
+        # duplicated in the UI so the placeholder can never disagree with the
+        # hours the reviewer actually judges against.
+        "shift_windows": {str(s): list(w) for s, w in leader_ai.SHIFT_WINDOW.items()},
         # Staging: what's queued for a future day + the dates "next day"
         # resolves to per shift (so the UI can label "applies from …").
         "pending": pending_list(db),
@@ -422,6 +431,72 @@ def put_criteria(body: CriteriaIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Unknown leader")
     set_criteria(db, task_id=body.task_id, criteria=body.criteria,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
+class WindowIn(BaseModel):
+    """The clock a proof photo for this task must carry. Same four-way
+    addressing as CriteriaIn — global (both ids absent), one supervisor, one
+    leader, or a scoped fan-out over a filtered matrix.
+
+    Either end may be blank: that end inherits the level above, and at the
+    global level the shift default (07:00–20:00 / 17:00–09:00)."""
+    task_id: int
+    win_from: str = ""
+    win_to: str = ""
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/window")
+def put_window(body: WindowIn, db: Session = Depends(get_db),
+               _: dict = Depends(verify_admin)):
+    """Set when a proof photo for this task may have been taken.
+
+    Applies at once and — unlike criteria — verdicts ALREADY written are
+    re-derived from the clock each one stored (services.leader_tasks.set_window
+    → leader_ai.rewindow). No Gemini call, no quota: the expensive half of the
+    date question was reading the photo, and that answer is on the row.
+    """
+    for v in (body.win_from, body.win_to):
+        if v.strip() and leader_ai.hhmm(v) is None:
+            raise HTTPException(status_code=400, detail="bad_time")
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    win = {"win_from": body.win_from, "win_to": body.win_to}
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_window(db, task_id=body.task_id, leader_id=lid,
+                           rejudge=False, **win)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_window(db, task_id=body.task_id, manager_id=mid,
+                           rejudge=False, **win)
+        # Once, after the whole fan-out — the re-derivation is per task, not per
+        # row written, so running it inside the loop would rescan N times.
+        leader_ai.rewindow(db, [body.task_id])
+        return {"ok": True, "count": len(ids)}
+    if body.manager_id is not None and not db.query(Manager).filter_by(
+            id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
+            id=body.leader_id).first():
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    set_window(db, task_id=body.task_id, manager_id=body.manager_id,
+               leader_id=body.leader_id, **win)
     return {"ok": True}
 
 

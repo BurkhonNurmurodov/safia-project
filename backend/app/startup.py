@@ -619,6 +619,59 @@ def add_leader_task_criteria() -> None:
         db.close()
 
 
+def add_leader_task_windows() -> None:
+    """2026-08-14: a proof photo's allowed clock becomes PER TASK.
+
+    Until now the reviewer judged every photo against one window per shift, and
+    shift 2's opened at 21:00 — four hours after the crew actually starts at
+    17:00 — so every correct 17:00–21:00 photo was date-flagged. The window now
+    rides the same global → supervisor → leader chain as criteria/name/weight;
+    NULL at every level = the shift default (leader_ai.SHIFT_WINDOW). Each end
+    is independent, so a task may narrow only its open or only its close.
+
+    Idempotent. `rewindow_reviews()` re-derives the verdicts already written
+    against the old window — see there for why that needs no Gemini call."""
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            for col in ("win_from", "win_to"):
+                db.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} VARCHAR(5)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task window migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def rewindow_reviews() -> None:
+    """2026-08-14: re-judge the DATE question on verdicts already written.
+
+    Every review stores `image_date` — the clock the model actually read off the
+    photo — so widening shift 2 to 17:00 (and narrowing shift 1 to 07:00–20:00)
+    can be re-decided from stored data alone: no image fetch, no Gemini call, no
+    quota. Only the two date flags move; `off_topic` / `not_proven` /
+    `unreadable` are untouched, and a row whose `image_date` will not parse is
+    left exactly as it is rather than guessed at.
+
+    Runs on every boot because it is cheap and self-limiting — it rewrites only
+    rows whose stored clock now disagrees with their flag — which also makes it
+    the thing that repairs verdicts after an admin edits a window."""
+    db = SessionLocal()
+    try:
+        from .services.leader_ai import rewindow
+        n = rewindow(db)
+        if n:
+            print(f"[startup] leader-ai: {n} verdict(s) re-judged against the new window")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader-ai rewindow skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_resolution() -> None:
     """2026-08-10: an AI flag gains a terminal state.
 
@@ -2229,5 +2282,25 @@ def add_worker_concern_failures_column() -> None:
     except Exception as exc:
         db.rollback()
         print(f"[startup] worker-concern failures column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def add_worker_concern_sweep_columns() -> None:
+    """2026-08-14: record what the incremental sync actually saved (how many
+    sheets it skipped) and, when it saved nothing, why — the Drive
+    modifiedTime sweep's own failure. Before this the sweep failing (Drive API
+    disabled on the Google project) looked exactly like the sweep working and
+    finding every sheet changed: both crawl all ~180 sheets, and the reason
+    reached only ``app.log``."""
+    db = SessionLocal()
+    try:
+        for col in ("skipped_sheets INTEGER DEFAULT 0", "sweep_error TEXT"):
+            db.execute(text(
+                f"ALTER TABLE worker_concern_sync ADD COLUMN IF NOT EXISTS {col}"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] worker-concern sweep columns migration skipped: {exc}")
     finally:
         db.close()

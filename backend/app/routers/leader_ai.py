@@ -209,9 +209,9 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
     if not refs:
         return {"enabled": True, "tasks": {}}
 
-    out = {}
-    for rev in db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all():
-        out[str(refs[rev.ref])] = _as_verdict(rev)
+    revs = db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all()
+    cfg = _task_cfg(db, revs)
+    out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev)) for rev in revs}
     return {"enabled": True, "tasks": out}
 
 
@@ -462,6 +462,19 @@ def _chain(cfg, rev, attr: str) -> str:
     return str(got).strip() if got and str(got).strip() else ""
 
 
+def _window(cfg, rev) -> tuple[str, str]:
+    """The task's effective photo window, off the same preloaded chain. Same
+    resolution as services/leader_ai.window_for, which is the per-row form —
+    the triage queue would otherwise pay three queries a card for it."""
+    defs, sup_cfg, own_cfg = cfg
+    return leader_ai.resolve_window(
+        rev.shift,
+        own_cfg.get((rev.leader_id, rev.task_id)) if rev.leader_id else None,
+        sup_cfg.get((rev.manager_id, rev.task_id)) if rev.manager_id else None,
+        defs.get(rev.task_id),
+    )
+
+
 def _label(cfg, rev) -> str:
     """LEVEL first, then language — the same precedence services/leader_ai
     `task_label` uses. Walking language-first would let the global `name_ru`
@@ -643,7 +656,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
         if supervisor is None and rev.manager_id in mgrs:
             supervisor = relabel_supervisor(mgrs[rev.manager_id].name)
 
-        lo, hi = leader_ai.date_window(rev.date, rev.shift)
+        lo, hi = leader_ai.date_window(rev.date, rev.shift, _window(cfg, rev))
         out.append({
             "ref": rev.ref,
             "uid": uid,
@@ -824,8 +837,9 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
+    win = leader_ai.window_for(db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
-        return {"ok": True, "task": _as_verdict(rev)}  # already judged; never re-spend
+        return {"ok": True, "task": _as_verdict(rev, win)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
     rev.attempts = 0
@@ -834,7 +848,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     except gemini.GeminiQuotaError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     db.refresh(rev)
-    return {"ok": True, "task": _as_verdict(rev)}
+    return {"ok": True, "task": _as_verdict(rev, win)}
 
 
 def _report_target(db: Session, uid: str) -> dict:
@@ -883,8 +897,10 @@ def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
     return refs
 
 
-def _as_verdict(rev: LeaderAiReview) -> dict:
-    lo, hi = leader_ai.date_window(rev.date, rev.shift)
+def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None) -> dict:
+    # `win` is the task's effective photo window; callers that hold the
+    # preloaded config chain pass it rather than making this re-walk it.
+    lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
     return {
         "status": rev.status,
         "flags": rev.flags or [],

@@ -72,9 +72,11 @@ async def lifespan(app: FastAPI):
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
+        add_leader_task_windows, rewindow_reviews,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
         add_worker_concern_failures_column,
+        add_worker_concern_sweep_columns,
         migrate_permission_modes,
         migrate_user_capabilities,
         repoint_shift_report_sheet,
@@ -111,11 +113,13 @@ async def lifespan(app: FastAPI):
     add_downtime_ns_columns()
     add_leader_task_setting_names()
     add_leader_task_criteria()
+    add_leader_task_windows()
     add_leader_ai_resolution()
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
     add_worker_concern_failures_column()
+    add_worker_concern_sweep_columns()
     migrate_multi_roles()
     # After migrate_multi_roles — it owns the table's columns; this re-keys it.
     migrate_leader_role_uniqueness()
@@ -129,6 +133,9 @@ async def lifespan(app: FastAPI):
     repoint_shift_report_sheet()
     wipe_cell_perenaladka_history()
     purge_leader_ai_history()
+    # After purge_leader_ai_history (no point re-judging rows about to be
+    # dropped) and after the window columns it reads exist.
+    rewindow_reviews()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

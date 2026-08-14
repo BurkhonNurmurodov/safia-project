@@ -1817,6 +1817,7 @@ _LT_MESSAGES = {
         "btn_yes": "Ha ✅",
         "btn_no": "Yo'q ❌",
         "photos_counter": "📌 {task}\n\nIsbot uchun kamida {min} ta rasm yuboring.\n\n📸 {k}/{min} rasm qabul qilindi.",
+        "photo_window": "\n\n🕒 Rasm {lo} — {hi} oralig'ida olingan bo'lishi kerak.",
         "btn_save": "💾 Saqlash",
         "btn_discard": "🔄 Bekor qilish",
         "reason_prompt": "📌 {task}\n\n✍️ Nega bajarilmadi? Sababini yozib yuboring.",
@@ -1845,6 +1846,7 @@ _LT_MESSAGES = {
         "btn_yes": "Ҳа ✅",
         "btn_no": "Йўқ ❌",
         "photos_counter": "📌 {task}\n\nИсбот учун камида {min} та расм юборинг.\n\n📸 {k}/{min} расм қабул қилинди.",
+        "photo_window": "\n\n🕒 Расм {lo} — {hi} оралиғида олинган бўлиши керак.",
         "btn_save": "💾 Сақлаш",
         "btn_discard": "🔄 Бекор қилиш",
         "reason_prompt": "📌 {task}\n\n✍️ Нега бажарилмади? Сабабини ёзиб юборинг.",
@@ -1873,6 +1875,7 @@ _LT_MESSAGES = {
         "btn_yes": "Да ✅",
         "btn_no": "Нет ❌",
         "photos_counter": "📌 {task}\n\nОтправьте минимум {min} фото как подтверждение.\n\n📸 Принято {k}/{min} фото.",
+        "photo_window": "\n\n🕒 Фото должно быть снято между {lo} и {hi}.",
         "btn_save": "💾 Сохранить",
         "btn_discard": "🔄 Сбросить",
         "reason_prompt": "📌 {task}\n\n✍️ Почему не выполнено? Напишите причину.",
@@ -1901,6 +1904,7 @@ _LT_MESSAGES = {
         "btn_yes": "Yes ✅",
         "btn_no": "No ❌",
         "photos_counter": "📌 {task}\n\nSend at least {min} photo(s) as proof.\n\n📸 {k}/{min} photos received.",
+        "photo_window": "\n\n🕒 The photo must be taken between {lo} and {hi}.",
         "btn_save": "💾 Save",
         "btn_discard": "🔄 Reset",
         "reason_prompt": "📌 {task}\n\n✍️ Why wasn't it done? Send the reason.",
@@ -1998,6 +2002,21 @@ def _lt_day(db, pid: int, date: str) -> LeaderTaskDay | None:
     return db.query(LeaderTaskDay).filter_by(leader_id=pid, date=date).first()
 
 
+def _lt_counter_text(lang: str, entry: dict | None, task: str, need: int, k: int) -> str:
+    """The "k/N photos" prompt, plus the hours the photo must carry.
+
+    The window is stated because it is ENFORCED: the AI reviewer flags a proof
+    whose clock falls outside it, and a leader flagged for a rule nobody told
+    them is the complaint that creates. Appended rather than folded into
+    `photos_counter` so the two send sites keep one format call each.
+    """
+    text = _lt(lang, "photos_counter").format(task=task, min=need, k=k)
+    win = (entry or {}).get("window")
+    if win:
+        text += _lt(lang, "photo_window").format(lo=win[0], hi=win[1])
+    return text
+
+
 def _lt_shift(db, prof) -> int:
     """The leader's shift (1 or 2) — their supervisor unit's shift. Drives the
     checklist day boundary; falls back to shift 1 (calendar day) when unset."""
@@ -2087,7 +2106,7 @@ def _lt_menu(db, tid: int, pid: int, lang: str, chat_id: int, msg_id: int | None
     promote_due(db, shift, date)  # apply staged config due at this boundary
     day = _lt_day(db, pid, date)
     entries = _lt_entries(db, day)
-    cfg = effective_leader_config(db, prof)
+    cfg = effective_leader_config(db, prof, shift)
 
     kb = types.InlineKeyboardMarkup(row_width=1)
     if day and day.closed_at:
@@ -2216,10 +2235,11 @@ def _lt_callback(call: types.CallbackQuery):
             bot.answer_callback_query(call.id, _lt(lang, "expired"), show_alert=True)
             return
 
-        date = effective_date(_lt_shift(db, prof))
+        shift = _lt_shift(db, prof)
+        date = effective_date(shift)
         day = _lt_day(db, pid, date)
         closed = bool(day and day.closed_at)
-        cfg = effective_leader_config(db, prof)
+        cfg = effective_leader_config(db, prof, shift)
 
         def tname(tid_):
             entry = cfg.get(tid_)
@@ -2325,7 +2345,7 @@ def _lt_callback(call: types.CallbackQuery):
             bot.answer_callback_query(call.id)
             try:
                 bot.edit_message_text(
-                    _lt(lang, "photos_counter").format(task=tname(task_id), min=need, k=0),
+                    _lt_counter_text(lang, cfg.get(task_id), tname(task_id), need, 0),
                     chat_id=chat_id, message_id=msg_id, reply_markup=kb)
             except Exception:
                 pass
@@ -2471,7 +2491,7 @@ def _lt_photo(message: types.Message):
         pid, task_id = cap.leader_id, cap.task_id
         chat, old_counter = cap.chat_id, cap.message_id
         prof = db.query(RoleProfile).filter_by(id=pid).first()
-        cfg = effective_leader_config(db, prof) if prof else {}
+        cfg = effective_leader_config(db, prof, _lt_shift(db, prof)) if prof else {}
         entry = cfg.get(task_id)
         tname = config_name(entry, lang) if entry else f"T{task_id}"
         kb = types.InlineKeyboardMarkup(row_width=1)
@@ -2488,8 +2508,7 @@ def _lt_photo(message: types.Message):
             pass
         try:
             sent = bot.send_message(
-                chat, _lt(lang, "photos_counter").format(task=tname, min=need, k=k),
-                reply_markup=kb)
+                chat, _lt_counter_text(lang, entry, tname, need, k), reply_markup=kb)
             cap.message_id = sent.message_id
         except Exception:
             logger.warning("Leader-task counter re-send failed", exc_info=True)

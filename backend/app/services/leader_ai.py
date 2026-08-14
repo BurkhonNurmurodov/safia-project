@@ -235,56 +235,159 @@ def task_examples(db: Session, task_id: int) -> list[tuple[bytes, str]]:
     return [(r.data, r.mime or "image/jpeg") for r in rows]
 
 
-# ── the expected date window ─────────────────────────────────────────────────
+# ── the expected photo window ────────────────────────────────────────────────
+#
+# When a proof photo may have been TAKEN. Deliberately not the same thing as
+# routers/leaders.WINDOW, which judges when the REPORT was filed and can void a
+# whole day: this one only ever decides one `date_ok`, so it is safe to make it
+# narrow and safe to make it per task.
+#
+# The shift defaults are the hours the crew is actually on the floor (user,
+# 2026-08-14). Shift 2's used to open at 21:00 — copied from the filing window —
+# which date-flagged every correct photo taken in the first four hours of the
+# night, the exact hours a start-of-shift task is photographed in.
+SHIFT_WINDOW = {
+    1: ("07:00", "20:00"),   # same day
+    2: ("17:00", "09:00"),   # crosses midnight
+}
+# An unknown shift is treated as shift 1: the stricter reading, and unknown-shift
+# rows are rare (an unmatched supervisor name).
+DEFAULT_WINDOW = SHIFT_WINDOW[1]
 
-def date_window(date: str, shift: int | None) -> tuple[str, str]:
-    """(from, to) as "YYYY-MM-DD HH:MM" for the checklist day.
 
-    Shift 2 leaders submit between 21:00 and 09:00 the next morning, so their
-    window is that submission window — NOT the full 21:00 → 20:59 day that
-    services/leader_tasks.effective_date attributes a submission to. Both open
-    at 21:00; the attribution day then runs on for another twelve hours, so a
-    report filed at noon still lands on the night it reports on (and is voided
-    as late by routers/leaders._rejected), while only the narrower window is
-    what a leader was actually asked to photograph inside.
+def hhmm(v: str | None) -> str | None:
+    """Normalise a stored/typed clock to "HH:MM", or None if it is not one.
+    Blank means "inherit", never "midnight"."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    m = re.match(r"^(\d{1,2})[:.\s]?(\d{2})$", s)
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2))
+    if h > 23 or mi > 59:
+        return None
+    return f"{h:02d}:{mi:02d}"
 
-    An unknown shift is treated as shift 1: the strict reading, and
-    unknown-shift rows are rare.
+
+def shift_window(shift: int | None) -> tuple[str, str]:
+    return SHIFT_WINDOW.get(shift or 0, DEFAULT_WINDOW)
+
+
+def resolve_window(shift: int | None, *levels) -> tuple[str, str]:
+    """The effective (from, to) for one task, given the chain's raw rows ordered
+    NARROWEST FIRST (leader, supervisor, global).
+
+    Each end resolves on its own — that is what makes both inputs optional in
+    the admin form. A supervisor who sets only a closing time keeps the global
+    (or shift-default) opening; a task that fills neither is judged by its
+    shift's hours exactly as before this existed.
     """
-    if shift == 2:
-        try:
-            nxt = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-        except ValueError:
-            nxt = date
-        return f"{date} 21:00", f"{nxt} 09:00"
-    return f"{date} 00:00", f"{date} 23:59"
+    lo = hi = None
+    for row in levels:
+        if row is None:
+            continue
+        lo = lo or hhmm(getattr(row, "win_from", None))
+        hi = hi or hhmm(getattr(row, "win_to", None))
+    d_lo, d_hi = shift_window(shift)
+    return lo or d_lo, hi or d_hi
+
+
+def window_for(db: Session, task_id: int, manager_id: int | None,
+               leader_id: int | None, shift: int | None) -> tuple[str, str]:
+    """Effective photo window for one task, resolved leader → supervisor →
+    global → shift default. The per-row form; bulk readers preload the three
+    config tables and call `resolve_window` directly (see routers/leader_ai
+    `_hydrate` — this walk costs three queries a row)."""
+    own = sup = None
+    if leader_id:
+        own = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+    if manager_id:
+        sup = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+    td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+    return resolve_window(shift, own, sup, td)
+
+
+def overnight(win: tuple[str, str]) -> bool:
+    """Does this window cross midnight? A close at or before the open is the
+    only thing that can mean it (17:00 → 09:00); a window is never 24h."""
+    return win[1] <= win[0]
+
+
+def date_window(date: str, shift: int | None,
+                win: tuple[str, str] | None = None) -> tuple[str, str]:
+    """(from, to) as "YYYY-MM-DD HH:MM" — the window pinned onto a real day.
+
+    `win` is the task's effective clock pair; without one the shift default is
+    used, which is what every caller that only knows the shift wants. A window
+    that crosses midnight closes on the NEXT date, so both halves of a night are
+    inside it — that is the whole reason the reviewer is shift-aware, since a
+    bare calendar-date check flags a correct 02:00 photo every night.
+    """
+    lo, hi = win or shift_window(shift)
+    if not overnight((lo, hi)):
+        return f"{date} {lo}", f"{date} {hi}"
+    try:
+        nxt = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        nxt = date
+    return f"{date} {lo}", f"{nxt} {hi}"
+
+
+def _bump(clock: str, minutes: int) -> str:
+    """A window edge moved by N minutes, wrapping at midnight — used only to
+    build in/out-of-window EXAMPLES for the prompt. Hard-coded example times
+    stopped being safe the moment the window became configurable: «07:30 is
+    inside» is a lie for a window that shuts at 06:00."""
+    h, m = (int(x) for x in clock.split(":"))
+    total = (h * 60 + m + minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
 
 
 def _prompt(*, task: str, note: str, criteria: str, date: str, shift: int | None,
-            n_images: int, omitted: int, n_examples: int = 0) -> str:
-    lo, hi = date_window(date, shift)
-    # Shift 2's window crosses midnight, so it is spelled out as two concrete
-    # dated halves rather than left as a range. Given only "21:00 → 09:00 next
-    # day" the model has to reason across midnight while HISOBOT SANASI sits
-    # directly above it — it anchors on the report date, reads the next
-    # calendar date as a mismatch, and flags a correct 02:00 photo every night.
-    # Both permitted dates are named, with in-window and out-of-window examples.
+            n_images: int, omitted: int, n_examples: int = 0,
+            win: tuple[str, str] | None = None) -> str:
+    win = win or shift_window(shift)
+    lo, hi = date_window(date, shift, win)
+    lo_t, hi_t = win
     nxt = hi.split(" ")[0]
-    lo_t, hi_t = lo.split(" ")[1], hi.split(" ")[1]
-    shift_note = (
-        f"Bu 2-smena: hisobot soat {lo_t} dan ertasi kuni {hi_t} gacha "
-        f"topshiriladi. Shuning uchun RUXSAT ETILGAN IKKITA SANA bor:\n"
-        f"   a) {date} — vaqti {lo_t} yoki undan KEYIN bo'lsa TO'G'RI;\n"
-        f"   b) {nxt} (ertasi kun) — vaqti {hi_t} yoki undan OLDIN bo'lsa TO'G'RI.\n"
-        f"Rasmdagi sana {nxt} bo'lishi, ya'ni HISOBOT SANASIDAN boshqa bo'lishi, "
-        f"KAMCHILIK EMAS. {nxt} 00:30, {nxt} 02:00, {nxt} 07:30 — bularning "
-        f"hammasi oyna ICHIDA: date_ok=true qo'y, sana nomuvofiqligi deb BELGILAMA. "
-        f"date_ok=false faqat shu ikki oraliqdan TASHQARIDA bo'lganda "
-        f"(masalan {date} 14:00 yoki {nxt} 11:00)."
-        if shift == 2 else
-        f"Bu 1-smena: ish kuni oddiy kalendar kuni — rasmdagi sana {date} "
-        f"bo'lishi kerak."
-    )
+    # A window that crosses midnight is spelled out as two concrete dated halves
+    # rather than left as a range. Given only "17:00 → 09:00 next day" the model
+    # has to reason across midnight while HISOBOT SANASI sits directly above it
+    # — it anchors on the report date, reads the next calendar date as a
+    # mismatch, and flags a correct 02:00 photo every night. Both permitted
+    # dates are named, with in-window and out-of-window examples.
+    #
+    # Every example time is DERIVED from the window (`_bump`), never written in:
+    # the window is admin-configurable per task now, so a literal "07:30 is
+    # inside" would start lying the day someone shuts the window at 06:00.
+    if overnight(win):
+        in_a, in_b = _bump(lo_t, 90), _bump(hi_t, -90)
+        out_a, out_b = _bump(lo_t, -180), _bump(hi_t, 120)
+        shift_note = (
+            f"Bu smena yarim tundan o'tadi: ish soat {lo_t} dan ertasi kuni "
+            f"{hi_t} gacha davom etadi. Shuning uchun RUXSAT ETILGAN IKKITA "
+            f"SANA bor:\n"
+            f"   a) {date} — vaqti {lo_t} yoki undan KEYIN bo'lsa TO'G'RI;\n"
+            f"   b) {nxt} (ertasi kun) — vaqti {hi_t} yoki undan OLDIN bo'lsa TO'G'RI.\n"
+            f"Rasmdagi sana {nxt} bo'lishi, ya'ni HISOBOT SANASIDAN boshqa bo'lishi, "
+            f"KAMCHILIK EMAS. {date} {in_a}, {nxt} 00:30, {nxt} {in_b} — bularning "
+            f"hammasi oyna ICHIDA: date_ok=true qo'y, sana nomuvofiqligi deb BELGILAMA. "
+            f"date_ok=false faqat shu ikki oraliqdan TASHQARIDA bo'lganda "
+            f"(masalan {date} {out_a} yoki {nxt} {out_b})."
+        )
+    else:
+        in_a = _bump(lo_t, 60)
+        out_a, out_b = _bump(lo_t, -120), _bump(hi_t, 120)
+        shift_note = (
+            f"Bu smena bir kun ichida ishlaydi: ish soat {lo_t} dan {hi_t} gacha. "
+            f"Shuning uchun rasmdagi sana {date} bo'lishi VA vaqti shu oraliqda "
+            f"bo'lishi kerak. {date} {in_a} — oyna ICHIDA, date_ok=true. "
+            f"Vaqti {lo_t} dan OLDIN yoki {hi_t} dan KEYIN bo'lsa "
+            f"(masalan {date} {out_a} yoki {date} {out_b}) — date_ok=false."
+        )
     # Relevance is asked against the task name plus its `note_*` description —
     # the same line the leader reads in the bot for what to photograph. It is
     # deliberately lenient: the failure it exists to catch is a photo about
@@ -961,6 +1064,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
         date=rev.date, shift=rev.shift,
         n_images=len(images), omitted=omitted, n_examples=len(examples),
+        win=window_for(db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift),
     )
     try:
         out = gemini.generate_json(prompt, examples + images, _SCHEMA)
@@ -1358,6 +1462,197 @@ _DATE_FLAGS = ("date_mismatch", "no_date")
 # something else, one because it does not go far enough — so they bucket
 # identically. Wrong subject AND wrong day is the forgery signature either way.
 _CONTENT_FLAGS = ("off_topic", "not_proven")
+
+
+# ── re-judging the DATE question from stored data ────────────────────────────
+#
+# A verdict records `image_date` — the clock the model actually read off the
+# photo, verbatim — which is the expensive half of the date question. So when
+# the WINDOW moves, the answer can be recomputed from the row itself: no image
+# fetch, no Gemini call, no quota, no re-check run. That is what makes an
+# editable window safe; without it every window change would silently leave
+# every earlier verdict judged against hours nobody uses any more.
+#
+# Strictly bounded: it moves `date_mismatch` and nothing else. `no_date`,
+# `off_topic`, `not_proven` and `unreadable` are answers to other questions and
+# are never touched, a row whose stored clock will not parse is left exactly as
+# it is rather than guessed at, and a row a human has already ruled on is left
+# alone entirely — re-flagging under a decision would rewrite what they decided.
+
+_MONTHS: dict[str, int] = {}
+for _i, _names in enumerate((
+    ("yan", "jan", "янв"), ("fev", "feb", "фев"), ("mar", "мар"),
+    ("apr", "апр"), ("may", "мая", "май"), ("iyn", "jun", "июн"),
+    ("iyl", "jul", "июл"), ("avg", "aug", "авг"), ("sen", "sep", "сен"),
+    ("okt", "oct", "окт"), ("noy", "nov", "ноя"), ("dek", "dec", "дек"),
+), start=1):
+    for _n in _names:
+        _MONTHS[_n] = _i
+
+# The order review_one appends flags in — kept here so a re-derived verdict is
+# byte-identical to a freshly written one carrying the same flags.
+_FLAG_ORDER = ("unreadable", "no_date", "date_mismatch", "off_topic", "not_proven")
+
+# A clock is recognised ONLY with a colon. Every source the prompt allows —
+# Windows tray, macOS menu bar, camera stamp — writes one, while the dot form is
+# indistinguishable from a day.month date: "14.08" is both a valid 14:08 and a
+# valid 14 August, and reading it wrong flips the verdict either way. No colon ⇒
+# undecidable ⇒ the row is left as the model judged it.
+_TIME_RE = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
+_ISO_DATE_RE = re.compile(r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b")
+_NUM_DATE_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b")
+_TEXT_DATE_RE = re.compile(r"\b(\d{1,2})\s*[-\s]\s*([A-Za-zА-Яа-яЁё]{3,})", re.UNICODE)
+
+
+def _one_clock(part: str) -> tuple[int, int, int, int] | None:
+    """(month, day, hour, minute) out of one transcribed stamp, or None."""
+    month = day = None
+    rest = part
+    m = _ISO_DATE_RE.search(rest)
+    if m:
+        month, day = int(m.group(2)), int(m.group(3))
+        rest = rest[:m.start()] + " " + rest[m.end():]
+    else:
+        # Day-first, exactly as the prompt states the local format: 04.08 is
+        # 4 August, never 8 April. Scanned rather than first-matched so a
+        # nonsense pair (a dot-form time read as 18.32) is skipped, not accepted.
+        for m in _NUM_DATE_RE.finditer(rest):
+            d, mo = int(m.group(1)), int(m.group(2))
+            if 1 <= mo <= 12 and 1 <= d <= 31:
+                month, day = mo, d
+                rest = rest[:m.start()] + " " + rest[m.end():]
+                break
+    t = _TIME_RE.search(rest)
+    if not t:
+        return None
+    hh, mi = int(t.group(1)), int(t.group(2))
+    if month is None:
+        # No numeric date — try the written form macOS uses ("Sesh 14 Avg").
+        rest = rest[:t.start()] + " " + rest[t.end():]
+        for m in _TEXT_DATE_RE.finditer(rest):
+            mo = _MONTHS.get(m.group(2)[:3].lower())
+            if mo and 1 <= int(m.group(1)) <= 31:
+                month, day = mo, int(m.group(1))
+                break
+    if month is None or day is None:
+        return None
+    return month, day, hh, mi
+
+
+def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
+    """Every (month, day, hour, minute) the model transcribed, or None if any
+    part of the string cannot be read that completely.
+
+    `image_date` is deliberately verbatim and holds whatever the screen showed —
+    "04.08.2026 14:22", "Sesh 4 Avg 14:22", "2026-08-04 14:22", or a bare
+    "14:22" — comma-separated when a report carried several photos. None means
+    "do not touch this row": a time with no day (which the model is told to flag
+    on its own) and an unreadable transcription are both undecidable here, and
+    the honest move is to leave the verdict the model gave.
+
+    The YEAR is read but discarded, exactly as the prompt instructs: macOS never
+    prints one, so demanding it would re-flag every macOS screenshot.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return None
+    out: list[tuple[int, int, int, int]] = []
+    for part in (p for p in s.split(",") if p.strip()):
+        one = _one_clock(part)
+        if one is None:
+            return None
+        out.append(one)
+    return out or None
+
+
+def clock_in_window(parts: list[tuple[int, int, int, int]],
+                    date: str, win: tuple[str, str]) -> bool | None:
+    """Are ALL of a report's photo clocks inside the window? None = undecidable.
+
+    Compares month + day only, never the year — the same rule the model is given
+    and for the same reason. One photo outside the window fails the report,
+    which is how `review_one` reads a multi-photo answer too.
+    """
+    if not parts:
+        return None
+    try:
+        day = datetime.strptime(str(date)[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+    lo, hi = win
+    nxt = day + timedelta(days=1)
+    d0, d1 = (day.month, day.day), (nxt.month, nxt.day)
+    for month, mday, hh, mi in parts:
+        clock = f"{hh:02d}:{mi:02d}"
+        if overnight(win):
+            ok = ((month, mday) == d0 and clock >= lo) or \
+                 ((month, mday) == d1 and clock <= hi)
+        else:
+            ok = (month, mday) == d0 and lo <= clock <= hi
+        if not ok:
+            return False
+    return True
+
+
+def rewindow(db: Session, task_ids: list[int] | None = None) -> int:
+    """Re-derive `date_mismatch` on written verdicts against today's windows.
+    Returns how many rows changed. Commits once.
+
+    Cheap enough to run at every boot and after every window edit: it reads three
+    small config tables plus the reviewed rows, and writes only the rows whose
+    stored clock now disagrees with their flag.
+    """
+    q = (db.query(LeaderAiReview)
+         .filter(LeaderAiReview.reviewed_at.isnot(None),
+                 LeaderAiReview.resolution.is_(None),
+                 LeaderAiReview.image_date.isnot(None)))
+    if task_ids:
+        q = q.filter(LeaderAiReview.task_id.in_(task_ids))
+    rows = q.all()
+    if not rows:
+        return 0
+
+    # Preloaded like routers/leader_ai._hydrate: the per-row chain walk is three
+    # queries, which over a full corpus is thousands of round trips at boot.
+    defs = {t.id: t for t in db.query(LeaderTaskDef).all()}
+    mgr_ids = {r.manager_id for r in rows if r.manager_id}
+    lead_ids = {r.leader_id for r in rows if r.leader_id}
+    sup_cfg = {(s.manager_id, s.task_id): s for s in db.query(LeaderTaskSetting)
+               .filter(LeaderTaskSetting.manager_id.in_(mgr_ids)).all()} if mgr_ids else {}
+    own_cfg = {(o.leader_id, o.task_id): o for o in db.query(LeaderTaskLeaderSetting)
+               .filter(LeaderTaskLeaderSetting.leader_id.in_(lead_ids)).all()} if lead_ids else {}
+
+    changed = 0
+    for rev in rows:
+        parts = parse_clock(rev.image_date)
+        if not parts:
+            continue
+        win = resolve_window(
+            rev.shift,
+            own_cfg.get((rev.leader_id, rev.task_id)),
+            sup_cfg.get((rev.manager_id, rev.task_id)),
+            defs.get(rev.task_id),
+        )
+        ok = clock_in_window(parts, rev.date, win)
+        if ok is None:
+            continue
+        flags = set(rev.flags or ())
+        had = "date_mismatch" in flags
+        if ok and had:
+            flags.discard("date_mismatch")
+        elif not ok and not had and "no_date" not in flags:
+            flags.add("date_mismatch")
+        else:
+            continue
+        # Rebuilt in review_one's own order, not appended to: the chip row reads
+        # strongest-claim-first and a flag tacked onto the end would sort a
+        # re-derived verdict differently from a freshly written one.
+        rev.flags = [f for f in _FLAG_ORDER if f in flags]
+        rev.status = "flagged" if flags else "ok"
+        changed += 1
+    if changed:
+        db.commit()
+    return changed
 
 
 def bucket_of(flags: list[str] | None) -> str:

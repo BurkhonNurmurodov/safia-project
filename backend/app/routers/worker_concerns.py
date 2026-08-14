@@ -26,6 +26,7 @@ Scoping (page-access matrix opens the page to supervisor + leader by default):
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -230,6 +231,38 @@ def _failures(db: Session, meta: Optional[WorkerConcernSyncMeta]) -> list[dict]:
     return out
 
 
+_DRIVE_CONSOLE = ("https://console.developers.google.com/apis/api/"
+                  "drive.googleapis.com/overview?project={}")
+
+
+def _sweep(meta: Optional[WorkerConcernSyncMeta]) -> dict:
+    """Whether the incremental skip was available at all, and why not.
+
+    The crawl is incremental only because a Drive metadata sweep can say which
+    sheets changed; when that sweep fails EVERY sheet is re-read and the refresh
+    costs the same minutes it always did. That is not a detail — it is the
+    difference between the optimisation working and not existing — so it is
+    reported, with the one action that fixes the common cause: Google's own
+    "enable the Drive API" page, project number lifted straight out of the 403."""
+    err = (meta.sweep_error if meta else None) or ""
+    if not err:
+        return {"ok": True, "code": None, "detail": "", "url": None,
+                "skipped": (meta.skipped_sheets if meta else 0) or 0}
+    low = err.lower()
+    code = "other"
+    url = None
+    if "has not been used in project" in low or "accessnotconfigured" in low or "is disabled" in low:
+        code = "api_disabled"
+        m = re.search(r"project (\d{6,})", err)
+        if m:
+            url = _DRIVE_CONSOLE.format(m.group(1))
+    elif "403" in err or "insufficient" in low or "permission" in low or "scope" in low:
+        code = "forbidden"
+    elif "timed out" in low or "timeout" in low or "connection" in low:
+        code = "network"
+    return {"ok": False, "code": code, "detail": err[:300], "url": url, "skipped": 0}
+
+
 def _sync_state(db: Session, meta: Optional[WorkerConcernSyncMeta]) -> dict:
     return {
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
@@ -242,6 +275,7 @@ def _sync_state(db: Session, meta: Optional[WorkerConcernSyncMeta]) -> dict:
         "running": _live(meta),
         "progress_done": meta.progress_done if meta else 0,
         "progress_total": meta.progress_total if meta else 0,
+        "sweep": _sweep(meta),
     }
 
 

@@ -98,6 +98,15 @@ const TXT = {
       network: "Aloqa uzildi — qayta urinib ko'ring",
       other: "Noma'lum xatolik",
     },
+    syncSkipped: "{n} tasi o'zgarmagan",
+    sweepOffHead: "Tezkor yangilash ishlamayapti: har safar barcha varaqlar qayta o'qilmoqda",
+    sweepWhy: {
+      api_disabled: "qaysi varaq o'zgarganini bilish uchun Google Drive API kerak, u loyihada yoqilmagan",
+      forbidden: "servis akkauntida Drive metama'lumotlarini o'qish huquqi yo'q",
+      network: "Drive'ga ulanib bo'lmadi — keyingi yangilashda o'zi tuzalishi mumkin",
+      other: "Drive'dan o'zgarish vaqtlarini olib bo'lmadi",
+    },
+    sweepEnable: "Drive API'ni yoqish",
     loadFailed: "Ma'lumotlarni yuklab bo'lmadi", retry: "Qayta urinish",
     emptyTitle: "Hali ma'lumot yo'q", emptyNote: "Google Sheets'dan birinchi sinxronlashni ishga tushiring — ~180 varaq, 2–4 daqiqa.",
     kTotal: "Jami havotirlar", kResolved: "Hal bo'lgan", kDoing: "Jarayonda",
@@ -141,6 +150,15 @@ const TXT = {
       network: "Алоқа узилди — қайта уриниб кўринг",
       other: "Номаълум хатолик",
     },
+    syncSkipped: "{n} таси ўзгармаган",
+    sweepOffHead: "Тезкор янгилаш ишламаяпти: ҳар сафар барча варақлар қайта ўқилмоқда",
+    sweepWhy: {
+      api_disabled: "қайси варақ ўзгарганини билиш учун Google Drive API керак, у лойиҳада ёқилмаган",
+      forbidden: "сервис аккаунтида Drive метамаълумотларини ўқиш ҳуқуқи йўқ",
+      network: "Drive'га уланиб бўлмади — кейинги янгилашда ўзи тузалиши мумкин",
+      other: "Drive'дан ўзгариш вақтларини олиб бўлмади",
+    },
+    sweepEnable: "Drive API'ни ёқиш",
     loadFailed: "Маълумотларни юклаб бўлмади", retry: "Қайта уриниш",
     emptyTitle: "Ҳали маълумот йўқ", emptyNote: "Google Sheets'дан биринчи синхронлашни ишга туширинг — ~180 варақ, 2–4 дақиқа.",
     kTotal: "Жами ҳавотирлар", kResolved: "Ҳал бўлган", kDoing: "Жараёнда",
@@ -184,6 +202,15 @@ const TXT = {
       network: "Сбой связи — попробуйте обновить ещё раз",
       other: "Неизвестная ошибка",
     },
+    syncSkipped: "{n} без изменений",
+    sweepOffHead: "Быстрое обновление не работает: каждый раз перечитываются все листы",
+    sweepWhy: {
+      api_disabled: "чтобы понять, какие листы изменились, нужен Google Drive API — он не включён в проекте",
+      forbidden: "у сервисного аккаунта нет прав на чтение метаданных Drive",
+      network: "не удалось связаться с Drive — возможно, исправится при следующем обновлении",
+      other: "не удалось получить из Drive время изменения листов",
+    },
+    sweepEnable: "Включить Drive API",
     loadFailed: "Не удалось загрузить данные", retry: "Повторить",
     emptyTitle: "Данных пока нет", emptyNote: "Запустите первую синхронизацию из Google Sheets — ~180 листов, 2–4 минуты.",
     kTotal: "Всего хавотиров", kResolved: "Решено", kDoing: "В работе",
@@ -227,6 +254,15 @@ const TXT = {
       network: "Connection failed — try refreshing again",
       other: "Unknown error",
     },
+    syncSkipped: "{n} unchanged",
+    sweepOffHead: "Incremental refresh is off: every sheet is being re-read",
+    sweepWhy: {
+      api_disabled: "telling which sheets changed needs the Google Drive API, and it is not enabled on the project",
+      forbidden: "the service account may not read Drive metadata",
+      network: "Drive could not be reached — the next refresh may recover on its own",
+      other: "modification times could not be read from Drive",
+    },
+    sweepEnable: "Enable the Drive API",
     loadFailed: "Failed to load data", retry: "Retry",
     emptyTitle: "No data yet", emptyNote: "Run the first sync from Google Sheets — ~180 sheets, 2–4 minutes.",
     kTotal: "Total concerns", kResolved: "Resolved", kDoing: "In progress",
@@ -645,6 +681,14 @@ export default function WorkerConcerns() {
         {sync?.progress_done ?? 0}/{sync?.progress_total || "…"}
       </span>
       {T.syncSheets}
+      {/* What the incremental sweep actually bought THIS run. Without it the
+          pill counts to a total with no clue whether that total is every sheet
+          or only the changed ones — the same "3/179" either way. */}
+      {sync?.sweep?.skipped > 0 && (
+        <span className="tabular-nums hidden sm:inline" style={{ color: "var(--text-4)" }}>
+          {" · "}{T.syncSkipped.replace("{n}", sync.sweep.skipped)}
+        </span>
+      )}
     </>
   ) : (
     <>
@@ -741,6 +785,37 @@ export default function WorkerConcerns() {
           {refreshBtn}
         </div>
       </div>
+
+      {/* Incremental refresh is OFF. The crawl still works, so this is not an
+          error banner — but it is the whole difference between a refresh that
+          takes seconds and one that re-reads ~180 sheets for minutes, and it
+          used to be visible only as a warning line in the server log. Amber,
+          above the fold, naming the cause; admins also get the one link that
+          fixes the usual one (Drive API switched off on the Google project). */}
+      {sync?.sweep && sync.sweep.ok === false && (
+        <div className="rounded-2xl px-4 py-3 text-xs mb-4"
+          style={{ background: hexA(C_DOING, 0.1), color: C_DOING, border: `1px solid ${hexA(C_DOING, 0.33)}` }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="inline-flex items-start gap-1.5 min-w-0">
+              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+              <span className="min-w-0">
+                <span className="font-semibold">{T.sweepOffHead}</span>
+                <span style={{ color: "var(--text-2)" }}>
+                  {" — "}{T.sweepWhy[sync.sweep.code] || T.sweepWhy.other}
+                  {sync.sweep.code === "other" && sync.sweep.detail ? ` (${sync.sweep.detail})` : ""}
+                </span>
+              </span>
+            </span>
+            {meta?.is_admin && sync.sweep.url && (
+              <a href={sync.sweep.url} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => openSheet(e, sync.sweep.url)}
+                className="inline-flex items-center gap-1 underline underline-offset-2 flex-shrink-0 font-semibold">
+                {T.sweepEnable}<ExternalLink size={11} />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* sync problems / load failures — before anything else, with a way out */}
       {(sync?.ok === false || loadError) && (

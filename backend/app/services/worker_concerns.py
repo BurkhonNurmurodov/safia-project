@@ -298,8 +298,8 @@ def _read_cell_sheet(gc, entry: dict, today: date_cls) -> tuple[list[WorkerConce
 _DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 
 
-def _drive_modified_times(gc, sheet_ids: list[str], touch) -> dict[str, str] | None:
-    """sheet_id → current Drive ``modifiedTime`` for every reachable sheet.
+def _drive_modified_times(gc, sheet_ids: list[str], touch) -> tuple[dict[str, str] | None, str]:
+    """→ (sheet_id → current Drive ``modifiedTime``, reason it's unavailable).
 
     Drive metadata is a SEPARATE (and far larger) quota than Sheets reads, so
     asking "which of the ~180 sheets changed?" costs one or two listing calls
@@ -311,7 +311,11 @@ def _drive_modified_times(gc, sheet_ids: list[str], touch) -> dict[str, str] | N
     Returns None when Drive is unavailable altogether (API not enabled on the
     project, scope refused, network down) — the caller then crawls everything,
     i.e. exactly the pre-incremental behavior. This sweep must only ever make
-    the sync cheaper, never fail it and never skip a sheet on a guess."""
+    the sync cheaper, never fail it and never skip a sheet on a guess.
+
+    The failure REASON comes back with it, because a silently inert
+    optimisation is worse than none: "Drive API disabled on the Google project"
+    is a one-click fix that nobody can act on while it lives in a server log."""
     times: dict[str, str] = {}
     try:
         page_token = None
@@ -335,7 +339,7 @@ def _drive_modified_times(gc, sheet_ids: list[str], touch) -> dict[str, str] | N
     except Exception as exc:
         log.warning("worker-concerns sync: Drive sweep unavailable (%s) — crawling all sheets",
                     str(exc)[:200])
-        return None
+        return None, str(exc)[:500]
     missing = [sid for sid in sheet_ids if sid not in times]
     for i, sid in enumerate(missing, 1):
         try:
@@ -348,7 +352,7 @@ def _drive_modified_times(gc, sheet_ids: list[str], touch) -> dict[str, str] | N
             pass  # stays absent → crawled this run, asked about again next run
         if i % 25 == 0:
             touch()  # keep the claim's heartbeat fresh through a long fallback loop
-    return times
+    return times, ""
 
 
 def _get_meta(db: Session) -> WorkerConcernSyncMeta:
@@ -371,6 +375,10 @@ def _claim(db: Session) -> bool:
     meta.heartbeat = now
     meta.progress_done = 0
     meta.progress_total = 0
+    # Both are answers about THIS run and are unknown until its sweep returns —
+    # showing the previous run's would be a guess about the one on screen.
+    meta.skipped_sheets = 0
+    meta.sweep_error = None
     db.commit()
     return True
 
@@ -408,7 +416,8 @@ def run_sync(full: bool = False) -> dict:
         # One Drive-metadata sweep decides what actually needs crawling. The
         # sweep runs even for full=True so every successful crawl refreshes
         # its baseline; ``full`` only disables the skip decision below.
-        mtimes = _drive_modified_times(gc, [e["sheet_id"] for e in registry], _touch)
+        mtimes, sweep_error = _drive_modified_times(
+            gc, [e["sheet_id"] for e in registry], _touch)
         baseline: dict[str, str | None] = {}
         if mtimes is not None:
             baseline = {s.sheet_id: s.modified_time
@@ -428,6 +437,11 @@ def run_sync(full: bool = False) -> dict:
 
         meta = _get_meta(db)
         meta.progress_total = len(to_crawl)
+        # Written BEFORE the crawl, not after it: "3/179" is exactly the moment
+        # someone asks why an "incremental" refresh is reading every sheet
+        # again, so the answer has to be on the page while it is still running.
+        meta.skipped_sheets = skipped
+        meta.sweep_error = sweep_error or None
         db.commit()
 
         invalid_total, failures = 0, []

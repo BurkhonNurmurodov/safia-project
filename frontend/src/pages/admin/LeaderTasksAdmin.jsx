@@ -176,6 +176,11 @@ export default function LeaderTasksAdmin() {
   // leader sees in the bot, so it applies at once and never joins the
   // "from next day" staging the other fields go through.
   const critMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/criteria", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // The proof-photo window rides the same instant path as the criteria — but
+  // unlike them it also re-judges verdicts already written, from the clock each
+  // one stored, so an edit fixes the existing queue and not just future
+  // reports. Nothing to stage: the bot reads the live value too.
+  const winMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/window", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -274,11 +279,30 @@ export default function LeaderTasksAdmin() {
   ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null };
   // The definition of done actually in force for a cell, walking the same
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
   const supCrit = (mid, tid) => getCell(mid, tid).criteria || critOf(tid);
+
+  // ── the proof-photo window ────────────────────────────────────────────────
+  // Same chain, resolved per END (`k` is "win_from" or "win_to"), because both
+  // inputs are independently optional: a supervisor may set only a closing time
+  // and keep the opening they inherit. What a blank falls back to comes from the
+  // SERVER (`shift_windows`) rather than being restated here — a placeholder
+  // that disagreed with the hours the reviewer judges against would be worse
+  // than no placeholder at all.
+  const shiftWins = data?.shift_windows || {};
+  const shiftOf = (mid) => managers.find((m) => m.id === mid)?.shift ?? 1;
+  const winDefault = (shift, k) => (shiftWins[String(shift)] || [])[k === "win_from" ? 0 : 1] || "";
+  const winOf = (tid, k) => tasks.find((x) => x.id === tid)?.[k] || "";
+  // Placeholders: what this level would inherit if left blank.
+  const supWinPh = (mid, tid, k) => winOf(tid, k) || winDefault(shiftOf(mid), k);
+  const leadWinPh = (mid, tid, k) => getCell(mid, tid)[k] || supWinPh(mid, tid, k);
+  // The global level serves BOTH shifts, so it cannot name one default — it
+  // names both, labelled, instead of quietly showing shift 1's.
+  const globalWinPh = (k) => Object.keys(shiftWins).sort()
+    .map((s) => `${s}: ${winDefault(s, k)}`).join(" · ");
   const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
   const getOv = (lid, tid) => leaderSettings[String(lid)]?.[String(tid)] ?? null;
   const leadEff = (lid, mid, tid) => {
@@ -319,6 +343,7 @@ export default function LeaderTasksAdmin() {
       enabled: eff.enabled, min_media: eff.min_media, weight: eff.weight,
       names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || ""])),
       criteria: ov?.criteria || "",
+      win_from: ov?.win_from || "", win_to: ov?.win_to || "",
     });
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
@@ -331,8 +356,20 @@ export default function LeaderTasksAdmin() {
     critMut.mutate({ ...ids, criteria: draft || "" });
   };
 
+  // Skipped when unchanged like the criteria — and for a sharper reason here:
+  // every window write re-derives that task's existing verdicts, so a no-op
+  // save would churn the triage queue for a modal the admin only opened to read.
+  const saveWindow = (draft, stored, ids) => {
+    const from = draft?.win_from || "";
+    const to = draft?.win_to || "";
+    if (from === (stored?.win_from || "") && to === (stored?.win_to || "")) return;
+    winMut.mutate({ ...ids, win_from: from, win_to: to });
+  };
+
   const saveCell = () => {
     saveCriteria(cell.criteria, getCell(cell.mid, cell.tid).criteria,
+      { task_id: cell.tid, manager_id: cell.mid });
+    saveWindow(cell, getCell(cell.mid, cell.tid),
       { task_id: cell.tid, manager_id: cell.mid });
     cellMut.mutate({
       manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
@@ -347,6 +384,8 @@ export default function LeaderTasksAdmin() {
     const mm = Number(lcell.min_media) || 0;
     const w = Number(lcell.weight) || 0;
     saveCriteria(lcell.criteria, getOv(lcell.lid, lcell.tid)?.criteria,
+      { task_id: lcell.tid, leader_id: lcell.lid });
+    saveWindow(lcell, getOv(lcell.lid, lcell.tid),
       { task_id: lcell.tid, leader_id: lcell.lid });
     leaderMut.mutate({
       leader_id: lcell.lid, task_id: lcell.tid,
@@ -408,6 +447,31 @@ export default function LeaderTasksAdmin() {
       <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)}
         placeholder={inherited || t("admin.ltasks.criteriaPh")}
         className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
+    </FormField>
+  );
+  // When a proof photo for this task may have been taken. TWO inputs, both
+  // optional: an empty end inherits the level above, and the placeholder shows
+  // exactly what that end would then be — the same value the reviewer uses and
+  // the bot prints to the leader. Native time inputs (there is no time template
+  // in components/ui; the date rule covers date pickers), styled like every
+  // other field in these modals so the row keeps the modal's baseline.
+  const windowField = (value, onChange, phFrom, phTo) => (
+    <FormField label={t("admin.ltasks.window")} hint={t("admin.ltasks.windowHint")}>
+      <div className="flex items-center gap-2">
+        <input type="time" value={value?.win_from || ""} placeholder={phFrom}
+          onChange={(e) => onChange({ win_from: e.target.value })}
+          className={inputCls} style={inputStyle} />
+        <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
+        <input type="time" value={value?.win_to || ""} placeholder={phTo}
+          onChange={(e) => onChange({ win_to: e.target.value })}
+          className={inputCls} style={inputStyle} />
+      </div>
+      {/* A time input renders "--:--" when empty, which reads as broken rather
+          than as inherited, so the inherited pair is spelled out under it. */}
+      <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+        {t("admin.ltasks.windowInherit")
+          .replace("{from}", phFrom || "—").replace("{to}", phTo || "—")}
+      </div>
     </FormField>
   );
   const nameFields = (names, setName, placeholderFor) =>
@@ -512,14 +576,23 @@ export default function LeaderTasksAdmin() {
         ? getOv(lead0.id, task.id)?.criteria || supCrit(lead0.manager_id, task.id)
         : supCrit(rows[0]?.m.id, task.id))
       : task.criteria) || "";
+    // Same scoped-seed rule as the criteria: under a filter the modal writes
+    // the visible rows, so it shows THEIR raw window, not the global one.
+    const win0 = anyFilter
+      ? (lead0
+        ? { win_from: getOv(lead0.id, task.id)?.win_from || "", win_to: getOv(lead0.id, task.id)?.win_to || "" }
+        : { win_from: getCell(rows[0]?.m.id, task.id).win_from || "", win_to: getCell(rows[0]?.m.id, task.id).win_to || "" })
+      : { win_from: task.win_from || "", win_to: task.win_to || "" };
     setCol({
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
+      ...win0, win0,
     });
   };
   const saveCol = () => {
     const ids = colScope();
     saveCriteria(col.criteria, col.criteria0, { task_id: col.tid, ...ids });
+    saveWindow(col, col.win0, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
@@ -662,7 +735,7 @@ export default function LeaderTasksAdmin() {
                             <td key={task.id}>
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", when: "now" })}
+                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
                                 {c.weight}%
@@ -719,6 +792,8 @@ export default function LeaderTasksAdmin() {
           {numField(t("admin.ltasks.minMedia"), cell.min_media, (v) => setCell((c) => ({ ...c, min_media: v })), 20)}
           {numField(t("admin.ltasks.weight"), cell.weight, (v) => setCell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
+          {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
+            supWinPh(cell.mid, cell.tid, "win_from"), supWinPh(cell.mid, cell.tid, "win_to"))}
           <WhenBar when={cell.when} setWhen={(v) => setCell((c) => ({ ...c, when: v }))} nextDate={cellNext} t={t} />
         </Modal>
       )}
@@ -737,6 +812,8 @@ export default function LeaderTasksAdmin() {
           {numField(t("admin.ltasks.minMedia"), lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
           {numField(t("admin.ltasks.weight"), lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
           {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), supCrit(lcell.mid, lcell.tid))}
+          {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
+            leadWinPh(lcell.mid, lcell.tid, "win_from"), leadWinPh(lcell.mid, lcell.tid, "win_to"))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
         </Modal>
       )}
@@ -779,6 +856,12 @@ export default function LeaderTasksAdmin() {
               {anyFilter ? t("admin.ltasks.criteriaScoped") : t("admin.ltasks.criteriaGlobal")}
             </p>
             {criteriaField(col.criteria, (v) => setCol((c) => ({ ...c, criteria: v })), "")}
+            {/* Unfiltered this writes the GLOBAL level, which both shifts
+                inherit — so the placeholder names both shift defaults rather
+                than picking one. Under a filter it writes the visible rows. */}
+            {windowField(col, (v) => setCol((c) => ({ ...c, ...v })),
+              anyFilter ? "" : globalWinPh("win_from"),
+              anyFilter ? "" : globalWinPh("win_to"))}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so
                   the filter genuinely cannot scope them. Say so rather than
