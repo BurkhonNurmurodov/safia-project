@@ -14,6 +14,7 @@ import StyledSelect from "../components/ui/StyledSelect";
 import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import Pagination from "../components/ui/Pagination";
+import CellLink from "../components/ui/CellLink";
 import { useToast } from "../components/ui/Toast";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter, PickFilter } from "../components/ui/ColumnFilter";
@@ -2415,7 +2416,12 @@ export default function Quality() {
                         {r.c ? <Chip color={CAT_COLORS[r.c] || C_NA}>{L("cat", r.c)}</Chip> : "—"}
                       </td>
                       <td className="px-3 py-2 max-w-[170px] truncate" title={cellNameOf(r, cellMap, lang) || ""} style={{ color: "var(--text-3)" }}>
-                        {cellNameOf(r, cellMap, lang) || "—"}
+                        {/* r.ci = cells.id when the fault code matched the
+                            registry; the link stops propagation so the row's
+                            own click (detail modal) doesn't also fire. */}
+                        {cellNameOf(r, cellMap, lang)
+                          ? <CellLink id={r.ci}>{cellNameOf(r, cellMap, lang)}</CellLink>
+                          : "—"}
                       </td>
                       {!lockOwn && <td className="px-3 py-2 max-w-[190px] truncate" title={tl(r.b || "")} style={{ color: "var(--text-2)" }}>{tl(who(r)) || "—"}</td>}
                       <td className="px-3 py-2 text-center" style={{ color: r.r ? C_WAIT : "var(--text-4)" }}>{r.r ? T.yes : "—"}</td>
@@ -2465,7 +2471,10 @@ export default function Quality() {
                 [RU.mNo, openRow.no || ""],
                 [RU.colPlace, openRow.pl || ""],
                 [RU.colProduct, openRow.pr || ""],
-                [RU.mCell, [...new Set([openRow.fc, cellNameOf(openRow, cellMap, lang)].filter(Boolean))].join(" · ")],
+                [RU.mCell, (() => {
+                  const label = [...new Set([openRow.fc, cellNameOf(openRow, cellMap, lang)].filter(Boolean))].join(" · ");
+                  return label ? <CellLink id={openRow.ci}>{label}</CellLink> : "";
+                })()],
                 [RU.mFault, openRow.f == null ? "—" : openRow.f ? T.yes : T.no],
                 [RU.colBrig, tl(who(openRow))],
                 ...(openRow.sup ? [[RU.mSheetName, tl(openRow.b || "")]] : []),

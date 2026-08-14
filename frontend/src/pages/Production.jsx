@@ -974,8 +974,10 @@ export default function Production() {
       case "wc":
         return (
           <td key={key} className="px-3 py-2 text-center">
-            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" title={wcName(r.work_center) || r.work_center}
-              style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}` }}>{r.work_center}</span>
+            {/* WCs ARE cells (Cell.sap_code): a registry match links to the
+                cell's page; unmatched codes stay inert chips. */}
+            <CellLink id={wcCell[r.work_center]?.id} className="font-mono text-[11px] px-1.5 py-0.5 rounded" title={wcName(r.work_center) || r.work_center}
+              style={{ background: hexToRgba(wc, 0.14), color: wc, border: `1px solid ${hexToRgba(wc, 0.28)}`, textDecorationColor: "currentColor" }}>{r.work_center}</CellLink>
           </td>
         );
       case "people":

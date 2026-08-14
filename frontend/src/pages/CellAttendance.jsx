@@ -23,6 +23,7 @@ import { CheckBox } from "../components/ui/CheckboxTree";
 import { ColFilter, OptsFilter, RngFilter } from "../components/ui/ColumnFilter";
 import Pagination from "../components/ui/Pagination";
 import EmptyState from "../components/ui/EmptyState";
+import CellLink from "../components/ui/CellLink";
 import { SkeletonTable } from "../components/ui/Skeleton";
 import api from "../utils/api";
 import { fmtPct, fmtNum } from "../utils/formatters";

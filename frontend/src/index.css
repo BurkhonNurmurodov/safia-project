@@ -494,17 +494,27 @@ input[type="checkbox"].cb-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239,
    (visible on touch, where hover never fires), solid + brand on hover, a brand
    focus ring for keyboards. The button is typography-neutral — it inherits
    font/color/alignment so it drops into a table cell, a chip or a card title
-   without changing how the text reads. */
+   without changing how the text reads.
+
+   The neutral reset lives in the `components` layer ON PURPOSE: Tailwind v4
+   puts utilities in a later cascade layer, so per-usage utility classes
+   (font-mono, text-sm, px-1.5 on a chip-shaped link…) still win over the
+   reset — while the unlayered decoration/hover/focus rules below always
+   apply. Inline styles (e.g. Production's colored WC chips) beat both. */
+@layer components {
+  .cell-link {
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    display: inline;
+    cursor: pointer;
+  }
+}
 .cell-link {
-  background: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  text-align: inherit;
-  display: inline;
-  cursor: pointer;
   text-decoration-line: underline;
   text-decoration-style: dotted;
   text-decoration-color: var(--text-4);

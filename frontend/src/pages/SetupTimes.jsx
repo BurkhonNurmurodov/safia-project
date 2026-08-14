@@ -21,6 +21,7 @@ import KPICard from "../components/ui/KPICard";
 import TrendChart from "../components/charts/TrendChart";
 import { useToast } from "../components/ui/Toast";
 import { SkeletonBlock } from "../components/ui/Skeleton";
+import CellLink from "../components/ui/CellLink";
 import api from "../utils/api";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -270,11 +271,15 @@ const sortCmp = (sort, val) => (a, b) => {
 };
 
 // Code + muted workshop name — the one way a cell renders in ALL three tabs.
-function CellCol({ code, name, lang }) {
+// With a registry id the code is a CellLink to /cells/:id; free-typed cells
+// that match no registry row (cellId null) stay inert text.
+function CellCol({ code, name, lang, cellId }) {
   const nm = pickName(name, lang);
   return (
     <>
-      <div className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>{code}</div>
+      <div className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>
+        <CellLink id={cellId}>{code}</CellLink>
+      </div>
       {nm && (
         <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }}>{nm}</div>
       )}
@@ -473,7 +478,7 @@ function StandardTab({ T, lang, tl }) {
                 <span className="font-medium" style={{ color: "var(--text-1)" }}>{tl(r.supervisor)}</span>
               </td>
               <td className="px-3 py-2">
-                <CellCol code={r.cell} name={r.cell_name} lang={lang} />
+                <CellCol code={r.cell} name={r.cell_name} lang={lang} cellId={r.cell_id} />
               </td>
               <td className="px-3 py-2 text-right">
                 <MinPill value={r.minutes} color={minColor(r.minutes)} />
@@ -736,7 +741,7 @@ function FactTab({ T, lang, tl }) {
                 )}
               </td>
               <td className="px-3 py-2">
-                <CellCol code={c.code} name={c.name} lang={lang} />
+                <CellCol code={c.code} name={c.name} lang={lang} cellId={c.cell_id} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums"
                 style={{ color: c.standard != null ? "var(--text-3)" : "var(--text-4)" }}>
@@ -1129,7 +1134,7 @@ function AnalysisTab({ T, lang, tl }) {
                 </span>
               </td>
               <td className="px-3 py-2">
-                <CellCol code={s.code} name={s.name} lang={lang} />
+                <CellCol code={s.code} name={s.name} lang={lang} cellId={s.cell_id} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums"
                 style={{ color: s.standard != null ? "var(--text-3)" : "var(--text-4)" }}>

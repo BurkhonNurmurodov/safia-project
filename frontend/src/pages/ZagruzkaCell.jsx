@@ -31,6 +31,7 @@ import TableCard, { Th } from "../components/ui/DataTable";
 import { segmentBands } from "../utils/segments";
 import EmptyState from "../components/ui/EmptyState";
 import { SkeletonChart } from "../components/ui/Skeleton";
+import CellLink from "../components/ui/CellLink";
 import { useFilters } from "../context/FilterContext";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -489,7 +490,9 @@ export default function ZagruzkaCell() {
                   return (
                     <tr key={c}>
                       <td className="px-3 py-2 truncate" style={{ color: "var(--text-1)" }} title={c}>
-                        {meta ? `${meta.verifix_code} · ${cellName(meta, lang, "name_")}` : c}
+                        {meta
+                          ? <CellLink id={meta.cell_id}>{`${meta.verifix_code} · ${cellName(meta, lang, "name_")}`}</CellLink>
+                          : c}
                       </td>
                       <td className="px-3 py-2 text-center" style={{ color: meta?.joined ? "var(--text-2)" : "#ef4444" }}>
                         {meta?.sap_code || "—"}
