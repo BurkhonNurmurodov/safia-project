@@ -1008,13 +1008,18 @@ export default function Broadcast() {
                   <tr key={i}><td colSpan={7} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td></tr>
                 ))}
                 {!historyLoading && historyRows.map((r) => (
-                  <tr key={r.id}>
+                  /* The whole row is the mouse target, and the date inside it is
+                     a REAL anchor — focusable, Enter-activatable, middle-clickable.
+                     The modal this replaced was none of those. */
+                  <tr
+                    key={r.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/broadcast/${r.id}`)}
+                  >
                     <td className="px-3 py-2 tabular-nums" style={{ color: "var(--text-2)" }}>
-                      {/* A real link: focusable, Enter-activatable, openable in
-                          a new tab — the old row-click modal was none of those. */}
                       <a
                         href={`/broadcast/${r.id}`}
-                        onClick={(e) => { e.preventDefault(); navigate(`/broadcast/${r.id}`); }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/broadcast/${r.id}`); }}
                         className="hover:underline"
                         style={{ color: "inherit" }}
                       >
