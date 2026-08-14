@@ -107,7 +107,13 @@ const FLAGS = ["off_topic", "not_proven", "date_mismatch", "no_date", "unreadabl
 // What the HUMAN said. A separate axis from the buckets — a rejected fake is
 // `forged` AND `rejected` — so it gets a panel section, never a tab.
 const STATES = ["open", "approved", "rejected", "requeried"];
-const BUCKETS = ["forged", "undone", "date", "tech", "clean"];
+// Strip order: «Hammasi» → the clean band → the flagged bands worst-first. Clean
+// sits second because it is the one tab that answers "what did the AI pass", and
+// reading it against «Hammasi» is how the reviewer sizes the rest; the flagged
+// four keep their severity order (a forged proof outranks a technical read) so
+// walking right walks down the queue. NOT the rail's sort — that stays the
+// server's `_BUCKET_RANK`, which never ranks clean at all.
+const BUCKETS = ["clean", "forged", "undone", "date", "tech"];
 // One helping of the rail, matching the server's own PAGE. «Ko'proq» asks for
 // another on top of it rather than turning a page: the rail is one list under
 // one J/K cursor, and a page boundary is exactly where that cursor would die.
