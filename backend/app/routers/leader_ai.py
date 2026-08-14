@@ -261,7 +261,6 @@ def _dim_ok(dim: str, want, rev, p) -> bool:
 @router.get("/queue")
 def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
           offset: int = Query(0, ge=0),
-          sort: str = Query("new", pattern="^(new|severity)$"),
           date_from: str | None = Query(None),
           date_to: str | None = Query(None),
           leader: str | None = Query(None),
@@ -359,13 +358,10 @@ def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
     # but the open one reading zero, and the strip would stop being a way back.
     buckets: dict[str, int] = {b: facets["bucket"].get(b, 0) for b in QUEUE_BUCKETS}
 
-    # Severity is no longer the only order. Newest-first is the default because
-    # the feed is now a register as much as a worklist — "what came in today"
-    # is the question you arrive with — and severity stays one pick away for the
-    # triage run, where working the worst rows first is the whole point.
-    if sort == "severity":
-        # Stable, so the newest-first order inside each band survives.
-        kept.sort(key=lambda r: leader_ai.bucket_rank(_bucket(r)))
+    # ONE order: newest first. The feed is a register as much as a worklist —
+    # "what came in today" is the question you arrive with — and the severity
+    # order that used to sit behind a toggle is now covered by the bucket strip,
+    # which narrows to the worst band instead of just floating it to the top.
     page = kept[offset:offset + limit]
 
     def _opts(dim: str) -> list[dict]:

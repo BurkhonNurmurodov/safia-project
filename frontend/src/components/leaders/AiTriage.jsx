@@ -154,9 +154,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // a blob written under the old shape would keep re-applying a leader nobody
   // can see a control for.
   const [stored, setStored] = usePersistentState("leaders.ai.flt2", EMPTY_FLT);
-  // Order is remembered but is NOT a filter — it hides nothing, so «clear
-  // filters» must not touch it and an empty rail is never its fault.
-  const [sort, setSort] = usePersistentState("leaders.ai.sort", "new");
   // How many helpings of the rail have been asked for. Part of the query key,
   // so «Ko'proq» is a refetch of one longer list rather than a second list to
   // stitch — which is what keeps the optimistic writes below single-target.
@@ -211,7 +208,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // queue back optimistically has to use this exact key — a bare
   // ["leader-ai-queue"] would write a cache entry nothing renders, and the
   // dispatched card would sit on screen until the next refetch.
-  const qkey = useMemo(() => ["leader-ai-queue", sc, f, sort, pages], [sc, f, sort, pages]);
+  const qkey = useMemo(() => ["leader-ai-queue", sc, f, pages], [sc, f, pages]);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: qkey,
@@ -226,7 +223,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
         flag: f.flag ?? undefined,
         bucket: f.bucket ?? undefined,
         state: f.state ?? undefined,
-        sort,
         limit: PAGE * pages,
       },
     }).then((r) => r.data),
@@ -554,17 +550,6 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
             },
           ]}
         />
-        {/* Order. Newest-first is the default because the feed answers «what
-            came in» as often as «what is left»; severity is what a triage run
-            wants, worst decision first, and it is one tap away rather than the
-            only behaviour. Not a FilterPanel section: it hides nothing, so it
-            must never appear among the chips that explain an empty rail. */}
-        <SegmentedToggle value={sort}
-          onChange={(v) => { setSort(v); setPages(1); setI(0); setPhotoIx(0); }}
-          options={[
-            { value: "new", label: T.aiSortNew, title: T.aiSortTipNew },
-            { value: "severity", label: T.aiSortSev, title: T.aiSortTipSev },
-          ]} />
         <div className="flex-1" />
         {actions}
         {undoable && (
