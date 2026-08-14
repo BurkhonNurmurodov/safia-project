@@ -122,6 +122,10 @@ function clockOutMin(clock) {
 // the day: a denominator of all rows compares 48 confectioners against 80
 // bodies of every trade and reads as a shortfall that isn't one.
 function isZagruzkaCalcRole(worker) {
+  // The unit's own brigadir is on the roster but runs it rather than working
+  // it. Checked first: their «Должность» is whatever the HR export spells, and
+  // a blank one would fall through to the hours rule below and be counted.
+  if (worker.is_supervisor) return false;
   const title = String(worker.job_title ?? "").trim();
   if (title.startsWith(ZAGRUZKA_ROLE_PREFIX) || ZAGRUZKA_ROLE_EXACT.has(title)) return true;
   // A blank title only joins the load when the row carries hours — there is
@@ -835,15 +839,14 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                     </div>
                   </td>
                   <td className="px-3 py-2" style={{ color: "var(--text-2)" }}>{tl(w.job_title) || "—"}</td>
+                  {/* Code only — the workshop name is four words of Russian per
+                      row and pushed every column after it off a phone. It stays
+                      in the tooltip and in the Yacheyka filter, where there is
+                      room to tell two codes apart. */}
                   {showCellCol && (
                     <td className="px-3 py-2" title={w._cell?.full || ""}>
                       {w._cell ? (
-                        <div className="max-w-[220px] truncate">
-                          <span className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</span>
-                          {w._cell.name && (
-                            <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{w._cell.name}</span>
-                          )}
-                        </div>
+                        <span className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</span>
                       ) : (
                         <span style={{ color: "var(--text-4)" }}>—</span>
                       )}

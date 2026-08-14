@@ -54,6 +54,7 @@ from app.routers.admin import verify_admin
 from app.services.attendance_sheet import AttendanceSheetError, parse_attendance_workbook
 from app.services.day_state import day_state
 from app.services.kpi_calculator import is_direct_role
+from app.services.name_map import supervisor_match
 from app.upload_guard import validate_spreadsheet
 
 log = logging.getLogger(__name__)
@@ -187,7 +188,44 @@ def _holding_managers(db: Session, batch: AttendanceBatch, d: date_t) -> set:
     return {m for m in ids if m}
 
 
-def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_t) -> int:
+def _cellless_by_manager(db: Session, batch: AttendanceBatch) -> tuple[dict, list]:
+    """Split the batch's cell-less rows into {manager_id: [rows]} + unmatched names.
+
+    A brigadir clocks in with no «Код подразделения», so there is no cell to
+    route their row on and _sync_manager has always dropped it — the person who
+    runs the unit was the one person missing from their own page. The only link
+    left is the NAME, matched against the supervisor registry by the same
+    scorer the Quality and Leaders sheets use.
+
+    That scorer is also what keeps this to brigadirs only: it demands surname
+    AND given name agree, so the mechanics and office staff who likewise carry
+    no cell match nothing and stay out, exactly as before.
+    """
+    rows = db.query(AttendanceBatchRow).filter(
+        AttendanceBatchRow.batch_id == batch.id,
+        AttendanceBatchRow.verifix_code.is_(None),
+    ).all()
+    if not rows:
+        return {}, []
+
+    # Active units only. An archived supervisor must not collect new attendance,
+    # and leaving them in the candidate set lets a retired namesake outscore the
+    # live unit — the matcher returns the single best candidate, not all of them.
+    managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+    hits = supervisor_match(managers, [r.worker_name for r in rows])
+    by_manager: dict[int, list] = {}
+    unmatched: list[str] = []
+    for r in rows:
+        hit = hits.get(r.worker_name)
+        if hit:
+            by_manager.setdefault(hit["id"], []).append(r)
+        elif r.worker_name:
+            unmatched.append(r.worker_name)
+    return by_manager, sorted(set(unmatched))
+
+
+def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_t,
+                  cellless=None) -> int:
     """Project the batch onto ONE supervisor's day: wipe their attendance for the
     date and re-insert every row of every ticked cell routed to them.
 
@@ -197,6 +235,10 @@ def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_
     "what you see on the tab" identical to "what is in attendance". The batch
     holds every file's cells for the day, so nothing another upload contributed
     is lost by the wipe.
+
+    `cellless` is the {manager_id: [rows]} map from _cellless_by_manager, passed
+    in so a save resolving twenty supervisors runs the name match once rather
+    than twenty times. Resolved here when the caller doesn't supply it.
 
     Caller commits. Returns the number of rows written.
     """
@@ -229,6 +271,28 @@ def _sync_manager(db: Session, batch: AttendanceBatch, manager_id: int, d: date_
                 verifix_code=r.verifix_code,
             ))
             written += 1
+
+    # The unit's own brigadir, matched by name because they carry no cell code.
+    # Written on every re-projection like any other row, so the wipe above never
+    # leaves them behind. Cell stays NULL — the Yacheyka column shows a dash,
+    # which is the truth: they came without being assigned to one.
+    if cellless is None:
+        cellless = _cellless_by_manager(db, batch)[0]
+    for r in cellless.get(manager_id, []):
+        db.add(Attendance(
+            manager_id=manager_id,
+            date=d,
+            worker_name=r.worker_name,
+            job_title=r.job_title,
+            schedule=r.schedule,
+            clock_in_out=r.clock_in_out,
+            hours_worked=r.hours_worked,
+            early_arrival_min=r.early_arrival_min,
+            effective_hours=r.effective_hours,
+            verifix_code=None,
+            is_supervisor=True,
+        ))
+        written += 1
 
     # A re-projection over a day that already had approved → task exchanges
     # brings every worker's full row back while the exchange docs stay, so
@@ -269,13 +333,17 @@ def _project(db: Session, batch: AttendanceBatch, d: date_t, targets=None):
     """
     if targets is None:
         targets = _pending_targets(batch)
+    cellless = _cellless_by_manager(db, batch)[0]
     written, skipped = [], []
     for mid in sorted({m for m in targets if m}):
         state, _closure, _counts = day_state(db, mid, d)
         if state != "open":
             skipped.append(mid)
             continue
-        written.append({"manager_id": mid, "rows": _sync_manager(db, batch, mid, d)})
+        written.append({
+            "manager_id": mid,
+            "rows": _sync_manager(db, batch, mid, d, cellless),
+        })
     _clear_pending(batch, {w["manager_id"] for w in written})
     return written, skipped
 
@@ -825,6 +893,8 @@ async def upload(
         )
     db.refresh(batch)
 
+    matched, unmatched = _cellless_by_manager(db, batch)
+
     result = _batch_payload(db, batch, d)
     result["upload_result"] = {
         "upload_id":      upload_row.id,
@@ -834,6 +904,12 @@ async def upload(
         "rows_added":     rows_added,
         "kept_edits":     kept_edits,
         "created_cells":  created,
+        # Brigadirs found by name among the cell-less rows, and the cell-less
+        # names that reached no supervisor. The second list is the one worth
+        # reading: a brigadir whose name is spelled a new way silently stays
+        # off their own page, and without this nothing would ever say so.
+        "brigadirs":      sum(len(v) for v in matched.values()),
+        "unmatched":      unmatched,
     }
     return result
 

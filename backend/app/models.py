@@ -75,6 +75,13 @@ class Attendance(Base):
     # set by the single-file «Davomat» upload. NULL on rows from the older
     # per-supervisor verifix files — those days simply group under "no cell".
     verifix_code = Column(String, nullable=True, index=True)
+    # 2026-08-14: the unit's OWN brigadir. They clock in with no «Код
+    # подразделения», so no cell routes their row to a supervisor — the single-
+    # file upload matches them by NAME instead (see _cellless_by_manager). The
+    # flag is what keeps them OFF the load: their job title is whatever the HR
+    # export happens to spell, and a blank one would otherwise be counted by the
+    # "no title + hours" fallback in is_direct_role.
+    is_supervisor = Column(Boolean, nullable=False, server_default="false", default=False)
 
     manager = relationship("Manager", back_populates="attendance")
 

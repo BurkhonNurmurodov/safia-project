@@ -299,6 +299,99 @@ def add_pp_product_op() -> None:
         db.close()
 
 
+def add_attendance_supervisor_column() -> None:
+    """Add is_supervisor to attendance (idempotent). Marks the unit's own
+    brigadir — a row the single-file «Davomat» upload files by NAME because the
+    person clocks in with no «Код подразделения» to route on. Existing rows are
+    FALSE, which is right: before this the row was never written at all."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS "
+            "is_supervisor BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] attendance is_supervisor column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
+def backfill_supervisor_attendance() -> None:
+    """Give already-uploaded days the brigadir row they never got.
+
+    Cell-less rows have been parked in every batch since the single-file upload
+    shipped — they were parsed, stored, and then dropped on the floor because
+    _sync_manager routes on cell codes and they carry none. This walks the
+    retained batches and inserts the matched ones, so a day that was saved
+    months ago gains its brigadir without a re-upload.
+
+    Additive ONLY. It never touches an existing row, so verifix corrections made
+    since that day was uploaded survive — which is exactly why this is not just
+    a re-run of _sync_manager, whose wipe-and-reproject would undo them.
+    """
+    from app.models import AttendanceBatch, AttendanceBatchRow
+    from app.services.name_map import supervisor_match
+
+    db = SessionLocal()
+    try:
+        batches = db.query(AttendanceBatch).all()
+        if not batches:
+            return
+        # Active units only — same candidate set the live upload path uses.
+        managers = db.query(Manager).filter(Manager.archived.is_(False)).all()
+        added = 0
+        for batch in batches:
+            rows = db.query(AttendanceBatchRow).filter(
+                AttendanceBatchRow.batch_id == batch.id,
+                AttendanceBatchRow.verifix_code.is_(None),
+            ).all()
+            if not rows:
+                continue
+            hits = supervisor_match(managers, [r.worker_name for r in rows])
+            for r in rows:
+                hit = hits.get(r.worker_name)
+                if not hit:
+                    continue
+                # Only a day this supervisor actually has saved. Inserting into
+                # an unsaved day would stand a lone brigadir up as if the whole
+                # unit had been uploaded.
+                if not db.query(Attendance.id).filter(
+                    Attendance.manager_id == hit["id"],
+                    Attendance.date == batch.date,
+                ).first():
+                    continue
+                if db.query(Attendance.id).filter(
+                    Attendance.manager_id == hit["id"],
+                    Attendance.date == batch.date,
+                    Attendance.worker_name == r.worker_name,
+                ).first():
+                    continue
+                db.add(Attendance(
+                    manager_id=hit["id"],
+                    date=batch.date,
+                    worker_name=r.worker_name,
+                    job_title=r.job_title,
+                    schedule=r.schedule,
+                    clock_in_out=r.clock_in_out,
+                    hours_worked=r.hours_worked,
+                    early_arrival_min=r.early_arrival_min,
+                    effective_hours=r.effective_hours,
+                    verifix_code=None,
+                    is_supervisor=True,
+                ))
+                added += 1
+        if added:
+            db.commit()
+            print(f"[startup] backfilled {added} brigadir attendance row(s)")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] brigadir attendance backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_downtime_ns_columns() -> None:
     """Add the «тўхтамаганда» half to downtime_data (idempotent). Every shift-report
     category is a column PAIR — the wait stopped the cell, or it did not — and only

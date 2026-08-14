@@ -38,7 +38,7 @@ import jwt
 from jwt import PyJWTError as JWTError
 from PIL import Image, ImageOps
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app import web_auth
@@ -52,8 +52,9 @@ from app.identity import (
 )
 from app.permissions import require_page
 from app.models import (
-    Admin, Cell, Factory, LeaderConcern, LeaderTask, Manager, ProfilePhoto,
-    RoleProfile, TelegramUser, TelegramUserRole, Translation, WebCredential,
+    Admin, Cell, CellAttendance, CellOjidaniya, CellPerenaladka, Factory,
+    LeaderConcern, LeaderTask, Manager, PPDaily, ProfilePhoto, RoleProfile,
+    TelegramUser, TelegramUserRole, Translation, WebCredential,
 )
 from app.upload_guard import validate_avatar
 from app.reg_token import validate_reg_token
@@ -945,6 +946,90 @@ def admin_delete_cell(cid: int, db: Session = Depends(get_db),
     alert_grant_use(db, caller, CAP_CELLS_MANAGE, "cell.deleted",
                     details=cell_details)
     return {"ok": True}
+
+
+@router.get("/cells/{cid}/details")
+def cell_details(cid: int, caller: dict = Depends(_caller),
+                 db: Session = Depends(get_db)):
+    """Everything the /cells/:id page shows about ONE cell — the full record,
+    its owners resolved to names, and its footprint across every table that
+    keys on the cell. Gated by a valid session only, NOT by page.view.cells:
+    cells are pressable from many pages (attendance, setup times, production),
+    so anyone who can see a cell somewhere may open its card. Every write stays
+    on the CAP_CELLS_MANAGE endpoints above, and in_load keeps its admin-only
+    /api/cell-attendance/registry endpoint — this page adds no new writer."""
+    c = db.query(Cell).filter_by(id=cid).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cell not found")
+
+    mgr = db.query(Manager).filter_by(id=c.manager_id).first() if c.manager_id else None
+    leader = (db.query(RoleProfile).filter_by(id=c.leader_id, role="leader").first()
+              if c.leader_id else None)
+    factory = (db.query(Factory).filter_by(id=mgr.factory_id).first()
+               if mgr and mgr.factory_id else None)
+
+    # Attendance footprint — match by resolved id OR raw code: upload keeps a
+    # row even when its «Код подразделения» had no cells match at the time, so
+    # code-matched rows predating the cell's registration still count here.
+    att_match = or_(CellAttendance.cell_id == c.id,
+                    CellAttendance.verifix_code == c.verifix_code)
+    att_days, att_first, att_last = (
+        db.query(func.count(func.distinct(CellAttendance.date)),
+                 func.min(CellAttendance.date), func.max(CellAttendance.date))
+        .filter(att_match).one())
+    att_last_people = (
+        db.query(func.count(CellAttendance.id))
+        .filter(att_match, CellAttendance.date == att_last).scalar()
+        if att_last else 0)
+
+    ojid_days, ojid_last = (
+        db.query(func.count(func.distinct(CellOjidaniya.date)),
+                 func.max(CellOjidaniya.date))
+        .filter(CellOjidaniya.cell_id == c.id).one())
+
+    peren_days, peren_last, peren_minutes = (
+        db.query(func.count(CellPerenaladka.id), func.max(CellPerenaladka.date),
+                 func.coalesce(func.sum(CellPerenaladka.minutes), 0))
+        .filter(CellPerenaladka.cell_id == c.id).one())
+
+    # Production joins Cell.sap_code → pp_daily.work_center (NOT pp's own
+    # sap_code, which is the SKU) — same join zagruzka_cell uses.
+    prod = None
+    if c.sap_code:
+        prod_days, prod_last = (
+            db.query(func.count(func.distinct(PPDaily.date)), func.max(PPDaily.date))
+            .filter(PPDaily.work_center == c.sap_code).one())
+        prod = {"days": prod_days or 0,
+                "last": prod_last.isoformat() if prod_last else None}
+
+    return {
+        "cell": {
+            "id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
+            "name_workshop_uz": c.name_workshop_uz,
+            "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
+            "name_workshop_ru": c.name_workshop_ru,
+            "name_workshop_en": c.name_workshop_en,
+            "manager_id": c.manager_id, "leader_id": c.leader_id,
+            "in_load": bool(c.in_load),
+            "att_included": c.att_included,  # None = derived from supervisor
+        },
+        "supervisor": ({"id": mgr.id, "name": mgr.name, "shift": mgr.shift,
+                        "archived": bool(mgr.archived)} if mgr else None),
+        "leader": ({"id": leader.id, "name": leader.name} if leader else None),
+        "factory": _factory_dict(factory),
+        "activity": {
+            "attendance": {
+                "days": att_days or 0,
+                "first": att_first.isoformat() if att_first else None,
+                "last": att_last.isoformat() if att_last else None,
+                "last_people": att_last_people or 0,
+            },
+            "ojidaniya": {"days": ojid_days or 0, "last": ojid_last},
+            "perenaladka": {"days": peren_days or 0, "last": peren_last,
+                            "minutes": float(peren_minutes or 0)},
+            "production": prod,
+        },
+    }
 
 
 # ── Admin: update ─────────────────────────────────────────────────────────────

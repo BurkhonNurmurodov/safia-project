@@ -18,7 +18,14 @@ _KNOWN_TITLES = or_(
     Attendance.job_title == "",
     Attendance.job_title.in_(["nan", "NaN"]),
 )
-_CALC_FILTER = and_(_KNOWN_TITLES, Attendance.hours_worked > 0)
+# is_supervisor excluded for the same reason as in routers/workers.py: the unit's
+# own brigadir is on the roster, not in the load, and a blank «Должность» would
+# otherwise slip through _KNOWN_TITLES.
+_CALC_FILTER = and_(
+    _KNOWN_TITLES,
+    Attendance.hours_worked > 0,
+    Attendance.is_supervisor.is_(False),
+)
 
 router = APIRouter(prefix="/api", tags=["attendance"])
 

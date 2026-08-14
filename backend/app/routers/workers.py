@@ -27,7 +27,15 @@ _KNOWN_TITLES = or_(
     Attendance.job_title == "",
     Attendance.job_title.in_(["nan", "NaN"]),
 )
-CALC_ROWS_FILTER = and_(_KNOWN_TITLES, Attendance.hours_worked > 0)
+# The SQL twin of services/kpi_calculator.is_direct_role — the is_supervisor leg
+# included. A unit's own brigadir is on the roster but never in the load, and
+# their «Должность» is whatever the HR export spells: a blank one matches
+# _KNOWN_TITLES above and would otherwise be counted here.
+CALC_ROWS_FILTER = and_(
+    _KNOWN_TITLES,
+    Attendance.hours_worked > 0,
+    Attendance.is_supervisor.is_(False),
+)
 
 # A worker who did NOT come has no «Отработано» value — the day cell holds a
 # marker instead of a clock string, so the parsers store hours_worked = NULL

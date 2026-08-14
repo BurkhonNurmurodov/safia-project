@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):
         add_leader_submission_columns, add_broadcast_rich_columns,
         add_broadcast_resume_columns, add_broadcast_schedule_column, add_pp_product_op,
         add_downtime_ns_columns,
+        add_attendance_supervisor_column, backfill_supervisor_attendance,
         add_profile_identity_columns, add_activity_profile_key,
         backfill_role_profile_keys,
         backfill_task_profiles, backfill_comment_profiles,
@@ -111,6 +112,9 @@ async def lifespan(app: FastAPI):
     add_broadcast_schedule_column()
     add_pp_product_op()
     add_downtime_ns_columns()
+    add_attendance_supervisor_column()
+    # After the column exists — it inserts rows carrying the flag.
+    backfill_supervisor_attendance()
     add_leader_task_setting_names()
     add_leader_task_criteria()
     add_leader_task_windows()

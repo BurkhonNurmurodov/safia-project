@@ -985,6 +985,20 @@ export default function AttendanceUpload() {
                 {t("attUp.mergeKeptEdits").replace("{n}", uploadSummary.kept_edits)}
               </div>
             )}
+            {uploadSummary.brigadirs > 0 && (
+              <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                {t("attUp.mergeBrigadirs").replace("{n}", uploadSummary.brigadirs)}
+              </div>
+            )}
+            {/* A cell-less name that reached no supervisor. Almost always a
+                brigadir spelled a new way — they stay off their own page, and
+                nothing else on this screen would ever mention it. */}
+            {uploadSummary.unmatched?.length > 0 && (
+              <div className="text-[11px]" style={{ color: "#eab308" }}>
+                {t("attUp.mergeUnmatched").replace("{n}", uploadSummary.unmatched.length)}
+                {": "}{uploadSummary.unmatched.join(", ")}
+              </div>
+            )}
           </div>
           <button
             type="button"

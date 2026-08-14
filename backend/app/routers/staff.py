@@ -1090,6 +1090,8 @@ def get_attendance(
             # Which cell the single-file «Davomat» upload filed the row under.
             # NULL on days that came in through the older per-supervisor files.
             "verifix_code":      row.verifix_code,
+            # The unit's own brigadir — on the roster, never in the load.
+            "is_supervisor":     bool(row.is_supervisor),
             "on_task":           task_map.get(row.worker_name),
             "pending_request":   {"id": pr.id, "changes": pr.changes, "original": pr.original} if pr else None,
         }

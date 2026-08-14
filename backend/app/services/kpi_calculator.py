@@ -6,10 +6,16 @@ VERIFIX_EFFICIENCY = 0.85
 ALLOWED_ROLES = {"Заготовитель продуктов и сырья", "Фасовщик"}
 
 
-def is_direct_role(job_title: str, hours_worked=None) -> bool:
+def is_direct_role(job_title: str, hours_worked=None, is_supervisor: bool = False) -> bool:
     """Return True only if this row should count towards calculations.
     Rule: matching job title (or empty) AND the worker actually came (hours > 0).
+
+    A unit's own brigadir is on the roster but never in the load, whatever the
+    HR export calls them — checked BEFORE the title, because a blank «Должность»
+    would otherwise fall through to the empty-title branch below and count.
     """
+    if is_supervisor:
+        return False
     try:
         hw = float(hours_worked or 0)
     except (TypeError, ValueError):
@@ -121,7 +127,11 @@ def compute_metrics(
     )
 
     # Only include rows matching the direct-role filter for calculations
-    calc_rows = [r for r in attendance_rows if is_direct_role(r.job_title, r.hours_worked)]
+    calc_rows = [
+        r for r in attendance_rows
+        if is_direct_role(r.job_title, r.hours_worked,
+                          getattr(r, "is_supervisor", False))
+    ]
 
     total_hours = 0.0
     total_early = 0.0
