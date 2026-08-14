@@ -164,11 +164,11 @@ export default function ComparisonTable({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
-  // AVG/MIN/MAX footer, one row each, summarising every COLUMN. Off by default:
-  // the fleet table is read supervisor-by-supervisor, and three extra rows under
-  // twenty of them is noise. Pages whose rows are peers of one unit (the per-cell
-  // загрузка) turn it on — there "how did the whole unit do on 06.08?" is the
-  // question the grid is actually asked.
+  // One AVG/MIN/MAX footer row summarising every COLUMN, cycling with the same
+  // header press as the pinned summary column. Off by default: the fleet table
+  // is read supervisor-by-supervisor. Pages whose rows are peers of one unit
+  // (the per-cell загрузка) turn it on — there "how did the whole unit do on
+  // 06.08?" is the question the grid is actually asked.
   columnSummary = false,
 }) {
   const { labelColor } = useChartTheme();
@@ -269,14 +269,16 @@ export default function ComparisonTable({
 
   // ── Column statistics (the optional footer) ──────────────────────────────────
   // The pinned column on the right summarises a ROW — one name across the whole
-  // period. This footer summarises a COLUMN — one day across every row.
+  // period. This footer is its transpose: ONE row summarising a COLUMN — one day
+  // across every row — and it follows the very same `summaryMode`, so the header
+  // pill switches both at once and the table is never showing an average one way
+  // and a maximum the other.
   //
-  // The three modes mean exactly what they mean in that column, so a reader
-  // learns the rule once: AVG averages each half on its own, while MIN/MAX pick
-  // the single row with the widest / narrowest P−A gap and show THAT row's pair.
-  // Taking the lowest P and the lowest A independently would print a cell that
-  // never happened — the point of the pair is that the two halves belong to the
-  // same measurement.
+  // The mode means exactly what it means in that column, so a reader learns the
+  // rule once: AVG averages each half on its own, while MIN/MAX pick the single
+  // row with the widest / narrowest P−A gap and show THAT row's pair. Taking the
+  // lowest P and the lowest A independently would print a cell that never
+  // happened — the point of the pair is that the halves belong to one measurement.
   //
   // Only what is on screen counts: values are read through the same approval
   // gate and the same calc factors as the cells above, so the footer can never
@@ -293,11 +295,11 @@ export default function ComparisonTable({
       return { p, a, d: (p !== null && a !== null) ? p - a : null };
     };
 
-    const stat = (vals, m) => {
+    const stat = (vals) => {
       const pV = vals.map(v => v.p), aV = vals.map(v => v.a), dV = vals.map(v => v.d);
-      if (m === "avg") return { p: rowAvg(pV), a: rowAvg(aV), d: rowAvg(dV), n: pV.filter(v => v !== null).length };
-      const i = findExtremeIdx(dV, pV, m);
-      const n = dV.filter(v => v !== null).length;
+      const n = pV.filter(v => v !== null).length;
+      if (summaryMode === "avg") return { p: rowAvg(pV), a: rowAvg(aV), d: rowAvg(dV), n };
+      const i = findExtremeIdx(dV, pV, summaryMode);
       return i === null ? { p: null, a: null, d: null, n } : { p: pV[i], a: aV[i], d: dV[i], n };
     };
 
@@ -306,15 +308,12 @@ export default function ComparisonTable({
     for (const d of dates) {
       const col = displayManagers.map(name => valuesOf(name, d));
       everything.push(...col);
-      byDate[d] = { avg: stat(col, "avg"), min: stat(col, "min"), max: stat(col, "max") };
+      byDate[d] = stat(col);
     }
-    // The corner closes each footer row with the same statistic over EVERY value
-    // in the grid — not an average of the column averages, which is a different
-    // number whenever the columns hold different counts of filled cells.
-    return {
-      byDate,
-      all: { avg: stat(everything, "avg"), min: stat(everything, "min"), max: stat(everything, "max") },
-    };
+    // The corner closes the row with the same statistic over EVERY value in the
+    // grid — not an average of the column averages, which is a different number
+    // whenever the columns hold different counts of filled cells.
+    return { byDate, all: stat(everything) };
   })();
 
   // One footer cell, built like a data cell (P half + A|D half, same widths and
@@ -970,59 +969,61 @@ export default function ComparisonTable({
             })}
           </tbody>
 
-          {/* Column statistics — AVG / MIN / MAX down the bottom, one row each.
-              All three at once, deliberately: the pinned column can afford to
-              cycle because a fourth mode would cost horizontal space the table
-              does not have, while a row costs 30px nobody is competing for, and
-              a statistic you have to tap to reach is a statistic nobody reads. */}
+          {/* Column statistic — ONE row, the transpose of the pinned summary
+              column, and driven by the same `summaryMode`: pressing the AVG
+              header on the right cycles this row with it. The label is a second
+              handle on that one control, not a second control. */}
           {columnStats && (
             <tfoot>
-              {["avg", "min", "max"].map((m, mi) => (
-                <tr key={`stat-${m}`}>
-                  <td style={{
+              <tr>
+                <td
+                  onClick={() => setSummaryMode(m => SUMMARY_CYCLE[m])}
+                  title={t("comparison.cycleTooltip")}
+                  style={{
                     position: "sticky", left: 0, zIndex: 3,
                     background: "var(--bg-card)",
                     borderRight: "2px solid var(--border-md)",
-                    borderTop: mi === 0 ? "2px solid var(--border-md)" : "1px solid var(--border)",
+                    borderTop: "2px solid var(--border-md)",
                     textAlign: "left", paddingLeft: 12, paddingRight: 8,
                     fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
                     textTransform: "uppercase", color: "var(--text-3)",
                     whiteSpace: "nowrap",
                     verticalAlign: "middle", height: 30,
                     width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
-                  }}>
-                    {m.toUpperCase()}
-                    <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
-                      {t("comparison.perDay")}
-                    </span>
-                  </td>
+                    cursor: "pointer", userSelect: "none",
+                  }}
+                >
+                  {summaryMode.toUpperCase()}
+                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
+                    {t("comparison.perDay")}
+                  </span>
+                </td>
 
-                  {dates.map((d, i) => statCell(
-                    columnStats.byDate[d][m],
-                    `stat-${m}-${d}`,
-                    {
-                      borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
-                      borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
-                    },
-                  ))}
+                {dates.map((d, i) => statCell(
+                  columnStats.byDate[d],
+                  `stat-${d}`,
+                  {
+                    borderTop: "2px solid var(--border-md)",
+                    borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+                  },
+                ))}
 
-                  {pads.map((_, i) => (
-                    <td key={`stat-pad-${m}-${i}`} colSpan={2} style={{
-                      padding: 0, height: 30,
-                      border: "1px solid var(--border)",
-                      borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
-                      background: "var(--bg-card)",
-                    }} />
-                  ))}
+                {pads.map((_, i) => (
+                  <td key={`stat-pad-${i}`} colSpan={2} style={{
+                    padding: 0, height: 30,
+                    border: "1px solid var(--border)",
+                    borderTop: "2px solid var(--border-md)",
+                    background: "var(--bg-card)",
+                  }} />
+                ))}
 
-                  {!isMobile && statCell(columnStats.all[m], `stat-${m}-all`, {
-                    ...stickySum,
-                    zIndex: 4,
-                    borderLeft: "2px solid var(--border-md)",
-                    borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
-                  })}
-                </tr>
-              ))}
+                {!isMobile && statCell(columnStats.all, "stat-all", {
+                  ...stickySum,
+                  zIndex: 4,
+                  borderLeft: "2px solid var(--border-md)",
+                  borderTop: "2px solid var(--border-md)",
+                })}
+              </tr>
             </tfoot>
           )}
         </table>
