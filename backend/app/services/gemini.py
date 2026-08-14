@@ -28,6 +28,13 @@ _TIMEOUT = httpx.Timeout(120.0, connect=20.0)
 # one cannot. Free-tier quota is the binding constraint, so this is quota, not
 # bandwidth, optimisation.
 _MAX_EDGE = 1280
+# …but never squeeze the SHORT edge below this. A phone screenshot is very tall,
+# so capping its long edge alone drags its width down to ~575px — and the OS
+# status bar is both the smallest text in the frame and the ONLY proof of when
+# the shot was taken, so that is precisely the row of pixels a proof review
+# cannot afford to blur away. Portrait proofs keep ~1.3× the width they had;
+# landscape photos are unaffected, since their short edge never binds first.
+_MIN_EDGE = 768
 _JPEG_QUALITY = 82
 
 
@@ -211,9 +218,10 @@ def model_source() -> str:
 
 
 def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
-    """Downscale to `_MAX_EDGE` when Pillow is present. Falls back to the
-    original bytes for anything Pillow can't open (and for animated/odd
-    formats) — a slightly expensive request beats a dropped proof photo."""
+    """Downscale to `_MAX_EDGE` — but never past `_MIN_EDGE` on the short edge —
+    when Pillow is present. Falls back to the original bytes for anything Pillow
+    can't open (and for animated/odd formats) — a slightly expensive request
+    beats a dropped proof photo."""
     try:
         from PIL import Image
     except ImportError:  # pragma: no cover - Pillow is in requirements
@@ -221,10 +229,16 @@ def shrink_image(data: bytes, mime: str = "image/jpeg") -> tuple[bytes, str]:
     try:
         img = Image.open(io.BytesIO(data))
         img.load()
-        if max(img.size) <= _MAX_EDGE and (mime or "").endswith(("jpeg", "jpg")):
+        w, h = img.size
+        scale = min(_MAX_EDGE / max(w, h), 1.0)
+        if min(w, h) * scale < _MIN_EDGE:
+            scale = min(_MIN_EDGE / min(w, h), 1.0)
+        if scale >= 1.0 and (mime or "").endswith(("jpeg", "jpg")):
             return data, "image/jpeg"
         img = img.convert("RGB")
-        img.thumbnail((_MAX_EDGE, _MAX_EDGE), Image.LANCZOS)
+        if scale < 1.0:
+            img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))),
+                             Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
         return buf.getvalue(), "image/jpeg"

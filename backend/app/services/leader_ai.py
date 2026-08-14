@@ -107,8 +107,15 @@ _DRAIN_LOCK_KEY = 8_140_573_112_004_331  # arbitrary, must not collide app-wide
 # has no nulls, and "not visible" is a real answer the backend must see, not an
 # absence to guess at. `raw` is what was on screen, verbatim, so an admin can
 # still judge the judge; `source` is where it was read (Windows tray, macOS menu
-# bar, camera stamp), which is the provenance note that says it read the right
-# thing rather than a date printed inside the document.
+# bar, PHONE status bar, camera stamp), which is the provenance note that says it
+# read the right thing rather than a date printed inside the document.
+#
+# The phone status bar was missing from that list until 2026-08-14, and its
+# absence was not cosmetic: the prompt enumerates the permitted sources and then
+# says "no entry if none of them is visible", so the model dutifully returned no
+# clock for every screenshot taken on a phone — which is what most proofs are —
+# and `date_flags()` turned that into `no_date`, i.e. an automatic rejection of a
+# photo whose date was sitting in plain sight at the top of the image.
 _CLOCK_SCHEMA = {
     "type": "OBJECT",
     "properties": {
@@ -452,30 +459,38 @@ VAZIFA: {task}
 Quyidagi savollarga javob ber:
 
 1) SOAT. Sen rasm QACHON OLINGANINI O'QIYSAN. Buning uchun FAQAT quyidagi
-uch manbadan biri hisobga olinadi:
-   a) SKRINSHOT — operatsion tizim soati skrinshot ichida ko'rinadi:
-      Windows'da pastki o'ng burchakda (masalasi panelida), macOS'da yuqori
+manbalardan biri hisobga olinadi:
+   a) KOMPYUTER SKRINSHOTI — operatsion tizim soati skrinshot ichida ko'rinadi:
+      Windows'da pastki o'ng burchakda (masalalar panelida), macOS'da yuqori
       o'ng burchakda (menyu satrida);
-   b) MONITOR SURATI — o'sha operatsion tizim soati monitor ekranida ko'rinadi
-      (Windows — pastki o'ng, macOS — yuqori o'ng);
-   c) KAMERA MUHRI — kamera rasmga avtomatik bosgan sana-vaqt yozuvi.
+   b) TELEFON SKRINSHOTI — telefonning O'Z holat satridagi (status bar) soat:
+      rasmning eng yuqori chekkasidagi, batareya, signal va Wi-Fi belgilari
+      turgan ingichka satr. Android'da soat va sana odatda chap tomonda
+      («15:10 pay, 13 avg» yoki «15:10 чт, 13 авг»), iPhone'da chap yuqorida.
+      Bu satr juda KICHIK yozilgan bo'ladi — uni diqqat bilan o'qi; u rasmda
+      bor ekan, «soat ko'rinmadi» deb yozma;
+   c) EKRAN SURATI — o'sha kompyuter yoki telefon soati kamera bilan olingan
+      ekran suratida ko'rinadi;
+   d) KAMERA MUHRI — kamera rasmga avtomatik bosgan sana-vaqt yozuvi.
 
-MUHIM: hujjatning O'Z ICHIDAGI sana — masalan jadval katagidagi sana, «Период»
-yoki «Sana» ustuni, blank/shakl sarlavhasidagi sana, qo'lda yozilgan sana —
-rasm qachon olinganini BILDIRMAYDI. Uni sana sifatida ISHLATMA. U to'g'ri
-ko'rinsa ham, yuqoridagi uch manbadan biri bo'lmasa — sana tasdiqlanmagan
-hisoblanadi.
+MUHIM: ILOVA yoki HUJJAT ICHIDAGI vaqt — masalan ro'yxatdagi «14:30 - 15:30»
+kabi jadval vaqtlari, jadval katagidagi sana, «Период» yoki «Sana» ustuni,
+blank/shakl sarlavhasidagi sana, qo'lda yozilgan sana — rasm qachon olinganini
+BILDIRMAYDI. Uni sana sifatida ISHLATMA. U to'g'ri ko'rinsa ham, yuqoridagi
+manbalardan biri bo'lmasa — sana tasdiqlanmagan hisoblanadi. Ya'ni soat FAQAT
+ekranning eng chekkasidagi tizim satridan yoki kamera muhridan o'qiladi.
 
 Sen sanani BAHOLAMAYSAN — faqat O'QIYSAN va yozasan. To'g'ri yoki noto'g'ri
 ekanini keyin tizim o'zi hisoblaydi. Qaysi sana kutilayotgani senga aytilmagan;
 taxmin qilma va hisobot sanasiga moslashtirma.
 
 Har bir TEKSHIRILADIGAN rasm uchun clocks ro'yxatiga bitta yozuv qo'sh:
-  raw    — ekranda qanday yozilgan bo'lsa shundayligicha (masalan «04.08.2026 14:22»);
+  raw    — ekranda qanday yozilgan bo'lsa shundayligicha, butun satr (masalan
+           «04.08.2026 14:22» yoki «15:10 чт, 13 авг.»);
   day    — kun raqami (1-31), ko'rinmasa 0;
   month  — oy raqami (1-12), ko'rinmasa 0;
   time   — soat «SS:DD» ko'rinishida (24 soatlik), ko'rinmasa "";
-  source — qayerdan o'qiding: «windows», «macos», «camera».
+  source — qayerdan o'qiding: «windows», «macos», «telefon», «camera».
 
 Mahalliy format KUN.OY.YIL, ya'ni 04.08.2026 = 4-avgust (4-yanvar emas), demak
 day=4, month=8. Oy nomi qisqartma bo'lishi mumkin (Avg / Авг / Aug = 8).
@@ -484,9 +499,9 @@ YIL kerak emas — uni yozma. Bu manbalar ko'pincha yilni ko'rsatmaydi (macOS
 menyu satri odatda faqat «Sesh 4 Avg 14:22» deb yozadi), va yil hisobga
 olinmaydi.
 
-- Uch manbadan hech biri ko'rinmasa (yoki faqat hujjat ichidagi sana bo'lsa) —
-  o'sha rasm uchun yozuv QO'SHMA. Hech qaysi rasmda soat bo'lmasa, clocks bo'sh
-  ro'yxat bo'ladi.
+- Yuqoridagi manbalardan hech biri ko'rinmasa (yoki faqat ilova/hujjat ichidagi
+  vaqt bo'lsa) — o'sha rasm uchun yozuv QO'SHMA. Hech qaysi rasmda soat
+  bo'lmasa, clocks bo'sh ro'yxat bo'ladi.
 - Faqat SOAT ko'rinib, kun ham oy ham ko'rinmasa — yozuvni qo'sh, time ni to'ldir,
   day=0 va month=0 qoldir.{ex_date}
 
@@ -1704,14 +1719,18 @@ _FLAG_ORDER = ("unreadable", "no_date", "date_mismatch", "off_topic", "not_prove
 _OWNED_FLAGS = ("no_date", "date_mismatch")
 
 # A clock is recognised ONLY with a colon. Every source the prompt allows —
-# Windows tray, macOS menu bar, camera stamp — writes one, while the dot form is
-# indistinguishable from a day.month date: "14.08" is both a valid 14:08 and a
-# valid 14 August, and reading it wrong flips the verdict either way. No colon ⇒
-# undecidable ⇒ the row is left as the model judged it.
+# Windows tray, macOS menu bar, phone status bar, camera stamp — writes one,
+# while the dot form is indistinguishable from a day.month date: "14.08" is both
+# a valid 14:08 and a valid 14 August, and reading it wrong flips the verdict
+# either way. No colon ⇒ undecidable ⇒ the row is left as the model judged it.
 _TIME_RE = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
 _ISO_DATE_RE = re.compile(r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b")
 _NUM_DATE_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b")
 _TEXT_DATE_RE = re.compile(r"\b(\d{1,2})\s*[-\s]\s*([A-Za-zА-Яа-яЁё]{3,})", re.UNICODE)
+# The mirror form — "Aug 13", "Thu, Aug 13", "авг. 13" — which an English-locale
+# Android and iOS write. Only ever accepted when the word IS a month name, so a
+# label like "Смена 2" can never be read as a date.
+_TEXT_DATE_RE2 = re.compile(r"\b([A-Za-zА-Яа-яЁё]{3,})\.?\s+(\d{1,2})\b", re.UNICODE)
 
 
 def _one_clock(part: str) -> tuple[int, int, int, int] | None:
@@ -1744,9 +1763,33 @@ def _one_clock(part: str) -> tuple[int, int, int, int] | None:
             if mo and 1 <= int(m.group(1)) <= 31:
                 month, day = mo, int(m.group(1))
                 break
+        if month is None:
+            for m in _TEXT_DATE_RE2.finditer(rest):
+                mo = _MONTHS.get(m.group(1)[:3].lower())
+                if mo and 1 <= int(m.group(2)) <= 31:
+                    month, day = mo, int(m.group(2))
+                    break
     if month is None or day is None:
         return None
     return month, day, hh, mi
+
+
+def _stamps(s: str) -> list[str]:
+    """Split a transcription into one string per CLOCK.
+
+    The comma separates PHOTOS — but it also sits inside a single phone status
+    bar in most locales ("15:10 чт, 13 авг."), and splitting there leaves a time
+    with no date beside a date with no time, so a perfectly readable stamp comes
+    back unparseable. A clock is anchored by its time, so fragments are merged
+    until every group holds exactly one.
+    """
+    groups: list[str] = []
+    for part in (p for p in s.split(",") if p.strip()):
+        if groups and not (_TIME_RE.search(groups[-1]) and _TIME_RE.search(part)):
+            groups[-1] += "," + part
+        else:
+            groups.append(part)
+    return groups
 
 
 def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
@@ -1767,7 +1810,7 @@ def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
     if not s:
         return None
     out: list[tuple[int, int, int, int]] = []
-    for part in (p for p in s.split(",") if p.strip()):
+    for part in _stamps(s):
         one = _one_clock(part)
         if one is None:
             return None
@@ -1887,7 +1930,7 @@ def clocks_from_text(raw: str | None) -> list[dict]:
     parsed = parse_clock(s)
     if parsed:
         return [{"raw": r.strip(), "month": m, "day": d, "time": f"{hh:02d}:{mi:02d}"}
-                for r, (m, d, hh, mi) in zip(s.split(","), parsed)]
+                for r, (m, d, hh, mi) in zip(_stamps(s), parsed)]
     return [{"raw": s, "month": 0, "day": 0, "time": ""}]
 
 
