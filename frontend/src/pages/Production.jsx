@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import { SkeletonBlock, SkeletonTable } from "../components/ui/Skeleton";
+import CellLink from "../components/ui/CellLink";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import DayStepper from "../components/ui/DayStepper";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -507,9 +508,10 @@ function PeopleTab({ wcs, constants, loading, canEdit, onSave, saving, savedAt }
 
   const chip = (code, cell) => {
     const c = wcColor(code);
+    // A registry-matched WC chip opens the cell's page; unmatched stays inert.
     return (
-      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md" title={pickCellName(cell, lang) || code}
-        style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}` }}>{code}</span>
+      <CellLink id={cell?.id} className="font-mono text-xs font-bold px-2 py-0.5 rounded-md" title={pickCellName(cell, lang) || code}
+        style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}`, textDecorationColor: "currentColor" }}>{code}</CellLink>
     );
   };
 
@@ -1197,11 +1199,11 @@ export default function Production() {
           {scopeCodes.map((code) => {
             const c = wcColor(code);
             return (
-              <span key={code} className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md"
+              <CellLink key={code} id={wcCell[code]?.id} className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md"
                 title={wcName(code) || code}
-                style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}` }}>
+                style={{ background: hexToRgba(c, 0.16), color: c, border: `1px solid ${hexToRgba(c, 0.3)}`, textDecorationColor: "currentColor" }}>
                 {code}{wcName(code) ? ` · ${wcName(code)}` : ""}
-              </span>
+              </CellLink>
             );
           })}
         </div>
@@ -1361,7 +1363,7 @@ export default function Production() {
             return (
               <div key={w.work_center} className="rounded-xl p-3" style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", borderLeft: `4px solid ${wc}` }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcName(w.work_center) || w.work_center} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}` }}>{w.work_center}</span>
+                  <CellLink id={w.cell?.id} className="font-mono text-sm font-bold px-2 py-0.5 rounded-md" title={wcName(w.work_center) || w.work_center} style={{ background: hexToRgba(wc, 0.16), color: wc, border: `1px solid ${hexToRgba(wc, 0.3)}`, textDecorationColor: "currentColor" }}>{w.work_center}</CellLink>
                   {/* The staffing pin governs BOTH numbers below, so its control sits
                       in the header — above the pair — not appended to one of them. */}
                   <span className="flex items-center gap-2 shrink-0">

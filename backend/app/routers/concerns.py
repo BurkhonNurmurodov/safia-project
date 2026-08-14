@@ -110,16 +110,17 @@ def _sm_names(db: Session) -> dict:
 
 
 def _cell_leaders(db: Session) -> dict:
-    """cell code → (owning leader's name, that leader's supervisor's name).
-    Cells are first-class rows (cells.verifix_code UNIQUE + leader_id →
+    """cell code → (cell id, owning leader's name, that leader's supervisor's
+    name). Cells are first-class rows (cells.verifix_code UNIQUE + leader_id →
     role_profiles.id); the Concerns table shows the leader who owns a concern's
     cell, resolved live so re-assignments stay current. The supervisor is the
     leader's unit brigadir (role_profiles.manager_id → managers), falling back
-    to the cell's own owning unit for leaderless cells."""
+    to the cell's own owning unit for leaderless cells. The id rides along so
+    the frontend's cell references can link to /cells/:id."""
     return {
-        code: (leader, sup)
-        for code, leader, sup in (
-            db.query(Cell.verifix_code, RoleProfile.name, Manager.name)
+        code: (cid, leader, sup)
+        for cid, code, leader, sup in (
+            db.query(Cell.id, Cell.verifix_code, RoleProfile.name, Manager.name)
             .outerjoin(RoleProfile, and_(RoleProfile.id == Cell.leader_id,
                                          RoleProfile.role == "leader"))
             .outerjoin(Manager, Manager.id == func.coalesce(RoleProfile.manager_id,
@@ -238,9 +239,9 @@ def _serialize(
     # name (renames stay live); the concern_owner snapshot / legacy typed text
     # is the fallback, without a position.
     owner_name = (owner_names or {}).get((c.owner_role, c.owner_profile_id))
-    # Live cell lookup: (current leader, that leader's supervisor).
-    cell_leader, cell_sup = (cell_leaders or {}).get(
-        (c.cell_code or "").strip(), (None, None)
+    # Live cell lookup: (registry id, current leader, that leader's supervisor).
+    cell_id, cell_leader, cell_sup = (cell_leaders or {}).get(
+        (c.cell_code or "").strip(), (None, None, None)
     )
     out = {
         "id": c.id,
@@ -250,6 +251,9 @@ def _serialize(
         "brigadir_manager_id": c.brigadir_manager_id,
         "brigadir_name": c.brigadir_name,
         "cell_code": c.cell_code,
+        # Registry id of that code (None when it matches no cells row) — the
+        # frontend renders the code as a link to /cells/:id when present.
+        "cell_id": cell_id,
         # The leader currently assigned to this concern's cell, resolved live
         # (falls back to the leader-name snapshot for legacy leader-logged rows).
         "cell_leader_name": (

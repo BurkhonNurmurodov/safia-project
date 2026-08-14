@@ -25,6 +25,7 @@ import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
 import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
+import CellLink from "../components/ui/CellLink";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LangContext";
@@ -1657,7 +1658,7 @@ export default function Concerns() {
             {/* labelled facts — fixed positions, no guessing which name is which */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <MobField label={t("concerns.colCell")}>
-                {r.cell_code || "—"}
+                {r.cell_code ? <CellLink id={r.cell_id}>{r.cell_code}</CellLink> : "—"}
                 {r.cell_leader_name && (
                   <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(r.cell_leader_name)}</div>
                 )}
@@ -2066,7 +2067,11 @@ export default function Concerns() {
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           {r.cell_code ? (
                             <>
-                              <div className="font-semibold" style={{ color: "var(--text-1)" }}>{r.cell_code}</div>
+                              {/* Registry-matched codes link to the cell page;
+                                  the row's own expand click is stopped. */}
+                              <div className="font-semibold" style={{ color: "var(--text-1)" }}>
+                                <CellLink id={r.cell_id}>{r.cell_code}</CellLink>
+                              </div>
                               {r.cell_leader_name && (
                                 <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }} title={tl(r.cell_leader_name)}>
                                   {shortOwner(r.cell_leader_name)}
@@ -2516,7 +2521,7 @@ export default function Concerns() {
                  style={{ background: "var(--bg-inner)", border: "1px solid var(--border)" }}>
               <MobField label={t("concerns.colDate")}>{fmtDate(viewRow.entry_date, lang)}</MobField>
               <MobField label={t("concerns.colCell")}>
-                {viewRow.cell_code || "—"}
+                {viewRow.cell_code ? <CellLink id={viewRow.cell_id}>{viewRow.cell_code}</CellLink> : "—"}
                 {viewRow.cell_leader_name && (
                   <div className="text-[10px]" style={{ color: "var(--text-3)" }}>{shortOwner(viewRow.cell_leader_name)}</div>
                 )}

@@ -167,6 +167,9 @@ export default function CellDetails() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["cell-details", id],
     queryFn: () => api.get(`/api/profiles/cells/${id}/details`).then((r) => r.data),
+    // A dead id stays dead — retrying only delays the 404 screen.
+    retry: (count, err) =>
+      ![404, 422].includes(err?.response?.status) && count < 1,
   });
 
   // The edit modal's option lists — the register endpoint already ships them,
@@ -222,7 +225,8 @@ export default function CellDetails() {
   }
 
   if (error) {
-    const gone = error?.response?.status === 404;
+    // 422 = the :id segment isn't even a number — same "no such cell" story.
+    const gone = [404, 422].includes(error?.response?.status);
     return (
       <Layout title={t("cellPage.title")}>
         <ErrorScreen

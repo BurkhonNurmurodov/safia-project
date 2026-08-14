@@ -4,7 +4,7 @@ import ReactApexChart from "react-apexcharts";
 import {
   RefreshCw, CalendarClock, AlertTriangle, ClipboardList, ShieldCheck,
   Loader, Loader2, Users2, TrendingUp, UserCog, Boxes, Megaphone, Settings2,
-  LayoutGrid, UserRound, CircleDot, ExternalLink,
+  LayoutGrid, UserRound, CircleDot, ExternalLink, FileSpreadsheet,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -19,6 +19,7 @@ import TableCard, { Th } from "../components/ui/DataTable";
 import { FilterPanel, OptsFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import api from "../utils/api";
+import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
 import { useTranslit } from "../utils/transliterate";
@@ -134,6 +135,22 @@ const TXT = {
     mTitle: "Havotir", mLeaderRow: "Varaqdagi lider yozuvi", mBrig: "Brigadir", mRawDate: "Varaqdagi sana",
     kamBand: "kam ma'lumot",
     pageOf: "sahifa",
+    xBtn: "Excel",
+    xTitle: "Excel eksport",
+    xModalQ: "Filtrlar qo'llangan. Faylga nimani kiritamiz?",
+    xOptFiltered: "Faqat filtrlangan yozuvlar",
+    xOptFilteredD: "Ekranda ko'rinayotgan kesim bo'yicha",
+    xOptAll: "Davrning barcha ma'lumotlari",
+    xOptAllD: "Tanlangan davr uchun to'liq manzara — filtrlarsiz",
+    xExport: "Eksport qilish",
+    xDownloaded: "Fayl yuklab olindi",
+    xSentTg: "Fayl Telegramga yuborildi",
+    xFailed: "Eksport qilib bo'lmadi",
+    xPeriod: "Davr", xPlant: "Zavod", xAllPlants: "Barcha zavodlar",
+    xFilters: "Filtrlar", xScopeAll: "Barcha ma'lumotlar (filtrsiz)",
+    xGenerated: "Shakllantirildi", xSearch: "Qidiruv",
+    xUnassignedRow: "Lidersiz yacheykalar",
+    xSecKpi: "Asosiy ko'rsatkichlar",
   },
   uz_cyrl: {
     title: "Ишчи ҳавотирлари", sub: "Ишчилар лидерларга билдирган ҳавотирлар — лидерлар KPI",
@@ -186,6 +203,22 @@ const TXT = {
     mTitle: "Ҳавотир", mLeaderRow: "Варақдаги лидер ёзуви", mBrig: "Бригадир", mRawDate: "Варақдаги сана",
     kamBand: "кам маълумот",
     pageOf: "саҳифа",
+    xBtn: "Excel",
+    xTitle: "Excel экспорт",
+    xModalQ: "Филтрлар қўлланган. Файлга нимани киритамиз?",
+    xOptFiltered: "Фақат филтрланган ёзувлар",
+    xOptFilteredD: "Экранда кўринаётган кесим бўйича",
+    xOptAll: "Даврнинг барча маълумотлари",
+    xOptAllD: "Танланган давр учун тўлиқ манзара — филтрларсиз",
+    xExport: "Экспорт қилиш",
+    xDownloaded: "Файл юклаб олинди",
+    xSentTg: "Файл Telegram'га юборилди",
+    xFailed: "Экспорт қилиб бўлмади",
+    xPeriod: "Давр", xPlant: "Завод", xAllPlants: "Барча заводлар",
+    xFilters: "Филтрлар", xScopeAll: "Барча маълумотлар (филтрсиз)",
+    xGenerated: "Шакллантирилди", xSearch: "Қидирув",
+    xUnassignedRow: "Лидерсиз ячейкалар",
+    xSecKpi: "Асосий кўрсаткичлар",
   },
   ru: {
     title: "Хавотиры работников", sub: "Опасения, поданные работниками лидерам — KPI лидеров",
@@ -238,6 +271,22 @@ const TXT = {
     mTitle: "Хавотир", mLeaderRow: "Лидер в строке листа", mBrig: "Бригадир", mRawDate: "Дата в листе",
     kamBand: "мало данных",
     pageOf: "страница",
+    xBtn: "Excel",
+    xTitle: "Экспорт в Excel",
+    xModalQ: "Применены фильтры. Что включить в файл?",
+    xOptFiltered: "Только отфильтрованные записи",
+    xOptFilteredD: "Срез, который сейчас на экране",
+    xOptAll: "Все данные за период",
+    xOptAllD: "Полная картина за выбранный период — без фильтров",
+    xExport: "Экспортировать",
+    xDownloaded: "Файл скачан",
+    xSentTg: "Файл отправлен в Telegram",
+    xFailed: "Не удалось экспортировать",
+    xPeriod: "Период", xPlant: "Завод", xAllPlants: "Все заводы",
+    xFilters: "Фильтры", xScopeAll: "Все данные (без фильтров)",
+    xGenerated: "Сформирован", xSearch: "Поиск",
+    xUnassignedRow: "Ячейки без лидера",
+    xSecKpi: "Ключевые показатели",
   },
   en: {
     title: "Worker concerns", sub: "Concerns workers raise to their leaders — the leaders' KPI",
@@ -290,6 +339,22 @@ const TXT = {
     mTitle: "Concern", mLeaderRow: "Leader as written in the sheet", mBrig: "Brigadir", mRawDate: "Date in the sheet",
     kamBand: "low data",
     pageOf: "page",
+    xBtn: "Excel",
+    xTitle: "Excel export",
+    xModalQ: "Filters are applied. What should go into the file?",
+    xOptFiltered: "Only the filtered records",
+    xOptFilteredD: "The slice currently on screen",
+    xOptAll: "All data for the period",
+    xOptAllD: "The full picture for the selected range — no filters",
+    xExport: "Export",
+    xDownloaded: "File downloaded",
+    xSentTg: "File sent to Telegram",
+    xFailed: "Export failed",
+    xPeriod: "Period", xPlant: "Plant", xAllPlants: "All plants",
+    xFilters: "Filters", xScopeAll: "All data (no filters)",
+    xGenerated: "Generated", xSearch: "Search",
+    xUnassignedRow: "Cells with no leader",
+    xSecKpi: "Key figures",
   },
 };
 
@@ -661,6 +726,109 @@ export default function WorkerConcerns() {
     e.preventDefault();
     try { tg.openLink(url); } catch { window.open(url, "_blank", "noopener"); }
   };
+  // ── Excel export ──────────────────────────────────────────────────────────
+  // One file mirrors the whole page: Obzor + Liderlar KPI + Reyestr (ALL
+  // matching rows — paging is a screen affordance). When filters make «what
+  // you see» ≠ «the period», a modal asks which one the file should be; the
+  // choice is resolved HERE into a plain filter set so the backend never
+  // re-derives it. Labels ship in the viewer's language; the data itself is
+  // re-queried server-side under the same scope builder as every endpoint.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState("filtered");
+  const [exporting, setExporting] = useState(false);
+
+  // The locked viewer's static plant chip is not a choice, so not a "filter".
+  const activeFilterChips = [];
+  if (factorySection?.active && !factorySection.static) activeFilterChips.push(factorySection.display);
+  if (mgrSel.length) activeFilterChips.push(`${T.fBrig}: ${mgrSel.length === 1 ? tl(supName[mgrSel[0]] || "") : mgrSel.length}`);
+  if (leadSel.length) activeFilterChips.push(`${T.fLeader}: ${leadSel.length === 1 ? tl(shortName(leadSel[0])) : leadSel.length}`);
+  if (cellSel.length) activeFilterChips.push(`${T.fCell}: ${cellSel.length === 1 ? cellSel[0] : cellSel.length}`);
+  if (stSel.length) activeFilterChips.push(`${T.fStatus}: ${stSel.length === 1 ? stL(stSel[0]) : stSel.length}`);
+  if (q.trim()) activeFilterChips.push(`${T.xSearch}: «${q.trim()}»`);
+  const filtersActive = activeFilterChips.length > 0;
+  // What the «filtered» option will actually put in the register sheet: the
+  // KPI total + the undated rows the range filters let through.
+  const regCount = kpi && !q.trim() ? (kpi.total ?? 0) + (kpi.undated_in_scope ?? 0) : null;
+
+  const buildExportBody = (scope) => {
+    const period = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`;
+    const plantValue = factorySection?.static ? factorySection.display
+      : scope === "filtered" && factorySection?.active ? factorySection.display
+      : T.xAllPlants;
+    return {
+      filename: `${T.title} ${fmtDate(dateFrom)}–${fmtDate(dateTo)}`,
+      title: T.title,
+      subtitle: T.sub,
+      caption: `📊 ${T.title} · ${period}`,
+      filters: scope === "all"
+        ? { date_from: dateFrom || undefined, date_to: dateTo || undefined, sort: regSort }
+        : { ...params, q: q.trim() || undefined, sort: regSort },
+      sheets: { overview: T.vObzor, leaders: T.vLeaders, register: T.vRegister },
+      status_labels: Object.fromEntries(ST_KEYS.map((k) => [k, stL(k)])),
+      labels: {
+        secKpi: T.xSecKpi,
+        kTotal: T.kTotal, kResolved: T.kResolved, kDoing: T.kDoing,
+        kOpen: T.kOpen, kOpenHint: T.kOpenHint,
+        kWorkers: T.kWorkers, kWorkersHint: T.kWorkersHint,
+        secDaily: T.secDaily, secDailySub: T.secDailySub,
+        secBrig: T.secBrig, secBrigSub: T.secBrigSub,
+        secCells: T.secCells, secCellsSub: T.secCellsSub,
+        secLeaders: T.secLeaders, secLeadersSub: T.secLeadersSub,
+        secRegister: T.secRegister,
+        colLeader: T.colLeader, colBrig: T.colBrig, colCells: T.colCells,
+        colTotal: T.colTotal, colDone: T.colDone, colDoing: T.colDoing,
+        colOpen: T.colOpen, colPct: T.colPct, colDate: T.colDate,
+        colCell: T.colCell, colOwner: T.colOwner, colText: T.colText,
+        colStatus: T.colStatus,
+        undatedNote: T.undatedNote, unassignedRow: T.xUnassignedRow,
+        lowNHint: T.lowNHint, noMatch: T.noMatch,
+        rows: T.rows, concernsWord: T.concernsWord, leadersWord: T.leadersWord,
+        bandLegend: {
+          green: `≥ ${bands.green}%`,
+          yellow: `${bands.yellow}–${bands.green - 1}%`,
+          red: `< ${bands.yellow}%`,
+          low: `${T.kamBand} (n<${minRanked})`,
+        },
+      },
+      meta: [
+        { label: T.xPeriod, value: period },
+        { label: T.xPlant, value: plantValue },
+        { label: T.xFilters, value: scope === "all" ? T.xScopeAll : (activeFilterChips.join(" · ") || "—") },
+        { label: T.lastSynced, value: lastSynced || T.never },
+        { label: T.xGenerated, value: fmtDateTime(new Date().toISOString()) },
+      ],
+    };
+  };
+
+  const runExport = async (scope) => {
+    setExporting(true);
+    try {
+      const via = await exportXlsx("/api/worker-concerns/export.xlsx", {
+        body: buildExportBody(scope),
+        fallbackName: "worker-concerns.xlsx",
+      });
+      toast.success(via === "download" ? T.xDownloaded : T.xSentTg);
+      setExportOpen(false);
+    } catch (e) {
+      // The modal (if open) stays up so the operator can retry; the error
+      // toast persists until dismissed (Telegram suppresses window.alert).
+      toast.error(`${T.xFailed}: ${e?.response?.data?.detail || e?.message || ""}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+  const onExportClick = () => {
+    if (filtersActive) { setExportScope("filtered"); setExportOpen(true); }
+    else runExport("all");
+  };
+  const exportBtn = hasData ? (
+    <Button size="lg" variant="secondary" loading={exporting}
+      icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+      onClick={onExportClick}>
+      <span className="hidden sm:inline">{T.xBtn}</span>
+    </Button>
+  ) : null;
+
   const refreshBtn = (
     <Button size="lg" variant="secondary" loading={running || refreshMut.isPending}
       icon={!(running || refreshMut.isPending) ? <RefreshCw size={14} /> : null}

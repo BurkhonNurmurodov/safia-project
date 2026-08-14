@@ -16,6 +16,7 @@ import FormField from "../components/ui/FormField";
 import StyledSelect from "../components/ui/StyledSelect";
 import LangTextInput from "../components/ui/LangTextInput";
 import ProfileAvatar, { useMyProfileDetails } from "../components/ui/ProfileAvatar";
+import CellLink from "../components/ui/CellLink";
 import { SectionHead } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
@@ -527,11 +528,11 @@ function MyProfile() {
               <InfoRow icon={LayoutGrid} label={t("profile.cells")} top>
                 <span className="inline-flex flex-wrap gap-1 justify-end">
                   {me.cells.map((c) => (
-                    <span key={c.verifix_code} title={cellName(c, lang) || undefined}
+                    <CellLink key={c.verifix_code} id={c.id} title={cellName(c, lang) || undefined}
                           className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
                           style={{ background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
                       {c.verifix_code}
-                    </span>
+                    </CellLink>
                   ))}
                 </span>
               </InfoRow>

@@ -11,6 +11,7 @@ import {
 import Layout from "../components/layout/Layout";
 import KPICard from "../components/ui/KPICard";
 import { SkeletonTable, SkeletonBlock } from "../components/ui/Skeleton";
+import CellLink from "../components/ui/CellLink";
 import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import SegmentedToggle from "../components/ui/SegmentedToggle";
@@ -159,6 +160,7 @@ const normName = (s) =>
 const cellDisplay = (c, lang) => {
   const nm = pickCellName(c, lang, "name_");
   return {
+    id: c.cell_id ?? null,   // registry id → the code links to /cells/:id
     code: c.verifix_code || "—",
     name: nm || "",
     full: `${c.verifix_code || "—"}${nm ? " · " + nm : ""}`,
@@ -850,7 +852,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                   {showCellCol && (
                     <td className="px-3 py-2" title={w._cell?.full || ""}>
                       {w._cell ? (
-                        <span className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</span>
+                        <CellLink id={w._cell.id} className="font-mono" style={{ color: "var(--text-2)" }}>{w._cell.code}</CellLink>
                       ) : (
                         <span style={{ color: "var(--text-4)" }}>—</span>
                       )}

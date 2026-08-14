@@ -27,11 +27,11 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import date as date_cls, datetime, timedelta, timezone
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,8 @@ from app.capabilities import page_scope_is_all
 from app.services.factory_scope import factory_of_managers, resolve_factory, viewer_factory_id
 from app.services.name_map import leader_is, supervisor_match
 from app.services.worker_concerns import STALE_AFTER, start_sync_thread
+from app.services.worker_concerns_export import build_worker_concerns_workbook
+from app.xlsx_delivery import deliver_xlsx
 
 router = APIRouter(prefix="/api/worker-concerns", tags=["worker-concerns"])
 
@@ -530,6 +532,223 @@ def get_list(
             "brigadir": r.reg_brigadir,
         } for r in items],
     }
+
+
+class WcExportFilters(BaseModel):
+    """The EFFECTIVE filter set — the scope modal's «filtered / whole period»
+    choice is already resolved client-side into plain filters, so the export
+    never needs a second copy of that decision."""
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    factory: Optional[int] = None
+    manager_id: list[int] = []
+    leader: list[str] = []
+    cell: list[str] = []
+    status: list[str] = []
+    q: Optional[str] = None
+    sort: str = "date_desc"
+
+
+class WcExportBody(BaseModel):
+    """Presentation comes from the page (labels, sheet names, meta lines —
+    already in the viewer's language); the data is re-queried HERE, because the
+    register is server-paginated and the file must carry ALL matching rows."""
+    filename: Optional[str] = None
+    title: str = "Worker concerns"
+    subtitle: Optional[str] = None
+    caption: Optional[str] = None
+    filters: WcExportFilters = Field(default_factory=WcExportFilters)
+    sheets: dict[str, str] = {}
+    labels: dict[str, Any] = {}
+    status_labels: dict[str, str] = {}
+    meta: list[dict[str, Any]] = []
+
+
+@router.post("/export.xlsx")
+def export_excel(
+    request: Request,
+    body: WcExportBody,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE_KEY)),
+):
+    """Multi-sheet Excel report of the page (Obzor · Liderlar KPI · Reyestr).
+
+    Everything is re-queried through the same ``_apply_scope_and_filters`` the
+    page's own endpoints use, so viewer locks hold no matter what the body
+    claims, and all three sheets agree about what "the current scope" means. A
+    browser session downloads the file; inside Telegram it lands in the
+    caller's private chat (app/xlsx_delivery.py)."""
+    f = body.filters
+    flt = {"date_from": f.date_from, "date_to": f.date_to, "factory": f.factory,
+           "manager_id": f.manager_id, "leader": f.leader, "cell": f.cell,
+           "status": f.status}
+
+    # One pass produces the KPI, daily, brigadir, cell AND leader aggregates —
+    # /stats and /leaders walk the same rows, and a single loop cannot let the
+    # sheets disagree with each other.
+    query, sup = _apply_scope_and_filters(db, payload, **flt)
+    rows = query.with_entities(
+        WorkerConcern.date, WorkerConcern.status, WorkerConcern.owner,
+        WorkerConcern.reg_brigadir, WorkerConcern.reg_cell, WorkerConcern.reg_leader,
+    ).all()
+
+    lo, hi = f.date_from, f.date_to
+    ranged = bool(lo or hi)
+
+    def in_exact(d: Optional[str]) -> bool:
+        if lo and (d is None or d < lo):
+            return False
+        if hi and (d is None or d > hi):
+            return False
+        return True
+
+    kpi = {s: 0 for s in STATUSES}
+    status_counts = {s: 0 for s in STATUSES}     # incl. undated — drives columns
+    workers: set[str] = set()
+    daily: dict[str, dict] = {}
+    brig: dict[str, dict] = {}
+    cells: dict[str, dict] = {}
+    groups: dict[str, dict] = {}
+    unassigned = {s: 0 for s in STATUSES}
+    undated = 0
+
+    for d, st, owner, b, c, l in rows:
+        status_counts[st] += 1
+        if ranged and d is None:
+            # Unusable filing date: outside every date-bound figure, counted so
+            # the file can say so (same rule as /stats and /leaders).
+            undated += 1
+            continue
+        if not in_exact(d):
+            continue
+        if d is not None:
+            day = daily.setdefault(d, {s: 0 for s in STATUSES})
+            day[st] += 1
+        kpi[st] += 1
+        if owner:
+            workers.add(" ".join(owner.lower().split()))
+        bd = brig.setdefault(b or "", {s: 0 for s in STATUSES})
+        bd[st] += 1
+        cd = cells.setdefault(c or "", {**{s: 0 for s in STATUSES}, "leader": l or ""})
+        cd[st] += 1
+        if l:
+            g = groups.setdefault(l, {**{s: 0 for s in STATUSES},
+                                      "brigadirs": set(), "cells": set()})
+            g[st] += 1
+            if b:
+                g["brigadirs"].add(b)
+            if c:
+                g["cells"].add(c)
+        else:
+            unassigned[st] += 1
+
+    total = sum(kpi.values())
+    done = kpi["done"]
+
+    by_brigadir = []
+    for name, v in brig.items():
+        m = sup.get(name) or {}
+        t = sum(v[s] for s in STATUSES)
+        by_brigadir.append({
+            "name": (m.get("name") or name or "—"),
+            "total": t, **{s: v[s] for s in STATUSES},
+            "pct": round(v["done"] * 100 / t, 1) if t else None,
+        })
+    by_brigadir.sort(key=lambda r: -r["total"])
+
+    top_cells = []
+    for code, v in cells.items():
+        t = sum(v[s] for s in STATUSES)
+        open_n = t - v["done"]
+        if open_n > 0:
+            top_cells.append({"code": code or "—", "leader": v["leader"],
+                              "total": t, "open": open_n})
+    top_cells.sort(key=lambda r: (-r["open"], -r["total"]))
+    top_cells = top_cells[:12]
+
+    leaders_out = []
+    for leader, g in groups.items():
+        t = sum(g[s] for s in STATUSES)
+        leaders_out.append({
+            "leader": leader,
+            "brigadirs": sorted((sup.get(b) or {}).get("name") or b
+                                for b in g["brigadirs"]),
+            "cells": sorted(g["cells"], key=lambda v: (len(v), v)),
+            "total": t, **{s: g[s] for s in STATUSES},
+            "open": t - g["done"],
+            "pct": round(g["done"] * 100 / t, 1) if t else None,
+            "ranked": t >= MIN_RANKED,
+        })
+    leaders_out.sort(key=lambda r: -r["total"])
+    ua_total = sum(unassigned.values())
+
+    # Full day axis over the EXACT range — a day with zero concerns is data.
+    def pd(s: Optional[str]) -> Optional[date_cls]:
+        try:
+            return date_cls.fromisoformat(s) if s else None
+        except ValueError:
+            return None
+
+    start = pd(lo) or pd(min(daily) if daily else None)
+    end = pd(hi) or pd(max(daily) if daily else None)
+    day_list = []
+    if start and end and start <= end:
+        cur = start
+        while cur <= end:
+            day_list.append(cur.isoformat())
+            cur += timedelta(days=1)
+
+    # The register: same scope + the text search, ALL rows in on-screen order.
+    regq, _sup2 = _apply_scope_and_filters(db, payload, **flt, q=f.q)
+    order = {
+        "date_asc": (WorkerConcern.date.asc().nullslast(), WorkerConcern.id.asc()),
+        "date_desc": (WorkerConcern.date.desc().nullslast(), WorkerConcern.id.desc()),
+    }.get(f.sort) or (WorkerConcern.date.desc().nullslast(), WorkerConcern.id.desc())
+    reg_rows = regq.with_entities(
+        WorkerConcern.date, WorkerConcern.reg_cell, WorkerConcern.reg_brigadir,
+        WorkerConcern.reg_leader, WorkerConcern.owner, WorkerConcern.text,
+        WorkerConcern.status, WorkerConcern.status_raw,
+    ).order_by(*order).all()
+
+    bio = build_worker_concerns_workbook({
+        "title": body.title,
+        "subtitle": body.subtitle or "",
+        "sheets": body.sheets,
+        "labels": body.labels,
+        "status_labels": body.status_labels,
+        "meta": body.meta,
+        "status_counts": status_counts,
+        "kpi": {
+            "total": total, "done": done, "doing": kpi["doing"],
+            "open": total - done,
+            "pct": round(done * 100 / total, 1) if total else None,
+            "workers": len(workers), "undated": undated,
+        },
+        "daily": {"days": day_list, "rows": daily},
+        "brigadirs": by_brigadir,
+        "top_cells": top_cells,
+        "leaders": {
+            "rows": leaders_out,
+            "unassigned": {**unassigned, "total": ua_total} if ua_total else None,
+            "undated": undated,
+            "bands": get_bands(db),
+        },
+        "register": [{
+            "d": d, "cell": c, "brigadir": (sup.get(b) or {}).get("name") or b,
+            "leader": l, "owner": o, "text": tx, "st": st, "straw": sr,
+        } for d, c, b, l, o, tx, st, sr in reg_rows],
+    })
+
+    fname = (body.filename or "worker-concerns").strip() or "worker-concerns"
+    if not fname.endswith(".xlsx"):
+        fname += ".xlsx"
+    caption = body.caption or f"📊 {body.title}"
+    try:
+        return deliver_xlsx(request, payload, fname, bio.read(), caption)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
 
 
 @router.post("/refresh")

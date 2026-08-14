@@ -2174,7 +2174,8 @@ def _factory_dict(f: Optional[Factory]) -> Optional[dict]:
 
 
 def _cell_dict(c: Cell) -> dict:
-    return {"verifix_code": c.verifix_code, "sap_code": c.sap_code,
+    # id rides along so the profile page's cell chips can link to /cells/:id.
+    return {"id": c.id, "verifix_code": c.verifix_code, "sap_code": c.sap_code,
             "name_workshop_uz": c.name_workshop_uz,
             "name_workshop_uz_cyrl": c.name_workshop_uz_cyrl,
             "name_workshop_ru": c.name_workshop_ru,

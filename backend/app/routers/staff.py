@@ -1131,6 +1131,9 @@ def get_attendance(
         for code in codes:
             c = by_code.get(code)
             cells.append({
+                # cell_id lets the Yacheyka column link to /cells/:id; None for
+                # codes the registry doesn't know (they render as inert text).
+                "cell_id":      c.id if c else None,
                 "verifix_code": code,
                 "name_uz":      c.name_workshop_uz      if c else None,
                 "name_uz_cyrl": c.name_workshop_uz_cyrl if c else None,
