@@ -1223,6 +1223,18 @@ def _beat(db: Session, **fields) -> None:
         log.debug("leader-ai: heartbeat write failed", exc_info=True)
 
 
+def _read_beat(db: Session) -> dict | None:
+    """The stored heartbeat, or None. Never raises — every caller is deciding
+    whether to do something extra, and a missing note is not a reason to fail."""
+    import json
+
+    try:
+        row = db.query(AppSetting).filter_by(key=HEARTBEAT_SETTING).first()
+        return json.loads(row.value) if row and row.value else None
+    except Exception:
+        return None
+
+
 def _note_refused(db: Session, state: str) -> None:
     """Record a kick that lost the race WITHOUT erasing the run that won it.
 
@@ -2577,3 +2589,45 @@ def register_drain_job() -> None:
     schedule_interval("leader-ai-drain", lambda: run_async(discover_first=False),
                       minutes=DRAIN_EVERY_MIN)
     log.info("leader-ai: periodic drain scheduled every %s min", DRAIN_EVERY_MIN)
+    resume_after_boot()
+
+
+def resume_after_boot() -> None:
+    """Pick the queue back up NOW, instead of leaving it for the timer.
+
+    **A restart is the normal case, not the rare one.** Every push to `main`
+    deploys and restarts this unit, which kills whatever drain thread was
+    running — and until now nothing at boot did anything about that: the rows
+    stayed `pending`, no chain was in flight to resume them, and the queue sat
+    still until the 20-minute timer came round. Deploy twice in an afternoon
+    and the reviewer looks like it stops dead at arbitrary rows and sulks,
+    which is exactly what it looked like.
+
+    Two things to put right, both of which only a boot can know:
+
+    * **A `running` heartbeat cannot have survived.** The thread that wrote it
+      is gone with the old process, so the strip goes on showing a live drain
+      and then a "stalled" one — the one state that makes an operator wait
+      rather than act. At boot it is a lie by construction, so it is cleared.
+    * **Queued work has nobody behind it.** A kick costs nothing when the queue
+      is empty and saves up to twenty minutes when it is not. It only ever
+      DRAINS — never discovers — so this can add no work of its own.
+    """
+    db = SessionLocal()
+    try:
+        beat = _read_beat(db)
+        if (beat or {}).get("state") == "running":
+            log.info("leader-ai: clearing a drain heartbeat left running by a "
+                     "previous process")
+            _beat(db, state="idle", reason="restarted")
+        n = (db.query(LeaderAiReview)
+             .filter(LeaderAiReview.status.in_(("pending", "error")),
+                     LeaderAiReview.attempts < MAX_ATTEMPTS)
+             .count())
+        if n:
+            log.info("leader-ai: %s row(s) still queued at boot, resuming now", n)
+            run_async(discover_first=False)
+    except Exception:
+        log.exception("leader-ai: boot resume failed")   # never block startup
+    finally:
+        db.close()

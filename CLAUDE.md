@@ -170,6 +170,14 @@ is a note and only a human `rejected` moves a number.
   thing every progress reader reads, so this buys the bar, the ETA, Stop and
   the detail view for free. It refuses to displace a LIVE run, so a re-check
   narrowed to one brigadir is never silently widened by someone's Refresh.
+- **Boot resumes the queue** (`leader_ai.resume_after_boot`, called from
+  `register_drain_job`, so both entrypoints get it). Every push to `main`
+  deploys and restarts the unit, killing the running drain thread — and nothing
+  at boot used to pick the rows back up, so the queue sat still until the
+  20-minute timer. Deploy twice in an afternoon and the reviewer looks like it
+  stops dead at arbitrary rows. It also clears a `running` heartbeat, which at
+  boot is a lie by construction (the thread that wrote it died with the old
+  process) and otherwise reads as a live-then-stalled drain forever.
 - **A drain pass with work left CHAINS into the next one** after
   `DRAIN_CONTINUE_S` (5s), instead of waiting for the timer. The batch cap
   (`gemini_batch_size`, 40) is invisible to the operator, so pacing the queue by
