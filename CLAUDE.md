@@ -162,6 +162,14 @@ is a note and only a human `rejected` moves a number.
   or the old "already ran" flag makes the new floor a no-op on every box that
   has booted once. It only ever RAISES the floor, never lowers it, and never
   overrules an admin who moved it from «Tarixni tozalash».
+- **Auto-queued work announces itself as a RUN** — `auto_discover` is followed
+  by `leader_ai.note_auto_run(...)`, exactly as the bot day-close path already
+  did. Queueing invisibly is what made the progress strip unreadable: a
+  hand-picked re-check sat at «150 / 150 · 100%» with nine hundred auto-queued
+  rows behind it and nothing on screen connecting them. The record is the one
+  thing every progress reader reads, so this buys the bar, the ETA, Stop and
+  the detail view for free. It refuses to displace a LIVE run, so a re-check
+  narrowed to one brigadir is never silently widened by someone's Refresh.
 - **The two RECURRING passes use a rolling window, not the fixed floor** —
   `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
   a pass bounded only by it re-reads every automatic day ever filed; both of

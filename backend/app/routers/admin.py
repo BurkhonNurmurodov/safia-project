@@ -393,6 +393,20 @@ def refresh_sheet(
             # Everything else stays drain-only: the kick moves rows that are
             # ALREADY queued and can never add any.
             queued = leader_ai.auto_discover(db)
+            # …and it announces itself as a RUN. Queueing work invisibly is how
+            # the progress strip came to describe one thing while the queue held
+            # another: a hand-picked re-check would sit at «150 / 150 · 100%»
+            # with nine hundred auto-queued rows behind it and nothing on screen
+            # tying them together. `note_auto_run` gives this the same bar, ETA,
+            # Stop button and detail view an operator-started run gets, because
+            # everything that reads progress reads that one record. It refuses
+            # to displace a LIVE run, so a re-check somebody deliberately
+            # narrowed to one brigadir is never silently widened by a Refresh.
+            if queued:
+                leader_ai.note_auto_run(
+                    db, queued,
+                    caller.get("full_name") or caller.get("username") or "",
+                )
             leader_ai.run_async(discover_first=False)
             return {"status": "ok", "sheet": name, "ai_queued": queued, **result}
 
