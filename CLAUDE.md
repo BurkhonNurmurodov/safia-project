@@ -170,6 +170,18 @@ is a note and only a human `rejected` moves a number.
   thing every progress reader reads, so this buys the bar, the ETA, Stop and
   the detail view for free. It refuses to displace a LIVE run, so a re-check
   narrowed to one brigadir is never silently widened by someone's Refresh.
+- **A drain pass with work left CHAINS into the next one** after
+  `DRAIN_CONTINUE_S` (5s), instead of waiting for the timer. The batch cap
+  (`gemini_batch_size`, 40) is invisible to the operator, so pacing the queue by
+  stalling 20 minutes between bites looked exactly like the drain giving up at a
+  random row. `DRAIN_EVERY_MIN` stays 20 and is now only the FALLBACK for a
+  queue nobody kicked — a 5s timer would fire a thread and take two locks around
+  the clock to find an empty queue. Never chain on `quota` (a 429 hammered every
+  five seconds turns a per-minute limit into a per-day one) or on `aborted`
+  (retired model / revoked key — the next pass fails identically). The heartbeat
+  stays `running` between chained passes, so the strip does not blink through
+  `idle` mid-drain. **Consequence to know: a large queue now finishes far
+  faster and reaches the daily Gemini cap sooner.**
 - **The two RECURRING passes use a rolling window, not the fixed floor** —
   `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
   a pass bounded only by it re-reads every automatic day ever filed; both of

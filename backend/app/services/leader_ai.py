@@ -37,6 +37,7 @@ import logging
 import re
 import socket
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
@@ -2365,7 +2366,48 @@ def _db_unlock(db: Session) -> None:
         log.debug("leader-ai: advisory unlock failed", exc_info=True)
 
 
-def run_async(discover_first: bool = False) -> None:
+# A drain pass stops after `gemini_batch_size` rows. It used to wait for the
+# 20-minute timer to take the next bite, which is why a queue appeared to stop
+# dead at an arbitrary row and sit there — the batch cap is invisible, so what
+# the operator saw was "it gave up". Pacing the whole queue against the free
+# tier's daily cap was the reason, but it paced by STALLING, and a plant
+# waiting on today's verdicts cannot tell a deliberate pause from a dead drain.
+#
+# So a pass that leaves work behind now chains straight into the next one after
+# this many seconds (user, 2026-08-14). The timer stays exactly as it was: the
+# fallback for a queue nobody kicked, not the thing that advances a live one.
+DRAIN_CONTINUE_S = 5
+
+# Backstop only. The queue strictly shrinks — a row goes pending → ok/flagged/
+# error and errors burn `attempts` — so a chain ends on its own. This is here
+# so that if that ever stops being true, the loop is bounded and says so in the
+# log instead of spinning quota forever.
+DRAIN_MAX_CHAIN = 500
+
+
+def _should_chain(db: Session, res: dict) -> bool:
+    """Is there more to do, and is it safe to go straight on?
+
+    Three reasons never to chain, all of them cases where continuing makes
+    things worse rather than slower:
+      * `quota`  — a 429. Hammering it every five seconds is how a per-minute
+                   limit turns into a per-day one.
+      * `aborted` — consecutive API-level failures (retired model, revoked
+                   key). The next pass fails identically; the operator has to
+                   fix something first.
+      * nothing left queued.
+    """
+    if not res.get("ok") or res.get("quota") or res.get("aborted"):
+        return False
+    return bool(
+        db.query(LeaderAiReview)
+        .filter(LeaderAiReview.status.in_(("pending", "error")),
+                LeaderAiReview.attempts < MAX_ATTEMPTS)
+        .first()
+    )
+
+
+def run_async(discover_first: bool = False, _chain: int = 0) -> None:
     """Fire a drain — and, only if asked, a discovery first — on a daemon thread.
 
     Called from request paths and bot callbacks, none of which may block on a
@@ -2393,6 +2435,7 @@ def run_async(discover_first: bool = False) -> None:
         db = SessionLocal()
         started = datetime.now(timezone.utc).isoformat()
         got = holding = False
+        chain = False
         try:
             got = _lock.acquire(blocking=False)
             if not got:
@@ -2410,7 +2453,15 @@ def run_async(discover_first: bool = False) -> None:
             res = drain(db, beat=lambda d, e: _beat(
                 db, state="running", startedAt=started, done=d, errors=e))
             log.info("leader-ai: drain finished %s", res)
-            _beat(db, state="idle", startedAt=started,
+            chain = _chain < DRAIN_MAX_CHAIN and _should_chain(db, res)
+            if _chain >= DRAIN_MAX_CHAIN:
+                log.warning("leader-ai: drain chain hit %s passes, stopping — "
+                            "the timer takes it from here", DRAIN_MAX_CHAIN)
+            # `running` while another pass is already booked, so the strip does
+            # not blink through "idle" between bites of one continuous drain —
+            # an idle state the operator can catch is what "it stopped" looks
+            # like, and that is the whole complaint this chaining answers.
+            _beat(db, state="running" if chain else "idle", startedAt=started,
                   done=res.get("done", 0), errors=res.get("errors", 0),
                   quota=bool(res.get("quota")), quotaMsg=res.get("quotaMsg"),
                   aborted=res.get("aborted"), reason=res.get("reason"))
@@ -2433,13 +2484,25 @@ def run_async(discover_first: bool = False) -> None:
             if got:
                 _lock.release()
 
+        # AFTER the finally, so both locks are already released — the next pass
+        # has to be able to claim them, and a chain that handed itself a lock it
+        # still held would deadlock on its own success.
+        if chain:
+            time.sleep(DRAIN_CONTINUE_S)
+            run_async(discover_first=False, _chain=_chain + 1)
+
     threading.Thread(target=_work, name="leader-ai-drain", daemon=True).start()
 
 
-# Every this many minutes the queue drains itself. Chosen against the free
-# tier's per-DAY cap rather than latency: a batch of `gemini_batch_size` every
-# 20 minutes is ~72 batches a day, which keeps a normal day's photos judged
-# within the hour without racing the quota to zero by lunchtime.
+# The FALLBACK heartbeat — not the thing that advances a live queue. A pass
+# with work left chains itself (`DRAIN_CONTINUE_S`), so this exists for the
+# queue nobody kicked: rows left `pending` by a restart, a swallowed kick, a
+# chain cut short by quota. Twenty minutes is right for that job and wrong as a
+# step size, which is what it used to be.
+#
+# It is deliberately NOT five seconds. A timer that short fires a thread, takes
+# two locks and writes a heartbeat around the clock to discover an empty queue
+# — churn the chaining already makes unnecessary.
 DRAIN_EVERY_MIN = 20
 
 
