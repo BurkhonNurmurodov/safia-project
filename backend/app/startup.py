@@ -1861,21 +1861,26 @@ def wipe_cell_perenaladka_history() -> None:
 # "the 10 Aug purge already ran", which is true and must stay true, while the
 # 11 Aug purge has not. Reusing the key would make the new floor a no-op on
 # every box that had already booted once.
-LEADER_AI_PURGE_FLAG = "leader_ai_purged_pre_2026_08_11"
+LEADER_AI_PURGE_FLAG = "leader_ai_purged_pre_2026_08_13"
 
 
 def purge_leader_ai_history() -> None:
     """One-shot purge of every AI proof-review verdict dated before the review
-    floor (`services.leader_ai.DEFAULT_FLOOR`, 11 Aug 2026 — the first day the
-    reworked criteria were in force for BOTH shifts).
+    floor (`services.leader_ai.DEFAULT_FLOOR`, **13 Aug 2026** since
+    2026-08-14 — the day automatic shift-1 review begins, so the platform
+    states ONE start date instead of two).
 
     The historical backfill judged months of reports under questions the system
     no longer asks, so those verdicts are not data to repair: they are answers
     to a retired question, and nothing on the page can tell the two apart by
-    looking. Pins the review floor to the same date — discovery back-fills
-    everything ever filed, and without the floor the next drain pass would
-    re-insert the deleted history as `pending` and re-spend the Gemini quota on
-    it.
+    looking. The same now goes for 11–12 Aug: the user does not want them, and
+    a floor above verdicts that still show in the triage queue would restate
+    the very contradiction moving the floor was meant to remove.
+
+    Pins the review floor to the same date — discovery back-fills everything
+    ever filed, and without the floor the next drain pass would re-insert the
+    deleted history as `pending` and re-spend the Gemini quota on it. The floor
+    is only ever RAISED here, never lowered.
 
     Flag-guarded per date, so verdicts written from the floor onward are never
     touched, and an admin who later moves the floor from the page (see

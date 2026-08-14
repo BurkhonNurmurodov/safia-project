@@ -153,6 +153,15 @@ is a note and only a human `rejected` moves a number.
   (`resend_if_changed`). Completion is a trigger, not the only route —
   `sweep_unreported()` runs every drain and sends reports whose one attempt was
   swallowed (Ghost Mode, a Telegram outage, a restart).
+- **The review FLOOR and `AUTO_FROM` are the same day (13 Aug 2026)** and
+  should stay that way. The floor sat at 11 Aug, so the activity strip said
+  review began on the 11th while every scoring surface said the 13th — two
+  start dates for one feature, with nothing on screen saying they answer
+  different questions. Moving it is the flag-guarded purge in
+  `startup.purge_leader_ai_history`: **bumping the date needs a NEW flag key**,
+  or the old "already ran" flag makes the new floor a no-op on every box that
+  has booted once. It only ever RAISES the floor, never lowers it, and never
+  overrules an admin who moved it from «Tarixni tozalash».
 - **The two RECURRING passes use a rolling window, not the fixed floor** —
   `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
   a pass bounded only by it re-reads every automatic day ever filed; both of

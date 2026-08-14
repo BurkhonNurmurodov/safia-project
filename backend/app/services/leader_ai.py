@@ -618,12 +618,20 @@ def _existing_refs(db: Session) -> set[str]:
 
 FLOOR_SETTING = "leader_ai_floor"
 
-# Where AI review begins when nobody has moved it. 11 Aug 2026 is the first day
-# the reworked criteria were in force, for BOTH shifts — everything before it
-# was judged under questions the system no longer asks, so it was purged rather
-# than left to look like evidence. The startup migration pins this; the admin
-# «Tarixni tozalash» form can move it afterwards.
-DEFAULT_FLOOR = "2026-08-11"
+# Where AI review begins when nobody has moved it. The startup migration pins
+# this; the admin «Tarixni tozalash» form can move it afterwards.
+#
+# **Deliberately the same day as `AUTO_FROM`** (user, 2026-08-14: "It should be
+# 13.08, we don't need the reports from 11.08"). It sat at 11 Aug — the day the
+# reworked criteria came in — which left the platform stating two different
+# start dates: the activity strip said review began on the 11th while every
+# scoring surface said the 13th, and nothing on screen explained that they
+# answer different questions. One date now means one thing.
+#
+# Raising it was moved through the flag-guarded purge below rather than typed
+# into the DB, so the 11–12 Aug verdicts go with it — a floor above verdicts
+# that still show in the triage queue is the same contradiction in a new place.
+DEFAULT_FLOOR = "2026-08-13"
 
 
 def floor_date(db: Session) -> str | None:
