@@ -457,7 +457,9 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
 
     Applies at once and — unlike criteria — verdicts ALREADY written are
     re-derived from the clock each one stored (services.leader_tasks.set_window
-    → leader_ai.rewindow). No Gemini call, no quota: the expensive half of the
+    → leader_ai.sync_date_flags). No Gemini call, no quota: the model no longer
+    judges the date at all — it transcribes the clock and the backend compares
+    it, so the
     date question was reading the photo, and that answer is on the row.
     """
     for v in (body.win_from, body.win_to):
@@ -487,7 +489,7 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
                            rejudge=False, **win)
         # Once, after the whole fan-out — the re-derivation is per task, not per
         # row written, so running it inside the loop would rescan N times.
-        leader_ai.rewindow(db, [body.task_id])
+        leader_ai.sync_date_flags(db, [body.task_id])
         return {"ok": True, "count": len(ids)}
     if body.manager_id is not None and not db.query(Manager).filter_by(
             id=body.manager_id).first():

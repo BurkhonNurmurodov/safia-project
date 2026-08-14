@@ -317,7 +317,7 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
     # is per TASK, so doing it inside the loop would re-scan the same rows once
     # per row written. The caller runs it once when the loop is done.
     if rejudge:
-        leader_ai.rewindow(db, [task_id])
+        leader_ai.sync_date_flags(db, [task_id])
 
 
 # ONE boundary, at the hour the night crew actually starts work: the day a

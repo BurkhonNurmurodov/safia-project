@@ -380,6 +380,14 @@ def refresh_sheet(
             # The kick stays, drain-only: it moves rows that are ALREADY queued
             # and can never add any. Refresh therefore keeps the queue flowing
             # without ever growing it.
+            #
+            # `restamp` queues nothing either. The sync re-dates night rows onto
+            # the night they report on, which changes the window their photos
+            # are judged against — so the verdicts it invalidated are re-pointed
+            # and their date flags recomputed here, from clocks already stored.
+            # No image fetch, no Gemini call: this used to require a paid
+            # re-check and so, in practice, never happened.
+            leader_ai.restamp(db)
             leader_ai.run_async(discover_first=False)
             return {"status": "ok", "sheet": name, **result}
 

@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
-        add_leader_task_windows, rewindow_reviews,
+        add_leader_task_windows, add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
         add_worker_concern_failures_column,
@@ -115,6 +115,8 @@ async def lifespan(app: FastAPI):
     add_leader_task_criteria()
     add_leader_task_windows()
     add_leader_ai_resolution()
+    # After add_leader_ai_resolution — the backfill reads reviewed rows.
+    add_leader_ai_clocks()
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
@@ -134,8 +136,8 @@ async def lifespan(app: FastAPI):
     wipe_cell_perenaladka_history()
     purge_leader_ai_history()
     # After purge_leader_ai_history (no point re-judging rows about to be
-    # dropped) and after the window columns it reads exist.
-    rewindow_reviews()
+    # dropped) and after the window + clocks columns it reads exist.
+    sync_leader_ai_dates()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

@@ -1371,8 +1371,18 @@ class LeaderAiReview(Base):
     # "off_topic" | "not_proven" | "unreadable". Empty on a clean pass.
     flags      = Column(JSONB, nullable=False, default=list)
     # The timestamp the model actually read off the image, verbatim, so an
-    # admin can judge the judge without opening the photo.
+    # admin can judge the judge without opening the photo. DERIVED from `clocks`
+    # (leader_ai.clocks_text) — kept as a column because every list, export and
+    # legacy row already reads it.
     image_date = Column(String, nullable=True)
+    # The same clocks in NUMBERS, one entry per proof photo:
+    #   {raw, month, day, time, source?}   month/day 0 and time "" = not visible
+    # This is what makes the date verdict re-derivable. The model transcribes
+    # here and judges nothing; `leader_ai.date_flags` compares these against the
+    # task's window, so changing a window corrects every affected verdict with
+    # no AI call. A verdict written before this column existed is backfilled by
+    # parsing `image_date` (see startup.add_leader_ai_clocks).
+    clocks     = Column(JSONB, nullable=False, default=list)
     # The verdict prose, per language — the page renders it in the viewer's own.
     reason_uz      = Column(Text, nullable=True)
     reason_uz_cyrl = Column(Text, nullable=True)

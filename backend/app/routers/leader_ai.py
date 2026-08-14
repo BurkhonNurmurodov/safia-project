@@ -108,6 +108,13 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     if not gemini.available():
         return {"enabled": False, "counts": {}, "flags": {}}
 
+    # The date verdict is DERIVED (clocks + report day + task window), and this
+    # is the entry point to every AI surface — so bring it up to date before a
+    # single number is counted. Normally a no-op scan writing nothing; after a
+    # window edit or a Refresh that moved reports to other days, this is what
+    # makes the correction visible without anyone re-running the AI.
+    leader_ai.sync_date_flags(db)
+
     # ONLY flagged rows are resolved to uids. The pending queue is a backfill of
     # everything ever filed — tens of thousands of rows — and loading it on
     # every page open would be the most expensive query on the page for a
@@ -656,7 +663,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
         if supervisor is None and rev.manager_id in mgrs:
             supervisor = relabel_supervisor(mgrs[rev.manager_id].name)
 
-        lo, hi = leader_ai.date_window(rev.date, rev.shift, _window(cfg, rev))
+        win = _window(cfg, rev)
+        lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
         out.append({
             "ref": rev.ref,
             "uid": uid,
@@ -681,8 +689,14 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             "resolvedAt": rev.resolved_at.isoformat() if rev.resolved_at else None,
             "resolutionNote": rev.resolution_note,
             "imageDate": rev.image_date,
+            "clocks": rev.clocks or [],
             "expected": f"{lo} — {hi}",
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
+            # The date sentence is OURS, not the model's — it no longer knows
+            # the window, and prose it wrote would go stale on the next window
+            # edit. Rendered beside `reason`, which now covers topic and proof
+            # only.
+            "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
@@ -905,12 +919,15 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None) -> dict
         "status": rev.status,
         "flags": rev.flags or [],
         "imageDate": rev.image_date,
+        "clocks": rev.clocks or [],
         # The window the verdict was measured against, from the SAME function
         # the checker used — a date flag is only actionable if you can see what
         # the photo was supposed to fall inside, and a second copy of the shift
         # rule in the client would eventually disagree with the backend.
         "expected": f"{lo} — {hi}",
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
+        "dateReason": leader_ai.date_prose(
+            rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift)),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,

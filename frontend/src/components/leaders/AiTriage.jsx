@@ -976,6 +976,11 @@ function Verdict({ item, T, lang }) {
   const f = new Set(item.flags);
   const bTone = item.bucket === "clean" ? C_GOOD : C_AI;
   const reason = item.reason?.[lang] || item.reason?.ru || item.reason?.en || "";
+  // The date sentence comes from the BACKEND, not the model — the model is only
+  // a transcriber now and never learns what the window is. Rendered as its own
+  // line so it re-reads correctly after a window edit, which model prose could
+  // not: that text was written once and froze.
+  const dateWhy = item.dateReason?.[lang] || item.dateReason?.ru || item.dateReason?.en || "";
   const rows = [
     { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
     { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
@@ -1041,10 +1046,16 @@ function Verdict({ item, T, lang }) {
         </div>
       </div>
 
-      {reason && (
+      {(reason || dateWhy) && (
         <div className="px-3 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           <Lbl>{T.aiWhy}</Lbl>
-          <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>{reason}</p>
+          {dateWhy && (
+            <p className="text-[13px] leading-relaxed mb-1.5"
+              style={{ color: f.has("date_mismatch") || f.has("no_date") ? "var(--text-1)" : "var(--text-2)" }}>
+              {dateWhy}
+            </p>
+          )}
+          {reason && <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>{reason}</p>}
         </div>
       )}
 

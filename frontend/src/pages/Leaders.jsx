@@ -1134,6 +1134,10 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
   }
 
   const reason = rev.reason?.[lang] || rev.reason?.ru || rev.reason?.en || "";
+  // Written by the backend from the stored clock + the window in force now, so
+  // it re-reads itself after a window edit. The model only transcribes clocks
+  // and never sees the window, so `reason` covers subject and proof only.
+  const dateWhy = rev.dateReason?.[lang] || rev.dateReason?.ru || rev.dateReason?.en || "";
   const flagged = rev.status === "flagged";
   const tone = flagged ? C_AI : C_GOOD;
 
@@ -1198,10 +1202,17 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
           {/* A date flag is only actionable next to the window it missed —
               especially on shift 2, where the allowed window legitimately runs
               into the next calendar morning. */}
-          {rev.expected && (rev.flags || []).some((f) => f === "date_mismatch" || f === "no_date") && (
-            <p className="text-[10px] tabular-nums mt-1" style={{ color: "var(--text-4)" }}>
-              {T.aiExpected}: {rev.expected}
-            </p>
+          {(rev.flags || []).some((f) => f === "date_mismatch" || f === "no_date") && (
+            <>
+              {dateWhy && (
+                <p className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>{dateWhy}</p>
+              )}
+              {rev.expected && (
+                <p className="text-[10px] tabular-nums mt-1" style={{ color: "var(--text-4)" }}>
+                  {T.aiExpected}: {rev.expected}
+                </p>
+              )}
+            </>
           )}
           {reason && (
             // Clamped to two lines: the cards sit two-up in the modal and an

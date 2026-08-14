@@ -629,8 +629,9 @@ def add_leader_task_windows() -> None:
     NULL at every level = the shift default (leader_ai.SHIFT_WINDOW). Each end
     is independent, so a task may narrow only its open or only its close.
 
-    Idempotent. `rewindow_reviews()` re-derives the verdicts already written
-    against the old window — see there for why that needs no Gemini call."""
+    Idempotent. `sync_leader_ai_dates()` re-derives the verdicts already
+    written against the old window — see there for why that needs no Gemini
+    call."""
     db = SessionLocal()
     try:
         for table in ("leader_task_defs", "leader_task_settings",
@@ -646,28 +647,70 @@ def add_leader_task_windows() -> None:
         db.close()
 
 
-def rewindow_reviews() -> None:
-    """2026-08-14: re-judge the DATE question on verdicts already written.
+def add_leader_ai_clocks() -> None:
+    """2026-08-14: the model stops judging the date and starts transcribing it.
 
-    Every review stores `image_date` — the clock the model actually read off the
-    photo — so widening shift 2 to 17:00 (and narrowing shift 1 to 07:00–20:00)
-    can be re-decided from stored data alone: no image fetch, no Gemini call, no
-    quota. Only the two date flags move; `off_topic` / `not_proven` /
-    `unreadable` are untouched, and a row whose `image_date` will not parse is
-    left exactly as it is rather than guessed at.
+    `clocks` holds one entry per proof photo — {raw, month, day, time, source} —
+    which is what lets the backend own the date verdict: the window comparison
+    runs on stored numbers, so changing a window re-decides every affected
+    report with no AI call. Verdicts written before the column existed are
+    backfilled by parsing their free-text `image_date`; one that will not parse
+    becomes an entry with month/day 0, i.e. «day unconfirmed» (user's ruling),
+    NOT an empty list — empty means no clock was visible at all.
 
-    Runs on every boot because it is cheap and self-limiting — it rewrites only
-    rows whose stored clock now disagrees with their flag — which also makes it
-    the thing that repairs verdicts after an admin edits a window."""
+    Idempotent: only rows still holding the default empty list are backfilled."""
     db = SessionLocal()
     try:
-        from .services.leader_ai import rewindow
-        n = rewindow(db)
-        if n:
-            print(f"[startup] leader-ai: {n} verdict(s) re-judged against the new window")
+        db.execute(text("ALTER TABLE leader_ai_reviews "
+                        "ADD COLUMN IF NOT EXISTS clocks JSONB NOT NULL DEFAULT '[]'::jsonb"))
+        db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[startup] leader-ai rewindow skipped: {exc}")
+        print(f"[startup] leader-ai clocks migration skipped: {exc}")
+        db.close()
+        return
+    try:
+        from .models import LeaderAiReview
+        from .services.leader_ai import clocks_from_text
+        rows = (db.query(LeaderAiReview)
+                .filter(LeaderAiReview.reviewed_at.isnot(None),
+                        LeaderAiReview.image_date.isnot(None))
+                .all())
+        n = 0
+        for rev in rows:
+            if rev.clocks:
+                continue
+            got = clocks_from_text(rev.image_date)
+            if got:
+                rev.clocks = got
+                n += 1
+        if n:
+            db.commit()
+            print(f"[startup] leader-ai: backfilled clocks for {n} verdict(s)")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader-ai clocks backfill skipped: {exc}")
+    finally:
+        db.close()
+
+
+def sync_leader_ai_dates() -> None:
+    """2026-08-14: bring every written verdict's DATE flags in line with the
+    windows in force now. Free — it re-reads the clocks each verdict stored, so
+    there is no image fetch, no Gemini call and no quota.
+
+    Runs at every boot (and from the window-edit, Refresh and overview paths):
+    the date verdict is derived data, and this is what keeps the derivation and
+    the stored copy the same thing. See services/leader_ai.sync_date_flags."""
+    db = SessionLocal()
+    try:
+        from .services.leader_ai import sync_date_flags
+        n = sync_date_flags(db)
+        if n:
+            print(f"[startup] leader-ai: {n} verdict(s) re-judged against the current window")
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader-ai date sync skipped: {exc}")
     finally:
         db.close()
 
