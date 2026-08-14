@@ -48,6 +48,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import (
     AppSetting,
+    LeaderAiDispute,
     LeaderAiReview,
     LeaderChecklist,
     LeaderTaskDay,
@@ -1481,6 +1482,13 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
                       streak, aborted)
             break
     reported = report_finished(db, touched) if touched else 0
+    # …and the safety net behind that hook: anything whose one completion
+    # attempt was swallowed (Ghost Mode, a Telegram outage, a restart between
+    # the verdict and the DM) is picked up here instead of being lost silently.
+    try:
+        reported += sweep_unreported(db)
+    except Exception:
+        log.exception("leader-ai: report sweep failed")
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
             "quota": quota, "quotaMsg": quota_msg, "aborted": aborted,
             "reported": reported}
@@ -1531,6 +1539,59 @@ def report_finished(db: Session, keys: set[str]) -> int:
                 sent += 1
         except Exception:
             log.exception("leader-ai: day report failed for %s", key)
+    return sent
+
+
+REPORT_SWEEP_CAP = 40
+
+
+def sweep_unreported(db: Session, limit: int = REPORT_SWEEP_CAP) -> int:
+    """Send the day reports that finished but never went out.
+
+    The completion hook fires exactly once per report — on the drain pass that
+    judged its last task. Anything that swallowed that one attempt loses the
+    notification for good: Ghost Mode was on, Telegram was down, the worker was
+    restarted between the verdict and the DM. Nobody would ever know, because
+    the evidence of a report that should have been sent is its absence.
+
+    So completion is a TRIGGER, not the only route. This sweeps for
+    automatic-regime reports whose tasks are all judged and which have no
+    ledger row, and sends them. Idempotent by construction — the ledger is
+    written when the DM goes out, so a swept report is never swept twice.
+
+    Capped per pass, and it only ever looks at the automatic window, so the
+    worst case is one shift's backlog rather than a walk of the archive.
+    """
+    from app.models import LeaderDayReport
+    from app.services import leader_reports
+
+    rows = (db.query(LeaderAiReview.ref, LeaderAiReview.status,
+                     LeaderAiReview.attempts)
+            .filter(_auto_clause()).all())
+    if not rows:
+        return 0
+    day_of = _day_of_map(db, [r.ref for r in rows])
+    open_keys: set[str] = set()
+    all_keys: set[str] = set()
+    for ref, status, attempts in rows:
+        key = report_key(ref, day_of)
+        all_keys.add(key)
+        if status in ("pending", "error") and (attempts or 0) < MAX_ATTEMPTS:
+            open_keys.add(key)
+    done_keys = all_keys - open_keys
+    if not done_keys:
+        return 0
+    known = {r[0] for r in db.query(LeaderDayReport.report_key)
+             .filter(LeaderDayReport.report_key.in_(done_keys)).all()}
+    sent = 0
+    for key in sorted(done_keys - known)[:limit]:
+        try:
+            if leader_reports.maybe_send_report(db, key):
+                sent += 1
+        except Exception:
+            log.exception("leader-ai: swept day report failed for %s", key)
+    if sent:
+        log.info("leader-ai: swept %s unsent day report(s)", sent)
     return sent
 
 
@@ -2162,7 +2223,7 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
         if not uid:
             continue
         s = out.setdefault(uid, {"checked": 0, "flagged": 0, "open": 0,
-                                 "pending": 0, "error": 0})
+                                 "pending": 0, "error": 0, "disputed": 0})
         if r.status in ("ok", "flagged"):
             # A verdict exists either way — "checked" is the machine's work,
             # not its opinion, so a clean pass counts exactly like a flag.
@@ -2177,7 +2238,32 @@ def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[s
             s["pending"] += r.n
         elif r.status == "error":
             s["error"] += r.n
+
+    # Live objections, so the register can say a rejection is being argued
+    # rather than settled. Without this the «Norozilik» filter would be an
+    # option that can never match anything — worse than not offering it.
+    dq = (db.query(LeaderAiDispute.ref, func.count(LeaderAiDispute.id))
+          .filter(LeaderAiDispute.status == "pending"))
+    if dates is not None:
+        dq = dq.filter(LeaderAiDispute.date.in_(dates))
+    drows = dq.group_by(LeaderAiDispute.ref).all()
+    if drows:
+        duids = uid_map(db, [_RefOnly(ref) for ref, _ in drows])
+        for ref, n in drows:
+            uid = duids.get(ref)
+            if uid and uid in out:
+                out[uid]["disputed"] += n
     return out
+
+
+class _RefOnly:
+    """A ref in the shape `uid_map` reads (`.ref`) — it resolves verdicts and
+    dispute rows through one function so both can never disagree about which
+    report a ref belongs to."""
+    __slots__ = ("ref",)
+
+    def __init__(self, ref: str):
+        self.ref = ref
 
 
 def task_weights(db: Session) -> dict[int, int]:

@@ -112,6 +112,72 @@ no correct way to render that.
   the register, tab order, the ONE global default tab, the «All» tab switch, and
   supervisor assignment.
 
+## Automatic proof verification (shift 1, from 13 Aug 2026)
+
+Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that
+review is **automatic and consequential for shift 1**: nobody presses anything,
+and a flagged proof costs its task immediately. Everything else — every day
+before that date, and shift 2 for good — keeps the original regime, where a flag
+is a note and only a human `rejected` moves a number.
+
+- **ONE predicate owns the boundary**: `leader_ai.in_auto_regime(date, shift)`
+  (`AUTO_FROM = "2026-08-13"`, `AUTO_SHIFTS = (1,)`), with `_auto_clause()` as
+  its SQL twin. Five surfaces read it — the score overlay, discovery, the
+  drain's ordering, the report DM and the day-report page. A second spelling of
+  "is this automatic" would show a leader a red badge on a day whose score never
+  moved. An unmatched unit carries a null shift and is deliberately OUT.
+- **Every flag rejects** — `not_proven`, `off_topic`, `no_date`, `date_mismatch`
+  **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
+  flag and never deducts: a dead Drive permission must not mass-fail a shift.
+  Only a human `approved` lifts an automatic rejection; `requeried` does not.
+- **`auto_discover()` is the second door into discovery's territory**, and it is
+  bounded so it cannot become the bulk auto-trigger the user banned three times:
+  shift 1, from one fixed date, sheet layer only. It runs on the leaders-sheet
+  **Refresh** and returns `ai_queued` so the press states what it produced.
+  `discover()` — the walk of everything ever filed — is still reachable only
+  from «Tekshirish», which counts first and asks.
+- **The drain walks the automatic regime FIRST and in order**: oldest day →
+  leader by leader → task 1..N. Not cosmetic: a day's report DM fires when its
+  last task lands, so interleaving leaders would leave every day half-checked
+  until the end of the batch.
+- **Reports are DMed per finished leader-day** (`services/leader_reports.py`) to
+  the unit's brigadir **and** the leader — the leader always, clean days
+  included, because points now come off automatically and a deduction somebody
+  discovers at the end of the month is how trust in the system dies. Both carry
+  a `web_app` button onto `/leaders/report/<uid>`. A day the filing-window rule
+  already voided is NOT reported: it scores 0 for a reason that outranks the
+  photos, and a "verified 62%" would contradict the register.
+- **`leader_day_reports` is the ledger**, keyed by `leader_ai.report_key()`.
+  `score_sent` is what makes corrections possible: a later re-review, triage
+  ruling or upheld dispute re-sends ONLY when the number actually moved
+  (`resend_if_changed`). Completion is a trigger, not the only route —
+  `sweep_unreported()` runs every drain and sends reports whose one attempt was
+  swallowed (Ghost Mode, a Telegram outage, a restart).
+- **`/leaders/report/:uid` is the day report** (`pages/LeaderDayReport.jsx`) —
+  **auth-only, row-scoped, not page-gated**, like `/cells/:id`: the brigadir
+  being told their unit's score is often somebody nobody granted `/leaders` to,
+  and a notification opening onto "no access" is worse than no notification.
+  Tasks group by OUTCOME (failures first), never by task number; the score is
+  never shown without its `submitted → verified` derivation; an unfinished check
+  says so instead of looking final. Photos are 72px thumbnails into a lightbox
+  **portaled to `document.body`** (`.page-enter`'s transform would otherwise
+  contain a `position:fixed` overlay).
+- **Disputes are the way back** (`leader_ai_disputes`): the unit's own brigadir
+  objects with a mandatory reason from the report page, admins decide inline in
+  Telegram (`approvals.py` kind `leader_dispute` / code `ld`) or on the page.
+  `_settle_dispute` is THE decision core for both. Approving writes
+  `resolution="approved"` on the verdict — that is what restores the weight —
+  and the corrected score re-DMs itself. Authority mirrors the late-day flow and
+  is deliberately not grantable.
+- **`components/leaders/verifyState.js` is THE verification vocabulary** —
+  states, colours, icons and precedence for the register chip, the page and the
+  filter. Never improvise a second set of words for these five facts. Every
+  state carries an icon as well as a colour. A day voided by the filing window
+  shows only its void chip; no second red mark beside it.
+
+Related memory: `leader-ai-proof-review`, `leader-task-photo-window`,
+`leaders-shift1-submission-window`.
+
 ## Browser login (the second door)
 
 The app has two front doors into the **same** session. Telegram is the first:
@@ -203,7 +269,7 @@ re-verifies it on every request. The second is a username + password at
 - **Pushing to `main` deploys to production.** `.gitea/workflows/deploy.yaml` runs `deploy/deploy.sh` on the VPS on every push — see the Deployment section below.
 - **The whole loop is automated by two hooks in `.claude/settings.local.json`: pull → edit → build → commit → push.**
   - `SessionStart` → `.claude/hooks/auto-pull.sh` fetches gitea and **fast-forwards `main`** before anything is edited. It never merges or rebases: on a diverged branch, or when uncommitted work blocks the fast-forward, it reports and leaves the tree untouched. Log: `.claude/auto-pull.log`.
-  - `Stop` → `.claude/hooks/auto-commit.sh` runs the Vite build, commits everything with a generated message, then pushes **gitea first** (that is the deploy) and the GitHub mirror after. A failed build aborts the commit; a failed mirror push is cosmetic and says so; a failed *gitea* push says `NOT deployed`. Log: `.claude/auto-commit.log`.
+  - `Stop` → `.claude/hooks/auto-commit.sh` bumps `VERSION` (patch, unless the turn already set it — see Versioning), runs the Vite build, commits everything with a generated message, then pushes **gitea first** (that is the deploy) and the GitHub mirror after. A failed build aborts the commit; a failed mirror push is cosmetic and says so; a failed *gitea* push says `NOT deployed`. Log: `.claude/auto-commit.log`.
   - Net effect: **one turn = one commit = one production deploy**, with no staging step and no review window. Verify a doubtful build by hand with `cd frontend && npx vite build`.
   - The pull only runs at session start. If `main` moves on gitea mid-session the push at turn end is *rejected*, not silently merged — you will see `PUSH FAILED` in the summary; pull and re-run.
 - `frontend/dist` is TRACKED and prod serves the SPA from it. Commit the build alongside the source — the pipeline rebuilds it for you if you forget, but committing it makes the deploy a no-restart, zero-downtime file swap.
@@ -257,14 +323,26 @@ a bump RESETS every number to its right to 0 — `1.4.7` → patch `1.4.8` → m
 | **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop |
 | **MAJOR** `x.0.0` | The app is no longer used the way it was | data-model migration, auth/permission model change, a page removed or replaced, a redesign of a core flow. Rare — reserved. |
 
-- **One turn = one commit = one deploy = at most ONE bump.** Bump once for the
-  whole turn, never per file.
+**PATCH is AUTOMATIC — never hand-bump one.** `.claude/hooks/auto-commit.sh`
+bumps the patch digit on every commit it makes, before the build (Vite bakes
+`VERSION` into the bundle, so a later bump would ship a bundle claiming the old
+number). Nothing to remember, and no deploy can go out unversioned.
+
+**MINOR and MAJOR are the judgement the hook cannot make — express one by
+EDITING `VERSION` during the turn.** A `VERSION` already changed against `HEAD`
+is left strictly alone by the hook, so your number is what ships. That is the
+whole mechanism: edit it for a big change, ignore it for a small one. There is
+no marker file and no flag.
+
+- **One turn = one commit = one deploy = at most ONE bump.** Never per file.
 - **Mixed turn → the highest level wins.** A feature plus three fixes is one
-  MINOR, not a MINOR and three PATCHes.
-- **A turn that edits no shipped code doesn't bump** — questions, investigations,
-  and scratchpad work leave `VERSION` alone.
-- Bump it in the same turn as the change: the Stop hook builds from `VERSION`
-  before it commits, so the number ships with the code it describes.
+  MINOR, not a MINOR and three PATCHes — so edit `VERSION` once, to `x.(y+1).0`.
+- **A turn that edits no shipped code doesn't bump** — the hook exits before the
+  bump when the tree is clean, so questions and investigations cost nothing.
+- The version leads the commit subject (`v1.2.0: Update Sidebar.jsx …`), which
+  makes `git log --oneline` the release history. `VERSION` itself is excluded
+  from the message generator's diff — it changes every commit and says nothing
+  about what any one of them did.
 
 Three readings, deliberately distinct, all in the sidebar's «Versiya» dialog
 (`components/layout/VersionBadge.jsx`): **App** = the bundle this tab is

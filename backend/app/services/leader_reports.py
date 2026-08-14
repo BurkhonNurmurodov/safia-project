@@ -17,6 +17,7 @@ day.
 
 import logging
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -294,7 +295,10 @@ def _tally(tasks: list[dict]) -> tuple[int, int, int, int, int]:
 # ── the report DM ────────────────────────────────────────────────────────────
 
 def report_url(uid: str) -> str:
-    return f"{settings.webapp_url.rstrip('/')}/leaders/report/{uid}"
+    """The mini-app URL for one day report. The uid is quoted: it is a form
+    submission id we did not mint, and one stray character in a Telegram
+    web_app URL is a button that opens a 404 instead of the report."""
+    return f"{settings.webapp_url.rstrip('/')}/leaders/report/{quote(uid, safe='')}"
 
 
 def _button_markup(url: str):
@@ -334,8 +338,16 @@ def maybe_send_report(db: Session, key: str) -> bool:
 
 def send_for_uid(db: Session, uid: str) -> bool:
     from app.identity import profile_key
+    from app.notify_ctx import notifications_suppressed
     from app.routers.leaders import build_report_row
     from app.routers.staff import notify_profile
+
+    # Ghost Mode: an admin testing the platform must not blast day reports at
+    # every brigadir and leader. Deliberately returns BEFORE the ledger is
+    # written, so the report is not marked as sent — `sweep_unreported` picks
+    # it up once the toggle is off, instead of the day being silently skipped.
+    if notifications_suppressed():
+        return False
 
     row = build_report_row(db, uid)
     if row is None:

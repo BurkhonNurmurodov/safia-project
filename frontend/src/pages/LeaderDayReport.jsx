@@ -11,7 +11,6 @@ import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import FormField from "../components/ui/FormField";
 import ErrorScreen from "../components/ui/ErrorScreen";
-import { SectionHead } from "../components/ui/DataTable";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { useLang } from "../context/LangContext";

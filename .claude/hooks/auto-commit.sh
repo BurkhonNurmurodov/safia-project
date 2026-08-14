@@ -36,6 +36,43 @@ mkdir -p "$(dirname "$LOG")"
 
 [ -z "$(git status --porcelain)" ] && { echo "nothing changed" >>"$LOG"; finish; }
 
+# --- version bump ----------------------------------------------------------
+# Every deploy ships a new number. The version is shown to every user in the
+# sidebar's «Versiya» dialog and served by /api/version, so a deploy that
+# leaves it alone makes both of them lie about what is running.
+#
+# This runs BEFORE the build, not merely before the commit: Vite bakes VERSION
+# into the bundle, so a bump applied afterwards would ship a bundle claiming
+# the previous number — the one place the mistake is invisible from here and
+# visible to everyone else.
+#
+# Only PATCH is automatic. MINOR and MAJOR are judgements about impact that
+# nothing in a diff can make, so they are expressed by EDITING VERSION during
+# the turn — and an already-edited VERSION is left strictly alone below. One
+# mechanism, no second marker file to forget about.
+#
+# If the build then fails, the bumped VERSION stays in the tree uncommitted and
+# the next run leaves it be: the bump belongs to the commit that ships, not to
+# every attempt at one.
+VERSION_FILE="$PROJECT/VERSION"
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "no VERSION file — skipping bump" >>"$LOG"
+elif ! git diff --quiet HEAD -- VERSION 2>/dev/null; then
+  echo "VERSION already set this turn — leaving it" >>"$LOG"
+else
+  CUR=$(tr -d '[:space:]' <"$VERSION_FILE")
+  if printf '%s' "$CUR" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    NEW="${CUR%.*}.$(( ${CUR##*.} + 1 ))"
+    printf '%s\n' "$NEW" >"$VERSION_FILE"
+    echo "version $CUR -> $NEW (patch)" >>"$LOG"
+  else
+    # Never rewrite something we don't understand, and never block the deploy
+    # over bookkeeping — a missed bump is a nuisance, a blocked deploy is not.
+    echo "VERSION is not X.Y.Z ('$CUR') — skipping bump" >>"$LOG"
+  fi
+fi
+VER=$(tr -d '[:space:]' <"$VERSION_FILE" 2>/dev/null)
+
 # --- build -----------------------------------------------------------------
 # Prod serves the SPA from the committed frontend/dist, so the build has to
 # land in the same commit as the source. A broken build must never be pushed.
@@ -49,20 +86,26 @@ git diff --cached --quiet && { echo "nothing staged" >>"$LOG"; finish; }
 
 # --- deterministic fallback message ----------------------------------------
 # frontend/dist is excluded everywhere below: minified bundles are pure noise.
+# VERSION joins it now that it changes on EVERY commit — it says nothing about
+# what THIS one did, it would crowd out a real filename in the fallback, and
+# left in the diff it tempts the generator into writing "Bump version to x.y.z"
+# as the whole message.
 SRC=':(exclude)frontend/dist'
-NAMES=$(git diff --cached --name-only -- . "$SRC")
+VSRC=':(exclude)VERSION'
+NAMES=$(git diff --cached --name-only -- . "$SRC" "$VSRC")
 N=$(printf '%s\n' "$NAMES" | grep -c . )
 HEADS=$(printf '%s\n' "$NAMES" | head -3 | sed 's:.*/::' | tr '\n' '|' | sed 's/|$//; s/|/, /g')
 if   [ "$N" -gt 3 ]; then FALLBACK="Update $HEADS and $((N-3)) more"
 elif [ "$N" -gt 0 ]; then FALLBACK="Update $HEADS"
+elif [ -n "$VER"  ]; then FALLBACK="Release v$VER"
 else                      FALLBACK="Rebuild frontend"
 fi
 
 # --- try to do better than the fallback ------------------------------------
 MSG="$FALLBACK"
 USED_AI="no"
-DIFF=$( { git diff --cached --stat -- . "$SRC" | tail -40
-          git diff --cached        -- . "$SRC" | head -600; } 2>/dev/null )
+DIFF=$( { git diff --cached --stat -- . "$SRC" "$VSRC" | tail -40
+          git diff --cached        -- . "$SRC" "$VSRC" | head -600; } 2>/dev/null )
 
 if [ -n "$DIFF" ] && command -v claude >/dev/null 2>&1; then
   RAW=$( printf '%s\n' "$DIFF" \
@@ -91,6 +134,11 @@ Rules: imperative mood, max 72 characters, describe what changed and why it matt
 else
   echo "claude not on PATH or empty diff — using fallback" >>"$LOG"
 fi
+
+# The version leads the subject line, so `git log --oneline` reads as the
+# release history it now is, and the number that shipped a change can be found
+# without opening the commit.
+[ -n "$VER" ] && MSG="v$VER: $MSG"
 
 echo "message ($USED_AI): $MSG" >>"$LOG"
 git commit -m "$MSG" >>"$LOG" 2>&1 \

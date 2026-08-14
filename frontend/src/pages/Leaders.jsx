@@ -1797,6 +1797,8 @@ export default function Leaders() {
   const [fShift, setFShift] = usePersistentState(`${prefix}_shift`, null); // null = all shifts | 1 | 2
   const [fSup, setFSup] = usePersistentState(`${prefix}_supervisor`, "All");
   const [fLeader, setFLeader] = usePersistentState(`${prefix}_leader`, "All");
+  // Verification state filter: all | rejected | disputed | checking | clean.
+  const [fVerify, setFVerify] = usePersistentState(`${prefix}_verify`, "all");
   const [standMode, setStandMode] = usePersistentState(`${prefix}_stand_mode`, "leader");
   const [standDir, setStandDir] = usePersistentState(`${prefix}_stand_dir`, "desc");
   const [standMetric, setStandMetric] = usePersistentState(`${prefix}_stand_metric`, "rating"); // rating | consist
@@ -1904,6 +1906,7 @@ export default function Leaders() {
 
   // On-page re-sync of the leaders sheet (same endpoint as the admin panel).
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [justSynced, setJustSynced] = useState(false);
   // How many new proof rows this Refresh handed to the AI. Shift 1 files through
   // the Google form, so Refresh IS the moment their photos become reviewable —
@@ -2508,6 +2511,15 @@ export default function Leaders() {
       const v = r.completion;
       return tBand === "good" ? v >= 85 : tBand === "mid" ? (v >= 50 && v < 85) : v < 50;
     });
+    // Verification state, read through the SAME resolver the row chip uses —
+    // a filter that classified rows differently from the badge beside them
+    // would be worse than no filter at all. «clean» deliberately means
+    // "checked and nothing found", not "no marks": a report verification never
+    // touched has not passed anything.
+    if (fVerify !== "all") arr = arr.filter((r) => {
+      const st = r.rejected ? null : reportState(r);
+      return fVerify === "clean" ? st?.key === "verified" : st?.key === fVerify;
+    });
     const dir = tSort.dir === "asc" ? 1 : -1;
     arr.sort((a, b) => {
       if (tSort.key === "date") return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
@@ -2522,7 +2534,7 @@ export default function Leaders() {
       return (a.completion - b.completion) * dir;          // score
     });
     return arr;
-  }, [filtered, tSearch, tBand, tSort, tl]);
+  }, [filtered, tSearch, tBand, fVerify, tSort, tl]);
 
   // What the rows ON SCREEN contain — the register's summary strip.
   //
@@ -2743,6 +2755,26 @@ export default function Leaders() {
                   opts={[{ value: "All", label: T.allLeaders }, ...leaderOptions.map((l) => ({ value: l, label: nm(l), title: nm(l) }))]}
                   value={fLeader}
                   onChange={setFLeader} />
+              ),
+            },
+            // Verification state. Offered to everyone the register is: since
+            // the automatic regime, a rejection moves the score of the brigadir
+            // and the leader reading this, so "show me the days that lost
+            // points" is their question too, not only an admin's triage one.
+            {
+              key: "verify", icon: ShieldAlert, label: T.fVerify,
+              active: fVerify !== "all",
+              display: fVerify !== "all" ? (T[`fVerify${fVerify[0].toUpperCase()}${fVerify.slice(1)}`] || fVerify) : "",
+              onClear: () => setFVerify("all"),
+              render: ({ close } = {}) => (
+                <PickFilter close={close} value={fVerify} onChange={setFVerify}
+                  opts={[
+                    { value: "all", label: T.fVerifyAll },
+                    { value: "rejected", label: T.fVerifyRejected },
+                    { value: "disputed", label: T.fVerifyDisputed },
+                    { value: "checking", label: T.fVerifyChecking },
+                    { value: "clean", label: T.fVerifyClean },
+                  ]} />
               ),
             },
           ]}

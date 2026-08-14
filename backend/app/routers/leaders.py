@@ -720,32 +720,35 @@ def file_dispute(
     is_admin = payload.get("role") == "admin"
     who = payload.get("full_name") or ""
     tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    # Always born `pending`, even when an admin files it: `_settle_dispute` is
+    # the ONLY thing that writes a decision, and it refuses to act on a row
+    # that already claims to be decided. Pre-stamping the admin's own filing
+    # would make it a no-op — the paper trail would say "approved" while the
+    # verdict kept its rejection and the leader's weight never came back.
     d = LeaderAiDispute(
         ref=ref, review_id=rev.id, date=report["date"], task_id=task_id,
         leader_id=report["leaderId"], leader_name=(report["leader"] or "")[:160],
-        manager_id=report["managerId"],
-        status="approved" if is_admin else "pending",
-        reason=reason,
+        manager_id=report["managerId"], status="pending", reason=reason,
         requested_by_profile=identity.viewer_profile_key(db, payload),
         requested_by_name=who, requested_by_telegram=tid,
     )
     db.add(d)
     db.flush()
-    if is_admin:
-        d.decided_by_name = who
-        d.decided_by_telegram = tid
-        d.decided_at = datetime.now(timezone.utc)
-        _settle_dispute(db, d, "approved", who, tid)
     db.commit()
-    logger.info("leader-dispute: %s filed by %s on %s task %s (%s)",
-                d.status, who, uid, task_id, reason[:80])
 
-    if not is_admin:
+    if is_admin:
+        # An admin asking themselves for permission is not a flow. Filing IS
+        # the decision — the same rule as opening a late day.
+        _settle_dispute(db, d, "approved", who, tid)
+        _report_after_ruling(db, d)
+    else:
         try:
             from app.approvals import send_leader_dispute_to_admins
             send_leader_dispute_to_admins(db, d)
         except Exception:
             logger.exception("leader-dispute: admin card failed for %s", d.id)
+    logger.info("leader-dispute: %s filed by %s on %s task %s (%s)",
+                d.status, who, uid, task_id, reason[:80])
     return {"ok": True, "status": d.status,
             "report": leader_reports.day_report(db, uid)}
 

@@ -46,6 +46,9 @@ export function reportState(row) {
   const ai = row?.ai;
   if (!ai) return null;
   const rejected = (row.tasks || []).filter((t) => t.ai_rejected).length;
+  // A live objection outranks the rejection it argues with: the number has not
+  // moved yet, but what the reader should do about it has.
+  if (ai.disputed > 0) return { ...VERIFY.disputed, n: ai.disputed };
   if (rejected > 0) return { ...VERIFY.rejected, n: rejected };
   if (ai.pending > 0) return { ...VERIFY.checking, n: ai.pending };
   if (ai.error > 0) return { ...VERIFY.error, n: ai.error };
