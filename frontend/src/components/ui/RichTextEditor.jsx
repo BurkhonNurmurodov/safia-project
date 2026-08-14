@@ -675,7 +675,7 @@ function EmojiPalette({ emojis, t, onOpen, onInsert, onAdd, onDelete }) {
 
 export default function RichTextEditor({
   onChange, placeholder = "", minHeight = 180, rich = false,
-  customEmojis = null, onAddEmoji, onDeleteEmoji,
+  customEmojis = null, onAddEmoji, onDeleteEmoji, initialHtml = "",
 }) {
   const { t } = useLang();
   const ref = useRef(null);
@@ -769,6 +769,21 @@ export default function RichTextEditor({
     try { document.execCommand("styleWithCSS", false, false); } catch { /* older engines */ }
     document.addEventListener("selectionchange", refreshStates);
     return () => document.removeEventListener("selectionchange", refreshStates);
+  }, []);
+
+  // Seed content once, at mount. The editor is uncontrolled (its truth is the
+  // contenteditable DOM), so a caller restoring a draft or duplicating an
+  // existing message passes `initialHtml` and bumps `key` to remount.
+  useEffect(() => {
+    if (!initialHtml || !ref.current) return;
+    ref.current.innerHTML = initialHtml;
+    // Embedded media are blobs held in THIS component's registry, and restored
+    // markup arrives without them. A node referencing a file we do not hold
+    // would fail the send with "missing media upload", so the references are
+    // dropped here and the caller tells the user to re-attach.
+    ref.current.querySelectorAll("[data-tg-media]").forEach((n) => n.remove());
+    emit();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 
   // Mode switch re-serializes the same DOM under the other dialect.

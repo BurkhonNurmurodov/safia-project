@@ -404,6 +404,31 @@ def _flood_wait_seconds(exc: Exception) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_DESC_RE = re.compile(r"Description:\s*(.+)", re.IGNORECASE | re.DOTALL)
+
+# Reason recorded for recipients skipped because the media died with the process
+# that held it. Not a Telegram error — a stable sentinel, so the record page can
+# say something true about a recipient nobody ever tried to reach.
+MEDIA_LOST_REASON = "Attachment was lost when the sending process restarted"
+
+
+def _failure_reason(exc: Exception) -> str:
+    """One failed DM reduced to the sentence an admin can act on.
+
+    Telegram's own description ("Forbidden: bot was blocked by the user") is the
+    part that decides whether retrying can achieve anything, so it is lifted out
+    of telebot's wrapper prose; everything else falls back to the exception text.
+    Capped at 200 chars — this ends up in a table cell, not a log."""
+    if isinstance(exc, ApiTelegramException):
+        desc = str(exc.description or "").strip()
+        if desc:
+            return desc[:200]
+    m = _DESC_RE.search(str(exc))
+    if m:
+        return m.group(1).strip()[:200]
+    return (str(exc).strip() or exc.__class__.__name__)[:200]
+
+
 def _send_once(send):
     """Run one Telegram send, waiting out a single flood-wait pause. Without
     this, one 429 makes every following recipient fail instantly inside the
@@ -519,12 +544,14 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
         sent = row.sent_count or 0
         failed = row.failed_count or 0
         failed_names = list(row.failed_names or [])
+        failures = list(row.failures or [])
         i = row.send_cursor or 0
         total = len(recipients)
 
         def _fields():
             f = {"sent_count": sent, "failed_count": failed,
-                 "failed_names": list(failed_names), "send_cursor": i}
+                 "failed_names": list(failed_names), "failures": list(failures),
+                 "send_cursor": i}
             if reusable:
                 f["media_specs"] = reusable
             return f
@@ -536,6 +563,7 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
             skipped = [name for _, name in recipients[i:]]
             failed += len(skipped)
             failed_names.extend(skipped)
+            failures.extend([[tid, nm, MEDIA_LOST_REASON] for tid, nm in recipients[i:]])
             i = total
             logger.warning("Rich broadcast %s: media lost with its original process "
                            "before any send succeeded — %s recipient(s) marked failed",
@@ -578,6 +606,7 @@ def _run_broadcast_rich(bid: int, media_items: list[dict] | None = None,
             except Exception as e:
                 failed += 1
                 failed_names.append(name)
+                failures.append([tid, name, _failure_reason(e)])
                 logger.warning("Rich broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
             i += 1
             if not io.flush(_fields()):
@@ -751,12 +780,14 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
         sent = row.sent_count or 0
         failed = row.failed_count or 0
         failed_names = list(row.failed_names or [])
+        failures = list(row.failures or [])
         i = row.send_cursor or 0
         total = len(recipients)
 
         def _fields():
             f = {"sent_count": sent, "failed_count": failed,
-                 "failed_names": list(failed_names), "send_cursor": i}
+                 "failed_names": list(failed_names), "failures": list(failures),
+                 "send_cursor": i}
             if file_id:
                 f["attachment_file_id"] = file_id
             return f
@@ -768,6 +799,7 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
             skipped = [name for _, name in recipients[i:]]
             failed += len(skipped)
             failed_names.extend(skipped)
+            failures.extend([[tid, nm, MEDIA_LOST_REASON] for tid, nm in recipients[i:]])
             i = total
             logger.warning("Broadcast %s: attachment lost with its original process "
                            "before any send succeeded — %s recipient(s) marked failed",
@@ -807,6 +839,7 @@ def _run_broadcast(bid: int, data: bytes | None = None, filename: str | None = N
             except Exception as e:
                 failed += 1
                 failed_names.append(name)
+                failures.append([tid, name, _failure_reason(e)])
                 logger.warning("Broadcast %s → %s (%s) failed: %s", bid, tid, name, e)
             i += 1
             if not io.flush(_fields()):
@@ -1072,6 +1105,95 @@ async def send_broadcast(
                 status_code=422,
                 detail=f"scheduled_at cannot be more than {MAX_SCHEDULE_DAYS} days out")
 
+    html, plain, kind, data, filename, media_items = await _parse_message(
+        text, mode, media_meta, file, media_files)
+
+    # `targets` is now a list of telegram_ids (the picker keys leaves by
+    # telegram_id). Validate each against the deliverable set before sending.
+    blocks = _profile_holders(db)
+    deliverable = _deliverable(blocks)
+    names = _stored_names(db, blocks)
+    want = _uniq([int(x) for x in keys if str(x).lstrip("-").isdigit()])
+    recipients = {tid: names.get(tid, str(tid)) for tid in want if tid in deliverable}
+    if not recipients:
+        raise HTTPException(status_code=422, detail="No deliverable recipients selected")
+
+    from app.telegram_bot import admin_profile_name
+    sender_tid = int(payload.get("sub", 0) or 0)
+
+    # A scheduled send has no thread to hold the uploaded bytes until its time
+    # comes, so the media is turned into reusable Telegram ids right now. This
+    # can fail (the bot cannot DM the admin, Telegram rejects the file) and
+    # deliberately fails the whole request: better a red error on the compose
+    # screen than a broadcast that fires at 06:00 and fails every recipient.
+    pre_file_id: str | None = None
+    pre_specs: list[dict] | None = None
+    if when and (kind or media_items):
+        pre_file_id, pre_specs = _preflight_media(
+            sender_tid, mode, html, kind, data, filename, media_items)
+
+    row = Broadcast(
+        sender_telegram_id=sender_tid,
+        sender_name=admin_profile_name(sender_tid),
+        mode=mode,
+        text_html=html, text_plain=plain,
+        attachment_kind=kind, attachment_name=filename,
+        media_names=[m["filename"] for m in media_items],
+        target_keys=keys, recipient_total=len(recipients),
+        sent_count=0, failed_count=0, failed_names=[], failures=[],
+        status="scheduled" if when else "sending",
+        scheduled_at=when,
+        # Resumable fan-out state: the resolved list + cursor live on the row.
+        # claimed_at is set NOW so a concurrently booting process's resume
+        # sweep can't steal the row from the only process holding the
+        # in-memory attachment bytes. A scheduled row claims nothing — it is
+        # not sending yet, and the resume sweep only looks at 'sending'.
+        recipients=[[tid, name] for tid, name in sorted(recipients.items())],
+        send_cursor=0,
+        claimed_at=None if when else datetime.now(timezone.utc),
+        attachment_file_id=pre_file_id,
+        media_specs=pre_specs,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    if when:
+        # The row is already the durable record; the timer is a convenience
+        # rebuilt at every boot. If arming fails the send is still covered by
+        # the 5-minute sweep, so this is logged, not raised.
+        schedule_at(_job_id(row.id), when, fire_scheduled_broadcast, (row.id,))
+        logger.info("Broadcast %s scheduled for %s (%s recipients)",
+                    row.id, when.isoformat(), len(recipients))
+        return {"id": row.id, "recipients": len(recipients),
+                "scheduled_at": when.isoformat()}
+
+    if mode == "rich":
+        threading.Thread(
+            target=_run_broadcast_rich,
+            args=(row.id, media_items), kwargs={"claimed": True},
+            daemon=True,
+        ).start()
+    else:
+        threading.Thread(
+            target=_run_broadcast,
+            args=(row.id, data, filename), kwargs={"claimed": True},
+            daemon=True,
+        ).start()
+    return {"id": row.id, "recipients": len(recipients)}
+
+
+async def _parse_message(
+    text: str, mode: str, media_meta: str,
+    file: UploadFile | None, media_files: list[UploadFile] | None,
+) -> tuple[str, str, str | None, bytes | None, str | None, list[dict]]:
+    """Sanitize and validate one composed message → (html, plain, attachment
+    kind, bytes, filename, rich media items).
+
+    Shared by /send and /test on purpose: a rehearsal that went through a
+    different sanitizer, a different length cap or a different media binding
+    would not be a rehearsal of the thing that ships.
+    """
     kind = data = filename = None
     media_items: list[dict] = []
 
@@ -1126,79 +1248,79 @@ async def send_broadcast(
         if _utf16_len(plain) > max_len:
             raise HTTPException(status_code=422, detail=f"Message exceeds {max_len} characters")
 
-    # `targets` is now a list of telegram_ids (the picker keys leaves by
-    # telegram_id). Validate each against the deliverable set before sending.
-    blocks = _profile_holders(db)
-    deliverable = _deliverable(blocks)
-    names = _stored_names(db, blocks)
-    want = _uniq([int(x) for x in keys if str(x).lstrip("-").isdigit()])
-    recipients = {tid: names.get(tid, str(tid)) for tid in want if tid in deliverable}
-    if not recipients:
-        raise HTTPException(status_code=422, detail="No deliverable recipients selected")
+    return html, plain, kind, data, filename, media_items
 
-    from app.telegram_bot import admin_profile_name
+
+@router.post("/test")
+async def test_broadcast(
+    text: str = Form(...),
+    mode: str = Form("normal"),
+    media_meta: str = Form("[]"),
+    file: UploadFile | None = File(None),
+    media_files: list[UploadFile] | None = File(None),
+    payload: dict = Depends(verify_admin),
+):
+    """DM the composed message to the composer, and to nobody else.
+
+    The only honest preview of a Telegram message is a Telegram message: the
+    composer's bubble approximates entities, rich mode renders differently per
+    client, and premium emoji survive or degrade depending on the bot's own
+    username. So this goes through _parse_message and the same send calls the
+    fan-out uses — what arrives is what the recipients would get.
+
+    Writes NO Broadcast row: a rehearsal is not a broadcast, and putting one in
+    the history would make the register lie about what was sent to whom.
+    ``degraded`` reports that premium emoji had to fall back, which is one of
+    the things being rehearsed.
+    """
+    if mode not in ("normal", "rich"):
+        raise HTTPException(status_code=422, detail="mode must be normal or rich")
+    html, _plain, kind, data, filename, media_items = await _parse_message(
+        text, mode, media_meta, file, media_files)
+
     sender_tid = int(payload.get("sub", 0) or 0)
+    if not sender_tid:
+        raise HTTPException(status_code=401, detail="Unknown sender")
 
-    # A scheduled send has no thread to hold the uploaded bytes until its time
-    # comes, so the media is turned into reusable Telegram ids right now. This
-    # can fail (the bot cannot DM the admin, Telegram rejects the file) and
-    # deliberately fails the whole request: better a red error on the compose
-    # screen than a broadcast that fires at 06:00 and fails every recipient.
-    pre_file_id: str | None = None
-    pre_specs: list[dict] | None = None
-    if when and (kind or media_items):
-        pre_file_id, pre_specs = _preflight_media(
-            sender_tid, mode, html, kind, data, filename, media_items)
+    from app.telegram_bot import bot, strip_custom_emoji
+    stripped = strip_custom_emoji(html)
 
-    row = Broadcast(
-        sender_telegram_id=sender_tid,
-        sender_name=admin_profile_name(sender_tid),
-        mode=mode,
-        text_html=html, text_plain=plain,
-        attachment_kind=kind, attachment_name=filename,
-        media_names=[m["filename"] for m in media_items],
-        target_keys=keys, recipient_total=len(recipients),
-        sent_count=0, failed_count=0, failed_names=[],
-        status="scheduled" if when else "sending",
-        scheduled_at=when,
-        # Resumable fan-out state: the resolved list + cursor live on the row.
-        # claimed_at is set NOW so a concurrently booting process's resume
-        # sweep can't steal the row from the only process holding the
-        # in-memory attachment bytes. A scheduled row claims nothing — it is
-        # not sending yet, and the resume sweep only looks at 'sending'.
-        recipients=[[tid, name] for tid, name in sorted(recipients.items())],
-        send_cursor=0,
-        claimed_at=None if when else datetime.now(timezone.utc),
-        attachment_file_id=pre_file_id,
-        media_specs=pre_specs,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
+    def _deliver(h: str):
+        if mode == "rich":
+            specs = [{"id": m["id"], "media": {"type": m["kind"], "media": f"attach://f{n}"}}
+                     for n, m in enumerate(media_items)]
+            files = {f"f{n}": (m["filename"], m["data"]) for n, m in enumerate(media_items)}
+            rich: dict = {"html": h, "is_rtl": False}
+            if specs:
+                rich["media"] = specs
+            _tg_api("sendRichMessage",
+                    {"chat_id": sender_tid, "rich_message": json.dumps(rich)}, files or None)
+        elif kind == "photo":
+            bot.send_photo(sender_tid, data, caption=h, parse_mode="HTML")
+        elif kind == "video":
+            bot.send_video(sender_tid, data, caption=h, parse_mode="HTML")
+        elif kind == "document":
+            bot.send_document(sender_tid, document=(filename, data), caption=h, parse_mode="HTML")
+        else:
+            bot.send_message(sender_tid, h, parse_mode="HTML")
 
-    if when:
-        # The row is already the durable record; the timer is a convenience
-        # rebuilt at every boot. If arming fails the send is still covered by
-        # the 5-minute sweep, so this is logged, not raised.
-        schedule_at(_job_id(row.id), when, fire_scheduled_broadcast, (row.id,))
-        logger.info("Broadcast %s scheduled for %s (%s recipients)",
-                    row.id, when.isoformat(), len(recipients))
-        return {"id": row.id, "recipients": len(recipients),
-                "scheduled_at": when.isoformat()}
+    degraded = False
+    try:
+        try:
+            _send_once(lambda: _deliver(html))
+        except Exception:
+            # Same degradation ladder as the real fan-out: premium emoji
+            # rejected → retry with fallback characters, and SAY so.
+            if html == stripped:
+                raise
+            _send_once(lambda: _deliver(stripped))
+            degraded = True
+    except Exception as exc:
+        logger.warning("Broadcast test send to %s failed: %s", sender_tid, exc)
+        raise HTTPException(status_code=502, detail=_failure_reason(exc)) from exc
 
-    if mode == "rich":
-        threading.Thread(
-            target=_run_broadcast_rich,
-            args=(row.id, media_items), kwargs={"claimed": True},
-            daemon=True,
-        ).start()
-    else:
-        threading.Thread(
-            target=_run_broadcast,
-            args=(row.id, data, filename), kwargs={"claimed": True},
-            daemon=True,
-        ).start()
-    return {"id": row.id, "recipients": len(recipients)}
+    logger.info("BROADCAST test sent to %s (mode=%s, degraded=%s)", sender_tid, mode, degraded)
+    return {"ok": True, "degraded": degraded}
 
 
 def _retryable(r: Broadcast) -> bool:
@@ -1249,6 +1371,10 @@ def retry_broadcast(bid: int, db: Session = Depends(get_db),
         "send_cursor": 0,
         "failed_count": 0,
         "failed_names": [],
+        # Cleared with the names: the reasons describe the attempt being
+        # replaced, and leaving them would report a recipient as both retried
+        # and still-blocked on the record page.
+        "failures": [],
         "status": "sending",
         "finished_at": None,
         "claimed_at": datetime.now(timezone.utc),
@@ -1317,9 +1443,17 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
             dirty = True
     if dirty:
         db.commit()
-    return [{
+    return [_row_summary(r) for r in rows]
+
+
+def _row_summary(r: Broadcast) -> dict:
+    """The shape of one broadcast in the history table AND in the header of its
+    record page. One builder so the two can never disagree about what a row
+    says — the page is reached by clicking the row it must match."""
+    return {
         "id": r.id,
         "created_at": r.created_at.isoformat() if r.created_at else None,
+        "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         "sender_name": r.sender_name,
         "mode": r.mode or "normal",
         "media_names": r.media_names or [],
@@ -1336,7 +1470,7 @@ def broadcast_history(db: Session = Depends(get_db), _: dict = Depends(verify_ad
         "can_retry": _retryable(r),
         "scheduled_at": r.scheduled_at.isoformat() if r.scheduled_at else None,
         "can_cancel": r.status == "scheduled",
-    } for r in rows]
+    }
 
 
 # ── /broadcast mini-app: recipient tree + draft send ──────────────────────────
@@ -1412,12 +1546,14 @@ def send_draft(
     from_chat_id = draft.from_chat_id
     sent = 0
     failed_names: list[str] = []
+    failures: list[list] = []
     for tid, name in recipients.items():
         try:
             _tg_copy(tid, from_chat_id, message_ids)
             sent += 1
         except Exception as e:
             failed_names.append(name)
+            failures.append([tid, name, _failure_reason(e)])
             logger.warning("Draft broadcast %s → %s (%s) failed: %s", draft.id, tid, name, e)
         time.sleep(0.05)  # stay under Telegram's ~30 msg/s ceiling
 
@@ -1434,6 +1570,13 @@ def send_draft(
         media_names=[],
         target_keys=want, recipient_total=total,
         sent_count=sent, failed_count=failed, failed_names=failed_names,
+        failures=failures,
+        # Persisted so a bot-composed broadcast opens the same per-recipient
+        # record page as a panel-composed one. Safe on a row created 'done':
+        # the resume sweep only claims 'sending' rows, and _retryable() refuses
+        # copy-mode outright, so this list is read by the record page alone.
+        recipients=[[tid, name] for tid, name in recipients.items()],
+        send_cursor=total,
         status="done", finished_at=datetime.now(timezone.utc),
     )
     db.add(row)
@@ -1508,3 +1651,85 @@ def delete_custom_emoji(emoji_row_id: int, db: Session = Depends(get_db),
         db.delete(row)
         db.commit()
     return {"ok": True}
+
+
+# ── One broadcast's record ────────────────────────────────────────────────────
+# Declared LAST on purpose: "/{bid}" would otherwise shadow every literal GET
+# path on this router (/history, /recipients, /emojis), which FastAPI resolves
+# in declaration order.
+
+@router.get("/{bid}")
+def broadcast_record(bid: int, db: Session = Depends(get_db),
+                     _: dict = Depends(verify_admin)):
+    """One broadcast plus its per-recipient delivery list — the payload behind
+    /broadcast/:id, which replaces the old history modal.
+
+    Per-recipient status is DERIVED, never stored twice: the resolved recipient
+    list is ordered and `send_cursor` says how far the fan-out got, so anyone
+    before the cursor was attempted and anyone after it has not been. Whether an
+    attempted recipient succeeded comes from `failures` (keyed by telegram_id,
+    carrying the reason). Rows written before that column exists only have
+    `failed_names`, so those are matched back positionally exactly the way
+    /retry rebuilds its subset — one name claims one slot — and report no
+    reason rather than a guessed one.
+    """
+    r = db.query(Broadcast).filter_by(id=bid).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+
+    recipients = r.recipients or []
+    cursor = r.send_cursor or 0
+
+    reasons: dict[int, str | None] = {}
+    for f in (r.failures or []):
+        if isinstance(f, (list, tuple)) and len(f) >= 2:
+            try:
+                reasons[int(f[0])] = (f[2] if len(f) > 2 else None)
+            except (TypeError, ValueError):
+                continue
+    legacy = None if reasons else Counter(r.failed_names or [])
+
+    # Nothing was attempted for these: 'scheduled' has not fired, 'canceled'
+    # never will. Both must read differently from "delivered", and from each
+    # other — a canceled row saying "pending" promises a send that is not coming.
+    unattempted = r.status in ("scheduled", "canceled")
+
+    people = []
+    for i, entry in enumerate(recipients):
+        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            tid, name = entry[0], entry[1]
+        else:
+            tid, name = entry, None
+        if unattempted or i >= cursor:
+            people.append({"telegram_id": tid, "name": name,
+                           "status": "canceled" if r.status == "canceled" else "pending",
+                           "error": None})
+            continue
+        failed, reason = False, None
+        if reasons:
+            try:
+                failed = int(tid) in reasons
+            except (TypeError, ValueError):
+                failed = False
+            reason = reasons.get(int(tid)) if failed else None
+        elif legacy and legacy.get(name):
+            legacy[name] -= 1
+            failed = True
+        people.append({"telegram_id": tid, "name": name,
+                       "status": "failed" if failed else "delivered",
+                       "error": reason})
+
+    out = _row_summary(r)
+    out.update({
+        "people": people,
+        # A retry REPLACES the row's recipient list with the failed subset, so
+        # the table can legitimately be shorter than recipient_total. Saying so
+        # beats silently showing 12 rows under a total of 337.
+        "partial_list": bool(people) and len(people) < (r.recipient_total or 0),
+        "target_keys": r.target_keys or [],
+        # copy-mode content lives in the sender's own Telegram chat, not here —
+        # there is nothing to prefill a new composer with.
+        "can_duplicate": (r.mode or "normal") != "copy" and bool(r.target_keys),
+        "has_media": bool(r.attachment_kind or r.media_names),
+    })
+    return out

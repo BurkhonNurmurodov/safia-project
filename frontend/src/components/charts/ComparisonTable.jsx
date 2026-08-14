@@ -164,6 +164,12 @@ export default function ComparisonTable({
   // per-cell page passes "Yacheyka" and a wider column for «4311 · Участок …».
   rowLabel = "Brigadir",
   labelWidth = LABEL_W,
+  // AVG/MIN/MAX footer, one row each, summarising every COLUMN. Off by default:
+  // the fleet table is read supervisor-by-supervisor, and three extra rows under
+  // twenty of them is noise. Pages whose rows are peers of one unit (the per-cell
+  // загрузка) turn it on — there "how did the whole unit do on 06.08?" is the
+  // question the grid is actually asked.
+  columnSummary = false,
 }) {
   const { labelColor } = useChartTheme();
   const isMobile = useIsMobile(); // phones: hide the pinned AVG/MIN/MAX summary pair
@@ -260,6 +266,108 @@ export default function ComparisonTable({
     paddingBottom: 6, paddingTop: 4, whiteSpace: "nowrap",
     background: HDR_BG,
   };
+
+  // ── Column statistics (the optional footer) ──────────────────────────────────
+  // The pinned column on the right summarises a ROW — one name across the whole
+  // period. This footer summarises a COLUMN — one day across every row.
+  //
+  // The three modes mean exactly what they mean in that column, so a reader
+  // learns the rule once: AVG averages each half on its own, while MIN/MAX pick
+  // the single row with the widest / narrowest P−A gap and show THAT row's pair.
+  // Taking the lowest P and the lowest A independently would print a cell that
+  // never happened — the point of the pair is that the two halves belong to the
+  // same measurement.
+  //
+  // Only what is on screen counts: values are read through the same approval
+  // gate and the same calc factors as the cells above, so the footer can never
+  // disagree with the grid it sits under.
+  const columnStats = (() => {
+    if (!columnSummary || !dates.length || !displayManagers.length) return null;
+
+    const valuesOf = (name, d) => {
+      const cell = data[name]?.[d];
+      if (!isApproved(name, d)) return { p: null, a: null, d: null };
+      const p = cell?.baseline_util != null ? Math.round(cell.baseline_util * 100) : null;
+      const aRaw = actualUtil(cell, factors);
+      const a = aRaw != null ? Math.round(aRaw * 100) : null;
+      return { p, a, d: (p !== null && a !== null) ? p - a : null };
+    };
+
+    const stat = (vals, m) => {
+      const pV = vals.map(v => v.p), aV = vals.map(v => v.a), dV = vals.map(v => v.d);
+      if (m === "avg") return { p: rowAvg(pV), a: rowAvg(aV), d: rowAvg(dV), n: pV.filter(v => v !== null).length };
+      const i = findExtremeIdx(dV, pV, m);
+      const n = dV.filter(v => v !== null).length;
+      return i === null ? { p: null, a: null, d: null, n } : { p: pV[i], a: aV[i], d: dV[i], n };
+    };
+
+    const everything = [];
+    const byDate = {};
+    for (const d of dates) {
+      const col = displayManagers.map(name => valuesOf(name, d));
+      everything.push(...col);
+      byDate[d] = { avg: stat(col, "avg"), min: stat(col, "min"), max: stat(col, "max") };
+    }
+    // The corner closes each footer row with the same statistic over EVERY value
+    // in the grid — not an average of the column averages, which is a different
+    // number whenever the columns hold different counts of filled cells.
+    return {
+      byDate,
+      all: { avg: stat(everything, "avg"), min: stat(everything, "min"), max: stat(everything, "max") },
+    };
+  })();
+
+  // One footer cell, built like a data cell (P half + A|D half, same widths and
+  // the same animation) but inert: an aggregate over cells has no per-cell
+  // formula to open and nothing to comment on.
+  function statCell(s, key, extra = {}) {
+    const pColor = s.p !== null ? getColor(s.p, psegs) : { bg: "transparent", fg: "var(--text-4)" };
+    const dColor = s.d !== null ? getColor(s.d, dsegs) : { bg: "transparent", fg: "var(--text-4)" };
+    const dash = <span style={{ opacity: 0.25, fontSize: 11 }}>—</span>;
+    return (
+      // An empty cell is left OUT of its column's statistic, so a day where two
+      // of seven rows carry a number averages two values, not seven. The count
+      // rides along in the tooltip — a mean whose denominator you can't see is a
+      // mean you can't argue with.
+      <td key={key} colSpan={2} title={t("comparison.statCount").replace("{n}", s.n)} style={{
+        padding: 0, position: "relative",
+        border: "1px solid var(--border)",
+        height: 30, verticalAlign: "middle",
+        background: "var(--bg-card)",
+        ...extra,
+      }}>
+        <div style={{
+          position: "absolute", left: 0, top: 0, bottom: 0,
+          width: isDiff ? "0%" : "50%",
+          transition: `width ${DUR} ${EASE}`,
+          overflow: "hidden", background: pColor.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          borderRight: "1px solid var(--border)", boxSizing: "border-box",
+        }}>
+          {s.p !== null
+            ? <span style={{ fontSize: 11, fontWeight: 700, color: pColor.fg, whiteSpace: "nowrap" }}>{s.p}%</span>
+            : dash}
+        </div>
+        <div style={{
+          position: "absolute", right: 0, top: 0, bottom: 0,
+          width: isDiff ? "100%" : "50%",
+          transition: `width ${DUR} ${EASE}, background-color 250ms`,
+          overflow: "hidden", background: dColor.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {isDiff
+            ? (s.d !== null
+                ? <span style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap" }}>
+                    {s.d > 0 ? "+" : ""}{s.d}%
+                  </span>
+                : dash)
+            : (s.a !== null
+                ? <span style={{ fontSize: 11, fontWeight: 700, color: dColor.fg, whiteSpace: "nowrap" }}>{s.a}%</span>
+                : dash)}
+        </div>
+      </td>
+    );
+  }
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -861,6 +969,62 @@ export default function ComparisonTable({
               );
             })}
           </tbody>
+
+          {/* Column statistics — AVG / MIN / MAX down the bottom, one row each.
+              All three at once, deliberately: the pinned column can afford to
+              cycle because a fourth mode would cost horizontal space the table
+              does not have, while a row costs 30px nobody is competing for, and
+              a statistic you have to tap to reach is a statistic nobody reads. */}
+          {columnStats && (
+            <tfoot>
+              {["avg", "min", "max"].map((m, mi) => (
+                <tr key={`stat-${m}`}>
+                  <td style={{
+                    position: "sticky", left: 0, zIndex: 3,
+                    background: "var(--bg-card)",
+                    borderRight: "2px solid var(--border-md)",
+                    borderTop: mi === 0 ? "2px solid var(--border-md)" : "1px solid var(--border)",
+                    textAlign: "left", paddingLeft: 12, paddingRight: 8,
+                    fontSize: 10, fontWeight: 700, letterSpacing: ".07em",
+                    textTransform: "uppercase", color: "var(--text-3)",
+                    whiteSpace: "nowrap",
+                    verticalAlign: "middle", height: 30,
+                    width: labelWidth, minWidth: labelWidth, maxWidth: labelWidth,
+                  }}>
+                    {m.toUpperCase()}
+                    <span style={{ marginLeft: 6, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--text-4)" }}>
+                      {t("comparison.perDay")}
+                    </span>
+                  </td>
+
+                  {dates.map((d, i) => statCell(
+                    columnStats.byDate[d][m],
+                    `stat-${m}-${d}`,
+                    {
+                      borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
+                      borderRight: (i < dates.length - 1 || padCount > 0) ? GROUP_BORDER : undefined,
+                    },
+                  ))}
+
+                  {pads.map((_, i) => (
+                    <td key={`stat-pad-${m}-${i}`} colSpan={2} style={{
+                      padding: 0, height: 30,
+                      border: "1px solid var(--border)",
+                      borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
+                      background: "var(--bg-card)",
+                    }} />
+                  ))}
+
+                  {!isMobile && statCell(columnStats.all[m], `stat-${m}-all`, {
+                    ...stickySum,
+                    zIndex: 4,
+                    borderLeft: "2px solid var(--border-md)",
+                    borderTop: mi === 0 ? "2px solid var(--border-md)" : undefined,
+                  })}
+                </tr>
+              ))}
+            </tfoot>
+          )}
         </table>
       </div>
 

@@ -1741,6 +1741,13 @@ class Broadcast(Base):
     sent_count         = Column(Integer, nullable=False, default=0)
     failed_count       = Column(Integer, nullable=False, default=0)
     failed_names       = Column(JSONB, nullable=False, default=list)  # profile names whose DM failed
+    # Per-recipient failure detail — [[telegram_id, name, reason], …]. failed_names
+    # above stays the name/count surface every existing consumer reads; this adds
+    # WHY, which is the only thing that tells an admin whether retrying is worth
+    # anything at all ("bot was blocked by the user" fails again every time).
+    # NULL on rows that predate the column — the record page renders those as "—"
+    # rather than inventing a reason.
+    failures           = Column(JSONB, nullable=True)
     status             = Column(String, nullable=False, default="sending")  # scheduled | sending | done | canceled
     created_at         = Column(DateTime(timezone=True), server_default=func.now())
     finished_at        = Column(DateTime(timezone=True), nullable=True)

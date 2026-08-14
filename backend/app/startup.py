@@ -447,6 +447,23 @@ def add_broadcast_resume_columns() -> None:
         db.close()
 
 
+def add_broadcast_failures_column() -> None:
+    """Per-recipient failure detail (idempotent). failed_names records WHO did
+    not get the message; this records WHY, which is what tells an admin whether
+    a retry can achieve anything — a user who blocked the bot fails identically
+    on every retry, a flood-wait or a network blip does not. Rows sent before
+    the column exists stay NULL and render as "—"."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS failures JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] broadcasts failures column migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_broadcast_schedule_column() -> None:
     """Deferred-send column (idempotent). A scheduled broadcast is a normal,
     fully-resolved row parked at status 'scheduled' until scheduled_at; the
