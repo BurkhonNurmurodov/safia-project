@@ -240,6 +240,38 @@ manual step, no SSH.
   if you add a file the app must read at runtime, check
   `git check-ignore -v <path>` before assuming it shipped.
 
+## Versioning
+
+The repo-root `VERSION` file is the ONE source of truth — `frontend/vite.config.js`
+injects it into the bundle, `backend/app/version.py` reads it for
+`FastAPI(version=…)` and `/api/version`. Never add a second one; `package.json`
+stays `0.0.0` on purpose.
+
+Three readings, deliberately distinct, all in the sidebar's «Versiya» dialog
+(`components/layout/VersionBadge.jsx`): **App** = the bundle this tab is
+running · **Deployed** = the bundle a reload would give it · **Server** = the
+Python process, its checkout commit and its boot time. A commit newer than the
+boot time means a backend change is still waiting on a restart — a
+frontend-only deploy never triggers one.
+
+- **A browser versions by the asset hash, not by this number.** Vite's
+  content-hashed filenames plus `/assets/* immutable` and `index.html no-store`
+  in `main.py` are the whole cache story; the version string is a human label
+  and changes nothing about caching.
+- **Update detection compares the BUILD STAMP, not the version** — `VERSION` is
+  bumped by hand for releases, while every deploy produces a new build.
+  `dist/build.json` is written by the build (and served **no-store**, same
+  reason as `index.html`); `hooks/useAppUpdate.js` polls it every 5 min and on
+  window focus, and `UpdatePrompt` in `Layout` offers a reload. It NEVER
+  reloads by itself — attendance drafts, admin forms and half-typed comments
+  are all unsaved state. The reactive half of the same problem stays
+  `lazyWithReload` → `window.__staleReload` (a lazy chunk that 404s), which
+  fires only once the app is already broken.
+- `dist/build.json` survives the wholesale `*.json` ignore via an explicit `!`
+  line in `.gitignore`. Ignored, it never ships and the prompt goes silent.
+- Vite 8 runs Rolldown, which silently dropped `this.emitFile` in
+  `generateBundle` — the plugin writes the marker in `writeBundle` instead.
+
 ## Context discipline
 
 - Read only the files needed for the task. Don't sweep the tree or open files "to understand the codebase" — this document is the map. Use the UI-template table above to find the right component instead of grepping for it.

@@ -9,6 +9,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import NotificationsBell, { useNotifications } from "../ui/NotificationsPanel";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
 import AddProfileModal from "./AddProfileModal";
+import UpdatePrompt from "./UpdatePrompt";
 import useActivityPing from "../../hooks/useActivityPing";
 import { useTranslit } from "../../utils/transliterate";
 import { ROLE_LABEL_KEYS } from "../../config/pages";
@@ -583,6 +584,10 @@ export default function Layout({ children, title }) {
           </main>
         </div>
       </div>
+
+      {/* Notices a newer build and offers a reload. Portals to body, so it sits
+          outside the column regardless of where it is mounted. */}
+      <UpdatePrompt />
     </div>
   );
 }

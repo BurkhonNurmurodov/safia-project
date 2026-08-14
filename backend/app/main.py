@@ -471,6 +471,12 @@ if STATIC_DIR:
         # "../dist-backup/secret" escape the intended directory.
         within = file_path == STATIC_DIR or file_path.startswith(STATIC_DIR + os.sep)
         if clean_path and within and os.path.isfile(file_path):
+            # build.json is the deploy marker the running app polls to notice a
+            # newer build. Cached, it keeps reporting the build the user already
+            # has and the update prompt never fires — so it gets index.html's
+            # no-store treatment for exactly the same reason.
+            if clean_path == "build.json":
+                return FileResponse(file_path, headers=NO_STORE)
             return FileResponse(file_path)
         # Otherwise serve index.html for SPA frontend routing
         return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers=NO_STORE)

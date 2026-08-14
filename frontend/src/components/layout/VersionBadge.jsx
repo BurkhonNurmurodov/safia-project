@@ -6,6 +6,7 @@ import Button from "../ui/Button";
 import { SkeletonBlock } from "../ui/Skeleton";
 import api from "../../utils/api";
 import { useLang } from "../../context/LangContext";
+import { useAppUpdate } from "../../hooks/useAppUpdate";
 import { APP_VERSION, BUILD_TIME, fmtStamp } from "../../utils/version";
 
 /**
@@ -14,15 +15,24 @@ import { APP_VERSION, BUILD_TIME, fmtStamp } from "../../utils/version";
  *
  * A push to main deploys straight to production — no staging step, no review
  * window — and nobody has a shell on the box, so "is this the build I just
- * pushed?" had no answer from inside the app. The rail answers the cheap half
- * (version + when this bundle was built); tapping it adds the server's own
- * readout, which is the half that catches the interesting failure: a UI that
- * shipped while the backend still runs older code, because a commit touching
- * only frontend/dist restarts nothing.
+ * pushed?" had no answer from inside the app. Three readings answer it, and
+ * they are deliberately three separate things:
+ *
+ *   • App       — the bundle THIS tab is running (baked in at build time)
+ *   • Deployed  — the bundle a reload would give you (dist/build.json, polled)
+ *   • Server    — the Python process, its checkout commit and boot time
+ *
+ * App ≠ Deployed means this tab is stale → the reload button. A commit newer
+ * than the server's boot time means a backend change is still waiting on a
+ * restart, which a frontend-only deploy never triggers. Neither is visible
+ * from a single "version" number, which is why all three are shown.
  */
 export default function VersionBadge({ expanded = true }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
+  // Shares one query with UpdatePrompt (same key) — opening this dialog costs
+  // no extra polling.
+  const { deployed, deployedVersion, updateReady, reload } = useAppUpdate();
 
   // Fetched only once the dialog is opened — the rail itself costs no request.
   const { data, isLoading, isError } = useQuery({
@@ -34,7 +44,7 @@ export default function VersionBadge({ expanded = true }) {
 
   const built = fmtStamp(BUILD_TIME);
   const serverVersion = data?.version;
-  const mismatch = Boolean(serverVersion) && serverVersion !== APP_VERSION;
+  const serverMismatch = Boolean(serverVersion) && serverVersion !== APP_VERSION;
 
   return (
     <>
@@ -49,7 +59,13 @@ export default function VersionBadge({ expanded = true }) {
           justifyContent: !expanded ? "center" : undefined,
         }}
       >
-        <Info size={14} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+        {/* Gold once an update is waiting: the toast can be dismissed, and the
+            rail is then the only remaining trace that one is available. */}
+        <Info
+          size={14}
+          className="flex-shrink-0"
+          style={{ color: updateReady ? "var(--brand)" : "var(--text-4)" }}
+        />
         <div
           className="text-[10px] leading-tight whitespace-nowrap transition-all duration-200 text-left"
           style={{
@@ -74,13 +90,29 @@ export default function VersionBadge({ expanded = true }) {
         maxWidth="max-w-sm"
         zIndex={70}
         footer={
-          <Button variant="secondary" onClick={() => setOpen(false)}>
-            {t("ui.version.close")}
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
+              {t("ui.version.close")}
+            </Button>
+            {updateReady && (
+              <Button variant="primary" onClick={reload}>
+                {t("ui.version.reload")}
+              </Button>
+            )}
+          </>
         }
       >
         <Row label={t("ui.version.app")} value={`v${APP_VERSION}`} />
         <Row label={t("ui.version.built")} value={built || "—"} />
+
+        {deployed && (
+          <div className="pt-3 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <Row
+              label={t("ui.version.deployed")}
+              value={`${deployedVersion ? `v${deployedVersion} · ` : ""}${fmtStamp(deployed) || "—"}`}
+            />
+          </div>
+        )}
 
         <div className="pt-3 space-y-3" style={{ borderTop: "1px solid var(--border)" }}>
           {isLoading ? (
@@ -101,18 +133,8 @@ export default function VersionBadge({ expanded = true }) {
           )}
         </div>
 
-        {mismatch && (
-          <div
-            className="text-[11px] rounded-lg px-2.5 py-2 leading-snug"
-            style={{
-              background: "rgba(234,179,8,0.12)",
-              border: "1px solid rgba(234,179,8,0.35)",
-              color: "var(--text-2)",
-            }}
-          >
-            {t("ui.version.mismatch")}
-          </div>
-        )}
+        {updateReady && <Notice>{t("ui.version.updateReady")}</Notice>}
+        {serverMismatch && <Notice>{t("ui.version.mismatch")}</Notice>}
       </Modal>
     </>
   );
@@ -128,6 +150,21 @@ function Row({ label, value, mono = false }) {
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function Notice({ children }) {
+  return (
+    <div
+      className="text-[11px] rounded-lg px-2.5 py-2 leading-snug"
+      style={{
+        background: "rgba(234,179,8,0.12)",
+        border: "1px solid rgba(234,179,8,0.35)",
+        color: "var(--text-2)",
+      }}
+    >
+      {children}
     </div>
   );
 }

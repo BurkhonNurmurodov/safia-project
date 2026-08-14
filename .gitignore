@@ -40,6 +40,10 @@ cPanel*
 !tsconfig.json
 !jsconfig.json
 !eslint.config.json
+# The build's deploy marker — emitted into the tracked dist and FETCHED AT
+# RUNTIME by the running app to detect a newer build. Ignored, it never ships
+# and the update prompt goes permanently silent. Exact path, not a glob.
+!frontend/dist/build.json
 # Defence in depth: these stay ignored even if *.json is ever relaxed.
 safia-project-*.json
 *service-account*.json

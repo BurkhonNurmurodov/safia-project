@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -19,6 +20,37 @@ try {
 // commit comes from the server at runtime (/api/version).
 const BUILD_TIME = new Date().toISOString()
 
+// The deploy marker. Emitted next to index.html so a RUNNING tab can ask
+// "which build is live right now?" and offer a reload when the answer stops
+// matching the stamp baked into its own bundle.
+//
+// It is emitted by the build rather than dropped in public/ so it can only ever
+// describe the build it shipped with, and it must be served no-store (see
+// serve_spa in backend/app/main.py) — a cached marker reports the build the
+// user already has, and the prompt would never fire.
+function emitBuildInfo() {
+  let root = process.cwd()
+  let outDir = 'dist'
+  return {
+    name: 'emit-build-info',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root
+      outDir = config.build.outDir
+    },
+    // Written to disk in writeBundle rather than handed to the bundler via
+    // this.emitFile: Vite 8 runs Rolldown, which dropped the emitted asset
+    // silently — and a marker that silently isn't there is a feature that
+    // silently does nothing.
+    writeBundle() {
+      writeFileSync(
+        resolve(root, outDir, 'build.json'),
+        JSON.stringify({ version: APP_VERSION, buildTime: BUILD_TIME }) + '\n',
+      )
+    },
+  }
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
@@ -27,6 +59,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    emitBuildInfo(),
   ],
   build: {
     minify: 'esbuild',
