@@ -601,6 +601,178 @@ _NOTIF_TG_HTML = {
                "This forecast is based only on historical data from previous days. "
                "Therefore, taking the actual situation and other factors into account, please call the number of people you need!</blockquote>"),
     },
+    # ── automatic day verification: the DM a person is JUDGED by ──────────────
+    # These six arrive daily and carry a number that costs points, so the plain
+    # one-line DM was the wrong shape for them: «Сдано: 100% → подтверждено:
+    # 55% | Не принято: №2, №4, №7, №8, №11, №13. Причины — в отчёте.» is one
+    # pipe-separated wall in which the verdict, its arithmetic and the way back
+    # all have the same weight. Here each fact gets its own labelled line, the
+    # score leads (it is what the phone's preview shows), and the recourse sits
+    # apart in a blockquote. The in-app bell keeps the terse _NOTIF_STRINGS
+    # text — a bell row is a one-liner by design.
+    # Two audiences, two voices: the *_report_* keys go to the unit's brigadir
+    # and name the leader; the bare keys are the leader's own copy, in the
+    # second person, and end on who to talk to rather than on how to object.
+    "leader_day_report_clean": {
+        "uz": ("✅ <b>Kun tasdiqlandi — {score}%</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📸 <b>Tekshirildi:</b> {total} tadan {checked} ta — barchasi qabul qilindi\n\n"
+               "<blockquote>Batafsil hisobot — quyidagi tugmada.</blockquote>"),
+        "uz_cyrl": ("✅ <b>Кун тасдиқланди — {score}%</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📸 <b>Текширилди:</b> {total} тадан {checked} та — барчаси қабул қилинди\n\n"
+                    "<blockquote>Батафсил ҳисобот — қуйидаги тугмада.</blockquote>"),
+        "ru": ("✅ <b>День подтверждён — {score}%</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📸 <b>Проверено:</b> {checked} из {total} — все подтверждения приняты\n\n"
+               "<blockquote>Подробный отчёт — по кнопке ниже.</blockquote>"),
+        "en": ("✅ <b>Day verified — {score}%</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📸 <b>Checked:</b> {checked} of {total} — all proofs accepted\n\n"
+               "<blockquote>The full report is behind the button below.</blockquote>"),
+    },
+    "leader_day_report_flagged": {
+        "uz": ("⚠️ <b>Kun tekshirildi — {score}%</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Sana:</b> {date}\n\n"
+               "📤 <b>Topshirilgan:</b> {raw}%\n"
+               "✅ <b>Tasdiqlangan:</b> {score}%\n"
+               "❌ <b>Qabul qilinmadi:</b> {total} tadan {rejected} ta\n\n"
+               "🔻 <b>Vazifalar:</b> {tasks}\n\n"
+               "<blockquote>Har bir vazifa bo'yicha sabab — quyidagi tugmadagi hisobotda. "
+               "Qaror noto'g'ri deb hisoblasangiz, o'sha yerdan e'tiroz yuborishingiz mumkin.</blockquote>"),
+        "uz_cyrl": ("⚠️ <b>Кун текширилди — {score}%</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Сана:</b> {date}\n\n"
+                    "📤 <b>Топширилган:</b> {raw}%\n"
+                    "✅ <b>Тасдиқланган:</b> {score}%\n"
+                    "❌ <b>Қабул қилинмади:</b> {total} тадан {rejected} та\n\n"
+                    "🔻 <b>Вазифалар:</b> {tasks}\n\n"
+                    "<blockquote>Ҳар бир вазифа бўйича сабаб — қуйидаги тугмадаги ҳисоботда. "
+                    "Қарор нотўғри деб ҳисобласангиз, ўша ердан эътироз юборишингиз мумкин.</blockquote>"),
+        "ru": ("⚠️ <b>День проверен — {score}%</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Дата:</b> {date}\n\n"
+               "📤 <b>Сдано:</b> {raw}%\n"
+               "✅ <b>Подтверждено:</b> {score}%\n"
+               "❌ <b>Не принято:</b> {rejected} из {total}\n\n"
+               "🔻 <b>Задачи:</b> {tasks}\n\n"
+               "<blockquote>Причина по каждой задаче — в отчёте по кнопке ниже. "
+               "Если решение кажется ошибочным, оттуда же можно отправить возражение.</blockquote>"),
+        "en": ("⚠️ <b>Day verified — {score}%</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>Date:</b> {date}\n\n"
+               "📤 <b>Submitted:</b> {raw}%\n"
+               "✅ <b>Verified:</b> {score}%\n"
+               "❌ <b>Not accepted:</b> {rejected} of {total}\n\n"
+               "🔻 <b>Tasks:</b> {tasks}\n\n"
+               "<blockquote>The reason for each task is in the report behind the button below. "
+               "If a decision looks wrong, you can file an objection from there.</blockquote>"),
+    },
+    "leader_day_report_corrected": {
+        "uz": ("🔄 <b>Baho qayta ko'rib chiqildi — {score}%</b>\n\n"
+               "👤 <b>Lider:</b> {leader}\n"
+               "📅 <b>Sana:</b> {date}\n\n"
+               "📊 <b>Avval:</b> {before}% → <b>hozir:</b> {score}%\n"
+               "❌ <b>Hozir qabul qilinmagan:</b> {rejected} ta vazifa\n\n"
+               "<blockquote>Nima o'zgargani — quyidagi tugmadagi hisobotda.</blockquote>"),
+        "uz_cyrl": ("🔄 <b>Баҳо қайта кўриб чиқилди — {score}%</b>\n\n"
+                    "👤 <b>Лидер:</b> {leader}\n"
+                    "📅 <b>Сана:</b> {date}\n\n"
+                    "📊 <b>Аввал:</b> {before}% → <b>ҳозир:</b> {score}%\n"
+                    "❌ <b>Ҳозир қабул қилинмаган:</b> {rejected} та вазифа\n\n"
+                    "<blockquote>Нима ўзгаргани — қуйидаги тугмадаги ҳисоботда.</blockquote>"),
+        "ru": ("🔄 <b>Оценка пересмотрена — {score}%</b>\n\n"
+               "👤 <b>Лидер:</b> {leader}\n"
+               "📅 <b>Дата:</b> {date}\n\n"
+               "📊 <b>Было:</b> {before}% → <b>стало:</b> {score}%\n"
+               "❌ <b>Сейчас не принято:</b> {rejected} задач(и)\n\n"
+               "<blockquote>Что именно изменилось — в отчёте по кнопке ниже.</blockquote>"),
+        "en": ("🔄 <b>Score reviewed — {score}%</b>\n\n"
+               "👤 <b>Leader:</b> {leader}\n"
+               "📅 <b>Date:</b> {date}\n\n"
+               "📊 <b>Was:</b> {before}% → <b>now:</b> {score}%\n"
+               "❌ <b>Currently not accepted:</b> {rejected} task(s)\n\n"
+               "<blockquote>What changed is in the report behind the button below.</blockquote>"),
+    },
+    "leader_day_clean": {
+        "uz": ("✅ <b>Kun hisobotingiz tasdiqlandi — {score}%</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n"
+               "📸 <b>Tekshirildi:</b> {total} tadan {checked} ta — barcha rasmlaringiz qabul qilindi\n\n"
+               "<blockquote>Rahmat! Batafsil hisobot — quyidagi tugmada.</blockquote>"),
+        "uz_cyrl": ("✅ <b>Кун ҳисоботингиз тасдиқланди — {score}%</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n"
+                    "📸 <b>Текширилди:</b> {total} тадан {checked} та — барча расмларингиз қабул қилинди\n\n"
+                    "<blockquote>Раҳмат! Батафсил ҳисобот — қуйидаги тугмада.</blockquote>"),
+        "ru": ("✅ <b>Ваш отчёт за день подтверждён — {score}%</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n"
+               "📸 <b>Проверено:</b> {checked} из {total} — все ваши фото приняты\n\n"
+               "<blockquote>Спасибо! Подробный отчёт — по кнопке ниже.</blockquote>"),
+        "en": ("✅ <b>Your day report is verified — {score}%</b>\n\n"
+               "📅 <b>Date:</b> {date}\n"
+               "📸 <b>Checked:</b> {checked} of {total} — all your photos were accepted\n\n"
+               "<blockquote>Thank you! The full report is behind the button below.</blockquote>"),
+    },
+    "leader_day_flagged": {
+        "uz": ("⚠️ <b>Kuningiz tekshirildi — {score}%</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n\n"
+               "📤 <b>Topshirilgan:</b> {raw}%\n"
+               "✅ <b>Tasdiqlangan:</b> {score}%\n"
+               "❌ <b>Qabul qilinmadi:</b> {total} tadan {rejected} ta\n\n"
+               "🔻 <b>Vazifalar:</b> {tasks}\n\n"
+               "<blockquote>Har bir vazifa bo'yicha sabab — quyidagi tugmadagi hisobotda. "
+               "Rozi bo'lmasangiz, brigadiringizga murojaat qiling.</blockquote>"),
+        "uz_cyrl": ("⚠️ <b>Кунингиз текширилди — {score}%</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n\n"
+                    "📤 <b>Топширилган:</b> {raw}%\n"
+                    "✅ <b>Тасдиқланган:</b> {score}%\n"
+                    "❌ <b>Қабул қилинмади:</b> {total} тадан {rejected} та\n\n"
+                    "🔻 <b>Вазифалар:</b> {tasks}\n\n"
+                    "<blockquote>Ҳар бир вазифа бўйича сабаб — қуйидаги тугмадаги ҳисоботда. "
+                    "Рози бўлмасангиз, бригадирингизга мурожаат қилинг.</blockquote>"),
+        "ru": ("⚠️ <b>Ваш день проверен — {score}%</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n\n"
+               "📤 <b>Сдано:</b> {raw}%\n"
+               "✅ <b>Подтверждено:</b> {score}%\n"
+               "❌ <b>Не принято:</b> {rejected} из {total}\n\n"
+               "🔻 <b>Задачи:</b> {tasks}\n\n"
+               "<blockquote>Причина по каждой задаче — в отчёте по кнопке ниже. "
+               "Если вы не согласны, обратитесь к своему бригадиру.</blockquote>"),
+        "en": ("⚠️ <b>Your day was verified — {score}%</b>\n\n"
+               "📅 <b>Date:</b> {date}\n\n"
+               "📤 <b>Submitted:</b> {raw}%\n"
+               "✅ <b>Verified:</b> {score}%\n"
+               "❌ <b>Not accepted:</b> {rejected} of {total}\n\n"
+               "🔻 <b>Tasks:</b> {tasks}\n\n"
+               "<blockquote>The reason for each task is in the report behind the button below. "
+               "If you disagree, talk to your supervisor.</blockquote>"),
+    },
+    "leader_day_corrected": {
+        "uz": ("🔄 <b>Bahoyingiz yangilandi — {score}%</b>\n\n"
+               "📅 <b>Sana:</b> {date}\n\n"
+               "📊 <b>Avval:</b> {before}% → <b>hozir:</b> {score}%\n"
+               "❌ <b>Hozir qabul qilinmagan:</b> {rejected} ta vazifa\n\n"
+               "<blockquote>Nima o'zgargani — quyidagi tugmadagi hisobotda.</blockquote>"),
+        "uz_cyrl": ("🔄 <b>Баҳоингиз янгиланди — {score}%</b>\n\n"
+                    "📅 <b>Сана:</b> {date}\n\n"
+                    "📊 <b>Аввал:</b> {before}% → <b>ҳозир:</b> {score}%\n"
+                    "❌ <b>Ҳозир қабул қилинмаган:</b> {rejected} та вазифа\n\n"
+                    "<blockquote>Нима ўзгаргани — қуйидаги тугмадаги ҳисоботда.</blockquote>"),
+        "ru": ("🔄 <b>Ваша оценка изменена — {score}%</b>\n\n"
+               "📅 <b>Дата:</b> {date}\n\n"
+               "📊 <b>Было:</b> {before}% → <b>стало:</b> {score}%\n"
+               "❌ <b>Сейчас не принято:</b> {rejected} задач(и)\n\n"
+               "<blockquote>Что именно изменилось — в отчёте по кнопке ниже.</blockquote>"),
+        "en": ("🔄 <b>Your score was updated — {score}%</b>\n\n"
+               "📅 <b>Date:</b> {date}\n\n"
+               "📊 <b>Was:</b> {before}% → <b>now:</b> {score}%\n"
+               "❌ <b>Currently not accepted:</b> {rejected} task(s)\n\n"
+               "<blockquote>What changed is in the report behind the button below.</blockquote>"),
+    },
 }
 
 
