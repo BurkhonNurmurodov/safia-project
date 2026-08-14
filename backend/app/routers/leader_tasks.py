@@ -12,7 +12,8 @@ import logging
 from io import BytesIO
 
 import requests
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     Response, UploadFile)
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -26,7 +27,8 @@ from app.models import (
     LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskMedia,
     LeaderTaskSetting, Manager, RoleProfile,
 )
-from app.permissions import require_page
+from app.permissions import page_allowed, require_page
+from app.security import require_auth
 from app.upload_guard import validate_avatar
 from app.routers.admin import _TG_API, _tg_file_meta, verify_admin
 from app.services import leader_ai, leader_bot
@@ -790,8 +792,9 @@ def delete_submissions(
 @router.get("/api/leader-tasks/media/{media_id}")
 def leader_task_media(
     media_id: int,
+    uid: str | None = Query(None, max_length=200),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("leaders")),
+    payload: dict = Depends(require_auth),
 ):
     m = db.query(LeaderTaskMedia).filter_by(id=media_id).first()
     if not m:
@@ -799,9 +802,23 @@ def leader_task_media(
 
     entry = db.query(LeaderTaskEntry).filter_by(id=m.entry_id).first()
     day = db.query(LeaderTaskDay).filter_by(id=entry.day_id).first() if entry else None
-    if not day or not leader_bot.visible_day(
+    if not day:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    # Two doors, matching the two surfaces that show these photos. The register's
+    # detail modal comes through the `leaders` page, as it always did. The day
+    # report is AUTH-ONLY by design — the brigadir it is written for often holds
+    # no page grant — and passes its `uid`, which authorises the photo against
+    # that report's own row scope. Without the second door the report renders its
+    # verdicts and 403s every piece of evidence behind them.
+    from app.routers.leaders import photo_scope_ok
+    ok = page_allowed(db, payload, "leaders") and leader_bot.visible_day(
         db, day, payload, sees_all=page_scope_is_all(db, payload, "leaders")
-    ):
+    )
+    if not ok:
+        ok = photo_scope_ok(db, payload, uid, lambda row: any(
+            media_id in (t.get("media") or []) for t in (row.get("tasks") or [])))
+    if not ok:
         # 404, not 403: whether a photo exists is itself somebody else's data.
         raise HTTPException(status_code=404, detail="Media not found")
 

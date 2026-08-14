@@ -153,6 +153,12 @@ is a note and only a human `rejected` moves a number.
   (`resend_if_changed`). Completion is a trigger, not the only route —
   `sweep_unreported()` runs every drain and sends reports whose one attempt was
   swallowed (Ghost Mode, a Telegram outage, a restart).
+- **The two RECURRING passes use a rolling window, not the fixed floor** —
+  `auto_window_start()` (`AUTO_LOOKBACK_DAYS = 14`). `AUTO_FROM` never moves, so
+  a pass bounded only by it re-reads every automatic day ever filed; both of
+  these run on a timer or on a button pressed all day, and would get slower
+  every day they worked correctly. Catching up on anything older is a
+  deliberate errand — «Tekshirish» with scope «unchecked», over a stated count.
 - **`/leaders/report/:uid` is the day report** (`pages/LeaderDayReport.jsx`) —
   **auth-only, row-scoped, not page-gated**, like `/cells/:id`: the brigadir
   being told their unit's score is often somebody nobody granted `/leaders` to,
@@ -169,6 +175,26 @@ is a note and only a human `rejected` moves a number.
   `resolution="approved"` on the verdict — that is what restores the weight —
   and the corrected score re-DMs itself. Authority mirrors the late-day flow and
   is deliberately not grantable.
+- **`_auto_clause()` folds a NULL shift with `coalesce`, and that is
+  load-bearing.** The drain splits its queue into the clause and its negation;
+  under SQL three-valued logic a NULL-shift row dated after `AUTO_FROM`
+  satisfies NEITHER (`NOT(TRUE AND NULL)` is NULL), so it would sit `pending`
+  forever — no verdict, no error, no retry, invisible to both branches. Any
+  future split on this predicate must keep the complement total.
+- **Proof photos have TWO doors** (`photo_scope_ok` + `permissions.page_allowed`).
+  `/api/leaders/photo` and `/api/leader-tasks/media/{id}` are page-gated for the
+  register, but the day report is auth-only by design, so it passes its `uid`
+  and the photo is authorised against that report's own row scope — plus a
+  check that the report really contains it, or a readable report would become a
+  fetcher for any photo on the platform. Page-gating them alone rendered the
+  verdicts and 403'd every piece of evidence behind them.
+- **A report that can never be sent is PARKED, not skipped**
+  (`leader_reports._park`, `score_sent = PARKED`, `sends = 0`). A key leaves the
+  sweep's candidate set only when a ledger row exists, so a
+  filing-window-voided day — and those accumulate daily — would sit in it
+  forever, sort ahead of newer keys and eat the whole per-pass budget until the
+  safety net silently stopped working. A park is not a send: if the day is
+  later opened, the next pass sends its FIRST report, not a correction.
 - **`components/leaders/verifyState.js` is THE verification vocabulary** —
   states, colours, icons and precedence for the register chip, the page and the
   filter. Never improvise a second set of words for these five facts. Every

@@ -1515,15 +1515,20 @@ def unfinished_reports(db: Session, keys: set[str]) -> set[str]:
     """
     if not keys:
         return set()
-    rows = (db.query(LeaderAiReview)
+    # One column, and only the rolling window — this is asked after every drain
+    # pass. Loading whole ORM rows (with their JSONB flags and clocks) to read
+    # one string off each was the same query five times more expensive.
+    rows = (db.query(LeaderAiReview.ref)
             .filter(_auto_clause(),
+                    LeaderAiReview.date >= auto_window_start(),
                     LeaderAiReview.status.in_(("pending", "error")),
                     LeaderAiReview.attempts < MAX_ATTEMPTS)
             .all())
     if not rows:
         return set()
-    day_of = _day_of_map(db, [r.ref for r in rows])
-    return {report_key(r.ref, day_of) for r in rows} & keys
+    refs = [r[0] for r in rows]
+    day_of = _day_of_map(db, refs)
+    return {report_key(ref, day_of) for ref in refs} & keys
 
 
 def report_finished(db: Session, keys: set[str]) -> int:
@@ -1567,7 +1572,13 @@ def sweep_unreported(db: Session, limit: int = REPORT_SWEEP_CAP) -> int:
 
     rows = (db.query(LeaderAiReview.ref, LeaderAiReview.status,
                      LeaderAiReview.attempts)
-            .filter(_auto_clause()).all())
+            .filter(_auto_clause(),
+                    # Rolling window: this fires on every drain tick, and the
+                    # failures it exists to heal are minutes-to-hours old. A
+                    # sweep bounded only by AUTO_FROM would re-read the whole
+                    # regime every twenty minutes, forever.
+                    LeaderAiReview.date >= auto_window_start())
+            .all())
     if not rows:
         return 0
     day_of = _day_of_map(db, [r.ref for r in rows])
@@ -1583,8 +1594,11 @@ def sweep_unreported(db: Session, limit: int = REPORT_SWEEP_CAP) -> int:
         return 0
     known = {r[0] for r in db.query(LeaderDayReport.report_key)
              .filter(LeaderDayReport.report_key.in_(done_keys)).all()}
+    # Newest first: if the budget ever binds, the report someone is actually
+    # waiting on is today's, not a fortnight-old one nobody asked about.
+    todo = sorted(done_keys - known, reverse=True)[:limit]
     sent = 0
-    for key in sorted(done_keys - known)[:limit]:
+    for key in todo:
         try:
             if leader_reports.maybe_send_report(db, key):
                 sent += 1
@@ -2062,6 +2076,26 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
 AUTO_FROM = "2026-08-13"        # first REPORTED day judged automatically
 AUTO_SHIFTS = (1,)              # shift 2 stays manual (user, 2026-08-14)
 
+# How far back the two RECURRING passes look — the Refresh's discovery and the
+# drain's report sweep. `AUTO_FROM` alone is a floor, not a window: it never
+# moves, so a pass bounded only by it re-reads every automatic day ever filed,
+# and both of these run on a timer or on a button people press all day. A month
+# in, that is a growing full scan every twenty minutes for work that is always
+# a day or two old.
+#
+# Catching up on something older than this is a deliberate errand, not a
+# background one — «Tekshirish» with scope «unchecked» does it over a stated
+# count. Generous enough (a fortnight) that a week-long outage still heals
+# itself.
+AUTO_LOOKBACK_DAYS = 14
+
+
+def auto_window_start() -> str:
+    """The oldest report date the recurring passes will touch. Never earlier
+    than AUTO_FROM, so the regime's own floor still holds."""
+    back = (datetime.now(timezone.utc) - timedelta(days=AUTO_LOOKBACK_DAYS)).date()
+    return max(AUTO_FROM, back.isoformat())
+
 
 def in_auto_regime(date: str | None, shift: int | None) -> bool:
     """Is this report judged automatically? Narrow on purpose: an unmatched
@@ -2071,9 +2105,19 @@ def in_auto_regime(date: str | None, shift: int | None) -> bool:
 
 
 def _auto_clause():
-    """The same predicate in SQL, for the queries that cannot walk rows."""
+    """The same predicate in SQL, for the queries that cannot walk rows.
+
+    **`coalesce` is load-bearing, not tidiness.** `shift` is nullable — an
+    unmatched supervisor name leaves it NULL — and `shift IN (1)` on a NULL
+    yields NULL, not FALSE. The drain splits its queue into `_auto_clause()`
+    and `~_auto_clause()`, and under three-valued logic a NULL-shift row dated
+    on or after AUTO_FROM satisfies NEITHER: `NOT(TRUE AND NULL)` is NULL, so
+    it drops out of both. Such a row would sit `pending` forever — no verdict,
+    no error, no retry, and invisible to every branch that looks for it.
+    Folding NULL to a shift that is never automatic makes the complement total.
+    """
     return and_(LeaderAiReview.date >= AUTO_FROM,
-                LeaderAiReview.shift.in_(AUTO_SHIFTS))
+                func.coalesce(LeaderAiReview.shift, -1).in_(AUTO_SHIFTS))
 
 
 def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set[int]]:
@@ -2142,7 +2186,12 @@ def auto_discover(db: Session) -> int:
     """
     known = _existing_refs(db)
     floor = floor_date(db)
-    start = max(AUTO_FROM, floor) if floor else AUTO_FROM
+    # The rolling window, not the fixed floor: this runs on every Refresh press,
+    # and reading every automatic day ever filed to find yesterday's rows would
+    # get slower every day it works correctly. See AUTO_LOOKBACK_DAYS.
+    start = auto_window_start()
+    if floor:
+        start = max(start, floor)
 
     rows = (db.query(LeaderChecklist)
             .filter(LeaderChecklist.date >= start)

@@ -198,6 +198,20 @@ def role_can_access(role: str | None, pages: list[str], access: dict,
     return any(p in (cap_pages or []) for p in live)
 
 
+def page_allowed(db: Session, payload: dict, *pages: str) -> bool:
+    """`require_page` as a QUESTION rather than a gate.
+
+    For endpoints with two legitimate doors — the page, or a narrower per-row
+    claim — where the page check can no longer be the dependency because it
+    would slam the second door shut. Runs the identical decision `require_page`
+    makes, so "does this person hold the page" cannot come to mean two things.
+    """
+    from app.capabilities import capability_pages, caller_denied_pages
+    return role_can_access(payload.get("role"), list(pages), get_page_access(db),
+                           capability_pages(db, payload),
+                           caller_denied_pages(db, payload))
+
+
 def require_page(*pages: str):
     """FastAPI dependency factory. Allows the request if the caller's role can
     access at least one of ``pages`` (admin always passes), or if a personal

@@ -16,7 +16,7 @@ from app.models import (
     LeaderLateRequest, LeaderSyncMeta, LeaderTaskDay, LeaderTaskOverride, Manager,
 )
 from app.capabilities import page_scope_is_all
-from app.permissions import require_page
+from app.permissions import page_allowed, require_page
 from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
@@ -623,9 +623,15 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
         return row.get("manager_id") is not None and \
             row.get("manager_id") == payload.get("role_id")
     if role == "leader":
+        # Profile identity FIRST and, once we have one, ONLY — exactly what
+        # get_leaders does. Falling through to the fuzzy name match on a row
+        # whose leader never resolved would open a door the register keeps
+        # shut: `leader_is` matches on a positive pair score, so two leaders
+        # spelled alike in different units could each read the other's report
+        # whenever the row's supervisor name failed to match a unit.
         my_pid = identity.viewer_leader_profile_id(db, payload)
-        if my_pid and row.get("leader_id"):
-            return row["leader_id"] == my_pid
+        if my_pid:
+            return row.get("leader_id") == my_pid
         me = payload.get("full_name") or ""
         return bool(row.get("leader") and len(_name_tokens(me)) >= 2
                     and leader_is(row["leader"], me))
@@ -1294,14 +1300,51 @@ def _photo_store(url: str, data: bytes, ctype: str) -> None:
         _photo_cache[url] = (now, data, ctype)
 
 
+def photo_scope_ok(db: Session, payload: dict, uid: str | None,
+                   in_report) -> bool:
+    """May this viewer fetch a proof photo they reached through report `uid`?
+
+    The day report is auth-only by design — the brigadir it is written for
+    often has no `leaders` page grant — but its photos hung off endpoints that
+    were page-gated, so the score, the verdicts and the windows loaded while
+    every thumbnail 403'd. A report that says "the proof does not show the work"
+    and then cannot show the proof is an accusation with the evidence removed.
+
+    So a photo is authorised the way the report is: by the ROW it belongs to.
+    `in_report(row)` asks the caller's own question — does this report actually
+    contain the photo being requested — because scope alone would otherwise let
+    anyone name a report they can read and pull any photo on the platform
+    through it.
+    """
+    if not uid:
+        return False
+    row = build_report_row(db, uid)
+    if row is None or not report_scope_ok(db, payload, row):
+        return False
+    return bool(in_report(row))
+
+
 @router.get("/leaders/photo")
 def get_leader_photo(
     url: str = Query(..., max_length=2000),
+    uid: str | None = Query(None, max_length=200),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page("leaders")),
+    payload: dict = Depends(require_auth),
 ):
     """Stream one sheet proof photo, rewritten from its Drive share url to the
-    direct-content host and served from this origin."""
+    direct-content host and served from this origin.
+
+    Two doors, because two surfaces show these photos. The register's detail
+    modal is behind the `leaders` page, as it always was. The day report is
+    auth-only and passes its `uid`, which authorises the photo against that
+    report's own row scope — see `photo_scope_ok`.
+    """
+    if not page_allowed(db, payload, "leaders") and not photo_scope_ok(
+        db, payload, uid,
+        lambda row: any(url in (t.get("photo") or "")
+                        for t in (row.get("tasks") or [])),
+    ):
+        raise HTTPException(status_code=404, detail="Photo not found")
     if not _photo_allowed(db, url):
         raise HTTPException(status_code=400, detail="Unsupported photo host")
 

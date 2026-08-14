@@ -248,7 +248,7 @@ function StateChip({ state, T, size = "sm" }) {
  * single line. The evidence for a verdict nobody is contesting is noise on a
  * phone, and burying the three that failed under ten that did not is how the
  * page stops answering its own question. */
-function TaskCard({ t, T, lang, open, onToggle, onPhoto, canDispute, onDispute }) {
+function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDispute }) {
   const st = taskState(t);
   const bad = st?.key === "rejected";
   const name = pick(t.name, lang);
@@ -307,8 +307,8 @@ function TaskCard({ t, T, lang, open, onToggle, onPhoto, canDispute, onDispute }
                 {photos.map((p, i) => (
                   <div key={i} className="w-16 h-16 flex-shrink-0">
                     {p.kind === "bot"
-                      ? <BotPhoto id={p.id} T={T} thumb className="" onClick={onPhoto} />
-                      : <ReportPhoto src={p.url} T={T} thumb className="" onClick={onPhoto} />}
+                      ? <BotPhoto id={p.id} uid={uid} T={T} thumb className="" onClick={onPhoto} />
+                      : <ReportPhoto src={p.url} uid={uid} T={T} thumb className="" onClick={onPhoto} />}
                   </div>
                 ))}
               </div>
@@ -579,7 +579,7 @@ export default function LeaderDayReport() {
             </p>
             {groups[g].map((t) => (
               <div key={t.id}>
-                <TaskCard t={t} T={T} lang={lang} open={isOpen(t)} onToggle={() => toggle(t)}
+                <TaskCard t={t} T={T} lang={lang} uid={data.uid} open={isOpen(t)} onToggle={() => toggle(t)}
                   onPhoto={setZoom} canDispute={data.canDispute}
                   onDispute={() => { setDisputeTask(t); setReason(""); }} />
                 {data.canDecide && t.dispute?.status === "pending" && (

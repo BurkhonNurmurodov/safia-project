@@ -333,37 +333,77 @@ def maybe_send_report(db: Session, key: str) -> bool:
     uid = uid_of_key(db, key)
     if not uid:
         return False
-    return send_for_uid(db, uid)
+    return send_for_uid(db, uid, key=key)
 
 
-def send_for_uid(db: Session, uid: str) -> bool:
+# A ledger row that stands for "this day will not be reported, and here is
+# why" — score `PARKED` (no real score can be negative) and `sends = 0`.
+PARKED = -1
+
+
+def _park(db: Session, key: str | None, uid: str, why: str) -> None:
+    """Record that a finished day is deliberately NOT being reported.
+
+    Without this the sweep starves. A key leaves its candidate set only when a
+    ledger row exists, so every report that can never be sent — a
+    filing-window-voided day above all, and those accumulate daily — stays in
+    the set forever, sorts ahead of newer keys and eats the whole per-pass
+    budget. The safety net would then quietly stop reaching the reports it
+    exists for.
+
+    A park is NOT a send: `sends = 0` keeps it distinguishable, and `PARKED`
+    can never equal a real score, so if the reason later goes away (a voided
+    day gets opened) the very next pass sends the report as a FIRST one rather
+    than as a correction. Never overwrites a real send.
+    """
+    if not key:
+        return
+    led = db.query(LeaderDayReport).filter_by(report_key=key).first()
+    if led is not None:
+        return
+    db.add(LeaderDayReport(report_key=key, uid=uid, date="", score_sent=PARKED,
+                           rejected_sent=0, tasks_total=0, sends=0))
+    db.commit()
+    log.info("leader-ai: day report parked (%s) for %s", why, uid)
+
+
+def send_for_uid(db: Session, uid: str, key: str | None = None) -> bool:
     from app.identity import profile_key
     from app.notify_ctx import notifications_suppressed
     from app.routers.leaders import build_report_row
     from app.routers.staff import notify_profile
 
     # Ghost Mode: an admin testing the platform must not blast day reports at
-    # every brigadir and leader. Deliberately returns BEFORE the ledger is
-    # written, so the report is not marked as sent — `sweep_unreported` picks
-    # it up once the toggle is off, instead of the day being silently skipped.
+    # every brigadir and leader. Returns BEFORE anything is written and does
+    # NOT park — this is transient, and the sweep must come back for it once
+    # the toggle is off.
     if notifications_suppressed():
         return False
 
+    # The caller's key wins. The sweep found this report under a key it read
+    # off the verdicts; re-deriving one from the row can land on a different
+    # spelling (a `sheetd:` ref whose row later gained a submission id), and
+    # the ledger would then be written under a key the sweep never looks up —
+    # so the report would be re-sent on every pass, forever.
+    key = key or key_of_uid(db, uid)
+
     row = build_report_row(db, uid)
     if row is None:
+        _park(db, key, uid, "report no longer exists")
         return False
     date, shift = row["date"], row.get("shift")
     if not leader_ai.in_auto_regime(date, shift):
+        _park(db, key, uid, "outside the automatic regime")
         return False
     # A day the filing-window rule already voided scores 0 for a reason that
     # outranks anything the photos say. Reporting a verified 62% on it would
     # contradict the register in the one message meant to explain the register.
     # It stays fully visible on the page, and if the day is later OPENED the
-    # score moves — at which point this fires with the real number.
+    # park lifts and this fires with the real number.
     if row.get("rejected"):
+        _park(db, key, uid, "voided by the filing window")
         return False
 
-    key = key_of_uid(db, uid)
     if not key:
         return False
 
@@ -379,7 +419,10 @@ def send_for_uid(db: Session, uid: str) -> bool:
     numbers = ", ".join(f"№{t['id']}" for t in report["tasks"] if t["ai_rejected"])
 
     led = db.query(LeaderDayReport).filter_by(report_key=key).first()
-    first = led is None
+    # A PARKED row is a placeholder, not a send: a day that was voided and has
+    # since been opened gets its FIRST report now, not a "score updated"
+    # correction announcing a number nobody was ever told.
+    first = led is None or (led.sends or 0) == 0
     if not first and led.score_sent == score and led.rejected_sent == counts["rejected"]:
         return False
 
@@ -399,7 +442,9 @@ def send_for_uid(db: Session, uid: str) -> bool:
         "checked": counts["checked"],
         "total": counts["total"],
         "tasks": numbers or "—",
-        "before": led.score_sent if led is not None else score,
+        # Only ever read by the "corrected" templates, which `first` rules out
+        # — so a PARKED sentinel can never reach a message.
+        "before": score if first else led.score_sent,
     }
     markup = _button_markup(report_url(uid))
     tone = "warning" if counts["rejected"] else "success"

@@ -86,18 +86,27 @@ export function ProxyPhoto({
   );
 }
 
+/* `uid` is the report the photo was reached through. Both endpoints below are
+ * page-gated for the register, but the day report at /leaders/report/:uid is
+ * AUTH-ONLY on purpose — the brigadir it is written for often holds no
+ * `leaders` grant — so it passes its uid and the backend authorises the photo
+ * against that one report's row scope instead. Omitted everywhere else, where
+ * the page grant is the door and nothing changes. */
+
 // A sheet (Fillout → Google Drive) proof photo. Zooming opens the ORIGINAL Drive
 // link, which is the full-resolution copy — the proxied one is just what renders
 // in the card.
-export const ReportPhoto = ({ src, T, className, ...rest }) => (
-  <ProxyPhoto T={T} className={className} href={src} deps={[src]} {...rest}
-    load={() => api.get("/api/leaders/photo", { params: { url: src }, responseType: "blob" })} />
+export const ReportPhoto = ({ src, T, className, uid, ...rest }) => (
+  <ProxyPhoto T={T} className={className} href={src} deps={[src, uid]} {...rest}
+    load={() => api.get("/api/leaders/photo",
+      { params: uid ? { url: src, uid } : { url: src }, responseType: "blob" })} />
 );
 
 // A bot-submission proof photo, streamed out of the Telegram archive channel.
-export const BotPhoto = ({ id, T, className, ...rest }) => (
-  <ProxyPhoto T={T} className={className} deps={[id]} {...rest}
-    load={() => api.get(`/api/leader-tasks/media/${id}`, { responseType: "blob" })} />
+export const BotPhoto = ({ id, T, className, uid, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[id, uid]} {...rest}
+    load={() => api.get(`/api/leader-tasks/media/${id}`,
+      { params: uid ? { uid } : undefined, responseType: "blob" })} />
 );
 
 /** One photo from the triage queue's `photos[]`, whichever layer filed it. */
