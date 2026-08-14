@@ -15,7 +15,13 @@ tables instead of the per-supervisor sheet imports:
                                                      pp_work_center_daily.people pin,
                                                      else ROUND(W × Q ÷ S) exactly as
                                                      services/pp_calc derives it
-    attendance     attendance (verifix, per unit)  cell_attendance (per cell)
+    attendance     attendance (verifix, per unit)  the SAME `attendance` rows,
+                                                     split per cell by
+                                                     Attendance.verifix_code
+                                                     («Код подразделения»), with
+                                                     cell_attendance as a per-day
+                                                     fallback for days the daily
+                                                     sheet does not cover
     equip_downtime downtime_data (sheet import)    cell_ojidaniya.stopped
 
 The cell↔production join is ``Cell.sap_code`` → ``pp_daily.work_center``; the
@@ -36,6 +42,12 @@ Decisions taken with the user (2026-07-31), all deliberate:
   * Attendance rows are filtered by the same ``is_direct_role`` rule as the fleet
     page; the titles that got excluded are reported in ``diagnostics`` so a
     spelling drift in the cell export can't silently zero a cell.
+  * Attendance comes from the DAILY «Davomat» upload (2026-08-14). It writes
+    ``Attendance.verifix_code``, so the everyday factory-wide file already
+    carries the cell dimension — no separate per-cell upload is needed, and the
+    page now covers every day the factory uploads. ``cell_attendance`` survives
+    as a per-DAY fallback for the days that predate that column. Which source
+    fed each day is reported in ``diagnostics.attendance_sources``.
   * No day-close gate. Per-cell data has no DayApproval / EditRequest flow, so
     every day that carries data is shown.
 
@@ -48,11 +60,12 @@ from typing import Optional
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    Cell, CellAttendance, CellOjidaniya, Manager,
+    Attendance, Cell, CellAttendance, CellOjidaniya, Manager,
     PPDaily, PPDaySetting, PPProduct, PPWorkCenter, PPWorkCenterDaily,
 )
 from app.permissions import require_page
@@ -263,24 +276,79 @@ def cell_zagruzka(
         return 0.0, False
 
     # ── Attendance per (cell, date) ───────────────────────────────────────────
+    # PRIMARY source: the DAILY «Davomat» single-file upload. Its rows land in
+    # the per-manager `attendance` table already tagged with «Код подразделения»
+    # (``Attendance.verifix_code``), so they carry the cell dimension this page
+    # needs — and that upload runs every day, while the isolated `cell_attendance`
+    # ingest is a test tab that only ever covered a handful of days.
+    #
+    # Matching is by CELL CODE, not by manager: the daily batch may hand a cell
+    # to another supervisor for one day, and a per-cell page must keep the cell's
+    # own attendance on the cell's own row.
+    #
+    # ``is_supervisor`` rows are excluded — the unit's cell-less brigadir is kept
+    # off загрузка at every other enforcement point too.
     att_by_cell: dict[tuple[int, date], list] = defaultdict(list)
     excluded_titles: dict[str, int] = defaultdict(int)
     cell_ids = [c.id for c in cells]
-    for r in db.query(CellAttendance).filter(
-        CellAttendance.cell_id.in_(cell_ids),
-        CellAttendance.date >= date_from,
-        CellAttendance.date <= date_to,
-    ).all():
-        att_by_cell[(r.cell_id, r.date)].append(r)
+    cell_id_set = set(cell_ids)
+    code_to_cell = {c.verifix_code: c.id for c in cells if c.verifix_code}
+
+    def _keep(r, cid: int, d: date) -> None:
+        att_by_cell[(cid, d)].append(r)
         # Report rows dropped despite the worker actually being there — a title
         # the fleet rule doesn't recognise would silently shrink verifix_labor.
-        if not is_direct_role(r.job_title, r.hours_worked):
+        if not is_direct_role(r.job_title, r.hours_worked,
+                              getattr(r, "is_supervisor", False)):
             try:
                 worked = float(r.hours_worked or 0) > 0
             except (TypeError, ValueError):
                 worked = False
             if worked:
                 excluded_titles[(r.job_title or "").strip() or "(blank)"] += 1
+
+    sheet_days: set[date] = set()
+    if code_to_cell:
+        for r in db.query(Attendance).filter(
+            Attendance.verifix_code.in_(list(code_to_cell)),
+            Attendance.date >= date_from,
+            Attendance.date <= date_to,
+            Attendance.is_supervisor.is_(False),
+        ).all():
+            cid = code_to_cell.get(r.verifix_code)
+            if cid is None:
+                continue
+            sheet_days.add(r.date)
+            _keep(r, cid, r.date)
+
+    # FALLBACK, resolved per DAY: `cell_attendance`, for days the daily sheet
+    # does not cover at all — the days loaded through the «cellatt» tab before
+    # the single-file flow started carrying cell codes (2026-08-01).
+    #
+    # Per DAY, never per cell: on a day the sheet DOES cover, a cell with no rows
+    # was deliberately ticked out of that day's batch, and falling back would
+    # resurrect attendance an admin had excluded on purpose.
+    #
+    # Matched by resolved id OR raw code, exactly like the cell-details footprint
+    # (routers/profiles.py): the upload keeps a row even when its «Код
+    # подразделения» matched no cell at the time, and an id-only filter makes
+    # those rows invisible here while every other surface still shows them.
+    cell_match = [CellAttendance.cell_id.in_(cell_ids)]
+    if code_to_cell:
+        cell_match.append(CellAttendance.verifix_code.in_(list(code_to_cell)))
+    fallback_days: set[date] = set()
+    for r in db.query(CellAttendance).filter(
+        or_(*cell_match),
+        CellAttendance.date >= date_from,
+        CellAttendance.date <= date_to,
+    ).all():
+        if r.date in sheet_days:
+            continue
+        cid = r.cell_id if r.cell_id in cell_id_set else code_to_cell.get(r.verifix_code)
+        if cid is None:
+            continue
+        fallback_days.add(r.date)
+        _keep(r, cid, r.date)
 
     # ── Ojidaniya per (cell, date): stopped minutes, minus Cat H / Cat I ───────
     idle_by_cell: dict[tuple[int, str], float] = defaultdict(float)
@@ -310,7 +378,7 @@ def cell_zagruzka(
     }
     collapsed_hc = 0   # cells blanked for a non-positive effective headcount
 
-    # Days the per-cell verifix export actually covers, for this unit's cells.
+    # Days attendance actually covers for this unit's cells, from either source.
     # SAP production covers every working day, so without this the page can't
     # tell "nobody worked" from "the file for that day was never uploaded".
     days_with_attendance = sorted({d for (_cid, d) in att_by_cell})
@@ -487,10 +555,18 @@ def cell_zagruzka(
         "fleet": fleet,
         "diagnostics": {
             "lock_warning": lock_warning,
-            # The days the per-cell verifix export covers. Everything outside
-            # this list is blank BY DESIGN, not because the cells were idle.
+            # The days attendance covers. Everything outside this list is blank
+            # BY DESIGN, not because the cells were idle.
             "days_with_attendance": [d.strftime("%d.%m.%Y") for d in days_with_attendance],
             "days_in_range": len(dates),
+            # Which source fed each day: the daily factory-wide «Davomat» sheet,
+            # or the older per-cell «cellatt» upload. Named because the two are
+            # ingested by different people at different times — a day missing
+            # from BOTH is a day nobody uploaded, and that is worth seeing.
+            "attendance_sources": {
+                "sheet": [d.strftime("%d.%m.%Y") for d in sorted(sheet_days)],
+                "cell_upload": [d.strftime("%d.%m.%Y") for d in sorted(fallback_days)],
+            },
             # Cells dropped because partial attendance drove effective_hc ≤ 0.
             "collapsed_effective_hc": collapsed_hc,
             # A cell with no SAP code, or one whose code matches no configured

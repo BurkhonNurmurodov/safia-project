@@ -534,9 +534,9 @@ export default function ZagruzkaCell() {
             </div>
           </div>
           {/* Attendance coverage — always shown, and first. Every blank day on
-              the grid is a day whose per-cell verifix file was never uploaded,
-              which is otherwise indistinguishable from "the cells were idle". */}
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1 mb-1">
+              the grid is a day whose attendance was never uploaded, which is
+              otherwise indistinguishable from "the cells were idle". */}
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1">
             <span className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ background: diag.days_with_attendance?.length ? "#22c55e" : "#ef4444" }} />
             <span style={{ color: "var(--text-3)" }}>
@@ -548,6 +548,21 @@ export default function ZagruzkaCell() {
               {diag.days_with_attendance?.length
                 ? diag.days_with_attendance.join(", ")
                 : "—"}
+            </span>
+          </div>
+          {/* Which upload fed those days. The daily factory-wide sheet and the
+              older per-cell import are loaded by different people at different
+              times, so "which one covered this day" is the first question when
+              a day is missing — the grid alone can't answer it. */}
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] py-1 mb-1 pl-4">
+            <span style={{ color: "var(--text-3)" }}>{t("zcell.diagAttSource")}:</span>
+            <span className="font-medium" style={{ color: "var(--text-2)" }}>
+              {t("zcell.diagAttSourceSheet")
+                .replace("{n}", diag.attendance_sources?.sheet?.length ?? 0)}
+              {(diag.attendance_sources?.cell_upload?.length ?? 0) > 0 && (
+                <> · {t("zcell.diagAttSourceCell")
+                  .replace("{n}", diag.attendance_sources.cell_upload.length)}</>
+              )}
             </span>
           </div>
           {diag.collapsed_effective_hc > 0 && (
