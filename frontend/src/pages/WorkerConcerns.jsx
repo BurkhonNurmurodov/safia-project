@@ -950,6 +950,7 @@ export default function WorkerConcerns() {
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
             {syncPill}
           </span>
+          {exportBtn}
           {refreshBtn}
         </div>
       </div>
@@ -1331,6 +1332,68 @@ export default function WorkerConcerns() {
               <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-4)" }}>{T.mBrig}</div>
               <div style={{ color: "var(--text-2)" }}>{tl(shortName(detail.brigadir || "")) || "—"}</div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* export scope — asked only when filters make «what you see» ≠ «the
+          period»; without filters the button exports the whole range directly */}
+      {exportOpen && (
+        <Modal open onClose={() => { if (!exporting) setExportOpen(false); }}
+          title={T.xTitle} icon={<FileSpreadsheet size={16} />} maxWidth="max-w-md"
+          footer={
+            <>
+              <Button variant="secondary" disabled={exporting} onClick={() => setExportOpen(false)}>{T.cancel}</Button>
+              <Button loading={exporting} icon={!exporting ? <FileSpreadsheet size={14} /> : null}
+                onClick={() => runExport(exportScope)}>
+                {T.xExport}
+              </Button>
+            </>
+          }>
+          <p className="text-sm mb-3" style={{ color: "var(--text-2)" }}>{T.xModalQ}</p>
+          <div role="radiogroup" aria-label={T.xTitle} className="space-y-2">
+            {[
+              {
+                v: "filtered", label: T.xOptFiltered, desc: T.xOptFilteredD,
+                chips: [
+                  ...(regCount != null ? [`${regCount.toLocaleString("ru-RU")} ${T.concernsWord}`] : []),
+                  ...activeFilterChips,
+                ],
+              },
+              { v: "all", label: T.xOptAll, desc: T.xOptAllD, chips: [] },
+            ].map((o) => {
+              const sel = exportScope === o.v;
+              return (
+                <button key={o.v} type="button" role="radio" aria-checked={sel}
+                  onClick={() => setExportScope(o.v)}
+                  className="w-full text-left rounded-xl px-3.5 py-3 transition-colors"
+                  style={{
+                    background: sel ? "var(--brand-bg)" : "var(--bg-inner)",
+                    border: `1px solid ${sel ? "var(--brand)" : "var(--border)"}`,
+                  }}>
+                  <span className="flex items-start gap-2.5">
+                    <span className="grid place-items-center w-4 h-4 rounded-full flex-shrink-0 mt-0.5"
+                      style={{ border: `2px solid ${sel ? "var(--brand)" : "var(--border-md)"}` }}>
+                      {sel && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--brand)" }} />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold" style={{ color: "var(--text-1)" }}>{o.label}</span>
+                      <span className="block text-[11px] mt-0.5" style={{ color: "var(--text-3)" }}>{o.desc}</span>
+                      {o.chips.length > 0 && (
+                        <span className="flex flex-wrap gap-1 mt-2">
+                          {o.chips.map((c) => (
+                            <span key={c} className="px-2 py-0.5 rounded-lg text-[10px] whitespace-nowrap"
+                              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                              {c}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </Modal>
       )}

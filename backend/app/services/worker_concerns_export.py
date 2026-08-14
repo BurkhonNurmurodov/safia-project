@@ -444,7 +444,9 @@ def _leaders_sheet(wb: Workbook, p: dict, sts: list[str]) -> None:
     if rows:
         ws.auto_filter.ref = (f"{get_column_letter(C1)}{head_row}:"
                               f"{get_column_letter(C2)}{last_data}")
-    ws.freeze_panes = ws.cell(first, C1 + 1)
+    # A coordinate string, not ws.cell(): on an empty sheet that cell sits
+    # inside the merged «no match» row and a MergedCell cannot anchor a freeze.
+    ws.freeze_panes = f"{get_column_letter(C1 + 1)}{first}"
     ws.print_title_rows = f"{head_row}:{head_row}"
 
 
@@ -506,7 +508,7 @@ def _register_sheet(wb: Workbook, p: dict) -> None:
     if reg:
         ws.auto_filter.ref = (f"{get_column_letter(C1)}{head_row}:"
                               f"{get_column_letter(C2)}{row - 1}")
-    ws.freeze_panes = ws.cell(first, C1 + 1)
+    ws.freeze_panes = f"{get_column_letter(C1 + 1)}{first}"
     ws.print_title_rows = f"{head_row}:{head_row}"
 
 
