@@ -1865,6 +1865,7 @@ def undo_request(req_id: int, caller=Depends(_require_staff), db: Session = Depe
 class ExportRow(BaseModel):
     worker_name:       Optional[str]   = None
     job_title:         Optional[str]   = None
+    cell:              Optional[str]   = None
     schedule:          Optional[str]   = None
     clock_in_out:      Optional[str]   = None
     hours_worked:      Optional[float] = None
@@ -1893,7 +1894,12 @@ def export_attendance(request: Request, body: ExportBody, caller=Depends(_requir
     ws = wb.active
     ws.title = "Attendance"
 
-    headers = ["Date", "Manager", "Worker", "Lavozim", "Jadval", "Clock In/Out", "Soat", "Early Arrival (min)", "Eff. Hours"]
+    # Yacheyka mirrors the page: the column exists only when the day's rows
+    # actually carry a cell code (legacy per-supervisor days have none).
+    has_cell = any((r.cell or "").strip() for r in body.rows)
+    headers = ["Date", "Manager", "Worker", "Lavozim"] \
+        + (["Yacheyka"] if has_cell else []) \
+        + ["Jadval", "Clock In/Out", "Soat", "Early Arrival (min)", "Eff. Hours"]
     ws.append(headers)
 
     # Style header row
@@ -1908,23 +1914,29 @@ def export_attendance(request: Request, body: ExportBody, caller=Depends(_requir
     # Data rows with alternating shading
     even_fill = PatternFill(fill_type="solid", fgColor="F1F5F9")
     for row_i, r in enumerate(body.rows, 2):
-        ws.append([
+        row = [
             body.attend_date,
             manager_name,
             r.worker_name        or "",
             r.job_title          or "",
+        ]
+        if has_cell:
+            row.append(r.cell or "")
+        row += [
             r.schedule           or "",
             r.clock_in_out       or "",
             r.hours_worked,
             r.early_arrival_min,
             r.effective_hours,
-        ])
+        ]
+        ws.append(row)
         if row_i % 2 == 0:
             for col_i in range(1, len(headers) + 1):
                 ws.cell(row_i, col_i).fill = even_fill
 
-    # Column widths: Date, Manager, Worker, Lavozim, Jadval, Clock, Soat, Early, Eff
-    for col_i, width in enumerate([13, 30, 42, 26, 18, 18, 8, 18, 12], 1):
+    # Column widths: Date, Manager, Worker, Lavozim, [Yacheyka], Jadval, Clock, Soat, Early, Eff
+    widths = [13, 30, 42, 26] + ([12] if has_cell else []) + [18, 18, 8, 18, 12]
+    for col_i, width in enumerate(widths, 1):
         ws.column_dimensions[ws.cell(1, col_i).column_letter].width = width
 
     buf = BytesIO()

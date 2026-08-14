@@ -581,7 +581,11 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
   const exportMutation = useMutation({
     mutationFn: (rows) => exportXlsx("/api/staff/attendance/export", {
-      body: { manager_id: managerId, attend_date: selectedDate, rows },
+      body: {
+        manager_id:  managerId,
+        attend_date: selectedDate,
+        rows: rows.map(w => ({ ...w, cell: w._cell?.code || "" })),
+      },
       fallbackName: `attendance_${selectedDate}.xlsx`,
     }),
   });

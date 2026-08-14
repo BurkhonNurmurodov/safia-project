@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutGrid, Plus, RefreshCw, Pencil, Trash2, Users, Flag, Hash, Factory, Settings2,
@@ -6,16 +7,14 @@ import {
 } from "lucide-react";
 import { FilterPanel, PickFilter } from "../components/ui/ColumnFilter";
 import Layout from "../components/layout/Layout";
-import Modal from "../components/ui/Modal";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Button from "../components/ui/Button";
 import { useToast } from "../components/ui/Toast";
-import FormField from "../components/ui/FormField";
-import StyledSelect from "../components/ui/StyledSelect";
 import SearchInput from "../components/ui/SearchInput";
 import EmptyState from "../components/ui/EmptyState";
 import TableCard, { Th } from "../components/ui/DataTable";
-import LangTextInput from "../components/ui/LangTextInput";
+import CellLink from "../components/ui/CellLink";
+import CellFormModal from "../components/CellFormModal";
 import { SkeletonBlock } from "../components/ui/Skeleton";
 import { useLang } from "../context/LangContext";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -42,19 +41,22 @@ import { exportXlsx } from "../utils/exportXlsx";
  *
  * Data + endpoints are unchanged: GET /api/profiles/admin/cells returns the
  * register plus the brigadir/leader option lists; create/edit/delete ride the
- * POST/PUT/DELETE /api/profiles/admin/cells[/id] endpoints.
+ * POST/PUT/DELETE /api/profiles/admin/cells[/id] endpoints (the add/edit form
+ * itself is the shared components/CellFormModal, also used by /cells/:id).
+ *
+ * Rows and phone cards NAVIGATE to the cell's own page (/cells/:id) — same
+ * pattern as the Profiles tab rows; edit/delete stay as the row's icon pair
+ * and stop the click from bubbling into the navigation.
  */
 
-const inputCls = "mt-1 w-full rounded-lg px-2.5 py-2 text-xs focus:outline-none";
-const inputStyle = { background: "var(--input-bg)", border: "1px solid var(--border-md)", color: "var(--text-1)" };
-
 // Compact gold-Edit / grey→red-Delete icon pair — shared by the desktop row and
-// the mobile card so both surfaces read identically.
+// the mobile card so both surfaces read identically. Clicks must not bubble:
+// the row/card underneath navigates to the cell page.
 function RowActions({ t, onEdit, onDelete, deleting }) {
   return (
     <div className="flex items-center justify-center gap-1.5">
       <button
-        onClick={onEdit}
+        onClick={(e) => { e.stopPropagation(); onEdit(); }}
         title={t("admin.profiles.edit")}
         aria-label={t("admin.profiles.edit")}
         className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
@@ -63,7 +65,7 @@ function RowActions({ t, onEdit, onDelete, deleting }) {
         <Pencil size={14} />
       </button>
       <button
-        onClick={onDelete}
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
         disabled={deleting}
         title={t("admin.profiles.delete")}
         aria-label={t("admin.profiles.delete")}
@@ -80,12 +82,16 @@ function RowActions({ t, onEdit, onDelete, deleting }) {
 
 // Phone-only card: code + SAP chip and the actions up top, the workshop name as
 // the body, brigadir + leader pinned to the footer so a stack lines up.
-function CellCard({ c, workshop, tl, t, canEdit, onEdit, onDelete, deleting }) {
+// The whole card opens the cell's page; the icon pair stops propagation.
+function CellCard({ c, workshop, tl, t, canEdit, onEdit, onDelete, deleting, onOpen }) {
   return (
-    <div className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)]">
+    <div
+      className="min-w-0 rounded-2xl p-4 flex flex-col gap-3 border border-[var(--border)] bg-[var(--bg-card)] cursor-pointer"
+      onClick={onOpen}
+    >
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <span className="font-mono font-semibold text-sm text-[var(--text-1)]">{c.verifix_code}</span>
+          <CellLink id={c.id} className="font-mono font-semibold text-sm text-[var(--text-1)]">{c.verifix_code}</CellLink>
           {c.sap_code && (
             <span
               className="font-mono text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap"
@@ -135,6 +141,7 @@ export default function Cells() {
   const canEdit = !capLoading && can(CAP.CELLS_MANAGE);
   const qc = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-cells"],
@@ -159,23 +166,10 @@ export default function Cells() {
     setSort((s) => (s.key === k ? { key: k, dir: s.dir === "asc" ? "desc" : "asc" } : { key: k, dir: "asc" }));
 
   const [modal, setModal] = useState(null);       // {mode:"add"|"edit", item?}
-  const [form, setForm] = useState({});
-  const [formError, setFormError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   const done = () => qc.invalidateQueries({ queryKey: ["admin-cells"] });
-  const fail = (e) => setFormError(e?.response?.data?.detail || t("admin.profiles.error"));
 
-  const createMut = useMutation({
-    mutationFn: (body) => api.post("/api/profiles/admin/cells", body),
-    onSuccess: () => { done(); setModal(null); },
-    onError: fail,
-  });
-  const updateMut = useMutation({
-    mutationFn: ({ cid, body }) => api.put(`/api/profiles/admin/cells/${cid}`, body),
-    onSuccess: () => { done(); setModal(null); },
-    onError: fail,
-  });
   const deleteMut = useMutation({
     mutationFn: (cid) => api.delete(`/api/profiles/admin/cells/${cid}`),
     onSuccess: () => { done(); setConfirmDelete(null); },
@@ -183,48 +177,9 @@ export default function Cells() {
     // signal that a deletion failed would be invisible on the primary device.
     onError: (e) => { setConfirmDelete(null); toast.error(e?.response?.data?.detail || t("admin.profiles.error")); },
   });
-  const busy = createMut.isPending || updateMut.isPending;
 
-  function openAdd() {
-    setForm({ verifix_code: "", sap_code: "", manager_id: "", leader_id: "",
-              name_workshop_uz: "", name_workshop_uz_cyrl: "",
-              name_workshop_ru: "", name_workshop_en: "" });
-    setFormError("");
-    setModal({ mode: "add" });
-  }
-
-  function openEdit(item) {
-    setForm({
-      verifix_code: item.verifix_code || "",
-      sap_code: item.sap_code || "",
-      manager_id: item.manager_id ? String(item.manager_id) : "",
-      leader_id: item.leader_id ? String(item.leader_id) : "",
-      name_workshop_uz: item.name_workshop_uz || "",
-      name_workshop_uz_cyrl: item.name_workshop_uz_cyrl || "",
-      name_workshop_ru: item.name_workshop_ru || "",
-      name_workshop_en: item.name_workshop_en || "",
-    });
-    setFormError("");
-    setModal({ mode: "edit", item });
-  }
-
-  function submit() {
-    setFormError("");
-    const code = (form.verifix_code || "").trim();
-    if (!code) { setFormError(t("admin.profiles.verifixCodeRequired")); return; }
-    const body = {
-      verifix_code: code,
-      sap_code: form.sap_code || "",
-      name_workshop_uz: form.name_workshop_uz || "",
-      name_workshop_uz_cyrl: form.name_workshop_uz_cyrl || "",
-      name_workshop_ru: form.name_workshop_ru || "",
-      name_workshop_en: form.name_workshop_en || "",
-      manager_id: form.manager_id ? Number(form.manager_id) : 0,
-      leader_id: form.leader_id ? Number(form.leader_id) : 0,
-    };
-    if (modal.mode === "add") createMut.mutate(body);
-    else updateMut.mutate({ cid: modal.item.id, body });
-  }
+  const openAdd = () => setModal({ mode: "add" });
+  const openEdit = (item) => setModal({ mode: "edit", item });
 
   // Global search over every visible field, then the two dropdown filters.
   const filtered = useMemo(() => {
@@ -326,6 +281,7 @@ export default function Cells() {
           onEdit={() => openEdit(c)}
           onDelete={() => setConfirmDelete(c)}
           deleting={deleteMut.isPending}
+          onOpen={() => navigate(`/cells/${c.id}`)}
         />
       ))}
     </div>
@@ -434,8 +390,10 @@ export default function Cells() {
             </tr>
           )}
           {!isLoading && sorted.map((c) => (
-            <tr key={c.id}>
-              <td className="px-3 py-2 font-mono font-semibold text-[var(--text-1)] whitespace-nowrap">{c.verifix_code}</td>
+            <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`/cells/${c.id}`)}>
+              <td className="px-3 py-2 font-mono font-semibold text-[var(--text-1)] whitespace-nowrap">
+                <CellLink id={c.id}>{c.verifix_code}</CellLink>
+              </td>
               <td className="px-3 py-2 font-mono text-[var(--text-3)] whitespace-nowrap">{c.sap_code || "—"}</td>
               <td className="px-3 py-2">
                 {wname(c)
@@ -462,102 +420,16 @@ export default function Cells() {
         </tbody>
       </TableCard>
 
-      {/* Add / edit modal */}
+      {/* Add / edit modal — the ONE cell form, shared with /cells/:id */}
       {modal && (
-        <Modal
+        <CellFormModal
+          mode={modal.mode}
+          item={modal.item}
+          units={units}
+          leaders={leaders}
           onClose={() => setModal(null)}
-          dismissable={!busy}
-          title={`${t(modal.mode === "add" ? "admin.profiles.addTitle" : "admin.profiles.editTitle")} · ${t("admin.profiles.cellsTab")}`}
-          maxWidth="max-w-sm"
-          footer={
-            <>
-              <Button variant="secondary" size="sm" onClick={() => setModal(null)} disabled={busy}>
-                {t("admin.users.cancel")}
-              </Button>
-              <Button
-                size="sm"
-                icon={modal.mode === "add" ? <Plus size={12} /> : <Pencil size={12} />}
-                loading={busy}
-                onClick={submit}
-              >
-                {t(modal.mode === "add" ? "admin.profiles.create" : "admin.profiles.save")}
-              </Button>
-            </>
-          }
-        >
-          <FormField label={t("admin.profiles.colVerifixCode")} required>
-            <input
-              type="text"
-              value={form.verifix_code || ""}
-              onChange={(e) => setForm((f) => ({ ...f, verifix_code: e.target.value }))}
-              className={inputCls}
-              style={inputStyle}
-              autoFocus={modal.mode === "add"}
-            />
-          </FormField>
-          <FormField label={t("admin.profiles.colSapCode")}>
-            <input
-              type="text"
-              value={form.sap_code || ""}
-              onChange={(e) => setForm((f) => ({ ...f, sap_code: e.target.value }))}
-              className={inputCls}
-              style={inputStyle}
-            />
-          </FormField>
-          <FormField label={t("admin.profiles.colWorkshop")}>
-            {/* One tabbed field, not four stacked inputs: every language column
-                is optional and a blank one falls back to Russian on display,
-                so the empty tabs preview the Russian text as a placeholder. */}
-            <LangTextInput
-              className="mt-1"
-              value={{
-                uz: form.name_workshop_uz,
-                uz_cyrl: form.name_workshop_uz_cyrl,
-                ru: form.name_workshop_ru,
-                en: form.name_workshop_en,
-              }}
-              onChange={(l, v) => setForm((f) => ({ ...f, [`name_workshop_${l}`]: v }))}
-            />
-          </FormField>
-          <FormField label={t("admin.profiles.colSupervisor")}>
-            <StyledSelect
-              value={form.manager_id || ""}
-              onChange={(v) => setForm((f) => ({ ...f, manager_id: v }))}
-              disabled={!!form.leader_id}
-              options={[
-                { value: "", label: t("admin.profiles.cellNoSupervisor") },
-                ...units.map((u) => ({ value: String(u.id), label: tl(u.name) })),
-              ]}
-            />
-            {form.leader_id && (
-              <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--text-4)" }}>
-                {t("admin.profiles.cellSupervisorFromOwner")}
-              </p>
-            )}
-          </FormField>
-          <FormField label={t("admin.profiles.colOwner")}>
-            <StyledSelect
-              value={form.leader_id || ""}
-              onChange={(v) => setForm((f) => {
-                // Owner is authoritative for the supervisor: picking a leader
-                // inherits their unit; clearing keeps the cell's current
-                // supervisor (a cell can be leaderless yet owned).
-                const L = leaders.find((x) => String(x.id) === String(v));
-                return {
-                  ...f,
-                  leader_id: v,
-                  manager_id: v ? (L?.manager_id ? String(L.manager_id) : f.manager_id) : f.manager_id,
-                };
-              })}
-              searchable
-              options={[
-                { value: "", label: t("admin.profiles.cellUnassigned") },
-                ...leaders.map((l) => ({ value: String(l.id), label: tl(l.name), title: tl(l.name) })),
-              ]}
-            />
-          </FormField>
-          {formError && <p className="text-[11px] font-medium text-red-400">{formError}</p>}
-        </Modal>
+          onSaved={done}
+        />
       )}
 
       {/* Delete confirmation */}

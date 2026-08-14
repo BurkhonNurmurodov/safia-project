@@ -55,6 +55,7 @@ const Production = lazyWithReload(() => import("./pages/Production"));
 const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
+const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
 const Quality = lazyWithReload(() => import("./pages/Quality"));
 const WorkerConcerns = lazyWithReload(() => import("./pages/WorkerConcerns"));
@@ -395,6 +396,13 @@ function AppWithLang() {
             <Route path="/leaders-shift2" element={<Navigate to="/leaders" replace />} />
             <Route path="/leaders-bot" element={<Navigate to="/leaders" replace />} />
             <Route path="/cells" element={<AuthGate><RequirePage page="cells"><Cells /></RequirePage></AuthGate>} />
+            {/* One cell's card — where every CellLink on the platform lands.
+                Auth-only on purpose (like /profile): cells are pressable from
+                attendance, setup times, production and quality, so the page
+                must open for viewers who don't hold the /cells register page.
+                The read endpoint is gated the same way; every write keeps its
+                own capability/admin guard. */}
+            <Route path="/cells/:id" element={<AuthGate><CellDetails /></AuthGate>} />
             <Route path="/kaizen" element={<AuthGate><RequirePage page="kaizen"><Kaizen /></RequirePage></AuthGate>} />
             <Route path="/quality" element={<AuthGate><RequirePage page="quality"><Quality /></RequirePage></AuthGate>} />
             <Route path="/concerns" element={<AuthGate><RequirePage page="concerns"><Concerns /></RequirePage></AuthGate>} />

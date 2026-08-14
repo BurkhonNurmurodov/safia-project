@@ -267,7 +267,9 @@ function LoadConfig({ onDirtyChange }) {
                   <span className="inline-flex"><CheckBox state={on ? "on" : "off"} /></span>
                 </td>
                 <td className="px-3 py-2 truncate" title={`${c.verifix_code || ""} ${name || ""}`.trim()}>
-                  <span className="font-mono" style={{ color: "var(--text-1)" }}>{c.verifix_code || "—"}</span>
+                  {/* The code opens the cell's page; the rest of the row still
+                      toggles the tick (CellLink stops propagation). */}
+                  <CellLink id={c.cell_id} className="font-mono" style={{ color: "var(--text-1)" }}>{c.verifix_code || "—"}</CellLink>
                   {name && <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{name}</span>}
                 </td>
                 <td className="px-3 py-2 truncate font-mono text-[11px]" style={{ color: "var(--text-3)" }}>
@@ -875,7 +877,9 @@ export default function CellAttendance() {
                         {/* Fixed layout means text can't widen its column, so the
                             long ones truncate and carry the full value in a title. */}
                         <td className="px-3 py-2 truncate" title={`${r.verifix_code || ""} ${r.cell_name || ""}`.trim()}>
-                          <span className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</span>
+                          {/* cell_id is null for codes the registry doesn't
+                              know — CellLink renders those inert on purpose. */}
+                          <CellLink id={r.cell_id} className="font-mono" style={{ color: "var(--text-2)" }}>{r.verifix_code || "—"}</CellLink>
                           {r.cell_name && (
                             <span className="ml-1.5" style={{ color: "var(--text-4)" }}>{r.cell_name}</span>
                           )}
