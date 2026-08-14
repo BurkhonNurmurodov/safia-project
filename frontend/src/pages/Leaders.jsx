@@ -833,6 +833,16 @@ const rowDate = (r) => String(r.date).slice(0, 10);
 // the mean of that person's rows on it — filing twice, once per shift, still
 // settles exactly one day — and every day of the window with no slot at all is
 // a real 0%, not a gap to skip over.
+//
+// Whether one TASK counts as done runs through `effDone`, on the same
+// precedence: the admin's ruling beats the AI's, which beats the leader's own
+// answer. `r.completion` arrives with the AI's deductions already spent out of
+// it by the backend, so anything that counts tasks BY HAND has to read them
+// through here too — built on the raw `done` flag, the task bars went on
+// showing 100% for a question whose proof the reviewer had thrown out, right
+// beside the average that had already dropped because of it.
+const effDone = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
+
 //   key → Map(date → { sum, n })
 const slotsBy = (rows, keyFn) => {
   const map = new Map();
@@ -2012,9 +2022,10 @@ export default function Leaders() {
     () => (detail ? rows.find((r) => r.uid === detail.uid) || detail : null),
     [rows, detail]);
   const openDetail = (r) => {
-    // Land the admin on what needs them: a report with failures opens filtered
-    // to its problems, a clean one opens showing everything.
-    setMFlt(r._failed > 0 ? "issues" : "all");
+    // Always open on the whole day — the report is read top to bottom, and a
+    // modal that lands pre-filtered hides eleven done tasks behind a tab the
+    // reader never asked for. «Issues» stays one tap away.
+    setMFlt("all");
     setZoom(null);
     setOvErr(null);
     setCheckErr(null);
@@ -2164,7 +2175,10 @@ export default function Leaders() {
 
   // Per-question rates, on the same footing: the denominator is every day each
   // leader owed an answer, so a day with no report is that question undone —
-  // exactly what a 0% day means in the ranking.
+  // exactly what a 0% day means in the ranking. The numerator counts EFFECTIVE
+  // answers (`effDone`), so a proof the reviewer rejected costs its bar exactly
+  // what it already cost the score — these rates and the average above them are
+  // two readings of one set of facts and must never contradict each other.
   //
   // Two things stay out of it. A question nobody was asked (`answered: false` —
   // it was added to the form after these submissions) is left out of its own
@@ -2201,7 +2215,7 @@ export default function Leaders() {
         onForm.add(id);                                  // keeps its axis slot either way
         if (tk.answered === false) continue;
         const a = s.tasks.get(id) || { done: 0, n: 0 };
-        a.n++; if (tk.done) a.done++;
+        a.n++; if (effDone(tk)) a.done++;
         s.tasks.set(id, a);
       }
     }
@@ -2499,11 +2513,10 @@ export default function Leaders() {
     let arr = filtered.map((r) => ({
       ...r,
       // an unasked question is not a missed one
-      // Effective failures: the admin's ruling beats the AI's, which beats the
-      // leader's own answer — the same precedence the score itself is built on,
-      // so this count can never disagree with the percentage beside it.
+      // Effective failures, through the page's one `effDone` rule — so this
+      // count can never disagree with the percentage beside it.
       _failed: (r.tasks || []).filter((tk) =>
-        tk.answered !== false && !(tk.admin_done ?? (tk.done && !tk.ai_rejected))).length,
+        tk.answered !== false && !effDone(tk)).length,
       _late: lateDays(r),
     }));
     if (q) arr = arr.filter((r) => `${tl(r.leader)} ${r.leader}`.toLowerCase().includes(q));
@@ -3335,16 +3348,13 @@ export default function Leaders() {
           metre of green ones. */}
       {detail && detailRow && (() => {
         const tasksAll = detailRow.tasks || [];
-        // Effective state, same precedence the score is built on: the admin's
-        // ruling beats the AI's, which beats the leader's own answer.
-        const effDoneOf = (tk) => tk.admin_done ?? (!!tk.done && !tk.ai_rejected);
         const asked = tasksAll.filter((tk) => tk.answered !== false);
-        const nDone = asked.filter(effDoneOf).length;
+        const nDone = asked.filter(effDone).length;
         const nFail = asked.length - nDone;
         // An "issue" is anything the admin may need to act on: an effective
         // failure, or a task the AI still doubts.
         const isIssue = (tk) => tk.answered !== false &&
-          (!effDoneOf(tk) || (aiOn && aiReport?.tasks?.[String(Number(tk.id))]?.status === "flagged"));
+          (!effDone(tk) || (aiOn && aiReport?.tasks?.[String(Number(tk.id))]?.status === "flagged"));
         const nIssues = tasksAll.filter(isIssue).length;
         // A filter that just emptied itself (the admin fixed the last issue)
         // falls back to «all» instead of a blank list.
@@ -3449,8 +3459,8 @@ export default function Leaders() {
               // answered «Ha», but the day no longer counts it.
               const voided = !!tk.ai_rejected;
               const overridden = tk.admin_done != null;
-              const effDone = effDoneOf(tk);
-              const tone = unasked ? C_FLAT : effDone ? C_GOOD : C_BAD;
+              const isDone = effDone(tk);
+              const tone = unasked ? C_FLAT : isDone ? C_GOOD : C_BAD;
               const rev = aiOn ? aiReport?.tasks?.[String(id)] : null;
               const reason = showReason(tk.reason, T);
               const nPhotos = photos.length + media.length;
@@ -3461,7 +3471,7 @@ export default function Leaders() {
                   <div className="px-3 py-2.5">
                     <div className="flex items-start gap-2.5">
                       {unasked ? <Minus size={16} color={tone} className="flex-shrink-0 mt-0.5" />
-                        : effDone ? <CheckCircle2 size={16} color={tone} className="flex-shrink-0 mt-0.5" />
+                        : isDone ? <CheckCircle2 size={16} color={tone} className="flex-shrink-0 mt-0.5" />
                         : <XCircle size={16} color={tone} className="flex-shrink-0 mt-0.5" />}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
