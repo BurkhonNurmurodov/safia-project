@@ -17,6 +17,7 @@ import RichTextEditor from "../../components/ui/RichTextEditor";
 import CheckboxTree, { collectLeafKeys, filterGroups } from "../../components/ui/CheckboxTree";
 import SegmentedToggle from "../../components/ui/SegmentedToggle";
 import TableCard, { Th, SectionHead } from "../../components/ui/DataTable";
+import EmptyState from "../../components/ui/EmptyState";
 import { SkeletonBlock } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { useLang } from "../../context/LangContext";
@@ -922,6 +923,9 @@ export default function Broadcast() {
   );
 
   const historyEmpty = !historyLoading && !historyRows.length;
+  // "Nothing here yet" and "nothing matches what you asked for" are different
+  // problems with different exits — never the same empty state.
+  const filtered = (history || []).length > 0;
 
   const historyView = (
     <div className="space-y-3">
@@ -950,26 +954,32 @@ export default function Broadcast() {
 
       {historyEmpty ? (
         <div
-          className="rounded-2xl px-4 py-10 flex flex-col items-center gap-3 text-center"
+          className="rounded-2xl px-4 py-6"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
         >
-          <Inbox size={26} style={{ color: "var(--text-4)" }} />
-          <div className="text-sm" style={{ color: "var(--text-2)" }}>
-            {(history || []).length ? t("admin.broadcast.noMatchHistory") : t("admin.broadcast.empty")}
-          </div>
-          {(history || []).length ? (
-            <Button
-              variant="secondary"
-              onClick={() => { setHistFilter("all"); setHistQuery(""); }}
-            >
-              {t("admin.broadcast.filterAll")}
-            </Button>
-          ) : (
-            /* An empty state that teaches and invites the first action. */
-            <Button icon={<Megaphone size={14} />} onClick={() => setView("compose")}>
-              {t("admin.broadcast.writeFirst")}
-            </Button>
-          )}
+          {/* Two different emptinesses, two different ways out: a filter that
+              matched nothing hands back the filter, an empty register invites
+              the first broadcast. */}
+          <EmptyState
+            icon={Inbox}
+            height="h-auto"
+            showUploadLink={false}
+            title={filtered ? t("admin.broadcast.noMatchHistory") : t("admin.broadcast.empty")}
+            message={filtered ? t("admin.broadcast.noMatchHint") : t("admin.broadcast.emptyHint")}
+            action={filtered ? (
+              <Button
+                variant="secondary"
+                icon={<RotateCcw size={13} />}
+                onClick={() => { setHistFilter("all"); setHistQuery(""); }}
+              >
+                {t("admin.broadcast.filterAll")}
+              </Button>
+            ) : (
+              <Button icon={<Megaphone size={14} />} onClick={() => setView("compose")}>
+                {t("admin.broadcast.writeFirst")}
+              </Button>
+            )}
+          />
         </div>
       ) : (
         <>
