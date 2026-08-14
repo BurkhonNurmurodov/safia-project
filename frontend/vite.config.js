@@ -1,8 +1,29 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+// ONE source of truth for the version: the repo-root VERSION file, which
+// backend/app/version.py reads too. Bump that file, never this one.
+let APP_VERSION = '0.0.0'
+try {
+  APP_VERSION = readFileSync(fileURLToPath(new URL('../VERSION', import.meta.url)), 'utf8').trim() || APP_VERSION
+} catch {
+  // No VERSION file (a stripped checkout) — the app still builds, unversioned.
+}
+
+// The build timestamp, NOT the git SHA: the Stop hook builds and only then
+// commits, so any SHA baked in here would name the PREVIOUS commit — worse
+// than no SHA at all. The stamp has no such off-by-one, and the deployed
+// commit comes from the server at runtime (/api/version).
+const BUILD_TIME = new Date().toISOString()
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __BUILD_TIME__: JSON.stringify(BUILD_TIME),
+  },
   plugins: [
     react(),
     tailwindcss(),

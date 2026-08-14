@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import api from "../../utils/api";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
+import VersionBadge from "./VersionBadge";
 import { useAuth } from "../../context/AuthContext";
 import { useLang } from "../../context/LangContext";
 import { useTranslit } from "../../utils/transliterate";
@@ -573,6 +574,11 @@ export default function Sidebar({ open, onClose, pinned, onTogglePin }) {
               </div>
             </div>
           )}
+
+          {/* Which build this is. Sits with the data-freshness line: both answer
+              "how current is what I'm looking at", one about the data, one
+              about the app itself. */}
+          <VersionBadge expanded={expanded} />
 
           {/* The person — bottom-most, the anchor of the rail. Opens /profile. */}
           {auth?.status === "approved" && (

@@ -28,6 +28,7 @@ from app.config import assert_secure_config, settings as cfg
 from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
+from app.version import APP_VERSION, STARTED_AT, current_commit
 from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns
 from app.routers import production as production_router
 from app.routers import auth as auth_router
@@ -190,7 +191,7 @@ async def lifespan(app: FastAPI):
 # Every /api/* request must carry a valid Telegram initData header (verified
 # hash + freshness), enforced app-wide. /admin/* API routes are guarded per
 # router below (so SPA navigations to /admin/* aren't mistaken for API calls).
-app = FastAPI(title="Zagruzka KPI API", version="1.0.0", lifespan=lifespan,
+app = FastAPI(title="Zagruzka KPI API", version=APP_VERSION, lifespan=lifespan,
               dependencies=[Depends(enforce_telegram_origin_global)])
 
 
@@ -406,7 +407,27 @@ app.include_router(zagruzka_cell.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": APP_VERSION}
+
+
+@app.get("/api/version")
+def api_version():
+    """What is actually deployed, readable from inside the app.
+
+    A push to main deploys with no staging step and no review window, and
+    nobody has a shell on the box — so this is the only way to check that the
+    build in front of you is the one you just pushed. Authenticated like every
+    other /api route (it is not in ``_EXEMPT_PATHS``).
+
+    ``commit`` is the checkout's HEAD *now*; ``started_at`` is when this
+    process booted. A commit newer than the boot time means a backend change
+    is still waiting on a restart — a frontend-only deploy never restarts.
+    """
+    return {
+        "version": APP_VERSION,
+        "commit": current_commit(),
+        "started_at": STARTED_AT,
+    }
 
 
 # Serve React build — must come AFTER all API routes

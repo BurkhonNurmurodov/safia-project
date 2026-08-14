@@ -67,6 +67,7 @@ const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const CellAttendance = lazyWithReload(() => import("./pages/CellAttendance"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
+const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
 const Login = lazyWithReload(() => import("./pages/Login"));
 const WebLogin = lazyWithReload(() => import("./pages/WebLogin"));
@@ -431,6 +432,14 @@ function AppWithLang() {
             <Route
               path="/broadcast-receivers"
               element={<AuthGate><BroadcastReceivers /></AuthGate>}
+            />
+            {/* One broadcast's record — where every history row lands, and where
+                a completed send hands off to watching it. RequireAdmin matches
+                the backend: every /api/broadcast read is verify_admin, so a
+                capability grantee would only get a page of 403s. */}
+            <Route
+              path="/broadcast/:id"
+              element={<AuthGate><RequireAdmin><BroadcastRecord /></RequireAdmin></AuthGate>}
             />
             <Route path="/admin" element={<Navigate to="/admin/upload" replace />} />
             {/* Catch-all. Must stay LAST — it matches whatever nothing above
