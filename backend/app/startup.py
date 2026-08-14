@@ -1913,6 +1913,58 @@ def purge_leader_ai_history() -> None:
         db.close()
 
 
+# Named after the shifts it clears, and versioned, for the same reason the floor
+# purge above is: the flag records "this exact pause has been applied once". If
+# `REVIEW_PAUSED_SHIFTS` ever changes, this key must change WITH it, or the old
+# "already ran" mark makes the new pause a no-op on every box that has booted.
+LEADER_AI_PAUSE_FLAG = "leader_ai_review_paused_shift2_v1"
+
+
+def drop_paused_shift_reviews() -> None:
+    """Take the paused shifts' work OUT of the AI queue, once.
+
+    Closing the doors (services/leader_ai.REVIEW_PAUSED_SHIFTS) stops new rows;
+    it does nothing about the ones queued before the pause existed. Those would
+    sit `pending` forever now that the drain refuses them — inflating «N queued»
+    on the admin strip and holding coverage below 100% with work nothing will
+    ever do. A queue figure that never moves is how an operator learns to stop
+    reading the strip.
+
+    **Only never-judged rows go.** `reviewed_at IS NULL AND resolution IS NULL`
+    is the whole rule: a verdict already written is an answer somebody may have
+    acted on, and a human ruling is that row's terminal state. What is deleted
+    is queue debris — the platform's own words for it (`scope="unjudged"` in the
+    cleanup tool) — and it is not lost: `discover()` re-finds every one of these
+    refs the moment the pause lifts, because the ref is what made them known.
+    """
+    from app.services.leader_ai import REVIEW_PAUSED_SHIFTS
+
+    if not REVIEW_PAUSED_SHIFTS:
+        # Nothing paused — and deliberately no flag written, so the guard stays
+        # honest about never having run.
+        return
+
+    db = SessionLocal()
+    try:
+        if db.query(AppSetting).filter_by(key=LEADER_AI_PAUSE_FLAG).first():
+            return
+        n = (db.query(LeaderAiReview)
+             .filter(LeaderAiReview.shift.in_(REVIEW_PAUSED_SHIFTS),
+                     LeaderAiReview.reviewed_at.is_(None),
+                     LeaderAiReview.resolution.is_(None))
+             .delete(synchronize_session=False))
+        db.add(AppSetting(key=LEADER_AI_PAUSE_FLAG, value="1"))
+        db.commit()
+        shifts = "/".join(str(s) for s in REVIEW_PAUSED_SHIFTS)
+        print(f"[startup] leader-ai: shift {shifts} review paused"
+              + (f", {n} unjudged row(s) dropped from the queue" if n else ""))
+    except Exception as exc:  # pragma: no cover — never block startup
+        db.rollback()
+        print(f"[startup] leader-ai pause cleanup skipped: {exc}")
+    finally:
+        db.close()
+
+
 ROLE_PROFILES_FLAG = "role_profiles_backfilled_v1"
 
 

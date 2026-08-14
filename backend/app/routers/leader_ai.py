@@ -863,10 +863,17 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
 
     rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
-        # Never queued — the usual case before the first Refresh has run.
+        # Never queued — the usual case before the first Refresh has run, and
+        # the normal case for a paused shift, which nothing queues on its own.
         # Queue THIS report only: a full discover() walks every report ever
         # filed and would turn one button press into a half-minute request.
-        leader_ai.queue_report(db, **_report_target(db, body.uid))
+        #
+        # `force`: this endpoint IS the human door the shift pause leaves open
+        # (see leader_ai.REVIEW_PAUSED_SHIFTS). An admin who opens one report
+        # and presses «check» on one photo is not the machine deciding to spend
+        # — and the verdict is written by `review_one` below, never by the
+        # drain, so the pause on the queue is untouched by it.
+        leader_ai.queue_report(db, force=True, **_report_target(db, body.uid))
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
@@ -1248,6 +1255,14 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
                        shift=body.shift, manager_id=body.manager_id,
                        leader_id=body.leader_id)
 
+    # A paused shift (leader_ai.REVIEW_PAUSED_SHIFTS) is excluded from both
+    # branches below — re-queueing rows the drain refuses to take would leave
+    # them `pending` forever and a run that can never reach 100%. Reported back
+    # so the modal can say WHY nothing was queued: for a shift the operator just
+    # picked out of a facet showing its row count, «nothing to check» is true
+    # and useless.
+    paused_pick = leader_ai.review_paused(body.shift)
+
     # ── "catch up": never-judged rows only ───────────────────────────────────
     # Nothing is overwritten, so there is no verdict to lose and no confirm to
     # earn. `discover()` runs even for the dry run: a report filed since the
@@ -1257,10 +1272,12 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
     if body.scope == "unchecked":
         found = leader_ai.discover(db)
         n = _scoped(
-            db.query(LeaderAiReview).filter(LeaderAiReview.status == "pending")
+            db.query(LeaderAiReview).filter(LeaderAiReview.status == "pending",
+                                            ~leader_ai.paused_clause())
         ).count()
         if body.dry_run:
-            return {"ok": True, "requeued": n, "found": found, "dryRun": True}
+            return {"ok": True, "requeued": n, "found": found, "dryRun": True,
+                    "paused": paused_pick}
         _start_run(db, n, body, admin)
         log.info("LEADER-AI catch-up by %s: %s pending (%s new) in %s..%s [%s]",
                  admin.get("telegram_id"), n, found,
@@ -1269,7 +1286,7 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
                                            body.leader_id)) or "all")
         leader_ai.run_async(discover_first=False)
         return {"ok": True, "requeued": n, "found": found,
-                "counts": leader_ai.counts(db)}
+                "paused": paused_pick, "counts": leader_ai.counts(db)}
 
     # ── re-check: throw away a verdict and earn it again ─────────────────────
     q = _scoped(db.query(LeaderAiReview).filter(
@@ -1280,20 +1297,27 @@ def recheck(body: RecheckIn, db: Session = Depends(get_db),
         q = q.filter(LeaderAiReview.status == "flagged")
     elif body.scope == "clean":
         q = q.filter(LeaderAiReview.status == "ok")
+    held = q.filter(leader_ai.paused_clause()).count() if leader_ai.REVIEW_PAUSED_SHIFTS else 0
+    q = q.filter(~leader_ai.paused_clause())
 
     if body.dry_run:
-        return {"ok": True, "requeued": q.count(), "dryRun": True}
+        return {"ok": True, "requeued": q.count(), "dryRun": True,
+                "paused": paused_pick}
 
     n = q.update({"status": "pending", "attempts": 0}, synchronize_session=False)
     db.commit()
     _start_run(db, n, body, admin)
-    log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s, %s)",
+    log.info("LEADER-AI recheck by %s: %s rows (scope=%s, %s..%s, %s)%s",
              admin.get("telegram_id"), n, body.scope,
              body.date_from or "*", body.date_to or "*",
              " · ".join(_narrow_labels(db, body.shift, body.manager_id,
-                                       body.leader_id)) or "everyone")
+                                       body.leader_id)) or "everyone",
+             # Said out loud, not inferred from a smaller number than expected.
+             f" — {held} held back, shift "
+             f"{'/'.join(map(str, leader_ai.REVIEW_PAUSED_SHIFTS))} paused" if held else "")
     leader_ai.run_async(discover_first=False)
-    return {"ok": True, "requeued": n, "counts": leader_ai.counts(db)}
+    return {"ok": True, "requeued": n, "paused": paused_pick,
+            "counts": leader_ai.counts(db)}
 
 
 # ── the run record: what the progress bar is measuring ───────────────────────
@@ -1710,7 +1734,11 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     pending = (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status.in_(("pending", "error")),
-                LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS)
+                LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS,
+                # Only what the drain will actually take: a paused shift's rows
+                # are queue debris, and counting them would park the strip at
+                # «40 queued» with nothing ever working through them.
+                ~leader_ai.paused_clause())
         .count()
     )
     if row is None:
@@ -1773,7 +1801,10 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         pending_run = _narrow(
             db.query(LeaderAiReview)
             .filter(LeaderAiReview.status.in_(("pending", "error")),
-                    LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS),
+                    LeaderAiReview.attempts < leader_ai.MAX_ATTEMPTS,
+                    # Same rule as the global figure above: the run ends when
+                    # the drain has nothing left it can take.
+                    ~leader_ai.paused_clause()),
             date_from=lo, date_to=hi, shift=r_shift,
             manager_id=r_mgr, leader_id=r_ldr,
         ).count()
@@ -2317,7 +2348,12 @@ def retry(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     so there has to be a way to re-run them without touching the database."""
     n = (
         db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status == "error")
+        .filter(LeaderAiReview.status == "error",
+                # A paused shift's rows are not retried — the drain would not
+                # take them, so `reset: n` would promise a retry that never
+                # happens and leave the rows sitting `pending` instead of
+                # visibly stuck.
+                ~leader_ai.paused_clause())
         .update({"attempts": 0, "status": "pending"}, synchronize_session=False)
     )
     db.commit()

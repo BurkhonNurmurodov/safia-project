@@ -2073,7 +2073,10 @@ def _lt_autoclose(db, prof, shift: int) -> None:
     if stale:
         # Auto-closed bygone days are submissions too — queue their photos, and
         # ONLY theirs: one `queue_report` per day just closed, for this leader,
-        # exactly the rule the manual close uses.
+        # exactly the rule the manual close uses. Including the pause: a paused
+        # shift queues nothing here either (leader_ai.REVIEW_PAUSED_SHIFTS), so
+        # the day still closes and still scores, it is simply not sent to the
+        # machine.
         #
         # This used to call `discover()`, which walks every report ever filed.
         # The caller is `/tasks`, so one leader opening their checklist with a
@@ -2436,10 +2439,16 @@ def _lt_callback(call: types.CallbackQuery):
             day.closed_at = datetime.now(timezone.utc)
             day.completion = compute_completion(cfg, list(entries.values()))
             db.commit()
-            # ── shift 2's automatic review starts HERE ────────────────────────
-            # Shift 2 files through the bot, so closing the day IS the moment
-            # this leader's proofs become reviewable — there is no sheet Refresh
-            # behind them and nothing else in the system marks the submission.
+            # ── the bot's automatic review door ───────────────────────────────
+            # PAUSED FOR SHIFT 2 (user, 2026-08-14). This is where a bot-filed
+            # day used to become reviewable — there is no sheet Refresh behind
+            # these proofs and nothing else in the system marks the submission —
+            # and shift 2 is what files through the bot, so in practice this was
+            # the whole of shift 2's AI review. `queue_report` now returns 0 for
+            # a paused shift (`leader_ai.REVIEW_PAUSED_SHIFTS`), so the close
+            # writes no queue rows and spends no quota; `n` is 0 and nothing
+            # below fires. The call is left in place deliberately: un-pausing is
+            # one tuple in leader_ai.py, not a hunt for the doors.
             #
             # THIS day is queued directly rather than through a full discovery
             # pass: `queue_report` matches one report (and honours the review

@@ -116,10 +116,31 @@ no correct way to render that.
 
 Leader-checklist proof photos are reviewed by Gemini. Since **2026-08-13** that
 review is **automatic and consequential for shift 1**: nobody presses anything,
-and a flagged proof costs its task immediately. Everything else — every day
-before that date, and shift 2 for good — keeps the original regime, where a flag
-is a note and only a human `rejected` moves a number.
+and a flagged proof costs its task immediately. Everything before that date keeps
+the original regime, where a flag is a note and only a human `rejected` moves a
+number — and **shift 2 is not reviewed by the machine at all** (see the pause
+below).
 
+- **Shift 2's review is PAUSED** (user, 2026-08-14) —
+  `leader_ai.REVIEW_PAUSED_SHIFTS = (2,)`, `review_paused(shift)` and
+  `paused_clause()` as its SQL twin. Nothing queues a paused shift (`discover`,
+  `queue_report`, and therefore both bot day-close doors), the drain refuses it
+  where the quota is actually spent, and every «queued» figure excludes it —
+  `_start_run`'s total, `/progress`, `/recheck`, `/retry` — because a queue
+  number nothing works through parks the strip at «40 queued» forever.
+  `should_chain` MUST exclude it too, or a pass with unreachable "work left"
+  chains a new drain every 5 seconds around the clock. This is deliberately NOT
+  the same predicate as `AUTO_SHIFTS`: that one says whose flags COST points,
+  this says whose photos are LOOKED AT — shift 2 was already outside the
+  automatic regime, yet every bot close still queued its proofs and paid for a
+  verdict on each. **One human door stays open**: the admin's per-task «check
+  now» (`review_now` → `queue_report(force=True)`), which reviews the row
+  directly and never touches the queue. Un-pausing is the tuple going back to
+  `()`; nothing was destroyed, because `startup.drop_paused_shift_reviews` only
+  dropped NEVER-JUDGED rows (`reviewed_at IS NULL AND resolution IS NULL`) and
+  `discover()` re-finds every one of them. That cleanup is flag-guarded and its
+  key names the shifts — **changing `REVIEW_PAUSED_SHIFTS` needs a NEW flag
+  key**, same lesson as the review floor.
 - **ONE predicate owns the boundary**: `leader_ai.in_auto_regime(date, shift)`
   (`AUTO_FROM = "2026-08-13"`, `AUTO_SHIFTS = (1,)`), with `_auto_clause()` as
   its SQL twin. Five surfaces read it — the score overlay, discovery, the

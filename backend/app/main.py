@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
         repoint_shift_report_sheet,
         wipe_cell_perenaladka_history,
         purge_leader_ai_history,
+        drop_paused_shift_reviews,
     )
     add_last_seen_column()
     add_tg_name_column()
@@ -145,6 +146,9 @@ async def lifespan(app: FastAPI):
     # After purge_leader_ai_history (no point re-judging rows about to be
     # dropped) and after the window + clocks columns it reads exist.
     sync_leader_ai_dates()
+    # After the date sync, which is what settles a row's shift: the pause
+    # cleanup reads it to decide what leaves the queue.
+    drop_paused_shift_reviews()
     backfill_role_profiles()
     backfill_concern_profiles()
     backfill_concern_owner()

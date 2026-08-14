@@ -42,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, false, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -692,7 +692,12 @@ def set_floor(db: Session, date: str | None) -> str | None:
 def discover(db: Session) -> int:
     """Insert `pending` rows for every reviewable (report, task) not yet known.
     Reviewable = the leader answered YES and attached at least one photo; a
-    "no" with a written reason has no image to judge."""
+    "no" with a written reason has no image to judge.
+
+    A paused shift (`REVIEW_PAUSED_SHIFTS`) is not reviewable while the pause
+    holds — skipped here rather than filtered at the drain, so the queue never
+    fills with rows nothing will ever take out of it and the «N queued» figure
+    on the page keeps meaning what it says."""
     known = _existing_refs(db)
     floor = floor_date(db)
     added = 0
@@ -718,6 +723,8 @@ def discover(db: Session) -> int:
             if ref in known or e.id not in with_media:
                 continue
             d = days[e.day_id]
+            if review_paused(shifts.get(d.manager_id)):
+                continue
             db.add(LeaderAiReview(
                 ref=ref, source="bot", date=d.date, task_id=e.task_id,
                 leader_id=d.leader_id, manager_id=d.manager_id,
@@ -767,6 +774,11 @@ def discover(db: Session) -> int:
                     break
                 info = sup.get(relabel_supervisor(r.supervisor)) or {}
                 who = lead.get((r.leader, info.get("id"))) or {}
+                # Paused shifts queue nothing — but their KNOWN refs still get
+                # the drift re-stamp below, so a row that moved day or unit is
+                # accurate the moment the pause lifts instead of carrying a
+                # stale window into its first verdict.
+                paused = review_paused(info.get("shift"))
                 for tk in (r.tasks or []):
                     if not tk.get("done") or not _sheet_photos(tk):
                         continue
@@ -784,6 +796,8 @@ def discover(db: Session) -> int:
                             db.query(LeaderAiReview).filter_by(id=was[0]).update(
                                 {"date": r.date, "shift": info.get("shift")})
                             fixed += 1
+                        continue
+                    if paused:
                         continue
                     db.add(LeaderAiReview(
                         ref=ref, source="sheet", date=r.date,
@@ -985,13 +999,20 @@ def undiscovered(db: Session, *, date_from: str | None = None,
 
 
 def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
-                 row: LeaderChecklist | None = None) -> int:
+                 row: LeaderChecklist | None = None, force: bool = False) -> int:
     """Queue ONE report's reviewable tasks, by the same rule as `discover()`.
 
     Exists for the per-task "check now" button: that press must not pay for a
     scan of every report ever filed, which is what `discover()` does and what
     the background drain is for. Matching is done for this row alone — a single
     fuzzy match is cheap, it is the batch of thousands that is not.
+
+    `force` overrides the shift pause (`REVIEW_PAUSED_SHIFTS`) and is passed by
+    exactly one caller: the admin's per-task «check now», where a person is
+    waiting on the answer for a photo they picked. Every other caller is the
+    system deciding by itself that a report should be judged — the bot's day
+    close, its auto-close of bygone days — and those are what the pause exists
+    to stop.
     """
     # Reports before the review floor are out of scope — see floor_date().
     floor = floor_date(db)
@@ -1002,6 +1023,8 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     added = 0
     if day is not None:
         mgr = db.query(Manager).filter_by(id=day.manager_id).first()
+        if not force and review_paused(mgr.shift if mgr else None):
+            return 0
         entries = db.query(LeaderTaskEntry).filter_by(
             day_id=day.id, done=True).all()
         with_media = {
@@ -1022,6 +1045,8 @@ def queue_report(db: Session, *, day: LeaderTaskDay | None = None,
     elif row is not None:
         name = relabel_supervisor(row.supervisor)
         info = (supervisor_match(db.query(Manager).all(), {name}) or {}).get(name) or {}
+        if not force and review_paused(info.get("shift")):
+            return 0
         who = {}
         if row.leader:
             who = (leader_match(
@@ -1358,7 +1383,10 @@ def note_auto_run(db: Session, queued: int, by: str) -> bool:
     total = max(queued, (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status.in_(("pending", "error")),
-                LeaderAiReview.attempts < MAX_ATTEMPTS)
+                LeaderAiReview.attempts < MAX_ATTEMPTS,
+                # Count what the drain will actually work through — a bar whose
+                # denominator includes paused rows stops short of 100% forever.
+                ~paused_clause())
         .count()
     ))
     payload = json.dumps({
@@ -1425,7 +1453,13 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     q = (
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status.in_(("pending", "error")),
-                LeaderAiReview.attempts < MAX_ATTEMPTS)
+                LeaderAiReview.attempts < MAX_ATTEMPTS,
+                # The pause, enforced where the quota is actually spent. The
+                # queue doors already refuse a paused shift, so this is the
+                # backstop for rows that got in another way — a re-check aimed
+                # at them, or a sheet row whose unit was moved to shift 2 after
+                # it was queued. Never spend on a shift nobody is reviewing.
+                ~paused_clause())
     )
     scope = _active_run_scope(db)
     if scope:
@@ -2138,7 +2172,9 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
 # the day-report page). A second spelling of "is this automatic" would show a
 # leader a red badge on a day their score never moved, or the reverse.
 AUTO_FROM = "2026-08-13"        # first REPORTED day judged automatically
-AUTO_SHIFTS = (1,)              # shift 2 stays manual (user, 2026-08-14)
+AUTO_SHIFTS = (1,)              # shift 2 stays manual (user, 2026-08-14) — and
+                                # since the same day is not reviewed at all,
+                                # see REVIEW_PAUSED_SHIFTS below
 
 # How far back the two RECURRING passes look — the Refresh's discovery and the
 # drain's report sweep. `AUTO_FROM` alone is a floor, not a window: it never
@@ -2182,6 +2218,59 @@ def _auto_clause():
     """
     return and_(LeaderAiReview.date >= AUTO_FROM,
                 func.coalesce(LeaderAiReview.shift, -1).in_(AUTO_SHIFTS))
+
+
+# ── the shift-2 pause ────────────────────────────────────────────────────────
+# Shift 2 is not reviewed by the machine AT ALL: nothing queues it, the drain
+# never picks it up, no Gemini quota is spent on it (user, 2026-08-14: "stop any
+# kind of auto ai review for the 2nd shift for now").
+#
+# This is NOT a second spelling of `AUTO_SHIFTS`, and the pair is exactly why it
+# needed its own name: `AUTO_SHIFTS` says whose flags COST points, this says
+# whose photos are LOOKED AT. Shift 2 was already outside the automatic regime —
+# a flag on it was a note nobody's score felt — but closing a shift-2 day in the
+# bot still queued every proof that day carried, and the drain still paid for a
+# verdict on each. "Not consequential" was never "not running", and it is the
+# second one the user asked to stop.
+#
+# ONE door stays open on purpose: the admin's per-task «Tekshirish» button
+# (`review_now`), which is a person pointing at one photo and waiting for the
+# answer. It reviews that row directly and never goes through the queue, so it
+# is not the machine working on its own — it is the only way to get a shift-2
+# verdict while the pause holds.
+#
+# Un-pausing is this tuple going back to `()`. The pause destroys nothing:
+# verdicts already written stand, and the queue rows it drops were never judged,
+# so `discover()` re-finds every one of them.
+REVIEW_PAUSED_SHIFTS = (2,)
+
+
+def review_paused(shift: int | None) -> bool:
+    """Is this shift's proof review paused?
+
+    A NULL shift — an unmatched supervisor name — is NOT paused. It belongs to
+    no shift at all, and the pause must never become a second way for a
+    name-matching miss to make somebody's work quietly disappear.
+    """
+    return shift in REVIEW_PAUSED_SHIFTS
+
+
+def paused_clause():
+    """The same predicate in SQL, for the queries that cannot walk rows. Public
+    — unlike `_auto_clause()` — because the endpoints that COUNT drainable work
+    live in routers/leader_ai.py, and a queue figure the drain will never work
+    through is the one number a progress bar must not print. Callers spell the
+    other polarity `~paused_clause()`.
+
+    `coalesce` for the same reason `_auto_clause()` needs it: `shift IN (2)` is
+    NULL for a NULL shift, so `~paused_clause()` would drop every unmatched row
+    out of the drain's queue and strand it `pending` forever — no verdict, no
+    error, no retry. Folding NULL to a shift nobody paused keeps the complement
+    total.
+    """
+    if not REVIEW_PAUSED_SHIFTS:
+        return false()
+    return func.coalesce(LeaderAiReview.shift, -1).in_(REVIEW_PAUSED_SHIFTS)
 
 
 def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set[int]]:
@@ -2457,7 +2546,11 @@ def _should_chain(db: Session, res: dict) -> bool:
     return bool(
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.status.in_(("pending", "error")),
-                LeaderAiReview.attempts < MAX_ATTEMPTS)
+                LeaderAiReview.attempts < MAX_ATTEMPTS,
+                # Same filter as the drain's own queue, and load-bearing here:
+                # "work left" that the drain cannot take would chain a new pass
+                # every 5 seconds, around the clock, to find nothing to do.
+                ~paused_clause())
         .first()
     )
 
