@@ -367,12 +367,16 @@ def send_for_uid(db: Session, uid: str) -> bool:
     if not key:
         return False
 
-    tasks = day_report(db, uid)
-    if tasks is None:
+    report = day_report(db, uid)
+    if report is None:
         return False
-    counts = tasks["counts"]
-    score, raw = tasks["score"], tasks["rawScore"]
-    numbers = ", ".join(f"№{t['id']}" for t in tasks["tasks"] if t["ai_rejected"])
+    counts = report["counts"]
+    score, raw = report["score"], report["rawScore"]
+    # Task NUMBERS, not names: the DM is read in four languages and a name list
+    # would have to be resolved per recipient, while «№3, №7» is the same
+    # reference the leader sees on their own checklist. The names are one tap
+    # away, on the page the button opens.
+    numbers = ", ".join(f"№{t['id']}" for t in report["tasks"] if t["ai_rejected"])
 
     led = db.query(LeaderDayReport).filter_by(report_key=key).first()
     first = led is None

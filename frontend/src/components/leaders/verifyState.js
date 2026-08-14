@@ -52,6 +52,14 @@ export function reportState(row) {
   if (rejected > 0) return { ...VERIFY.rejected, n: rejected };
   if (ai.pending > 0) return { ...VERIFY.checking, n: ai.pending };
   if (ai.error > 0) return { ...VERIFY.error, n: ai.error };
+  // Flags exist but nothing was deducted — the MANUAL regime (shift 2, and
+  // every day before the automatic one), where a flag waits for a human and
+  // costs nothing until it gets one. Silent, never "verified": this row has
+  // not passed anything, and a green shield reading «all accepted» over three
+  // open flags would be a false statement on the one screen people check to
+  // see whether their score is safe. The admin's own amber flag-count chip
+  // already covers the triage side of it.
+  if (ai.open > 0) return null;
   if (ai.checked > 0) return { ...VERIFY.verified, n: ai.checked };
   return null;
 }
