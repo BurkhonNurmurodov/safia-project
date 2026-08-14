@@ -210,6 +210,70 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Фото-подтверждение не принято", "Дата: {date} | Задача: {task} | Проверил(а): {by} | Задача засчитана как невыполненная за этот день."),
         "en": ("Proof photo rejected", "Date: {date} | Task: {task} | Reviewed by: {by} | The task now counts as not done for that day."),
     },
+    # ── automatic day verification (shift 1, from leader_ai.AUTO_FROM) ────────
+    # Every task of a leader's day has been judged. Two audiences, two things
+    # they need: the brigadir gets the unit's number, the leader gets their own
+    # receipt. A clean day and a day with rejections are SEPARATE templates on
+    # purpose — one sentence carrying "0 rejected" reads as an accusation the
+    # reader then has to disprove, and whole-sentence templates are the house
+    # rule anyway (word order differs per language).
+    "leader_day_report_clean": {
+        "uz": ("{leader}: kun tasdiqlandi — {score}%", "Sana: {date} | Barcha {checked} ta dalil qabul qilindi. Batafsil hisobotni quyidagi tugmadan oching."),
+        "uz_cyrl": ("{leader}: кун тасдиқланди — {score}%", "Сана: {date} | Барча {checked} та далил қабул қилинди. Батафсил ҳисоботни қуйидаги тугмадан очинг."),
+        "ru": ("{leader}: день подтверждён — {score}%", "Дата: {date} | Все {checked} подтверждений приняты. Подробный отчёт — по кнопке ниже."),
+        "en": ("{leader}: day verified — {score}%", "Date: {date} | All {checked} proofs accepted. Open the full report with the button below."),
+    },
+    "leader_day_report_flagged": {
+        "uz": ("{leader}: {rejected} ta vazifa o'tmadi — {score}%", "Sana: {date} | Topshirilgan: {raw}% → tasdiqlangan: {score}% | Qabul qilinmagan vazifalar: {tasks}. Sabablarini hisobotdan ko'ring."),
+        "uz_cyrl": ("{leader}: {rejected} та вазифа ўтмади — {score}%", "Сана: {date} | Топширилган: {raw}% → тасдиқланган: {score}% | Қабул қилинмаган вазифалар: {tasks}. Сабабларини ҳисоботдан кўринг."),
+        "ru": ("{leader}: не прошло задач — {rejected}, итог {score}%", "Дата: {date} | Сдано: {raw}% → подтверждено: {score}% | Не принято: {tasks}. Причины — в отчёте."),
+        "en": ("{leader}: {rejected} task(s) failed — {score}%", "Date: {date} | Submitted: {raw}% → verified: {score}% | Not accepted: {tasks}. The reasons are in the report."),
+    },
+    # The score MOVED after the first report — a re-review, an admin ruling or
+    # an upheld dispute. Says what it was and what it is now: a bare new number
+    # is indistinguishable from the notification arriving twice.
+    "leader_day_report_corrected": {
+        "uz": ("{leader}: baho yangilandi — {before}% → {score}%", "Sana: {date} | Qayta ko'rib chiqilgandan so'ng kun bahosi o'zgardi. Hozir qabul qilinmagan: {rejected} ta vazifa."),
+        "uz_cyrl": ("{leader}: баҳо янгиланди — {before}% → {score}%", "Сана: {date} | Қайта кўриб чиқилгандан сўнг кун баҳоси ўзгарди. Ҳозир қабул қилинмаган: {rejected} та вазифа."),
+        "ru": ("{leader}: оценка изменена — {before}% → {score}%", "Дата: {date} | После пересмотра результат дня изменился. Сейчас не принято задач: {rejected}."),
+        "en": ("{leader}: score updated — {before}% → {score}%", "Date: {date} | The day's result changed after review. Currently not accepted: {rejected} task(s)."),
+    },
+    # The leader's own copy. They are told on EVERY verified day, clean or not
+    # (user, 2026-08-14): points come off automatically now, and a deduction
+    # somebody discovers at the end of the month is how trust in the whole
+    # system dies. The clean receipt is also what makes the flagged message
+    # legible as a verdict rather than as an accusation out of nowhere.
+    "leader_day_clean": {
+        "uz": ("Kun hisobotingiz tasdiqlandi — {score}%", "Sana: {date} | Barcha {checked} ta dalil rasmingiz qabul qilindi. Rahmat."),
+        "uz_cyrl": ("Кун ҳисоботингиз тасдиқланди — {score}%", "Сана: {date} | Барча {checked} та далил расмингиз қабул қилинди. Раҳмат."),
+        "ru": ("Ваш отчёт за день подтверждён — {score}%", "Дата: {date} | Все ваши {checked} фото-подтверждений приняты. Спасибо."),
+        "en": ("Your day report is verified — {score}%", "Date: {date} | All {checked} of your proof photos were accepted. Thank you."),
+    },
+    "leader_day_flagged": {
+        "uz": ("{rejected} ta dalilingiz qabul qilinmadi — {score}%", "Sana: {date} | Topshirilgan: {raw}% → tasdiqlangan: {score}% | Vazifalar: {tasks}. Har biri uchun sababni hisobotdan ko'ring; rozi bo'lmasangiz brigadiringizga murojaat qiling."),
+        "uz_cyrl": ("{rejected} та далилингиз қабул қилинмади — {score}%", "Сана: {date} | Топширилган: {raw}% → тасдиқланган: {score}% | Вазифалар: {tasks}. Ҳар бири учун сабабни ҳисоботдан кўринг; рози бўлмасангиз бригадирингизга мурожаат қилинг."),
+        "ru": ("Не принято подтверждений: {rejected} — итог {score}%", "Дата: {date} | Сдано: {raw}% → подтверждено: {score}% | Задачи: {tasks}. Причина по каждой — в отчёте; если не согласны, обратитесь к своему бригадиру."),
+        "en": ("{rejected} of your proofs were not accepted — {score}%", "Date: {date} | Submitted: {raw}% → verified: {score}% | Tasks: {tasks}. The reason for each is in the report; if you disagree, talk to your supervisor."),
+    },
+    "leader_day_corrected": {
+        "uz": ("Bahoyingiz yangilandi — {before}% → {score}%", "Sana: {date} | Qayta ko'rib chiqilgandan so'ng kun bahosi o'zgardi. Hozir qabul qilinmagan: {rejected} ta vazifa."),
+        "uz_cyrl": ("Баҳоингиз янгиланди — {before}% → {score}%", "Сана: {date} | Қайта кўриб чиқилгандан сўнг кун баҳоси ўзгарди. Ҳозир қабул қилинмаган: {rejected} та вазифа."),
+        "ru": ("Ваша оценка изменена — {before}% → {score}%", "Дата: {date} | После пересмотра результат дня изменился. Сейчас не принято задач: {rejected}."),
+        "en": ("Your score was updated — {before}% → {score}%", "Date: {date} | The day's result changed after review. Currently not accepted: {rejected} task(s)."),
+    },
+    # An admin ruled on the brigadir's objection to an automatic rejection.
+    "leader_dispute_approved": {
+        "uz": ("Norozilik qabul qilindi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa yana bajarilgan deb hisoblanadi."),
+        "uz_cyrl": ("Норозилик қабул қилинди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа яна бажарилган деб ҳисобланади."),
+        "ru": ("Возражение принято", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача снова засчитана как выполненная."),
+        "en": ("Objection upheld", "Date: {date} | Task: {task} | Decided by: {by} | The task counts as done again."),
+    },
+    "leader_dispute_rejected": {
+        "uz": ("Norozilik rad etildi", "Sana: {date} | Vazifa: {task} | Hal qildi: {by} | Vazifa bajarilmagan bo'lib qoladi."),
+        "uz_cyrl": ("Норозилик рад этилди", "Сана: {date} | Вазифа: {task} | Ҳал қилди: {by} | Вазифа бажарилмаган бўлиб қолади."),
+        "ru": ("Возражение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача остаётся незачтённой."),
+        "en": ("Objection refused", "Date: {date} | Task: {task} | Decided by: {by} | The task stays not done."),
+    },
     "leader_proof_requeried": {
         "uz": ("Dalil rasmini qayta yuboring", "Sana: {date} | Vazifa: {task} | So'radi: {by} | Hozircha baho o'zgargani yo'q — yangi rasm yuklang."),
         "uz_cyrl": ("Далил расмини қайта юборинг", "Сана: {date} | Вазифа: {task} | Сўради: {by} | Ҳозирча баҳо ўзгаргани йўқ — янги расм юкланг."),
@@ -649,7 +713,8 @@ def flush_queued_supervisor_dms(db: Session, telegram_id: int, manager_id: int) 
 
 def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
                    type: str = "info", exclude_account: int | None = None,
-                   skip_accounts: set[int] | None = None) -> set[int]:
+                   skip_accounts: set[int] | None = None,
+                   markup_fn=None) -> set[int]:
     """Notify a PROFILE — the person — wherever they are.
 
     Writes ONE bell row addressed to the profile (so every account holding it
@@ -672,6 +737,11 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
     event addresses (a leader who also stands in as their unit's brigadir). The
     return value is the set of accounts this call DMed, so a caller notifying
     several profiles about one event accumulates it and passes it back in.
+
+    ``markup_fn(lang)`` attaches an inline keyboard to the DM, built per
+    recipient language — a notification whose whole point is "go and look at
+    this" is a dead end without the button, and the bell row (which carries no
+    keyboard) is not a substitute on a phone.
     """
     if notifications_suppressed() or not profile:
         return set()
@@ -698,8 +768,14 @@ def notify_profile(db: Session, profile: str | None, nkey: str, params: dict,
         lang = _get_user_lang(db, tid)
         title, body = _mk_notif(nkey, params, lang)
         html = _mk_notif_tg(nkey, params, lang)
+        markup = None
+        if markup_fn is not None:
+            try:
+                markup = markup_fn(lang)
+            except Exception:
+                logger.exception("notify_profile: markup build failed for %s", nkey)
         try:
-            send_tg_notification(tid, title, body, html=html)
+            send_tg_notification(tid, title, body, html=html, markup=markup)
         except Exception:
             pass
         dmed.add(tid)

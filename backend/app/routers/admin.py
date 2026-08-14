@@ -368,28 +368,33 @@ def refresh_sheet(
             meta.message = None
             meta.row_count = result.get("leader_rows", 0)
             db.commit()
-            # ── shift 1 is submitted to the AI BY HAND, not by this Refresh ───
-            # Refresh used to run a full `discover()` inline and hand every
-            # shift-1 report that landed straight to the AI. It no longer does:
-            # pulling the sheet and deciding those photos are worth quota are
-            # two separate calls, and only the first one is what an operator
-            # pressing Refresh asked for. Submission now comes from the re-check
-            # modal («Tekshirish» → scope «unchecked»), which counts the work
-            # first and shows the number before spending anything.
-            #
-            # The kick stays, drain-only: it moves rows that are ALREADY queued
-            # and can never add any. Refresh therefore keeps the queue flowing
-            # without ever growing it.
-            #
-            # `restamp` queues nothing either. The sync re-dates night rows onto
-            # the night they report on, which changes the window their photos
-            # are judged against — so the verdicts it invalidated are re-pointed
-            # and their date flags recomputed here, from clocks already stored.
-            # No image fetch, no Gemini call: this used to require a paid
-            # re-check and so, in practice, never happened.
+            # `restamp` queues nothing. The sync re-dates night rows onto the
+            # night they report on, which changes the window their photos are
+            # judged against — so the verdicts it invalidated are re-pointed and
+            # their date flags recomputed here, from clocks already stored. No
+            # image fetch, no Gemini call: this used to require a paid re-check
+            # and so, in practice, never happened.
             leader_ai.restamp(db)
+
+            # ── the automatic regime submits itself (user, 2026-08-14) ────────
+            # Shift 1 from `leader_ai.AUTO_FROM` is checked without anyone
+            # pressing anything: Refresh is what brings new submissions into the
+            # platform, so it is the honest place to hand them to the reviewer.
+            #
+            # This is NOT the bulk auto-trigger the user banned three times, and
+            # the difference is the bound, not the intent: `auto_discover` can
+            # only ever reach shift-1 reports dated on or after one fixed day,
+            # so its worst case is this week's checklists — never the archive
+            # walk `discover()` performs, which is still reachable only from the
+            # «Tekshirish» modal that counts the work and asks first. The count
+            # queued is returned so the press states what it produced instead of
+            # spending silently.
+            #
+            # Everything else stays drain-only: the kick moves rows that are
+            # ALREADY queued and can never add any.
+            queued = leader_ai.auto_discover(db)
             leader_ai.run_async(discover_first=False)
-            return {"status": "ok", "sheet": name, **result}
+            return {"status": "ok", "sheet": name, "ai_queued": queued, **result}
 
         if name == "quality":
             result = sync_quality_sheet(src.sheet_id, db)

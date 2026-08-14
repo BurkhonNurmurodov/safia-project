@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactApexChart from "react-apexcharts";
 import {
@@ -7,7 +8,7 @@ import {
   CheckCircle2, XCircle, ArrowDownNarrowWide, ArrowUpNarrowWide,
   AlertTriangle, Users, User, RefreshCw, Loader2, Clock, CalendarClock,
   Crown, Award, Shield, ShieldAlert, SlidersHorizontal, CalendarDays, Sparkles, Ban,
-  ShieldCheck, Hourglass, Layers, X,
+  ShieldCheck, Hourglass, Layers, X, FileText,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import StyledSelect from "../components/ui/StyledSelect";
@@ -29,6 +30,7 @@ import AiRecheck from "../components/leaders/AiRecheck";
 import AiProgress from "../components/leaders/AiProgress";
 import AiClearHistory from "../components/leaders/AiClearHistory";
 import { ReportPhoto, BotPhoto } from "../components/leaders/ProofPhoto";
+import { reportState } from "../components/leaders/verifyState";
 import api from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 import { useCapabilities } from "../hooks/useCapabilities";
@@ -118,6 +120,15 @@ const TXT = {
     aiFoff_topic: "Rasm vazifaga mos emas",
     aiFnot_proven: "Bajarilgani ko'rinmayapti",
     aiFunreadable: "Rasm o'qilmadi",
+    vf_verified: "Dalillar tekshirildi — hammasi qabul qilindi",
+    vf_rejected: "Dalil qabul qilinmagan vazifalar bor",
+    vf_disputed: "Norozilik ko'rib chiqilmoqda",
+    vf_error: "Ba'zi rasmlarni tekshirib bo'lmadi (texnik)",
+    vf_checking: "Tekshiruv davom etmoqda",
+    fullReport: "To'liq kun hisoboti",
+    fVerify: "Tekshiruv holati", fVerifyAll: "Barchasi",
+    fVerifyRejected: "Qabul qilinmagan", fVerifyClean: "Toza",
+    fVerifyChecking: "Tekshirilmoqda", fVerifyDisputed: "Norozilik",
     aiRowBadge: "AI shubhali deb belgilagan vazifalar",
     aiQueued: "AI tekshiruvi navbatda",
     aiRun: "AI tekshiruvi",
@@ -269,6 +280,15 @@ const TXT = {
     aiFoff_topic: "Расм вазифага мос эмас",
     aiFnot_proven: "Бажарилгани кўринмаяпти",
     aiFunreadable: "Расм ўқилмади",
+    vf_verified: "Далиллар текширилди — ҳаммаси қабул қилинди",
+    vf_rejected: "Далил қабул қилинмаган вазифалар бор",
+    vf_disputed: "Норозилик кўриб чиқилмоқда",
+    vf_error: "Баъзи расмларни текшириб бўлмади (техник)",
+    vf_checking: "Текширув давом этмоқда",
+    fullReport: "Тўлиқ кун ҳисоботи",
+    fVerify: "Текширув ҳолати", fVerifyAll: "Барчаси",
+    fVerifyRejected: "Қабул қилинмаган", fVerifyClean: "Тоза",
+    fVerifyChecking: "Текширилмоқда", fVerifyDisputed: "Норозилик",
     aiRowBadge: "AI шубҳали деб белгилаган вазифалар",
     aiQueued: "AI текшируви навбатда",
     aiRun: "AI текшируви",
@@ -420,6 +440,15 @@ const TXT = {
     aiFoff_topic: "Фото не по задаче",
     aiFnot_proven: "Выполнение не видно",
     aiFunreadable: "Фото не читается",
+    vf_verified: "Подтверждения проверены — всё принято",
+    vf_rejected: "Есть непринятые подтверждения",
+    vf_disputed: "Возражение на рассмотрении",
+    vf_error: "Часть фото проверить не удалось (техническая ошибка)",
+    vf_checking: "Проверка идёт",
+    fullReport: "Полный отчёт за день",
+    fVerify: "Статус проверки", fVerifyAll: "Все",
+    fVerifyRejected: "Не принято", fVerifyClean: "Чисто",
+    fVerifyChecking: "В проверке", fVerifyDisputed: "Возражение",
     aiRowBadge: "Задачи, отмеченные ИИ как сомнительные",
     aiQueued: "Ожидает проверки ИИ",
     aiRun: "Проверка ИИ",
@@ -571,6 +600,15 @@ const TXT = {
     aiFoff_topic: "Photo is not about this task",
     aiFnot_proven: "Does not show the work done",
     aiFunreadable: "Photo unreadable",
+    vf_verified: "Proofs checked — all accepted",
+    vf_rejected: "Some proofs were not accepted",
+    vf_disputed: "An objection is under review",
+    vf_error: "Some photos could not be checked (technical)",
+    vf_checking: "Verification is running",
+    fullReport: "Full day report",
+    fVerify: "Verification", fVerifyAll: "All",
+    fVerifyRejected: "Not accepted", fVerifyClean: "Clean",
+    fVerifyChecking: "In review", fVerifyDisputed: "Objection",
     aiRowBadge: "Tasks the AI flagged as suspect",
     aiQueued: "Waiting for AI review",
     aiRun: "AI review",
@@ -1054,6 +1092,28 @@ function AiChip({ n, T }) {
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums align-middle flex-shrink-0"
       style={{ background: hexA(C_AI, 0.14), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
       <Sparkles size={11} />{n}
+    </span>
+  );
+}
+
+/* What VERIFICATION did to this report — shown to every viewer, not just
+ * admins, because an automatic rejection moves the score of the brigadir and
+ * the leader reading this row. Icon + colour from the shared taxonomy, so the
+ * register, the day report and the DM describe one fact one way.
+ *
+ * Silent on a day the filing-window rule already voided: that day scores 0 for
+ * a reason that outranks anything the photos say, and a second red mark beside
+ * the void chip would read as two separate failures. */
+function VerifyChip({ row, T }) {
+  if (row.rejected) return null;
+  const st = reportState(row);
+  if (!st) return null;
+  const { color, Icon, key, n } = st;
+  return (
+    <span title={T[`vf_${key}`]}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums align-middle flex-shrink-0"
+      style={{ background: hexA(color, 0.14), color, border: `1px solid ${hexA(color, 0.3)}` }}>
+      <Icon size={11} />{key === "verified" ? "" : n}
     </span>
   );
 }
@@ -3172,6 +3232,7 @@ export default function Leaders() {
                           {/* Admin-only: how many of this report's tasks the AI
                               doubts, so a suspect day is findable without
                               opening all of them. Null for everyone else. */}
+                          <VerifyChip row={r} T={T} />
                           {aiOn && <AiChip n={aiFlags[r.uid]} T={T} />}
                         </span>
                       </td>
@@ -3205,6 +3266,7 @@ export default function Leaders() {
                   <div className="flex items-start justify-between gap-2">
                     <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
                       {nm(r.leader)}
+                      {" "}<VerifyChip row={r} T={T} />
                       {aiOn && aiFlags[r.uid] ? <> <AiChip n={aiFlags[r.uid]} T={T} /></> : null}
                     </span>
                     <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
@@ -3300,6 +3362,18 @@ export default function Leaders() {
               {detailRow.source === "bot" && <span>{T.srcBot}</span>}
             </span>
           </div>
+
+          {/* The whole day on its own page — proof photos, verdicts, the window
+              each was judged against, and the objection flow. This modal is a
+              register affordance; that page is where an argument about the
+              score is actually settled, and it is what the verification DM
+              links to, so both audiences read the same screen. */}
+          <a href={`/leaders/report/${encodeURIComponent(detailRow.uid)}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/leaders/report/${encodeURIComponent(detailRow.uid)}`); }}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold"
+            style={{ color: "var(--brand)" }}>
+            <FileText size={12} />{T.fullReport}
+          </a>
 
           {/* Why the day scored 0 despite the answers below being filled in —
               or, once it was opened, why it counts anyway. A full-width band,

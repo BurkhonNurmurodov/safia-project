@@ -1420,6 +1420,88 @@ class LeaderAiReview(Base):
     resolution_note = Column(Text, nullable=True)
 
 
+class LeaderDayReport(Base):
+    """The ledger of verification reports already DMed for one leader-day.
+
+    The automatic regime (shift 1, from `leader_ai.AUTO_FROM`) DMs the unit's
+    supervisor and the leader once every task of a day has been judged, and
+    again whenever a later ruling MOVES the day's score. `score_sent` is what
+    makes the second half possible: without a record of the number the last DM
+    carried, "did this change?" is unanswerable and the choice is between never
+    correcting a stale figure and re-sending on every drain pass.
+
+    Keyed by `report_key` — `leader_ai.report_key()`, the same grouping the
+    queue and the census use — never by checklist row: leader_checklists is
+    wiped and reloaded on every sheet refresh, so a row-keyed ledger would
+    forget what it had sent and re-notify the whole week on the next sync.
+    """
+    __tablename__ = "leader_day_reports"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    report_key = Column(String, nullable=False, unique=True, index=True)
+    uid        = Column(String, nullable=True)     # what /api/leaders prints
+    date       = Column(String(10), nullable=False, index=True)
+    shift      = Column(Integer, nullable=True)
+    leader_id  = Column(Integer, nullable=True, index=True)
+    leader_name = Column(String(160), nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)
+
+    # The day's adjusted score as of the last DM, and what it was made of. A
+    # later re-review or human ruling is a "correction" only when it moves this.
+    score_sent    = Column(Integer, nullable=False, default=0)
+    rejected_sent = Column(Integer, nullable=False, default=0)
+    tasks_total   = Column(Integer, nullable=False, default=0)
+
+    sends        = Column(Integer, nullable=False, default=0)
+    first_sent_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_sent_at  = Column(DateTime(timezone=True), nullable=True)
+
+
+class LeaderAiDispute(Base):
+    """A supervisor's objection to one AI rejection, and the admin's decision.
+
+    Automatic rejection needs a way back that does not require the admin to
+    have been watching: the unit's own brigadir sees the verdict on the day
+    report, files a reason, and an admin rules on it — the same shape as
+    opening a late day (LeaderLateRequest), by the same authority rule.
+
+    Keyed by the verdict's `ref`, not by `review_id`: a review row is
+    re-creatable from its ref (discovery re-inserts a deleted row, «stop and
+    clear» deletes never-judged ones), so a dispute hung off the numeric id
+    would lose its subject. One LIVE row per ref — a re-filed dispute after a
+    refusal replaces the old one, exactly like a late request.
+
+    Approval writes `resolution="approved"` on the review, which is what
+    actually restores the task's weight; this table is the paper trail and the
+    queue the admin works from. Deciding it re-runs the day's report DM, so a
+    corrected score announces itself.
+    """
+    __tablename__ = "leader_ai_disputes"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    ref       = Column(String, nullable=False, index=True)
+    review_id = Column(Integer, nullable=True, index=True)
+    date      = Column(String(10), nullable=False, index=True)
+    task_id   = Column(Integer, nullable=False)
+    leader_id = Column(Integer, nullable=True, index=True)
+    leader_name = Column(String(160), nullable=True)
+    manager_id = Column(Integer, nullable=True, index=True)
+
+    status = Column(String(12), nullable=False, default="pending", index=True)
+    # Why the verdict is wrong. Required — an overturned rejection has to
+    # explain itself to the calibration stats as much as to the next reader.
+    reason = Column(Text, nullable=False)
+    requested_by_profile = Column(String, nullable=True)     # "supervisor:12"
+    requested_by_name = Column(String(160), nullable=True)
+    requested_by_telegram = Column(BigInteger, nullable=True)
+    requested_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    decided_by_name = Column(String(160), nullable=True)
+    decided_by_telegram = Column(BigInteger, nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    decision_note = Column(Text, nullable=True)
+
+
 class LeaderTaskOverride(Base):
     """An admin's manual ruling on ONE task of ONE report — done or not done,
     regardless of what the leader answered or what the AI thought.

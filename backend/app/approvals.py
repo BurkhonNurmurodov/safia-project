@@ -36,7 +36,7 @@ class AlreadyHandled(Exception):
 # ── i18n ────────────────────────────────────────────────────────────────────
 
 _KIND_CODE = {"edit_request": "er", "edit_batch": "eb", "hr_document": "hr",
-              "leader_late": "ll"}
+              "leader_late": "ll", "leader_dispute": "ld"}
 _CODE_KIND = {v: k for k, v in _KIND_CODE.items()}
 
 _MONTHS = {
@@ -56,6 +56,10 @@ _LABELS = {
         "hdr_role":      "📋 Lavozim o'zgarishi hujjati",
         "hdr_exchange":  "🔄 Xodim almashinuvi hujjati",
         "hdr_late":      "⏰ Kechikkan hisobotni ochish so'rovi",
+        "hdr_dispute":   "⚖️ AI qaroriga norozilik",
+        "task":          "Vazifa",
+        "ai_verdict":    "AI xulosasi",
+        "dispute_note":  "Tasdiqlansa, vazifa yana bajarilgan deb hisoblanadi va kun bahosi qayta hisoblanadi. Rad etilsa, AI qarori kuchida qoladi.",
         "leader":        "Lider",
         "filed_at":      "Yuborilgan",
         "score":         "Natija",
@@ -96,6 +100,10 @@ _LABELS = {
         "hdr_role":      "📋 Документ смены должности",
         "hdr_exchange":  "🔄 Документ обмена сотрудниками",
         "hdr_late":      "⏰ Запрос на открытие опоздавшего отчёта",
+        "hdr_dispute":   "⚖️ Возражение на решение ИИ",
+        "task":          "Задача",
+        "ai_verdict":    "Заключение ИИ",
+        "dispute_note":  "При одобрении задача снова засчитывается и оценка дня пересчитывается. При отклонении решение ИИ остаётся в силе.",
         "leader":        "Лидер",
         "filed_at":      "Отправлено",
         "score":         "Результат",
@@ -136,6 +144,10 @@ _LABELS = {
         "hdr_role":      "📋 Role change document",
         "hdr_exchange":  "🔄 Worker exchange document",
         "hdr_late":      "⏰ Request to open a late report",
+        "hdr_dispute":   "⚖️ Objection to an AI ruling",
+        "task":          "Task",
+        "ai_verdict":    "AI verdict",
+        "dispute_note":  "Approving counts the task as done again and re-scores the day. Refusing leaves the AI ruling in force.",
         "leader":        "Leader",
         "filed_at":      "Filed",
         "score":         "Score",
@@ -477,6 +489,59 @@ def send_hr_document_to_admins(db, doc) -> None:
                    skip_telegram_id=doc.created_by_telegram_id))
 
 
+def _leader_dispute_data(db, d) -> dict:
+    """Facts of a brigadir's objection to an automatic rejection. The AI's own
+    verdict travels with it: an admin ruling on "was the machine wrong" needs
+    to read what the machine actually said, and asking them to open the panel
+    first would make the inline buttons decoration."""
+    from app.services import leader_ai, leader_reports
+    from app.models import LeaderAiReview
+
+    mgr = db.query(Manager).filter_by(id=d.manager_id).first() if d.manager_id else None
+    rev = (db.query(LeaderAiReview).filter_by(id=d.review_id).first()
+           or db.query(LeaderAiReview).filter_by(ref=d.ref).first())
+    verdict = ""
+    if rev is not None:
+        flags = ", ".join(rev.flags or []) or "—"
+        prose = (rev.reason_ru or rev.reason_uz or rev.reason_en or "").strip()
+        verdict = f"[{flags}] {prose}".strip()
+    return {
+        "unit":       mgr.name if mgr else "—",
+        "date":       d.date,
+        "leader":     d.leader_name or "—",
+        "task":       leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id),
+        "verdict":    verdict[:600],
+        "supervisor": d.requested_by_name,
+        "reason":     d.reason,
+        "uid":        leader_reports.uid_of_ref(db, d.ref) or "",
+    }
+
+
+def _render_leader_dispute(data, lang) -> str:
+    lines = [_L(lang, "hdr_dispute"), ""]
+    lines.append(f"🏭 {_L(lang, 'unit')}: {_v(data['unit'])}")
+    lines.append(f"📅 {_L(lang, 'date')}: {_fmt_date(data['date'], lang)}")
+    lines.append(f"👤 {_L(lang, 'leader')}: {_v(data['leader'])}")
+    lines.append(f"📋 {_L(lang, 'task')}: {_v(data['task'])}")
+    lines.append("")
+    lines.append(f"🤖 {_L(lang, 'ai_verdict')}: {_v(data['verdict'])}")
+    lines.append(f"✍️ {_L(lang, 'creator')}: {_v(data['supervisor'])}")
+    lines.append(f"💬 {_L(lang, 'reason')}: {_v(data['reason'])}")
+    lines.append("")
+    lines.append(_L(lang, "dispute_note"))
+    return "\n".join(lines)
+
+
+def send_leader_dispute_to_admins(db, d) -> None:
+    """A brigadir's objection to an automatic rejection. Admins only, by the
+    same rule as opening a late day: the person who wants the deduction undone
+    is not the person who undoes it. The panel button lands on the day report
+    itself, which is where the photo and the verdict sit side by side."""
+    data = _leader_dispute_data(db, d)
+    panel = f"/leaders/report/{data['uid']}" if data.get("uid") else "/leaders"
+    _broadcast(db, "leader_dispute", d.id, data, _render_leader_dispute, panel=panel)
+
+
 def send_leader_late_to_admins(db, req) -> None:
     """A supervisor's request to open a voided leader-day. Admins only — the flow
     exists so that the person who wants the day open is not the person who opens
@@ -635,6 +700,8 @@ def handle_approval_callback(call, code: str, status: str, ref: str) -> None:
             _decide_hr_document(int(ref), status, call)
         elif code == "ll":
             _decide_leader_late(int(ref), status, call)
+        elif code == "ld":
+            _decide_leader_dispute(int(ref), status, call)
         else:
             bot.answer_callback_query(call.id)
             return
@@ -698,6 +765,57 @@ def _decide_leader_late(req_id: int, status: str, call) -> None:
         decided_by = _display_name(call.from_user)
         decide_late_request(db, req, status, decided_by, call.from_user.id)
     edit_admin_notices("leader_late", req_id, status, decided_by)
+
+
+def _decide_leader_dispute(dispute_id: int, status: str, call) -> None:
+    """Rule on an objection from the inline card. Admin-only and re-checked
+    here — notices for this kind only ever go to admins, but a forwarded
+    message must not be able to restore a leader's points.
+
+    Runs the SAME core as the web endpoint, so a dispute settled from a DM
+    re-scores the day and re-sends its report exactly like one settled in the
+    panel."""
+    from app.models import LeaderAiDispute
+    from app.routers.leaders import _report_after_ruling, _settle_dispute
+    from app.telegram_bot import _admin_ids
+
+    if call.from_user.id not in _admin_ids():
+        raise AlreadyHandled()
+    with SessionLocal() as db:
+        d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+        if d is None or d.status != "pending":
+            raise AlreadyHandled()   # withdrawn, or another admin got there first
+        decided_by = _display_name(call.from_user)
+        _settle_dispute(db, d, status, decided_by, call.from_user.id)
+        _notify_dispute_decided(db, d, status, decided_by)
+        _report_after_ruling(db, d)
+    edit_admin_notices("leader_dispute", dispute_id, status, decided_by)
+
+
+def _notify_dispute_decided(db, d, status: str, decided_by: str) -> None:
+    """Tell the brigadir who filed it and the leader whose score it moves.
+    Never raises into a decision — a Telegram outage must not leave a ruling
+    half-applied."""
+    from app.identity import profile_key
+    from app.routers.staff import notify_profile
+    from app.services import leader_ai
+
+    nkey = ("leader_dispute_approved" if status == "approved"
+            else "leader_dispute_rejected")
+    params = {
+        "date": d.date, "by": decided_by,
+        "task": leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id),
+    }
+    try:
+        dmed = set()
+        if d.manager_id:
+            dmed = notify_profile(db, profile_key("supervisor", d.manager_id),
+                                  nkey, params, type="info")
+        if d.leader_id:
+            notify_profile(db, profile_key("leader", d.leader_id), nkey, params,
+                           type="info", skip_accounts=dmed)
+    except Exception:
+        logger.exception("leader-dispute: decision notice failed for %s", d.id)
 
 
 def _decide_hr_document(doc_id: int, status: str, call) -> None:

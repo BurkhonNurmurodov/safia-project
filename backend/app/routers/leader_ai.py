@@ -769,6 +769,7 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
         db.commit()
         log.info("leader-ai: %s reopened %s", who, rev.ref)
         return {"ok": True, "ref": rev.ref, "resolution": None,
+                "reported": _rescore_day(db, rev),
                 "counts": leader_ai.counts(db)}
 
     rev.resolution = body.resolution
@@ -781,7 +782,25 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
     if body.resolution in ("rejected", "requeried"):
         _notify_leader(db, rev)
     return {"ok": True, "ref": rev.ref, "resolution": rev.resolution,
+            "reported": _rescore_day(db, rev),
             "counts": leader_ai.counts(db)}
+
+
+def _rescore_day(db: Session, rev: LeaderAiReview) -> bool:
+    """A ruling in the automatic regime can MOVE the day's score after its
+    report was already sent — an approved flag hands the weight back, a
+    rejection on a clean pass takes more away. Both audiences were told a
+    number; leaving them with a stale one is how the first message stops being
+    believed.
+
+    `resend_if_changed` owns the comparison, so "changed" means exactly the
+    same thing here as it does in the drain. Outside the automatic regime, and
+    for a day no report was ever sent for, this does nothing at all."""
+    from app.services import leader_reports
+    if not leader_ai.in_auto_regime(rev.date, rev.shift):
+        return False
+    uid = leader_reports.uid_of_ref(db, rev.ref)
+    return leader_reports.resend_if_changed(db, uid) if uid else False
 
 
 def _notify_leader(db: Session, rev: LeaderAiReview) -> None:

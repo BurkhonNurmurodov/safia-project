@@ -41,7 +41,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -1402,11 +1402,34 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
             q = q.filter(LeaderAiReview.manager_id == scope["manager_id"])
         if scope["leader_id"] is not None:
             q = q.filter(LeaderAiReview.leader_id == scope["leader_id"])
-    rows = (
-        q.order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.asc())
+    # The automatic regime goes FIRST, and in the order the user asked for:
+    # oldest day first, one leader finished before the next is started, tasks in
+    # catalog order. It is not cosmetic — a day's report DM is sent when its
+    # last task is judged, so interleaving leaders would leave every day
+    # half-checked for the whole batch and send every report at the end. Walking
+    # them in order means each leader's supervisor hears as that leader lands.
+    #
+    # The backfill's own order (newest report first) is unchanged behind it: a
+    # queue nobody is waiting on is best read from the end people remember.
+    auto = (
+        q.filter(_auto_clause())
+        .order_by(LeaderAiReview.date.asc(),
+                  LeaderAiReview.manager_id.asc().nullslast(),
+                  LeaderAiReview.leader_id.asc().nullslast(),
+                  LeaderAiReview.task_id.asc(),
+                  LeaderAiReview.id.asc())
         .limit(limit)
         .all()
     )
+    rows = auto
+    if len(rows) < limit:
+        rest = (
+            q.filter(~_auto_clause())
+            .order_by(LeaderAiReview.date.desc(), LeaderAiReview.id.asc())
+            .limit(limit - len(rows))
+            .all()
+        )
+        rows = rows + rest
     if scope and not rows:
         # The run's slice is done. Release the confinement and stop for THIS
         # pass rather than rolling straight on: it leaves `/progress` a poll in
@@ -1423,7 +1446,13 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
     quota_msg = None
     aborted = None
     streak = 0  # consecutive API-level failures
+    # Reports the automatic regime touched this pass — each is checked for
+    # completion below, and the finished ones DM their supervisor and leader.
+    touched: set[str] = set()
+    day_of = _day_of_map(db, [r.ref for r in rows])
     for rev in rows:
+        if in_auto_regime(rev.date, rev.shift):
+            touched.add(report_key(rev.ref, day_of))
         try:
             outcome = review_one(db, rev)
         except gemini.GeminiQuotaError as exc:
@@ -1451,8 +1480,58 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
             log.error("leader-ai: %s consecutive API failures, aborting drain (%s)",
                       streak, aborted)
             break
+    reported = report_finished(db, touched) if touched else 0
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
-            "quota": quota, "quotaMsg": quota_msg, "aborted": aborted}
+            "quota": quota, "quotaMsg": quota_msg, "aborted": aborted,
+            "reported": reported}
+
+
+def _day_of_map(db: Session, refs: list[str]) -> dict[int, int]:
+    """entry_id → day_id for the bot refs in `refs`, so `report_key` can group
+    them. One lookup for the whole batch; `report_key` needs it per ref."""
+    ids = {int(r.split(":")[1]) for r in refs if r.startswith("bot:")}
+    if not ids:
+        return {}
+    return {e.id: e.day_id for e in db.query(LeaderTaskEntry)
+            .filter(LeaderTaskEntry.id.in_(ids)).all()}
+
+
+def unfinished_reports(db: Session, keys: set[str]) -> set[str]:
+    """Which of these reports still have a task the drain will come back to.
+
+    A report is FINISHED when nothing is left queued — every task carries a
+    verdict, or has burned its retries. Deliberately not "no errors": a photo
+    the platform cannot fetch is never going to resolve itself, and holding a
+    day's report hostage to it would mean the one failure mode nobody can fix
+    from the app is also the one that silences the whole notification.
+    """
+    if not keys:
+        return set()
+    rows = (db.query(LeaderAiReview)
+            .filter(_auto_clause(),
+                    LeaderAiReview.status.in_(("pending", "error")),
+                    LeaderAiReview.attempts < MAX_ATTEMPTS)
+            .all())
+    if not rows:
+        return set()
+    day_of = _day_of_map(db, [r.ref for r in rows])
+    return {report_key(r.ref, day_of) for r in rows} & keys
+
+
+def report_finished(db: Session, keys: set[str]) -> int:
+    """DM the day report for every finished report among `keys`. Returns how
+    many were sent. Never raises into the drain — a Telegram outage must not
+    cost the verdicts of the batch it fired on."""
+    from app.services import leader_reports
+    pending = unfinished_reports(db, keys)
+    sent = 0
+    for key in sorted(keys - pending):
+        try:
+            if leader_reports.maybe_send_report(db, key):
+                sent += 1
+        except Exception:
+            log.exception("leader-ai: day report failed for %s", key)
+    return sent
 
 
 def counts(db: Session) -> dict:
@@ -1907,8 +1986,53 @@ def uid_map(db: Session, revs: list) -> dict[str, str]:
     return out
 
 
+# ── the automatic regime ─────────────────────────────────────────────────────
+# From 13 Aug 2026, shift 1 does not wait for a human to agree with the AI: a
+# flagged proof marks its task not-done immediately, the whole day is checked
+# without anyone pressing anything, and the unit's brigadir and the leader are
+# told the verified score. Everything outside this window — every earlier day,
+# and shift 2 for good — keeps the original regime, where a flag is a note and
+# only a human `rejected` moves a number.
+#
+# ONE predicate, because five surfaces have to agree about which reports it
+# covers (the score overlay, discovery, the drain's ordering, the report DM and
+# the day-report page). A second spelling of "is this automatic" would show a
+# leader a red badge on a day their score never moved, or the reverse.
+AUTO_FROM = "2026-08-13"        # first REPORTED day judged automatically
+AUTO_SHIFTS = (1,)              # shift 2 stays manual (user, 2026-08-14)
+
+
+def in_auto_regime(date: str | None, shift: int | None) -> bool:
+    """Is this report judged automatically? Narrow on purpose: an unmatched
+    unit carries a null shift, and a name-matching miss must never be what
+    costs a leader their score."""
+    return bool(date) and shift in AUTO_SHIFTS and str(date)[:10] >= AUTO_FROM
+
+
+def _auto_clause():
+    """The same predicate in SQL, for the queries that cannot walk rows."""
+    return and_(LeaderAiReview.date >= AUTO_FROM,
+                LeaderAiReview.shift.in_(AUTO_SHIFTS))
+
+
 def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set[int]]:
-    """report uid → the task ids whose proof a human REJECTED.
+    """report uid → the task ids whose proof does not count.
+
+    Two ways a task lands here, and they are deliberately different questions:
+
+      * a human ruled `rejected` — in EVERY regime, on any day, unchanged;
+      * the report is in the automatic regime and its verdict is flagged, with
+        no human `approved` to lift it. Every flag counts, `unreadable`
+        included (the user's ruling): a proof nobody can read is not a proof.
+
+    A technical `error` row is NOT a flag and never appears here. A failed
+    Drive fetch or a dead bot token is the platform's fault, and a rule that
+    let an outage mass-fail a shift would be indefensible the first time it
+    fired.
+
+    `requeried` does not lift an automatic rejection either: it means "re-file
+    this", not "the machine was wrong", so the day stands scored until someone
+    approves the replacement. Only `approved` restores the weight.
 
     The leaders sheet is a read-only source we cannot write back to, and a bot
     day is closed and immutable, so a rejection can never be an edit — it is an
@@ -1917,7 +2041,13 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
     want from a judgement call.
     """
     q = (db.query(LeaderAiReview)
-         .filter(LeaderAiReview.resolution == "rejected"))
+         .filter(or_(
+             LeaderAiReview.resolution == "rejected",
+             and_(_auto_clause(),
+                  LeaderAiReview.status == "flagged",
+                  or_(LeaderAiReview.resolution.is_(None),
+                      LeaderAiReview.resolution != "approved")),
+         )))
     if dates:
         q = q.filter(LeaderAiReview.date.in_(dates))
     revs = q.all()
@@ -1930,6 +2060,71 @@ def rejected_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, set
         if uid:
             out.setdefault(uid, set()).add(rev.task_id)
     return out
+
+
+def auto_discover(db: Session) -> int:
+    """Queue every never-seen report the automatic regime covers. Returns how
+    many task-verdicts were queued.
+
+    This is the second door into `discover()`'s territory, and it is bounded so
+    it can never become the bulk auto-trigger the user banned three times: the
+    regime predicate pins it to shift 1 from one fixed date, so the corpus it
+    can reach is this week's reports, not the archive. It queues; the scheduled
+    drain spends.
+
+    Sheet layer only, and that is not an oversight — `/api/leaders` merges bot
+    days for shift 2 alone (`leader_bot.MERGE_SHIFT`), so a shift-1 bot day is
+    a report no register, score or page anywhere in the platform displays.
+    Reviewing one would spend quota on a verdict with nothing to attach to and
+    would DM a supervisor a score they cannot open. If that merge rule ever
+    widens to shift 1, widen this with it.
+    """
+    known = _existing_refs(db)
+    floor = floor_date(db)
+    start = max(AUTO_FROM, floor) if floor else AUTO_FROM
+
+    rows = (db.query(LeaderChecklist)
+            .filter(LeaderChecklist.date >= start)
+            .order_by(LeaderChecklist.date.asc(), LeaderChecklist.id.asc())
+            .all())
+    if not rows:
+        return 0
+
+    managers = db.query(Manager).all()
+    sup_match = supervisor_match(
+        managers, {relabel_supervisor(r.supervisor) for r in rows if r.supervisor})
+    profiles = db.query(RoleProfile).filter(RoleProfile.role == "leader").all()
+    lead_match = leader_match(profiles, {
+        (r.leader, (sup_match.get(relabel_supervisor(r.supervisor)) or {}).get("id"))
+        for r in rows if r.leader
+    })
+
+    added = 0
+    for row in rows:
+        info = sup_match.get(relabel_supervisor(row.supervisor)) or {}
+        if not in_auto_regime(row.date, info.get("shift")):
+            continue
+        who = lead_match.get((row.leader, info.get("id"))) or {}
+        for tk in (row.tasks or []):
+            if added >= DISCOVER_CAP:
+                break
+            if not tk.get("done") or not _sheet_photos(tk):
+                continue
+            tid = int(tk.get("id") or 0)
+            ref = sheet_ref(row, tid)
+            if ref in known:
+                continue
+            db.add(LeaderAiReview(
+                ref=ref, source="sheet", date=row.date, task_id=tid,
+                leader_id=who.get("id"), manager_id=info.get("id"),
+                shift=info.get("shift"), status="pending", flags=[],
+            ))
+            known.add(ref)
+            added += 1
+    if added:
+        db.commit()
+        log.info("leader-ai: auto-discovery queued %s task(s) from %s", added, start)
+    return added
 
 
 def stats_by_uid(db: Session, dates: set[str] | None = None) -> dict[str, dict[str, int]]:

@@ -54,6 +54,7 @@ const Daily = lazyWithReload(() => import("./pages/Daily"));
 const Production = lazyWithReload(() => import("./pages/Production"));
 const Trudoyomkost = lazyWithReload(() => import("./pages/Trudoyomkost"));
 const Leaders = lazyWithReload(() => import("./pages/Leaders"));
+const LeaderDayReport = lazyWithReload(() => import("./pages/LeaderDayReport"));
 const Cells = lazyWithReload(() => import("./pages/Cells"));
 const CellDetails = lazyWithReload(() => import("./pages/CellDetails"));
 const Kaizen = lazyWithReload(() => import("./pages/Kaizen"));
@@ -390,6 +391,11 @@ function AppWithLang() {
             <Route path="/production" element={<AuthGate><RequirePage page="production"><Production /></RequirePage></AuthGate>} />
             <Route path="/trudoyomkost" element={<AuthGate><RequirePage page="trudoyomkost"><Trudoyomkost /></RequirePage></AuthGate>} />
             <Route path="/leaders" element={<AuthGate><RequirePage page="leaders"><Leaders /></RequirePage></AuthGate>} />
+            {/* One leader's verified day. AUTH-ONLY, deliberately not page-gated:
+                it is the destination of the verification DM, and the brigadir
+                being told their unit's score is often somebody nobody granted
+                the /leaders page to. The backend scopes the row itself. */}
+            <Route path="/leaders/report/:uid" element={<AuthGate><LeaderDayReport /></AuthGate>} />
             {/* The retired per-shift admin copies and the bot-only page they
                 replaced — old bookmarks and Telegram buttons land on the one
                 merged page, whose Smena filter does the narrowing now. */}

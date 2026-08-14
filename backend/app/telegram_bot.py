@@ -1191,16 +1191,18 @@ def strip_custom_emoji(html_text: str) -> str:
     return _TG_EMOJI_RE.sub(r"\1", html_text or "")
 
 
-def _send_html_message(chat_id: int, html_text: str) -> None:
+def _send_html_message(chat_id: int, html_text: str, reply_markup=None) -> None:
     """send_message in HTML mode, retrying once with premium emoji stripped to
     their fallback chars if Telegram rejects them (see strip_custom_emoji)."""
     try:
-        bot.send_message(chat_id, html_text, parse_mode="HTML")
+        bot.send_message(chat_id, html_text, parse_mode="HTML",
+                         reply_markup=reply_markup)
     except Exception:
         stripped = strip_custom_emoji(html_text)
         if stripped == html_text:
             raise
-        bot.send_message(chat_id, stripped, parse_mode="HTML")
+        bot.send_message(chat_id, stripped, parse_mode="HTML",
+                         reply_markup=reply_markup)
 
 
 # Telegram refusals that mean "this account can never be DMed as things stand"
@@ -1239,7 +1241,8 @@ def _record_dm_outcome(telegram_id: int, error: str | None) -> None:
         pass        # bookkeeping must never break the notification itself
 
 
-def send_tg_notification(telegram_id: int, title: str, body: str, html: str | None = None) -> bool:
+def send_tg_notification(telegram_id: int, title: str, body: str,
+                         html: str | None = None, markup=None) -> bool:
     """Send a Telegram DM mirroring an in-app notification. When ``html`` is given
     it is sent verbatim in HTML parse mode (self-contained message, e.g. bold
     labels + <blockquote>); otherwise falls back to the default Markdown layout.
@@ -1253,9 +1256,10 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
     msg = f"🔔 *{title}*\n{body}"
     try:
         if html is not None:
-            _send_html_message(telegram_id, html)
+            _send_html_message(telegram_id, html, reply_markup=markup)
         else:
-            bot.send_message(telegram_id, msg, parse_mode="Markdown")
+            bot.send_message(telegram_id, msg, parse_mode="Markdown",
+                             reply_markup=markup)
         _record_dm_outcome(telegram_id, None)
         return True
     except Exception as e:
@@ -1267,7 +1271,7 @@ def send_tg_notification(telegram_id: int, title: str, body: str, html: str | No
         # unknown chat must fail on the first attempt, not be retried.
         if html is None and "parse" in str(e).lower():
             try:
-                bot.send_message(telegram_id, msg)
+                bot.send_message(telegram_id, msg, reply_markup=markup)
                 logger.warning("Telegram notification to %s sent unformatted "
                                "(Markdown rejected): %s", telegram_id, e)
                 _record_dm_outcome(telegram_id, None)

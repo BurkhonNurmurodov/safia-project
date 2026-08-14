@@ -12,14 +12,15 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    AppSetting, LeaderChecklist, LeaderLateRequest, LeaderSyncMeta,
-    LeaderTaskOverride, Manager,
+    AppSetting, LeaderAiDispute, LeaderAiReview, LeaderChecklist,
+    LeaderLateRequest, LeaderSyncMeta, LeaderTaskDay, LeaderTaskOverride, Manager,
 )
 from app.capabilities import page_scope_is_all
 from app.permissions import require_page
+from app.security import require_auth
 from app import identity
 from app.models import RoleProfile
-from app.services import leader_ai, leader_bot
+from app.services import leader_ai, leader_bot, leader_reports
 from app.services.name_map import (
     _name_tokens,
     leader_is,
@@ -408,16 +409,21 @@ def get_leaders(
 
     _apply_overlays(db, data)
 
-    # Admin-only: what the AI has done to each report, so the register header
-    # can count the rows actually on screen. Stamped on the row rather than
-    # fetched beside it — the header's numbers and the table's rows then come
-    # out of one read and cannot describe different sets.
-    if role == "admin":
-        ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
-        for row in data:
-            hit = ai_stats.get(row["uid"])
-            if hit:
-                row["ai"] = hit
+    # What verification has done to each report, so the register can print the
+    # state beside the score. Stamped on the row rather than fetched beside it
+    # — the header's numbers and the table's rows then come out of one read and
+    # cannot describe different sets.
+    #
+    # Served to EVERY viewer since the automatic regime shipped, not just
+    # admins: a rejection now moves the score of the brigadir and the leader
+    # reading this, and hiding the reason from the two people it costs would
+    # leave them with a number that dropped for no visible cause. It stays one
+    # aggregated query scoped to the dates already on screen.
+    ai_stats = leader_ai.stats_by_uid(db, {str(r["date"]) for r in data})
+    for row in data:
+        hit = ai_stats.get(row["uid"])
+        if hit:
+            row["ai"] = hit
 
     return {
         "role": role,
@@ -508,6 +514,344 @@ def _apply_overlays(db: Session, data: list[dict]) -> None:
                 delta -= weights.get(tid, 0)
         if delta:
             row["completion"] = min(100.0, max(0.0, row["completion"] + delta / total * 100))
+
+
+def build_report_row(db: Session, uid: str) -> dict | None:
+    """ONE report, shaped exactly as `/api/leaders` ships it — same matchers,
+    same window verdict, same overlays, same keys. None when the uid names
+    nothing (a deleted bot day, a sheet row the register no longer carries).
+
+    The day-report page and the report DM both read the day through this, so a
+    score can never differ between the register, the page and the message. The
+    alternative — re-deriving a completion in the notifier — is how three
+    surfaces end up printing three numbers for one day, which is exactly the
+    thing this feature exists to avoid.
+
+    Narrowed to one row rather than reusing get_leaders(): the matchers are
+    fuzzy and cost real time over the whole table, and `queue_report` already
+    matches a single row this way.
+    """
+    uid = str(uid or "").strip()
+    if not uid:
+        return None
+
+    if uid.startswith("bot-"):
+        try:
+            day_id = int(uid[4:])
+        except ValueError:
+            return None
+        day = db.query(LeaderTaskDay).filter_by(id=day_id).first()
+        if day is None or day.closed_at is None:
+            return None
+        rows = leader_bot.dashboard_rows(db, [day])
+        if not rows:
+            return None
+        row = rows[0]
+        row["rejected"] = False
+        row["late_state"] = None
+        # dashboard_rows names the unit; the scope check needs its id.
+        row["manager_id"] = day.manager_id
+        row["raw_completion"] = row["completion"]
+        _apply_overlays(db, [row])
+        return row
+
+    q = db.query(LeaderChecklist)
+    src = (q.filter_by(id=int(uid[4:])).first()
+           if uid.startswith("row-") and uid[4:].isdigit()
+           else q.filter_by(submission_id=uid).first())
+    if src is None:
+        return None
+
+    name = _relabel(src.supervisor)
+    info = (supervisor_match(db.query(Manager).all(), {name}) or {}).get(name) or {}
+    prof = {}
+    if src.leader:
+        prof = (leader_match(
+            db.query(RoleProfile).filter(RoleProfile.role == "leader").all(),
+            {(src.leader, info.get("id"))},
+        ) or {}).get((src.leader, info.get("id"))) or {}
+
+    shift = info.get("shift")
+    voided = _rejected(src.date, shift, src.submitted_at)
+    req = None
+    if voided:
+        req = _late_map(db).get(_late_key(prof.get("id"), src.leader, src.date))
+    opened = bool(req and req.status == "approved")
+
+    row = {
+        "uid": leader_ai.row_uid(src),
+        "source": "sheet",
+        "date": src.date,
+        "submitted_at": src.submitted_at.isoformat() if src.submitted_at else None,
+        "supervisor": name,
+        "manager_id": info.get("id"),
+        "shift": shift,
+        "rejected": voided and not opened,
+        "late_state": req.status if req else ("void" if voided else None),
+        "late_by": req.decided_by_name if opened else None,
+        "late_reason": req.reason if req else None,
+        "leader_id": prof.get("id"),
+        "leader": prof.get("name") or src.leader,
+        "completion": float(src.completion or 0),
+        "tasks": src.tasks or [],
+    }
+    # What the leader's own answers added up to, before any overlay moved it.
+    # The page and the DM both print the pair — a score that dropped without
+    # showing what it dropped from reads as an error, not a verdict.
+    row["raw_completion"] = row["completion"]
+    _apply_overlays(db, [row])
+    return row
+
+
+def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
+    """May this viewer read this one report? Mirrors the row scoping in
+    `get_leaders` exactly — admins, shift- and top-managers see every report,
+    a supervisor their own unit's, a leader their own.
+
+    The day report is reachable straight from a Telegram DM, so it is
+    auth-only rather than page-gated (like `/cells/:id`): a brigadir who was
+    never granted the `/leaders` page still has to be able to open the report
+    about their own unit that the bot just sent them. Authority to READ is the
+    row scope; authority to ACT is checked separately.
+    """
+    role = payload.get("role")
+    if role in ("admin", "shift-manager", "top-manager"):
+        return True
+    if page_scope_is_all(db, payload, "leaders"):
+        return True
+    if role == "supervisor":
+        return row.get("manager_id") is not None and \
+            row.get("manager_id") == payload.get("role_id")
+    if role == "leader":
+        my_pid = identity.viewer_leader_profile_id(db, payload)
+        if my_pid and row.get("leader_id"):
+            return row["leader_id"] == my_pid
+        me = payload.get("full_name") or ""
+        return bool(row.get("leader") and len(_name_tokens(me)) >= 2
+                    and leader_is(row["leader"], me))
+    return False
+
+
+# ── the day report (one leader, one day, every verdict) ──────────────────────
+# Reached from the Telegram DM the automatic regime sends, so it is AUTH-ONLY
+# and row-scoped rather than page-gated: the brigadir being told their unit's
+# score is often someone no admin ever granted the /leaders page to, and a
+# notification that lands on a "no access" screen is worse than no
+# notification. Reading is the row scope; acting is checked per action below.
+
+@router.get("/leaders/report/{uid}")
+def get_day_report(
+    uid: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    row = leader_reports.day_report(db, uid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such report")
+    if not report_scope_ok(db, payload, {
+        "manager_id": row["managerId"], "leader_id": row["leaderId"],
+        "leader": row["leader"],
+    }):
+        # 404, not 403: a supervisor probing ids must not learn which ones name
+        # a real report in another unit.
+        raise HTTPException(status_code=404, detail="No such report")
+
+    role = payload.get("role")
+    row["canDispute"] = _may_request_for(payload, row["managerId"])
+    row["canDecide"] = _may_decide(payload)
+    row["viewerRole"] = role
+    return row
+
+
+@router.post("/leaders/report/{uid}/dispute")
+def file_dispute(
+    uid: str,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Object to one automatic rejection. The unit's own brigadir files it with
+    a reason; every admin gets it as an inline Telegram card. An admin filing
+    one IS the decision — the same rule as opening a late day, because it is
+    the same authority question.
+
+    The task is re-derived from the report the caller can actually read, so
+    "is this yours" and "does this rejection exist" are one check.
+    """
+    reason = str(body.get("reason") or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=400, detail="A reason is required")
+    if len(reason) > 1000:
+        raise HTTPException(status_code=400, detail="Reason is too long")
+    try:
+        task_id = int(body.get("task_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="task_id must be an integer")
+
+    report = leader_reports.day_report(db, uid)
+    if report is None or not report_scope_ok(db, payload, {
+        "manager_id": report["managerId"], "leader_id": report["leaderId"],
+        "leader": report["leader"],
+    }):
+        raise HTTPException(status_code=404, detail="No such report")
+    if not _may_request_for(payload, report["managerId"]):
+        raise HTTPException(status_code=403, detail="Not your unit")
+
+    task = next((t for t in report["tasks"] if t["id"] == task_id), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail="No such task on this report")
+    if not task["ai_rejected"]:
+        raise HTTPException(status_code=409, detail="This task was not rejected")
+    live = task.get("dispute")
+    if live and live["status"] == "pending":
+        raise HTTPException(status_code=409, detail="Already awaiting a decision")
+
+    ref = leader_reports.ref_of_task(db, uid, task_id)
+    rev = db.query(LeaderAiReview).filter_by(ref=ref).first() if ref else None
+    if rev is None:
+        raise HTTPException(status_code=404, detail="No verdict to dispute")
+
+    # A refused dispute may be re-filed with a better reason; the new row
+    # replaces it so one verdict never carries two live objections.
+    for old in db.query(LeaderAiDispute).filter_by(ref=ref).all():
+        db.delete(old)
+    db.flush()
+
+    is_admin = payload.get("role") == "admin"
+    who = payload.get("full_name") or ""
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    d = LeaderAiDispute(
+        ref=ref, review_id=rev.id, date=report["date"], task_id=task_id,
+        leader_id=report["leaderId"], leader_name=(report["leader"] or "")[:160],
+        manager_id=report["managerId"],
+        status="approved" if is_admin else "pending",
+        reason=reason,
+        requested_by_profile=identity.viewer_profile_key(db, payload),
+        requested_by_name=who, requested_by_telegram=tid,
+    )
+    db.add(d)
+    db.flush()
+    if is_admin:
+        d.decided_by_name = who
+        d.decided_by_telegram = tid
+        d.decided_at = datetime.now(timezone.utc)
+        _settle_dispute(db, d, "approved", who, tid)
+    db.commit()
+    logger.info("leader-dispute: %s filed by %s on %s task %s (%s)",
+                d.status, who, uid, task_id, reason[:80])
+
+    if not is_admin:
+        try:
+            from app.approvals import send_leader_dispute_to_admins
+            send_leader_dispute_to_admins(db, d)
+        except Exception:
+            logger.exception("leader-dispute: admin card failed for %s", d.id)
+    return {"ok": True, "status": d.status,
+            "report": leader_reports.day_report(db, uid)}
+
+
+def _settle_dispute(db: Session, d: LeaderAiDispute, status: str,
+                    by_name: str | None, by_telegram: int | None) -> bool:
+    """Apply an admin's ruling on one dispute. THE decision core — the web
+    endpoint and the Telegram inline tap both run it, so a dispute decided from
+    a DM behaves exactly like one decided in the panel.
+
+    Approving writes `resolution="approved"` on the verdict, which is what
+    actually restores the task's weight; the dispute row is the paper trail.
+    Refusing writes `rejected` — the human agreeing with the machine — because
+    leaving it NULL would put the flag back in the open triage queue as though
+    nobody had ever looked at it.
+    """
+    if d.status == status and d.decided_at is not None:
+        return False
+    rev = db.query(LeaderAiReview).filter_by(id=d.review_id).first() \
+        or db.query(LeaderAiReview).filter_by(ref=d.ref).first()
+    d.status = status
+    d.decided_by_name = by_name
+    d.decided_by_telegram = by_telegram
+    d.decided_at = datetime.now(timezone.utc)
+    if rev is not None:
+        rev.resolution = "approved" if status == "approved" else "rejected"
+        rev.resolved_by = (by_name or "")[:160] or None
+        rev.resolved_at = d.decided_at
+        rev.resolution_note = f"dispute #{d.id}: {d.reason}"[:2000]
+    db.commit()
+    return True
+
+
+@router.post("/leaders/disputes/{dispute_id}/decide")
+def decide_dispute(
+    dispute_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    status = str(body.get("status") or "").strip()
+    if status not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="status must be approved or rejected")
+    if not _may_decide(payload):
+        raise HTTPException(status_code=403, detail="Admins only")
+    d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+    if d is None:
+        raise HTTPException(status_code=404, detail="No such dispute")
+    if d.status != "pending":
+        raise HTTPException(status_code=409, detail="Already decided")
+
+    who = payload.get("full_name") or ""
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    _settle_dispute(db, d, status, who, tid)
+    try:
+        from app.approvals import _notify_dispute_decided, edit_admin_notices
+        _notify_dispute_decided(db, d, status, who)
+        # Retire the inline cards sitting in every other admin's DM, so a
+        # decided dispute cannot be decided a second time from a stale message.
+        edit_admin_notices("leader_dispute", d.id, status, who)
+    except Exception:
+        logger.exception("leader-dispute: notice edit failed for %s", d.id)
+    return {"ok": True, "status": d.status,
+            "reported": _report_after_ruling(db, d)}
+
+
+def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
+    """A ruling that MOVED the day's score re-sends its report; one that did
+    not stays silent. `resend_if_changed` owns that comparison — it is the same
+    rule the drain uses, so a correction cannot mean two different things."""
+    uid = leader_reports.uid_of_ref(db, d.ref)
+    return leader_reports.resend_if_changed(db, uid) if uid else False
+
+
+@router.get("/leaders/disputes")
+def list_disputes(
+    status: str | None = Query(None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """The disputes an admin has to rule on, newest first. Scoped like every
+    other read here: an admin sees all, a brigadir their own unit's."""
+    role = payload.get("role")
+    q = db.query(LeaderAiDispute)
+    if status:
+        q = q.filter(LeaderAiDispute.status == status)
+    if not (_may_decide(payload) or role in ("shift-manager", "top-manager")
+            or page_scope_is_all(db, payload, "leaders")):
+        if role != "supervisor":
+            return {"items": [], "canDecide": False}
+        q = q.filter(LeaderAiDispute.manager_id == payload.get("role_id"))
+    rows = q.order_by(LeaderAiDispute.id.desc()).limit(300).all()
+    uids = leader_reports.uids_of_refs(db, [r.ref for r in rows])
+    return {
+        "canDecide": _may_decide(payload),
+        "items": [{
+            "id": d.id, "status": d.status, "date": d.date,
+            "taskId": d.task_id, "leader": d.leader_name,
+            "managerId": d.manager_id, "reason": d.reason,
+            "by": d.requested_by_name,
+            "at": d.requested_at.isoformat() if d.requested_at else None,
+            "decidedBy": d.decided_by_name,
+            "decidedAt": d.decided_at.isoformat() if d.decided_at else None,
+            "uid": uids.get(d.ref),
+        } for d in rows],
+    }
 
 
 @router.post("/leaders/task-override")

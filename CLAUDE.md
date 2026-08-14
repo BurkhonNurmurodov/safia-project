@@ -247,6 +247,25 @@ injects it into the bundle, `backend/app/version.py` reads it for
 `FastAPI(version=…)` and `/api/version`. Never add a second one; `package.json`
 stays `0.0.0` on purpose.
 
+**Every change bumps `VERSION`, sized to its impact** (`MAJOR.MINOR.PATCH`), and
+a bump RESETS every number to its right to 0 — `1.4.7` → patch `1.4.8` → minor
+`1.5.0` → major `2.0.0`. What each level means here:
+
+| Level | Bump for | Examples |
+|---|---|---|
+| **PATCH** `1.0.x` | Nothing new; something works better | bug fix, copy/translation fix, styling or spacing tweak, refactor with no visible change, docs |
+| **MINOR** `1.x.0` | Something the user can now do, or a visible behaviour change | new page/tab/admin destination, new endpoint or capability, a new column/filter/export, a template gaining a prop |
+| **MAJOR** `x.0.0` | The app is no longer used the way it was | data-model migration, auth/permission model change, a page removed or replaced, a redesign of a core flow. Rare — reserved. |
+
+- **One turn = one commit = one deploy = at most ONE bump.** Bump once for the
+  whole turn, never per file.
+- **Mixed turn → the highest level wins.** A feature plus three fixes is one
+  MINOR, not a MINOR and three PATCHes.
+- **A turn that edits no shipped code doesn't bump** — questions, investigations,
+  and scratchpad work leave `VERSION` alone.
+- Bump it in the same turn as the change: the Stop hook builds from `VERSION`
+  before it commits, so the number ships with the code it describes.
+
 Three readings, deliberately distinct, all in the sidebar's «Versiya» dialog
 (`components/layout/VersionBadge.jsx`): **App** = the bundle this tab is
 running · **Deployed** = the bundle a reload would give it · **Server** = the
@@ -258,8 +277,9 @@ frontend-only deploy never triggers one.
   content-hashed filenames plus `/assets/* immutable` and `index.html no-store`
   in `main.py` are the whole cache story; the version string is a human label
   and changes nothing about caching.
-- **Update detection compares the BUILD STAMP, not the version** — `VERSION` is
-  bumped by hand for releases, while every deploy produces a new build.
+- **Update detection compares the BUILD STAMP, not the version.** Even with the
+  bump rule above, the version is the wrong handle: it is set by judgement and
+  a rebuild can ship the same number twice, while the stamp is unique per build.
   `dist/build.json` is written by the build (and served **no-store**, same
   reason as `index.html`); `hooks/useAppUpdate.js` polls it every 5 min and on
   window focus, and `UpdatePrompt` in `Layout` offers a reload. It NEVER
