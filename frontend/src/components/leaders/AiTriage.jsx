@@ -454,22 +454,34 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
   // still has flags behind it, and the count says how many. Busiest first —
   // ninety leaders sorted alphabetically bury the one worth opening.
   const facetN = (dim, v) => (facets[dim] || []).find((o) => o.v === v)?.n;
-  const taskName = (id) =>
-    (facets.task || []).find((o) => o.v === id)?.label || `${T.task} ${id}`;
+  // A task is named by its NUMBER here — «Vazifa 3» — exactly as the cards,
+  // the toasts and the day report already call it, not by its wording. The
+  // wording («Фиксация ежедневной загрузки ячеек…») truncates in the list to
+  // a run of near-identical prefixes and differs per unit (a supervisor may
+  // rename it); the number is the one handle every surface shares. The
+  // wording is not lost: it is the tooltip, and the search box matches it.
+  const taskName = (id) => `${T.task} ${id}`;
+  const taskTitle = (id) => {
+    const wording = (facets.task || []).find((o) => o.v === id)?.label;
+    return wording ? `${taskName(id)} · ${wording}` : taskName(id);
+  };
 
   /** `[«All …», …live options]` — with the CURRENT pick forced in even when the
    *  other filters have starved it to zero. A list that silently drops what is
    *  selected leaves the control showing no selection at all, which reads as
-   *  "no filter" over a queue that is very much filtered. */
-  const optList = (dim, allLabel, name) => {
-    const live = (facets[dim] || []).map((o) => ({
-      value: o.v, label: `${name(o.v)} · ${o.n}`, title: name(o.v),
-    }));
+   *  "no filter" over a queue that is very much filtered. Numbered labels read
+   *  in NUMBER order (1, 2, 3 …), so the busiest-first order the server ships
+   *  the facet in is re-sorted here — the count beside each still says which
+   *  ones carry the work. */
+  const optList = (dim, allLabel, name, title = name) => {
+    const live = (facets[dim] || [])
+      .map((o) => ({ value: o.v, label: `${name(o.v)} · ${o.n}`, title: title(o.v) }))
+      .sort((a, b) => Number(a.value) - Number(b.value));
     const pick = f[dim];            // the state keys ARE the dimension names
     const missing = pick != null && !live.some((o) => o.value === pick);
     return [
       { value: null, label: allLabel },
-      ...(missing ? [{ value: pick, label: `${name(pick)} · 0`, title: name(pick) }] : []),
+      ...(missing ? [{ value: pick, label: `${name(pick)} · 0`, title: title(pick) }] : []),
       ...live,
     ];
   };
@@ -523,7 +535,7 @@ export default function AiTriage({ T, lang, taskDetail, nm, actions, scope, onCl
               onClear: () => setF({ task: null }),
               render: ({ close } = {}) => (
                 <PickFilter searchable close={close} value={f.task}
-                  opts={optList("task", T.aiFAllTasks, taskName)}
+                  opts={optList("task", T.aiFAllTasks, taskName, taskTitle)}
                   onChange={(v) => setF({ task: v })} />
               ),
             },
