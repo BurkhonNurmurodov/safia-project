@@ -810,6 +810,9 @@ const DAY = 86400000;
 const ddmm = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 // "2026-04-08T07:22:58" → "07:22"
 const hhmm = (ts) => (ts ? String(ts).slice(11, 16) : "");
+// The unit's brigadir, or "" for a row whose name the sheet never matched to one
+// — the backend spells that "N/A", which must never be printed as a person.
+const supName = (s) => (s && s !== "N/A" ? s : "");
 // Days between the day a checklist was filed and the day it reports on. > 0 means
 // it was written up after the fact, which is what the "late" chip calls out.
 const lateDays = (row) => {
@@ -2537,6 +2540,13 @@ export default function Leaders() {
     arr.sort((a, b) => {
       if (tSort.key === "date") return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
       if (tSort.key === "leader") return tl(a.leader).localeCompare(tl(b.leader)) * dir;
+      // an unmatched row (no supervisor) sorts to the bottom either way — a
+      // blank cell at the top reads as "the sort broke"
+      if (tSort.key === "supervisor") {
+        const av = supName(a.supervisor), bv = supName(b.supervisor);
+        if (!av || !bv) return !av && !bv ? 0 : !av ? 1 : -1;
+        return tl(av).localeCompare(tl(bv)) * dir;
+      }
       if (tSort.key === "failed") return (a._failed - b._failed) * dir;
       // submissions with no timestamp (pre-form-change rows) sort to the bottom
       if (tSort.key === "submitted") {
@@ -3246,12 +3256,13 @@ export default function Leaders() {
           ) : (<>
             {/* desktop / tablet: sortable table (canonical POSITIONS-style) */}
             <div className="hidden sm:block overflow-auto" style={{ maxHeight: 460 }}>
-              <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 680 }}>
+              <table className="w-full text-xs whitespace-nowrap [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-[var(--border)] [&_td]:border-[var(--border)] [&_tbody_tr]:border-t [&_tbody_tr]:border-[var(--border)] [&_tbody_tr:hover]:bg-[var(--bg-inner)]" style={{ color: "var(--text-1)", minWidth: 800 }}>
                 <thead>
                   <tr>
                     <Th label={T.thDate}      k="date"      sort={tSort} onSort={toggleSort} />
                     <Th label={T.thSubmitted} k="submitted" sort={tSort} onSort={toggleSort} />
                     <Th label={T.thLeader}    k="leader"    sort={tSort} onSort={toggleSort} />
+                    <Th label={T.supervisor}  k="supervisor" sort={tSort} onSort={toggleSort} />
                     <Th label={T.thScore}     k="score"     sort={tSort} onSort={toggleSort} align="center" />
                     <Th label={T.thFailed}    k="failed"    sort={tSort} onSort={toggleSort} />
                     <Th label={T.thAction} align="right" />
@@ -3280,6 +3291,12 @@ export default function Leaders() {
                           <VerifyChip row={r} T={T} />
                           {aiOn && <AiChip n={aiFlags[r.uid]} T={T} />}
                         </span>
+                      </td>
+                      {/* The unit's brigadir — who a leader answers to, and the
+                          only way to read a run of low rows as one unit's
+                          problem rather than N unrelated people's. */}
+                      <td className="px-3 py-2" style={{ color: "var(--text-3)" }}>
+                        {supName(r.supervisor) ? nm(r.supervisor) : "—"}
                       </td>
                       <td className="px-3 py-2 text-center">
                         {/* Grey, not traffic-light, once the window voided the row:
@@ -3319,6 +3336,12 @@ export default function Leaders() {
                       {Math.round(r.completion)}%
                     </span>
                   </div>
+                  {supName(r.supervisor) && (
+                    <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-3)" }}>
+                      <ShieldCheck size={11} />
+                      <span>{nm(r.supervisor)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs" style={{ color: "var(--text-4)" }}>{fmtDate(r.date, lang)}</span>
                     <span className="text-xs" style={{ color: r._failed ? "#ef4444" : "var(--text-4)" }}>{r._failed} {T.missed}</span>
