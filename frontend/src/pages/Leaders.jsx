@@ -686,7 +686,7 @@ const TXT = {
     regNothingToCheck: "Nothing to check",
     regErrN: "{n} could not be read",
     regFlagged: "Flagged proofs",
-    regOpenN: "{n} awaiting your decision",
+    regOpenN: "{n} awaiting a decision",
     regAllRuled: "All resolved",
     regClean: "None flagged",
     regGlobalN: "{n} proofs queued platform-wide",
@@ -1084,15 +1084,17 @@ function StatCard({ label, icon: Icon, tip, value, valueColor, badge, badgeColor
 // and two copies would have meant two blob lifecycles and two retry behaviours
 // for one image.
 
-/* ══ AI proof review (admin-only pilot) ═══════════════════════════════════════
+/* ══ AI proof review ══════════════════════════════════════════════════════════
  * Two questions are asked of each proof photo — is its drawn-on timestamp
  * inside the checklist day (per the leader's SHIFT, so a 02:00 shift-2 photo
  * is on time), and does it show the work actually done, measured against the
  * criteria an admin wrote on the ltasks config page. See backend
- * services/leader_ai.py; nothing here renders for a non-admin.
+ * services/leader_ai.py. The RESULT renders for every viewer of the page, on
+ * the rows they may see (a brigadir's unit, a leader's own days); only the
+ * controls that spend or rule on a review are the admin's.
  *
  * Visual weight is deliberately asymmetric. A clean verdict is one quiet line
- * — an admin scanning ten cards should not have to read ten "all good"
+ * — someone scanning ten cards should not have to read ten "all good"
  * paragraphs. A flag turns the strip amber and spells out what is wrong, since
  * that is the only state anyone has to act on. */
 const C_AI = "#eab308";  // amber: needs a look, not a failure — red stays "not done"
@@ -1833,24 +1835,30 @@ export default function Leaders() {
   const showClearTab = isAdmin;
   const showLateTab = isAdmin || auth?.role === "supervisor";
 
-  // ── AI proof review (admin-only pilot) ─────────────────────────────────────
-  // `enabled: isAdmin` is the whole gate on the client: for anybody else the
-  // request is never made and every AI affordance below evaluates to null, so
-  // the page is byte-for-byte what it was. The server gates it again.
-  // Only flag/queue COUNTS per report come down here — verdict prose is fetched
-  // per report when its modal opens, so this stays small over years of rows.
-  // Read BEFORE the tab list, because the triage tab's existence depends on it.
+  // ── AI proof review ────────────────────────────────────────────────────────
+  // The RESULT of a review is for every viewer of this page; the reviewer's
+  // CONTROLS are the admin's. `aiOn` gates the former — the amber flag chip on
+  // a row, the checked / flagged cells under the filters, the verdict strip
+  // inside each task card — because a flag now costs points on its own and
+  // the brigadir and leader whose score just moved are exactly the readers who
+  // need to see why. `isAdmin` still gates the latter: the AI tab, the run and
+  // re-check controls, the progress strip, «check this task now». The server
+  // draws the same line (`routers/leader_ai`): the two reads take the page and
+  // the row scope, every action takes `verify_admin`.
+  //
+  // A non-admin's answer here is the `enabled` bit alone. Their per-report
+  // counts ride on /api/leaders as `row.ai`, already scoped to what they may
+  // see; verdict prose is fetched per report when its modal opens.
+  // Read BEFORE the tab list, because the triage tab's badge depends on it.
   const { data: aiData } = useQuery({
     queryKey: ["leader-ai-overview"],
     queryFn: () => api.get("/api/leader-ai/overview").then((r) => r.data),
-    enabled: isAdmin,
     // A drain runs on a timer now (services/leader_ai.register_drain_job) as
     // well as after a Refresh or a bot day-close, so the counts go stale on
     // their own; refetching on focus follows it without polling all day.
     refetchOnWindowFocus: true,
   });
-  const aiOn = isAdmin && !!aiData?.enabled;
-  const aiFlags = aiData?.flags ?? {};
+  const aiOn = !!aiData?.enabled;
   // What is still OWED, not what was ever flagged. The server only counts
   // unresolved rows here, so the badge can reach zero.
   const aiTodo = aiData?.counts?.open ?? 0;
@@ -1944,12 +1952,14 @@ export default function Leaders() {
   });
 
   // Verdict prose for the ONE report whose detail modal is open. Keyed on the
-  // uid so reopening a report reuses the cached answer.
+  // uid so reopening a report reuses the cached answer. Every viewer asks — the
+  // server answers within the row's own scope, and only while the reviewer is
+  // on (off, there is nothing to fetch and the strips stay silent).
   const { data: aiReport } = useQuery({
     queryKey: ["leader-ai-report", detail?.uid],
     queryFn: () => api.get("/api/leader-ai/report", { params: { uid: detail.uid } })
       .then((r) => r.data),
-    enabled: !!(isAdmin && detail?.uid),
+    enabled: !!(aiOn && detail?.uid),
   });
   // "Check this task now": one deliberate call for one task, so the admin gets
   // a verdict in seconds instead of waiting on a backlog they cannot see. The
@@ -3157,7 +3167,7 @@ export default function Leaders() {
           {/* Actions only. The counts moved OUT of this row and under the
               filters, where they can describe the rows the filters left. */}
           <SectionHead icon={ListChecks} title={T.tableTitle}
-            right={aiOn ? (
+            right={isAdmin && aiOn ? (
               /* ONE door into the reviewer, and it counts before it spends.
                  «AI tekshiruvi» used to sit here beside this: a press ran a
                  full discovery over every report ever filed, queued thousands
@@ -3186,9 +3196,11 @@ export default function Leaders() {
           {/* ── what you are looking at ──────────────────────────────────────
               Below the filters on purpose: this band is the RESULT of them, so
               it reads top-down as «narrow it → here is what is left». Every
-              figure is summed over the rows on screen. Two cells for everyone
-              (what is here), two more for an admin with the reviewer on (what
-              the machine has done to it). */}
+              figure is summed over the rows on screen. Two cells for what is
+              here, two more — for every viewer, once the reviewer is on — for
+              what the machine has done to it; `r.ai` is already scoped to the
+              rows this viewer may see, so a brigadir's cells count their unit
+              and a leader's their own days. */}
           <div className={`grid gap-px ${aiOn ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2"}`}
             style={{ background: "var(--border)", borderBottom: "1px solid var(--border)" }}>
             <RegStat label={T.regShown}
@@ -3226,10 +3238,11 @@ export default function Leaders() {
               /* The one cell that is a door: a flag is work, and the queue is
                  the next tab. Only clickable while something is actually
                  owed — a button that lands you on an empty queue is a lie
-                 about there being something to do. */
+                 about there being something to do — and only for the admin,
+                 whose tab it is; everyone else reads the number in place. */
               <RegStat label={T.regFlagged} value={regStats.flagged.toLocaleString()}
                 tone={regStats.open ? C_AI : regStats.flagged ? "var(--text-1)" : "var(--text-3)"}
-                onClick={regStats.open ? () => setTab("ai") : undefined}
+                onClick={isAdmin && regStats.open ? () => setTab("ai") : undefined}
                 sub={!regStats.flagged ? T.regClean
                   : regStats.open
                     ? T.regOpenN.replace("{n}", regStats.open.toLocaleString())
@@ -3240,8 +3253,9 @@ export default function Leaders() {
           {/* The queue the «AI tekshiruvi» button actually drains is the whole
               platform's, not this filter's — said out loud, and labelled as
               such, because it used to sit unlabelled beside the numbers above
-              and was read as one of them. */}
-          {aiOn && (aiData?.counts?.pending || 0) > 0 && (
+              and was read as one of them. Admin only: it describes the
+              reviewer's backlog, and the server sends `counts` to nobody else. */}
+          {isAdmin && aiOn && (aiData?.counts?.pending || 0) > 0 && (
             <div className="px-3 py-1.5 flex items-center gap-1.5 text-[11px]"
               style={{ color: "var(--text-4)", borderBottom: "1px solid var(--border)" }}>
               <Sparkles size={11} className="flex-shrink-0" />
@@ -3285,11 +3299,13 @@ export default function Leaders() {
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-1)" }}>
                         <span className="inline-flex items-center gap-1.5">
                           {nm(r.leader)}
-                          {/* Admin-only: how many of this report's tasks the AI
-                              doubts, so a suspect day is findable without
-                              opening all of them. Null for everyone else. */}
+                          {/* How many of this report's tasks the AI doubts and
+                              nobody has ruled on yet, so a suspect day is
+                              findable without opening all of them. From the
+                              row's own counts — the same scoped source as the
+                              verify chip beside it — for every viewer. */}
                           <VerifyChip row={r} T={T} />
-                          {aiOn && <AiChip n={aiFlags[r.uid]} T={T} />}
+                          {aiOn && <AiChip n={r.ai?.open} T={T} />}
                         </span>
                       </td>
                       {/* The unit's brigadir — who a leader answers to, and the
@@ -3329,7 +3345,7 @@ export default function Leaders() {
                     <span className="font-semibold leading-tight" style={{ color: "var(--text-1)" }}>
                       {nm(r.leader)}
                       {" "}<VerifyChip row={r} T={T} />
-                      {aiOn && aiFlags[r.uid] ? <> <AiChip n={aiFlags[r.uid]} T={T} /></> : null}
+                      {aiOn && r.ai?.open ? <> <AiChip n={r.ai.open} T={T} /></> : null}
                     </span>
                     <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold text-white tabular-nums flex-shrink-0"
                       style={{ background: r.rejected ? C_FLAT : scoreColor(r.completion) }}>
@@ -3410,10 +3426,10 @@ export default function Leaders() {
                 <XCircle size={12} />{nFail} {T.sumFailed}
               </span>
             )}
-            {aiOn && (aiFlags[detailRow.uid] || 0) > 0 && (
+            {aiOn && (detailRow.ai?.open || 0) > 0 && (
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold tabular-nums"
                 style={{ background: hexA(C_AI, 0.12), color: C_AI, border: `1px solid ${hexA(C_AI, 0.3)}` }}>
-                <Sparkles size={12} />{aiFlags[detailRow.uid]} {T.aiFlagsN}
+                <Sparkles size={12} />{detailRow.ai.open} {T.aiFlagsN}
               </span>
             )}
             <span className="ml-auto inline-flex items-center flex-wrap gap-1.5 text-[11px]"
@@ -3557,12 +3573,15 @@ export default function Leaders() {
                     </div>
                   </div>
                   <AiReview rev={rev} T={T} lang={lang}
+                    // The verdict itself renders for every viewer; the button
+                    // that SPENDS a review is the admin's (the endpoint is
+                    // admin-only, and a control that 403s is worse than none).
                     // Only a task the leader answered YES to, with photos, has
                     // anything to review — the button must not appear where it
                     // could never do anything. A task that ALREADY has a verdict
                     // still qualifies: that is the re-check, and the branch that
                     // invites a first check tests `judged` itself.
-                    canCheck={aiOn && !unasked && tk.done && nPhotos > 0}
+                    canCheck={isAdmin && aiOn && !unasked && tk.done && nPhotos > 0}
                     checking={checkingTask === id}
                     error={checkErr?.id === id ? checkErr.msg : null}
                     onCheck={(force) => checkTask(id, force)} />

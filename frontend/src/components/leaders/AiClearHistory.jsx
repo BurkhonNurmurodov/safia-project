@@ -280,11 +280,14 @@ export default function AiClearHistory({ floor, defaultFloor }) {
       );
       // Everything on the page reads this table: the register badges, the triage
       // queue, the coverage bar and the tab counter. Re-read them all rather
-      // than leaving a screen quoting rows that no longer exist.
+      // than leaving a screen quoting rows that no longer exist. The register's
+      // row chips (verify state + flag count) ride on /api/leaders as `row.ai`,
+      // so that read has to go too, or a wiped verdict keeps badging its row.
       qc.invalidateQueries({ queryKey: ["leader-ai-overview"] });
       qc.invalidateQueries({ queryKey: ["leader-ai-progress"] });
       qc.invalidateQueries({ queryKey: ["leader-ai-queue"] });
       qc.invalidateQueries({ queryKey: ["leader-ai-activity"] });
+      qc.invalidateQueries({ queryKey: ["leaders"] });
     },
     onError: (e) => setConfirmErr(e?.response?.data?.detail || String(e?.message || e)),
   });

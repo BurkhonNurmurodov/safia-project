@@ -606,7 +606,8 @@ def build_report_row(db: Session, uid: str) -> dict | None:
 def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
     """May this viewer read this one report? Mirrors the row scoping in
     `get_leaders` exactly — admins, shift- and top-managers see every report,
-    a supervisor their own unit's, a leader their own.
+    a supervisor their own unit's, a leader their own, a guest whatever the
+    page shows them.
 
     The day report is reachable straight from a Telegram DM, so it is
     auth-only rather than page-gated (like `/cells/:id`): a brigadir who was
@@ -619,6 +620,14 @@ def report_scope_ok(db: Session, payload: dict, row: dict) -> bool:
         return True
     if page_scope_is_all(db, payload, "leaders"):
         return True
+    if role == "guest":
+        # A guest has no unit and no rows of their own, so `get_leaders` scopes
+        # nothing for them: holding the page IS the whole scope, and a guest
+        # who was given it reads the register whole — rows, photos, verdicts.
+        # Without this clause the same guest could open every row in the table
+        # and none of the day reports (or verdicts) behind them. A guest with
+        # no page grant still reads nothing here.
+        return page_allowed(db, payload, "leaders")
     if role == "supervisor":
         return row.get("manager_id") is not None and \
             row.get("manager_id") == payload.get("role_id")

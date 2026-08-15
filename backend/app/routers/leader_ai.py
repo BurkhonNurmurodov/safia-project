@@ -1,13 +1,22 @@
 """AI proof-review endpoints for the leader monitoring page.
 
-**Admin-only, deliberately.** This is a pilot: every endpoint here is gated by
-`verify_admin`, and the page asks for none of them unless the viewer is an
-admin — so a supervisor, leader or top-manager sees the page exactly as it was.
+**Reading a verdict is for everyone the register shows the row to; acting on
+the reviewer is admin-only.** Two reads — `overview`'s "is the reviewer on"
+bit and `report`'s per-task verdicts — take the `/leaders` page and the row's
+own scope (`report_scope_ok`, the same rule the day report and its photos
+use), so a brigadir or a leader sees the review result on their own rows
+exactly as an admin does: the amber flag chip, the checked / flagged cells and
+the verdict strip inside each task card. This started as an admin-only pilot;
+once a flag began costing points automatically, hiding the verdict from the
+two people it costs was the wrong default. Everything that queues, re-checks,
+resolves, configures or purges stays behind `verify_admin`.
 
 Verdicts are read in three shapes:
 
-* `overview` — flag counts per report uid, for the register's row badge. Small
-  by design, so it stays cheap over years of reports.
+* `overview` — queue state and the reviewer's own numbers, for the admin's
+  strip and tab. Every other viewer receives the `enabled` bit alone: their
+  per-report counts already ride on `/api/leaders` as `row.ai`, scoped to the
+  rows they may see.
 * `report` — every verdict of ONE report, fetched when its detail modal opens.
 * `queue` — the review feed: one flat list of every JUDGED proof in the chosen
   period — flagged and clean, decided and undecided — with the photos, the
@@ -42,6 +51,7 @@ from app.models import (
     LeaderTaskEntry, LeaderTaskLeaderSetting, LeaderTaskMedia, LeaderTaskSetting,
     Manager, RoleProfile,
 )
+from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.services import gemini, leader_ai
 from app.services.name_map import relabel_supervisor
@@ -49,18 +59,12 @@ from app.services.name_map import relabel_supervisor
 router = APIRouter(prefix="/api/leader-ai", tags=["leader-ai"])
 log = logging.getLogger(__name__)
 
-# Newest flagged rows resolved into the register's badge map. A cap rather than
-# a date filter because the page filters client-side and never tells the server
-# its range; newest-first means the badge is always right where anyone is
-# actually looking.
-FLAG_MAP_CAP = 4000
-
-# How far the queue's own scan reaches. Bigger than the badge map because it no
-# longer walks flags alone: a clean verdict is a row too, and a factory filing
-# ~13 tasks × ~90 leaders puts a thousand rows in a single day. The pass over
-# these is column-projected (see `_scan`) precisely so the ceiling could be
-# raised — carrying four languages of verdict prose through 12 000 rows to
-# count facets is what made 4 000 the old limit.
+# How far the queue's own scan reaches. It no longer walks flags alone: a clean
+# verdict is a row too, and a factory filing ~13 tasks × ~90 leaders puts a
+# thousand rows in a single day. The pass over these is column-projected (see
+# `_scan`) precisely so the ceiling could be raised — carrying four languages
+# of verdict prose through 12 000 rows to count facets is what made 4 000 the
+# old limit.
 SCAN_CAP = 12000
 
 # How much of the queue one read hands over. The rail is a continuous list an
@@ -72,41 +76,26 @@ PAGE = 150
 QUEUE_CAP = 1200
 
 
-def _bot_uid_map(db: Session, entry_ids: set[int]) -> dict[int, str]:
-    """bot entry id → the uid /api/leaders prints for its day."""
-    if not entry_ids:
-        return {}
-    entries = db.query(LeaderTaskEntry).filter(LeaderTaskEntry.id.in_(entry_ids)).all()
-    return {e.id: f"bot-{e.day_id}" for e in entries}
-
-
-def _sheet_uid_map(db: Session, refs: set[str]) -> dict[str, str]:
-    """sheet ref → uid. A ref built on a submission id already IS the uid; one
-    built on date+leader has to be resolved back to a live row, because the uid
-    for those is the (recycled) row id."""
-    out: dict[str, str] = {}
-    dated = [r for r in refs if r.startswith("sheetd:")]
-    for ref in refs:
-        if ref.startswith("sheet:"):
-            out[ref] = ref.split(":", 2)[1]
-    if dated:
-        dates = {r.split(":")[1] for r in dated}
-        rows = db.query(LeaderChecklist).filter(LeaderChecklist.date.in_(dates)).all()
-        by_key = {(r.date, (r.leader or "").strip().lower()[:60]): r for r in rows}
-        for ref in dated:
-            parts = ref.split(":")
-            row = by_key.get((parts[1], parts[2] if len(parts) > 3 else ""))
-            if row is not None:
-                out[ref] = leader_ai.row_uid(row)
-    return out
-
-
 @router.get("/overview")
-def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
-    """Queue state + flag counts per report uid. Only reports that actually
-    carry a flag are listed — a clean report contributes nothing to the map."""
+def overview(db: Session = Depends(get_db),
+             payload: dict = Depends(require_page("leaders"))):
+    """Queue state and the reviewer's own numbers — the admin's strip and tab.
+
+    Any viewer of the page may ask, and learns ONE thing: whether the reviewer
+    is on at all, which is what lets the register show its verdict cells and
+    the modal its verdict strips instead of an empty «0 / 12 checked» under a
+    reviewer that will never run. Everything else here is platform-wide (the
+    queue, the run floor, calibration) — the admin's operational view, and no
+    part of what a leader's or a brigadir's own rows say. Their per-report
+    counts, including the unresolved-flag count the row chip prints, already
+    ride on `/api/leaders` as `row.ai` (`leader_ai.stats_by_uid`), scoped to
+    the rows they may see; the flag map that used to be resolved here for the
+    same chip was a second spelling of the same number and is gone.
+    """
     if not gemini.available():
-        return {"enabled": False, "counts": {}, "flags": {}}
+        return {"enabled": False, "counts": {}}
+    if payload.get("role") != "admin":
+        return {"enabled": True}
 
     # The date verdict is DERIVED (clocks + report day + task window), and this
     # is the entry point to every AI surface — so bring it up to date before a
@@ -115,42 +104,10 @@ def overview(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # makes the correction visible without anyone re-running the AI.
     leader_ai.sync_date_flags(db)
 
-    # ONLY flagged rows are resolved to uids. The pending queue is a backfill of
-    # everything ever filed — tens of thousands of rows — and loading it on
-    # every page open would be the most expensive query on the page for a
-    # number that `counts` already reports in one aggregate.
-    #
-    # UNRESOLVED only: once a human has ruled on a flag it stops badging the
-    # register. A badge that survives its own decision is a badge that can never
-    # reach zero, which is exactly what made the old counter meaningless.
-    flagged = (
-        db.query(LeaderAiReview)
-        .filter(LeaderAiReview.status == "flagged",
-                LeaderAiReview.resolution.is_(None))
-        .order_by(LeaderAiReview.date.desc())
-        .limit(FLAG_MAP_CAP)
-        .all()
-    )
-
-    bot_uid = _bot_uid_map(
-        db, {int(r.ref.split(":")[1]) for r in flagged if r.ref.startswith("bot:")}
-    )
-    sheet_uid = _sheet_uid_map(
-        db, {r.ref for r in flagged if not r.ref.startswith("bot:")}
-    )
-
-    flags: dict[str, int] = {}
-    for rev in flagged:
-        uid = (bot_uid.get(int(rev.ref.split(":")[1]))
-               if rev.ref.startswith("bot:") else sheet_uid.get(rev.ref))
-        if uid:
-            flags[uid] = flags.get(uid, 0) + 1
-
     return {
         "enabled": True,
         "model": gemini.active_model(),
         "counts": leader_ai.counts(db),
-        "flags": flags,
         # Where review begins. Every "why has this old day never been checked"
         # question has this as its answer, and until it shipped in a payload the
         # only place it existed was a settings row nobody can read.
@@ -206,11 +163,28 @@ def _calibration(db: Session) -> dict:
 
 @router.get("/report")
 def report(uid: str = Query(...), db: Session = Depends(get_db),
-           _: dict = Depends(verify_admin)):
+           payload: dict = Depends(require_page("leaders"))):
     """Every verdict for one report, keyed by task id — what the detail modal
-    renders inside each task card."""
+    renders inside each task card.
+
+    Page-gated, then ROW-scoped for anyone but an admin: the same
+    `report_scope_ok` the day report, its photos and its disputes answer to,
+    so a supervisor reads verdicts on their own unit's reports and a leader on
+    their own — exactly the rows the register already lists for them, and not
+    one more (a uid is guessable; the row scope is what makes that harmless).
+    404 rather than 403, as the day report does: a probe must not learn which
+    uids name a real report in another unit.
+    """
     if not gemini.available():
         return {"enabled": False, "tasks": {}}
+
+    if payload.get("role") != "admin":
+        # Lazy, like leader_reports: routers/leaders imports the leader_ai
+        # SERVICE at module load, and this router is loaded beside it.
+        from app.routers.leaders import build_report_row, report_scope_ok
+        row = build_report_row(db, uid)
+        if row is None or not report_scope_ok(db, payload, row):
+            raise HTTPException(status_code=404, detail="No such report")
 
     refs = _refs_for_uid(db, uid)
     if not refs:

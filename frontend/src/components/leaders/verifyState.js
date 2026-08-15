@@ -33,7 +33,7 @@ export const VERIFY = {
 
 /**
  * The state of a whole report, from the per-report AI counts `/api/leaders`
- * stamps on admin rows (`row.ai`) plus its own task list.
+ * stamps on every viewer's rows (`row.ai`) plus its own task list.
  *
  * Precedence is what the reader must act on first: a rejection outranks a
  * dispute outranks an unfinished check outranks a technical failure outranks
@@ -57,8 +57,9 @@ export function reportState(row) {
   // costs nothing until it gets one. Silent, never "verified": this row has
   // not passed anything, and a green shield reading «all accepted» over three
   // open flags would be a false statement on the one screen people check to
-  // see whether their score is safe. The admin's own amber flag-count chip
-  // already covers the triage side of it.
+  // see whether their score is safe. The amber flag-count chip that renders
+  // beside this one (`AiChip`, from the same `row.ai.open`) says what the
+  // machine doubts; this chip says only what verification has SETTLED.
   if (ai.open > 0) return null;
   if (ai.checked > 0) return { ...VERIFY.verified, n: ai.checked };
   return null;
