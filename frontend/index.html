@@ -27,7 +27,11 @@
     <script>
       // ES5-only boot diagnostics: expands the WebApp even if the bundle fails,
       // and surfaces startup errors + engine version on machines where React
-      // never mounts (old WebView2 on some Windows laptops).
+      // never mounts (old WebView2 on some Windows laptops). Four screens, one
+      // box (#boot-debug): the slow-connection loader (bundle still arriving),
+      // the stale-version countdown (a hashed chunk is gone), the recovery
+      // card (something really failed) and, inside it, the outdated-engine
+      // notice. Every one of them is torn down the moment React paints.
       (function () {
         try {
           if (window.Telegram && window.Telegram.WebApp) {
@@ -53,9 +57,50 @@
         }
 
         var errors = [];
+        // Everything that must ARRIVE before main.jsx can run: the entry module
+        // plus the static deps Vite lists as modulepreload. Resource Timing
+        // says which of them have finished — the difference between "the
+        // bundle is still coming down a slow link" and "it came and never ran".
+        // DOM .src/.href are already absolute, which is what the timing
+        // entries are keyed by (no URL constructor here — ES5 engines).
+        function bootGraph() {
+          var urls = [];
+          try {
+            var s = document.querySelector('script[type="module"][src]');
+            if (s && s.src) urls.push(s.src);
+            var links = document.querySelectorAll('link[rel="modulepreload"][href]');
+            for (var i = 0; i < links.length; i++) if (links[i].href) urls.push(links[i].href);
+          } catch (e) {}
+          return urls;
+        }
+        // null = can't tell (no Resource Timing); else { done, pending[], lastEnd, lines[] }.
+        function graphStatus() {
+          if (!(window.performance && typeof performance.getEntriesByName === 'function')) return null;
+          var urls = bootGraph();
+          if (!urls.length) return null;
+          var pending = [], lastEnd = 0, lines = [];
+          for (var i = 0; i < urls.length; i++) {
+            var name = urls[i].split('/').pop();
+            var list = performance.getEntriesByName(urls[i]);
+            var e = list && list.length ? list[list.length - 1] : null;
+            if (e && e.responseEnd) {
+              if (e.responseEnd > lastEnd) lastEnd = e.responseEnd;
+              lines.push(name + ': done @' + (e.responseEnd / 1000).toFixed(1) + 's' +
+                (e.transferSize ? ' (' + Math.round(e.transferSize / 1024) + ' KB)' : ''));
+            } else {
+              pending.push(name);
+              lines.push(name + ': PENDING');
+            }
+          }
+          return { done: !pending.length, pending: pending, lastEnd: lastEnd, lines: lines };
+        }
         function envInfo() {
           var info = [];
           info.push('stage: ' + (window.__bootStage || 'inline only - bundle never started'));
+          try {
+            var g = graphStatus();
+            if (g) info.push('assets:\n  ' + g.lines.join('\n  '));
+          } catch (e) {}
           // Whether React actually painted is THE question every one of these
           // reports has to answer — a stage of 'react-render-called' only says
           // render() was called, not that it produced anything.
@@ -102,13 +147,57 @@
           // Cache-buster defeats an intermediate cache re-serving a broken asset.
           location.replace(location.pathname + '?v=' + Date.now() + location.hash);
         }
+        // Branded logo loader mirroring components/ui/PageLoader.jsx: 96px
+        // pulsing circular logo + a 24px brand spinner. Shared by the
+        // stale-version and the slow-connection screens; fully inline because
+        // neither can assume the bundle's CSS ever arrived.
+        function brandedOverlay(p, spinner, title, sub) {
+          return (
+            '<div style="display:flex;flex-direction:column;align-items:center;' +
+            'justify-content:center;gap:20px">' +
+              '<img src="/logo.png" alt="Safia" style="width:96px;height:96px;' +
+              'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18);' +
+              'animation:safia-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" />' +
+              (spinner
+                ? '<div style="width:24px;height:24px;border:3px solid ' + p.brand +
+                  ';border-right-color:transparent;border-radius:9999px;' +
+                  'animation:safia-spin 1s linear infinite"></div>'
+                : '') +
+              '<div>' +
+                '<div style="font-size:16px;font-weight:600;color:' + p.text1 + '">' +
+                  title + '</div>' +
+                '<div style="margin-top:6px;font-size:14px;color:' + p.text3 + '">' +
+                  sub + '</div>' +
+              '</div>' +
+            '</div>'
+          );
+        }
+        // The full-screen box every boot screen paints into. One element, one
+        // id, so a later screen replaces an earlier one instead of stacking.
+        function bootBox() {
+          var box = document.getElementById('boot-debug');
+          if (!box) {
+            box = document.createElement('div');
+            box.id = 'boot-debug';
+            document.body.appendChild(box);
+          }
+          return box;
+        }
+        // The app painted: whatever boot screen is up is now covering a running
+        // app and must go. The stale-version screen is the one exception — it
+        // owns the reload it is counting down to.
+        function dismissBootScreen() {
+          if (window.__staleReloadStarted) return;
+          var box = document.getElementById('boot-debug');
+          if (box && box.parentNode) box.parentNode.removeChild(box);
+        }
         // Plain-language recovery copy in the 4 app languages (no exception
         // strings shown to the user — those live behind "technical details").
         var BOOT_STRINGS = {
-          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot", oldTitle: "Kompyuter brauzeri juda eski", oldMsg: "Bu kompyuterda Telegram Windows tizimining eskirgan ichki brauzerida ishlayapti — ilova unda ishga tusha olmaydi. Ilovani telefondagi Telegram orqali oching yoki saytga oddiy brauzer orqali kiring:", oldHint: "IT uchun: Microsoft Edge WebView2 o‘rnatilsa, Telegram Desktop ham ishlaydi." },
-          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот", oldTitle: "Компьютер браузери жуда эски", oldMsg: "Бу компьютерда Telegram Windows тизимининг эскирган ички браузерида ишлаяпти — илова унда ишга туша олмайди. Иловани телефондаги Telegram орқали очинг ёки сайтга оддий браузер орқали киринг:", oldHint: "IT учун: Microsoft Edge WebView2 ўрнатилса, Telegram Desktop ҳам ишлайди." },
-          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали", oldTitle: "Устаревший браузер Windows", oldMsg: "Telegram на этом компьютере работает через устаревший встроенный браузер Windows — приложение в нём запуститься не может. Откройте приложение в Telegram на телефоне или зайдите на сайт через обычный браузер:", oldHint: "Для IT: после установки Microsoft Edge WebView2 заработает и Telegram Desktop." },
-          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details", oldTitle: "Outdated Windows browser", oldMsg: "Telegram on this computer runs on Windows’ outdated built-in browser, so the app can’t start here. Open it in Telegram on your phone, or sign in from a regular browser:", oldHint: "For IT: installing Microsoft Edge WebView2 also fixes Telegram Desktop." }
+          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot", oldTitle: "Kompyuter brauzeri juda eski", oldMsg: "Bu kompyuterda Telegram Windows tizimining eskirgan ichki brauzerida ishlayapti — ilova unda ishga tusha olmaydi. Ilovani telefondagi Telegram orqali oching yoki saytga oddiy brauzer orqali kiring:", oldHint: "IT uchun: Microsoft Edge WebView2 o‘rnatilsa, Telegram Desktop ham ishlaydi.", slowTitle: "Yuklanmoqda…", slowMsg: "Aloqa sekin — ilova odatdagidan uzoqroq ochilmoqda. Biroz kuting." },
+          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот", oldTitle: "Компьютер браузери жуда эски", oldMsg: "Бу компьютерда Telegram Windows тизимининг эскирган ички браузерида ишлаяпти — илова унда ишга туша олмайди. Иловани телефондаги Telegram орқали очинг ёки сайтга оддий браузер орқали киринг:", oldHint: "IT учун: Microsoft Edge WebView2 ўрнатилса, Telegram Desktop ҳам ишлайди.", slowTitle: "Юкланмоқда…", slowMsg: "Алоқа секин — илова одатдагидан узоқроқ очилмоқда. Бироз кутинг." },
+          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали", oldTitle: "Устаревший браузер Windows", oldMsg: "Telegram на этом компьютере работает через устаревший встроенный браузер Windows — приложение в нём запуститься не может. Откройте приложение в Telegram на телефоне или зайдите на сайт через обычный браузер:", oldHint: "Для IT: после установки Microsoft Edge WebView2 заработает и Telegram Desktop.", slowTitle: "Загрузка…", slowMsg: "Медленное соединение — приложение открывается дольше обычного. Подождите немного." },
+          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details", oldTitle: "Outdated Windows browser", oldMsg: "Telegram on this computer runs on Windows’ outdated built-in browser, so the app can’t start here. Open it in Telegram on your phone, or sign in from a regular browser:", oldHint: "For IT: installing Microsoft Edge WebView2 also fixes Telegram Desktop.", slowTitle: "Loading…", slowMsg: "Slow connection — the app is taking longer than usual to open. Please wait a moment." }
         };
         function bootLang() {
           var l = '';
@@ -142,42 +231,14 @@
           // hashed stylesheet may be stale too), so colors + keyframes are inline.
           var p = palette();
           ensureAnims();
-
-          // Branded logo loader mirroring components/ui/PageLoader.jsx: 96px
-          // pulsing circular logo + a 24px brand spinner (gap on the right).
-          function overlay(spinner, title, sub) {
-            return (
-              '<div style="display:flex;flex-direction:column;align-items:center;' +
-              'justify-content:center;gap:20px">' +
-                '<img src="/logo.png" alt="Safia" style="width:96px;height:96px;' +
-                'border-radius:9999px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.18);' +
-                'animation:safia-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" />' +
-                (spinner
-                  ? '<div style="width:24px;height:24px;border:3px solid ' + p.brand +
-                    ';border-right-color:transparent;border-radius:9999px;' +
-                    'animation:safia-spin 1s linear infinite"></div>'
-                  : '') +
-                '<div>' +
-                  '<div style="font-size:16px;font-weight:600;color:' + p.text1 + '">' +
-                    title + '</div>' +
-                  '<div style="margin-top:6px;font-size:14px;color:' + p.text3 + '">' +
-                    sub + '</div>' +
-                '</div>' +
-              '</div>'
-            );
-          }
+          function overlay(spinner, title, sub) { return brandedOverlay(p, spinner, title, sub); }
 
           var KEY = 'chunkReloadAt';
           var last = 0;
           try { last = Number(sessionStorage.getItem(KEY) || 0); } catch (e) {}
           var reloadDidNotHelp = last && (Date.now() - last < 30000);
 
-          var box = document.getElementById('boot-debug');
-          if (!box) {
-            box = document.createElement('div');
-            box.id = 'boot-debug';
-            document.body.appendChild(box);
-          }
+          var box = bootBox();
           box.setAttribute('style',
             'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;' +
             'display:flex;align-items:center;justify-content:center;' +
@@ -222,12 +283,7 @@
           var p = palette();
           ensureAnims();
           var S = BOOT_STRINGS[bootLang()];
-          var box = document.getElementById('boot-debug');
-          if (!box) {
-            box = document.createElement('div');
-            box.id = 'boot-debug';
-            document.body.appendChild(box);
-          }
+          var box = bootBox();
           box.setAttribute('style',
             'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;overflow:auto;' +
             'display:flex;align-items:center;justify-content:center;padding:24px;' +
@@ -355,7 +411,7 @@
                 report();
                 return;
               }
-              staleReload(); // stale hashed chunk after a redeploy — reload, don't panic
+              chunkLoadFailed(url);
               return;
             }
             // Only a script from OUR OWN origin can keep this app from booting.
@@ -379,15 +435,108 @@
           errors.push('unhandled rejection: ' + (r && (r.message || String(r))));
           report();
         });
-        setTimeout(function () {
-          var root = document.getElementById('root');
-          if (root && root.childNodes.length === 0) {
-            if (!errors.length) {
-              errors.push('No JS error captured - bundle did not load or did not run.');
-            }
+        // A hashed chunk that fails to load is USUALLY a stale hash after a
+        // redeploy — but the very same element error fires when the transfer
+        // is dropped or times out (dead Wi-Fi, a reset on the Cloudflare
+        // path, WebKit's 60s request timeout on a crawling link). Announcing
+        // "A new version is available" and reloading into the same broken
+        // link mis-tells the user AND whoever reads the report, and its loop
+        // guard then dead-ends on "close and reopen". So ask the server first:
+        // 404/410 → the hash is gone → stale reload; anything else → the
+        // file is there and the CONNECTION is the story → recovery card,
+        // with the answer in the details. Bounded: no answer in 6s counts as
+        // a network failure, which on a link that dead is the truth anyway.
+        function chunkLoadFailed(url) {
+          var settled = false;
+          function settle(status) {
+            if (settled) return;
+            settled = true;
+            if (status === 404 || status === 410 || status === -1) { staleReload(); return; }
+            errors.push('Failed to load: ' + url + (status
+              ? ' (re-check: HTTP ' + status + ' - the file is on the server; the transfer was dropped, or this engine could not parse it)'
+              : ' (re-check: no answer - the connection is dropping or timing out)'));
             report();
           }
-        }, 10000);
+          if (typeof fetch !== 'function') { settle(-1); return; } // can't tell — the old behaviour
+          try {
+            fetch(url, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
+              .then(function (r) { settle(r ? r.status : 0); }, function () { settle(0); });
+          } catch (e) { settle(0); }
+          setTimeout(function () { settle(0); }, 6000);
+        }
+        // Calm "still loading" screen for a link that is slow, not dead. Yields
+        // to the two screens that outrank it: the stale-version countdown and
+        // an already painted recovery card (never downgrade a real error).
+        function slowScreen() {
+          if (window.__staleReloadStarted) return;
+          if (document.getElementById('boot-tech') || document.getElementById('boot-slow')) return;
+          var p = palette();
+          ensureAnims();
+          var S = BOOT_STRINGS[bootLang()];
+          var box = bootBox();
+          box.setAttribute('style',
+            'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'text-align:center;padding:24px;background:' + p.bg + ';color:' + p.text1 + ';' +
+            "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
+          box.innerHTML = '<div id="boot-slow">' + brandedOverlay(p, true, S.slowTitle, S.slowMsg) + '</div>';
+        }
+        // The moment React paints, every boot screen is stale — including a
+        // recovery card painted seconds earlier while the bundle was still on
+        // its way down a slow link. Without this the user sits behind "App
+        // failed to start" over an app that is running perfectly (the macOS
+        // Telegram report of 2026-08-15). MutationObserver where the engine
+        // has one; the watchdog below polls the same condition as the fallback.
+        try {
+          var rootEl = document.getElementById('root');
+          if (rootEl && typeof MutationObserver === 'function') {
+            var mo = new MutationObserver(function () {
+              if (!appMounted()) return;
+              mo.disconnect();
+              dismissBootScreen();
+            });
+            mo.observe(rootEl, { childList: true });
+          }
+        } catch (e) {}
+        // Boot watchdog. First look at 10s; from then on, once a second, until
+        // the app mounts or a verdict is reached. The old single 10s timer
+        // called every slow link a failure: nothing distinguishes "the bundle
+        // is still coming" from "it came and never ran" except the resource
+        // timeline, so that is what decides here —
+        //   still downloading            → slow-connection screen, keep waiting (up to 60s)
+        //   downloaded < 5s ago / running → give parse+eval and React a moment
+        //   downloaded and silent        → recovery card ("downloaded but never ran")
+        //   past 60s and still pending   → recovery card ("still downloading")
+        // Without Resource Timing it behaves exactly as before (verdict at 10s).
+        var WATCH_FIRST_MS = 10000, WATCH_CAP_MS = 60000, GRACE_MS = 5000;
+        var verdictGiven = false, stageSeenAt = NaN;
+        function nowMs() {
+          return (window.performance && typeof performance.now === 'function') ? performance.now() : NaN;
+        }
+        function watch() {
+          if (window.__staleReloadStarted) return 'stop';
+          if (appMounted()) { dismissBootScreen(); return 'stop'; }
+          if (verdictGiven || errors.length) return; // a card is up or coming — keep watching only for a late mount
+          var now = nowMs();
+          var g = isNaN(now) ? null : graphStatus(); // no clock to compare against → old behaviour
+          if (window.__bootStage && isNaN(stageSeenAt)) stageSeenAt = now;
+          var waitReason = null;
+          if (g && !g.done) waitReason = (now > WATCH_CAP_MS) ? null : 'downloading';
+          else if (g && g.done && !window.__bootStage && (now - g.lastEnd) < GRACE_MS) waitReason = 'evaluating';
+          else if (window.__bootStage && (now - stageSeenAt) < GRACE_MS) waitReason = 'rendering';
+          if (waitReason) { slowScreen(); return; }
+          verdictGiven = true;
+          errors.push(!g ? 'No JS error captured - bundle did not load or did not run.'
+            : window.__bootStage ? 'No JS error captured - bundle ran (see stage) but React never painted.'
+            : g.done ? 'No JS error captured - bundle fully downloaded but never ran.'
+            : 'No JS error captured - bundle still downloading after ' + Math.round(now / 1000) +
+              's (pending: ' + g.pending.join(', ') + ').');
+          report();
+        }
+        setTimeout(function () {
+          if (watch() === 'stop') return;
+          var iv = setInterval(function () { if (watch() === 'stop') clearInterval(iv); }, 1000);
+        }, WATCH_FIRST_MS);
       })();
     </script>
     <script type="module" src="/src/main.jsx"></script>
