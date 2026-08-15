@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AppSetting, LeaderTaskConfigAudit, LeaderTaskDef, LeaderTaskEntry,
-    LeaderTaskLeaderSetting, LeaderTaskPendingChange, LeaderTaskSetting,
-    Manager, RoleProfile,
+    LeaderTaskExample, LeaderTaskLeaderSetting, LeaderTaskPendingChange,
+    LeaderTaskSetting, Manager, RoleProfile,
 )
 # The photo window's shape, defaults and re-derivation live with the reviewer
 # that reads them — this module only stores and displays them. Safe as a
@@ -137,6 +137,8 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             # global level that lands on the shift default.
             "win_from": (s.win_from if s else None) or None,
             "win_to": (s.win_to if s else None) or None,
+            # RAW: None = inherit the global submission deadline (informational).
+            "deadline": (s.deadline if s else None) or None,
         }
     return out
 
@@ -162,20 +164,41 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "criteria": r.criteria or None,
             "win_from": r.win_from or None,
             "win_to": r.win_to or None,
+            "deadline": r.deadline or None,
         }
     return out
 
 
+def resolve_deadline(*levels) -> str | None:
+    """The submission deadline in force — first non-blank "HH:MM" walking the
+    levels narrowest-first (leader row, supervisor row, global def; any may be
+    None). No shift default on purpose: blank everywhere means "no task-specific
+    deadline", and the tab then shows the DAY's filing deadline, labelled as the
+    day's, rather than inventing one here."""
+    for row in levels:
+        if row is None:
+            continue
+        v = leader_ai.hhmm(getattr(row, "deadline", None))
+        if v:
+            return v
+    return None
+
+
 def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict[int, dict]:
-    """task_id → {enabled, min_media, weight, names, window} fully RESOLVED for
-    one leader (RoleProfile): global catalog → supervisor override → leader
-    override, field by field. `names` here are the final display names per
-    language. This is what the bot's /tasks flow and day scoring run on.
+    """task_id → {enabled, min_media, weight, names, window, criteria, deadline}
+    fully RESOLVED for one leader (RoleProfile): global catalog → supervisor
+    override → leader override, field by field. `names` here are the final
+    display names per language. This is what the bot's /tasks flow and day
+    scoring run on.
 
     `window` is the (from, to) clock a proof photo for that task must fall in —
     resolved the same way, then defaulted by SHIFT, which is why the caller may
     pass one. Callers that only score a day can leave it out; the bot passes the
     shift it already computed, because that window is printed to the leader.
+
+    `criteria` (the definition of done) and `deadline` (informational "due by")
+    resolve down the same chain and are what the /leaders «Vazifalar» tab shows
+    a leader beside each task; the bot and the scorer ignore both.
     """
     defs = ensure_task_defs(db)
     sup = {
@@ -205,12 +228,116 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
                 or (getattr(s, f"name_{l}", None) if s else None)
                 or getattr(td, f"name_{l}")
             )
+        criteria = ""
+        for level in (r, s, td):
+            if level is not None and (level.criteria or "").strip():
+                criteria = level.criteria.strip()
+                break
         out[td.id] = {
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
             "window": leader_ai.resolve_window(shift, r, s, td),
+            "criteria": criteria,
+            "deadline": resolve_deadline(r, s, td),
         }
     return out
+
+
+def requirements_for(db: Session, *, prof=None, manager=None,
+                     shift: int | None = None) -> dict:
+    """What the /leaders «Vazifalar» tab shows: the ENABLED tasks in force for
+    one subject — a leader (`prof`, the fully resolved chain), a supervisor's
+    unit (`manager`, its level of the chain: no per-leader rows), or the global
+    catalog (neither) — each with its display names, proof-type note, the
+    definition of done, weight, min photos, photo window, deadline and example
+    photo ids. `shift` decides the window default and the day's filing window;
+    a subject with a unit takes the unit's shift, the global catalog the one
+    the caller asks for (1 when unstated — the regime the tab was built for).
+
+    Returned as plain dicts keyed for the client, names/notes as per-language
+    maps so the page picks its own language.
+    """
+    defs = ensure_task_defs(db)
+    if manager is None and prof is not None and prof.manager_id:
+        manager = db.query(Manager).filter_by(id=prof.manager_id).first()
+    if manager is not None and manager.shift in (1, 2):
+        shift = manager.shift
+    if shift not in (1, 2):
+        shift = 1
+
+    if prof is not None:
+        cfg = effective_leader_config(db, prof, shift)
+        level = "leader"
+    else:
+        cfg = {}
+        sup_rows = {
+            s.task_id: s
+            for s in db.query(LeaderTaskSetting).filter_by(manager_id=manager.id).all()
+        } if manager is not None else {}
+        for td in defs:
+            s = sup_rows.get(td.id)
+            names = {
+                l: (getattr(s, f"name_{l}", None) if s else None) or getattr(td, f"name_{l}")
+                for l in _LANGS
+            }
+            crit = ""
+            for level_row in (s, td):
+                if level_row is not None and (level_row.criteria or "").strip():
+                    crit = level_row.criteria.strip()
+                    break
+            cfg[td.id] = {
+                "enabled": s.enabled if s else True,
+                "min_media": s.min_media if s else 1,
+                "weight": s.weight if s else td.default_weight,
+                "names": names,
+                "window": leader_ai.resolve_window(shift, s, td),
+                "criteria": crit,
+                "deadline": resolve_deadline(s, td),
+            }
+        level = "supervisor" if manager is not None else "global"
+
+    examples: dict[int, list[int]] = {}
+    for eid, tid in (db.query(LeaderTaskExample.id, LeaderTaskExample.task_id)
+                     .order_by(LeaderTaskExample.id).all()):
+        examples.setdefault(tid, []).append(eid)
+
+    tasks = []
+    for td in defs:
+        c = cfg.get(td.id)
+        if not c or not c["enabled"]:
+            continue
+        tasks.append({
+            "id": td.id,
+            "names": c["names"],
+            "note": {l: getattr(td, f"note_{l}") or "" for l in _LANGS},
+            "criteria": c["criteria"] or "",
+            "weight": int(c["weight"] or 0),
+            "min_media": int(c["min_media"] or 0),
+            "window": list(c["window"]),
+            "deadline": c["deadline"],
+            "examples": examples.get(td.id, []),
+        })
+    total = sum(t["weight"] for t in tasks)
+
+    # The day's filing window — the deadline a task without one of its own
+    # falls back to. Imported lazily: routers.leaders imports this module.
+    from app.routers.leaders import WINDOW
+    opens, closes, overnight = WINDOW[shift]
+    return {
+        "level": level,
+        "shift": shift,
+        "subject": {
+            "leader": prof.name if prof is not None else None,
+            "leader_id": prof.id if prof is not None else None,
+            "supervisor": manager.name if manager is not None else None,
+            "manager_id": manager.id if manager is not None else None,
+        },
+        "filing": {"from": opens.strftime("%H:%M"), "to": closes.strftime("%H:%M"),
+                   "overnight": overnight},
+        "photo_default": list(leader_ai.SHIFT_WINDOW.get(shift) or leader_ai.SHIFT_WINDOW[1]),
+        "total_weight": total,
+        "tasks": tasks,
+    }
 
 
 def set_criteria(db: Session, *, task_id: int, criteria: str,
@@ -240,6 +367,10 @@ def set_criteria(db: Session, *, task_id: int, criteria: str,
             row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
             db.add(row)
         row.criteria = text
+        # Clearing the last override on the row drops the row: a leader row
+        # that overrides nothing would still ring "overridden" in the matrix.
+        if text is None and _leader_row_bare(row):
+            db.delete(row)
     elif manager_id is not None:
         row = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
@@ -307,6 +438,9 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
         if not row:
             return
     row.win_from, row.win_to = lo, hi
+    # Same rule as set_criteria: a leader row left overriding nothing goes.
+    if leader_id is not None and _leader_row_bare(row):
+        db.delete(row)
     db.commit()
     # Verdicts already written for this task were judged against the OLD window.
     # Re-deriving them costs nothing (the clock the model read is stored on the
@@ -318,6 +452,47 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
     # per row written. The caller runs it once when the loop is done.
     if rejudge:
         leader_ai.sync_date_flags(db, [task_id])
+
+
+def set_deadline(db: Session, *, task_id: int, deadline: str | None,
+                 manager_id: int | None = None, leader_id: int | None = None) -> None:
+    """Write the informational submission deadline at one level of the chain.
+    Blank clears that level and falls back to the level above (blank
+    everywhere ⇒ the tab shows the day's filing deadline instead).
+
+    Not stageable and nothing to re-judge: no verdict, score or flag reads it —
+    it is what the «Vazifalar» tab TELLS the leader, so it applies at once, and
+    a level with no row yet is materialised with the values that level already
+    resolves to (same rule as criteria/window) so setting a deadline can never
+    silently change what the task requires."""
+    v = leader_ai.hhmm(deadline)
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+    else:
+        row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not row:
+            return
+    row.deadline = v
+    db.commit()
 
 
 # ONE boundary, at the hour the night crew actually starts work: the day a
@@ -541,6 +716,28 @@ def apply_supervisor_batch(db: Session, manager_id: int, cells: list[dict]) -> N
                               c["min_media"], c["weight"], c.get("names"))
 
 
+def _leader_row_extras(row) -> bool:
+    """True when a per-leader row carries an override the CELL write never
+    sends — criteria, photo window, deadline all live on this same row but
+    arrive through their own endpoints — so a cell write must not decide the
+    row's fate on its own fields alone. `getattr` because these columns were
+    added one at a time and an older row object may predate the newest."""
+    if row is None:
+        return False
+    return any((getattr(row, k, None) or "").strip()
+               for k in ("criteria", "win_from", "win_to", "deadline"))
+
+
+def _leader_row_bare(row) -> bool:
+    """A per-leader row that overrides NOTHING — every cell field null, no
+    name, none of the side-endpoint extras. Such a row is deleted wherever the
+    last override on it is cleared, so `hasOv` in the matrix keeps meaning
+    "something differs" rather than "someone once saved this modal"."""
+    return (row.enabled is None and row.min_media is None and row.weight is None
+            and not any(getattr(row, f"name_{l}") for l in _LANGS)
+            and not _leader_row_extras(row))
+
+
 def apply_leader_cell(db: Session, leader_id: int, task_id: int, enabled=None,
                       min_media=None, weight=None, names=None, reset=False) -> None:
     row = (db.query(LeaderTaskLeaderSetting)
@@ -553,7 +750,14 @@ def apply_leader_cell(db: Session, leader_id: int, task_id: int, enabled=None,
         nm = {l: None for l in _LANGS}
     all_inherit = (enabled is None and min_media is None and weight is None
                    and not any(nm.values()))
-    if reset or all_inherit:
+    # A row that overrides NOTHING is dropped rather than left as a ghost (the
+    # matrix would ring it as "overridden" with nothing differing). But the
+    # admin's leader modal opens on the supervisor's values and saves every
+    # field it left equal as "inherit" — so a save that only changed the
+    # criteria arrives here as all-inherit, right after the criteria endpoint
+    # wrote its text onto this very row. Deleting on the cell's own fields
+    # alone took that text (and any window / deadline) with it.
+    if reset or (all_inherit and not _leader_row_extras(row)):
         if row:
             db.delete(row)
         return

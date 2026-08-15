@@ -25,6 +25,7 @@ import EmptyState from "../components/ui/EmptyState";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import BotDataClear from "../components/leaders/BotDataClear";
 import LateReports from "../components/leaders/LateReports";
+import TaskRequirements from "../components/leaders/TaskRequirements";
 import AiTriage, { AiCalibration } from "../components/leaders/AiTriage";
 import AiRecheck from "../components/leaders/AiRecheck";
 import AiProgress from "../components/leaders/AiProgress";
@@ -71,7 +72,7 @@ const tipHTML = (label, val, color) => `
 const TXT = {
   uz: {
     title: "Lider nazorati", shift1: "1-smena", shift2: "2-smena",
-    tabMonitor: "Monitoring", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
+    tabMonitor: "Monitoring", tabTasks: "Vazifalar", tabClear: "Ma'lumotlarni tozalash", srcBot: "Bot orqali",
     tabLate: "Kechikkanlar", reasonLbl: "Sabab",
     pendChip: "So'rov yuborilgan", pendTitle: "Kunni ochish so'ralgan — admin qarori kutilmoqda",
     lateOkChip: "Kechikkan — qabul qilingan", lateOkTitle: "Kechikkan hisobot: {by} ochgan, kun o'z natijasi bilan hisoblanadi",
@@ -231,7 +232,7 @@ const TXT = {
   },
   uz_cyrl: {
     title: "Лидер назорати", shift1: "1-смена", shift2: "2-смена",
-    tabMonitor: "Мониторинг", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
+    tabMonitor: "Мониторинг", tabTasks: "Вазифалар", tabClear: "Маълумотларни тозалаш", srcBot: "Бот орқали",
     tabLate: "Кечикканлар", reasonLbl: "Сабаб",
     pendChip: "Сўров юборилган", pendTitle: "Кунни очиш сўралган — админ қарори кутилмоқда",
     lateOkChip: "Кечиккан — қабул қилинган", lateOkTitle: "Кечиккан ҳисобот: {by} очган, кун ўз натижаси билан ҳисобланади",
@@ -391,7 +392,7 @@ const TXT = {
   },
   ru: {
     title: "Контроль лидеров", shift1: "Смена 1", shift2: "Смена 2",
-    tabMonitor: "Мониторинг", tabClear: "Очистка данных", srcBot: "Из бота",
+    tabMonitor: "Мониторинг", tabTasks: "Задачи", tabClear: "Очистка данных", srcBot: "Из бота",
     tabLate: "Опоздавшие", reasonLbl: "Причина",
     pendChip: "Запрос отправлен", pendTitle: "Запрошено открытие дня — ждём решения администратора",
     lateOkChip: "Опоздал — засчитан", lateOkTitle: "Опоздавший отчёт: открыл(а) {by}, день засчитан со своим результатом",
@@ -551,7 +552,7 @@ const TXT = {
   },
   en: {
     title: "Leader Monitoring", shift1: "Shift 1", shift2: "Shift 2",
-    tabMonitor: "Monitoring", tabClear: "Clear data", srcBot: "Filed in bot",
+    tabMonitor: "Monitoring", tabTasks: "Tasks", tabClear: "Clear data", srcBot: "Filed in bot",
     tabLate: "Late reports", reasonLbl: "Reason",
     pendChip: "Request sent", pendTitle: "Opening this day was requested — awaiting an admin decision",
     lateOkChip: "Late — accepted", lateOkTitle: "Late report: opened by {by}; the day counts at its own score",
@@ -1823,7 +1824,9 @@ export default function Leaders() {
   const [standInfo, setStandInfo] = useState(false);
   const [tierEdit, setTierEdit] = useState(null);            // admin's draft cutoffs
   const [detail, setDetail] = useState(null);
-  const [taskInfo, setTaskInfo] = useState(false);
+  // A task the day-detail modal asked the «Vazifalar» tab to open on — the
+  // tab scrolls that card into view once, then forgets it.
+  const [taskFocus, setTaskFocus] = useState(null);
 
   // The page's tool tabs are shift-specific WORKFLOWS, not shift-filtered
   // views — each carries its own filters, so both stay put no matter where the
@@ -1870,7 +1873,10 @@ export default function Leaders() {
   // exists made the tab unreachable for the one person who can supply the key,
   // which is how this feature shipped and then sat dark for days. With no key
   // the tab opens onto the setup form instead of the queue.
-  const tabOk = { monitor: true, clear: showClearTab, late: showLateTab, ai: isAdmin };
+  // «Vazifalar» is reference material for every viewer of the page — a leader
+  // reads their own chain, a supervisor their unit's, everyone else follows
+  // the filters — so it is never role-gated.
+  const tabOk = { monitor: true, tasks: true, clear: showClearTab, late: showLateTab, ai: isAdmin };
   const tab = tabOk[tabSaved] ? tabSaved : "monitor";
 
   // The queue's own feed: the tab badge needs the count before the tab is ever
@@ -2816,7 +2822,9 @@ export default function Leaders() {
     </div>
   );
 
-  const tabsBar = (showClearTab || showLateTab) ? (
+  // Always rendered: «Vazifalar» gives every viewer a second tab, so the
+  // strip is no longer conditional on the admin/supervisor tools.
+  const tabsBar = (
     <div className="mb-3">
       {/* No `scrollable` here: it makes the track w-full, and inside a block
           div that stretches the bar across the page. Two or three short tabs
@@ -2824,6 +2832,7 @@ export default function Leaders() {
       <SegmentedToggle asTabs ariaLabel={pageTitle} value={tab} onChange={setTab}
         options={[
           ["monitor", T.tabMonitor],
+          ["tasks", T.tabTasks],
           // The badge is what this viewer still owes — an admin's pending
           // decisions, a brigadir's un-asked days — so the tab is a to-do
           // count, not a total that never goes down.
@@ -2856,7 +2865,7 @@ export default function Leaders() {
           ...(showClearTab ? [["clear", T.tabClear]] : []),
         ]} />
     </div>
-  ) : null;
+  );
 
   // A run is STARTED from the register (Monitoring) and WATCHED from the AI
   // tab, so the bar is bolted to the tab strip rather than to either view — a
@@ -2882,6 +2891,18 @@ export default function Leaders() {
       {isAdmin && <AiProgress showIdle={tab === "ai"} />}
     </>
   );
+
+  if (tab === "tasks") {
+    return (
+      <Layout title={pageTitle}>
+        {headerBar}
+        {pageChrome}
+        <TaskRequirements scope={scope} rows={rows}
+          isLeader={isLeader} isSupervisor={isSupervisor} nm={nm}
+          focusTaskId={taskFocus} onFocusDone={() => setTaskFocus(null)} />
+      </Layout>
+    );
+  }
 
   if (tab === "clear") {
     return (
@@ -3011,7 +3032,7 @@ export default function Leaders() {
           </div>
           <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <SectionHead icon={BarChart3} title={T.taskTitle}
-              right={<button onClick={() => setTaskInfo(true)} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
+              right={<button onClick={() => setTab("tasks")} className="p-1 rounded transition-colors hover:bg-white/10" title={T.taskInfoTitle} aria-label={T.taskInfoTitle} style={{ color: "var(--brand-text)" }}><Info size={15} /></button>} />
             <div className="px-3 pb-3 pt-1 apx-bare-tip"><ReactApexChart type="bar" series={[{ name: "%", data: chartTasks.map((t) => t.rate) }]} options={taskOptions} height={260} /></div>
           </div>
         </div>
@@ -3515,6 +3536,17 @@ export default function Leaders() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                           <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>{T.task} {tk.id}</span>
+                          {/* What this task REQUIRES — the rule, weight, window,
+                              deadline and examples — lives on the «Vazifalar»
+                              tab; a reader of a failed day is one tap from it,
+                              landing on this very task's card. */}
+                          <button type="button"
+                            onClick={() => { setDetail(null); setTaskFocus(id); setTab("tasks"); }}
+                            className="p-0.5 rounded transition-colors hover:bg-white/10"
+                            title={T.taskInfoTitle} aria-label={T.taskInfoTitle}
+                            style={{ color: "var(--text-3)" }}>
+                            <Info size={12} />
+                          </button>
                           {unasked && <span className="text-[10px] font-semibold" style={{ color: tone }}>{T.notAsked}</span>}
                           {/* the ruling that made the icon say what it says */}
                           {overridden && (
@@ -3690,35 +3722,6 @@ export default function Leaders() {
         </Modal>
       )}
 
-      {taskInfo && (
-        <Modal maxWidth="max-w-3xl" title={T.taskInfoTitle} onClose={() => setTaskInfo(false)}>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr style={{ background: "var(--brand)", color: "#fff" }}>
-                <th className="text-left px-3 py-2 text-xs font-semibold" style={{ width: 50 }}>ID</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold">{T.taskDesc}</th>
-                <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: 70 }}>{T.taskWeight}</th>
-                <th className="text-left px-3 py-2 text-xs font-semibold">{T.taskNote}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TASK_DETAILS.map((_, i) => {
-                const d = taskDetail(i + 1, lang);
-                return (
-                  <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td className="px-3 py-2 font-bold text-xs" style={{ color: "var(--text-4)" }}>T{i + 1}</td>
-                    <td className="px-3 py-2 text-xs font-medium" style={{ color: "var(--text-1)" }}>{d.n}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold" style={{ background: "var(--bg-inner)", border: "1px solid var(--border-md)", color: "var(--text-2)" }}>{d.weight}</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs" style={{ color: "var(--text-3)" }}>{d.note}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Modal>
-      )}
     </Layout>
   );
 }

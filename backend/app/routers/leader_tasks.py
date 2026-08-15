@@ -19,6 +19,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import identity
 from app.capabilities import page_scope_is_all
 from app.config import settings
 from app.database import get_db
@@ -35,9 +36,10 @@ from app.services import leader_ai, leader_bot
 from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
-    next_effective_date, pending_list, promote_all_shifts, revert_audit,
-    set_criteria, set_window, write_change,
+    next_effective_date, pending_list, promote_all_shifts, requirements_for,
+    revert_audit, set_criteria, set_deadline, set_window, write_change,
 )
+from app.services.name_map import relabel_supervisor, supervisor_match
 
 router = APIRouter(tags=["leader-tasks"])
 log = logging.getLogger(__name__)
@@ -88,6 +90,10 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # placeholder rather than pretending the field is empty.
                 "win_from": td.win_from or "",
                 "win_to": td.win_to or "",
+                # Global submission deadline (informational, shown to leaders
+                # on /leaders «Vazifalar»); blank = none, the tab shows the
+                # day's filing deadline instead.
+                "deadline": td.deadline or "",
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
@@ -504,12 +510,62 @@ def put_window(body: WindowIn, db: Session = Depends(get_db),
     return {"ok": True}
 
 
+class DeadlineIn(BaseModel):
+    """By when the task should be submitted ("HH:MM", blank = clear this level).
+    Same four-way addressing as WindowIn. Informational: it is what the
+    /leaders «Vazifalar» tab tells the leader; nothing scores against it."""
+    task_id: int
+    deadline: str = ""
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/deadline")
+def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
+                 _: dict = Depends(verify_admin)):
+    if body.deadline.strip() and leader_ai.hhmm(body.deadline) is None:
+        raise HTTPException(status_code=400, detail="bad_time")
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_deadline(db, task_id=body.task_id, deadline=body.deadline,
+                             leader_id=lid)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_deadline(db, task_id=body.task_id, deadline=body.deadline,
+                             manager_id=mid)
+        return {"ok": True, "count": len(ids)}
+    if body.manager_id is not None and not db.query(Manager).filter_by(
+            id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
+            id=body.leader_id).first():
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    set_deadline(db, task_id=body.task_id, deadline=body.deadline,
+                 manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
 # ── Admin: example proof photos (AI reference images) ────────────────────────
 # Optional per-task EXAMPLES of a correct proof, shown to the AI reviewer
 # beside the written criteria (services/leader_ai.py sends them in front of the
-# proof photos). Global per task like note_*, never shown to the leader, and —
-# like criteria — they apply at once: nothing the leader sees changes, so
-# nothing here stages.
+# proof photos) AND to leaders on the /leaders «Vazifalar» tab (the viewer
+# endpoint further down). Global per task like note_*, and — like criteria —
+# they apply at once: nothing here stages.
 
 _EXAMPLE_MAX_BYTES = 10 * 1024 * 1024
 _EXAMPLES_PER_TASK = 3
@@ -843,3 +899,76 @@ def leader_task_media(
     if meta["file_size"]:
         headers["Content-Length"] = str(meta["file_size"])
     return StreamingResponse(_chunks(), media_type=meta["mime_type"], headers=headers)
+
+
+# ── Viewer: the «Vazifalar» tab of /leaders ───────────────────────────────────
+# What each daily task REQUIRES — name, proof type, the definition of done the
+# reviewer judges by, weight, min photos, the photo window, the submission
+# deadline and the example photos — for the subject the viewer may look at.
+# Reference material, not a record: it takes the page grant and resolves WHOSE
+# chain to read the same way /api/leaders scopes rows (a leader → their own,
+# a supervisor → their unit, everyone else → whatever the page filters name),
+# so nobody reads another unit's overrides through a typeable id.
+
+@router.get("/api/leader-tasks/requirements")
+def leader_task_requirements(
+    leader_id: int | None = Query(None),
+    supervisor: str | None = Query(None, max_length=200),
+    shift: int | None = Query(None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page("leaders")),
+):
+    role = payload.get("role")
+    sees_all = page_scope_is_all(db, payload, "leaders")
+
+    def _leader(pid: int | None):
+        if pid is None:
+            return None
+        return db.query(RoleProfile).filter_by(id=pid, role="leader").first()
+
+    if role == "leader" and not sees_all:
+        # Own chain only, from any of this person's logins. No resolvable
+        # profile ⇒ the global catalog rather than a guess at somebody else's.
+        prof = _leader(identity.viewer_leader_profile_id(db, payload))
+        return requirements_for(db, prof=prof, shift=shift)
+
+    if role == "supervisor" and not sees_all:
+        mid = payload.get("role_id")
+        manager = db.query(Manager).filter_by(id=mid).first() if mid else None
+        prof = _leader(leader_id)
+        # A leader picked from outside the unit is silently the unit's own
+        # view — the row scoping the register applies, not a 403 that would
+        # confirm the id exists.
+        if prof is not None and manager is not None and prof.manager_id == manager.id:
+            return requirements_for(db, prof=prof, manager=manager, shift=shift)
+        return requirements_for(db, manager=manager, shift=shift)
+
+    # Admin / top-manager / a "see all" grant: the page filters decide.
+    prof = _leader(leader_id)
+    if prof is not None:
+        return requirements_for(db, prof=prof, shift=shift)
+    manager = None
+    if supervisor:
+        # The filter carries the register's (relabelled) sheet spelling of the
+        # unit; the same fuzzy matcher /api/leaders uses bridges it to the row.
+        managers = db.query(Manager).all()
+        hit = supervisor_match(managers, {relabel_supervisor(supervisor)})
+        mid = (hit.get(relabel_supervisor(supervisor)) or {}).get("id")
+        manager = next((m for m in managers if m.id == mid), None) if mid else None
+    return requirements_for(db, manager=manager, shift=shift)
+
+
+@router.get("/api/leader-tasks/examples/{example_id}")
+def leader_task_example(example_id: int, db: Session = Depends(get_db),
+                        _: dict = Depends(require_page("leaders"))):
+    """An example proof photo for the «Vazifalar» tab. Page-gated only — the
+    examples are global per task and carry nobody's data, so there is no row to
+    scope them to (unlike the media streamer above)."""
+    row = db.query(LeaderTaskExample).filter_by(id=example_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No example")
+    return Response(
+        content=row.data,
+        media_type=row.mime or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )

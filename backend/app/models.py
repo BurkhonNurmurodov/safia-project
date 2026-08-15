@@ -1185,10 +1185,12 @@ class LeaderTaskDef(Base):
     note_uz_cyrl = Column(String, nullable=True)
     note_ru      = Column(String, nullable=True)
     note_en      = Column(String, nullable=True)
-    # "What makes this task truly done" — read by the AI proof reviewer, never
-    # shown to the leader in the bot. Single free text in any language: it is
-    # prompt material, not UI copy. Blank ⇒ the task is not reviewable, and its
-    # photos are left unjudged rather than measured against nothing.
+    # "What makes this task truly done" — read by the AI proof reviewer, and
+    # since 2026-08-15 ALSO shown to the leader as the task's description on the
+    # /leaders «Vazifalar» tab (the rule a leader is judged by is a rule they
+    # get to read). Single free text in any language: it started as prompt
+    # material, so it is not translated. Blank ⇒ the task is not reviewable, and
+    # its photos are left unjudged rather than measured against nothing.
     criteria     = Column(Text, nullable=True)
     # When a proof photo for THIS task may have been taken, "HH:MM" wall clock.
     # Either end NULL = fall back to the shift default (services/leader_ai.py
@@ -1196,6 +1198,14 @@ class LeaderTaskDef(Base):
     # field, so a task can narrow only its opening or only its deadline.
     win_from     = Column(String(5), nullable=True)
     win_to       = Column(String(5), nullable=True)
+    # By when THIS task should be submitted, "HH:MM" wall clock in the shift's
+    # day — INFORMATIONAL: shown to the leader on the /leaders «Vazifalar» tab,
+    # never judged (a bot entry is still only measured against the day's filing
+    # window, routers/leaders.WINDOW). NULL = no task-specific deadline; the
+    # chain falls through supervisor → global and, blank everywhere, the tab
+    # shows the day's filing deadline marked as such. Distinct from `win_to`:
+    # that is when a photo may have been TAKEN, this is when the answer is DUE.
+    deadline     = Column(String(5), nullable=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1226,6 +1236,8 @@ class LeaderTaskSetting(Base):
     # through it the shift default). Each end inherits on its own.
     win_from     = Column(String(5), nullable=True)
     win_to       = Column(String(5), nullable=True)
+    # Per-supervisor submission deadline (informational). NULL = inherit global.
+    deadline     = Column(String(5), nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
 
@@ -1254,6 +1266,8 @@ class LeaderTaskLeaderSetting(Base):
     # one, per field.
     win_from     = Column(String(5), nullable=True)
     win_to       = Column(String(5), nullable=True)
+    # Per-leader submission deadline (informational). NULL = inherit.
+    deadline     = Column(String(5), nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 
@@ -1262,8 +1276,9 @@ class LeaderTaskExample(Base):
     """An admin-uploaded EXAMPLE proof photo for one checklist task — "a correct
     proof looks like this". Global per task like `note_*` (no supervisor/leader
     chain to walk), optional, capped at a few per task. Read by the AI proof
-    reviewer as reference images beside the written criteria; never shown to the
-    leader in the bot. Bytes live in the DB for the same reason ProfilePhoto's
+    reviewer as reference images beside the written criteria, and shown to the
+    leader on the /leaders «Vazifalar» tab (page-gated, no row scope — it is
+    reference material, not evidence). Bytes live in the DB for the same reason ProfilePhoto's
     do — a row survives deploys, restores and the dbdump tab — and are
     re-encoded to a ≤1280px JPEG before landing here, the exact size the Gemini
     request would shrink them to anyway."""

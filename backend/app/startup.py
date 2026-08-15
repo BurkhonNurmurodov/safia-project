@@ -757,6 +757,29 @@ def add_leader_task_windows() -> None:
         db.close()
 
 
+def add_leader_task_deadlines() -> None:
+    """2026-08-15: each checklist task gets a submission DEADLINE ("HH:MM"),
+    on the same global → supervisor → leader chain as the photo window — the
+    time the /leaders «Vazifalar» tab tells the leader the task is due by.
+
+    Informational only: nothing scores or flags against it (a bot entry is
+    still judged solely by the day's filing window). NULL at every level ⇒ the
+    tab shows the day's filing deadline instead, marked as the day's. Idempotent.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS deadline VARCHAR(5)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task deadline migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_clocks() -> None:
     """2026-08-14: the model stops judging the date and starts transcribing it.
 

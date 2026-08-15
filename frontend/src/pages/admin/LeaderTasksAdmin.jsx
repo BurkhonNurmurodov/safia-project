@@ -181,6 +181,10 @@ export default function LeaderTasksAdmin() {
   // one stored, so an edit fixes the existing queue and not just future
   // reports. Nothing to stage: the bot reads the live value too.
   const winMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/window", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // The submission deadline is informational (shown to leaders on the /leaders
+  // «Vazifalar» tab, judged by nothing), so it applies at once like the window
+  // and has nothing to re-derive.
+  const dlMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/deadline", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -279,7 +283,7 @@ export default function LeaderTasksAdmin() {
   ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null };
   // The definition of done actually in force for a cell, walking the same
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
@@ -303,7 +307,16 @@ export default function LeaderTasksAdmin() {
   // names both, labelled, instead of quietly showing shift 1's.
   const globalWinPh = (k) => Object.keys(shiftWins).sort()
     .map((s) => `${s}: ${winDefault(s, k)}`).join(" · ");
+  // ── the submission deadline ──────────────────────────────────────────────
+  // Same chain, ONE clock, no shift default: blank everywhere means the tab
+  // shows the day's filing deadline instead, so the placeholder says that.
+  const dlOf = (tid) => tasks.find((x) => x.id === tid)?.deadline || "";
+  const supDlPh = (mid, tid) => dlOf(tid);
+  const leadDlPh = (mid, tid) => getCell(mid, tid).deadline || supDlPh(mid, tid);
   const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
+  // The name a leader INHERITS in one language: the supervisor's own rename
+  // when they wrote one, else the global name (NOT NULL, so never blank).
+  const supNameOf = (mid, tid, l) => getCell(mid, tid).names?.[l] || tasks.find((x) => x.id === tid)?.name?.[l] || "";
   const getOv = (lid, tid) => leaderSettings[String(lid)]?.[String(tid)] ?? null;
   const leadEff = (lid, mid, tid) => {
     const base = getCell(mid, tid);
@@ -311,6 +324,18 @@ export default function LeaderTasksAdmin() {
     return { enabled: ov?.enabled ?? base.enabled, min_media: ov?.min_media ?? base.min_media, weight: ov?.weight ?? base.weight };
   };
   const leadTaskName = (lid, mid, task) => getOv(lid, task.id)?.names?.[lang] || supTaskName(mid, task);
+  // What the leader modal INHERITS for its text fields, per field: names by
+  // language, the definition of done, each window end, the deadline — the
+  // value the supervisor's row resolves to (their override, else global, and
+  // for the window on to the shift default). The modal opens on exactly these,
+  // and Save treats "still equal to this" as inherit — see saveLeaderCell.
+  const leadInherit = (mid, tid) => ({
+    names: Object.fromEntries(LANGS.map((l) => [l, supNameOf(mid, tid, l)])),
+    criteria: supCrit(mid, tid),
+    win_from: leadWinPh(mid, tid, "win_from"),
+    win_to: leadWinPh(mid, tid, "win_to"),
+    deadline: leadDlPh(mid, tid),
+  });
 
   const sums = useMemo(() => {
     const out = {};
@@ -335,15 +360,23 @@ export default function LeaderTasksAdmin() {
 
   const toggleOpen = (mid) => setOpen((s) => { const n = new Set(s); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
 
+  // The leader modal opens on the value IN FORCE for every field — the
+  // leader's own override where one exists, else what the supervisor's row
+  // resolves to — the same way enabled / photos / weight always did. The text
+  // fields used to open EMPTY with the inherited value as a placeholder, which
+  // read as inherited right up to the first keystroke, when it vanished and
+  // the admin had to retype a whole definition-of-done to change one word.
   const openLeaderCell = (p, mid, task) => {
     const ov = getOv(p.id, task.id);
     const eff = leadEff(p.id, mid, task.id);
+    const inh = leadInherit(mid, task.id);
     setLcell({
       lid: p.id, mid, tid: task.id, hasOv: !!ov, when: "now",
       enabled: eff.enabled, min_media: eff.min_media, weight: eff.weight,
-      names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || ""])),
-      criteria: ov?.criteria || "",
-      win_from: ov?.win_from || "", win_to: ov?.win_to || "",
+      names: Object.fromEntries(LANGS.map((l) => [l, ov?.names?.[l] || inh.names[l]])),
+      criteria: ov?.criteria || inh.criteria,
+      win_from: ov?.win_from || inh.win_from, win_to: ov?.win_to || inh.win_to,
+      deadline: ov?.deadline || inh.deadline,
     });
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
@@ -365,11 +398,18 @@ export default function LeaderTasksAdmin() {
     if (from === (stored?.win_from || "") && to === (stored?.win_to || "")) return;
     winMut.mutate({ ...ids, win_from: from, win_to: to });
   };
+  const saveDeadline = (draft, stored, ids) => {
+    const v = draft?.deadline || "";
+    if (v === (stored?.deadline || "")) return;
+    dlMut.mutate({ ...ids, deadline: v });
+  };
 
   const saveCell = () => {
     saveCriteria(cell.criteria, getCell(cell.mid, cell.tid).criteria,
       { task_id: cell.tid, manager_id: cell.mid });
     saveWindow(cell, getCell(cell.mid, cell.tid),
+      { task_id: cell.tid, manager_id: cell.mid });
+    saveDeadline(cell, getCell(cell.mid, cell.tid),
       { task_id: cell.tid, manager_id: cell.mid });
     cellMut.mutate({
       manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
@@ -379,20 +419,50 @@ export default function LeaderTasksAdmin() {
     });
   };
 
-  const saveLeaderCell = () => {
-    const base = getCell(lcell.mid, lcell.tid);
+  // A leader-modal text left EQUAL to what it inherits is not an override:
+  // it goes out as "" (clear / inherit), and only a diverging value is stored.
+  const ownText = (v, inherited) => {
+    const s = (v || "").trim();
+    return s === (inherited || "").trim() ? "" : s;
+  };
+  // Every field of the leader modal opens on the value in force, so "inherit"
+  // is expressed by leaving it equal to the supervisor's — the payload sends
+  // "" / null for those and a value only where the admin diverged (the numbers
+  // always worked this way; the texts now do too). The four writers behind
+  // the one Save button all land on the SAME override row (criteria, window
+  // and deadline are materialised onto it by their own endpoints), so they
+  // run one after another: fired together they raced the row's unique key,
+  // and the cell write — arriving last — decided whether the criteria just
+  // written survived. A failed step stops the chain: its onError has already
+  // raised the toast and the modal stays open, so a retry runs from live
+  // state, each step skipping what is already stored.
+  const saveLeaderCell = async () => {
+    const { lid, mid, tid } = lcell;
+    const base = getCell(mid, tid);
+    const ov = getOv(lid, tid);
+    const inh = leadInherit(mid, tid);
+    const ids = { task_id: tid, leader_id: lid };
     const mm = Number(lcell.min_media) || 0;
     const w = Number(lcell.weight) || 0;
-    saveCriteria(lcell.criteria, getOv(lcell.lid, lcell.tid)?.criteria,
-      { task_id: lcell.tid, leader_id: lcell.lid });
-    saveWindow(lcell, getOv(lcell.lid, lcell.tid),
-      { task_id: lcell.tid, leader_id: lcell.lid });
+    const criteria = ownText(lcell.criteria, inh.criteria);
+    const win_from = ownText(lcell.win_from, inh.win_from);
+    const win_to = ownText(lcell.win_to, inh.win_to);
+    const deadline = ownText(lcell.deadline, inh.deadline);
+    try {
+      if (criteria !== (ov?.criteria || ""))
+        await critMut.mutateAsync({ ...ids, criteria });
+      if (win_from !== (ov?.win_from || "") || win_to !== (ov?.win_to || ""))
+        await winMut.mutateAsync({ ...ids, win_from, win_to });
+      if (deadline !== (ov?.deadline || ""))
+        await dlMut.mutateAsync({ ...ids, deadline });
+    } catch { return; }
     leaderMut.mutate({
-      leader_id: lcell.lid, task_id: lcell.tid,
+      ...ids,
       enabled: lcell.enabled === base.enabled ? null : lcell.enabled,
       min_media: mm === Number(base.min_media) ? null : mm,
       weight: w === Number(base.weight) ? null : w,
-      names: lcell.names, when: lcell.when,
+      names: Object.fromEntries(LANGS.map((l) => [l, ownText(lcell.names?.[l], inh.names[l])])),
+      when: lcell.when,
     });
   };
 
@@ -428,6 +498,20 @@ export default function LeaderTasksAdmin() {
     confirmLabel: t("admin.ltasks.revert"), onConfirm: () => revertMut.mutate({ audit_id: a.id }),
   });
 
+  // The leader modal's rule — equal to the brigadir's ⇒ inherited, changed ⇒
+  // this leader only — shown PER FIELD while typing, as a small mark beside
+  // the label of every field that currently differs, instead of only stated in
+  // a sentence at the top that nobody re-reads mid-edit. Null when nothing
+  // differs, so the field helpers can take it as an optional trailing arg and
+  // the other modals (which pass none) render exactly as before.
+  const changedPill = (differs) => (differs ? (
+    <span className="ml-1.5 align-middle rounded px-1.5 py-px text-[10px] font-semibold normal-case tracking-normal"
+      style={{ background: "rgba(200,151,63,0.12)", color: "var(--brand)", border: "1px solid rgba(200,151,63,0.35)" }}>
+      {t("admin.ltasks.changed")}
+    </span>
+  ) : null);
+  const withMark = (label, mark) => (mark ? <>{label}{mark}</> : label);
+
   const statusToggle = (value, onChange) => (
     <SegmentedToggle fill value={value} onChange={onChange}
       options={[[true, t("admin.ltasks.enabled")], [false, t("admin.ltasks.disabled")]]} />
@@ -442,8 +526,8 @@ export default function LeaderTasksAdmin() {
   // the admin thinks in rather than the 4-language stack the names use.
   // `inherited` previews the level above: blank here means inherit, and an
   // admin has to be able to see what that inherits TO before leaving it blank.
-  const criteriaField = (value, onChange, inherited) => (
-    <FormField label={t("admin.ltasks.criteria")} hint={t("admin.ltasks.criteriaHint")}>
+  const criteriaField = (value, onChange, inherited, mark) => (
+    <FormField label={withMark(t("admin.ltasks.criteria"), mark)} hint={t("admin.ltasks.criteriaHint")}>
       <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)}
         placeholder={inherited || t("admin.ltasks.criteriaPh")}
         className={inputCls} style={{ ...inputStyle, resize: "vertical", minHeight: 84 }} />
@@ -455,8 +539,8 @@ export default function LeaderTasksAdmin() {
   // the bot prints to the leader. Native time inputs (there is no time template
   // in components/ui; the date rule covers date pickers), styled like every
   // other field in these modals so the row keeps the modal's baseline.
-  const windowField = (value, onChange, phFrom, phTo) => (
-    <FormField label={t("admin.ltasks.window")} hint={t("admin.ltasks.windowHint")}>
+  const windowField = (value, onChange, phFrom, phTo, mark) => (
+    <FormField label={withMark(t("admin.ltasks.window"), mark)} hint={t("admin.ltasks.windowHint")}>
       <div className="flex items-center gap-2">
         <input type="time" value={value?.win_from || ""} placeholder={phFrom}
           onChange={(e) => onChange({ win_from: e.target.value })}
@@ -474,9 +558,23 @@ export default function LeaderTasksAdmin() {
       </div>
     </FormField>
   );
-  const nameFields = (names, setName, placeholderFor) =>
+  // By when the task should be submitted — ONE clock, informational: it is
+  // what the /leaders «Vazifalar» tab tells the leader, nothing scores against
+  // it. Blank inherits the level above; blank everywhere and the tab prints
+  // the day's filing deadline instead, which the inherit line says.
+  const deadlineField = (value, onChange, ph, mark) => (
+    <FormField label={withMark(t("admin.ltasks.deadline"), mark)} hint={t("admin.ltasks.deadlineHint")}>
+      <input type="time" value={value?.deadline || ""} placeholder={ph}
+        onChange={(e) => onChange({ deadline: e.target.value })}
+        className={inputCls} style={inputStyle} />
+      <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+        {ph ? t("admin.ltasks.deadlineInherit").replace("{t}", ph) : t("admin.ltasks.deadlineDay")}
+      </div>
+    </FormField>
+  );
+  const nameFields = (names, setName, placeholderFor, markFor) =>
     LANGS.map((l) => (
-      <FormField key={l} label={`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`}>
+      <FormField key={l} label={withMark(`${t("admin.ltasks.taskName")} (${LANG_LABELS[l]})`, markFor?.(l))}>
         <input value={names?.[l] || ""} placeholder={placeholderFor(l)} onChange={(e) => setName(l, e.target.value)} className={inputCls} style={inputStyle} />
       </FormField>
     ));
@@ -536,7 +634,6 @@ export default function LeaderTasksAdmin() {
   ];
 
   const cellTask = cell && (tasks.find((task) => task.id === cell.tid) || {});
-  const lcellTask = lcell && (tasks.find((task) => task.id === lcell.tid) || {});
   // Live task row behind the column modal — example ids must come from the
   // query (not the col draft) so an upload/delete re-renders the strip.
   const colTask = col && (tasks.find((task) => task.id === col.tid) || {});
@@ -583,16 +680,22 @@ export default function LeaderTasksAdmin() {
         ? { win_from: getOv(lead0.id, task.id)?.win_from || "", win_to: getOv(lead0.id, task.id)?.win_to || "" }
         : { win_from: getCell(rows[0]?.m.id, task.id).win_from || "", win_to: getCell(rows[0]?.m.id, task.id).win_to || "" })
       : { win_from: task.win_from || "", win_to: task.win_to || "" };
+    const deadline0 = (anyFilter
+      ? (lead0
+        ? getOv(lead0.id, task.id)?.deadline
+        : getCell(rows[0]?.m.id, task.id).deadline)
+      : task.deadline) || "";
     setCol({
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
-      ...win0, win0,
+      ...win0, win0, deadline: deadline0, deadline0,
     });
   };
   const saveCol = () => {
     const ids = colScope();
     saveCriteria(col.criteria, col.criteria0, { task_id: col.tid, ...ids });
     saveWindow(col, col.win0, { task_id: col.tid, ...ids });
+    saveDeadline(col, { deadline: col.deadline0 }, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
@@ -607,6 +710,10 @@ export default function LeaderTasksAdmin() {
   };
   const cellNext = cell && nextForShift(managers.find((m) => m.id === cell.mid)?.shift);
   const lcellNext = lcell && nextForShift(managers.find((m) => m.id === lcell.mid)?.shift);
+  // What the open leader modal compares against: the brigadir's cell for the
+  // numbers/status, the resolved chain for the texts (see leadInherit).
+  const lBase = lcell && getCell(lcell.mid, lcell.tid);
+  const lInh = lcell && leadInherit(lcell.mid, lcell.tid);
 
   return (
     <div className="space-y-6">
@@ -784,7 +891,7 @@ export default function LeaderTasksAdmin() {
         <Modal title={t("admin.ltasks.cellTitle")} subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setCell(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setCell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellMut.isPending || critMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.supNameHint")}</p>
           {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
@@ -794,6 +901,7 @@ export default function LeaderTasksAdmin() {
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
             supWinPh(cell.mid, cell.tid, "win_from"), supWinPh(cell.mid, cell.tid, "win_to"))}
+          {deadlineField(cell, (v) => setCell((c) => ({ ...c, ...v })), supDlPh(cell.mid, cell.tid))}
           <WhenBar when={cell.when} setWhen={(v) => setCell((c) => ({ ...c, when: v }))} nextDate={cellNext} t={t} />
         </Modal>
       )}
@@ -804,16 +912,29 @@ export default function LeaderTasksAdmin() {
           footer={<>
             {lcell.hasOv && <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>{t("admin.ltasks.reset")}</Button>}
             <Button variant="secondary" onClick={() => setLcell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={leaderMut.isPending || critMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.leaderHint")}</p>
-          {nameFields(lcell.names, (l, v) => setLcell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => getCell(lcell.mid, lcell.tid).names?.[l] || lcellTask?.name?.[l] || "")}
-          <FormField label={t("admin.ltasks.status")} required>{statusToggle(lcell.enabled, (v) => setLcell((c) => ({ ...c, enabled: v })))}</FormField>
-          {numField(t("admin.ltasks.minMedia"), lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
-          {numField(t("admin.ltasks.weight"), lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
-          {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), supCrit(lcell.mid, lcell.tid))}
-          {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
-            leadWinPh(lcell.mid, lcell.tid, "win_from"), leadWinPh(lcell.mid, lcell.tid, "win_to"))}
+          {/* Every field opens on the value in force and carries a «changed»
+              mark the moment it differs from what the brigadir's row resolves
+              to — the placeholders still name the inherited value for a field
+              the admin empties, which is how a leader is sent back to inherit. */}
+          {nameFields(lcell.names, (l, v) => setLcell((c) => ({ ...c, names: { ...c.names, [l]: v } })),
+            (l) => lInh.names[l],
+            (l) => changedPill(ownText(lcell.names?.[l], lInh.names[l]) !== ""))}
+          <FormField label={withMark(t("admin.ltasks.status"), changedPill(lcell.enabled !== lBase.enabled))} required>
+            {statusToggle(lcell.enabled, (v) => setLcell((c) => ({ ...c, enabled: v })))}
+          </FormField>
+          {numField(withMark(t("admin.ltasks.minMedia"), changedPill((Number(lcell.min_media) || 0) !== Number(lBase.min_media))),
+            lcell.min_media, (v) => setLcell((c) => ({ ...c, min_media: v })), 20)}
+          {numField(withMark(t("admin.ltasks.weight"), changedPill((Number(lcell.weight) || 0) !== Number(lBase.weight))),
+            lcell.weight, (v) => setLcell((c) => ({ ...c, weight: v })), 100)}
+          {criteriaField(lcell.criteria, (v) => setLcell((c) => ({ ...c, criteria: v })), lInh.criteria,
+            changedPill(ownText(lcell.criteria, lInh.criteria) !== ""))}
+          {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.win_from, lInh.win_to,
+            changedPill(ownText(lcell.win_from, lInh.win_from) !== "" || ownText(lcell.win_to, lInh.win_to) !== ""))}
+          {deadlineField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.deadline,
+            changedPill(ownText(lcell.deadline, lInh.deadline) !== ""))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
         </Modal>
       )}
@@ -825,7 +946,7 @@ export default function LeaderTasksAdmin() {
             <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
             {/* Filtered down to nothing: there is no row for a name or a
                 definition-of-done to land on, so Save has no target. */}
-            <Button loading={taskMut.isPending || critMut.isPending}
+            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending}
               disabled={anyFilter && !applyN} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
           </>}>
           {/* One scope statement for the whole modal — every field below it
@@ -862,6 +983,7 @@ export default function LeaderTasksAdmin() {
             {windowField(col, (v) => setCol((c) => ({ ...c, ...v })),
               anyFilter ? "" : globalWinPh("win_from"),
               anyFilter ? "" : globalWinPh("win_to"))}
+            {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so
                   the filter genuinely cannot scope them. Say so rather than

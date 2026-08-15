@@ -75,7 +75,8 @@ async def lifespan(app: FastAPI):
         backfill_task_profiles, backfill_comment_profiles,
         seed_setup_times,
         add_leader_task_setting_names, add_leader_task_criteria,
-        add_leader_task_windows, add_leader_ai_clocks, sync_leader_ai_dates,
+        add_leader_task_windows, add_leader_task_deadlines,
+        add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
         add_worker_concern_failures_column,
@@ -122,6 +123,7 @@ async def lifespan(app: FastAPI):
     add_leader_task_setting_names()
     add_leader_task_criteria()
     add_leader_task_windows()
+    add_leader_task_deadlines()
     add_leader_ai_resolution()
     # After add_leader_ai_resolution — the backfill reads reviewed rows.
     add_leader_ai_clocks()

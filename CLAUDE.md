@@ -258,9 +258,31 @@ below).
   filter. Never improvise a second set of words for these five facts. Every
   state carries an icon as well as a colour. A day voided by the filing window
   shows only its void chip; no second red mark beside it.
+- **`/leaders` «Vazifalar» tab (`components/leaders/TaskRequirements.jsx`) is
+  where a leader READS the rules** — for every enabled task: name, proof type,
+  the AI definition of done (`criteria`, shown as the task's description —
+  the rule someone is judged by is a rule they get to read, so `criteria` and
+  the example photos are no longer "never shown to the leader"), weight (+ share
+  when the enabled sum ≠ 100), min photos, photo window, submission deadline and
+  the example photos (72px → the shared `ui/Lightbox.jsx`). Fed by
+  `GET /api/leader-tasks/requirements` (`services/leader_tasks.requirements_for`),
+  resolved down the global → supervisor → leader chain and scoped like
+  `/api/leaders` (a leader → own, a supervisor → own unit or one of its leaders,
+  everyone else follows the page filters; global standard when nothing is
+  picked). Examples stream from the page-gated `GET /api/leader-tasks/examples/{id}`
+  (reference material, no row scope). Day-detail task rows carry an ⓘ that
+  jumps to that task's card. The old ⓘ table built from the hard-coded
+  `TASK_DETAILS` is gone — never resurrect a config view from the seed.
+- **The per-task submission `deadline` ("HH:MM", same three tables + admin matrix
+  field beside the window, `PUT /admin/leader-tasks/deadline`) is INFORMATIONAL
+  (user, 2026-08-15)** — a bot entry is still judged by nothing but the day's
+  filing window. Blank at every level ⇒ the tab prints the day's filing deadline
+  marked «kun bo'yicha», never nothing. Practical for shift 1 only for now (a
+  global value serves both shifts, like the window). Enforcing it (deduct or
+  flag) is a separate decision — ask before touching scoring.
 
 Related memory: `leader-ai-proof-review`, `leader-task-photo-window`,
-`leaders-shift1-submission-window`.
+`leaders-shift1-submission-window`, `leader-task-requirements-tab`.
 
 ## Browser login (the second door)
 

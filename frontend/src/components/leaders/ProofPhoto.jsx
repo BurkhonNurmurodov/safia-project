@@ -109,6 +109,15 @@ export const BotPhoto = ({ id, T, className, uid, ...rest }) => (
       { params: uid ? { uid } : undefined, responseType: "blob" })} />
 );
 
+// An admin-uploaded EXAMPLE of a correct proof for one task, as shown on the
+// «Vazifalar» tab. Page-gated only (reference material, nobody's data), so no
+// uid: /api/leader-tasks/examples/{id}. Bytes are immutable per id, so the
+// browser cache does the rest.
+export const ExamplePhoto = ({ id, T, className, ...rest }) => (
+  <ProxyPhoto T={T} className={className} deps={[id]} {...rest}
+    load={() => api.get(`/api/leader-tasks/examples/${id}`, { responseType: "blob" })} />
+);
+
 /** One photo from the triage queue's `photos[]`, whichever layer filed it. */
 export const QueuePhoto = ({ photo, T, ...rest }) =>
   photo.kind === "bot"

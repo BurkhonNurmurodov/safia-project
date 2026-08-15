@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, CalendarDays, User, Users, Sparkles, Clock, X,
+  ArrowLeft, CalendarDays, User, Users, Sparkles, Clock,
   CheckCircle2, XCircle, MessageSquareWarning, Camera, ChevronDown,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
+import Lightbox from "../components/ui/Lightbox";
 import FormField from "../components/ui/FormField";
 import ErrorScreen from "../components/ui/ErrorScreen";
 import { SkeletonBlock } from "../components/ui/Skeleton";
@@ -204,31 +204,6 @@ const hexA = (hex, a) => {
 };
 const fill = (s, p) => Object.entries(p).reduce((a, [k, v]) => a.replaceAll(`{${k}}`, v), s);
 const pick = (o, lang) => o?.[lang] || o?.ru || o?.en || "";
-
-/* ── the photo lightbox ─────────────────────────────────────────────────────
- * Portaled to document.body, NOT rendered in place: the page-enter transform
- * makes any ancestor the containing block for position:fixed, which would pin
- * a "full-screen" overlay inside the card it opened from. */
-function Lightbox({ src, onClose }) {
-  if (!src) return null;
-  return createPortal(
-    <div role="dialog" aria-modal="true" onClick={onClose}
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.92)",
-               paddingTop: "calc(var(--tg-safe-top, 0px) + 1rem)",
-               paddingBottom: "calc(var(--tg-safe-bottom, 0px) + 1rem)" }}>
-      <button type="button" onClick={onClose} aria-label="Close"
-        className="absolute top-3 right-3 rounded-full p-2"
-        style={{ background: "rgba(255,255,255,0.14)", color: "#fff",
-                 top: "calc(var(--tg-safe-top, 0px) + 0.75rem)" }}>
-        <X size={20} />
-      </button>
-      <img src={src} alt="" onClick={(e) => e.stopPropagation()}
-        className="max-w-full max-h-full rounded-lg" style={{ objectFit: "contain" }} />
-    </div>,
-    document.body,
-  );
-}
 
 function StateChip({ state, T, size = "sm" }) {
   if (!state) return null;
