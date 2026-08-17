@@ -1206,6 +1206,17 @@ class LeaderTaskDef(Base):
     # shows the day's filing deadline marked as such. Distinct from `win_to`:
     # that is when a photo may have been TAKEN, this is when the answer is DUE.
     deadline     = Column(String(5), nullable=True)
+    # Is the DATE question asked for this task AT ALL? False = the proof does
+    # not have to prove WHEN it was taken. The reviewer still transcribes any
+    # clock it can see (so the flag can be flipped back and every stored verdict
+    # re-decided for free), but `leader_ai.date_flags` returns nothing, so
+    # `no_date`/`date_mismatch` can never be raised and — under the automatic
+    # regime — can never deduct. For tasks whose proof is a screen that carries
+    # no clock at all (an in-app checklist, a printed system report): the only
+    # other options there are rejecting every honest filing, or leaving a
+    # permanent flag nobody may act on. NULL at the two override levels below =
+    # inherit; True everywhere is what the platform did before this existed.
+    date_check   = Column(Boolean, nullable=False, default=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1238,6 +1249,9 @@ class LeaderTaskSetting(Base):
     win_to       = Column(String(5), nullable=True)
     # Per-supervisor submission deadline (informational). NULL = inherit global.
     deadline     = Column(String(5), nullable=True)
+    # Per-supervisor "is the date checked at all". NULL = inherit the global
+    # answer; False exempts this unit's filings from the date question.
+    date_check   = Column(Boolean, nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
 
@@ -1268,6 +1282,9 @@ class LeaderTaskLeaderSetting(Base):
     win_to       = Column(String(5), nullable=True)
     # Per-leader submission deadline (informational). NULL = inherit.
     deadline     = Column(String(5), nullable=True)
+    # Per-leader "is the date checked at all". NULL = inherit the supervisor's
+    # effective answer.
+    date_check   = Column(Boolean, nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 

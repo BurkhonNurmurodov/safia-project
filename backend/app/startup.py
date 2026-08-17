@@ -780,6 +780,40 @@ def add_leader_task_deadlines() -> None:
         db.close()
 
 
+def add_leader_task_date_check() -> None:
+    """2026-08-17: a task may declare that its proof does not need a DATE.
+
+    Some proofs are screens that carry no clock — an in-app checklist, a printed
+    system report — and for those the date question had only two outcomes, both
+    wrong: reject every honest filing, or leave a flag nobody may act on. The
+    answer now rides the same global → supervisor → leader chain as the photo
+    window: NULL at an override level = inherit, and TRUE at the global level is
+    what the platform did before this existed, so nothing changes until an admin
+    unticks a task.
+
+    Idempotent. The columns are added nullable (that is all
+    `ADD COLUMN IF NOT EXISTS` can do without rewriting the table), then the
+    GLOBAL level is filled in, because that one is the chain's floor and a NULL
+    there would mean "inherit" with nothing left to inherit from.
+    `leader_ai.resolve_date_check` reads NULL as "checked" regardless, so a box
+    that never ran this still behaves exactly as before.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS date_check BOOLEAN"))
+        db.execute(text(
+            "UPDATE leader_task_defs SET date_check = TRUE WHERE date_check IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task date-check migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_clocks() -> None:
     """2026-08-14: the model stops judging the date and starts transcribing it.
 

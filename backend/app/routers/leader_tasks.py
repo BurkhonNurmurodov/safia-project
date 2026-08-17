@@ -37,7 +37,8 @@ from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    revert_audit, set_criteria, set_deadline, set_window, write_change,
+    revert_audit, set_criteria, set_date_check, set_deadline, set_window,
+    write_change,
 )
 from app.services.name_map import relabel_supervisor, supervisor_match
 
@@ -94,6 +95,11 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # on /leaders «Vazifalar»); blank = none, the tab shows the
                 # day's filing deadline instead.
                 "deadline": td.deadline or "",
+                # Global "is the date checked at all". Never null at this level —
+                # it is the floor of the chain (startup.add_leader_task_date_check
+                # fills it), so the UI shows a two-way toggle here and a
+                # three-way one (inherit) at the levels below.
+                "date_check": td.date_check is not False,
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
@@ -557,6 +563,73 @@ def put_deadline(body: DeadlineIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Unknown leader")
     set_deadline(db, task_id=body.task_id, deadline=body.deadline,
                  manager_id=body.manager_id, leader_id=body.leader_id)
+    return {"ok": True}
+
+
+class DateCheckIn(BaseModel):
+    """Is the proof photo's DATE judged for this task? Same four-way addressing
+    as WindowIn — global (both ids absent), one supervisor, one leader, or a
+    scoped fan-out over a filtered matrix.
+
+    `date_check` is a TRI-STATE and must stay one: True judge, False exempt,
+    null inherit the level above (at the global level null means True, the
+    chain's floor). A plain bool would make "inherit" unexpressible and every
+    save would pin an answer at whatever level the modal happened to be open on.
+    """
+    task_id: int
+    date_check: bool | None = None
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/date-check")
+def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
+                   _: dict = Depends(verify_admin)):
+    """Exempt a task from the date question, or put it back under it.
+
+    Applies at once and — exactly like the window — re-derives the verdicts
+    ALREADY written for the task from the clocks each one stored
+    (services.leader_tasks.set_date_check → leader_ai.sync_date_flags). No
+    Gemini call and no quota: unticking clears the `no_date`/`date_mismatch`
+    flags off existing reports (and, in the automatic regime, the deductions
+    they caused), ticking it back on restores them. Nothing is destroyed either
+    way, because the clock the model read stays on the row.
+    """
+    if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
+        raise HTTPException(status_code=404, detail="Unknown task")
+    if body.leader_ids is not None or body.manager_ids is not None:
+        if body.leader_ids is not None:
+            ids = [i for (i,) in db.query(RoleProfile.id).filter(
+                RoleProfile.id.in_(body.leader_ids),
+                RoleProfile.role == "leader").all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for lid in ids:
+                set_date_check(db, task_id=body.task_id, date_check=body.date_check,
+                               leader_id=lid, rejudge=False)
+        else:
+            ids = [i for (i,) in db.query(Manager.id).filter(
+                Manager.id.in_(body.manager_ids),
+                Manager.archived.is_(False)).all()]
+            if not ids:
+                raise HTTPException(status_code=400, detail="no_rows")
+            for mid in ids:
+                set_date_check(db, task_id=body.task_id, date_check=body.date_check,
+                               manager_id=mid, rejudge=False)
+        # Once, after the whole fan-out — the re-derivation is per task, not per
+        # row written (same reason as put_window).
+        leader_ai.sync_date_flags(db, [body.task_id])
+        return {"ok": True, "count": len(ids)}
+    if body.manager_id is not None and not db.query(Manager).filter_by(
+            id=body.manager_id).first():
+        raise HTTPException(status_code=404, detail="Unknown supervisor")
+    if body.leader_id is not None and not db.query(RoleProfile).filter_by(
+            id=body.leader_id).first():
+        raise HTTPException(status_code=404, detail="Unknown leader")
+    set_date_check(db, task_id=body.task_id, date_check=body.date_check,
+                   manager_id=body.manager_id, leader_id=body.leader_id)
     return {"ok": True}
 
 

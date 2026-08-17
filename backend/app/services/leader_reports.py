@@ -132,7 +132,8 @@ def day_report(db: Session, uid: str) -> dict | None:
     half-built answer to a question about fairness.
     """
     from app.routers.leaders import build_report_row
-    from app.routers.leader_ai import _as_verdict, _refs_for_uid, _task_cfg, _window
+    from app.routers.leader_ai import (
+        _as_verdict, _date_check, _refs_for_uid, _task_cfg, _window)
 
     row = build_report_row(db, uid)
     if row is None:
@@ -143,8 +144,8 @@ def day_report(db: Session, uid: str) -> dict | None:
             if refs else [])
     cfg = _task_cfg(db, revs) if revs else None
     by_task = {refs[r.ref]: r for r in revs if r.ref in refs}
-    verdicts = {refs[r.ref]: _as_verdict(r, _window(cfg, r)) for r in revs
-                if r.ref in refs}
+    verdicts = {refs[r.ref]: _as_verdict(r, _window(cfg, r), _date_check(cfg, r))
+                for r in revs if r.ref in refs}
 
     # Live disputes, so a task the brigadir already objected to offers the
     # state of that objection instead of the button that files another one.

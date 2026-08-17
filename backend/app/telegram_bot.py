@@ -2013,10 +2013,15 @@ def _lt_counter_text(lang: str, entry: dict | None, task: str, need: int, k: int
     whose clock falls outside it, and a leader flagged for a rule nobody told
     them is the complaint that creates. Appended rather than folded into
     `photos_counter` so the two send sites keep one format call each.
+
+    The converse holds too, which is why `date_check` is read here: a task
+    exempted from the date question has no enforced hours, and printing them
+    anyway would make the bot demand something no verdict measures — leaders
+    reshooting proofs to satisfy a rule that is not applied.
     """
     text = _lt(lang, "photos_counter").format(task=task, min=need, k=k)
     win = (entry or {}).get("window")
-    if win:
+    if win and (entry or {}).get("date_check", True):
         text += _lt(lang, "photo_window").format(lo=win[0], hi=win[1])
     return text
 

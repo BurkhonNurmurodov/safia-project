@@ -4,7 +4,7 @@ import {
   Sparkles, CheckCircle2, XCircle, MessageSquare, Inbox,
   ChevronLeft, ChevronRight, ChevronDown, Undo2, Keyboard, X, Gauge,
   ClipboardCheck, Flag, SearchX, Settings2, Gavel, RotateCcw,
-  ImageOff,
+  ImageOff, MinusCircle,
 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
@@ -993,9 +993,18 @@ function Verdict({ item, T, lang }) {
   // line so it re-reads correctly after a window edit, which model prose could
   // not: that text was written once and froze.
   const dateWhy = item.dateReason?.[lang] || item.dateReason?.ru || item.dateReason?.en || "";
+  // The task may be exempt from the date question altogether. Its two rows then
+  // collapse into ONE neutral row: neither is passed or failed, they were never
+  // asked, and a green tick would claim a check that did not run. What the model
+  // read is still shown — it is evidence either way. `skip` is the third state.
+  const dateOn = item.dateCheck !== false;
   const rows = [
-    { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
-    { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
+    ...(dateOn ? [
+      { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
+      { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
+    ] : [
+      { skip: true, label: T.aiQ_noDate, val: item.imageDate || "—" },
+    ]),
     // Subject before completeness: a reviewer who sees "wrong subject" ticked
     // red stops reading, and asking "does it prove the work" about a photo of
     // something else is a question with no meaning.
@@ -1047,8 +1056,12 @@ function Verdict({ item, T, lang }) {
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
             <div key={r.label} className="flex items-start gap-2 text-[13px]">
-              {r.ok ? <CheckCircle2 size={16} color={C_GOOD} className="flex-shrink-0 mt-px" />
-                : <XCircle size={16} color={C_BAD} className="flex-shrink-0 mt-px" />}
+              {/* Three states, not two: asked-and-passed, asked-and-failed, and
+                  NOT ASKED — which wears the flat tone and a dash, because a
+                  question nobody put is not an answer of either kind. */}
+              {r.skip ? <MinusCircle size={16} color={C_FLAT} className="flex-shrink-0 mt-px" />
+                : r.ok ? <CheckCircle2 size={16} color={C_GOOD} className="flex-shrink-0 mt-px" />
+                  : <XCircle size={16} color={C_BAD} className="flex-shrink-0 mt-px" />}
               <span style={{ color: "var(--text-2)" }}>
                 <b className="font-semibold" style={{ color: "var(--text-1)" }}>{r.label}</b>
                 {r.val && <span className="tabular-nums" style={{ color: "var(--text-3)" }}> · {r.val}</span>}

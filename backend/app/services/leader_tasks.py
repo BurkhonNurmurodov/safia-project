@@ -139,6 +139,9 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             "win_to": (s.win_to if s else None) or None,
             # RAW: None = inherit the global submission deadline (informational).
             "deadline": (s.deadline if s else None) or None,
+            # RAW tri-state, and `or None` would destroy it: None = inherit,
+            # False = this unit's filings are exempt from the date question.
+            "date_check": s.date_check if s else None,
         }
     return out
 
@@ -165,6 +168,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "win_from": r.win_from or None,
             "win_to": r.win_to or None,
             "deadline": r.deadline or None,
+            "date_check": r.date_check,
         }
     return out
 
@@ -195,6 +199,8 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
     resolved the same way, then defaulted by SHIFT, which is why the caller may
     pass one. Callers that only score a day can leave it out; the bot passes the
     shift it already computed, because that window is printed to the leader.
+    `date_check` is whether that window is ENFORCED at all: False and the bot
+    must stop printing it, or a leader reads hours nothing measures them by.
 
     `criteria` (the definition of done) and `deadline` (informational "due by")
     resolve down the same chain and are what the /leaders «Vazifalar» tab shows
@@ -237,6 +243,9 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
             "window": leader_ai.resolve_window(shift, r, s, td),
+            # Resolved beside the window it governs: with this False the window
+            # is not enforced, so no surface may present it as a requirement.
+            "date_check": leader_ai.resolve_date_check(r, s, td),
             "criteria": criteria,
             "deadline": resolve_deadline(r, s, td),
         }
@@ -291,6 +300,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "weight": s.weight if s else td.default_weight,
                 "names": names,
                 "window": leader_ai.resolve_window(shift, s, td),
+                "date_check": leader_ai.resolve_date_check(s, td),
                 "criteria": crit,
                 "deadline": resolve_deadline(s, td),
             }
@@ -314,6 +324,10 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             "weight": int(c["weight"] or 0),
             "min_media": int(c["min_media"] or 0),
             "window": list(c["window"]),
+            # False ⇒ the tab must NOT print the window as a rule: the leader
+            # would be reading a requirement nothing enforces, which is the same
+            # mistake in reverse as enforcing one nobody stated.
+            "date_check": bool(c["date_check"]),
             "deadline": c["deadline"],
             "examples": examples.get(td.id, []),
         })
@@ -450,6 +464,63 @@ def set_window(db: Session, *, task_id: int, win_from: str | None,
     # `rejudge=False` is for a fan-out over many supervisors/leaders: the pass
     # is per TASK, so doing it inside the loop would re-scan the same rows once
     # per row written. The caller runs it once when the loop is done.
+    if rejudge:
+        leader_ai.sync_date_flags(db, [task_id])
+
+
+def set_date_check(db: Session, *, task_id: int, date_check: bool | None,
+                   manager_id: int | None = None, leader_id: int | None = None,
+                   rejudge: bool = True) -> None:
+    """Write "is the date checked for this task" at one level of the chain.
+    None clears the level and falls back to the level above; at the GLOBAL level
+    None is stored as True, because that level is the chain's floor and has
+    nothing left to inherit from.
+
+    Same shape and the same re-judge as `set_window` — for the same reason: this
+    changes how already-collected photos are JUDGED, not what the leader is
+    asked to do, so it applies at once and every verdict already written is
+    re-decided from its stored clocks (no Gemini call, no quota). Unticking a
+    task therefore CLEARS the date flag off its existing reports, and ticking it
+    back on restores it; nothing is destroyed either way.
+
+    A level with no row yet is materialised with the values that level already
+    resolves to, so writing this can never silently change what the task
+    requires (same rule as criteria/window/deadline).
+    """
+    v = None if date_check is None else bool(date_check)
+
+    if leader_id is not None:
+        row = db.query(LeaderTaskLeaderSetting).filter_by(
+            leader_id=leader_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return  # nothing stored, nothing to clear
+            row = LeaderTaskLeaderSetting(leader_id=leader_id, task_id=task_id)
+            db.add(row)
+    elif manager_id is not None:
+        row = db.query(LeaderTaskSetting).filter_by(
+            manager_id=manager_id, task_id=task_id).first()
+        if not row:
+            if v is None:
+                return
+            td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+            row = LeaderTaskSetting(
+                manager_id=manager_id, task_id=task_id, enabled=True,
+                min_media=1, weight=td.default_weight if td else 0,
+            )
+            db.add(row)
+    else:
+        row = db.query(LeaderTaskDef).filter_by(id=task_id).first()
+        if not row:
+            return
+        # The floor of the chain is never "inherit".
+        v = True if v is None else v
+    row.date_check = v
+    # Same rule as set_criteria/set_window: a leader row left overriding nothing
+    # goes, so the matrix's "overridden" mark keeps meaning something.
+    if leader_id is not None and _leader_row_bare(row):
+        db.delete(row)
+    db.commit()
     if rejudge:
         leader_ai.sync_date_flags(db, [task_id])
 
@@ -718,14 +789,21 @@ def apply_supervisor_batch(db: Session, manager_id: int, cells: list[dict]) -> N
 
 def _leader_row_extras(row) -> bool:
     """True when a per-leader row carries an override the CELL write never
-    sends — criteria, photo window, deadline all live on this same row but
-    arrive through their own endpoints — so a cell write must not decide the
-    row's fate on its own fields alone. `getattr` because these columns were
-    added one at a time and an older row object may predate the newest."""
+    sends — criteria, photo window, deadline, the date-check exemption all live
+    on this same row but arrive through their own endpoints — so a cell write
+    must not decide the row's fate on its own fields alone. `getattr` because
+    these columns were added one at a time and an older row object may predate
+    the newest."""
     if row is None:
         return False
-    return any((getattr(row, k, None) or "").strip()
-               for k in ("criteria", "win_from", "win_to", "deadline"))
+    if any((getattr(row, k, None) or "").strip()
+           for k in ("criteria", "win_from", "win_to", "deadline")):
+        return True
+    # NOT a blank-string test: this one is a tri-state boolean whose whole point
+    # is being False, and `or ""` would read an active exemption as "unset" —
+    # the next cell write would then delete the row and silently re-arm the date
+    # check on a task somebody had exempted.
+    return getattr(row, "date_check", None) is not None
 
 
 def _leader_row_bare(row) -> bool:

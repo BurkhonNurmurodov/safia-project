@@ -151,6 +151,33 @@ below).
   **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
   flag and never deducts: a dead Drive permission must not mass-fail a shift.
   Only a human `approved` lifts an automatic rejection; `requeried` does not.
+- **A task may be EXEMPT from the date question** (user, 2026-08-17) —
+  `date_check` on the same global → supervisor → leader chain as the photo
+  window, resolved by the one predicate `leader_ai.resolve_date_check` (NULL =
+  inherit, NULL everywhere = checked, so nothing changes until an admin unticks
+  something). Some proofs are screens that carry no clock — an in-app checklist,
+  a printed system report — and there the date question had only two outcomes,
+  both wrong: reject every honest filing, or leave a flag nobody may act on.
+  `date_flags(..., check=False)` returns **nothing**, and since it owns both
+  `no_date` and `date_mismatch` (`_OWNED_FLAGS`) that empty answer is what
+  CLEARS those flags off verdicts already written — via the same free
+  `sync_date_flags` re-derive a window edit uses, so unticking a task drops its
+  date deductions and ticking it back on restores them, with no Gemini call
+  either way. The model still transcribes the clock (that is what makes the flip
+  reversible), and it is still shown; only the judgement is withheld. **The
+  window and this answer must travel TOGETHER** — `date_rule_for` per row,
+  `resolve_window` + `resolve_date_check` for bulk readers — because a window
+  displayed without it is a rule the reader cannot tell is enforced: with the
+  check off the `expected` payload is null, the triage card's two date rows
+  collapse into ONE neutral «not asked» row, the «Vazifalar» tab prints «sana
+  tekshirilmaydi» instead of hours, and the bot stops printing the window on the
+  photo prompt. Admin: the `dateCheckField` toggle in all three ltasks modals →
+  `PUT /admin/leader-tasks/date-check` (tri-state, four-way addressed like
+  `WindowIn`). Two traps: `resolve_date_check` cannot use `resolve_deadline`'s
+  "first non-blank" test (the meaningful value is FALSE), and
+  `_leader_row_extras` must count it or a cell write deletes a leader row whose
+  only override was the exemption. Scores correct themselves everywhere at once,
+  but no corrected report is re-DMed — same as a window edit.
 - **`auto_discover()` is the second door into discovery's territory**, and it is
   bounded so it cannot become the bulk auto-trigger the user banned three times:
   shift 1, from one fixed date, sheet layer only. It runs on the leaders-sheet

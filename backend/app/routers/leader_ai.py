@@ -194,7 +194,8 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
 
     revs = db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all()
     cfg = _task_cfg(db, revs)
-    out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev)) for rev in revs}
+    out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev), _date_check(cfg, rev))
+           for rev in revs}
     return {"enabled": True, "tasks": out}
 
 
@@ -445,17 +446,27 @@ def _chain(cfg, rev, attr: str) -> str:
     return str(got).strip() if got and str(got).strip() else ""
 
 
+def _levels(cfg, rev):
+    """This row's three config rows, narrowest first — the chain both date-rule
+    resolvers below walk."""
+    defs, sup_cfg, own_cfg = cfg
+    return (own_cfg.get((rev.leader_id, rev.task_id)) if rev.leader_id else None,
+            sup_cfg.get((rev.manager_id, rev.task_id)) if rev.manager_id else None,
+            defs.get(rev.task_id))
+
+
 def _window(cfg, rev) -> tuple[str, str]:
     """The task's effective photo window, off the same preloaded chain. Same
-    resolution as services/leader_ai.window_for, which is the per-row form —
+    resolution as services/leader_ai.date_rule_for, which is the per-row form —
     the triage queue would otherwise pay three queries a card for it."""
-    defs, sup_cfg, own_cfg = cfg
-    return leader_ai.resolve_window(
-        rev.shift,
-        own_cfg.get((rev.leader_id, rev.task_id)) if rev.leader_id else None,
-        sup_cfg.get((rev.manager_id, rev.task_id)) if rev.manager_id else None,
-        defs.get(rev.task_id),
-    )
+    return leader_ai.resolve_window(rev.shift, *_levels(cfg, rev))
+
+
+def _date_check(cfg, rev) -> bool:
+    """Is the date question asked for this row's task? Off the same chain, for
+    the same reason — and it travels with `_window` everywhere, because a window
+    shown without it is a rule the reader cannot tell is enforced."""
+    return leader_ai.resolve_date_check(*_levels(cfg, rev))
 
 
 def _label(cfg, rev) -> str:
@@ -665,6 +676,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
 
         names = proj.get(rev.ref) or {}
         win = _window(cfg, rev)
+        checked = _date_check(cfg, rev)
         lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
         out.append({
             "ref": rev.ref,
@@ -691,13 +703,18 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             "resolutionNote": rev.resolution_note,
             "imageDate": rev.image_date,
             "clocks": rev.clocks or [],
-            "expected": f"{lo} — {hi}",
+            # NULL when the task is exempt from the date question: there is no
+            # window in force, and a card printing one beside an unjudged clock
+            # is how a reviewer starts "correcting" verdicts nobody made.
+            "expected": f"{lo} — {hi}" if checked else None,
+            "dateCheck": checked,
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
             # The date sentence is OURS, not the model's — it no longer knows
             # the window, and prose it wrote would go stale on the next window
             # edit. Rendered beside `reason`, which now covers topic and proof
             # only.
-            "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win),
+            "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win,
+                                               check=checked),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
@@ -878,9 +895,11 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
-    win = leader_ai.window_for(db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
+    win, checked = leader_ai.date_rule_for(
+        db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
-        return {"ok": True, "task": _as_verdict(rev, win)}  # already judged; never re-spend
+        return {"ok": True,
+                "task": _as_verdict(rev, win, checked)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
     rev.attempts = 0
@@ -889,7 +908,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     except gemini.GeminiQuotaError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     db.refresh(rev)
-    return {"ok": True, "task": _as_verdict(rev, win)}
+    return {"ok": True, "task": _as_verdict(rev, win, checked)}
 
 
 def _report_target(db: Session, uid: str) -> dict:
@@ -938,9 +957,11 @@ def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
     return refs
 
 
-def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None) -> dict:
-    # `win` is the task's effective photo window; callers that hold the
-    # preloaded config chain pass it rather than making this re-walk it.
+def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
+                check: bool = True) -> dict:
+    # `win` is the task's effective photo window and `check` whether it is
+    # enforced at all; callers that hold the preloaded config chain pass both
+    # rather than making this re-walk the chain.
     lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
     return {
         "status": rev.status,
@@ -950,11 +971,14 @@ def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None) -> dict
         # The window the verdict was measured against, from the SAME function
         # the checker used — a date flag is only actionable if you can see what
         # the photo was supposed to fall inside, and a second copy of the shift
-        # rule in the client would eventually disagree with the backend.
-        "expected": f"{lo} — {hi}",
+        # rule in the client would eventually disagree with the backend. NULL
+        # when the task is exempt: nothing was measured against it.
+        "expected": f"{lo} — {hi}" if check else None,
+        "dateCheck": check,
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
         "dateReason": leader_ai.date_prose(
-            rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift)),
+            rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift),
+            check=check),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,

@@ -328,12 +328,41 @@ def resolve_window(shift: int | None, *levels) -> tuple[str, str]:
     return lo or d_lo, hi or d_hi
 
 
-def window_for(db: Session, task_id: int, manager_id: int | None,
-               leader_id: int | None, shift: int | None) -> tuple[str, str]:
-    """Effective photo window for one task, resolved leader → supervisor →
-    global → shift default. The per-row form; bulk readers preload the three
-    config tables and call `resolve_window` directly (see routers/leader_ai
-    `_hydrate` — this walk costs three queries a row)."""
+def resolve_date_check(*levels) -> bool:
+    """Is the DATE question asked for this task? The chain's rows narrowest first
+    (leader, supervisor, global), same order as `resolve_window`.
+
+    True = judge the clock against the window, which is what every task did
+    before this flag existed. False = the proof does not have to prove WHEN it
+    was taken, so `date_flags` returns nothing at all for it (see there).
+
+    NULL means inherit, and NULL everywhere means checked: a box whose migration
+    has not run, a row written before the column existed and a level nobody has
+    touched all read as the old behaviour rather than as a silent exemption.
+    Note this cannot use `resolve_deadline`'s "first non-blank" test — the value
+    being resolved is FALSE at its most meaningful, and `if v` would skip it.
+    """
+    for row in levels:
+        if row is None:
+            continue
+        v = getattr(row, "date_check", None)
+        if v is not None:
+            return bool(v)
+    return True
+
+
+def date_rule_for(db: Session, task_id: int, manager_id: int | None,
+                  leader_id: int | None,
+                  shift: int | None) -> tuple[tuple[str, str], bool]:
+    """The whole date rule for one row — (window, checked) — in ONE chain walk,
+    resolved leader → supervisor → global → shift default.
+
+    The two facts always travel together: a window nobody compares against is
+    just a label, and a comparison with no window has nothing to compare to. The
+    per-row form; bulk readers preload the three config tables and call
+    `resolve_window`/`resolve_date_check` directly (see routers/leader_ai
+    `_hydrate` — this walk costs three queries a row).
+    """
     own = sup = None
     if leader_id:
         own = db.query(LeaderTaskLeaderSetting).filter_by(
@@ -342,7 +371,7 @@ def window_for(db: Session, task_id: int, manager_id: int | None,
         sup = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-    return resolve_window(shift, own, sup, td)
+    return resolve_window(shift, own, sup, td), resolve_date_check(own, sup, td)
 
 
 def overnight(win: tuple[str, str]) -> bool:
@@ -1185,8 +1214,9 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # The model no longer answers the date question; it hands over what it READ
     # and the window comparison happens here, on our own data.
     rev.clocks = _clean_clocks(out.get("clocks"))
-    win = window_for(db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
-    flags += date_flags(rev.clocks, rev.date, win)
+    win, checked = date_rule_for(db, rev.task_id, rev.manager_id,
+                                 rev.leader_id, rev.shift)
+    flags += date_flags(rev.clocks, rev.date, win, check=checked)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
     rev.flags = flags
@@ -1933,14 +1963,29 @@ def clock_in_window(clocks: list[dict] | None,
 
 
 def date_flags(clocks: list[dict] | None, date: str,
-               win: tuple[str, str]) -> list[str]:
+               win: tuple[str, str], *, check: bool = True) -> list[str]:
     """THE date verdict. Derived, never stored — so it is always the answer for
     the window in force RIGHT NOW, and an admin who edits a window has every
     affected report corrected before the page finishes loading.
 
     This is the whole point of making the model a transcriber: a stored verdict
     was a frozen opinion that only a paid AI re-check could revise.
+
+    `check=False` — the task's chain says its proof does not have to prove WHEN
+    it was taken (`resolve_date_check`) — returns NO flags rather than a passing
+    one: this function owns both `no_date` and `date_mismatch` (`_OWNED_FLAGS`),
+    so an empty answer is what clears an earlier verdict's date flag when the
+    exemption is switched on, exactly as a widened window does. The clocks are
+    still stored and still shown; only the judgement is withheld, so switching
+    the exemption back off re-decides every affected row with no AI call.
+
+    It defaults to True — the old behaviour — deliberately: the three callers
+    (`review_one`, `sync_date_flags`, `date_prose`) all pass it explicitly, and
+    a fourth one added without it should keep judging dates rather than quietly
+    exempt every task on the platform.
     """
+    if not check:
+        return []
     ok = clock_in_window(clocks, date, win)
     if ok is None:
         return ["no_date"]
@@ -2042,15 +2087,28 @@ _DATE_PROSE = {
         "ru": "Фото снято {seen} — в пределах допустимого интервала {lo} — {hi}.",
         "en": "The photo was taken {seen} — within the allowed {lo} — {hi}.",
     },
+    # The exemption says so IN WORDS. A card that simply omitted the date line
+    # would read as "not checked yet"; one that printed the "ok" sentence would
+    # claim a window was verified when nothing compared anything to it. What was
+    # READ is still stated, because it is still on the row and an admin looking
+    # at a suspicious proof should see it.
+    "not_required": {
+        "uz": "Bu vazifa uchun sana tekshirilmaydi. Rasmdan o'qilgani: {seen}.",
+        "uz_cyrl": "Бу вазифа учун сана текширилмайди. Расмдан ўқилгани: {seen}.",
+        "ru": "Для этой задачи дата не проверяется. Прочитано на фото: {seen}.",
+        "en": "The date is not checked for this task. Read off the photo: {seen}.",
+    },
 }
 
 
 def date_prose(clocks: list[dict] | None, date: str,
-               win: tuple[str, str]) -> dict[str, str]:
+               win: tuple[str, str], *, check: bool = True) -> dict[str, str]:
     """The date verdict as a sentence per language. Derived like the flag
     itself, so the two can never disagree."""
-    flags = date_flags(clocks, date, win)
-    if not flags:
+    flags = date_flags(clocks, date, win, check=check)
+    if not check:
+        key = "not_required"
+    elif not flags:
         key = "ok"
     elif "no_date" in flags:
         key = "no_date"
@@ -2069,11 +2127,12 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     """Re-derive every written verdict's DATE flags from its stored clocks and
     the window in force now. Returns how many rows changed; commits once.
 
-    The date verdict has exactly THREE inputs — the clocks (frozen at review
-    time), the report's day, and the task's window — and this runs whenever any
-    of them can have moved: at boot, after a window edit, after a sheet Refresh
-    or a discover (both re-stamp `date`), and when the AI overview is opened.
-    There is no fourth input, so there is no trigger left to forget.
+    The date verdict has exactly FOUR inputs — the clocks (frozen at review
+    time), the report's day, the task's window, and whether the task's chain
+    asks the date question at all — and this runs whenever any of them can have
+    moved: at boot, after a window edit, after a date-check edit, after a sheet
+    Refresh or a discover (both re-stamp `date`), and when the AI overview is
+    opened. There is no fifth input, so there is no trigger left to forget.
 
     It is kept a WRITE rather than a read-time overlay because `status`/`flags`
     are what ~20 queue, count, re-check and progress queries filter on in SQL;
@@ -2106,14 +2165,13 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
 
     changed = 0
     for rev in rows:
-        win = resolve_window(
-            rev.shift,
-            own_cfg.get((rev.leader_id, rev.task_id)),
-            sup_cfg.get((rev.manager_id, rev.task_id)),
-            defs.get(rev.task_id),
-        )
+        levels = (own_cfg.get((rev.leader_id, rev.task_id)),
+                  sup_cfg.get((rev.manager_id, rev.task_id)),
+                  defs.get(rev.task_id))
+        win = resolve_window(rev.shift, *levels)
         kept = [f for f in (rev.flags or ()) if f not in _OWNED_FLAGS]
-        want = set(kept) | set(date_flags(rev.clocks, rev.date, win))
+        want = set(kept) | set(date_flags(
+            rev.clocks, rev.date, win, check=resolve_date_check(*levels)))
         flags = [f for f in _FLAG_ORDER if f in want]
         if flags == list(rev.flags or ()):
             continue
