@@ -448,8 +448,9 @@ pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
   traffic-light palette by vocabulary (`utils/arcStatus.js`); the remote
   `status_color` is a plain-hex fallback only.
 - **Credentials**: `Settings.arc_username/arc_password` read `ARC_USERNAME` /
-  `ARC_PASSWORD` first and the bare `USERNAME` / `PASSWORD` IT wrote into prod
-  `.env` by SSH second; both blank ⇒ page says «not connected», no jobs
+  `ARC_PASSWORD` first, then the bare `USERNAME` / `PASSWORD` IT wrote into prod
+  `.env` by SSH — and `PASSAWORD`, the misspelling actually in that file (it is
+  the one thing the code cannot edit); both blank ⇒ «not connected», no jobs
   registered. `Settings.Config.extra = "ignore"` exists because a stray `.env`
   key used to abort boot AND the rollback — never re-tighten it. Rotation
   without SSH: Gitea secrets `ARC_USERNAME` / `ARC_PASSWORD` (`deploy/sync-env.sh`).

@@ -73,8 +73,10 @@ def configured() -> bool:
     return bool(settings.arc_username and settings.arc_password)
 
 
-# The four env names the credential can travel under (canonical first).
-_CRED_NAMES = ("ARC_USERNAME", "ARC_PASSWORD", "USERNAME", "PASSWORD")
+# Every env name the credential can travel under (canonical first). PASSAWORD
+# is the misspelling that actually reached prod's .env — kept because the file
+# is the one thing this code cannot edit.
+_CRED_NAMES = ("ARC_USERNAME", "ARC_PASSWORD", "USERNAME", "PASSWORD", "PASSAWORD")
 _KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 
 

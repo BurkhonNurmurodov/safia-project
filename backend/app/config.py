@@ -77,7 +77,9 @@ class Settings(BaseSettings):
     # when both exist. Blank (either) disables the integration.
     arc_api_url: str = "https://api.dashboard.service.safiabakery.uz"
     arc_username: str = Field("", validation_alias=AliasChoices("ARC_USERNAME", "USERNAME"))
-    arc_password: str = Field("", validation_alias=AliasChoices("ARC_PASSWORD", "PASSWORD"))
+    # PASSAWORD is not a typo HERE: it is the spelling that actually reached
+    # prod's .env, and the file is the one thing this code cannot edit.
+    arc_password: str = Field("", validation_alias=AliasChoices("ARC_PASSWORD", "PASSWORD", "PASSAWORD"))
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod

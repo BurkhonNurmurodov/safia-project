@@ -717,7 +717,7 @@ export default function Arc() {
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <span style={{ color: "var(--text-3)" }}>{t("arc.diagCred")}:</span>
-                {["USERNAME", "PASSWORD", "ARC_USERNAME", "ARC_PASSWORD"].map((n) => {
+                {["USERNAME", "PASSWORD", "PASSAWORD", "ARC_USERNAME", "ARC_PASSWORD"].map((n) => {
                   const v = diag.env_file?.cred?.[n];
                   const tone = v === true ? C_DONE : v === false ? C_OVERDUE : C_GREY;
                   return (
