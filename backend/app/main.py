@@ -29,7 +29,7 @@ from app.database import engine, Base
 from app.scheduler import shutdown_scheduler, start_scheduler
 from app.security import enforce_telegram_origin_admin, enforce_telegram_origin_global
 from app.version import APP_VERSION, STARTED_AT, current_commit
-from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns
+from app.routers import admin, brigadirs, attendance, heatmap, workers, downtime, plan, comments, settings, translations, leaders, kaizen, activity, concerns, tasks, profiles, leaderboard, quality, boot, ui_prefs, broadcast, setup_times, leader_tasks, leader_ai, idle_cell, cell_attendance, zagruzka_cell, attendance_batch, factories, worker_concerns, arc
 from app.routers import production as production_router
 from app.routers import auth as auth_router
 from app.routers import web_login as web_login_router
@@ -192,6 +192,10 @@ async def lifespan(app: FastAPI):
     # passenger_wsgi.py).
     from app.services.worker_concerns import register_boot_jobs as register_wc_jobs
     register_wc_jobs()
+    # ARC ticket mirror: quick pass every 15 min, full walk nightly + boot
+    # catch-up (mirrored in passenger_wsgi.py; skips without credentials).
+    from app.services.arc_sync import register_boot_jobs as register_arc_jobs
+    register_arc_jobs()
     yield
     shutdown_scheduler()
 
@@ -412,6 +416,9 @@ app.include_router(attendance_batch.router)
 # Per-cell загрузка TEST twin of /zagruzka, hard-locked to one supervisor —
 # self-gates via require_page("zagruzka-cell") (admin-only by default).
 app.include_router(zagruzka_cell.router)
+# ARC service-ticket register — self-gates via require_page("arc")
+# (admin-only by default), so no admin guard here.
+app.include_router(arc.router)
 
 
 @app.get("/health")

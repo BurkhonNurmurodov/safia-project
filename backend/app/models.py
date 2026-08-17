@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Index, Integer, BigInteger, Boolean, String, Numeric, Date, DateTime, LargeBinary, Text, ForeignKey, func, text, UniqueConstraint
+from sqlalchemy import Column, Index, Integer, BigInteger, Boolean, String, Numeric, Float, Date, DateTime, LargeBinary, Text, ForeignKey, func, text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -2236,3 +2236,91 @@ class WorkerConcernSheetState(Base):
     sheet_id      = Column(String, primary_key=True)
     modified_time = Column(String, nullable=True)  # Drive RFC3339 string, compared verbatim
     crawled_at    = Column(DateTime(timezone=True), nullable=True)
+
+
+class ArcRequest(Base):
+    """One service ticket mirrored from the ARC API («requests/factory»).
+
+    ``remote_id`` is the API's uuid and the ONLY identity — the row is upserted
+    on it every sync, so the local copy always reads as the API's latest state
+    (the API carries no updated_at, so every page walk re-writes every row).
+    ``raw`` keeps the full item: the register's columns are the fields the page
+    reads today, and a field the API adds later must not be lost until someone
+    adds a column for it.
+
+    ``missing_since`` is set ONLY by a full walk that finished (page reached
+    pages, no exception) for rows the API stopped returning, and cleared the
+    moment a row is seen again. A quick pass (first N pages) never touches it —
+    it cannot tell "gone" from "further down than I looked". Missing rows stay
+    in the table (never deleted) and are hidden by default on the page."""
+    __tablename__ = "arc_requests"
+
+    id                      = Column(Integer, primary_key=True, autoincrement=True)
+    remote_id               = Column(String, unique=True, nullable=False)
+    request_num             = Column(Integer, index=True)
+    branch_id               = Column(String, nullable=True)
+    branch_name             = Column(String, index=True)
+    country_id              = Column(String, nullable=True)
+    description             = Column(Text, nullable=True)
+    category_id             = Column(String, nullable=True)
+    category_name           = Column(String, index=True)
+    category_is_urgent      = Column(Boolean, nullable=True)
+    category_deadline_hours = Column(Integer, nullable=True)
+    deadline                = Column(DateTime(timezone=True), nullable=True)
+    deadline_time           = Column(DateTime(timezone=True), nullable=True)
+    master_id               = Column(String, nullable=True)
+    master_name             = Column(String, index=True)
+    status                  = Column(Integer, nullable=True)
+    normalized_status       = Column(String, index=True)
+    status_color            = Column(String, nullable=True)
+    is_overdue              = Column(Boolean, nullable=True)
+    created_at              = Column(DateTime(timezone=True), index=True)
+    cancelled_at            = Column(DateTime(timezone=True), nullable=True)
+    finished_at             = Column(DateTime(timezone=True), nullable=True)
+    completed_at            = Column(DateTime(timezone=True), nullable=True)
+    extra_phone             = Column(String, nullable=True)
+    latitude                = Column(Float, nullable=True)
+    longitude               = Column(Float, nullable=True)
+    deny_reason             = Column(Text, nullable=True)
+    sended_to_sap           = Column(Boolean, nullable=True)
+    photo_report            = Column(Text, nullable=True)
+    comment_report          = Column(Text, nullable=True)
+    document_url            = Column(Text, nullable=True)
+    has_other_active        = Column(Boolean, nullable=True)
+    other_active_count      = Column(Integer, nullable=True)
+    client_name             = Column(String, nullable=True)
+    raw                     = Column(JSONB, nullable=True)         # the full API item
+    first_seen_at           = Column(DateTime(timezone=True), server_default=func.now())
+    synced_at               = Column(DateTime(timezone=True), nullable=True)   # every upsert
+    missing_since           = Column(DateTime(timezone=True), nullable=True)   # completed full walk only
+
+
+class ArcSyncMeta(Base):
+    """Singleton row (id=1) tracking the ARC mirror: the claim that keeps two
+    passes from overlapping (``running`` + ``heartbeat``; a heartbeat older
+    than the stale window is a dead process's claim), the progress feed the
+    page polls, and the last outcome. ``mode`` says what the last pass was —
+    «quick» (first pages, every 15 min) or «full» (every page, nightly / on
+    Refresh). ``status_catalog`` is the distinct (status, normalized_status,
+    status_color) triples with counts, recomputed after every pass so the
+    filter never offers a value the table doesn't hold. ``spec`` is the API's
+    own openapi document, fetched best-effort and kept for the admin-only
+    /spec endpoint — it may stay null forever without anything else caring."""
+    __tablename__ = "arc_sync_meta"
+
+    id              = Column(Integer, primary_key=True)
+    last_synced     = Column(DateTime(timezone=True), nullable=True)
+    ok              = Column(Boolean, default=True)
+    message         = Column(Text, nullable=True)
+    row_count       = Column(Integer, default=0)
+    remote_total    = Column(Integer, default=0)
+    running         = Column(Boolean, default=False, nullable=False)
+    started_at      = Column(DateTime(timezone=True), nullable=True)
+    heartbeat       = Column(DateTime(timezone=True), nullable=True)
+    progress_done   = Column(Integer, default=0)
+    progress_total  = Column(Integer, default=0)
+    last_full_at    = Column(DateTime(timezone=True), nullable=True)
+    mode            = Column(String, nullable=True)     # "full" | "quick"
+    status_catalog  = Column(JSONB, nullable=True)      # [{status, normalized_status, status_color, count}]
+    spec            = Column(JSONB, nullable=True)      # openapi doc, best-effort
+    spec_fetched_at = Column(DateTime(timezone=True), nullable=True)

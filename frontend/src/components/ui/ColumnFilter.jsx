@@ -106,12 +106,18 @@ export function TxtFilter({ value, onChange, placeholder }) {
 // `groupBy` (optional) buckets the rows under small caption headers — pass a
 // fn returning an option's group label. Groups keep the order they first
 // appear in `opts`, so the caller controls both the group and the row order.
-export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null }) {
+// `labelOf` (optional) gives the plain-text label used for search and the row
+// tooltip when `render` returns a node AND the option itself is an opaque id
+// (a category uuid rendered as «name · count») — without it the search box
+// would match the id, never the name.
+export function OptsFilter({ opts, sel, onChange, render, searchable = false, groupBy = null, labelOf = null }) {
   const { t } = useLang();
   const [q, setQ] = useState("");
-  // `render` may return a node (chips, icons) — fall back to the raw option so
-  // search and the row tooltip stay meaningful instead of "[object Object]".
+  // `render` may return a node (chips, icons) — fall back to `labelOf`, then
+  // the raw option, so search and the row tooltip stay meaningful instead of
+  // "[object Object]".
   const label = (o) => {
+    if (labelOf) return String(labelOf(o) ?? "");
     const r = render ? render(o) : o;
     return typeof r === "string" || typeof r === "number" ? String(r) : String(o ?? "");
   };

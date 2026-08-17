@@ -99,6 +99,7 @@ const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
+const Arc = lazyWithReload(() => import("./pages/Arc"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
 const Gamification = lazyWithReload(() => import("./pages/Gamification"));
@@ -451,6 +452,7 @@ function AppWithLang() {
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
+            <Route path="/arc" element={<AuthGate><RequirePage page="arc"><Arc /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />
             {/* Own profile — every approved role has one, so no page-access

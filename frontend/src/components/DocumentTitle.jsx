@@ -35,6 +35,7 @@ const TITLE_KEYS = {
   "/setup-times":      "nav.setupTimes",
   "/idle-cell":        "nav.idleCell",
   "/zagruzka-cell":    "nav.zagruzkaCell",
+  "/arc":              "nav.arc",
   "/login":            "login.title",
   "/broadcast-receivers": "admin.tabBroadcast",
   // Segment roots — "/brigadir/12", "/admin/upload" and friends land here.

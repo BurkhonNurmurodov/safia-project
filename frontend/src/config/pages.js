@@ -48,6 +48,7 @@ export const PAGES = [
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
   { tier: "test", key: "idle-cell", route: "/idle-cell", labelKey: "nav.idleCell" },
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
+  { key: "arc", route: "/arc", labelKey: "nav.arc" },
 ];
 
 // Fallback matrix used before the API responds (matches the original hardcoded
@@ -83,6 +84,9 @@ export const DEFAULT_PAGE_ACCESS = {
   // Per-cell загрузка TEST twin of /zagruzka, locked to one supervisor's cells.
   // Admin-only while the per-cell method is validated; feeds nothing downstream.
   "zagruzka-cell": [],
+  // ARC service-ticket register (synced from the ARC API) — admin-only until
+  // a role is enabled from the Access tab.
+  arc: [],
 };
 
 // `capPages` are pages unlocked by the viewer's PERSONAL capability grants

@@ -11,7 +11,7 @@ import {
   Factory, Gauge, ClipboardCheck, Sparkles, Activity, ShieldAlert, ListTodo,
   MessageSquareWarning, Headset, Wrench, LayoutGrid, Timer, UserCheck,
   FlaskConical, Medal, ChevronDown, Cog, UsersRound, Crown, BadgeCheck,
-  Grid3x3, TestTubes, Megaphone,
+  Grid3x3, TestTubes, Megaphone, ClipboardList,
 } from "lucide-react";
 import api from "../../utils/api";
 import ProfileAvatar, { useMyProfileDetails } from "../ui/ProfileAvatar";
@@ -37,6 +37,8 @@ const ALL_LINKS = [
   { to: "/daily",    page: "daily",    key: "nav.daily",           icon: CalendarCheck, group: "prod" },
   { to: "/production", page: "production", key: "nav.production",    icon: Factory, group: "prod" },
   { to: "/trudoyomkost", page: "trudoyomkost", key: "nav.trudoyomkost", icon: Gauge, group: "prod" },
+  // ARC service-ticket register — synced from the ARC API, admin-only by default.
+  { to: "/arc", page: "arc", key: "nav.arc", icon: ClipboardList, group: "prod" },
   // Leader monitoring — ONE page for every role (the per-shift admin copies
   // are retired): the Smena filter inside it narrows to a shift, «All» shows
   // both. Shift 2's days come from the bot once the leader closed one there.

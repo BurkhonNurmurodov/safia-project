@@ -33,7 +33,7 @@ ENV_FILE="${ENV_FILE:-/var/www/production/backend/.env}"
 
 # The secrets this deploy is allowed to write. Adding one here plus a matching
 # `env:` line in .gitea/workflows/deploy.yaml is the whole procedure.
-KEYS=(GEMINI_API_KEY)
+KEYS=(GEMINI_API_KEY ARC_USERNAME ARC_PASSWORD)
 
 changed=0
 

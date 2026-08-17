@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell", "arc"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -103,6 +103,10 @@ DEFAULT_PAGE_ACCESS = {
     # method is being validated — it reads pp_* / cell_* tables only and feeds
     # nothing downstream.
     "zagruzka-cell": [],
+    # ARC service-ticket register (mirrored from the ARC API by
+    # services/arc_sync.py). Admin-only by default; open up roles from the
+    # Access tab or per person via page.view.arc.
+    "arc": [],
 }
 
 

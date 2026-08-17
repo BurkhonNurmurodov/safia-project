@@ -421,6 +421,39 @@ re-verifies it on every request. The second is a username + password at
   `utils/session.js` `inTelegram()`, which tests `WebApp.platform !== "unknown"`
   — `window.Telegram.WebApp` exists in every browser and proves nothing.
 
+## ARC tickets (`/arc`, page key `arc`)
+
+A mirror of IT's ARC service-ticket API
+(`api.dashboard.service.safiabakery.uz`, login → bearer → paginated
+`/arc/api/v1/requests/factory`). Admin-only by default; open it from Access /
+Permissions. `services/arc_client.py` (login, cached token, ONE re-login on
+401, page walk) · `services/arc_sync.py` (background thread + DB claim, per-page
+`ON CONFLICT` upsert into `arc_requests`, quick pass every 15 min = first 30
+pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
+`routers/arc.py` (`/meta` `/list` `/stats` `/requests/{id}` `/refresh`
+`/export.xlsx` `/spec`) · `pages/Arc.jsx`.
+
+- **The API's quirks are load-bearing**: a wrong password answers **404**
+  «Invalid Credentials» (not 401); there is no refresh endpoint (re-login);
+  docs live at `/arc/openapi.json` BEHIND the bearer (the sync stores them in
+  `arc_sync_meta.spec`, admin `GET /api/arc/spec`); tickets carry no
+  `updated_at`, so a row the API stops returning is only ever MARKED
+  (`missing_since`, set by a COMPLETED full walk that saw ≥1 ticket, cleared
+  when seen again) — never deleted.
+- **Derived state is defined ONCE** (`_derived()` in the router):
+  `closed_at = coalesce(completed_at, finished_at)`, `is_open`, `due =
+  coalesce(deadline_time, deadline)`, `late`, `overdue_now`, `hours_to_close`
+  — list, stats and export all read the same expressions; on-time % is over
+  closed tickets that HAVE a due. Status chips map `normalized_status` onto the
+  traffic-light palette by vocabulary (`utils/arcStatus.js`); the remote
+  `status_color` is a plain-hex fallback only.
+- **Credentials**: `Settings.arc_username/arc_password` read `ARC_USERNAME` /
+  `ARC_PASSWORD` first and the bare `USERNAME` / `PASSWORD` IT wrote into prod
+  `.env` by SSH second; both blank ⇒ page says «not connected», no jobs
+  registered. `Settings.Config.extra = "ignore"` exists because a stray `.env`
+  key used to abort boot AND the rollback — never re-tighten it. Rotation
+  without SSH: Gitea secrets `ARC_USERNAME` / `ARC_PASSWORD` (`deploy/sync-env.sh`).
+
 ## Workflow
 
 - **`gitea` is THE remote** — `git.safiabakery.uz/Safia-Outsource/production` (private). `main` tracks `gitea/main`, so a bare `git pull` / `git push` means gitea. GitHub (`origin`) is a mirror only: it is pushed last, best-effort, and never gated on.

@@ -201,6 +201,10 @@ try:
     # app/main.py).
     from app.services.worker_concerns import register_boot_jobs as register_wc_jobs
     register_wc_jobs()
+    # ARC ticket mirror: quick pass every 15 min, full walk nightly + boot
+    # catch-up (mirrored in app/main.py; skips without credentials).
+    from app.services.arc_sync import register_boot_jobs as register_arc_jobs
+    register_arc_jobs()
 except Exception as e:
     # .exception() keeps the traceback — the old bare print dropped it, which
     # is what left the stale-connection startup failure undiagnosable.

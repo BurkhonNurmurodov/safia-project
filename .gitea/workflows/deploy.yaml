@@ -47,6 +47,8 @@ jobs:
         id: syncenv
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ARC_USERNAME: ${{ secrets.ARC_USERNAME }}
+          ARC_PASSWORD: ${{ secrets.ARC_PASSWORD }}
         run: |
           set -euo pipefail
           cd /var/www/production

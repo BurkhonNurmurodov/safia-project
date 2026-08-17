@@ -2,7 +2,7 @@ import hashlib
 import logging
 import os
 
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 log = logging.getLogger(__name__)
@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     # Allows the "__dev__" auth bypass (admin login without Telegram initData).
     # Must stay off in production; set DEV_AUTH=1 in backend/.env for local dev.
     dev_auth: bool = False
+    # ARC service-ticket API (page /arc). IT put the credential into prod .env under
+    # the bare names USERNAME/PASSWORD by SSH; the ARC_-prefixed names are the
+    # canonical ones (deliverable via deploy/sync-env.sh + Gitea secrets) and win
+    # when both exist. Blank (either) disables the integration.
+    arc_api_url: str = "https://api.dashboard.service.safiabakery.uz"
+    arc_username: str = Field("", validation_alias=AliasChoices("ARC_USERNAME", "USERNAME"))
+    arc_password: str = Field("", validation_alias=AliasChoices("ARC_PASSWORD", "PASSWORD"))
 
     @field_validator("admin_telegram_id", mode="before")
     @classmethod
@@ -127,6 +134,10 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = _ENV_FILE
+        # A key in .env with no matching field used to abort boot (extra_forbidden)
+        # — and the rollback commit died the same way. A stray key must read as
+        # «not configured», never as an outage, on a platform with no SSH.
+        extra = "ignore"
 
 
 settings = Settings()
