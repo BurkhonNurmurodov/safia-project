@@ -51,6 +51,31 @@ function MediaDots({ n }) {
 const inputCls = "w-full px-3 py-2 rounded-xl text-sm outline-none";
 const inputStyle = { background: "var(--bg-inner)", border: "1px solid var(--border)", color: "var(--text-1)" };
 
+/**
+ * A native time input WITH a way back to blank. Blank is a real value on these
+ * fields — it means "inherit the level above" — but no engine gives it an
+ * affordance: Chrome wants a Delete on the focused segment, and Telegram's iOS
+ * wheel picker has no clear at all, so on the primary device a time set once
+ * could never be unset. The ✕ shows only when the field holds a value, and it
+ * sits OUTSIDE the input, clear of whatever picker indicator the engine draws
+ * inside the right edge.
+ */
+function TimeInput({ value, placeholder, onChange, clearTitle }) {
+  return (
+    <div className="flex items-center gap-1 flex-1 min-w-0">
+      <input type="time" value={value || ""} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputCls} style={inputStyle} />
+      {value ? (
+        <Button variant="ghost" tint size="lg" className="shrink-0"
+          style={{ paddingInline: 8 }} icon={<X size={14} />}
+          title={clearTitle} aria-label={clearTitle}
+          onClick={() => onChange("")} />
+      ) : null}
+    </div>
+  );
+}
+
 // Apply now vs stage to the target's next shift day.
 function WhenBar({ when, setWhen, nextDate, t }) {
   return (
@@ -572,19 +597,18 @@ export default function LeaderTasksAdmin() {
   // When a proof photo for this task may have been taken. TWO inputs, both
   // optional: an empty end inherits the level above, and the placeholder shows
   // exactly what that end would then be — the same value the reviewer uses and
-  // the bot prints to the leader. Native time inputs (there is no time template
-  // in components/ui; the date rule covers date pickers), styled like every
-  // other field in these modals so the row keeps the modal's baseline.
+  // the bot prints to the leader. Both go through the local TimeInput (there is
+  // no time template in components/ui; the date rule covers date pickers),
+  // styled like every other field in these modals so the row keeps the modal's
+  // baseline — and each end carries its own ✕ back to blank.
   const windowField = (value, onChange, phFrom, phTo, mark) => (
     <FormField label={withMark(t("admin.ltasks.window"), mark)} hint={t("admin.ltasks.windowHint")}>
       <div className="flex items-center gap-2">
-        <input type="time" value={value?.win_from || ""} placeholder={phFrom}
-          onChange={(e) => onChange({ win_from: e.target.value })}
-          className={inputCls} style={inputStyle} />
+        <TimeInput value={value?.win_from} placeholder={phFrom}
+          onChange={(v) => onChange({ win_from: v })} clearTitle={t("admin.ltasks.timeClear")} />
         <span className="text-xs shrink-0" style={{ color: "var(--text-3)" }}>—</span>
-        <input type="time" value={value?.win_to || ""} placeholder={phTo}
-          onChange={(e) => onChange({ win_to: e.target.value })}
-          className={inputCls} style={inputStyle} />
+        <TimeInput value={value?.win_to} placeholder={phTo}
+          onChange={(v) => onChange({ win_to: v })} clearTitle={t("admin.ltasks.timeClear")} />
       </div>
       {/* A time input renders "--:--" when empty, which reads as broken rather
           than as inherited, so the inherited pair is spelled out under it. */}
@@ -600,9 +624,10 @@ export default function LeaderTasksAdmin() {
   // the day's filing deadline instead, which the inherit line says.
   const deadlineField = (value, onChange, ph, mark) => (
     <FormField label={withMark(t("admin.ltasks.deadline"), mark)} hint={t("admin.ltasks.deadlineHint")}>
-      <input type="time" value={value?.deadline || ""} placeholder={ph}
-        onChange={(e) => onChange({ deadline: e.target.value })}
-        className={inputCls} style={inputStyle} />
+      <div className="flex items-center gap-2">
+        <TimeInput value={value?.deadline} placeholder={ph}
+          onChange={(v) => onChange({ deadline: v })} clearTitle={t("admin.ltasks.timeClear")} />
+      </div>
       <div className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
         {ph ? t("admin.ltasks.deadlineInherit").replace("{t}", ph) : t("admin.ltasks.deadlineDay")}
       </div>
