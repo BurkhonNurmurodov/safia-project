@@ -1513,7 +1513,7 @@ function ShiftChip({ shift, T }) {
   );
 }
 
-function StandCard({ e, worst, metric, T, name, cuts, trend, shift }) {
+function StandCard({ e, worst, metric, T, name, sup, cuts, trend, shift }) {
   const tone = worst ? C_BAD : MEDAL[e.place] || MEDAL[3];
   const Badge = worst ? AlertTriangle : Trophy;
   const ranked = metric === "consist" ? e.consist : e.rating;
@@ -1529,7 +1529,20 @@ function StandCard({ e, worst, metric, T, name, cuts, trend, shift }) {
 
       <div className="relative flex items-center gap-2">
         <Avatar name={name} size={30} />
-        <div className="min-w-0 text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
+        <div className="min-w-0">
+          <div className="text-[12.5px] font-semibold leading-tight" style={{ color: "var(--text-1)" }}>{name}</div>
+          {/* Whose unit this is. The register below DROPS the podium rows, so its
+            * «Brigadir» column never speaks for the top three — the card has to.
+            * Same compact spelling as that column ("N. Nurbek"), full name on the
+            * tooltip, and the page's own supervisor icon so the line needs no label. */}
+          {sup && (
+            <div className="mt-0.5 flex items-center gap-1 min-w-0 text-[10.5px] leading-tight"
+              title={`${T.supervisor}: ${sup}`} style={{ color: "var(--text-3)" }}>
+              <ShieldCheck size={11} className="flex-shrink-0" style={{ color: "var(--text-4)" }} />
+              <span className="truncate">{initialSurname(sup)}</span>
+            </div>
+          )}
+        </div>
         {/* Rank medallion — a FILLED chip carrying the trophy and the place digit
           * together. The bare outline trophy it replaced tinted too few pixels to
           * separate gold from bronze, and the ghost numeral behind the card is
@@ -3108,6 +3121,7 @@ export default function Leaders() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3">
               {standTop.map((e) => (
                 <StandCard key={e.name} e={e} name={nm(e.name)} worst={standDir === "asc"} metric={standMetric} T={T} cuts={tierCuts} trend={standTrend}
+                  sup={effStandMode === "leader" && !isSupervisor && leaderSup[e.name] ? nm(leaderSup[e.name]) : null}
                   shift={showShiftChips ? shiftOf.get(e.name) : null} />
               ))}
             </div>
