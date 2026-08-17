@@ -194,7 +194,8 @@ def report(uid: str = Query(...), db: Session = Depends(get_db),
 
     revs = db.query(LeaderAiReview).filter(LeaderAiReview.ref.in_(refs.keys())).all()
     cfg = _task_cfg(db, revs)
-    out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev), _date_check(cfg, rev))
+    out = {str(refs[rev.ref]): _as_verdict(rev, _window(cfg, rev),
+                                          _date_check(cfg, rev), _time_check(cfg, rev))
            for rev in revs}
     return {"enabled": True, "tasks": out}
 
@@ -469,6 +470,13 @@ def _date_check(cfg, rev) -> bool:
     return leader_ai.resolve_date_check(*_levels(cfg, rev))
 
 
+def _time_check(cfg, rev) -> bool:
+    """And is the CLOCK judged, or only the day? The third of the three that
+    travel together — with this False the window above is not a rule either, so
+    no surface may print it as one (see leader_ai.resolve_time_check)."""
+    return leader_ai.resolve_time_check(*_levels(cfg, rev))
+
+
 def _label(cfg, rev) -> str:
     """LEVEL first, then language — the same precedence services/leader_ai
     `task_label` uses. Walking language-first would let the global `name_ru`
@@ -676,7 +684,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
 
         names = proj.get(rev.ref) or {}
         win = _window(cfg, rev)
-        checked = _date_check(cfg, rev)
+        checked, timed = _date_check(cfg, rev), _time_check(cfg, rev)
         lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
         out.append({
             "ref": rev.ref,
@@ -703,18 +711,22 @@ def _hydrate(db: Session, rows: list[LeaderAiReview],
             "resolutionNote": rev.resolution_note,
             "imageDate": rev.image_date,
             "clocks": rev.clocks or [],
-            # NULL when the task is exempt from the date question: there is no
-            # window in force, and a card printing one beside an unjudged clock
-            # is how a reviewer starts "correcting" verdicts nobody made.
-            "expected": f"{lo} — {hi}" if checked else None,
+            # What the row was actually measured against — the window, the DAY
+            # alone on a task judged by the day, and NULL when the task is exempt
+            # from the date question entirely. A card printing a window beside an
+            # unjudged clock is how a reviewer starts "correcting" verdicts nobody
+            # made; printing one on a date-only task is the same mistake quieter.
+            "expected": (None if not checked
+                         else f"{lo} — {hi}" if timed else str(rev.date)[:10]),
             "dateCheck": checked,
+            "timeCheck": timed,
             "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
             # The date sentence is OURS, not the model's — it no longer knows
             # the window, and prose it wrote would go stale on the next window
             # edit. Rendered beside `reason`, which now covers topic and proof
             # only.
             "dateReason": leader_ai.date_prose(rev.clocks, rev.date, win,
-                                               check=checked),
+                                               check=checked, times=timed),
             # The yardstick the verdict was measured against. Asking a reviewer
             # to agree with a judgment while hiding its criterion is the reason
             # the old card could only ever be taken on faith.
@@ -903,11 +915,11 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
         rev = db.query(LeaderAiReview).filter_by(ref=ref).first()
     if rev is None:
         raise HTTPException(status_code=404, detail="Nothing to review for this task")
-    win, checked = leader_ai.date_rule_for(
+    win, checked, timed = leader_ai.date_rule_for(
         db, rev.task_id, rev.manager_id, rev.leader_id, rev.shift)
     if rev.status in ("ok", "flagged") and not body.force:
         return {"ok": True,
-                "task": _as_verdict(rev, win, checked)}  # already judged; never re-spend
+                "task": _as_verdict(rev, win, checked, timed)}  # already judged; never re-spend
 
     # An admin asking again IS the retry — give a burned-out row its attempts back.
     rev.attempts = 0
@@ -916,7 +928,7 @@ def review_now(body: ReviewNowIn, db: Session = Depends(get_db),
     except gemini.GeminiQuotaError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     db.refresh(rev)
-    return {"ok": True, "task": _as_verdict(rev, win, checked)}
+    return {"ok": True, "task": _as_verdict(rev, win, checked, timed)}
 
 
 def _report_target(db: Session, uid: str) -> dict:
@@ -966,27 +978,31 @@ def _refs_for_uid(db: Session, uid: str) -> dict[str, int]:
 
 
 def _as_verdict(rev: LeaderAiReview, win: tuple[str, str] | None = None,
-                check: bool = True) -> dict:
-    # `win` is the task's effective photo window and `check` whether it is
-    # enforced at all; callers that hold the preloaded config chain pass both
-    # rather than making this re-walk the chain.
+                check: bool = True, times: bool = True) -> dict:
+    # `win` is the task's effective photo window, `check` whether the date is
+    # judged at all and `times` whether the CLOCK is judged or only the day;
+    # callers that hold the preloaded config chain pass all three rather than
+    # making this re-walk the chain.
     lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
     return {
         "status": rev.status,
         "flags": rev.flags or [],
         "imageDate": rev.image_date,
         "clocks": rev.clocks or [],
-        # The window the verdict was measured against, from the SAME function
-        # the checker used — a date flag is only actionable if you can see what
-        # the photo was supposed to fall inside, and a second copy of the shift
-        # rule in the client would eventually disagree with the backend. NULL
-        # when the task is exempt: nothing was measured against it.
-        "expected": f"{lo} — {hi}" if check else None,
+        # What the verdict was measured against, from the SAME functions the
+        # checker used — a date flag is only actionable if you can see what the
+        # photo was supposed to satisfy, and a second copy of the rule in the
+        # client would eventually disagree with the backend. Three shapes, one
+        # field: the window when hours are judged, the DAY alone when only the
+        # day is, and NULL when the task is exempt (nothing was measured).
+        "expected": (None if not check
+                     else f"{lo} — {hi}" if times else str(rev.date)[:10]),
         "dateCheck": check,
+        "timeCheck": times,
         "reason": {l: getattr(rev, f"reason_{l}") for l in leader_ai.LANGS},
         "dateReason": leader_ai.date_prose(
             rev.clocks, rev.date, win or leader_ai.shift_window(rev.shift),
-            check=check),
+            check=check, times=times),
         "photos": rev.photos,
         "error": rev.error,
         "attempts": rev.attempts,

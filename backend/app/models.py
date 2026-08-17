@@ -1217,6 +1217,24 @@ class LeaderTaskDef(Base):
     # permanent flag nobody may act on. NULL at the two override levels below =
     # inherit; True everywhere is what the platform did before this existed.
     date_check   = Column(Boolean, nullable=False, default=True)
+    # And if it IS asked — must the CLOCK be proven too, or is the DAY enough?
+    # The third state of one three-way rule (`date_check` False dominates both):
+    #   date_check T + time_check T  the old, strict answer: a SYSTEM clock must
+    #                                be readable and inside `win_from..win_to`;
+    #   date_check T + time_check F  DATE ONLY — the day must be the report's
+    #                                day, the hour is never judged and the window
+    #                                is not a rule; a date printed ON SCREEN (an
+    #                                in-app date filter, a dated register row)
+    #                                counts, and a proof with no readable date at
+    #                                all is NOT flagged;
+    #   date_check F                 the question is not asked at all.
+    # Why the middle exists (user, 2026-08-17): most proofs here are screenshots
+    # of THIS dashboard, where the day is plainly on screen but no OS clock is —
+    # so strict mode answered `no_date` on honest filings, and the only escape
+    # was exempting the day as well, i.e. losing the one fact the screen does
+    # prove. NULL at the two override levels below = inherit; True everywhere is
+    # what the platform did before this existed.
+    time_check   = Column(Boolean, nullable=False, default=True)
     # Virtual-default weight: a supervisor with no leader_task_settings row for
     # this task uses this (the seeded weights sum to 100, so untouched
     # supervisors never trip the ≠100 warning).
@@ -1252,6 +1270,9 @@ class LeaderTaskSetting(Base):
     # Per-supervisor "is the date checked at all". NULL = inherit the global
     # answer; False exempts this unit's filings from the date question.
     date_check   = Column(Boolean, nullable=True)
+    # Per-supervisor "must the CLOCK be proven, or is the day enough". NULL =
+    # inherit; False = date-only for this unit (see LeaderTaskDef.time_check).
+    time_check   = Column(Boolean, nullable=True)
 
     __table_args__ = (UniqueConstraint("manager_id", "task_id", name="uq_ltask_setting"),)
 
@@ -1285,6 +1306,9 @@ class LeaderTaskLeaderSetting(Base):
     # Per-leader "is the date checked at all". NULL = inherit the supervisor's
     # effective answer.
     date_check   = Column(Boolean, nullable=True)
+    # Per-leader "must the CLOCK be proven, or is the day enough". NULL =
+    # inherit (see LeaderTaskDef.time_check for the three-way rule).
+    time_check   = Column(Boolean, nullable=True)
 
     __table_args__ = (UniqueConstraint("leader_id", "task_id", name="uq_ltask_leader_setting"),)
 

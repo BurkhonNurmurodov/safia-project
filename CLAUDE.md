@@ -151,11 +151,29 @@ below).
   **and `unreadable`** (the user's ruling). A technical `error` row is NOT a
   flag and never deducts: a dead Drive permission must not mass-fail a shift.
   Only a human `approved` lifts an automatic rejection; `requeried` does not.
-- **A task may be EXEMPT from the date question** (user, 2026-08-17) —
-  `date_check` on the same global → supervisor → leader chain as the photo
-  window, resolved by the one predicate `leader_ai.resolve_date_check` (NULL =
-  inherit, NULL everywhere = checked, so nothing changes until an admin unticks
-  something). Some proofs are screens that carry no clock — an in-app checklist,
+- **The date question has THREE modes, not two** (user, 2026-08-17) — two
+  nullable booleans on the same global → supervisor → leader chain as the photo
+  window, resolved by `leader_ai.resolve_date_check` + `resolve_time_check`
+  (NULL = inherit, NULL everywhere = the strict answer, so nothing changes until
+  an admin picks something). Read them as ONE rule, always via
+  `date_rule_for` → `(window, checked, timed)`:
+  - `date_check T` + `time_check T` — **strict**: a SYSTEM clock (OS bar, phone
+    status bar, camera stamp) must be readable and inside the window. The
+    unchanged original.
+  - `date_check T` + `time_check F` — **date only**: the DAY must be the
+    report's day, the hour is never compared and the window is not a rule. Here
+    and ONLY here the model may read a date printed INSIDE the app or document
+    (a date filter, a dated register row) — `_prompt(screen_dates=True)`, which
+    strict mode explicitly forbids — and it lists every date it sees, because
+    `clock_in_window(times=False)` passes on ANY matching day: one screen
+    legitimately shows several. **No visible date at all is NOT flagged**
+    (`date_flags` drops `no_date` in this mode); a WRONG day still is. This mode
+    exists because most proofs here are screenshots of THIS dashboard, whose day
+    is on screen while no OS clock is — strict mode answered `no_date`, i.e.
+    rejected, on honest filings, and exempting the day threw away the one fact
+    the screen does prove.
+  - `date_check F` — **not asked at all**.
+  Some proofs are screens that carry no clock — an in-app checklist,
   a printed system report — and there the date question had only two outcomes,
   both wrong: reject every honest filing, or leave a flag nobody may act on.
   `date_flags(..., check=False)` returns **nothing**, and since it owns both
@@ -171,13 +189,25 @@ below).
   check off the `expected` payload is null, the triage card's two date rows
   collapse into ONE neutral «not asked» row, the «Vazifalar» tab prints «sana
   tekshirilmaydi» instead of hours, and the bot stops printing the window on the
-  photo prompt. Admin: the `dateCheckField` toggle in all three ltasks modals →
-  `PUT /admin/leader-tasks/date-check` (tri-state, four-way addressed like
-  `WindowIn`). Two traps: `resolve_date_check` cannot use `resolve_deadline`'s
-  "first non-blank" test (the meaningful value is FALSE), and
-  `_leader_row_extras` must count it or a cell write deletes a leader row whose
-  only override was the exemption. Scores correct themselves everywhere at once,
-  but no corrected report is re-DMed — same as a window edit.
+  photo prompt. **Date-only mode restates all four rather than blanking them**:
+  `expected` carries the DAY (labelled «Kerakli sana», never «oyna»), the triage
+  card keeps two rows with the second asking about the day, the tab prints «sana
+  kerak, vaqt shart emas», and the bot asks for a visible date instead of hours
+  (`photo_date_only`) — silence there would read as "nothing about when is
+  asked", which is the third mode, not this one. Admin: ONE three-option
+  `dateRuleField` in all three ltasks modals (the four combinations have only
+  three meanings, so the fourth is never offerable) → `PUT
+  /admin/leader-tasks/date-check` + `/time-check`, both tri-state and four-way
+  addressed like `WindowIn`, written one AFTER the other (they materialise the
+  same override row, and two parallel inserts race its unique key). Three traps:
+  `resolve_date_check`/`resolve_time_check` cannot use `resolve_deadline`'s
+  "first non-blank" test (the meaningful value is FALSE); `_leader_row_extras`
+  must count BOTH or a cell write deletes a leader row whose only override was
+  the exemption; and a task switched INTO date-only re-derives its old verdicts
+  free but cannot gain a date nobody was asked to transcribe — those rows only
+  lose flags, and «Qayta tekshirish» is what re-reads their photos. Scores
+  correct themselves everywhere at once, but no corrected report is re-DMed —
+  same as a window edit.
 - **`auto_discover()` is the second door into discovery's territory**, and it is
   bounded so it cannot become the bulk auto-trigger the user banned three times:
   shift 1, from one fixed date, sheet layer only. It runs on the leaders-sheet

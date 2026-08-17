@@ -21,6 +21,14 @@ import { useTranslit } from "../../utils/transliterate";
 
 const C_ON = "#22c55e", C_OFF = "#94a3b8", C_WARN = "#eab308", C_BAD = "#ef4444";
 const LANGS = ["uz", "uz_cyrl", "ru", "en"];
+// The date rule as ONE value in the UI and TWO booleans on the wire — the same
+// three modes the backend resolves (leader_ai.resolve_date_check +
+// resolve_time_check). Read `date_check` FIRST: False answers the hour question
+// too, so a row carrying `time_check` under an exempt date is not a fourth mode,
+// just a leftover, and must still read as «off».
+const dcMode = (v) => (v?.date_check === false ? "off"
+  : v?.time_check === false ? "day" : "full");
+const dcModeValues = (m) => ({ date_check: m !== "off", time_check: m === "full" });
 const LANG_LABELS = { uz: "UZ", uz_cyrl: "УЗ", ru: "РУ", en: "EN" };
 const OV_RING = "inset 0 0 0 2px rgba(255,255,255,0.75)";
 
@@ -215,6 +223,11 @@ export default function LeaderTasksAdmin() {
   // (and the deductions they caused in the automatic regime), ticking it back
   // on restores them, both from stored clocks with no AI call.
   const dcMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/date-check", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
+  // The middle mode: judge the DAY, never the hour. Its own endpoint, written
+  // right after the one above and never in parallel with it (see saveDateRule)
+  // — both materialise the SAME override row, and two concurrent inserts race
+  // its unique key.
+  const tcMut = useMutation({ mutationFn: (b) => api.put("/admin/leader-tasks/time-check", b), onSuccess: () => { invalidate(); ping(); }, onError: onErr });
   // Example proof photos live beside the criteria: instant like it (nothing
   // the leader sees changes), ids come from the live config so an upload or
   // delete re-renders the strip through the same invalidate.
@@ -313,7 +326,7 @@ export default function LeaderTasksAdmin() {
   ), [rows, leadSel]);
 
   const tname = (task) => task.name?.[lang] || task.name?.uz || `T${task.id}`;
-  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null, date_check: null };
+  const getCell = (mid, tid) => settings[String(mid)]?.[String(tid)] ?? { enabled: true, min_media: 1, weight: 0, names: {}, criteria: null, win_from: null, win_to: null, deadline: null, date_check: null, time_check: null };
   // The definition of done actually in force for a cell, walking the same
   // chain the backend reviewer walks: leader → supervisor → global.
   const critOf = (tid) => tasks.find((x) => x.id === tid)?.criteria || "";
@@ -343,14 +356,21 @@ export default function LeaderTasksAdmin() {
   const dlOf = (tid) => tasks.find((x) => x.id === tid)?.deadline || "";
   const supDlPh = (mid, tid) => dlOf(tid);
   const leadDlPh = (mid, tid) => getCell(mid, tid).deadline || supDlPh(mid, tid);
-  // ── is the photo's DATE judged at all ─────────────────────────────────────
-  // Same chain, but a BOOLEAN, so "inherit" cannot be a blank field — it is
+  // ── how the photo's DATE is judged ────────────────────────────────────────
+  // Same chain, but BOOLEANS, so "inherit" cannot be a blank field — it is
   // expressed the way `enabled`/`weight` express it: the control opens on the
   // value in force, and Save sends null when it still equals what that level
   // inherits. `?? ` and not `||`: the meaningful value here is FALSE, and `||`
   // would read an inherited exemption as unset every time.
+  //
+  // TWO booleans, ONE control (see dateRuleField): the reader picks a mode and
+  // the pair is derived from it, because "date off + time on" is not a mode
+  // anybody means. They still resolve INDEPENDENTLY per level — like the two
+  // window ends — so a supervisor may narrow one and keep inheriting the other.
   const dcOf = (tid) => tasks.find((x) => x.id === tid)?.date_check !== false;
   const supDc = (mid, tid) => getCell(mid, tid).date_check ?? dcOf(tid);
+  const tcOf = (tid) => tasks.find((x) => x.id === tid)?.time_check !== false;
+  const supTc = (mid, tid) => getCell(mid, tid).time_check ?? tcOf(tid);
   const supTaskName = (mid, task) => getCell(mid, task.id).names?.[lang] || tname(task);
   // The name a leader INHERITS in one language: the supervisor's own rename
   // when they wrote one, else the global name (NOT NULL, so never blank).
@@ -374,6 +394,7 @@ export default function LeaderTasksAdmin() {
     win_to: leadWinPh(mid, tid, "win_to"),
     deadline: leadDlPh(mid, tid),
     date_check: supDc(mid, tid),
+    time_check: supTc(mid, tid),
   });
 
   const sums = useMemo(() => {
@@ -417,6 +438,7 @@ export default function LeaderTasksAdmin() {
       win_from: ov?.win_from || inh.win_from, win_to: ov?.win_to || inh.win_to,
       deadline: ov?.deadline || inh.deadline,
       date_check: ov?.date_check ?? inh.date_check,
+      time_check: ov?.time_check ?? inh.time_check,
     });
   };
   const openLeaderByIds = (p, tid) => { const task = tasks.find((x) => x.id === tid); if (task) { setShowExc(false); openLeaderCell(p, p.manager_id, task); } };
@@ -453,11 +475,28 @@ export default function LeaderTasksAdmin() {
   // leader modal's numbers do. `stored` is the level's RAW value, null when it
   // holds no override, which is what makes the no-op test correct in both
   // directions: pinning True where True was inherited is a real change.
-  const saveDateCheck = (draft, stored, inherited, ids) => {
-    const v = draft?.date_check !== false;
-    const out = inherited === undefined ? v : (v === inherited ? null : v);
-    if (out === (stored ?? null)) return;
-    dcMut.mutate({ ...ids, date_check: out });
+  //
+  // The two flags of the date rule go out one AFTER the other, awaited, never
+  // fired together: both materialise the same override row when the level has
+  // none, and two concurrent inserts race its unique key. Awaiting also means a
+  // failure stops the pair instead of half-applying a mode nobody picked.
+  // Returns whether both writes landed, and NEVER rejects: two of its three
+  // callers fire it without awaiting (the cell and column modals, like every
+  // other writer there), and a rejected promise nobody catches is a console
+  // error on a failure the mutation's own onError has already toasted.
+  const saveDateRule = async (draft, stored, inherited, ids) => {
+    for (const [key, mut] of [["date_check", dcMut], ["time_check", tcMut]]) {
+      const v = draft?.[key] !== false;
+      const inh = inherited?.[key];
+      const out = inh === undefined ? v : (v === inh ? null : v);
+      if (out === (stored?.[key] ?? null)) continue;
+      try {
+        await mut.mutateAsync({ ...ids, [key]: out });
+      } catch {
+        return false;
+      }
+    }
+    return true;
   };
 
   const saveCell = () => {
@@ -467,7 +506,8 @@ export default function LeaderTasksAdmin() {
       { task_id: cell.tid, manager_id: cell.mid });
     saveDeadline(cell, getCell(cell.mid, cell.tid),
       { task_id: cell.tid, manager_id: cell.mid });
-    saveDateCheck(cell, getCell(cell.mid, cell.tid).date_check, dcOf(cell.tid),
+    saveDateRule(cell, getCell(cell.mid, cell.tid),
+      { date_check: dcOf(cell.tid), time_check: tcOf(cell.tid) },
       { task_id: cell.tid, manager_id: cell.mid });
     cellMut.mutate({
       manager_id: cell.mid, task_id: cell.tid, enabled: cell.enabled,
@@ -513,9 +553,8 @@ export default function LeaderTasksAdmin() {
         await winMut.mutateAsync({ ...ids, win_from, win_to });
       if (deadline !== (ov?.deadline || ""))
         await dlMut.mutateAsync({ ...ids, deadline });
-      const dc = lcell.date_check === inh.date_check ? null : lcell.date_check !== false;
-      if (dc !== (ov?.date_check ?? null))
-        await dcMut.mutateAsync({ ...ids, date_check: dc });
+      // Not a throw — see saveDateRule — so the chain stops on the answer.
+      if (!await saveDateRule(lcell, ov, inh, ids)) return;
     } catch { return; }
     leaderMut.mutate({
       ...ids,
@@ -633,19 +672,27 @@ export default function LeaderTasksAdmin() {
       </div>
     </FormField>
   );
-  // Is the photo's DATE judged at all? Sits directly under the window it
-  // governs, because with this off the window above it is not a rule — and the
-  // hint says exactly that rather than leaving two controls that look equally
-  // binding. A toggle and not a blank-means-inherit field: the value that
-  // matters is False, and a control whose "off" and "unset" look identical is
-  // how an exemption gets switched on by accident.
-  const dateCheckField = (value, onChange, mark) => (
+  // HOW the photo's date is judged — three mutually-exclusive modes. Sits
+  // directly under the window it governs, because in two of the three that
+  // window is not a rule at all, and the hint says which rather than leaving
+  // two controls that look equally binding.
+  //
+  // One pick, not two toggles: the pair (date_check, time_check) has four
+  // combinations and only three meanings — "the day is not judged" already
+  // answers the hour question — so offering the fourth would let an admin
+  // choose a state the backend cannot distinguish from another.
+  //
+  // A pick and not a blank-means-inherit field for the same reason as before:
+  // the values that matter are the relaxations, and a control whose "off" and
+  // "unset" look identical is how an exemption gets switched on by accident.
+  const dateRuleField = (value, onChange, mark) => (
     <FormField label={withMark(t("admin.ltasks.dateCheck"), mark)}
-      hint={value?.date_check !== false ? t("admin.ltasks.dateCheckHint")
-        : t("admin.ltasks.dateCheckOffHint")}>
-      <SegmentedToggle fill value={value?.date_check !== false}
-        onChange={(v) => onChange({ date_check: v })}
-        options={[[true, t("admin.ltasks.dateOn")], [false, t("admin.ltasks.dateOff")]]} />
+      hint={t(`admin.ltasks.dateHint.${dcMode(value)}`)}>
+      <SegmentedToggle fill value={dcMode(value)}
+        onChange={(m) => onChange(dcModeValues(m))}
+        options={[["full", t("admin.ltasks.dateFull")],
+                  ["day", t("admin.ltasks.dateDayOnly")],
+                  ["off", t("admin.ltasks.dateOff")]]} />
     </FormField>
   );
   const nameFields = (names, setName, placeholderFor, markFor) =>
@@ -761,22 +808,29 @@ export default function LeaderTasksAdmin() {
         ? getOv(lead0.id, task.id)?.deadline
         : getCell(rows[0]?.m.id, task.id).deadline)
       : task.deadline) || "";
-    // A boolean has no blank state, so under a filter this seeds on the value in
+    // A boolean has no blank state, so under a filter these seed on the value in
     // FORCE for the visible rows (not their raw null) — and `dc0raw` keeps the
-    // raw one beside it, because "already stored here" is what decides whether
+    // raw pair beside it, because "already stored here" is what decides whether
     // Save writes anything. Unfiltered, the level IS global: the two agree.
+    const ov0 = lead0 ? getOv(lead0.id, task.id) : null;
+    const cell0 = lead0 ? null : getCell(rows[0]?.m.id, task.id);
     const dcInh = anyFilter
-      ? (lead0 ? supDc(lead0.manager_id, task.id) : dcOf(task.id))
-      : undefined;
+      ? (lead0
+        ? { date_check: supDc(lead0.manager_id, task.id),
+            time_check: supTc(lead0.manager_id, task.id) }
+        : { date_check: dcOf(task.id), time_check: tcOf(task.id) })
+      : {};
     const dc0raw = anyFilter
-      ? (lead0 ? getOv(lead0.id, task.id)?.date_check ?? null
-        : getCell(rows[0]?.m.id, task.id).date_check ?? null)
-      : task.date_check !== false;
+      ? { date_check: (lead0 ? ov0?.date_check : cell0.date_check) ?? null,
+          time_check: (lead0 ? ov0?.time_check : cell0.time_check) ?? null }
+      : { date_check: task.date_check !== false, time_check: task.time_check !== false };
     setCol({
       tid: task.id, enabled: f.enabled, min_media: f.min_media, weight: f.weight,
       names: { ...names0 }, names0, criteria: criteria0, criteria0, when: "now",
       ...win0, win0, deadline: deadline0, deadline0,
-      date_check: dc0raw ?? dcInh, dc0raw, dcInh,
+      date_check: dc0raw.date_check ?? dcInh.date_check,
+      time_check: dc0raw.time_check ?? dcInh.time_check,
+      dc0raw, dcInh,
     });
   };
   const saveCol = () => {
@@ -784,7 +838,7 @@ export default function LeaderTasksAdmin() {
     saveCriteria(col.criteria, col.criteria0, { task_id: col.tid, ...ids });
     saveWindow(col, col.win0, { task_id: col.tid, ...ids });
     saveDeadline(col, { deadline: col.deadline0 }, { task_id: col.tid, ...ids });
-    saveDateCheck(col, col.dc0raw, col.dcInh, { task_id: col.tid, ...ids });
+    saveDateRule(col, col.dc0raw, col.dcInh, { task_id: col.tid, ...ids });
     if (LANGS.some((l) => (col.names?.[l] || "") !== (col.names0?.[l] || "")))
       taskMut.mutate({ task_id: col.tid, names: col.names, when: col.when, ...ids });
   };
@@ -931,7 +985,7 @@ export default function LeaderTasksAdmin() {
                             <td key={task.id}>
                               <button type="button"
                                 title={`${supTaskName(m.id, task)} · ${c.enabled ? t("admin.ltasks.enabled") : t("admin.ltasks.disabled")} · ${t("admin.ltasks.photos")} ${c.min_media} · ${c.weight}%`}
-                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), when: "now" })}
+                                onClick={() => setCell({ mid: m.id, tid: task.id, ...c, criteria: c.criteria || "", win_from: c.win_from || "", win_to: c.win_to || "", date_check: supDc(m.id, task.id), time_check: supTc(m.id, task.id), when: "now" })}
                                 className="relative w-full h-9 transition-opacity hover:opacity-75 grid place-items-center text-[11px] font-bold tabular-nums rounded"
                                 style={cellStyle(c)}>
                                 {c.weight}%
@@ -980,7 +1034,7 @@ export default function LeaderTasksAdmin() {
         <Modal title={t("admin.ltasks.cellTitle")} subtitle={tl(managers.find((m) => m.id === cell.mid)?.name || "")} icon={<ListChecks size={14} />} onClose={() => setCell(null)}
           footer={<>
             <Button variant="secondary" onClick={() => setCell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={cellMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending} onClick={saveCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.supNameHint")}</p>
           {nameFields(cell.names, (l, v) => setCell((c) => ({ ...c, names: { ...c.names, [l]: v } })), (l) => cellTask?.name?.[l] || "")}
@@ -990,7 +1044,7 @@ export default function LeaderTasksAdmin() {
           {criteriaField(cell.criteria, (v) => setCell((c) => ({ ...c, criteria: v })), critOf(cell.tid))}
           {windowField(cell, (v) => setCell((c) => ({ ...c, ...v })),
             supWinPh(cell.mid, cell.tid, "win_from"), supWinPh(cell.mid, cell.tid, "win_to"))}
-          {dateCheckField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
+          {dateRuleField(cell, (v) => setCell((c) => ({ ...c, ...v })))}
           {deadlineField(cell, (v) => setCell((c) => ({ ...c, ...v })), supDlPh(cell.mid, cell.tid))}
           <WhenBar when={cell.when} setWhen={(v) => setCell((c) => ({ ...c, when: v }))} nextDate={cellNext} t={t} />
         </Modal>
@@ -1002,7 +1056,7 @@ export default function LeaderTasksAdmin() {
           footer={<>
             {lcell.hasOv && <Button variant="danger" className="mr-auto" icon={<RotateCcw size={14} />} onClick={askReset}>{t("admin.ltasks.reset")}</Button>}
             <Button variant="secondary" onClick={() => setLcell(null)}>{t("admin.broadcast.cancel")}</Button>
-            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
+            <Button loading={leaderMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending} onClick={saveLeaderCell}>{t("admin.ltasks.save")}</Button>
           </>}>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>{t("admin.ltasks.leaderHint")}</p>
           {/* Every field opens on the value in force and carries a «changed»
@@ -1023,8 +1077,8 @@ export default function LeaderTasksAdmin() {
             changedPill(ownText(lcell.criteria, lInh.criteria) !== ""))}
           {windowField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.win_from, lInh.win_to,
             changedPill(ownText(lcell.win_from, lInh.win_from) !== "" || ownText(lcell.win_to, lInh.win_to) !== ""))}
-          {dateCheckField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
-            changedPill((lcell.date_check !== false) !== (lInh.date_check !== false)))}
+          {dateRuleField(lcell, (v) => setLcell((c) => ({ ...c, ...v })),
+            changedPill(dcMode(lcell) !== dcMode(lInh)))}
           {deadlineField(lcell, (v) => setLcell((c) => ({ ...c, ...v })), lInh.deadline,
             changedPill(ownText(lcell.deadline, lInh.deadline) !== ""))}
           <WhenBar when={lcell.when} setWhen={(v) => setLcell((c) => ({ ...c, when: v }))} nextDate={lcellNext} t={t} />
@@ -1038,7 +1092,7 @@ export default function LeaderTasksAdmin() {
             <Button variant="secondary" onClick={() => setCol(null)}>{t("admin.broadcast.cancel")}</Button>
             {/* Filtered down to nothing: there is no row for a name or a
                 definition-of-done to land on, so Save has no target. */}
-            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending}
+            <Button loading={taskMut.isPending || critMut.isPending || winMut.isPending || dlMut.isPending || dcMut.isPending || tcMut.isPending}
               disabled={anyFilter && !applyN} onClick={saveCol}>{t("admin.ltasks.save")}</Button>
           </>}>
           {/* One scope statement for the whole modal — every field below it
@@ -1075,8 +1129,8 @@ export default function LeaderTasksAdmin() {
             {windowField(col, (v) => setCol((c) => ({ ...c, ...v })),
               anyFilter ? "" : globalWinPh("win_from"),
               anyFilter ? "" : globalWinPh("win_to"))}
-            {dateCheckField(col, (v) => setCol((c) => ({ ...c, ...v })),
-              changedPill(anyFilter && (col.date_check !== false) !== (col.dcInh !== false)))}
+            {dateRuleField(col, (v) => setCol((c) => ({ ...c, ...v })),
+              changedPill(anyFilter && dcMode(col) !== dcMode(col.dcInh)))}
             {deadlineField(col, (v) => setCol((c) => ({ ...c, ...v })), "")}
             <div className="pt-1">
               {/* Examples are keyed per TASK — there is no per-row storage, so
@@ -1129,7 +1183,11 @@ export default function LeaderTasksAdmin() {
                 // Chipped even though its neighbours on this row (criteria,
                 // window, deadline) are not: it is the one override a leader can
                 // hold ALONE, and without a chip that row lists nothing at all.
-                if (r.ov.date_check != null) chips.push(excChip(`${t("admin.ltasks.dateCheck")}: ${r.ov.date_check ? t("admin.ltasks.dateOn") : t("admin.ltasks.dateOff")}`));
+                // One chip for the pair: they are one rule, and two chips
+                // reading «date: yes» + «time: no» is the four-combination
+                // confusion the single control exists to avoid.
+                if (r.ov.date_check != null || r.ov.time_check != null)
+                  chips.push(excChip(`${t("admin.ltasks.dateCheck")}: ${t(`admin.ltasks.dateMode.${dcMode(r.ov)}`)}`));
                 return (
                   <button key={`${r.p.id}-${r.tid}`} onClick={() => openLeaderByIds(r.p, r.tid)}
                     className="w-full text-left flex items-center gap-2 px-1 py-1.5 text-sm hover:bg-[var(--bg-inner)]" style={{ borderTop: "1px solid var(--border)" }}>

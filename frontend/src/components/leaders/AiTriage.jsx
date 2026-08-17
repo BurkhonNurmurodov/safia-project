@@ -993,17 +993,27 @@ function Verdict({ item, T, lang }) {
   // line so it re-reads correctly after a window edit, which model prose could
   // not: that text was written once and froze.
   const dateWhy = item.dateReason?.[lang] || item.dateReason?.ru || item.dateReason?.en || "";
-  // The task may be exempt from the date question altogether. Its two rows then
-  // collapse into ONE neutral row: neither is passed or failed, they were never
-  // asked, and a green tick would claim a check that did not run. What the model
-  // read is still shown — it is evidence either way. `skip` is the third state.
+  // The date question has three regimes, and the rows say WHICH one ran — a
+  // reviewer comparing two cards must not have to infer it:
+  //   full  two rows, as always: was a clock read, and was it inside the window;
+  //   day   two rows still, but the second asks about the DAY and is labelled as
+  //         date-only, because "inside the window" over a proof whose hours
+  //         nobody compared is a claim about a check that did not run;
+  //   off   ONE neutral row — neither passed nor failed, never asked, and a green
+  //         tick would claim otherwise. `skip` is that third state.
+  // What the model read is shown in every regime: it is evidence either way.
   const dateOn = item.dateCheck !== false;
+  const timeOn = dateOn && item.timeCheck !== false;
   const rows = [
-    ...(dateOn ? [
+    ...(!dateOn ? [
+      { skip: true, label: T.aiQ_noDate, val: item.imageDate || "—" },
+    ] : timeOn ? [
       { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
       { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
     ] : [
-      { skip: true, label: T.aiQ_noDate, val: item.imageDate || "—" },
+      { ok: !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
+      { ok: !f.has("date_mismatch"), label: T.aiQ_day,
+        val: `${shortWin(item.expected)} · ${T.aiQ_dayOnly}` },
     ]),
     // Subject before completeness: a reviewer who sees "wrong subject" ticked
     // red stops reading, and asking "does it prove the work" about a photo of

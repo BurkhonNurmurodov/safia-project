@@ -814,6 +814,40 @@ def add_leader_task_date_check() -> None:
         db.close()
 
 
+def add_leader_task_time_check() -> None:
+    """2026-08-17: the DATE question splits in two — is the day asked at all
+    (`date_check`), and if so must the CLOCK be proven too (`time_check`).
+
+    Deliberately a second column rather than a widened `date_check`: the boolean
+    is read by five surfaces and stored at three levels, and a type change would
+    have to rewrite every one of them in the same deploy — while a rollback (the
+    deploy script does roll back on an unhealthy /health) would leave the old
+    code reading a column it cannot parse. Two booleans compose instead:
+    `date_check` False still means "not asked", and `time_check` False is the new
+    middle — the day is judged, the hour never is.
+
+    Idempotent, and shaped exactly like the date-check migration above: nullable
+    columns everywhere (all `ADD COLUMN IF NOT EXISTS` can do), then TRUE filled
+    in at the GLOBAL level, which is the chain's floor and has nothing to inherit
+    from. `leader_ai.resolve_time_check` reads NULL as "checked", so a box that
+    never ran this keeps judging clocks exactly as before.
+    """
+    db = SessionLocal()
+    try:
+        for table in ("leader_task_defs", "leader_task_settings",
+                      "leader_task_leader_settings"):
+            db.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS time_check BOOLEAN"))
+        db.execute(text(
+            "UPDATE leader_task_defs SET time_check = TRUE WHERE time_check IS NULL"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] leader task time-check migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_leader_ai_clocks() -> None:
     """2026-08-14: the model stops judging the date and starts transcribing it.
 

@@ -116,6 +116,17 @@ _DRAIN_LOCK_KEY = 8_140_573_112_004_331  # arbitrary, must not collide app-wide
 # clock for every screenshot taken on a phone — which is what most proofs are —
 # and `date_flags()` turned that into `no_date`, i.e. an automatic rejection of a
 # photo whose date was sitting in plain sight at the top of the image.
+#
+# The SAME failure returned in a second guise (user, 2026-08-17), and the fix is
+# the third state of the date rule rather than another source in the list. A task
+# whose proof is a screenshot of THIS dashboard has its day printed inside the
+# app — a date filter, a dated register row — and the prompt bans reading exactly
+# that, because in-app text does not say when a photo was TAKEN. True, and
+# irrelevant on a task the operator judges by the day alone: there the ban left no
+# date at all, so an honest filing came back `no_date` = rejected. So a task may
+# now be judged by the DAY only (`time_check` False), which flips two things
+# together — the model may read a date off the screen, and `date_flags` compares
+# days and never hours. Read `resolve_time_check` and `date_flags` as one rule.
 _CLOCK_SCHEMA = {
     "type": "OBJECT",
     "properties": {
@@ -351,17 +362,47 @@ def resolve_date_check(*levels) -> bool:
     return True
 
 
+def resolve_time_check(*levels) -> bool:
+    """Given the date question IS asked, must the CLOCK be proven too? The
+    chain's rows narrowest first, same order and same NULL-inherit rule as
+    `resolve_date_check` — which it composes with, never replaces:
+
+        date_check False              → nothing is asked (this answer is moot)
+        date_check True  + True here  → strict: a system clock, inside the window
+        date_check True  + False here → DATE ONLY: the day is judged, the hour
+                                        is not, and the window is not a rule
+
+    Read it with `resolve_date_check`, never alone: on its own, False says
+    "hours are not judged", which is also true of a fully exempt task, so a
+    surface that reads only this one cannot tell "the day must match" from "we
+    do not ask". Every caller here resolves the pair (see `date_rule_for`).
+
+    Defaults True for the same reason as its twin: NULL is inherit, NULL all the
+    way up is the behaviour that predates this column, and a migration that has
+    not run must never read as a silent relaxation.
+    """
+    for row in levels:
+        if row is None:
+            continue
+        v = getattr(row, "time_check", None)
+        if v is not None:
+            return bool(v)
+    return True
+
+
 def date_rule_for(db: Session, task_id: int, manager_id: int | None,
                   leader_id: int | None,
-                  shift: int | None) -> tuple[tuple[str, str], bool]:
-    """The whole date rule for one row — (window, checked) — in ONE chain walk,
-    resolved leader → supervisor → global → shift default.
+                  shift: int | None) -> tuple[tuple[str, str], bool, bool]:
+    """The whole date rule for one row — (window, checked, timed) — in ONE chain
+    walk, resolved leader → supervisor → global → shift default.
 
-    The two facts always travel together: a window nobody compares against is
-    just a label, and a comparison with no window has nothing to compare to. The
-    per-row form; bulk readers preload the three config tables and call
-    `resolve_window`/`resolve_date_check` directly (see routers/leader_ai
-    `_hydrate` — this walk costs three queries a row).
+    The three facts always travel together: a window nobody compares against is
+    just a label, a comparison with no window has nothing to compare to, and a
+    window shown for a task whose hours are not judged is a rule the reader
+    cannot tell is dead. The per-row form; bulk readers preload the three config
+    tables and call `resolve_window`/`resolve_date_check`/`resolve_time_check`
+    directly (see routers/leader_ai `_hydrate` — this walk costs three queries a
+    row).
     """
     own = sup = None
     if leader_id:
@@ -371,7 +412,9 @@ def date_rule_for(db: Session, task_id: int, manager_id: int | None,
         sup = db.query(LeaderTaskSetting).filter_by(
             manager_id=manager_id, task_id=task_id).first()
     td = db.query(LeaderTaskDef).filter_by(id=task_id).first()
-    return resolve_window(shift, own, sup, td), resolve_date_check(own, sup, td)
+    return (resolve_window(shift, own, sup, td),
+            resolve_date_check(own, sup, td),
+            resolve_time_check(own, sup, td))
 
 
 def overnight(win: tuple[str, str]) -> bool:
@@ -401,13 +444,24 @@ def date_window(date: str, shift: int | None,
 
 
 def _prompt(*, task: str, note: str, criteria: str,
-            n_images: int, omitted: int, n_examples: int = 0) -> str:
+            n_images: int, omitted: int, n_examples: int = 0,
+            screen_dates: bool = False) -> str:
     # NOTE the parameters that are gone: date, shift, win. The model is not told
     # which day the report is for, which hours are allowed, or that shifts
     # exist. It transcribes clocks; `date_flags()` compares them. Two whole
     # classes of bug went with them — a model that anchored its READING on the
     # report date printed above it, and an overnight window it had to reason
     # across midnight about (which flagged a correct 02:00 photo every night).
+    #
+    # `screen_dates` is the ONE thing about the rule the model is now told, and
+    # it is a question of what may be READ, never of what passes: with it, a date
+    # printed inside the app or document counts as a date worth transcribing.
+    # It rides on `time_check` being off (see `resolve_time_check`) because the
+    # two are the same fact from either end — a task judged by the day alone is
+    # exactly a task whose proof carries a day and no clock, and telling the
+    # model to ignore that day left `date_flags` with nothing to judge, which is
+    # how an honest dashboard screenshot became `no_date`. The model still is not
+    # told WHICH day is expected, so it cannot anchor on one.
     # Relevance is asked against the task name plus its `note_*` description —
     # the same line the leader reads in the bot for what to photograph. It is
     # deliberately lenient: the failure it exists to catch is a photo about
@@ -479,15 +533,43 @@ def _prompt(*, task: str, note: str, criteria: str,
         ex_date = ""
     omit = (f"\nEslatma: bu vazifada ko'proq rasm bor, faqat birinchi "
             f"{n_images} tasi yuborildi ({omitted} tasi yuborilmadi).") if omitted else ""
-    return f"""Sen zavod liderlarining kunlik hisobotlarini tekshiruvchi auditorsan.
-{intro}
+    # Question 1, in its two forms — which SOURCES may be read, and when to add
+    # no entry at all. Everything after it (the field list, the day-first format,
+    # the discarded year) is shared, because those are facts about transcription
+    # and not about the rule.
+    #
+    # Strict: only a system clock or a camera stamp, and an in-app date is
+    # explicitly BANNED — it does not say when a photo was taken, which is the
+    # question that mode asks.
+    #
+    # Date-only: the same sources PLUS the date printed on screen, and EVERY
+    # visible date is listed rather than one per photo. Both follow from the
+    # judgement: `clock_in_window(times=False)` passes on ANY matching day
+    # because one screen legitimately shows several (a register filtered to
+    # today still lists last week's rows), so the model must hand over all of
+    # them; withholding the one the filter shows was what left an honest proof
+    # with no readable date at all.
+    if screen_dates:
+        date_block = """1) SANA. Sen rasmda KO'RINGAN SANANI O'QIYSAN. Bu vazifada rasm QACHON
+(soat necha) olingani tekshirilmaydi — soat ko'rinmasa, bu muammo emas. Sana
+quyidagilarning HAR BIRIDAN o'qilishi mumkin:
+   a) TIZIM SOATI — Windows'da pastki o'ng burchakda, macOS'da yuqori o'ng
+      burchakda, telefonda eng yuqori holat satridagi sana-vaqt;
+   b) KAMERA MUHRI — kamera rasmga bosgan sana-vaqt yozuvi;
+   c) EKRANDAGI, ya'ni ILOVA yoki HUJJAT ICHIDAGI SANA — bu vazifada BU HAM
+      TO'LIQ HISOBGA OLINADI: ilovadagi sana filtri («17-avgust, 2026» kabi),
+      jadval yoki ro'yxat qatoridagi sana, hujjat/shakl sarlavhasidagi sana,
+      qo'lda yozilgan sana.
 
-VAZIFA: {task}
-{note_line}{omit}
+Ekranda BIR NECHTA sana bo'lsa — masalan yuqorida filtr sanasi, pastda
+qatorlarning sanalari — HAMMASINI yoz, har biri uchun alohida yozuv qo'sh (eng
+ko'p 8 ta: avval filtr yoki sarlavha sanasi, keyin qatorlardagi sanalar).
+Qaysi biri to'g'ri kelishini tizim o'zi hisoblaydi.
 
-Quyidagi savollarga javob ber:
-
-1) SOAT. Sen rasm QACHON OLINGANINI O'QIYSAN. Buning uchun FAQAT quyidagi
+Sen sanani BAHOLAMAYSAN — faqat O'QIYSAN va yozasan. Qaysi sana kutilayotgani
+senga aytilmagan; taxmin qilma va o'zingdan sana qo'shma."""
+    else:
+        date_block = """1) SOAT. Sen rasm QACHON OLINGANINI O'QIYSAN. Buning uchun FAQAT quyidagi
 manbalardan biri hisobga olinadi:
    a) KOMPYUTER SKRINSHOTI — operatsion tizim soati skrinshot ichida ko'rinadi:
       Windows'da pastki o'ng burchakda (masalalar panelida), macOS'da yuqori
@@ -511,15 +593,45 @@ ekranning eng chekkasidagi tizim satridan yoki kamera muhridan o'qiladi.
 
 Sen sanani BAHOLAMAYSAN — faqat O'QIYSAN va yozasan. To'g'ri yoki noto'g'ri
 ekanini keyin tizim o'zi hisoblaydi. Qaysi sana kutilayotgani senga aytilmagan;
-taxmin qilma va hisobot sanasiga moslashtirma.
+taxmin qilma va hisobot sanasiga moslashtirma."""
+    # The "add no entry" rules, per mode: what counts as nothing to transcribe
+    # differs exactly as the source list does.
+    empty_rules = ("""
+- Rasmda hech qanday sana ko'rinmasa — o'sha rasm uchun yozuv QO'SHMA. Hech
+  qaysi rasmda sana bo'lmasa, clocks bo'sh ro'yxat bo'ladi. O'ylab yoki taxmin
+  qilib sana YOZMA.
+- Sana ko'rinib, soati ko'rinmasa — yozuvni qo'sh, day va month ni to'ldir,
+  time ni "" qoldir. Bu vazifada bu KAMCHILIK emas."""
+                   if screen_dates else """
+- Yuqoridagi manbalardan hech biri ko'rinmasa (yoki faqat ilova/hujjat ichidagi
+  vaqt bo'lsa) — o'sha rasm uchun yozuv QO'SHMA. Hech qaysi rasmda soat
+  bo'lmasa, clocks bo'sh ro'yxat bo'ladi.
+- Faqat SOAT ko'rinib, kun ham oy ham ko'rinmasa — yozuvni qo'sh, time ni to'ldir,
+  day=0 va month=0 qoldir.""")
+    entry_line = ("Topilgan HAR BIR sana uchun clocks ro'yxatiga bitta yozuv qo'sh:"
+                  if screen_dates
+                  else "Har bir TEKSHIRILADIGAN rasm uchun clocks ro'yxatiga bitta yozuv qo'sh:")
+    source_line = ("  source — qayerdan o'qiding: «windows», «macos», «telefon», "
+                   "«camera», «ekran» (ilova ichidagi sana)."
+                   if screen_dates else
+                   "  source — qayerdan o'qiding: «windows», «macos», «telefon», «camera».")
+    return f"""Sen zavod liderlarining kunlik hisobotlarini tekshiruvchi auditorsan.
+{intro}
 
-Har bir TEKSHIRILADIGAN rasm uchun clocks ro'yxatiga bitta yozuv qo'sh:
+VAZIFA: {task}
+{note_line}{omit}
+
+Quyidagi savollarga javob ber:
+
+{date_block}
+
+{entry_line}
   raw    — ekranda qanday yozilgan bo'lsa shundayligicha, butun satr (masalan
            «04.08.2026 14:22» yoki «15:10 чт, 13 авг.»);
   day    — kun raqami (1-31), ko'rinmasa 0;
   month  — oy raqami (1-12), ko'rinmasa 0;
   time   — soat «SS:DD» ko'rinishida (24 soatlik), ko'rinmasa "";
-  source — qayerdan o'qiding: «windows», «macos», «telefon», «camera».
+{source_line}
 
 Mahalliy format KUN.OY.YIL, ya'ni 04.08.2026 = 4-avgust (4-yanvar emas), demak
 day=4, month=8. Oy nomi qisqartma bo'lishi mumkin (Avg / Авг / Aug = 8).
@@ -527,12 +639,7 @@ day=4, month=8. Oy nomi qisqartma bo'lishi mumkin (Avg / Авг / Aug = 8).
 YIL kerak emas — uni yozma. Bu manbalar ko'pincha yilni ko'rsatmaydi (macOS
 menyu satri odatda faqat «Sesh 4 Avg 14:22» deb yozadi), va yil hisobga
 olinmaydi.
-
-- Yuqoridagi manbalardan hech biri ko'rinmasa (yoki faqat ilova/hujjat ichidagi
-  vaqt bo'lsa) — o'sha rasm uchun yozuv QO'SHMA. Hech qaysi rasmda soat
-  bo'lmasa, clocks bo'sh ro'yxat bo'ladi.
-- Faqat SOAT ko'rinib, kun ham oy ham ko'rinmasa — yozuvni qo'sh, time ni to'ldir,
-  day=0 va month=0 qoldir.{ex_date}
+{empty_rules}{ex_date}
 
 {match_block}
 
@@ -1180,11 +1287,19 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
         return "image"
 
     examples = task_examples(db, rev.task_id)
+    # Resolved BEFORE the call, not just after it: the rule decides what the
+    # model is asked to read (a date-only task's date lives inside the app, and
+    # the strict prompt forbids reading it), and the same values then judge what
+    # came back. One walk, one answer, no chance of asking one question and
+    # grading another.
+    win, checked, timed = date_rule_for(db, rev.task_id, rev.manager_id,
+                                        rev.leader_id, rev.shift)
     prompt = _prompt(
         task=task_label(db, rev.task_id, rev.manager_id, rev.leader_id),
         note=task_note(db, rev.task_id),
         criteria=criteria_for(db, rev.task_id, rev.manager_id, rev.leader_id),
         n_images=len(images), omitted=omitted, n_examples=len(examples),
+        screen_dates=checked and not timed,
     )
     try:
         out = gemini.generate_json(prompt, examples + images, _SCHEMA)
@@ -1214,9 +1329,7 @@ def review_one(db: Session, rev: LeaderAiReview) -> str:
     # The model no longer answers the date question; it hands over what it READ
     # and the window comparison happens here, on our own data.
     rev.clocks = _clean_clocks(out.get("clocks"))
-    win, checked = date_rule_for(db, rev.task_id, rev.manager_id,
-                                 rev.leader_id, rev.shift)
-    flags += date_flags(rev.clocks, rev.date, win, check=checked)
+    flags += date_flags(rev.clocks, rev.date, win, check=checked, times=timed)
     flags = [f for f in _FLAG_ORDER if f in set(flags)]
 
     rev.flags = flags
@@ -1882,6 +1995,40 @@ def _one_clock(part: str) -> tuple[int, int, int, int] | None:
     return month, day, hh, mi
 
 
+def _date_only(s: str) -> tuple[int, int] | None:
+    """(month, day) out of a stamp that carries NO clock — "17-avgust, 2026",
+    "2026-08-17", "17.08" — or None.
+
+    The date-only mode's counterpart to `_one_clock`, which by design returns
+    None without a time: there, a date with no clock is undecidable, so it must
+    not be read. Here the date IS the answer, and leaving it unparsed would send
+    the entry through as silence — the verdict would come back "no date visible"
+    on a screenshot whose date the model transcribed perfectly.
+
+    Same rules as `_one_clock`'s date half: day-first local format, month names
+    accepted abbreviated, the year read and discarded. Deliberately called only
+    where the model itself said the string is a date.
+    """
+    m = _ISO_DATE_RE.search(s)
+    if m:
+        mo, d = int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return mo, d
+    for m in _NUM_DATE_RE.finditer(s):
+        d, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return mo, d
+    for m in _TEXT_DATE_RE.finditer(s):
+        mo = _MONTHS.get(m.group(2)[:3].lower())
+        if mo and 1 <= int(m.group(1)) <= 31:
+            return mo, int(m.group(1))
+    for m in _TEXT_DATE_RE2.finditer(s):
+        mo = _MONTHS.get(m.group(1)[:3].lower())
+        if mo and 1 <= int(m.group(2)) <= 31:
+            return mo, int(m.group(2))
+    return None
+
+
 def _stamps(s: str) -> list[str]:
     """Split a transcription into one string per CLOCK.
 
@@ -1927,7 +2074,8 @@ def parse_clock(raw: str | None) -> list[tuple[int, int, int, int]] | None:
 
 
 def clock_in_window(clocks: list[dict] | None,
-                    date: str, win: tuple[str, str]) -> bool | None:
+                    date: str, win: tuple[str, str],
+                    *, times: bool = True) -> bool | None:
     """Are ALL of a report's photo clocks inside the window? None = undecidable
     (no clock was read at all — that is `no_date`, a different answer).
 
@@ -1939,6 +2087,21 @@ def clock_in_window(clocks: list[dict] | None,
     right but which day it belongs to cannot be proven, and the user's rule is
     that an unprovable day is flagged (2026-08-14). One bad photo fails the
     report, which is how a multi-photo answer is read everywhere else too.
+
+    `times=False` — the task's chain says the DAY is enough (`resolve_time_check`)
+    — answers a deliberately different question, in three ways:
+
+    * the hour is not read at all, so `win` only still decides whether the day
+      after also counts (an overnight shift's morning half). Nothing else about
+      the window is applied — it is not a rule in this mode;
+    * ANY entry carrying the right day passes, where the strict form needs EVERY
+      entry to. In this mode the dates come off the SCREEN, and one screen
+      legitimately shows many: a register filtered to today still lists rows
+      from last week. The user's rule is exactly this — "if at least one date in
+      the screenshot is the submitted day, the task is done" (2026-08-17);
+    * an entry with no day at all is not a failure, it is silence — it just
+      cannot vote. All of them silent ⇒ None, and `date_flags` turns THAT into
+      no flag rather than `no_date`.
     """
     if not clocks:
         return None
@@ -1950,6 +2113,12 @@ def clock_in_window(clocks: list[dict] | None,
     nxt = day + timedelta(days=1)
     d0, d1 = (day.month, day.day), (nxt.month, nxt.day)
     over = overnight(win)
+    if not times:
+        days = [(int(c.get("month") or 0), int(c.get("day") or 0)) for c in clocks]
+        seen = [d for d in days if 0 not in d]
+        if not seen:
+            return None          # nothing dated anything — nobody voted
+        return any(d == d0 or (over and d == d1) for d in seen)
     for c in clocks:
         got = (int(c.get("month") or 0), int(c.get("day") or 0))
         clock = hhmm(c.get("time"))
@@ -1963,7 +2132,8 @@ def clock_in_window(clocks: list[dict] | None,
 
 
 def date_flags(clocks: list[dict] | None, date: str,
-               win: tuple[str, str], *, check: bool = True) -> list[str]:
+               win: tuple[str, str], *, check: bool = True,
+               times: bool = True) -> list[str]:
     """THE date verdict. Derived, never stored — so it is always the answer for
     the window in force RIGHT NOW, and an admin who edits a window has every
     affected report corrected before the page finishes loading.
@@ -1979,16 +2149,35 @@ def date_flags(clocks: list[dict] | None, date: str,
     still stored and still shown; only the judgement is withheld, so switching
     the exemption back off re-decides every affected row with no AI call.
 
-    It defaults to True — the old behaviour — deliberately: the three callers
-    (`review_one`, `sync_date_flags`, `date_prose`) all pass it explicitly, and
-    a fourth one added without it should keep judging dates rather than quietly
-    exempt every task on the platform.
+    `times=False` — the chain says the DAY is enough — keeps `date_mismatch` and
+    drops `no_date` entirely. That asymmetry is the whole point of the mode and
+    is deliberate on both halves:
+
+    * a proof whose visible date is the WRONG day is still a rejection. That is
+      the failure this question exists for — yesterday's screenshot re-filed
+      today — and it is provable from the screen without any clock;
+    * a proof with no visible date is NOT a rejection. Here the day is meant to
+      come off the screen, and "the screen does not show one" is a fact about the
+      screen, not misconduct. Flagging it is exactly the complaint that created
+      this mode: a Xavotirlar screenshot showing «17-avgust, 2026» in the app but
+      no OS clock was answered `no_date`, i.e. rejected, on a task whose own
+      written rule said the time is not required (user, 2026-08-17).
+
+    Which also makes the mode switch FREE in both directions on already-judged
+    rows, like a window edit: turning it on can only clear flags from stored
+    clocks, and turning it back off re-derives the strict answer from the same
+    data. No Gemini call, no quota, no re-check run.
+
+    Both flags default to True — the old behaviour — deliberately: the three
+    callers (`review_one`, `sync_date_flags`, `date_prose`) all pass them
+    explicitly, and a fourth one added without them should keep judging dates
+    and clocks rather than quietly relax every task on the platform.
     """
     if not check:
         return []
-    ok = clock_in_window(clocks, date, win)
+    ok = clock_in_window(clocks, date, win, times=times)
     if ok is None:
-        return ["no_date"]
+        return ["no_date"] if times else []
     return [] if ok else ["date_mismatch"]
 
 
@@ -2005,9 +2194,11 @@ def _clean_clocks(raw) -> list[dict]:
     """Normalise what the model returned. A generative model fills a schema
     approximately: it will send 32 for a day, "14:22:05" or "2:22 PM" for a
     time, and occasionally a whole entry of nothing. Everything is squeezed into
-    the two shapes `clock_in_window` understands — a complete clock, or an entry
-    with day/month 0 meaning "seen, but the day cannot be proven" — because a
-    silently malformed entry would otherwise read as an in-window pass.
+    the three shapes `clock_in_window` understands — a complete clock; a date
+    with an empty time (all a date-only task's proof carries, and undecidable in
+    strict mode, which is exactly how each reads it); or an entry with day/month
+    0 meaning "seen, but the day cannot be proven" — because a silently malformed
+    entry would otherwise read as an in-window pass.
     """
     out: list[dict] = []
     for c in (raw or []):
@@ -2029,6 +2220,12 @@ def _clean_clocks(raw) -> list[dict]:
                 t = f"{hh:02d}:{mi:02d}"
                 if not month:
                     month, day = m2, d2
+            elif not month:
+                # No clock anywhere in it — but a DATE may still be in there, and
+                # on a date-only task that is the whole answer. `parse_clock`
+                # cannot see it: it is anchored on a time by design.
+                if d := _date_only(str(c.get("raw") or "")):
+                    month, day = d
         entry = {"raw": str(c.get("raw") or "").strip()[:120],
                  "month": month, "day": day, "time": t}
         if src := str(c.get("source") or "").strip()[:16]:
@@ -2087,6 +2284,39 @@ _DATE_PROSE = {
         "ru": "Фото снято {seen} — в пределах допустимого интервала {lo} — {hi}.",
         "en": "The photo was taken {seen} — within the allowed {lo} — {hi}.",
     },
+    # Strict mode, and the screen showed a DATE but no clock — which is what a
+    # dashboard screenshot looks like once a date-only task is switched back to
+    # strict. Without its own sentence it fell into `date_mismatch`, i.e. "the
+    # photo was taken {a date with no time} — outside the allowed window", which
+    # states a time comparison that never happened.
+    "no_time": {
+        "uz": "Rasmda sana ({seen}) ko'rinadi, lekin qachon olinganini ko'rsatuvchi soat topilmadi. Bu vazifada ruxsat etilgan vaqt: {lo} — {hi}.",
+        "uz_cyrl": "Расмда сана ({seen}) кўринади, лекин қачон олинганини кўрсатувчи соат топилмади. Бу вазифада рухсат этилган вақт: {lo} — {hi}.",
+        "ru": "На фото видна дата ({seen}), но часов, показывающих время съёмки, нет. Допустимое время для этой задачи: {lo} — {hi}.",
+        "en": "The photo shows a date ({seen}) but no clock telling when it was taken. Allowed for this task: {lo} — {hi}.",
+    },
+    # ── date-only mode: the day is judged, the hour is not ───────────────────
+    # Each of the three says WHICH question was asked, because the same row in
+    # strict mode would have been answered differently — an admin comparing two
+    # cards must be able to see that, not infer it from a missing window line.
+    "day_ok": {
+        "uz": "Rasmdagi sana ({seen}) hisobot kuniga ({day}) to'g'ri keladi. Bu vazifada olingan vaqt tekshirilmaydi.",
+        "uz_cyrl": "Расмдаги сана ({seen}) ҳисобот кунига ({day}) тўғри келади. Бу вазифада олинган вақт текширилмайди.",
+        "ru": "Дата на фото ({seen}) совпадает с днём отчёта ({day}). Время съёмки в этой задаче не проверяется.",
+        "en": "The date on the photo ({seen}) matches the report day ({day}). The time is not checked for this task.",
+    },
+    "day_bad": {
+        "uz": "Rasmdagi sana ({seen}) hisobot kuniga ({day}) to'g'ri kelmaydi.",
+        "uz_cyrl": "Расмдаги сана ({seen}) ҳисобот кунига ({day}) тўғри келмайди.",
+        "ru": "Дата на фото ({seen}) не совпадает с днём отчёта ({day}).",
+        "en": "The date on the photo ({seen}) does not match the report day ({day}).",
+    },
+    "day_none": {
+        "uz": "Rasmda sana ko'rinmadi. Bu vazifada sana majburiy emas, shuning uchun bunga belgi qo'yilmadi.",
+        "uz_cyrl": "Расмда сана кўринмади. Бу вазифада сана мажбурий эмас, шунинг учун бунга белги қўйилмади.",
+        "ru": "На фото не видно даты. В этой задаче дата не обязательна, поэтому метка не ставится.",
+        "en": "No date is visible on the photo. It is not mandatory for this task, so nothing was flagged for it.",
+    },
     # The exemption says so IN WORDS. A card that simply omitted the date line
     # would read as "not checked yet"; one that printed the "ok" sentence would
     # claim a window was verified when nothing compared anything to it. What was
@@ -2102,37 +2332,48 @@ _DATE_PROSE = {
 
 
 def date_prose(clocks: list[dict] | None, date: str,
-               win: tuple[str, str], *, check: bool = True) -> dict[str, str]:
+               win: tuple[str, str], *, check: bool = True,
+               times: bool = True) -> dict[str, str]:
     """The date verdict as a sentence per language. Derived like the flag
     itself, so the two can never disagree."""
-    flags = date_flags(clocks, date, win, check=check)
     if not check:
         key = "not_required"
-    elif not flags:
+    elif not times:
+        # Date-only: three outcomes, and "no flag" covers two of them — the day
+        # matched, or nothing on the screen was dated. They must not share a
+        # sentence: one says the proof was verified, the other says the question
+        # went unanswered and was let go.
+        got = clock_in_window(clocks, date, win, times=False)
+        key = "day_none" if got is None else ("day_ok" if got else "day_bad")
+    elif not date_flags(clocks, date, win, check=check, times=times):
         key = "ok"
-    elif "no_date" in flags:
+    elif clock_in_window(clocks, date, win) is None:
         key = "no_date"
-    else:
+    elif any(not (c.get("day") and c.get("month")) for c in (clocks or [])):
         # "Read a clock but not a day" reads very differently from "wrong day",
         # and one sentence for both is what made a flagged card unactionable.
-        key = ("unconfirmed"
-               if any(not (c.get("day") and c.get("month")) for c in (clocks or []))
-               else "date_mismatch")
+        key = "unconfirmed"
+    elif any(not hhmm(c.get("time")) for c in (clocks or [])):
+        key = "no_time"          # dated, but nothing says when it was taken
+    else:
+        key = "date_mismatch"
     lo, hi = date_window(date, None, win)
     seen = clocks_text(clocks) or "—"
-    return {l: t.format(seen=seen, lo=lo, hi=hi) for l, t in _DATE_PROSE[key].items()}
+    return {l: t.format(seen=seen, lo=lo, hi=hi, day=str(date)[:10])
+            for l, t in _DATE_PROSE[key].items()}
 
 
 def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
     """Re-derive every written verdict's DATE flags from its stored clocks and
     the window in force now. Returns how many rows changed; commits once.
 
-    The date verdict has exactly FOUR inputs — the clocks (frozen at review
-    time), the report's day, the task's window, and whether the task's chain
-    asks the date question at all — and this runs whenever any of them can have
-    moved: at boot, after a window edit, after a date-check edit, after a sheet
-    Refresh or a discover (both re-stamp `date`), and when the AI overview is
-    opened. There is no fifth input, so there is no trigger left to forget.
+    The date verdict has exactly FIVE inputs — the clocks (frozen at review
+    time), the report's day, the task's window, whether the task's chain asks the
+    date question at all, and whether it asks about the CLOCK or only the day —
+    and this runs whenever any of them can have moved: at boot, after a window
+    edit, after a date-check or time-check edit, after a sheet Refresh or a
+    discover (both re-stamp `date`), and when the AI overview is opened. There is
+    no sixth input, so there is no trigger left to forget.
 
     It is kept a WRITE rather than a read-time overlay because `status`/`flags`
     are what ~20 queue, count, re-check and progress queries filter on in SQL;
@@ -2171,7 +2412,8 @@ def sync_date_flags(db: Session, task_ids: list[int] | None = None) -> int:
         win = resolve_window(rev.shift, *levels)
         kept = [f for f in (rev.flags or ()) if f not in _OWNED_FLAGS]
         want = set(kept) | set(date_flags(
-            rev.clocks, rev.date, win, check=resolve_date_check(*levels)))
+            rev.clocks, rev.date, win, check=resolve_date_check(*levels),
+            times=resolve_time_check(*levels)))
         flags = [f for f in _FLAG_ORDER if f in want]
         if flags == list(rev.flags or ()):
             continue

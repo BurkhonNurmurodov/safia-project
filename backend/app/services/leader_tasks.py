@@ -142,6 +142,9 @@ def effective_settings(db: Session, manager_id: int) -> dict[int, dict]:
             # RAW tri-state, and `or None` would destroy it: None = inherit,
             # False = this unit's filings are exempt from the date question.
             "date_check": s.date_check if s else None,
+            # Same tri-state, same trap: None = inherit, False = this unit is
+            # judged by the DAY alone (the hour is not compared to the window).
+            "time_check": s.time_check if s else None,
         }
     return out
 
@@ -169,6 +172,7 @@ def leader_overrides(db: Session, leader_ids: list[int]) -> dict[int, dict[int, 
             "win_to": r.win_to or None,
             "deadline": r.deadline or None,
             "date_check": r.date_check,
+            "time_check": r.time_check,
         }
     return out
 
@@ -243,9 +247,12 @@ def effective_leader_config(db: Session, prof, shift: int | None = None) -> dict
             "enabled": enabled, "min_media": min_media,
             "weight": weight, "names": names,
             "window": leader_ai.resolve_window(shift, r, s, td),
-            # Resolved beside the window it governs: with this False the window
-            # is not enforced, so no surface may present it as a requirement.
+            # Resolved beside the window it governs: with either of these False
+            # the window is not enforced, so no surface may present it as a
+            # requirement — `date_check` False asks nothing about the day at all,
+            # `time_check` False asks about the day but never the hour.
             "date_check": leader_ai.resolve_date_check(r, s, td),
+            "time_check": leader_ai.resolve_time_check(r, s, td),
             "criteria": criteria,
             "deadline": resolve_deadline(r, s, td),
         }
@@ -301,6 +308,7 @@ def requirements_for(db: Session, *, prof=None, manager=None,
                 "names": names,
                 "window": leader_ai.resolve_window(shift, s, td),
                 "date_check": leader_ai.resolve_date_check(s, td),
+                "time_check": leader_ai.resolve_time_check(s, td),
                 "criteria": crit,
                 "deadline": resolve_deadline(s, td),
             }
@@ -326,8 +334,11 @@ def requirements_for(db: Session, *, prof=None, manager=None,
             "window": list(c["window"]),
             # False ⇒ the tab must NOT print the window as a rule: the leader
             # would be reading a requirement nothing enforces, which is the same
-            # mistake in reverse as enforcing one nobody stated.
+            # mistake in reverse as enforcing one nobody stated. `time_check`
+            # False is the middle answer — the DAY must be right, the hours are
+            # not a rule — so the tab states that instead of the window.
             "date_check": bool(c["date_check"]),
+            "time_check": bool(c["time_check"]),
             "deadline": c["deadline"],
             "examples": examples.get(td.id, []),
         })
@@ -472,22 +483,49 @@ def set_date_check(db: Session, *, task_id: int, date_check: bool | None,
                    manager_id: int | None = None, leader_id: int | None = None,
                    rejudge: bool = True) -> None:
     """Write "is the date checked for this task" at one level of the chain.
-    None clears the level and falls back to the level above; at the GLOBAL level
-    None is stored as True, because that level is the chain's floor and has
-    nothing left to inherit from.
 
-    Same shape and the same re-judge as `set_window` — for the same reason: this
-    changes how already-collected photos are JUDGED, not what the leader is
-    asked to do, so it applies at once and every verdict already written is
-    re-decided from its stored clocks (no Gemini call, no quota). Unticking a
-    task therefore CLEARS the date flag off its existing reports, and ticking it
-    back on restores it; nothing is destroyed either way.
+    See `_set_chain_flag` for the shape both halves of the date rule share; this
+    one answers whether the day is asked about AT ALL, and False makes its twin
+    moot (nothing is compared, so there is no hour question either).
+    """
+    _set_chain_flag(db, task_id=task_id, attr="date_check", value=date_check,
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+
+
+def set_time_check(db: Session, *, task_id: int, time_check: bool | None,
+                   manager_id: int | None = None, leader_id: int | None = None,
+                   rejudge: bool = True) -> None:
+    """Write "is the CLOCK checked, or is the day enough" at one level.
+
+    The other half of the same rule, written through the same helper on purpose:
+    the two travel together on every read (`leader_ai.date_rule_for`), and two
+    hand-written level-materialisers would eventually disagree about what an
+    absent row means — which is a silent change to what a task requires.
+    """
+    _set_chain_flag(db, task_id=task_id, attr="time_check", value=time_check,
+                    manager_id=manager_id, leader_id=leader_id, rejudge=rejudge)
+
+
+def _set_chain_flag(db: Session, *, task_id: int, attr: str,
+                    value: bool | None, manager_id: int | None = None,
+                    leader_id: int | None = None, rejudge: bool = True) -> None:
+    """Write one tri-state BOOLEAN rule at one level of the global → supervisor →
+    leader chain. None clears the level and falls back to the level above; at the
+    GLOBAL level None is stored as True, because that level is the chain's floor
+    and has nothing left to inherit from.
+
+    Same shape and the same re-judge as `set_window` — for the same reason: these
+    change how already-collected photos are JUDGED, not what the leader is asked
+    to do, so they apply at once and every verdict already written is re-decided
+    from its stored clocks (no Gemini call, no quota). Relaxing a task therefore
+    CLEARS the date flags off its existing reports, and tightening it back
+    restores them; nothing is destroyed either way.
 
     A level with no row yet is materialised with the values that level already
     resolves to, so writing this can never silently change what the task
     requires (same rule as criteria/window/deadline).
     """
-    v = None if date_check is None else bool(date_check)
+    v = None if value is None else bool(value)
 
     if leader_id is not None:
         row = db.query(LeaderTaskLeaderSetting).filter_by(
@@ -515,7 +553,7 @@ def set_date_check(db: Session, *, task_id: int, date_check: bool | None,
             return
         # The floor of the chain is never "inherit".
         v = True if v is None else v
-    row.date_check = v
+    setattr(row, attr, v)
     # Same rule as set_criteria/set_window: a leader row left overriding nothing
     # goes, so the matrix's "overridden" mark keeps meaning something.
     if leader_id is not None and _leader_row_bare(row):
@@ -789,21 +827,22 @@ def apply_supervisor_batch(db: Session, manager_id: int, cells: list[dict]) -> N
 
 def _leader_row_extras(row) -> bool:
     """True when a per-leader row carries an override the CELL write never
-    sends — criteria, photo window, deadline, the date-check exemption all live
-    on this same row but arrive through their own endpoints — so a cell write
-    must not decide the row's fate on its own fields alone. `getattr` because
-    these columns were added one at a time and an older row object may predate
-    the newest."""
+    sends — criteria, photo window, deadline, the date-check exemption and the
+    date-only mode all live on this same row but arrive through their own
+    endpoints — so a cell write must not decide the row's fate on its own fields
+    alone. `getattr` because these columns were added one at a time and an older
+    row object may predate the newest."""
     if row is None:
         return False
     if any((getattr(row, k, None) or "").strip()
            for k in ("criteria", "win_from", "win_to", "deadline")):
         return True
-    # NOT a blank-string test: this one is a tri-state boolean whose whole point
-    # is being False, and `or ""` would read an active exemption as "unset" —
-    # the next cell write would then delete the row and silently re-arm the date
+    # NOT a blank-string test: these are tri-state booleans whose whole point is
+    # being False, and `or ""` would read an active exemption as "unset" — the
+    # next cell write would then delete the row and silently re-arm the date
     # check on a task somebody had exempted.
-    return getattr(row, "date_check", None) is not None
+    return any(getattr(row, k, None) is not None
+               for k in ("date_check", "time_check"))
 
 
 def _leader_row_bare(row) -> bool:

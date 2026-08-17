@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, CalendarDays, User, Users, Sparkles, Clock,
+  ArrowLeft, CalendarDays, User, Users, Sparkles, Clock, CalendarCheck,
   CheckCircle2, XCircle, MessageSquareWarning, Camera, ChevronDown, RotateCcw,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
@@ -59,6 +59,7 @@ const T_ALL = {
     answerYes: "Bajarildi", answerNo: "Bajarilmadi", noAnswer: "Javob berilmagan",
     reason: "Sabab", weight: "Ulush", photos: "Dalil rasmlari",
     aiVerdict: "AI xulosasi", window: "Ruxsat etilgan vaqt", onPhoto: "Rasmda",
+    needDate: "Kerakli sana",
     errNote: "Bu rasmni yuklab bo'lmadi. Bu texnik nosozlik — baho pasaytirilmadi.",
     adminRuled: "Admin qarori: {v}", ruledDone: "bajarilgan", ruledNot: "bajarilmagan",
     dispute: "Norozilik bildirish", disputeTitle: "AI qaroriga norozilik",
@@ -102,6 +103,7 @@ const T_ALL = {
     answerYes: "Бажарилди", answerNo: "Бажарилмади", noAnswer: "Жавоб берилмаган",
     reason: "Сабаб", weight: "Улуш", photos: "Далил расмлари",
     aiVerdict: "AI хулосаси", window: "Рухсат этилган вақт", onPhoto: "Расмда",
+    needDate: "Керакли сана",
     errNote: "Бу расмни юклаб бўлмади. Бу техник носозлик — баҳо пасайтирилмади.",
     adminRuled: "Админ қарори: {v}", ruledDone: "бажарилган", ruledNot: "бажарилмаган",
     dispute: "Норозилик билдириш", disputeTitle: "AI қарорига норозилик",
@@ -145,6 +147,7 @@ const T_ALL = {
     answerYes: "Выполнено", answerNo: "Не выполнено", noAnswer: "Нет ответа",
     reason: "Причина", weight: "Вес", photos: "Фото-подтверждения",
     aiVerdict: "Заключение ИИ", window: "Допустимое время", onPhoto: "На фото",
+    needDate: "Нужная дата",
     errNote: "Это фото не удалось загрузить. Это техническая ошибка — оценка не снижена.",
     adminRuled: "Решение админа: {v}", ruledDone: "выполнено", ruledNot: "не выполнено",
     dispute: "Возразить", disputeTitle: "Возражение на решение ИИ",
@@ -188,6 +191,7 @@ const T_ALL = {
     answerYes: "Done", answerNo: "Not done", noAnswer: "No answer",
     reason: "Reason", weight: "Weight", photos: "Proof photos",
     aiVerdict: "AI verdict", window: "Allowed window", onPhoto: "On the photo",
+    needDate: "Required date",
     errNote: "This photo could not be fetched. That is a technical failure — nothing was deducted.",
     adminRuled: "Admin ruling: {v}", ruledDone: "done", ruledNot: "not done",
     dispute: "Object", disputeTitle: "Object to the AI ruling",
@@ -343,9 +347,14 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
                       {pick(rev.dateReason, lang)}
                     </p>
                   )}
+                  {/* Hours when the hours were the rule, the required DAY when
+                      the task is judged by the day alone — the leader must be
+                      able to read which rule they were measured by. */}
                   <p className="text-[10px] tabular-nums mt-1 flex items-center gap-1 flex-wrap"
                     style={{ color: "var(--text-4)" }}>
-                    <Clock size={10} />{T.window}: {rev.expected}
+                    {rev.timeCheck === false
+                      ? <><CalendarCheck size={10} />{T.needDate}: {rev.expected}</>
+                      : <><Clock size={10} />{T.window}: {rev.expected}</>}
                     {rev.imageDate && <> · {T.onPhoto}: {rev.imageDate}</>}
                   </p>
                 </>

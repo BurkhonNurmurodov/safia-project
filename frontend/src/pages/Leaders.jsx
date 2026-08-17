@@ -115,7 +115,7 @@ const TXT = {
     aiPending: "Navbatda",
     aiError: "Tekshirib bo'lmadi",
     aiImgDate: "Rasmdagi sana",
-    aiExpected: "Ruxsat etilgan oyna",
+    aiExpected: "Ruxsat etilgan oyna", aiExpectedDay: "Kerakli sana",
     aiFdate_mismatch: "Sana mos emas",
     aiFno_date: "Rasmda sana yo'q",
     aiFoff_topic: "Rasm vazifaga mos emas",
@@ -161,6 +161,7 @@ const TXT = {
     aiZoom: "Rasmni kattalashtirish",
     aiQ_read: "Sana o'qildi", aiQ_window: "Ruxsat etilgan oynada",
     aiQ_noDate: "Sana bu vazifada tekshirilmaydi",
+    aiQ_day: "Hisobot kuniga to'g'ri keladi", aiQ_dayOnly: "faqat sana, vaqtsiz",
     aiQ_match: "Rasm vazifaga mos", aiQ_done: "Bajarilgani ko'rinadi",
     aiWhy: "Nima uchun", aiLeaderSaid: "Lider izohi",
     aiCriteria: "O'lchov mezoni", aiNoCriteria: "Mezon yozilmagan — faqat sana tekshirildi.",
@@ -277,7 +278,7 @@ const TXT = {
     aiPending: "Навбатда",
     aiError: "Текшириб бўлмади",
     aiImgDate: "Расмдаги сана",
-    aiExpected: "Рухсат этилган ойна",
+    aiExpected: "Рухсат этилган ойна", aiExpectedDay: "Керакли сана",
     aiFdate_mismatch: "Сана мос эмас",
     aiFno_date: "Расмда сана йўқ",
     aiFoff_topic: "Расм вазифага мос эмас",
@@ -323,6 +324,7 @@ const TXT = {
     aiZoom: "Расмни катталаштириш",
     aiQ_read: "Сана ўқилди", aiQ_window: "Рухсат этилган ойнада",
     aiQ_noDate: "Сана бу вазифада текширилмайди",
+    aiQ_day: "Ҳисобот кунига тўғри келади", aiQ_dayOnly: "фақат сана, вақтсиз",
     aiQ_match: "Расм вазифага мос", aiQ_done: "Бажарилгани кўринади",
     aiWhy: "Нима учун", aiLeaderSaid: "Лидер изоҳи",
     aiCriteria: "Ўлчов мезони", aiNoCriteria: "Мезон ёзилмаган — фақат сана текширилди.",
@@ -439,7 +441,7 @@ const TXT = {
     aiPending: "В очереди",
     aiError: "Проверить не удалось",
     aiImgDate: "Дата на фото",
-    aiExpected: "Допустимое окно",
+    aiExpected: "Допустимое окно", aiExpectedDay: "Нужная дата",
     aiFdate_mismatch: "Дата не совпадает",
     aiFno_date: "На фото нет даты",
     aiFoff_topic: "Фото не по задаче",
@@ -485,6 +487,7 @@ const TXT = {
     aiZoom: "Увеличить фото",
     aiQ_read: "Дата прочитана", aiQ_window: "В допустимом окне",
     aiQ_noDate: "Дата для этой задачи не проверяется",
+    aiQ_day: "Совпадает с днём отчёта", aiQ_dayOnly: "только дата, без времени",
     aiQ_match: "Фото по задаче", aiQ_done: "Выполнение видно",
     aiWhy: "Почему", aiLeaderSaid: "Комментарий лидера",
     aiCriteria: "Критерий оценки", aiNoCriteria: "Критерий не задан — проверялась только дата.",
@@ -601,7 +604,7 @@ const TXT = {
     aiPending: "Queued",
     aiError: "Could not review",
     aiImgDate: "Date on photo",
-    aiExpected: "Allowed window",
+    aiExpected: "Allowed window", aiExpectedDay: "Required date",
     aiFdate_mismatch: "Date does not match",
     aiFno_date: "No date on the photo",
     aiFoff_topic: "Photo is not about this task",
@@ -647,6 +650,7 @@ const TXT = {
     aiZoom: "Enlarge photo",
     aiQ_read: "Date read", aiQ_window: "Inside the window",
     aiQ_noDate: "Date is not checked for this task",
+    aiQ_day: "Matches the report day", aiQ_dayOnly: "date only, no time",
     aiQ_match: "Photo matches the task", aiQ_done: "Work is visible",
     aiWhy: "Why", aiLeaderSaid: "Leader's own note",
     aiCriteria: "Criterion", aiNoCriteria: "No criterion written — only the date was checked.",
@@ -1300,9 +1304,12 @@ function AiReview({ rev, T, lang, canCheck, checking, error, onCheck }) {
               {dateWhy && (
                 <p className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>{dateWhy}</p>
               )}
+              {/* Named for what it IS: a window when the hours were compared,
+                  the required DAY when only the day was. One label for both
+                  would describe a comparison that never happened. */}
               {rev.expected && (
                 <p className="text-[10px] tabular-nums mt-1" style={{ color: "var(--text-4)" }}>
-                  {T.aiExpected}: {rev.expected}
+                  {rev.timeCheck === false ? T.aiExpectedDay : T.aiExpected}: {rev.expected}
                 </p>
               )}
             </>

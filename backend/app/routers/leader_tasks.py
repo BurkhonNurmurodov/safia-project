@@ -37,7 +37,8 @@ from app.services.leader_tasks import (
     CHANNEL_SETTING_KEY, audit_list, cancel_pending, channel_chat_id,
     effective_date, effective_settings, ensure_task_defs, leader_overrides,
     next_effective_date, pending_list, promote_all_shifts, requirements_for,
-    revert_audit, set_criteria, set_date_check, set_deadline, set_window,
+    revert_audit, set_criteria, set_date_check, set_deadline, set_time_check,
+    set_window,
     write_change,
 )
 from app.services.name_map import relabel_supervisor, supervisor_match
@@ -95,11 +96,13 @@ def get_config(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                 # on /leaders «Vazifalar»); blank = none, the tab shows the
                 # day's filing deadline instead.
                 "deadline": td.deadline or "",
-                # Global "is the date checked at all". Never null at this level —
-                # it is the floor of the chain (startup.add_leader_task_date_check
-                # fills it), so the UI shows a two-way toggle here and a
-                # three-way one (inherit) at the levels below.
+                # Global "is the date checked at all" and "is the CLOCK checked
+                # too". Never null at this level — it is the floor of the chain
+                # (startup.add_leader_task_date_check / _time_check fill them),
+                # so the UI shows a plain three-mode pick here and a fourth
+                # "inherit" state at the levels below.
                 "date_check": td.date_check is not False,
+                "time_check": td.time_check is not False,
                 "examples": examples.get(td.id, []),
                 "default_weight": td.default_weight,
             }
@@ -597,6 +600,66 @@ def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
     they caused), ticking it back on restores them. Nothing is destroyed either
     way, because the clock the model read stays on the row.
     """
+    return _write_date_rule(db, body, setter=set_date_check, kw="date_check",
+                            value=body.date_check)
+
+
+class TimeCheckIn(BaseModel):
+    """And is the CLOCK judged for this task, or is the day enough? The other
+    half of the date rule, addressed and staged exactly like `DateCheckIn` —
+    global, one supervisor, one leader, or a scoped fan-out.
+
+    `time_check` is the same TRI-STATE: True compare the hour to the window,
+    False judge the DAY alone (the window stops being a rule), null inherit the
+    level above. It only means anything where `date_check` is True; False there
+    already answers the whole question.
+    """
+    task_id: int
+    time_check: bool | None = None
+    manager_id: int | None = None
+    leader_id: int | None = None
+    manager_ids: list[int] | None = None
+    leader_ids: list[int] | None = None
+
+
+@router.put("/admin/leader-tasks/time-check")
+def put_time_check(body: TimeCheckIn, db: Session = Depends(get_db),
+                   _: dict = Depends(verify_admin)):
+    """Judge a task by the DAY alone, or put its hours back under the window.
+
+    The middle setting of the date rule, and the answer to the proof that has a
+    date on screen but no clock — a screenshot of this dashboard, an in-app
+    register, a printed report. With it on, the reviewer may read the date
+    printed INSIDE the app (strict mode forbids that, because in-app text does
+    not say when a photo was taken), the day must be the report's day, and the
+    hour is never compared to anything.
+
+    Applies at once and re-derives the verdicts ALREADY written from their stored
+    clocks, exactly like the window and the date check — no Gemini call, no
+    quota. Switching it on drops the `no_date` flags (and the deductions they
+    caused in the automatic regime) from reports whose photos never carried a
+    clock; switching it back off restores the strict answer. One asymmetry worth
+    knowing: rows judged BEFORE the switch were reviewed under the strict prompt,
+    which was told not to read in-app dates, so a re-derive can only clear their
+    flags — it cannot discover a date nobody was asked to transcribe. Newly
+    reviewed rows get the full benefit, and «Qayta tekshirish» is what re-reads
+    old photos if that matters for a particular day.
+    """
+    return _write_date_rule(db, body, setter=set_time_check, kw="time_check",
+                            value=body.time_check)
+
+
+def _write_date_rule(db: Session, body, *, setter, kw: str,
+                     value: bool | None) -> dict:
+    """The four-way write both halves of the date rule share — global, one
+    supervisor, one leader, or a fan-out over a filtered matrix — with ONE
+    re-derivation at the end.
+
+    Shared rather than copied because the two halves are read as one rule
+    (`leader_ai.date_rule_for`): a fan-out that validated ids differently, or
+    skipped the single `sync_date_flags`, would leave the pair enforced on
+    different sets of rows, which is invisible until somebody's score moves.
+    """
     if not db.query(LeaderTaskDef).filter_by(id=body.task_id).first():
         raise HTTPException(status_code=404, detail="Unknown task")
     if body.leader_ids is not None or body.manager_ids is not None:
@@ -607,8 +670,8 @@ def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
             if not ids:
                 raise HTTPException(status_code=400, detail="no_rows")
             for lid in ids:
-                set_date_check(db, task_id=body.task_id, date_check=body.date_check,
-                               leader_id=lid, rejudge=False)
+                setter(db, task_id=body.task_id, **{kw: value},
+                       leader_id=lid, rejudge=False)
         else:
             ids = [i for (i,) in db.query(Manager.id).filter(
                 Manager.id.in_(body.manager_ids),
@@ -616,8 +679,8 @@ def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
             if not ids:
                 raise HTTPException(status_code=400, detail="no_rows")
             for mid in ids:
-                set_date_check(db, task_id=body.task_id, date_check=body.date_check,
-                               manager_id=mid, rejudge=False)
+                setter(db, task_id=body.task_id, **{kw: value},
+                       manager_id=mid, rejudge=False)
         # Once, after the whole fan-out — the re-derivation is per task, not per
         # row written (same reason as put_window).
         leader_ai.sync_date_flags(db, [body.task_id])
@@ -628,8 +691,8 @@ def put_date_check(body: DateCheckIn, db: Session = Depends(get_db),
     if body.leader_id is not None and not db.query(RoleProfile).filter_by(
             id=body.leader_id).first():
         raise HTTPException(status_code=404, detail="Unknown leader")
-    set_date_check(db, task_id=body.task_id, date_check=body.date_check,
-                   manager_id=body.manager_id, leader_id=body.leader_id)
+    setter(db, task_id=body.task_id, **{kw: value},
+           manager_id=body.manager_id, leader_id=body.leader_id)
     return {"ok": True}
 
 

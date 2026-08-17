@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ListChecks, User, Users, Layers, Camera, Clock, AlarmClock, Scale, Info,
-  Image as ImageIcon, RefreshCw,
+  Image as ImageIcon, RefreshCw, CalendarCheck,
 } from "lucide-react";
 import Button from "../ui/Button";
 import EmptyState from "../ui/EmptyState";
@@ -56,6 +56,7 @@ const TXT = {
     criteria: "Talab", noCriteria: "Talab yozilmagan — AI faqat rasm vaqtini tekshiradi.",
     noCriteriaNoDate: "Talab yozilmagan — AI faqat rasm mavzusini tekshiradi.",
     photoWin: "Rasm: {from} – {to}", noDate: "Sana tekshirilmaydi",
+    dayOnly: "Sana kerak, vaqt shart emas",
     due: "Muddat: {t} gacha", dueDay: "{t} gacha · kun bo'yicha",
     examples: "Namuna",
     empty: "Faol vazifalar yo'q", emptyMsg: "Bu darajada barcha vazifalar o'chirilgan.",
@@ -78,6 +79,7 @@ const TXT = {
     criteria: "Талаб", noCriteria: "Талаб ёзилмаган — AI фақат расм вақтини текширади.",
     noCriteriaNoDate: "Талаб ёзилмаган — AI фақат расм мавзусини текширади.",
     photoWin: "Расм: {from} – {to}", noDate: "Сана текширилмайди",
+    dayOnly: "Сана керак, вақт шарт эмас",
     due: "Муддат: {t} гача", dueDay: "{t} гача · кун бўйича",
     examples: "Намуна",
     empty: "Фаол вазифалар йўқ", emptyMsg: "Бу даражада барча вазифалар ўчирилган.",
@@ -100,6 +102,7 @@ const TXT = {
     criteria: "Требование", noCriteria: "Требование не задано — ИИ проверяет только время фото.",
     noCriteriaNoDate: "Требование не задано — ИИ проверяет только тему фото.",
     photoWin: "Фото: {from} – {to}", noDate: "Дата не проверяется",
+    dayOnly: "Нужна дата, время не обязательно",
     due: "Срок: до {t}", dueDay: "до {t} · по дню",
     examples: "Пример",
     empty: "Нет активных задач", emptyMsg: "На этом уровне все задачи отключены.",
@@ -122,6 +125,7 @@ const TXT = {
     criteria: "Requirement", noCriteria: "No requirement written — the AI checks only the photo time.",
     noCriteriaNoDate: "No requirement written — the AI checks only the photo subject.",
     photoWin: "Photo: {from} – {to}", noDate: "Date not checked",
+    dayOnly: "Date required, time not",
     due: "Due: by {t}", dueDay: "by {t} · day rule",
     examples: "Example",
     empty: "No active tasks", emptyMsg: "Every task is disabled at this level.",
@@ -167,11 +171,16 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
   const note = task.note?.[lang] || task.note?.uz || "";
   const criteria = (task.criteria || "").trim();
   const [wFrom, wTo] = task.window || [];
-  // The window is only a RULE while the date is judged. With the check off it is
-  // stale config, so the chip states the exemption instead — a leader reading
-  // hours nothing measures them by reshoots proofs for no reason, which is the
-  // same failure as being flagged for a rule nobody stated.
+  // The window is only a RULE while the CLOCK is judged. In the other two modes
+  // it is stale config, so the chip states what is actually asked instead — a
+  // leader reading hours nothing measures them by reshoots proofs for no reason,
+  // which is the same failure as being flagged for a rule nobody stated.
+  //   full  the window, as before
+  //   day   "a date must be visible, the time need not be" — the honest ask for
+  //         a proof that is a screen: its day is on it, its shooting time is not
+  //   off   nothing about when at all
   const dateOn = task.date_check !== false;
+  const timeOn = dateOn && task.time_check !== false;
   const share = total > 0 ? Math.round((task.weight / total) * 100) : 0;
   // A clock before the shift's start on an overnight day is tomorrow morning —
   // "02:00" on a 17:00→09:00 day. Said, so the leader does not read it as
@@ -214,9 +223,9 @@ function TaskCard({ task, lang, T, tl, total, shift, filingTo, filingOvernight, 
         <Fact icon={Scale}>
           {total !== 100 ? fill(T.ptsShare, { n: task.weight, p: share }) : fill(T.pts, { n: task.weight })}
         </Fact>
-        <Fact icon={Clock}>
-          {dateOn ? fill(T.photoWin, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
-            : T.noDate}
+        <Fact icon={timeOn ? Clock : CalendarCheck}>
+          {timeOn ? fill(T.photoWin, { from: wFrom || "—", to: (wTo || "—") + morning(wTo) })
+            : dateOn ? T.dayOnly : T.noDate}
         </Fact>
         {dueOwn
           ? <Fact icon={AlarmClock} tone="accent">{fill(T.due, { t: dueOwn + morning(dueOwn) })}</Fact>
