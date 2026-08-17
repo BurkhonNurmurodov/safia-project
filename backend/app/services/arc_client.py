@@ -271,17 +271,63 @@ def get_json(client: httpx.Client, path: str, params: Optional[dict] = None,
         raise ArcError(f"ARC {res.status_code} on {path}: body is not JSON")
 
 
-def iter_requests(client: httpx.Client, size: int = 100
+def probe_requests(client: httpx.Client, extra: Optional[dict] = None) -> dict:
+    """One cheap call (``size=1``) that asks the API how many tickets it is
+    willing to hand over UNDER ``extra``. The whole filter investigation is
+    built on comparing this number across parameter sets — a filter we never
+    send is indistinguishable from one that does not exist until the totals
+    differ. Never raises: a rejected parameter is an ANSWER (it tells us the
+    name or the value is wrong), so it is reported, not thrown."""
+    params = {"page": 1, "size": 1}
+    params.update(extra or {})
+    try:
+        body = get_json(client, _REQUESTS_PATH, params)
+    except ArcError as exc:
+        return {"ok": False, "error": str(exc)[:300], "total": None}
+    return {"ok": True, "total": int(body.get("total") or 0),
+            "pages": int(body.get("pages") or 0),
+            "size": int(body.get("size") or 0),
+            "sample": (body.get("items") or [None])[0]}
+
+
+def get_path(client: httpx.Client, path: str, params: Optional[dict] = None) -> dict:
+    """Probe an arbitrary ARC path (the spec lists endpoints we never call —
+    /stats and /export among them). Reports rather than raises, same reason as
+    :func:`probe_requests`."""
+    try:
+        body = get_json(client, path, params)
+    except ArcError as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+    if isinstance(body, dict):
+        return {"ok": True, "kind": "object", "keys": sorted(body.keys())[:40],
+                "total": body.get("total"),
+                "count": len(body.get("items") or []) if "items" in body else None}
+    if isinstance(body, list):
+        first = body[0] if body else None
+        return {"ok": True, "kind": "list", "count": len(body),
+                "keys": sorted(first.keys())[:40] if isinstance(first, dict) else []}
+    return {"ok": True, "kind": type(body).__name__}
+
+
+def iter_requests(client: httpx.Client, size: int = 100,
+                  extra: Optional[dict] = None
                   ) -> Iterator[tuple[list[dict], int, int, int]]:
     """Walk the factory requests page by page, yielding
     ``(items, page, pages, total)``. A 422 on the size parameter (the API's
     cap is below what we asked) retries the SAME page with 50 and keeps 50
     for the rest of the walk. Stops when the last page is reached, the API
-    returns nothing, or MAX_PAGES is hit."""
+    returns nothing, or MAX_PAGES is hit.
+
+    ``extra`` is the discovered filter set (see services/arc_discovery.py) —
+    the parameters that make the API return MORE than its defaults do. An
+    undeclared parameter is silently ignored by FastAPI, so a wrong guess here
+    costs nothing but is also worth nothing; only the spec tells the truth."""
     page = 1
     while page <= MAX_PAGES:
+        params = {"page": page, "size": size}
+        params.update(extra or {})
         try:
-            body = get_json(client, _REQUESTS_PATH, {"page": page, "size": size})
+            body = get_json(client, _REQUESTS_PATH, params)
         except ArcError as exc:
             if size > 50 and " 422 " in str(exc):
                 size = 50

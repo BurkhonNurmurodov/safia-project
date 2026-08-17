@@ -1010,8 +1010,14 @@ function Verdict({ item, T, lang }) {
     ] : timeOn ? [
       { ok: !f.has("no_date") && !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
       { ok: !f.has("date_mismatch") && !f.has("no_date"), label: T.aiQ_window, val: shortWin(item.expected) },
+    ] : !item.imageDate ? [
+      // Date-only, and nothing dated was read. Not a pass and not a failure —
+      // the question was put and the screen did not answer it, which this mode
+      // deliberately lets go — so it is the `skip` row, not a green tick beside
+      // an empty reading.
+      { skip: true, label: T.aiQ_dayMissing, val: "—" },
     ] : [
-      { ok: !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate || "—" },
+      { ok: !f.has("unreadable"), label: T.aiQ_read, val: item.imageDate },
       { ok: !f.has("date_mismatch"), label: T.aiQ_day,
         val: `${shortWin(item.expected)} · ${T.aiQ_dayOnly}` },
     ]),

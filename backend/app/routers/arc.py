@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ArcRequest, ArcSyncMeta
 from app.permissions import require_page
-from app.services import arc_client
+from app.services import arc_client, arc_discovery
 from app.services.arc_export import build_arc_workbook
 from app.services.arc_sync import _live, start_sync_thread
 from app.xlsx_delivery import deliver_xlsx
@@ -289,6 +289,11 @@ def _sync_state(meta: Optional[ArcSyncMeta]) -> dict:
         "started_at": _iso(meta.started_at) if meta else None,
         "last_full_at": _iso(meta.last_full_at) if meta else None,
         "spec_available": bool(meta and meta.spec is not None),
+        # What the API says it holds under the widest parameters we found, vs
+        # what we hold. The two numbers side by side are the whole «are we
+        # missing data?» question — never make the reader compute it.
+        "probe_at": _iso(getattr(meta, "probe_at", None)) if meta else None,
+        "filters": getattr(meta, "filters", None) if meta else None,
     }
 
 
@@ -532,6 +537,47 @@ def export_xlsx(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
+
+
+@router.post("/probe")
+def post_probe(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """Re-measure what the ARC API is willing to give under which parameters
+    (services/arc_discovery.py) and adopt the widest set. ADMIN-ONLY: it is a
+    burst of calls against a third-party system and it CHANGES what every
+    later sync sends."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    if not arc_client.configured():
+        raise HTTPException(status_code=400, detail=NOT_CONFIGURED_MSG)
+    report = arc_discovery.run_probe(db)
+    if not report.get("ok"):
+        raise HTTPException(status_code=502, detail=f"ARC probe failed: {report.get('error')}")
+    return report
+
+
+@router.get("/probe")
+def get_probe(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_page(PAGE)),
+):
+    """The last measurement, unchanged — what the API declares it accepts,
+    what each parameter did to the total, and which set the walk now sends."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    meta = db.query(ArcSyncMeta).filter_by(id=1).first()
+    return {
+        "report": getattr(meta, "probe", None),
+        "at": _iso(getattr(meta, "probe_at", None)),
+        "filters": getattr(meta, "filters", None),
+        # The spec may exist even when nothing has been probed yet — the
+        # parameter list alone already answers «which filters are there?».
+        "params": arc_discovery.describe_params(getattr(meta, "spec", None)),
+        "paths": arc_discovery.describe_paths(getattr(meta, "spec", None)),
+        "spec_available": bool(getattr(meta, "spec", None)),
+    }
 
 
 @router.get("/diag")

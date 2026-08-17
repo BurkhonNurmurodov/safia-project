@@ -4,7 +4,7 @@ import {
   RefreshCw, CalendarClock, Download, Loader2, ClipboardList, Store, UserCog, Tag,
   CircleDot, Layers, Siren, AlertTriangle, PackageCheck, Camera, FileText, ExternalLink,
   MapPin, Phone, Check, Timer, CheckCircle2, ShieldCheck, Hourglass, Hash, UserRound,
-  PlugZap, Zap, ListChecks,
+  PlugZap, Zap, ListChecks, Radar,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import DateRangePicker from "../components/ui/DateRangePicker";
@@ -24,6 +24,8 @@ import api from "../utils/api";
 import { exportXlsx } from "../utils/exportXlsx";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useLang } from "../context/LangContext";
+import { useAuth } from "../context/AuthContext";
+import ApiPanel from "../components/arc/ApiPanel";
 import { inTelegram } from "../utils/session";
 import { toneFor, hexA, C_DONE, C_DOING, C_OVERDUE, C_GREY } from "../utils/arcStatus";
 
@@ -63,7 +65,6 @@ const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--borde
 // branch saw).
 const localISO = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localISO(d); };
 
 const tsFmt = new Intl.DateTimeFormat("ru-RU", {
   timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
@@ -151,8 +152,11 @@ export default function Arc() {
   const today = localISO(new Date());
 
   // ── page state (persisted, like every page) ───────────────────────────────
-  const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", () => isoDaysAgo(29));
-  const [dateTo, setDateTo] = usePersistentState("arc_date_to", today);
+  // No default period. A register answers «what do we have?», and a 30-day
+  // window is a filter the reader never chose — it made a full mirror look
+  // like a thin one. Both bounds empty = every ticket ever filed.
+  const [dateFrom, setDateFrom] = usePersistentState("arc_date_from", "");
+  const [dateTo, setDateTo] = usePersistentState("arc_date_to", "");
   const [state, setState] = usePersistentState("arc_state", "all");
   const [statusSel, setStatusSel] = usePersistentState("arc_status", []);
   const [catSel, setCatSel] = usePersistentState("arc_category", []);
@@ -165,6 +169,8 @@ export default function Arc() {
   const [page, setPage] = usePersistentState("arc_page", 1);
   const [sort, setSort] = usePersistentState("arc_sort", { key: "created_at", dir: "desc" });
   const [openId, setOpenId] = useState(null);
+  const [apiOpen, setApiOpen] = useState(false);
+  const isAdmin = useAuth()?.auth?.role === "admin";
 
   // ── meta (options + sync state) ───────────────────────────────────────────
   const metaQ = useQuery({
@@ -676,9 +682,25 @@ export default function Arc() {
           <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs" style={{ ...cardStyle, color: "var(--text-2)" }}>
             {syncPill}
           </span>
+          {isAdmin && (
+            <Button size="lg" variant="secondary" icon={<Radar size={14} />}
+              title={t("arc.api.title")} onClick={() => setApiOpen(true)}>
+              <span className="hidden sm:inline">{t("arc.api.short")}</span>
+            </Button>
+          )}
           {refreshBtn}
         </div>
       </div>
+
+      {isAdmin && apiOpen && (
+        <ApiPanel open onClose={() => setApiOpen(false)} sync={sync}
+          onProbed={() => {
+            // A probe can change WHAT the next walk fetches — say so, and let
+            // the operator start that walk from the same place.
+            toast.success(t("arc.api.probed"));
+            qc.invalidateQueries({ queryKey: ["arc-meta"] });
+          }} />
+      )}
 
       {loadError && (
         <div className="rounded-2xl px-4 py-3 text-xs mb-4 flex items-center justify-between gap-3 flex-wrap"

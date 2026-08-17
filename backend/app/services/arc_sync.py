@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import ArcRequest, ArcSyncMeta
-from app.services import arc_client
+from app.services import arc_client, arc_discovery
 from app.services.arc_client import ArcAuthError, ArcTransientError, configured
 
 log = logging.getLogger(__name__)
@@ -185,7 +185,23 @@ def run_sync(mode: str = "full") -> dict:
         spec_checked = False
         started = _now()
         with httpx.Client(timeout=arc_client._TIMEOUT) as client:
-            for items, page, pages, total in arc_client.iter_requests(client):
+            # Never probed, and about to walk everything? Measure FIRST, on
+            # this connection: a filter discovered after the walk would leave
+            # the register short until the next pass, and the first full sync
+            # after an upgrade is exactly when that costs the most. ~40 cheap
+            # size=1 calls, once in the mirror's life (and on demand from the
+            # page's «API» panel).
+            if mode == "full" and _get_meta(db).probe_at is None:
+                try:
+                    arc_discovery.run_probe(db, client)
+                except Exception as exc:              # noqa: BLE001
+                    log.warning("arc probe during sync failed: %s", str(exc)[:200])
+            # The measured filter set — what makes the API hand over more than
+            # its defaults do. Empty means «the defaults were already widest».
+            filters = arc_discovery.active_filters(db)
+            if filters:
+                log.info("arc sync (%s): walking with discovered filters %s", mode, filters)
+            for items, page, pages, total in arc_client.iter_requests(client, extra=filters):
                 now = _now()
                 if not spec_checked:
                     # First successful call of the pass — the login just worked.

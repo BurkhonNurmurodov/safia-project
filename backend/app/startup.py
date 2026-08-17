@@ -2465,6 +2465,23 @@ def add_leader_task_setting_names() -> None:
         db.close()
 
 
+def add_arc_probe_columns() -> None:
+    """The ARC filter investigation's three columns on arc_sync_meta (probe,
+    probe_at, filters). The table already exists on every box that booted the
+    /arc release, and create_all never ALTERs — so a plain new-column add."""
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS probe JSONB"))
+        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS probe_at TIMESTAMPTZ"))
+        db.execute(text("ALTER TABLE arc_sync_meta ADD COLUMN IF NOT EXISTS filters JSONB"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[startup] arc_sync_meta probe columns migration skipped: {exc}")
+    finally:
+        db.close()
+
+
 def add_web_credential_password_enc() -> None:
     """The sealed copy of a browser password (WebCredential.password_enc), so an
     admin can READ a login back on the profile page instead of resetting it.

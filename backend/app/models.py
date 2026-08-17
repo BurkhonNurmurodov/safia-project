@@ -2348,3 +2348,9 @@ class ArcSyncMeta(Base):
     status_catalog  = Column(JSONB, nullable=True)      # [{status, normalized_status, status_color, count}]
     spec            = Column(JSONB, nullable=True)      # openapi doc, best-effort
     spec_fetched_at = Column(DateTime(timezone=True), nullable=True)
+    # What the API answers under which parameters (services/arc_discovery.py):
+    # the measured report, and the filter set the walk sends because it made
+    # the API hand over MORE than its defaults did. NULL filters = defaults.
+    probe           = Column(JSONB, nullable=True)
+    probe_at        = Column(DateTime(timezone=True), nullable=True)
+    filters         = Column(JSONB, nullable=True)

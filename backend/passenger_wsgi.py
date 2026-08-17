@@ -83,6 +83,7 @@ try:
         add_leader_ai_clocks, sync_leader_ai_dates,
         add_leader_ai_resolution,
         add_web_credential_password_enc,
+        add_arc_probe_columns,
         add_worker_concern_failures_column,
         add_worker_concern_sweep_columns,
         migrate_permission_modes,
@@ -140,6 +141,7 @@ try:
     add_profile_identity_columns()
     add_activity_profile_key()
     add_web_credential_password_enc()
+    add_arc_probe_columns()
     add_worker_concern_failures_column()
     add_worker_concern_sweep_columns()
     migrate_multi_roles()
