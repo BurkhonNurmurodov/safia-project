@@ -201,6 +201,7 @@ const TXT = {
     regPhotos: "Dalil rasmlari",
     regProofsN: "{n} ta vazifa dalilida",
     regNoPhotos: "Bu hisobotlarda rasm yo'q",
+    photosFail: "Rasmlar yuklanmadi — modalni qayta oching",
     regChecked: "AI tekshirgan dalil",
     regLeftN: "{n} tasi hali tekshirilmagan",
     regAllChecked: "Hammasi tekshirildi",
@@ -361,6 +362,7 @@ const TXT = {
     regPhotos: "Далил расмлари",
     regProofsN: "{n} та вазифа далилида",
     regNoPhotos: "Бу ҳисоботларда расм йўқ",
+    photosFail: "Расмлар юкланмади — модални қайта очинг",
     regChecked: "AI текширган далил",
     regLeftN: "{n} таси ҳали текширилмаган",
     regAllChecked: "Ҳаммаси текширилди",
@@ -521,6 +523,7 @@ const TXT = {
     regPhotos: "Фото-доказательства",
     regProofsN: "в {n} подтверждениях задач",
     regNoPhotos: "В этих отчётах нет фото",
+    photosFail: "Фото не загрузились — откройте отчёт заново",
     regChecked: "Проверено ИИ",
     regLeftN: "Ещё не проверено: {n}",
     regAllChecked: "Проверено всё",
@@ -681,6 +684,7 @@ const TXT = {
     regPhotos: "Proof photos",
     regProofsN: "across {n} task proofs",
     regNoPhotos: "No photos in these reports",
+    photosFail: "Photos could not be loaded — reopen the report",
     regChecked: "Proofs AI checked",
     regLeftN: "{n} not checked yet",
     regAllChecked: "All checked",
@@ -829,6 +833,15 @@ const isoShift = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(
 const weekStartISO = (iso) => { const d = new Date(iso + "T00:00:00"); return isoShift(iso, -((d.getDay() + 6) % 7)); };
 const spanDays = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / DAY) + 1;
 const rowDate = (r) => String(r.date).slice(0, 10);
+
+// Proof photos of a sheet task. The register feed (/api/leaders) ships only a
+// COUNT per task (`photos`) — the URL strings were 7.6 MB of a 10 MB response,
+// for links nobody sees until one report's modal opens — so the count comes
+// from the row and the links come from /api/leaders/report/:uid, fetched when
+// that modal opens. `photoUrls` still parses a raw `photo` field (the day
+// report carries it), with the same rule the feed applies server-side.
+const photoUrls = (s) => String(s || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
+const photoCount = (tk) => (typeof tk?.photos === "number" ? tk.photos : photoUrls(tk?.photo).length);
 
 // ── scoring core ────────────────────────────────────────────────────────────
 // ONE rule scores this whole page — the KPI cards, the trend line, the task
@@ -1967,6 +1980,18 @@ export default function Leaders() {
       .then((r) => r.data),
     enabled: !!(aiOn && detail?.uid),
   });
+  // Proof-photo LINKS for the one open report. The register feed carries only
+  // a per-task count (see photoUrls above), so the URLs are read here, from the
+  // same day report the notification DM links to — row-scoped, so a viewer can
+  // only ever fetch links for a report the register already showed them. Keyed
+  // exactly like LeaderDayReport, so opening the modal and then the page (or
+  // the reverse) is one read, and reopening a report costs nothing.
+  const { data: dayReport, isError: dayReportErr } = useQuery({
+    queryKey: ["leaderDayReport", detail?.uid],
+    queryFn: () => api.get(`/api/leaders/report/${encodeURIComponent(detail.uid)}`).then((r) => r.data),
+    enabled: !!detail?.uid,
+    retry: false,
+  });
   // "Check this task now": one deliberate call for one task, so the admin gets
   // a verdict in seconds instead of waiting on a backlog they cannot see. The
   // busy state is keyed by task id, so only the card that was tapped spins.
@@ -2593,8 +2618,7 @@ export default function Leaders() {
     let checked = 0, flagged = 0, open = 0, errors = 0;
     for (const r of displayRows) {
       for (const tk of r.tasks || []) {
-        const n = (tk.photo || "").split(",")
-          .filter((p) => p.trim().includes("http")).length + (tk.media || []).length;
+        const n = photoCount(tk) + (tk.media || []).length;
         if (!n) continue;
         photos += n;
         proofs += 1;
@@ -3509,9 +3533,20 @@ export default function Leaders() {
 
           <div className="space-y-2.5">
             {shown.map((tk) => {
-              const photos = (tk.photo || "").split(",").map((p) => p.trim()).filter((p) => p.includes("http"));
               const media = tk.media || [];
               const id = Number(tk.id);
+              // How many links this task has is known from the row itself; the
+              // links arrive with the day report. Until then the grid holds
+              // the same number of placeholder tiles, so the card is laid out
+              // once and the photos fill in — never a card that grows under
+              // the reader's thumb.
+              const nUrls = photoCount(tk);
+              const repTask = dayReport?.tasks?.find((x) => Number(x.id) === id);
+              const photos = repTask ? photoUrls(repTask.photo) : photoUrls(tk.photo);
+              // Pending = the report has not answered yet, and only then: once
+              // it has, whatever it holds is the truth (an empty grid over a
+              // stuck skeleton), and a failed read gets its own line below.
+              const photosPending = nUrls > 0 && photos.length === 0 && !dayReport && !dayReportErr;
               const desc = taskDetail(id, lang).n;
               // a question the form did not put to this leader — neither pass nor fail
               const unasked = tk.answered === false;
@@ -3523,7 +3558,7 @@ export default function Leaders() {
               const tone = unasked ? C_FLAT : isDone ? C_GOOD : C_BAD;
               const rev = aiOn ? aiReport?.tasks?.[String(id)] : null;
               const reason = showReason(tk.reason, T);
-              const nPhotos = photos.length + media.length;
+              const nPhotos = nUrls + media.length;
               const busy = ovBusy?.id === id;
               return (
                 <div key={id} className="rounded-xl overflow-hidden"
@@ -3587,12 +3622,16 @@ export default function Leaders() {
                             Clicking still opens the full-resolution view. */}
                         {nPhotos > 0 && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                            {photos.map((p, pi) => (
-                              <div key={pi} className="aspect-square rounded-lg overflow-hidden"
-                                style={{ background: "var(--bg-inner)" }}>
-                                <ReportPhoto src={p} T={T} className="" thumb fit="contain" onClick={(u) => setZoom(u)} />
-                              </div>
-                            ))}
+                            {photosPending
+                              ? Array.from({ length: nUrls }, (_, pi) => (
+                                <SkeletonBlock key={`s${pi}`} className="aspect-square rounded-lg" />
+                              ))
+                              : photos.map((p, pi) => (
+                                <div key={pi} className="aspect-square rounded-lg overflow-hidden"
+                                  style={{ background: "var(--bg-inner)" }}>
+                                  <ReportPhoto src={p} T={T} className="" thumb fit="contain" onClick={(u) => setZoom(u)} />
+                                </div>
+                              ))}
                             {media.map((mid) => (
                               <div key={`m${mid}`} className="aspect-square rounded-lg overflow-hidden"
                                 style={{ background: "var(--bg-inner)" }}>
@@ -3600,6 +3639,12 @@ export default function Leaders() {
                               </div>
                             ))}
                           </div>
+                        )}
+                        {/* The row says there are links and the report read
+                            failed: say so, rather than an empty grid that reads
+                            as "no photos" for a task the count says has some. */}
+                        {nUrls > 0 && photos.length === 0 && dayReportErr && (
+                          <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>{T.photosFail}</p>
                         )}
                       </div>
                     </div>

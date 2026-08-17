@@ -11,6 +11,7 @@ So instead of picking one spelling to match against, we accept *every* known
 spelling of a brigadir — the canonical Latin name plus its Cyrillic overrides —
 and map them all back to the single canonical name the app keys everything by."""
 
+from functools import lru_cache
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -131,8 +132,16 @@ def _pair_score(sheet: list[str], canon: list[str]) -> float:
     return 0.5 * sur + 0.5 * (1.0 if prefix else first)
 
 
+@lru_cache(maxsize=4096)
 def _norm(name: str) -> str:
-    """The folded token skeleton used as a lookup key on both sides of a match."""
+    """The folded token skeleton used as a lookup key on both sides of a match.
+
+    Memoised: it is a pure function of the string, and the callers hit it with
+    the SAME few dozen names thousands of times — `/api/leaders` alone folds
+    every row's supervisor about eight times (relabel, spelling census, scope,
+    shift lookup …), which was 15k transliterations per open. The key space is
+    bounded (a few hundred sheet spellings, ever), so the cache never grows past
+    a few hundred entries in practice; 4096 is a ceiling, not a target."""
     return " ".join(_name_tokens(name))
 
 

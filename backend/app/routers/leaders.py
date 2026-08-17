@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
 from time import monotonic
 from urllib.parse import urlparse
 
@@ -41,6 +42,61 @@ logger = logging.getLogger(__name__)
 # services/name_map.py — the AI proof reviewer resolves the same rows to a unit
 # and must not diverge from this one.
 _relabel = relabel_supervisor
+
+
+# ── The register's wire shape ────────────────────────────────────────────────
+# `/api/leaders` is the whole history in one response — every report ever
+# filed, because the period/leader filtering is client-side (see get_leaders).
+# What made that response 10 MB (3.7 MB gzipped, and mostly incompressible) was
+# not the rows: it was every task's `photo` field, a comma-joined list of
+# ~250-character signed S3 URLs — 7.6 MB of the 10, for links nobody sees until
+# ONE report's modal is opened. So the register ships a per-task COUNT instead,
+# and the modal fetches the URLs for the one report it opens from
+# `/api/leaders/report/{uid}` (row-scoped, and the same row the DM links to).
+# The day report, the report DM and the AI reviewer read the source row through
+# build_report_row() and keep the URLs — only the bulk feed is projected.
+
+def _photo_count(photo) -> int:
+    """How many proof links a sheet task carries — the same rule the client
+    used to apply to the raw field (comma-split, keep the http ones)."""
+    return sum(1 for p in str(photo or "").split(",") if "http" in p)
+
+
+def _wire_task(t: dict) -> dict:
+    """A task as the register feed ships it: the source dict minus the URL
+    string, plus its count. A NEW dict — the source list belongs to the ORM
+    row and the overlays already mutate it in place; the projection must not
+    also strip it, or a later reader of the same row would find no photos."""
+    out = {k: v for k, v in t.items() if k != "photo"}
+    out["photos"] = _photo_count(t.get("photo"))
+    return out
+
+
+def _json_default(o):
+    if isinstance(o, datetime):
+        return o.isoformat()
+    if hasattr(o, "isoformat"):            # date / time
+        return o.isoformat()
+    if isinstance(o, Decimal):
+        return float(o)
+    if isinstance(o, (set, frozenset)):
+        return sorted(o)
+    raise TypeError(f"not JSON serialisable: {type(o).__name__}")
+
+
+def _json_response(payload) -> Response:
+    """Serialise the register straight to bytes.
+
+    Returning a plain dict hands it to FastAPI's `jsonable_encoder`, which walks
+    every one of the ~150k nested values (rows × tasks × keys) in Python — and
+    does so on the EVENT LOOP, not in the threadpool the handler ran in, so for
+    the duration every other request on the single worker waits behind it. The
+    dict is already JSON-native (dates pre-formatted, Decimals cast), so the C
+    encoder does the whole job in a few tens of ms; `separators` drops the
+    whitespace the default renderer would add to every one of those values."""
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"),
+                      default=_json_default).encode("utf-8")
+    return Response(content=body, media_type="application/json")
 
 
 # ── Submission windows ────────────────────────────────────────────────────────
@@ -245,7 +301,11 @@ def get_leaders(
     sheet row is dropped; every other day still comes from the Google Form
     sheet, which keeps the whole history. Shift 1 is sheet-only — the rule is
     the ROW's shift, not the viewer's, so one (leader, date) reads the same to
-    everybody. See services/leader_bot.py."""
+    everybody. See services/leader_bot.py.
+
+    **Wire shape.** Every task ships `photos` (a count), never the URL string
+    the source row holds — see `_wire_task`. The modal that needs the links
+    fetches them for its ONE report from `/api/leaders/report/{uid}`."""
     role = payload.get("role")
     # A personal "see all" page grant lifts both scoping passes below. The
     # reported `role` stays the caller's own — it drives the page's layout, not
@@ -424,8 +484,11 @@ def get_leaders(
         hit = ai_stats.get(row["uid"])
         if hit:
             row["ai"] = hit
+        # LAST, after every overlay has stamped the source tasks: the wire copy
+        # carries the count, not the links (see _wire_task).
+        row["tasks"] = [_wire_task(t) for t in (row.get("tasks") or [])]
 
-    return {
+    return _json_response({
         "role": role,
         "last_synced": meta.last_synced.isoformat() if meta and meta.last_synced else None,
         "data": data,
@@ -434,7 +497,7 @@ def get_leaders(
         # made from the role string on the client.
         "can_request_late": role in ("admin", "supervisor"),
         "can_decide_late": _may_decide(payload),
-    }
+    })
 
 
 def _apply_overlays(db: Session, data: list[dict]) -> None:
