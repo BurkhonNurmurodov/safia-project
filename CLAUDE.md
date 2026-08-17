@@ -470,13 +470,25 @@ pages, full walk nightly 03:15 + on Refresh + 60 s after boot) ·
   `updated_at`, so a row the API stops returning is only ever MARKED
   (`missing_since`, set by a COMPLETED full walk that saw ≥1 ticket, cleared
   when seen again) — never deleted.
+- **What the API gives is MEASURED, never assumed** (`services/arc_discovery.py`,
+  admin «API» panel on the page + `GET/POST /api/arc/probe`). FastAPI silently
+  IGNORES a query parameter it does not declare, so guessing filter names is
+  worthless — the openapi document lists them and the only honest test is the
+  `total` the API reports for one parameter set versus another. The probe tries
+  both sides of every declared boolean, each enum value and an open bound for
+  every date parameter, keeps whatever RAISES the total, and verifies the
+  combination beats the baseline before storing it in `arc_sync_meta.filters`;
+  every walk then sends that set. A first full sync with no stored measurement
+  probes before walking. Nothing is stored when the defaults are already widest.
 - **Derived state is defined ONCE** (`_derived()` in the router):
   `closed_at = coalesce(completed_at, finished_at)`, `is_open`, `due =
   coalesce(deadline_time, deadline)`, `late`, `overdue_now`, `hours_to_close`
   — list, stats and export all read the same expressions; on-time % is over
   closed tickets that HAVE a due. Status chips map `normalized_status` onto the
   traffic-light palette by vocabulary (`utils/arcStatus.js`); the remote
-  `status_color` is a plain-hex fallback only.
+  `status_color` is a plain-hex fallback only. The register defaults to NO
+  period — a rolling window is a filter the reader never chose, and it made a
+  full mirror look like a thin one.
 - **Credentials**: `Settings.arc_username/arc_password` read `ARC_USERNAME` /
   `ARC_PASSWORD` first, then the bare `USERNAME` / `PASSWORD` IT wrote into prod
   `.env` by SSH — and `PASSAWORD`, the misspelling actually in that file (it is
