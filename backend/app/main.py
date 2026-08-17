@@ -400,8 +400,9 @@ app.include_router(leader_ai.router)
 # require_page("idle-cell"), so no admin guard here (grantable to
 # leaders/supervisors later).
 app.include_router(idle_cell.router)
-# Per-cell attendance viewer (read-only sibling of the Staff verifix page) —
-# self-gates via require_page("cell-attendance").
+# Per-cell attendance rows, read by the Staff (verifix) page's Yacheyka column
+# and cell view — its own page is gone, so this self-gates via
+# require_page("staff") (and require_page("cells") for the in-load writer).
 app.include_router(cell_attendance.router)
 # Single-file attendance ingest («Davomat» admin tab) — one «Отчёт по посещениям
 # сотрудников» export for the whole factory, staged for review before it reaches

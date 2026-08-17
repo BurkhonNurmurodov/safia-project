@@ -34,7 +34,6 @@ const TITLE_KEYS = {
   "/activity":         "nav.activity",
   "/setup-times":      "nav.setupTimes",
   "/idle-cell":        "nav.idleCell",
-  "/cell-attendance":  "nav.cellAttendance",
   "/zagruzka-cell":    "nav.zagruzkaCell",
   "/login":            "login.title",
   "/broadcast-receivers": "admin.tabBroadcast",

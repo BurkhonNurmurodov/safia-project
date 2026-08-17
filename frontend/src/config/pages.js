@@ -47,7 +47,6 @@ export const PAGES = [
   { key: "activity", route: "/activity", labelKey: "nav.activity" },
   { key: "setup", route: "/setup-times", labelKey: "nav.setupTimes" },
   { tier: "test", key: "idle-cell", route: "/idle-cell", labelKey: "nav.idleCell" },
-  { tier: "test", key: "cell-attendance", route: "/cell-attendance", labelKey: "nav.cellAttendance" },
   { tier: "test", key: "zagruzka-cell", route: "/zagruzka-cell", labelKey: "nav.zagruzkaCell" },
 ];
 
@@ -81,7 +80,6 @@ export const DEFAULT_PAGE_ACCESS = {
   activity: [], // Users activity & usage stats — admin-only until enabled
   setup: [], // Setup-times register (переналадка) — admin-only until enabled
   "idle-cell": [], // Manual per-cell idle-time (ojidaniya) TEST entry — admin-only until enabled
-  "cell-attendance": [], // Per-cell attendance viewer (verifix import) — admin-only until enabled
   // Per-cell загрузка TEST twin of /zagruzka, locked to one supervisor's cells.
   // Admin-only while the per-cell method is validated; feeds nothing downstream.
   "zagruzka-cell": [],

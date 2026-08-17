@@ -1,18 +1,24 @@
-"""Per-CELL attendance viewer — the read side of the «Отчёт по посещениям
-сотрудников» export ingested by the admin «Attendance by cell» upload tab.
+"""Per-CELL attendance — the read side of the «Отчёт по посещениям сотрудников»
+export ingested by the admin «Attendance by cell» upload tab. The data lives in
+the isolated TEST table ``cell_attendance`` and feeds the per-cell zagruzka; it
+does NOT touch the per-manager ``attendance`` flow.
 
-Mirrors the Staff (verifix) page's Workers tab, but keyed by CELL instead of by
-supervisor, and read-only: no HR documents, no requests, no approvals. The data
-lives in the isolated TEST table ``cell_attendance`` and feeds the future
-per-cell zagruzka; it does NOT touch the per-manager ``attendance`` flow.
+**Its own page is gone (2026-08-17).** The standalone /cell-attendance viewer was
+removed once the Staff (verifix) page covered the same ground — the Yacheyka
+column on the workers table, and the read-only cell view its unit picker opens —
+so these endpoints are gated on ``staff``, the page that actually reaches them.
+Anyone who can open Staff for a unit can see that unit's cells; nothing widened
+beyond that, because ``_scope`` still cuts the rows to the caller's own cells.
 
-Scoping mirrors idle_cell.py: admins/top-managers and a ``page.view.cell-attendance``
+Scoping mirrors idle_cell.py: admins/top-managers and a ``page.view.staff``
 "all" grant see every cell, supervisors/shift-managers their unit's cells,
 leaders their own. Rows whose «Код подразделения» matched no cell (cell_id NULL)
 are only visible to the all-scope viewers — nobody else can be shown to own them.
 
-``/registry`` is the page's admin-only «Sozlash» tab: the full cell catalog with
-the ``in_load`` tick that decides which cells the загрузка counts.
+``PUT /registry`` is the lone survivor of the deleted «Sozlash» tab and the ONLY
+writer of ``Cell.in_load`` — the tick that decides which cells the загрузка
+counts. It is now driven one cell at a time from /cells/:id, so it is gated on
+``cells`` and hard-limited to role admin on top.
 """
 from datetime import datetime
 
@@ -28,7 +34,11 @@ from app import identity
 
 router = APIRouter(prefix="/api/cell-attendance", tags=["cell-attendance"])
 
-PAGE = "cell-attendance"
+# The page these rows are READ from (Staff), and the page the in-load tick is
+# WRITTEN from (the cell register). Deliberately two keys: browsing a unit's
+# attendance and editing what the загрузка counts are different privileges.
+PAGE = "staff"
+CONFIG_PAGE = "cells"
 
 # Newest N dates offered by the day picker — the register grows one row per
 # worker per day, so an unbounded DISTINCT would only ever get longer.
@@ -180,51 +190,19 @@ def day_attendance(
     }
 
 
-# ── «Sozlash» tab — which cells count toward the load ─────────────────────────
-# The whole registry, not just the cells that carry rows on the open day: this
-# is configuration, so stepping through dates must not change what is listed.
-
-@router.get("/registry")
-def load_registry(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
-):
-    """Every registered cell with its owners and its in-load flag. Admin-only —
-    it is the read side of a settings screen, not of the attendance view."""
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admins only")
-
-    cells = db.query(Cell).all()
-    mgr_names = {m.id: m.name for m in db.query(Manager).all()}
-    leader_names = {p.id: p.name for p in db.query(RoleProfile).all()}
-    out = [
-        {
-            "cell_id":      c.id,
-            "verifix_code": c.verifix_code,
-            "sap_code":     c.sap_code,
-            "name_uz":      c.name_workshop_uz,
-            "name_uz_cyrl": c.name_workshop_uz_cyrl,
-            "name_ru":      c.name_workshop_ru,
-            "name_en":      c.name_workshop_en,
-            "manager_id":   c.manager_id,
-            "manager_name": mgr_names.get(c.manager_id),
-            "leader_id":    c.leader_id,
-            "leader_name":  leader_names.get(c.leader_id),
-            "in_load":      bool(c.in_load),
-        }
-        for c in cells
-    ]
-    out.sort(key=lambda c: (c["verifix_code"] or "zzz").lower())
-    return out
-
+# ── Which cells count toward the load ─────────────────────────────────────────
+# The bulk «Sozlash» table died with the /cell-attendance page; /cells/:id ticks
+# one cell at a time through this same endpoint, so `in_load` still has exactly
+# one writer. The read side went with the table — every reader already gets the
+# flag on the cell record it was looking at anyway.
 
 @router.put("/registry")
 def save_load_registry(
     body: dict = Body(...),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_page(PAGE)),
+    payload: dict = Depends(require_page(CONFIG_PAGE)),
 ):
-    """Persist the ticks. The page sends only what it CHANGED
+    """Persist the ticks. The caller sends only what it CHANGED
     (``{"changes": [{"cell_id": 12, "in_load": true}, …]}``), so two admins
     editing different cells don't overwrite each other."""
     if payload.get("role") != "admin":

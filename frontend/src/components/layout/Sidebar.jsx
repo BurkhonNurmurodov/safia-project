@@ -50,7 +50,6 @@ const ALL_LINKS = [
   { to: "/activity", page: "activity", key: "nav.activity", icon: Activity, group: "system" },
   { to: "/setup-times", page: "setup", key: "nav.setupTimes", icon: Wrench, group: "cells" },
   { to: "/idle-cell", page: "idle-cell", key: "nav.idleCell", icon: Timer, group: "lab" },
-  { to: "/cell-attendance", page: "cell-attendance", key: "nav.cellAttendance", icon: UserCheck, group: "lab" },
   { to: "/zagruzka-cell", page: "zagruzka-cell", key: "nav.zagruzkaCell", icon: FlaskConical, group: "lab" },
 ];
 

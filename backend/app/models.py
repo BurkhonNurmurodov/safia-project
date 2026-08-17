@@ -477,7 +477,7 @@ class Cell(Base):
     leader_id    = Column(Integer, ForeignKey("role_profiles.id"), nullable=True, index=True)
     # 2026-07-31: does this cell count toward the production load (загрузка)?
     # Until now that was DERIVED from "the cell has a supervisor"; it is now an
-    # explicit admin decision, ticked on the /cell-attendance «Sozlash» tab.
+    # explicit admin decision, ticked on the cell's own page (/cells/:id).
     # Default off — a newly registered cell counts only once an admin says so.
     in_load      = Column(Boolean, nullable=False, server_default="false", default=False)
     # 2026-08-01: permanent answer to "do this cell's people count toward its

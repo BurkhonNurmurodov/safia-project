@@ -642,8 +642,8 @@ def migrate_cell_in_load_column() -> None:
     """2026-07-31: «counts in загрузка» becomes an explicit per-cell flag instead
     of being derived from "the cell has a supervisor". Every existing row starts
     FALSE by deliberate choice — the admin ticks the cells that belong in the
-    load on the /cell-attendance «Sozlash» tab, rather than inheriting a set
-    nobody chose. Idempotent; runs after migrate_cell_supervisor_column."""
+    load one at a time on /cells/:id, rather than inheriting a set nobody chose.
+    Idempotent; runs after migrate_cell_supervisor_column."""
     db = SessionLocal()
     try:
         db.execute(text(

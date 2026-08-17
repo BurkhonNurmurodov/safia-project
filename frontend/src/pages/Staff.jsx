@@ -442,9 +442,9 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
 
   // ── Yacheyka column ────────────────────────────────────────────────────────
   // On a date that has a by-cell attendance upload, every worker also shows the
-  // cell that import put them in. Query keys are shared with the
-  // /cell-attendance page, so this costs nothing extra there; a viewer without
-  // that page gets one 403 → no dates → the column simply never renders.
+  // cell that import put them in. Query keys are shared with the cell view
+  // below, so opening one costs the other nothing; a day with no by-cell upload
+  // yields no dates → the column simply never renders.
   const { data: cellDates = [] } = useQuery({
     queryKey: ["cell-attendance-dates"],
     queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),
@@ -793,7 +793,7 @@ export function AttendanceTable({ managerId, selectedDate, pickSupervisor }) {
                 </th>
                 {showCellCol && (
                   <th className={thCls} style={{ borderColor: "var(--border)" }}>
-                    <ColFilter label={t("cellAtt.colCell")} active={filters.cells.length > 0}>
+                    <ColFilter label={t("staff.colCell")} active={filters.cells.length > 0}>
                       <OptsFilter searchable opts={distinctCells} sel={filters.cells} onChange={v => setF("cells", v)} />
                     </ColFilter>
                   </th>
@@ -932,8 +932,8 @@ export function CellDayView({ date, cellSel, hasCellData }) {
   const { tl } = useTranslit();
   const [search, setSearch] = useState("");
 
-  // Same query key + params as the /cell-attendance page and the parent's
-  // picker feed — one fetch serves all three.
+  // Same query key + params as the Yacheyka column and the parent's picker
+  // feed — one fetch serves all three.
   const { data, isLoading } = useQuery({
     queryKey: ["cell-attendance", date],
     queryFn: () => api.get("/api/cell-attendance", { params: { date } }).then(r => r.data),
@@ -963,8 +963,8 @@ export function CellDayView({ date, cellSel, hasCellData }) {
 
   const worked    = allRows.filter(r => r.status === "worked");
   const cameRatio = allRows.length ? worked.length / allRows.length : null;
-  // The load slice by the by-cell rule: the cell must be ticked on the
-  // /cell-attendance «Sozlash» tab AND the row must hold a load role.
+  // The load slice by the by-cell rule: the cell must be ticked «Zagruzka
+  // hisobida» on its /cells/:id page AND the row must hold a load role.
   const zagAll  = cellInfo?.in_load === true
     ? allRows.filter(r => LOAD_ROLE_RE.test(r.job_title || ""))
     : [];
@@ -1051,7 +1051,7 @@ export function CellDayView({ date, cellSel, hasCellData }) {
                 <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colHours")}</th>
                 <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEarly")}</th>
                 <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colEffHours")}</th>
-                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("cellAtt.colStatus")}</th>
+                <th className={thCls} style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>{t("staff.colStatus")}</th>
               </tr>
             </thead>
             <tbody>
@@ -3922,10 +3922,9 @@ export default function Staff() {
   // ── Cells from the by-cell attendance import ───────────────────────────────
   // On a date that has a by-cell upload, the unit picker also lists the cells
   // carrying rows that day; picking one swaps the verifix table for a read-only
-  // cell roster. Both queries share keys with the /cell-attendance page, so
-  // neither costs a second fetch there. A viewer without the cell-attendance
-  // page simply gets a 403 → no dates → the section never appears (no retry:
-  // the answer won't change).
+  // cell roster. Both queries share keys with the Yacheyka column above, so
+  // neither costs a second fetch. A day with no by-cell upload yields no dates
+  // → the section never appears (no retry: the answer won't change).
   const { data: cellDates = [] } = useQuery({
     queryKey: ["cell-attendance-dates"],
     queryFn: () => api.get("/api/cell-attendance/dates").then(r => r.data),

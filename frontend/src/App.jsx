@@ -65,7 +65,6 @@ const Tasks = lazyWithReload(() => import("./pages/Tasks"));
 const UsersActivity = lazyWithReload(() => import("./pages/UsersActivity"));
 const SetupTimes = lazyWithReload(() => import("./pages/SetupTimes"));
 const IdleCell = lazyWithReload(() => import("./pages/IdleCell"));
-const CellAttendance = lazyWithReload(() => import("./pages/CellAttendance"));
 const ZagruzkaCell = lazyWithReload(() => import("./pages/ZagruzkaCell"));
 const BroadcastReceivers = lazyWithReload(() => import("./pages/BroadcastReceivers"));
 const BroadcastRecord = lazyWithReload(() => import("./pages/BroadcastRecord"));
@@ -418,7 +417,6 @@ function AppWithLang() {
             <Route path="/activity" element={<AuthGate><RequirePage page="activity"><UsersActivity /></RequirePage></AuthGate>} />
             <Route path="/setup-times" element={<AuthGate><RequirePage page="setup"><SetupTimes /></RequirePage></AuthGate>} />
             <Route path="/idle-cell" element={<AuthGate><RequirePage page="idle-cell"><IdleCell /></RequirePage></AuthGate>} />
-            <Route path="/cell-attendance" element={<AuthGate><RequirePage page="cell-attendance"><CellAttendance /></RequirePage></AuthGate>} />
             <Route path="/zagruzka-cell" element={<AuthGate><RequirePage page="zagruzka-cell"><ZagruzkaCell /></RequirePage></AuthGate>} />
             {/* Safia Honors — gamification design preview, admin-only demo (no page-access key). */}
             <Route path="/gamification" element={<AuthGate><RequireAdmin><Gamification /></RequireAdmin></AuthGate>} />

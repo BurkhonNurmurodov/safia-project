@@ -1,8 +1,9 @@
 /**
  * Shared pieces of the per-cell attendance model (the isolated
- * `cell_attendance` table) — used by the /cell-attendance page and the Staff
- * page's cell view, which must agree on what identifies a cell and which rows
- * the загрузка counts.
+ * `cell_attendance` table) — used by the Staff (verifix) page's Yacheyka column
+ * and its cell view, which must agree on what identifies a cell and which rows
+ * the загрузка counts. The standalone /cell-attendance page these were split out
+ * of is gone (2026-08-17): Staff shows the same rows, keyed by the same cells.
  */
 
 // One identity for a cell across the catalog and the rows. Unmatched codes have
@@ -12,7 +13,7 @@ export const cellKey = (o) => String(o.cell_id ?? `x:${o.verifix_code ?? ""}`);
 
 // «Zagruzkada hisoblanadigan» — the slice the production load actually counts:
 // every flavour of konditer plus the fasovchiks, inside a cell the admin has
-// TICKED on the «Sozlash» tab. Which cells belong in the load used to be
+// TICKED on its /cells/:id page. Which cells belong in the load used to be
 // inferred from "the cell has a brigadir"; since 2026-07-31 it is an explicit
 // decision stored on the cell (`in_load`), so a cell can be left out even with
 // an owner, and unmatched codes — which carry no cell record at all — still

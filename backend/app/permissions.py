@@ -40,7 +40,7 @@ TOGGLEABLE_ROLES = ["top-manager", "shift-manager", "supervisor", "leader", "gue
 
 # The pages an admin can control. Order matters: it drives the "first accessible
 # page" fallback on the frontend.
-PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "cell-attendance", "zagruzka-cell"]
+PAGE_KEYS = ["overview", "zagruzka", "leaderboard", "workers", "plan", "downtime", "staff", "daily", "production", "trudoyomkost", "leaders", "cells", "kaizen", "quality", "concerns", "worker-concerns", "tasks", "activity", "setup", "idle-cell", "zagruzka-cell"]
 
 # Default access — mirrors the original hardcoded frontend guards.
 # "leaderboard" defaults to no toggleable roles, i.e. admin-only.
@@ -98,10 +98,6 @@ DEFAULT_PAGE_ACCESS = {
     # open to leaders/supervisors from the Access tab (or per-person via
     # page.view.idle-cell on the Permissions tab). Does NOT replace the sheet import.
     "idle-cell": [],
-    # Per-cell attendance viewer over the verifix «Отчёт по посещениям» import —
-    # read-only, admin-only by default; open to roles here or per-person via
-    # page.view.cell-attendance on the Permissions tab.
-    "cell-attendance": [],
     # Per-cell загрузка TEST twin of /zagruzka, hard-locked to one supervisor's
     # cells. Admin-only by default and meant to stay that way while the per-cell
     # method is being validated — it reads pp_* / cell_* tables only and feeds

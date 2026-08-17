@@ -168,13 +168,15 @@ export default function CellAttendanceUpload() {
           />
 
           {/* The workflow spans three pages; this one is where uploads happen,
-              so it should say where the other two are. */}
+              so it should say where the other two are: the cell register that
+              gives a «Код подразделения» a name, and the Staff (verifix) page
+              that browses the rows this upload lands. */}
           <div className="mt-4 pt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ borderTop: "1px solid var(--border)", color: "var(--text-3)" }}>
             <Link to="/cells" className="inline-flex items-center gap-1 hover:underline">
               {t("admin.cellAtt.linkCells")} <ArrowRight size={11} />
             </Link>
-            <Link to="/cell-attendance" className="inline-flex items-center gap-1 hover:underline">
-              {t("admin.cellAtt.linkSozlash")} <ArrowRight size={11} />
+            <Link to="/staff" className="inline-flex items-center gap-1 hover:underline">
+              {t("admin.cellAtt.linkStaff")} <ArrowRight size={11} />
             </Link>
           </div>
         </div>
