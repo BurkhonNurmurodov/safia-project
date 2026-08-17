@@ -431,10 +431,10 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("{actor_name} returned a concern to you", "“{concern}”\n\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_comment": {
-        "uz": ("{author_name} xavotirga izoh qoldirdi", "«{comment}»\n\n💬 Xavotir: {concern}"),
-        "uz_cyrl": ("{author_name} хавотирга изоҳ қолдирди", "«{comment}»\n\n💬 Хавотир: {concern}"),
-        "ru": ("{author_name} оставил(а) комментарий к опасению", "«{comment}»\n\n💬 Опасение: {concern}"),
-        "en": ("{author_name} commented on a concern", "“{comment}”\n\n💬 Concern: {concern}"),
+        "uz": ("{author_name} xavotirga izoh qoldirdi", "«{comment}»\n\n📄 Xavotir: {concern}"),
+        "uz_cyrl": ("{author_name} хавотирга изоҳ қолдирди", "«{comment}»\n\n📄 Хавотир: {concern}"),
+        "ru": ("{author_name} оставил(а) комментарий к опасению", "«{comment}»\n\n📄 Опасение: {concern}"),
+        "en": ("{author_name} commented on a concern", "“{comment}”\n\n📄 Concern: {concern}"),
     },
     "task_created": {
         "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
@@ -591,49 +591,85 @@ def _render_body(tmpl: str, values: dict, *, html: bool = False) -> str:
     return "\n".join(out).strip("\n")
 
 
+def _notif_values(params: dict, lang: str, *, escape: bool = False) -> dict:
+    """The interpolation values behind BOTH notification renderers — the plain
+    bell/DM text and the HTML Telegram body. One prep step, so an HTML DM can
+    never quietly lose a language-derived label the bell resolves.
+
+    ``escape`` HTML-escapes the interpolated free text (names, a concern's own
+    words) so a stray & or < in a DB value can't break the markup; ints pass
+    through untouched."""
+    params = params or {}
+    # Latinise embedded DB values (names, job titles) for uz/en so notifications
+    # match the dashboard; ru/uz_cyrl keep the original Cyrillic. No-op on the
+    # already-Latin/non-string params (count, etc.).
+    values = {k: transliterate(v, lang) for k, v in params.items()}
+    if "date" in params:
+        values["date"] = _fmt_date(params["date"], lang)
+    # Back-compat: call_forecast gained ``eff`` (Zagruzka %) then ``name``
+    # (supervisor) fields after some notices were already stored; fall back so
+    # those old rows still render at view time.
+    values.setdefault("eff", "—")
+    values.setdefault("name", "—")
+    # Language-derived params: resolve from the raw value so the label localises
+    # to the *viewer's* language, not the creator's (doc_type → doc_label).
+    if "doc_type" in params:
+        values["doc_label"] = _doc_label(params["doc_type"], lang)
+    if "task_status" in params:
+        by_lang = _TASK_STATUS_LABELS.get(params["task_status"], {})
+        values["status_label"] = by_lang.get(lang) or by_lang.get("en") or params["task_status"]
+    if "concern_level" in params:
+        by_lang = _CONCERN_LEVEL_LABELS.get(params["concern_level"], {})
+        values["level_label"] = by_lang.get(lang) or by_lang.get("en") or params["concern_level"]
+    # A concern raised by the cell's own leader printed the one name twice, under
+    # two labels ("Лидер: X … Хавотир эгаси: X"), which told the reader nothing
+    # the first row hadn't. Blank the duplicate and let _render_body take the
+    # line out. Done here, at RENDER time, so notifications already in the bell
+    # lose the repetition too.
+    if _same_person(params.get("leader_name"), params.get("owner")):
+        values["leader_name"] = ""
+    if escape:
+        values = {k: (_html_escape(v) if isinstance(v, str) else v)
+                  for k, v in values.items()}
+    return values
+
+
 def _mk_notif(nkey: str, params: dict, lang: str) -> tuple[str, str]:
     """Render a notification template (title, body) in ``lang``. Pure — given the
     same key + raw params it produces the same output, so the bell can call it at
     *view time* in each viewer's current language (see routers/notifications.py)."""
-    params = params or {}
     strings = _NOTIF_STRINGS.get(nkey, {})
     title_tmpl, body_tmpl = strings.get(lang) or strings.get("en") or (nkey, "")
-    # Latinise embedded DB values (names, job titles) for uz/en so notifications
-    # match the dashboard; ru/uz_cyrl keep the original Cyrillic. No-op on the
-    # already-Latin/non-string params (count, etc.).
-    localized = {k: transliterate(v, lang) for k, v in params.items()}
-    if "date" in params:
-        localized["date"] = _fmt_date(params["date"], lang)
-    # Back-compat: call_forecast gained ``eff`` (Zagruzka %) then ``name``
-    # (supervisor) fields after some notices were already stored; fall back so
-    # those old rows still render at view time.
-    localized.setdefault("eff", "—")
-    localized.setdefault("name", "—")
-    # Language-derived params: resolve from the raw value so the label localises
-    # to the *viewer's* language, not the creator's (doc_type → doc_label).
-    if "doc_type" in params:
-        localized["doc_label"] = _doc_label(params["doc_type"], lang)
-    if "task_status" in params:
-        by_lang = _TASK_STATUS_LABELS.get(params["task_status"], {})
-        localized["status_label"] = by_lang.get(lang) or by_lang.get("en") or params["task_status"]
-    if "concern_level" in params:
-        by_lang = _CONCERN_LEVEL_LABELS.get(params["concern_level"], {})
-        localized["level_label"] = by_lang.get(lang) or by_lang.get("en") or params["concern_level"]
-    # A concern raised by the cell's own leader printed the one name twice, under
-    # two labels ("Лидер: X … Хавотир эгаси: X"), which told the reader nothing
-    # the first row hadn't. Blank the duplicate and let _drop_empty_rows take the
-    # line out. Done here, at RENDER time, so notifications already in the bell
-    # lose the repetition too.
-    if _same_person(params.get("leader_name"), params.get("owner")):
-        localized["leader_name"] = ""
-    return title_tmpl.format(**localized), _render_body(body_tmpl, localized)
+    values = _notif_values(params, lang)
+    return title_tmpl.format(**values), _render_body(body_tmpl, values)
 
+
+# The second, cheaper door to a rich DM: a key listed here is rendered in HTML
+# straight from its _NOTIF_STRINGS row shape — «quoted» content becomes a
+# <blockquote>, each "{emoji} Label: value" row gets a <b>bold label</b>, and
+# this emoji leads the bold title. Same look as the hand-written templates
+# below, but ONE string per language stays the source for both the bell and the
+# DM, which is what keeps a typo fixed in one of them from surviving in the
+# other. Reach for _NOTIF_TG_HTML instead only when the DM must say something
+# the bell does not (a greeting, an advisory paragraph, a premium emoji).
+_NOTIF_TG_ICON = {
+    "concern_created": "🔔",
+    "concern_assigned": "📌",
+    "concern_moved": "🔀",
+    "concern_resolved": "✅",
+    "concern_reopened": "🔄",
+    "concern_edited": "✏️",
+    "concern_escalated": "⬆️",
+    "concern_returned": "↩️",
+    "concern_comment": "💬",
+}
 
 # HTML-formatted Telegram bodies for notifications whose DM should render richer
 # than the plain bell text — bold labels and a real <blockquote> the legacy
-# Markdown parse mode can't produce. Only keys present here send in HTML mode;
-# every other notification keeps the plain Markdown DM. Params are ints + a
-# pre-formatted date (no user free-text), so no HTML escaping is needed.
+# Markdown parse mode can't produce. Only keys present here (or in
+# _NOTIF_TG_ICON above) send in HTML mode; every other notification keeps the
+# plain Markdown DM. Params are ints + a pre-formatted date (no user free-text),
+# so no HTML escaping is needed.
 _NOTIF_TG_HTML = {
     # Verifix upload reminder → a warm, personal DM: greeting by the brigadir's
     # name, the day-close ask, and a premium (custom) emoji sign-off. The
@@ -860,23 +896,29 @@ _NOTIF_TG_HTML = {
 
 
 def _mk_notif_tg(nkey: str, params: dict, lang: str) -> str | None:
-    """Optional HTML-formatted Telegram body for a notification. Returns None when
-    the key has no HTML variant, so the caller falls back to the plain DM path."""
+    """The HTML-formatted Telegram body for a notification, or None when the key
+    has neither kind of rich variant and the caller should send the plain DM.
+
+    Two sources, in order: a hand-written _NOTIF_TG_HTML template (the DM says
+    more than the bell), else an icon in _NOTIF_TG_ICON, which promotes the key's
+    own _NOTIF_STRINGS row shape to HTML. The result is self-contained — it
+    carries its own title, because the HTML send path has no separate title
+    line."""
     tmpls = _NOTIF_TG_HTML.get(nkey)
-    if not tmpls:
+    icon = _NOTIF_TG_ICON.get(nkey)
+    if not tmpls and not icon:
+        return None                      # plain-DM key: don't prep values for nothing
+    values = _notif_values(params, lang, escape=True)
+    if tmpls:
+        return (tmpls.get(lang) or tmpls.get("en")).format(**values)
+
+    strings = _NOTIF_STRINGS.get(nkey, {})
+    title_tmpl, body_tmpl = strings.get(lang) or strings.get("en") or ("", "")
+    if not title_tmpl:
         return None
-    tmpl = tmpls.get(lang) or tmpls.get("en")
-    params = params or {}
-    localized = {k: transliterate(v, lang) for k, v in params.items()}
-    if "date" in params:
-        localized["date"] = _fmt_date(params["date"], lang)
-    localized.setdefault("eff", "—")   # see _mk_notif — old call_forecast rows lack it
-    localized.setdefault("name", "—")  # same: pre-name notices
-    # HTML-escape interpolated free-text (names) so a stray & or < in a DB value
-    # can't break the surrounding markup. Ints (counts) pass through untouched.
-    localized = {k: (_html_escape(v) if isinstance(v, str) else v)
-                 for k, v in localized.items()}
-    return tmpl.format(**localized)
+    title = title_tmpl.format(**values)
+    body = _render_body(body_tmpl, values, html=True)
+    return f"{icon} <b>{title}</b>\n\n{body}" if body else f"{icon} <b>{title}</b>"
 
 
 def _jsonify_params(params: dict) -> dict:
