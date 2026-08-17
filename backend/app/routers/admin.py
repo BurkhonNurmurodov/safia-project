@@ -947,6 +947,121 @@ def admin_set_capabilities(
     return {"status": "ok", "caps": caps, "profiles": profile_caps}
 
 
+class CopyCapabilitiesPayload(BaseModel):
+    source_key:     Optional[int] = None   # telegram id to copy FROM
+    source_profile: Optional[str] = None   # profile key ("supervisor:42") to copy FROM
+    keys:     list[int] = []               # destination telegram ids
+    profiles: list[str] = []               # destination profile keys
+
+
+@router.post("/capabilities/copy")
+def admin_copy_capabilities(
+    payload: CopyCapabilitiesPayload,
+    db: Session = Depends(get_db),
+    admin_payload: dict = Depends(verify_admin),
+):
+    """MIRROR one target's entries onto others — "make these people like X".
+
+    Equipping a second supervisor meant reading the first one's rows off the
+    screen and re-ticking every one of them by hand, which is how a page gets
+    missed. This is that edit expressed once — and unlike
+    :func:`admin_set_capabilities` it is a whole-set REPLACE, not a diff: each
+    destination ends up holding EXACTLY the source's grants, scopes and blocks,
+    and whatever it held beyond them is cleared. A merge would leave two people
+    the tab now presents as identical actually differing, with nothing on screen
+    saying so; the honest thing to do with the extras is remove them, visibly,
+    one audit row each.
+
+    The mirror is computed HERE rather than assembled by the caller: "everything
+    the source does not hold is revoked" is the dangerous half of this
+    operation, and a client that got that list wrong could strip a whole role.
+    The source is read fresh from the DB for the same reason — a tab left open
+    since this morning must not decide what a save means.
+
+    Revoking a capability a destination never held is a no-op that writes no
+    audit row (see :func:`apply_caps`), so the complement can be sent wholesale
+    and each target's trail still records only what actually changed. Admin
+    profiles are absent from the tree and hold the catalog through their role,
+    so they are neither a useful source nor reachable as a destination."""
+    if (payload.source_key is None) == (payload.source_profile is None):
+        raise HTTPException(status_code=400, detail="Pick exactly one source")
+    if not payload.keys and not payload.profiles:
+        raise HTTPException(status_code=400, detail="No targets selected")
+    if any(tid <= 0 for tid in payload.keys):
+        raise HTTPException(status_code=400, detail="Invalid telegram id")
+    if any(":" not in key for key in payload.profiles):
+        raise HTTPException(status_code=400, detail="Invalid profile key")
+
+    # A source that does not resolve is REFUSED rather than read as "holds
+    # nothing": one stale id would otherwise mean an empty mirror, and an empty
+    # mirror strips every destination bare.
+    if payload.source_key is not None:
+        if not db.query(TelegramUser).filter(
+                TelegramUser.telegram_id == payload.source_key).first():
+            raise HTTPException(status_code=404, detail="Source account not found")
+        rows = db.query(UserCapability).filter(
+            UserCapability.telegram_id == payload.source_key).all()
+    else:
+        if ":" not in payload.source_profile or not identity.profile_display_name(
+                db, payload.source_profile):
+            raise HTTPException(status_code=404, detail="Source profile not found")
+        rows = db.query(ProfilePermission).filter(
+            ProfilePermission.profile_key == payload.source_profile).all()
+
+    grants: dict[str, str] = {}
+    denies: list[str] = []
+    for r in rows:
+        if r.capability not in CAPABILITY_KEYS:
+            continue
+        if r.mode == MODE_DENY:
+            denies.append(r.capability)
+        else:
+            grants[r.capability] = r.scope if r.scope in SCOPES else "own"
+    revokes = [k for k in CAPABILITY_KEYS if k not in grants and k not in denies]
+
+    # The source is never its own destination — ticking the role it sits in
+    # would mirror it onto itself, and "nothing changed" would be counted back
+    # as one more person equipped.
+    dest_keys = [tid for tid in dict.fromkeys(payload.keys) if tid != payload.source_key]
+    dest_profiles = [k for k in dict.fromkeys(payload.profiles)
+                     if k != payload.source_profile]
+    if not dest_keys and not dest_profiles:
+        raise HTTPException(status_code=400, detail="No targets besides the source")
+
+    # Counted BEFORE the write: what the mirror takes away is the half nobody
+    # asked for by name, so the response can say it out loud.
+    drop = set(revokes)
+    removed = 0
+    if dest_keys:
+        removed += sum(1 for r in db.query(UserCapability).filter(
+            UserCapability.telegram_id.in_(dest_keys)).all() if r.capability in drop)
+    if dest_profiles:
+        removed += sum(1 for r in db.query(ProfilePermission).filter(
+            ProfilePermission.profile_key.in_(dest_profiles)).all() if r.capability in drop)
+
+    actor_name = admin_payload.get("full_name")
+    actor_id = int(admin_payload["sub"])
+    if dest_keys:
+        apply_caps(db, dest_keys, grants, revokes, denies,
+                   actor_name=actor_name, actor_telegram_id=actor_id)
+    if dest_profiles:
+        apply_profile_perms(db, dest_profiles, grants, revokes, denies,
+                            actor_name=actor_name, actor_telegram_id=actor_id)
+
+    log.info(
+        "CAPABILITIES copied from %s to %d account(s) + %d profile(s) by %s: "
+        "%d entries, %d removed",
+        payload.source_key or payload.source_profile, len(dest_keys),
+        len(dest_profiles), actor_name, len(grants) + len(denies), removed,
+    )
+    return {
+        "status":  "ok",
+        "targets": len(dest_keys) + len(dest_profiles),
+        "entries": len(grants) + len(denies),
+        "removed": removed,
+    }
+
+
 @router.get("/capabilities/audit")
 def admin_capability_audit(
     limit: int = 200,

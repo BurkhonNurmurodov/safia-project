@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   KeyRound, Check, Minus, Shield, ClipboardCheck, CalendarClock, UserCog, History,
-  LayoutGrid, Ban, Briefcase, Hourglass,
+  LayoutGrid, Ban, Briefcase, Hourglass, Copy,
 } from "lucide-react";
 import api from "../../utils/api";
 import { usePersistentState } from "../../hooks/usePersistentState";
@@ -23,6 +23,7 @@ import { SkeletonBlock } from "../../components/ui/Skeleton";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/Toast";
 import { useAdminDirty } from "./AdminPanel";
+import CopyPermsModal from "./CopyPermsModal";
 
 /**
  * Per-ACCOUNT capabilities — the person-level half of the permission system.
@@ -60,6 +61,15 @@ import { useAdminDirty } from "./AdminPanel";
  * from one supervisor used to mean taking it from every supervisor. Actions
  * stay two-state — their authority is checked by hardcoded rules that never
  * consult a deny list, so a denied ACTION would be a block that does nothing.
+ *
+ * «Nusxalash» hands the WHOLE set to other people (`CopyPermsModal`): the
+ * selected person is the source, the same nested tree picks the destinations,
+ * and each one ends up an exact MIRROR — the source's grants, scopes and blocks,
+ * with anything they held beyond that removed. Re-ticking one supervisor's rows
+ * onto the next by eye is how a page gets missed. It is deliberately not part of
+ * the draft: the dialog writes on its own press (its own body is the review),
+ * the server reads the source fresh, and a pending draft is named there and
+ * excluded rather than silently travelling.
  *
  * Two deliberate omissions, enforced server-side too: this tab is itself never
  * grantable (handing out powers stays a real admin's job), and admin profiles
@@ -151,6 +161,7 @@ export default function Permissions() {
   const [saving, setSaving]     = useState(false);
   const [pendingSel, setPendingSel] = useState(null);  // selection awaiting a discard confirm
   const [confirmSave, setConfirmSave] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
   const toast = useToast();
 
   const { data, isLoading } = useQuery({
@@ -317,6 +328,25 @@ export default function Permissions() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /**
+   * A copy is written by the dialog itself — one press after ticking, no second
+   * confirm — so all this does is say what landed and refetch. The toast names
+   * the removals separately: an exact copy also TAKES, and the count of what it
+   * took is the one number nobody asked for by name.
+   */
+  function copyDone(res) {
+    setCopyOpen(false);
+    qc.invalidateQueries({ queryKey: ["admin-capabilities"] });
+    qc.invalidateQueries({ queryKey: ["admin-capabilities-audit"] });
+    qc.invalidateQueries({ queryKey: ["my-capabilities"] });
+    toast.success(
+      t(res?.removed ? "admin.perms.copy.doneRemoved" : "admin.perms.copy.done")
+        .replace("{n}", res?.entries ?? 0)
+        .replace("{m}", res?.targets ?? 0)
+        .replace("{r}", res?.removed ?? 0),
+    );
   }
 
   const only = chosen.length === 1 ? chosen[0] : null;
@@ -487,14 +517,30 @@ export default function Permissions() {
                   title={headTitle}
                   subtitle={headSub}
                   right={
-                    <Button
-                      size="md"
-                      onClick={() => (grantCount + denyCount > 0 ? setConfirmSave(true) : save())}
-                      loading={saving}
-                      disabled={!dirty}
-                    >
-                      {dirty ? t("admin.perms.saveN").replace("{n}", changeCount) : t("admin.save")}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {/* Hand this whole set to other people. Needs ONE source,
+                          so with a bulk selection it stays visible and disabled
+                          rather than vanishing — the count beside it is the
+                          explanation, and its title spells it out. */}
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        icon={Copy}
+                        disabled={!only}
+                        title={only ? undefined : t("admin.perms.copy.needOne")}
+                        onClick={() => setCopyOpen(true)}
+                      >
+                        {t("admin.perms.copy.button")}
+                      </Button>
+                      <Button
+                        size="md"
+                        onClick={() => (grantCount + denyCount > 0 ? setConfirmSave(true) : save())}
+                        loading={saving}
+                        disabled={!dirty}
+                      >
+                        {dirty ? t("admin.perms.saveN").replace("{n}", changeCount) : t("admin.save")}
+                      </Button>
+                    </div>
                   }
                 />
                 {/* What a save will MEAN here, said before it is made rather than
@@ -686,6 +732,20 @@ export default function Permissions() {
         onCancel={() => setConfirmSave(false)}
         onConfirm={save}
       />
+
+      {/* Keyed by the source: opening it for someone else starts with an empty
+          selection instead of inheriting the last person's ticks. */}
+      {copyOpen && only && (
+        <CopyPermsModal
+          key={only.key}
+          source={only}
+          tree={tree}
+          capLabel={capLabel}
+          dirtyCount={changeCount}
+          onClose={() => setCopyOpen(false)}
+          onDone={copyDone}
+        />
+      )}
 
       {toast.node}
     </div>
