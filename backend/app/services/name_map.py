@@ -93,8 +93,9 @@ _VOWELS = "AEIOU"
 def _name_tokens(name: str) -> list[str]:
     """Fold a name onto a comparable Latin skeleton: transliterate, drop the
     Uzbek patronymic suffixes, and normalize the letter pairs the two sources
-    disagree on. ZH→J matters most: the transliterator writes ж the Russian way
-    (Санжар → Sanzhar) while the sheet types it the Uzbek way (SANJARBEK)."""
+    disagree on. ZH→J still matters even though the transliterator now writes ж
+    the Uzbek way (Санжар → Sanjar): a sheet typed in Latin may carry the Russian
+    spelling of the same name (SANZHAR vs SANJARBEK)."""
     s = transliterate(name or "", "uz").upper()
     s = re.sub(r"[ʻ'’‘`´]", "", s)
     s = re.sub(r"\b(O\s*G\s*LI|OGLI|QIZI|UGLI|O\s*G\s*L)\b", " ", s)

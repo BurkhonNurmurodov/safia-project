@@ -9,11 +9,14 @@ supervisor names, job titles) render in the Latin alphabet for the "uz" and
 Keep this map in sync with transliterate.js.
 """
 
-# Cyrillic (lower-case) → Latin. Upper-case is handled by preserving the case of
-# the source character on the first letter of the replacement.
+# Cyrillic (lower-case) → UZBEK LATIN. Upper-case is handled by preserving the
+# case of the source character on the first letter of the replacement.
+# This stage always produces Uzbek Latin (_english_word below converts that to
+# English conventions), so the values follow the Uzbek alphabet, never the
+# Russian romanisation: ж is "j" (Санжар → Sanjar), NOT "zh".
 _CYRILLIC_TO_LATIN = {
     "а": "a",  "б": "b",  "в": "v",  "г": "g",  "д": "d",
-    "е": "ye", "ё": "yo", "ж": "zh", "з": "z",  "и": "i",
+    "е": "ye", "ё": "yo", "ж": "j",  "з": "z",  "и": "i",
     "й": "y",  "к": "k",  "л": "l",  "м": "m",  "н": "n",
     "о": "o",  "п": "p",  "р": "r",  "с": "s",  "т": "t",
     "у": "u",  "ф": "f",  "х": "kh", "ц": "ts", "ч": "ch",

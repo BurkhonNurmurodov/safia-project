@@ -17,16 +17,28 @@
  *   <td>{tl(worker.worker_name)}</td>
  */
 
+import { useMemo } from "react";
+
 import { useLang } from "../context/LangContext";
+
+/** Fold a raw DB name onto a comparable key: trimmed, single-spaced, lower-case.
+ *  Only ever merges spellings of one value — never splits one. */
+const normaliseNameKey = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 
 // ─── Character map ────────────────────────────────────────────────────────────
 // Key   = Cyrillic character (lower-case).
-// Value = Latin equivalent used for both uz and en.
+// Value = the UZBEK LATIN equivalent — this stage always produces Uzbek Latin,
+// and toEnglish() below is what converts that to English conventions. So the
+// values here must follow the Uzbek alphabet, never the Russian romanisation:
+// ж is "j" (Санжар → Sanjar), NOT "zh". Writing "zh" here made every ж-name
+// render the Russian way on a platform whose Latin is Uzbek, contradicted the
+// reverse map below (j → ж, so "Sanjar" round-tripped to "Sanzhar"), and forced
+// an admin to hand-type a name override per person per spelling to undo it.
 // Upper-case is handled automatically by capitaliseResult().
 const CYRILLIC_TO_LATIN = {
   // Core Russian/Uzbek Cyrillic
   а: "a",  б: "b",  в: "v",  г: "g",  д: "d",
-  е: "ye", ё: "yo", ж: "zh", з: "z",  и: "i",
+  е: "ye", ё: "yo", ж: "j",  з: "z",  и: "i",
   й: "y",  к: "k",  л: "l",  м: "m",  н: "n",
   о: "o",  п: "p",  р: "r",  с: "s",  т: "t",
   у: "u",  ф: "f",  х: "kh", ц: "ts", ч: "ch",
@@ -280,11 +292,34 @@ export function transliterate(value, lang) {
  */
 export function useTranslit() {
   const { lang, nameOverrides } = useLang();
+
+  // The override is keyed by the EXACT raw DB value, but one person's name
+  // reaches the UI in more than one spelling: the Translations editor lists the
+  // canonical `Manager.name` ("Абдукаримов Санжар"), while feeds built from the
+  // source sheets carry whatever the form captured — commonly the same name
+  // SHOUTED ("АБДУКАРИМОВ САНЖАР"). Exact matching made an override apply on the
+  // pages reading the canonical name and silently miss the ones reading a sheet
+  // spelling, which reads as "the fix worked in some places". So keep a second,
+  // case- and whitespace-folded index and fall back to it. A fold that two
+  // DIFFERENT override values share is dropped rather than guessed at.
+  const folded = useMemo(() => {
+    const out = new Map(), clash = new Set();
+    for (const [key, value] of Object.entries(nameOverrides?.[lang] || {})) {
+      if (!key.startsWith("name.")) continue;
+      const k = normaliseNameKey(key.slice(5));
+      if (!k || clash.has(k)) continue;
+      if (out.has(k) && out.get(k) !== value) { out.delete(k); clash.add(k); continue; }
+      out.set(k, value);
+    }
+    return out;
+  }, [nameOverrides, lang]);
+
   return {
     /** Render a DB string for the current language (override → transliterate). */
     tl: (value) => {
       if (!value) return value;
-      const custom = nameOverrides?.[lang]?.[`name.${String(value).trim()}`];
+      const raw = String(value).trim();
+      const custom = nameOverrides?.[lang]?.[`name.${raw}`] ?? folded.get(normaliseNameKey(raw));
       return custom || transliterate(value, lang);
     },
     /** The current language, in case callers need it. */

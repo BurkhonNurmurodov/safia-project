@@ -39,8 +39,9 @@ const CYRILLIC_NAME_RE = /^[Ѐ-ӿʻʼ'’\-\s]+$/;
 // One script-agnostic key per name, so a name typed in any of the four scripts
 // matches the profile however it is spelled in the database. transliterate(…,
 // "en") is the single target Latin and Uzbek-Cyrillic both converge on; the
-// digraph folds below close the gaps it leaves — zh→j because Cyrillic ж
-// becomes "zh" where Uzbek Latin writes j (Санжар vs Sanjar), and gh→g / kh→h
+// digraph folds below close the gaps it leaves — zh→j because a name typed
+// straight into the DB in Latin may carry the Russian spelling (Sanzhar) of the
+// ж the transliterator now writes the Uzbek way (Санжар → Sanjar), and gh→g / kh→h
 // because the Russian spelling drops ғ/ҳ/қ/ў (Ғулом → Гулом → "Gulom" against
 // the canonical "Ghulom"). Folding only ever merges spellings, never splits
 // them, so it can add a near-miss to the results but can never hide a match.
