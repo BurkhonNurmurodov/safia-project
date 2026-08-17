@@ -534,6 +534,16 @@ def export_xlsx(
         raise HTTPException(status_code=500, detail=f"Telegram send failed: {e}")
 
 
+@router.get("/diag")
+def get_diag(payload: dict = Depends(require_page(PAGE))):
+    """Why «not connected»? ADMIN-ONLY. Reports which env NAMES the process
+    finds and where (never a value) — the platform has no shell, so this is the
+    only way to tell «wrong file» from «unparseable line» from «blank value»."""
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return arc_client.diagnostics()
+
+
 @router.get("/spec")
 def get_spec(
     db: Session = Depends(get_db),

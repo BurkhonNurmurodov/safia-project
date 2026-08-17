@@ -25,6 +25,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -69,6 +71,81 @@ class ArcTransientError(ArcError):
 
 def configured() -> bool:
     return bool(settings.arc_username and settings.arc_password)
+
+
+# The four env names the credential can travel under (canonical first).
+_CRED_NAMES = ("ARC_USERNAME", "ARC_PASSWORD", "USERNAME", "PASSWORD")
+_KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+
+
+def _scan_env_file(path: str) -> dict:
+    """Read one dotenv file the way the diagnostic needs it: which KEY NAMES it
+    defines, which of the credential names carry a non-empty value, and the
+    line numbers of statements no parser would accept. Never a value."""
+    out = {"path": path, "exists": os.path.isfile(path), "keys": [],
+           "cred": {}, "bad_lines": [], "glued": [], "error": None}
+    if not out["exists"]:
+        return out
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except OSError as exc:
+        out["error"] = type(exc).__name__
+        return out
+    keys: list[str] = []
+    for no, line in enumerate(lines, 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = _KEY_RE.match(line)
+        if not m:
+            out["bad_lines"].append(no)
+            continue
+        key, raw = m.group(1), m.group(2).strip()
+        keys.append(key)
+        if key.upper() in _CRED_NAMES:
+            val = raw.split(" #", 1)[0].strip().strip("'\"") if raw else ""
+            out["cred"][key.upper()] = bool(val)
+        # `echo "USERNAME=x" >> .env` onto a file whose last line had no
+        # trailing newline glues the new key onto the previous VALUE
+        # (`NOTION_TOKEN=abcUSERNAME=x`) — visible in an editor, invisible to
+        # every parser. Report the host key, never the value.
+        for name in _CRED_NAMES:
+            if key.upper() != name and f"{name}=" in raw.upper():
+                out["glued"].append({"key": key, "name": name})
+    out["keys"] = sorted(set(keys))
+    return out
+
+
+def diagnostics() -> dict:
+    """Why is the integration «not connected»? Everything the operator would
+    otherwise need a shell for — the file the process reads, the credential
+    NAMES it does or does not find (never values), sibling .env files that may
+    have received the lines by mistake, and what pydantic finally resolved."""
+    from app.config import _ENV_FILE
+    env_file = os.path.abspath(_ENV_FILE)
+    backend_dir = os.path.dirname(env_file)
+    root = os.path.dirname(backend_dir)
+    siblings = [
+        os.path.join(root, ".env"),
+        os.path.join(backend_dir, "app", ".env"),
+        os.path.join(root, "bot", ".env"),
+        os.path.join(root, "frontend", ".env"),
+        os.path.join(root, "deploy", ".env"),
+    ]
+    other = []
+    for p in siblings:
+        if os.path.isfile(p):
+            scan = _scan_env_file(p)
+            other.append({"path": p, "cred": scan["cred"], "keys_count": len(scan["keys"])})
+    return {
+        "env_file": _scan_env_file(env_file),
+        "other_env_files": other,
+        "process_env": {n: bool((os.environ.get(n) or "").strip()) for n in _CRED_NAMES},
+        "resolved": {"username": bool(settings.arc_username), "password": bool(settings.arc_password),
+                     "api_url": _base()},
+        "configured": configured(),
+    }
 
 
 def _base() -> str:

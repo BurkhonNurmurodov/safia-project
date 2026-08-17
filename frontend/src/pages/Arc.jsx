@@ -569,6 +569,17 @@ export default function Arc() {
     </>
   );
 
+  // ── «not connected» diagnostics (admin-only endpoint; others 403 → nothing) ─
+  // The platform has no shell, so the page itself must say WHERE the process
+  // looked and which credential NAMES it found — never a value.
+  const diagQ = useQuery({
+    queryKey: ["arc-diag"],
+    queryFn: () => api.get("/api/arc/diag").then((r) => r.data),
+    enabled: !!meta && !configured,
+    retry: false,
+  });
+  const diag = diagQ.data;
+
   // ── detail modal ──────────────────────────────────────────────────────────
   const detailQ = useQuery({
     queryKey: ["arc-request", openId],
@@ -695,6 +706,67 @@ export default function Arc() {
         <div className="rounded-2xl" style={cardStyle}>
           <EmptyState icon={PlugZap} height="h-56" showUploadLink={false}
             title={t("arc.notConfiguredTitle")} message={t("arc.notConfigured")} />
+          {diag && (
+            /* admin diagnostics: file → credential names → parse problems */
+            <div className="border-t px-4 py-3 text-xs space-y-2" style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>
+              <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--text-4)" }}>{t("arc.diagTitle")}</div>
+              <div className="flex flex-wrap gap-x-2">
+                <span style={{ color: "var(--text-3)" }}>{t("arc.diagFile")}:</span>
+                <code className="break-all">{diag.env_file?.path}</code>
+                {!diag.env_file?.exists && <span style={{ color: C_OVERDUE }}>· {t("arc.diagMissingFile")}</span>}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span style={{ color: "var(--text-3)" }}>{t("arc.diagCred")}:</span>
+                {["USERNAME", "PASSWORD", "ARC_USERNAME", "ARC_PASSWORD"].map((n) => {
+                  const v = diag.env_file?.cred?.[n];
+                  const tone = v === true ? C_DONE : v === false ? C_OVERDUE : C_GREY;
+                  return (
+                    <span key={n} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 tabular-nums"
+                      style={{ background: hexA(tone, 0.12), color: tone, border: `1px solid ${hexA(tone, 0.4)}` }}>
+                      <code>{n}</code>
+                      <span>{v === true ? t("arc.diagSet") : v === false ? t("arc.diagEmpty") : t("arc.diagAbsent")}</span>
+                    </span>
+                  );
+                })}
+              </div>
+              {diag.env_file?.exists && (
+                <div className="flex flex-wrap gap-x-2">
+                  <span style={{ color: "var(--text-3)" }}>{t("arc.diagKeys")}:</span>
+                  <span className="break-all">{(diag.env_file.keys || []).join(", ") || "—"}</span>
+                </div>
+              )}
+              {diag.env_file?.bad_lines?.length > 0 && (
+                <div style={{ color: C_OVERDUE }}>{t("arc.diagBadLines")}: {diag.env_file.bad_lines.join(", ")}</div>
+              )}
+              {(diag.env_file?.glued || []).map((g) => (
+                <div key={`${g.key}-${g.name}`} style={{ color: C_OVERDUE }}>
+                  {tpl(t("arc.diagGlued"), { name: g.name, key: g.key })}
+                </div>
+              ))}
+              {diag.other_env_files?.length > 0 && (
+                <div className="flex flex-wrap gap-x-2">
+                  <span style={{ color: "var(--text-3)" }}>{t("arc.diagOther")}:</span>
+                  <span className="break-all">
+                    {diag.other_env_files.map((f) => `${f.path} (${Object.entries(f.cred || {}).filter(([, ok]) => ok).map(([k]) => k).join("+") || "—"})`).join("; ")}
+                  </span>
+                </div>
+              )}
+              {Object.values(diag.process_env || {}).some(Boolean) && (
+                <div className="flex flex-wrap gap-x-2">
+                  <span style={{ color: "var(--text-3)" }}>{t("arc.diagProcess")}:</span>
+                  <span>{Object.entries(diag.process_env).filter(([, ok]) => ok).map(([k]) => k).join(", ")}</span>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-x-2">
+                <span style={{ color: "var(--text-3)" }}>{t("arc.diagResolved")}:</span>
+                <span>
+                  username <span style={{ color: diag.resolved?.username ? C_DONE : C_OVERDUE }}>{diag.resolved?.username ? "✓" : "✗"}</span>
+                  {" · "}password <span style={{ color: diag.resolved?.password ? C_DONE : C_OVERDUE }}>{diag.resolved?.password ? "✓" : "✗"}</span>
+                </span>
+              </div>
+              <p style={{ color: "var(--text-4)" }}>{t("arc.diagHint")}</p>
+            </div>
+          )}
         </div>
       ) : !hasData ? (
         /* never synced — the page's only useful action is the first walk */
