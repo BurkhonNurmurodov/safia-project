@@ -23,6 +23,7 @@ import Field from "../components/ui/FormField";
 import SearchInput from "../components/ui/SearchInput";
 import TableCard, { Th, SectionHead } from "../components/ui/DataTable";
 import CommentsModal, { CommentsButton } from "../components/ui/CommentsModal";
+import ColumnsPicker from "../components/ui/ColumnsPicker";
 import { FilterPanel, OptsFilter, RngFilter, PickFilter } from "../components/ui/ColumnFilter";
 import { SkeletonBlock, SkeletonChart } from "../components/ui/Skeleton";
 import CellLink from "../components/ui/CellLink";
@@ -118,6 +119,26 @@ const fmtDate = (iso, lang) => {
   if (lang === "ru") return `${d} ${mn} ${y}`;               // 2 июля 2026
   return `${d}-${mn}, ${y}`;                                 // 2-iyul, 2026 / 2-июл, 2026
 };
+
+// Register column catalog — the ONE source of order, labels and header icons for
+// the concerns table. Cells are rendered by a per-key switch (`listCell` below),
+// so the ColumnsPicker's hide/reorder comes for free.
+const COLS = [
+  { key: "date",       labelKey: "concerns.colDate",       icon: CalendarClock },
+  { key: "cell",       labelKey: "concerns.colCell",       icon: LayoutGrid },
+  { key: "category",   labelKey: "concerns.colCategory",   icon: Tag },
+  { key: "owner",      labelKey: "concerns.colOwner",      icon: UserRound },
+  { key: "concern",    labelKey: "concerns.colConcern",    icon: FileText },
+  { key: "status",     labelKey: "concerns.colStatus",     icon: CircleDot },
+  { key: "level",      labelKey: "concerns.colLevel",      icon: Layers },
+  { key: "deadline",   labelKey: "concerns.colDeadline",   icon: Clock,         align: "center" },
+  { key: "resolution", labelKey: "concerns.colResolution", icon: Timer,         align: "center" },
+  { key: "comments",   labelKey: "concerns.colComments",   icon: MessageSquare, align: "center" },
+];
+// Per-profile pref key, and the column that can never be hidden — the concern
+// text IS the row's identity, hiding it would leave anonymous rows.
+const COL_PREF_KEY = "concerns.list.cols";
+const LOCKED_COLS = new Set(["concern"]);
 
 // Card chrome (mirrors Kaizen).
 const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--border)" };
@@ -1049,6 +1070,41 @@ export default function Concerns() {
     });
   }, [filtered, sort, tl]);
 
+  // ── register column visibility / order ──────────────────────────────────
+  // Notion-style picker, persisted per ACTIVE profile via /api/ui-prefs (so it
+  // follows the user across devices). Same wiring as the Production «Позиции»
+  // table — see ColumnsPicker.
+  const { data: savedCols } = useQuery({
+    queryKey: ["ui-pref", COL_PREF_KEY],
+    queryFn: () => api.get(`/api/ui-prefs/${COL_PREF_KEY}`).then((r) => r.data?.value),
+    staleTime: Infinity,
+  });
+  const [colsLocal, setColsLocal] = useState(null);   // this session's edits win over the fetch
+  const colCfg = useMemo(() => {
+    // Reconcile the saved pref against the current catalog: drop keys that no
+    // longer exist, append new columns at the end, never let a locked one hide.
+    const saved = colsLocal ?? savedCols;
+    const keys = COLS.map((c) => c.key);
+    const savedOrder = Array.isArray(saved?.order) ? saved.order.filter((k) => keys.includes(k)) : [];
+    const order = [...savedOrder, ...keys.filter((k) => !savedOrder.includes(k))];
+    const hidden = Array.isArray(saved?.hidden)
+      ? saved.hidden.filter((k) => keys.includes(k) && !LOCKED_COLS.has(k))
+      : [];
+    return { order, hidden };
+  }, [colsLocal, savedCols]);
+  const saveCols = useMutation({
+    mutationFn: (value) => api.put(`/api/ui-prefs/${COL_PREF_KEY}`, { value }),
+  });
+  const onColsChange = (value) => {
+    setColsLocal(value);
+    qc.setQueryData(["ui-pref", COL_PREF_KEY], value);
+    saveCols.mutate(value);
+  };
+  const visibleCols = useMemo(() => {
+    const hiddenSet = new Set(colCfg.hidden);
+    return colCfg.order.map((k) => COLS.find((c) => c.key === k)).filter((c) => c && !hiddenSet.has(c.key));
+  }, [colCfg]);
+
   // ── mutations ───────────────────────────────────────────────────────────
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["concerns"] });
@@ -1584,9 +1640,143 @@ export default function Concerns() {
     </>
   );
 
+  // ONE cell per column key — the register's <td>s live here so the
+  // ColumnsPicker's hide/reorder needs no markup change of its own.
+  const listCell = (key, r) => {
+    switch (key) {
+      case "date":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>
+            {fmtDate(r.entry_date, lang)}
+          </td>
+        );
+      // Cell (the "Ячейка номер") + the leader currently assigned to it — the
+      // concern's subject at a glance.
+      case "cell":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+            {r.cell_code ? (
+              <>
+                {/* Registry-matched codes link to the cell page; the row's own
+                    expand click is stopped. */}
+                <div className="font-semibold" style={{ color: "var(--text-1)" }}>
+                  <CellLink id={r.cell_id}>{r.cell_code}</CellLink>
+                </div>
+                {r.cell_leader_name && (
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }} title={tl(r.cell_leader_name)}>
+                    {shortOwner(r.cell_leader_name)}
+                  </div>
+                )}
+              </>
+            ) : <span style={{ color: "var(--text-4)" }}>—</span>}
+          </td>
+        );
+      // Department category
+      case "category":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+            <CategoryChip category={r.category} label={categoryLabel(r.category)} />
+          </td>
+        );
+      // Owner = whoever created the concern; the line under the name is their
+      // position.
+      case "owner":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+            <div style={{ color: "var(--text-1)" }} title={tl(r.owner_name)}>{shortOwner(r.owner_name)}</div>
+            {r.owner_role && (
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
+                {roleLabel(r.owner_role)}
+              </div>
+            )}
+          </td>
+        );
+      case "concern":
+        return (
+          <td key={key} className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
+            <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
+            {r.solution && (
+              <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
+                ✓ {tl(r.solution)}
+              </div>
+            )}
+          </td>
+        );
+      // Status stays inline-editable → swallow the click so it doesn't toggle the row
+      case "status":
+        return (
+          <td key={key} className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+            <StatusSelect
+              status={r.status}
+              label={statusLabel(r.status)}
+              statusLabel={statusLabel}
+              saving={savingStatusId === r.id}
+              disabled={!r.can_set_status}
+              options={STATUSES}
+              onChange={(s) => requestStatusChange(r, s)}
+            />
+          </td>
+        );
+      // Escalation level + who concretely holds it — the chip names the step,
+      // the line under it the person.
+      case "level":
+        return (
+          <td key={key} className="px-3 py-2.5 whitespace-nowrap">
+            <LevelChip
+              level={r.level || "supervisor"}
+              label={levelLabel(r.level || "supervisor")}
+              title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
+            />
+            {r.responsible_name && (
+              <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }} title={tl(r.responsible_name)}>
+                {shortOwner(r.responsible_name)}
+              </div>
+            )}
+          </td>
+        );
+      // Overdue = still open and past entry_date + deadline_days (same
+      // convention as the mobile card and the charts).
+      case "deadline": {
+        const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
+          ? isoPlusDays(r.entry_date, r.deadline_days)
+          : null;
+        const overdue = dueIso != null && isoDiffDays(dueIso, localTodayIso()) < 0;
+        return (
+          <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]"
+              style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}>
+            {r.deadline_days ?? "—"}
+          </td>
+        );
+      }
+      // Time since creation: done rows show the creation→done span, open rows
+      // count up to now. Legacy done rows with no done_at timestamp show "—".
+      case "resolution":
+        return (
+          <td key={key} className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
+            {fmtResolution(resolutionMinutes(r))}
+          </td>
+        );
+      // Thread — its own column so the badge is readable at a glance; the click
+      // must not toggle the row open.
+      case "comments":
+        return (
+          <td key={key} className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+            <CommentsButton
+              count={r.comment_count}
+              label={t("concerns.commentsTitle")}
+              onClick={() => setCommentsRow(r)}
+            />
+          </td>
+        );
+      default:
+        return <td key={key} className="px-3 py-2.5" />;
+    }
+  };
+
   // Phone layout for the concern list — each concern is its own standalone
-  // card (TableCard's `mobileCards` mode); the 9-column table keeps rendering
-  // from `sm:` up. Same data, same tap-to-reveal actions, same status pill.
+  // card (TableCard's `mobileCards` mode); the table (columns picked via the
+  // toolbar's ColumnsPicker) keeps rendering from `sm:` up. Same data, same
+  // tap-to-reveal actions, same status pill.
   const mobileList = (
     <>
       {isLoading && Array.from({ length: 4 }).map((_, i) => (
@@ -2012,47 +2202,42 @@ export default function Concerns() {
                 {t("concerns.add")}
               </Button>
             )}
+            {/* Hidden below `sm:` — that is where TableCard swaps the table for
+                the stacked cards, and a picker over a table nobody can see is a
+                control with no effect. */}
+            <ColumnsPicker
+              className="ml-auto hidden sm:block"
+              columns={COLS.map((c) => ({ key: c.key, label: t(c.labelKey), locked: LOCKED_COLS.has(c.key) }))}
+              order={colCfg.order}
+              hidden={colCfg.hidden}
+              onChange={onColsChange}
+            />
           </>
         }
       >
               <thead>
                 <tr>
-                  <Th icon={CalendarClock} label={t("concerns.colDate")}     k="date"     sort={sort} onSort={onSort} />
-                  <Th icon={LayoutGrid}    label={t("concerns.colCell")}     k="cell"     sort={sort} onSort={onSort} />
-                  <Th icon={Tag}           label={t("concerns.colCategory")} k="category" sort={sort} onSort={onSort} />
-                  <Th icon={UserRound}     label={t("concerns.colOwner")}    k="owner"    sort={sort} onSort={onSort} />
-                  <Th icon={FileText}      label={t("concerns.colConcern")}  k="concern"  sort={sort} onSort={onSort} />
-                  <Th icon={CircleDot}     label={t("concerns.colStatus")}   k="status"   sort={sort} onSort={onSort} />
-                  <Th icon={Layers}        label={t("concerns.colLevel")}    k="level"    sort={sort} onSort={onSort} />
-                  <Th icon={Clock}         label={t("concerns.colDeadline")} k="deadline" sort={sort} onSort={onSort} align="center" />
-                  <Th icon={Timer}         label={t("concerns.colResolution")} k="resolution" sort={sort} onSort={onSort} align="center" />
-                  <Th icon={MessageSquare} label={t("concerns.colComments")} k="comments" sort={sort} onSort={onSort} align="center" />
+                  {visibleCols.map((c) => (
+                    <Th key={c.key} icon={c.icon} label={t(c.labelKey)} k={c.key}
+                        sort={sort} onSort={onSort} align={c.align} />
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {isLoading && Array.from({ length: 6 }).map((_, i) => (
                   <tr key={`sk-${i}`}>
-                    {Array.from({ length: 10 }).map((_, j) => (
-                      <td key={j} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
+                    {visibleCols.map((c) => (
+                      <td key={c.key} className="px-3 py-2.5"><SkeletonBlock className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))}
                 {!isLoading && sorted.length === 0 && (
-                  <tr><td colSpan={10} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
+                  <tr><td colSpan={visibleCols.length} className="px-3 py-8 text-center" style={{ color: "var(--text-4)" }}>
                     {t("concerns.empty")}
                   </td></tr>
                 )}
                 {!isLoading && sorted.map((r) => {
                   const expanded = expandedId === r.id;
-                  // Every row is expandable — the action bar always carries at
-                  // least «Ko'rish», even for a viewer with no rights over it.
-                  const colSpan = 10;
-                  // Overdue = still open and past entry_date + deadline_days
-                  // (same convention as the mobile card and the charts).
-                  const dueIso = r.status !== "done" && r.deadline_days != null && r.entry_date
-                    ? isoPlusDays(r.entry_date, r.deadline_days)
-                    : null;
-                  const overdue = dueIso != null && isoDiffDays(dueIso, localTodayIso()) < 0;
                   return (
                     <Fragment key={r.id}>
                       {/* Click a row to reveal its action bar (Staff-style). */}
@@ -2061,93 +2246,13 @@ export default function Concerns() {
                         className="align-top cursor-pointer"
                         style={{ background: expanded ? "var(--bg-inner)" : "transparent" }}
                       >
-                        <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color: "var(--text-2)" }}>{fmtDate(r.entry_date, lang)}</td>
-                        {/* Cell (the "Ячейка номер") + the leader currently
-                            assigned to it — the concern's subject at a glance */}
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {r.cell_code ? (
-                            <>
-                              {/* Registry-matched codes link to the cell page;
-                                  the row's own expand click is stopped. */}
-                              <div className="font-semibold" style={{ color: "var(--text-1)" }}>
-                                <CellLink id={r.cell_id}>{r.cell_code}</CellLink>
-                              </div>
-                              {r.cell_leader_name && (
-                                <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }} title={tl(r.cell_leader_name)}>
-                                  {shortOwner(r.cell_leader_name)}
-                                </div>
-                              )}
-                            </>
-                          ) : <span style={{ color: "var(--text-4)" }}>—</span>}
-                        </td>
-                        {/* Department category */}
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <CategoryChip category={r.category} label={categoryLabel(r.category)} />
-                        </td>
-                        {/* Owner = whoever created the concern; the line under
-                            the name is their position */}
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <div style={{ color: "var(--text-1)" }} title={tl(r.owner_name)}>{shortOwner(r.owner_name)}</div>
-                          {r.owner_role && (
-                            <div className="text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>
-                              {roleLabel(r.owner_role)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 min-w-[240px] max-w-sm" style={{ color: "var(--text-1)" }}>
-                          <div className="line-clamp-2" title={r.concern_text}>{tl(r.concern_text)}</div>
-                          {r.solution && (
-                            <div className="text-[11px] mt-1 line-clamp-1" style={{ color: "var(--text-3)" }} title={r.solution}>
-                              ✓ {tl(r.solution)}
-                            </div>
-                          )}
-                        </td>
-                        {/* Status stays inline-editable → swallow the click so it doesn't toggle the row */}
-                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <StatusSelect
-                            status={r.status}
-                            label={statusLabel(r.status)}
-                            statusLabel={statusLabel}
-                            saving={savingStatusId === r.id}
-                            disabled={!r.can_set_status}
-                            options={STATUSES}
-                            onChange={(s) => requestStatusChange(r, s)}
-                          />
-                        </td>
-                        {/* Escalation level + who concretely holds it — the
-                            chip names the step, the line under it the person */}
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <LevelChip
-                            level={r.level || "supervisor"}
-                            label={levelLabel(r.level || "supervisor")}
-                            title={r.top_manager_name ? tl(r.top_manager_name) : undefined}
-                          />
-                          {r.responsible_name && (
-                            <div className="text-[10px] mt-1" style={{ color: "var(--text-3)" }} title={tl(r.responsible_name)}>
-                              {shortOwner(r.responsible_name)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: overdue ? "#ef4444" : "var(--text-2)", fontWeight: overdue ? 600 : undefined }}>{r.deadline_days ?? "—"}</td>
-                        {/* Time since creation: done rows show the creation→done
-                            span, open rows count up to now. Legacy done rows with
-                            no done_at timestamp show "—". */}
-                        <td className="px-3 py-2.5 text-center font-mono text-[11px]" style={{ color: "var(--text-2)" }}>
-                          {fmtResolution(resolutionMinutes(r))}
-                        </td>
-                        {/* Thread — its own column so the badge is readable at a
-                            glance; the click must not toggle the row open. */}
-                        <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          <CommentsButton
-                            count={r.comment_count}
-                            label={t("concerns.commentsTitle")}
-                            onClick={() => setCommentsRow(r)}
-                          />
-                        </td>
+                        {visibleCols.map((c) => listCell(c.key, r))}
                       </tr>
+                      {/* Every row is expandable — the action bar always carries
+                          at least «Ko'rish», even for a viewer with no rights. */}
                       {expanded && (
                         <tr style={{ background: "var(--bg-inner)" }}>
-                          <td colSpan={colSpan} className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td colSpan={visibleCols.length} className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
                             <div className="flex flex-wrap items-center gap-2">
                               {rowActions(r)}
                             </div>
