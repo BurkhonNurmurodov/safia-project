@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+from collections import Counter
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from time import monotonic
@@ -28,6 +29,7 @@ from app.services.name_map import (
     leader_match,
     relabel_supervisor,
     supervisor_match,
+    unit_display_names,
 )
 
 router = APIRouter(prefix="/api", tags=["leaders"])
@@ -338,18 +340,12 @@ def get_leaders(
     # answered under two different names splits its own supervisor picker entry
     # and its own standings row. Built before the scoping pass so the label a
     # unit carries never depends on who is looking. Units the sheet never named
-    # fall back to Manager.name inside dashboard_rows().
-    _spellings: dict[int, dict[str, int]] = {}
-    for r in rows:
-        mid = (sup_match.get(_relabel(r.supervisor)) or {}).get("id")
-        if mid is not None:
-            seen = _spellings.setdefault(mid, {})
-            name = _relabel(r.supervisor)
-            seen[name] = seen.get(name, 0) + 1
-    sup_display = {
-        mid: max(seen.items(), key=lambda kv: (kv[1], kv[0]))[0]
-        for mid, seen in _spellings.items()
-    }
+    # fall back to Manager.name inside dashboard_rows(). The census itself is
+    # `name_map.unit_display_names`, shared with the AI queue's `_project`,
+    # which has to label a bot row with the SAME string the picker holds.
+    sup_display = unit_display_names(
+        sup_match, Counter(r.supervisor for r in rows).items()
+    )
 
     if role == "supervisor" and not sees_all:
         # Scope by the matched unit id, not name equality: the sheet name never

@@ -241,6 +241,32 @@ def supervisor_match(managers: Iterable, names: Iterable[str]) -> dict[str, dict
     return out
 
 
+def unit_display_names(sup_match: dict[str, dict],
+                       spellings: Iterable[tuple[str | None, int]]) -> dict[int, str]:
+    """unit id → the (relabelled) supervisor spelling the leaders sheet prints
+    for it most often.
+
+    ``spellings`` are ``(raw sheet «Бригадир ФИО», rows carrying it)`` pairs
+    over the WHOLE sheet, ``sup_match`` the ``supervisor_match`` of their
+    relabelled forms. Bot-filed rows have no sheet spelling of their own and
+    adopt this one, so a unit that answered under two names never splits its
+    own picker entry or standings row. Shared by ``/api/leaders`` and the AI
+    queue: the page's supervisor picker holds exactly these strings, and a
+    queue row labelled by any other rule would be invisible to that picker.
+    Ties break on the name so the label is stable across syncs.
+    """
+    seen: dict[int, dict[str, int]] = {}
+    for raw, n in spellings:
+        name = relabel_supervisor(raw)
+        mid = (sup_match.get(name) or {}).get("id")
+        if mid is None:
+            continue
+        per = seen.setdefault(mid, {})
+        per[name] = per.get(name, 0) + n
+    return {mid: max(per.items(), key=lambda kv: (kv[1], kv[0]))[0]
+            for mid, per in seen.items()}
+
+
 # ─── Manual leaders-sheet name → leader PROFILE pins ─────────────────────────
 # The checklist form captures whatever spelling the leader typed, and some of
 # those name the person in a form _pair_score can never reach: it requires the

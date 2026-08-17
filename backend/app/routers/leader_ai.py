@@ -54,7 +54,9 @@ from app.models import (
 from app.permissions import require_page
 from app.routers.admin import verify_admin
 from app.services import gemini, leader_ai
-from app.services.name_map import relabel_supervisor
+from app.services.name_map import (
+    leader_match, relabel_supervisor, supervisor_match, unit_display_names,
+)
 
 router = APIRouter(prefix="/api/leader-ai", tags=["leader-ai"])
 log = logging.getLogger(__name__)
@@ -354,7 +356,7 @@ def queue(limit: int = Query(PAGE, ge=1, le=QUEUE_CAP),
 
     return {
         "enabled": True,
-        "items": _hydrate(db, _full(db, page)),
+        "items": _hydrate(db, _full(db, page), proj),
         "buckets": buckets,
         "total": len(kept),
         # The rail asks for more of the SAME list rather than turning a page, so
@@ -505,6 +507,27 @@ def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
     which is right for 300 rows and ruinous for 4 000. So the names are
     resolved here from column-projected reads, by the same rules, and the
     heavy work stays on the page.
+
+    **The names are the REGISTER's names — the same strings `/api/leaders`
+    ships for the same source row.** The `/leaders` page keys people by name:
+    its leader and supervisor pickers hold exactly what the register put on its
+    rows, and every tab — this queue included — is filtered by that one pick.
+    So a queue row labelled by any other rule is a row the picker can never
+    reach: the queue used to print a sheet row's leader as the SHEET spelt it
+    (`ABDURASULOV YULDASH …`), the register resolves the same row to the
+    PROFILE name (`Abdurasulov Yuldash`), and picking that leader on the page
+    answered «no rows match» over a queue holding forty of theirs. The rule,
+    per source (see `routers/leaders.get_leaders` + `leader_bot.dashboard_rows`):
+
+    * sheet row — supervisor: the relabelled sheet spelling; leader: the
+      PROFILE the (spelling, unit) pair resolves to, else the raw spelling.
+      Resolved LIVE, not read off the review's stamped `leader_id`: that id was
+      matched at discovery, and a profile created since (or a pin added to
+      `_LEADER_PINS`) moves the register's name while the stamp stays put.
+    * bot row — leader: the profile name; supervisor: the spelling the sheet
+      most often uses for the unit (`unit_display_names`), else Manager.name.
+    * a review whose source row is gone — the stamped ids, same labels; the
+      register has no such row, so there is nothing for it to disagree with.
     """
     if not rows:
         return {}
@@ -513,26 +536,44 @@ def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
     prof_ids = {r.leader_id for r in rows if r.leader_id}
     profs = {p.id: p.name for p in db.query(RoleProfile.id, RoleProfile.name)
              .filter(RoleProfile.id.in_(prof_ids)).all()} if prof_ids else {}
-    mgr_ids = {r.manager_id for r in rows if r.manager_id}
-    mgrs = {m.id: m.name for m in db.query(Manager.id, Manager.name)
-            .filter(Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
+    # The whole roster, not the referenced units: the sheet's «Бригадир ФИО»
+    # resolves to a unit by fuzzy match over every manager, as the register does.
+    managers = db.query(Manager).all()
+    mgrs = {m.id: m.name for m in managers}
 
-    # Sheet rows carry the leader's name as the SHEET spells it, which is what
-    # the rail prints even when the fuzzy match to a profile came back empty —
-    # so the filter has to match on that same string. Columns only: the `tasks`
-    # JSONB on these rows is the whole report and none of it is needed here.
+    # Columns only: the `tasks` JSONB on these rows is the whole report and
+    # none of it is needed here.
+    scope = _sheet_scope(rows)
+    sheet = (db.query(LeaderChecklist.date, LeaderChecklist.leader,
+                      LeaderChecklist.supervisor, LeaderChecklist.submission_id)
+             .filter(scope).all()) if scope is not None else []
+    has_bot = any(r.ref.startswith("bot:") for r in rows)
+
+    # One census of the sheet's supervisor spellings — the whole sheet, so the
+    # unit a spelling resolves to and the label a unit carries never depend on
+    # which rows happen to be in scope. A grouped count: ~50 distinct spellings
+    # out of thousands of rows.
+    census = (db.query(LeaderChecklist.supervisor, func.count(LeaderChecklist.id))
+              .group_by(LeaderChecklist.supervisor).all()) if (sheet or has_bot) else []
+    sup_match = supervisor_match(
+        managers, {relabel_supervisor(s) for s, _ in census if s})
+    sup_display = unit_display_names(sup_match, census) if has_bot else {}
+    lead_match = leader_match(
+        db.query(RoleProfile.id, RoleProfile.name, RoleProfile.manager_id)
+        .filter(RoleProfile.role == "leader").all(),
+        {(l, (sup_match.get(relabel_supervisor(s)) or {}).get("id"))
+         for _, l, s, _ in sheet if l},
+    ) if sheet else {}
+
     by_key: dict[tuple[str, str], tuple[str, str]] = {}
     by_sub: dict[str, tuple[str, str]] = {}
-    scope = _sheet_scope(rows)
-    if scope is not None:
-        for d, ldr, sup, sub in db.query(
-                LeaderChecklist.date, LeaderChecklist.leader,
-                LeaderChecklist.supervisor, LeaderChecklist.submission_id
-        ).filter(scope).all():
-            pair = (ldr, relabel_supervisor(sup))
-            by_key[(d, (ldr or "").strip().lower()[:60])] = pair
-            if sub:
-                by_sub[sub] = pair
+    for d, ldr, sup, sub in sheet:
+        sup_lbl = relabel_supervisor(sup)
+        who = lead_match.get((ldr, (sup_match.get(sup_lbl) or {}).get("id"))) or {}
+        pair = (who.get("name") or ldr, sup_lbl)
+        by_key[(d, (ldr or "").strip().lower()[:60])] = pair
+        if sub:
+            by_sub[sub] = pair
 
     out: dict[str, dict] = {}
     for rev in rows:
@@ -544,11 +585,11 @@ def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
             if pair:
                 leader, supervisor = pair
         # Bot rows stamp `leader_id` from the day at discovery, so the profile
-        # name IS the name the rail prints — no entry→day walk needed here.
+        # name IS the name the register prints — no entry→day walk needed here.
         if not leader and rev.leader_id in profs:
             leader = profs[rev.leader_id]
         if not supervisor and rev.manager_id in mgrs:
-            supervisor = relabel_supervisor(mgrs[rev.manager_id])
+            supervisor = sup_display.get(rev.manager_id) or mgrs[rev.manager_id]
         out[rev.ref] = {
             "leader": leader or "—",
             "supervisor": supervisor or "—",
@@ -557,22 +598,21 @@ def _project(db: Session, rows: list[LeaderAiReview]) -> dict[str, dict]:
     return out
 
 
-def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
+def _hydrate(db: Session, rows: list[LeaderAiReview],
+             proj: dict[str, dict]) -> list[dict]:
     """Attach names, photos and the leader's own answer to each verdict.
 
     Everything is batch-loaded: a 300-row queue that walked one query per row
     would be the slowest read on the platform.
+
+    `proj` is `_project` over a superset of `rows` — the names come from THERE,
+    never re-derived here. The rail prints these strings and the page's leader
+    picker filters on them, so a second resolution rule inside the hydrator is
+    a rail whose names the picker cannot find (which is exactly what happened
+    while this function spelt a sheet row's leader as the sheet did).
     """
     if not rows:
         return []
-
-    # ── names ────────────────────────────────────────────────────────────────
-    prof_ids = {r.leader_id for r in rows if r.leader_id}
-    profs = {p.id: p for p in db.query(RoleProfile)
-             .filter(RoleProfile.id.in_(prof_ids)).all()} if prof_ids else {}
-    mgr_ids = {r.manager_id for r in rows if r.manager_id}
-    mgrs = {m.id: m for m in db.query(Manager)
-            .filter(Manager.id.in_(mgr_ids)).all()} if mgr_ids else {}
 
     cfg = _task_cfg(db, rows)
 
@@ -586,9 +626,6 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
                   .filter(LeaderTaskMedia.entry_id.in_(entry_ids))
                   .order_by(LeaderTaskMedia.pos).all()):
             media.setdefault(m.entry_id, []).append(m.id)
-    day_ids = {e.day_id for e in entries.values()}
-    days = {d.id: d for d in db.query(LeaderTaskDay)
-            .filter(LeaderTaskDay.id.in_(day_ids)).all()} if day_ids else {}
 
     # ── the sheet layer: one query, keyed by ref handle — see _sheet_scope ────
     sheet_rows: dict[tuple[str, str], LeaderChecklist] = {}
@@ -602,7 +639,6 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
 
     out = []
     for rev in rows:
-        leader = supervisor = None
         task: dict = {}
         photos: list[dict] = []
         uid = None
@@ -613,17 +649,12 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
                 uid = f"bot-{entry.day_id}"
                 task = {"done": bool(entry.done), "reason": entry.reason}
                 photos = [{"kind": "bot", "id": mid} for mid in media.get(entry.id, [])]
-                day = days.get(entry.day_id)
-                if day is not None and day.leader_id in profs:
-                    leader = profs[day.leader_id].name
         else:
             parts = rev.ref.split(":")
             row = (by_submission.get(parts[1]) if rev.ref.startswith("sheet:")
                    else sheet_rows.get((rev.date, parts[2] if len(parts) > 3 else "")))
             if row is not None:
                 uid = leader_ai.row_uid(row)
-                leader = row.leader
-                supervisor = relabel_supervisor(row.supervisor)
                 tk = next((t for t in (row.tasks or [])
                            if int(t.get("id") or 0) == rev.task_id), None)
                 if tk:
@@ -632,11 +663,7 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
                               for p in (tk.get("photo") or "").split(",")
                               if "http" in p]
 
-        if leader is None and rev.leader_id in profs:
-            leader = profs[rev.leader_id].name
-        if supervisor is None and rev.manager_id in mgrs:
-            supervisor = relabel_supervisor(mgrs[rev.manager_id].name)
-
+        names = proj.get(rev.ref) or {}
         win = _window(cfg, rev)
         lo, hi = leader_ai.date_window(rev.date, rev.shift, win)
         out.append({
@@ -650,8 +677,8 @@ def _hydrate(db: Session, rows: list[LeaderAiReview]) -> list[dict]:
             "date": rev.date,
             "shift": rev.shift,
             "source": rev.source,
-            "leader": leader or "—",
-            "supervisor": supervisor or "—",
+            "leader": names.get("leader") or "—",
+            "supervisor": names.get("supervisor") or "—",
             "flags": rev.flags or [],
             "status": rev.status,
             "bucket": _bucket(rev),
