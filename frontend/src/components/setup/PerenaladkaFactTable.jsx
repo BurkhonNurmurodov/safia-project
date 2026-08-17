@@ -48,6 +48,7 @@ const TXT = {
     colStandard: "Standart (min)", colFact: "Fakt (min)", colNote: "Izoh",
     standardHint: "«Standart» ro'yxatidan olinadi — bu yerda tahrirlanmaydi",
     leader: "Lider", minSuffix: "min",
+    vsStd: "Standartga nisbatan farq",
     notePh: "Ixtiyoriy",
     save: "Saqlash", del: "Tozalash", cancel: "Bekor qilish",
     saved: "Saqlandi", cleared: "Yozuv tozalandi",
@@ -63,6 +64,7 @@ const TXT = {
     colStandard: "Стандарт (мин)", colFact: "Факт (мин)", colNote: "Изоҳ",
     standardHint: "«Стандарт» рўйхатидан олинади — бу ерда таҳрирланмайди",
     leader: "Лидер", minSuffix: "мин",
+    vsStd: "Стандартга нисбатан фарқ",
     notePh: "Ихтиёрий",
     save: "Сақлаш", del: "Тозалаш", cancel: "Бекор қилиш",
     saved: "Сақланди", cleared: "Ёзув тозаланди",
@@ -78,6 +80,7 @@ const TXT = {
     colStandard: "Стандарт (мин)", colFact: "Факт (мин)", colNote: "Примечание",
     standardHint: "Берётся из реестра «Стандарт» — здесь не редактируется",
     leader: "Лидер", minSuffix: "мин",
+    vsStd: "Отклонение от стандарта",
     notePh: "Необязательно",
     save: "Сохранить", del: "Очистить", cancel: "Отмена",
     saved: "Сохранено", cleared: "Запись очищена",
@@ -93,6 +96,7 @@ const TXT = {
     colStandard: "Standard (min)", colFact: "Fact (min)", colNote: "Note",
     standardHint: "Taken from the «Standard» register — not editable here",
     leader: "Leader", minSuffix: "min",
+    vsStd: "Difference from the standard",
     notePh: "Optional",
     save: "Save", del: "Clear", cancel: "Cancel",
     saved: "Saved", cleared: "Entry cleared",
@@ -159,11 +163,14 @@ export function CellCol({ code, name, lang, cellId }) {
   const nm = pickName(name, lang);
   return (
     <>
-      <div className="font-mono tabular-nums" style={{ color: "var(--text-2)" }}>
+      <div className="font-mono tabular-nums truncate" style={{ color: "var(--text-2)" }}>
         <CellLink id={cellId}>{code}</CellLink>
       </div>
       {nm && (
-        <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }}>{nm}</div>
+        // Truncated, not wrapped: a fixed-width column must never let a long
+        // workshop name spill into the number beside it. The full name stays
+        // one hover away.
+        <div className="text-[11px] leading-tight mt-0.5 truncate" title={nm} style={{ color: "var(--text-4)" }}>{nm}</div>
       )}
     </>
   );
@@ -208,16 +215,29 @@ export const asIdleCell = (c) => ({
 // A number typed straight into a table row. `text` + inputMode=decimal, not
 // type=number: the uz/ru iOS keypad types a comma, which type=number silently
 // discards. text-base on phones is what stops iOS zooming the page on focus.
+//
+// Two rules about its chrome:
+//  · The BORDER never carries the traffic light. A red-outlined field means
+//    "what you typed is invalid" in every form anyone has ever filled in, and
+//    a changeover that ran long is a fact about the shift, not a typo — the
+//    colour belongs on the value and on the signed delta beside it.
+//  · The focus ring is drawn here because `outline-none` removed the browser's
+//    own. Without it, tabbing down a column of 22 identical fields left the
+//    operator with no idea which one they were typing into.
 function RowInput({ value, onChange, onEnter, align = "left", color, className = "", ...rest }) {
+  const [focused, setFocused] = useState(false);
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }}
-      className={`w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs outline-none ${align === "right" ? "text-right tabular-nums" : ""} ${className}`}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      className={`w-full rounded-lg px-2 py-1.5 md:py-1 text-base md:text-xs outline-none transition-colors ${align === "right" ? "text-right tabular-nums" : ""} ${className}`}
       style={{
         background: "var(--bg-inner)",
-        border: `1px solid ${color ? hexA(color, 0.45) : "var(--border-md)"}`,
+        border: `1px solid ${focused ? "var(--brand)" : "var(--border-md)"}`,
+        boxShadow: focused ? "0 0 0 3px var(--brand-ring)" : "none",
         color: color || "var(--text-1)",
         fontWeight: color ? 600 : 400,
       }}
@@ -323,6 +343,15 @@ export default function PerenaladkaFactTable({
     <>
       <TableCard
         icon={icon}
+        // Column widths come from the header, not from the rows. This table is
+        // typed into: the action cell is empty until a row is dirty, and under
+        // the default auto layout the Save button materialising mid-edit
+        // re-measured every other column — the cell, the standard, the field
+        // being typed into and the note all jumped ~120px left on the first
+        // keystroke, on every row, all day. A reserved action column and a
+        // fixed layout mean the grid never moves under the operator's hands.
+        fixed
+        minWidth={showSupervisor ? 1140 : 1000}
         title={title || T.secFact}
         right={
           <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: "var(--text-4)" }}>
@@ -334,14 +363,21 @@ export default function PerenaladkaFactTable({
         <thead>
           <tr>
             {showSupervisor && (
-              <Th icon={CircleUserRound} label={T.colSupervisor} k="supervisor" sort={sort} onSort={onSort} />
+              <Th icon={CircleUserRound} label={T.colSupervisor} k="supervisor" sort={sort} onSort={onSort}
+                  cls="w-[15%]" />
             )}
-            <Th icon={LayoutGrid} label={T.colCell} k="cell" sort={sort} onSort={onSort} />
+            <Th icon={LayoutGrid} label={T.colCell} k="cell" sort={sort} onSort={onSort}
+                cls={showSupervisor ? "w-[26%]" : "w-[32%]"} />
             <Th icon={Gauge} label={T.colStandard} k="standard" sort={sort} onSort={onSort}
-                align="right" hint={T.standardHint} />
-            <Th icon={Timer} label={T.colFact} k="fact" sort={sort} onSort={onSort} align="right" />
+                align="right" hint={T.standardHint} cls="w-[170px]" />
+            <Th icon={Timer} label={T.colFact} k="fact" sort={sort} onSort={onSort} align="right"
+                cls="w-[164px]" />
+            {/* The note takes whatever is left — it is the one column that can
+                use every spare pixel and the one whose width means nothing. */}
             <Th icon={MessageSquareText} label={T.colNote} k="note" sort={sort} onSort={onSort} />
-            <Th label="" />
+            {/* Sized for its widest state (Save + Clear, longest language), so
+                it holds that space even while it is empty. */}
+            <Th label="" cls="w-[180px]" />
           </tr>
         </thead>
         <tbody>
@@ -358,15 +394,24 @@ export default function PerenaladkaFactTable({
             const dirty = isDirty(c);
             const typed = d.minutes.trim() ? num(d.minutes) : null;
             const color = factColor(Number.isFinite(typed) ? typed : null, c.standard);
+            // Signed distance from the standard — the non-colour half of the
+            // traffic light. "+7" says what the red actually meant, and says
+            // it to the ~8% of men who cannot tell it from the green.
+            const gap = Number.isFinite(typed) && c.standard != null
+              ? parseFloat((typed - c.standard).toFixed(2))
+              : null;
+            const delta = gap == null ? "" : gap > 0 ? `+${fmtMin(gap)}` : fmtMin(gap);
             return (
               <tr key={c.cell_id}>
                 {showSupervisor && (
                   <td className="px-3 py-2">
-                    <div className="font-medium" style={{ color: c.supervisor ? "var(--text-1)" : "var(--text-4)" }}>
+                    <div className="font-medium truncate" title={c.supervisor ? tl(c.supervisor) : undefined}
+                         style={{ color: c.supervisor ? "var(--text-1)" : "var(--text-4)" }}>
                       {c.supervisor ? tl(c.supervisor) : "—"}
                     </div>
                     {c.leader && (
-                      <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }} title={T.leader}>
+                      <div className="text-[11px] leading-tight mt-0.5 truncate" style={{ color: "var(--text-4)" }}
+                           title={`${T.leader}: ${tl(c.leader)}`}>
                         {tl(c.leader)}
                       </div>
                     )}
@@ -377,7 +422,8 @@ export default function PerenaladkaFactTable({
                   {/* Without the supervisor column the leader is this row's only
                       other identity — it must not disappear with it. */}
                   {!showSupervisor && c.leader && (
-                    <div className="text-[11px] leading-tight mt-0.5" style={{ color: "var(--text-4)" }} title={T.leader}>
+                    <div className="text-[11px] leading-tight mt-0.5 truncate" style={{ color: "var(--text-4)" }}
+                         title={`${T.leader}: ${tl(c.leader)}`}>
                       {tl(c.leader)}
                     </div>
                   )}
@@ -386,18 +432,31 @@ export default function PerenaladkaFactTable({
                     style={{ color: c.standard != null ? "var(--text-3)" : "var(--text-4)" }}>
                   {fmtMin(c.standard)}
                 </td>
-                <td className="px-3 py-2 w-[110px] min-w-[92px]">
-                  <RowInput
-                    value={d.minutes}
-                    onChange={setField(c, "minutes")}
-                    onEnter={() => dirty && commit(c)}
-                    align="right"
-                    color={d.minutes.trim() ? color : null}
-                    inputMode="decimal"
-                    aria-label={T.colFact}
-                  />
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <RowInput
+                      value={d.minutes}
+                      onChange={setField(c, "minutes")}
+                      onEnter={() => dirty && commit(c)}
+                      align="right"
+                      color={d.minutes.trim() ? color : null}
+                      inputMode="decimal"
+                      aria-label={T.colFact}
+                      className="flex-1 min-w-0"
+                    />
+                    {/* Fixed width whether or not it has something to say —
+                        an empty slot that collapses is one more thing moving
+                        the instant somebody types. */}
+                    <span
+                      className="w-[42px] shrink-0 text-right text-[11px] font-semibold tabular-nums"
+                      style={{ color }}
+                      title={delta ? `${T.vsStd}: ${delta} ${T.minSuffix}` : undefined}
+                    >
+                      {delta}
+                    </span>
+                  </div>
                 </td>
-                <td className="px-3 py-2 min-w-[160px] max-w-[320px]">
+                <td className="px-3 py-2">
                   <RowInput
                     value={d.note}
                     onChange={setField(c, "note")}
