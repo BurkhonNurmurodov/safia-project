@@ -184,20 +184,22 @@
           return box;
         }
         // The app painted: whatever boot screen is up is now covering a running
-        // app and must go. The stale-version screen is the one exception — it
-        // owns the reload it is counting down to.
+        // app and must go. Two screens are exempt — the stale-version one owns
+        // the reload it is counting down to, and the connection one is raised
+        // by a page chunk that never arrived, so the shell underneath it has
+        // painted but has no page to show.
         function dismissBootScreen() {
-          if (window.__staleReloadStarted) return;
+          if (window.__staleReloadStarted || window.__netFailStarted) return;
           var box = document.getElementById('boot-debug');
           if (box && box.parentNode) box.parentNode.removeChild(box);
         }
         // Plain-language recovery copy in the 4 app languages (no exception
         // strings shown to the user — those live behind "technical details").
         var BOOT_STRINGS = {
-          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot", oldTitle: "Kompyuter brauzeri juda eski", oldMsg: "Bu kompyuterda Telegram Windows tizimining eskirgan ichki brauzerida ishlayapti — ilova unda ishga tusha olmaydi. Ilovani telefondagi Telegram orqali oching yoki saytga oddiy brauzer orqali kiring:", oldHint: "IT uchun: Microsoft Edge WebView2 o‘rnatilsa, Telegram Desktop ham ishlaydi.", slowTitle: "Yuklanmoqda…", slowMsg: "Aloqa sekin — ilova odatdagidan uzoqroq ochilmoqda. Biroz kuting." },
-          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот", oldTitle: "Компьютер браузери жуда эски", oldMsg: "Бу компьютерда Telegram Windows тизимининг эскирган ички браузерида ишлаяпти — илова унда ишга туша олмайди. Иловани телефондаги Telegram орқали очинг ёки сайтга оддий браузер орқали киринг:", oldHint: "IT учун: Microsoft Edge WebView2 ўрнатилса, Telegram Desktop ҳам ишлайди.", slowTitle: "Юкланмоқда…", slowMsg: "Алоқа секин — илова одатдагидан узоқроқ очилмоқда. Бироз кутинг." },
-          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали", oldTitle: "Устаревший браузер Windows", oldMsg: "Telegram на этом компьютере работает через устаревший встроенный браузер Windows — приложение в нём запуститься не может. Откройте приложение в Telegram на телефоне или зайдите на сайт через обычный браузер:", oldHint: "Для IT: после установки Microsoft Edge WebView2 заработает и Telegram Desktop.", slowTitle: "Загрузка…", slowMsg: "Медленное соединение — приложение открывается дольше обычного. Подождите немного." },
-          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details", oldTitle: "Outdated Windows browser", oldMsg: "Telegram on this computer runs on Windows’ outdated built-in browser, so the app can’t start here. Open it in Telegram on your phone, or sign in from a regular browser:", oldHint: "For IT: installing Microsoft Edge WebView2 also fixes Telegram Desktop.", slowTitle: "Loading…", slowMsg: "Slow connection — the app is taking longer than usual to open. Please wait a moment." }
+          uz:      { title: "Ilova yuklanmadi", msg: "Aloqa uzildi va ilova to‘liq ochilmadi. Bu odatda o‘zi tuzaladi — qayta urinib ko‘ring.", retry: "Qayta urinish", reopen: "Ilovani qayta ochish", report: "Muammoni yuborish", sent: "Yuborildi — jamoaga xabar bordi", copied: "Nusxa olindi", details: "Texnik ma’lumot", oldTitle: "Kompyuter brauzeri juda eski", oldMsg: "Bu kompyuterda Telegram Windows tizimining eskirgan ichki brauzerida ishlayapti — ilova unda ishga tusha olmaydi. Ilovani telefondagi Telegram orqali oching yoki saytga oddiy brauzer orqali kiring:", oldHint: "IT uchun: Microsoft Edge WebView2 o‘rnatilsa, Telegram Desktop ham ishlaydi.", slowTitle: "Yuklanmoqda…", slowMsg: "Aloqa sekin — ilova odatdagidan uzoqroq ochilmoqda. Biroz kuting.", netTitle: "Serverga ulanib bo‘lmadi", netMsg: "Ilova serverga ulana olmadi — aloqa uzildi yoki tarmoq uni to‘sib qo‘ydi. Boshqa tarmoqqa (mobil internet yoki Wi‑Fi) o‘tib, qayta urinib ko‘ring.", newTitle: "Yangi versiya chiqdi", newMsg: "Yangilanmoqda… ({n})", updTitle: "Yangilanish kerak", updMsg: "Ilovani yopib, qaytadan oching." },
+          uz_cyrl: { title: "Илова юкланмади", msg: "Алоқа узилди ва илова тўлиқ очилмади. Бу одатда ўзи тузалади — қайта уриниб кўринг.", retry: "Қайта уриниш", reopen: "Иловани қайта очиш", report: "Муаммони юбориш", sent: "Юборилди — жамоага хабар борди", copied: "Нусха олинди", details: "Техник маълумот", oldTitle: "Компьютер браузери жуда эски", oldMsg: "Бу компьютерда Telegram Windows тизимининг эскирган ички браузерида ишлаяпти — илова унда ишга туша олмайди. Иловани телефондаги Telegram орқали очинг ёки сайтга оддий браузер орқали киринг:", oldHint: "IT учун: Microsoft Edge WebView2 ўрнатилса, Telegram Desktop ҳам ишлайди.", slowTitle: "Юкланмоқда…", slowMsg: "Алоқа секин — илова одатдагидан узоқроқ очилмоқда. Бироз кутинг.", netTitle: "Серверга уланиб бўлмади", netMsg: "Илова серверга улана олмади — алоқа узилди ёки тармоқ уни тўсиб қўйди. Бошқа тармоққа (мобил интернет ёки Wi‑Fi) ўтиб, қайта уриниб кўринг.", newTitle: "Янги версия чиқди", newMsg: "Янгиланмоқда… ({n})", updTitle: "Янгиланиш керак", updMsg: "Иловани ёпиб, қайтадан очинг." },
+          ru:      { title: "Приложение не загрузилось", msg: "Соединение прервалось, и приложение не открылось полностью. Обычно это решается повторной попыткой.", retry: "Повторить", reopen: "Открыть заново", report: "Сообщить о проблеме", sent: "Отправлено — команда уведомлена", copied: "Скопировано", details: "Технические детали", oldTitle: "Устаревший браузер Windows", oldMsg: "Telegram на этом компьютере работает через устаревший встроенный браузер Windows — приложение в нём запуститься не может. Откройте приложение в Telegram на телефоне или зайдите на сайт через обычный браузер:", oldHint: "Для IT: после установки Microsoft Edge WebView2 заработает и Telegram Desktop.", slowTitle: "Загрузка…", slowMsg: "Медленное соединение — приложение открывается дольше обычного. Подождите немного.", netTitle: "Нет связи с сервером", netMsg: "Приложению не удалось связаться с сервером — соединение прервано или заблокировано сетью. Попробуйте другую сеть (мобильный интернет или Wi‑Fi) и повторите.", newTitle: "Доступна новая версия", newMsg: "Обновление… ({n})", updTitle: "Нужно обновление", updMsg: "Закройте приложение и откройте заново." },
+          en:      { title: "The app didn’t load", msg: "The connection dropped and the app didn’t finish loading. This usually fixes itself — try again.", retry: "Try again", reopen: "Reopen the app", report: "Report the problem", sent: "Sent — the team was notified", copied: "Copied", details: "Technical details", oldTitle: "Outdated Windows browser", oldMsg: "Telegram on this computer runs on Windows’ outdated built-in browser, so the app can’t start here. Open it in Telegram on your phone, or sign in from a regular browser:", oldHint: "For IT: installing Microsoft Edge WebView2 also fixes Telegram Desktop.", slowTitle: "Loading…", slowMsg: "Slow connection — the app is taking longer than usual to open. Please wait a moment.", netTitle: "Can’t reach the server", netMsg: "The app couldn’t reach the server — the connection was dropped or blocked by your network. Try a different network (mobile data or Wi‑Fi) and retry.", newTitle: "A new version is available", newMsg: "Reloading… ({n})", updTitle: "Update needed", updMsg: "Please close and reopen the app." }
         };
         function bootLang() {
           var l = '';
@@ -231,6 +233,7 @@
           // hashed stylesheet may be stale too), so colors + keyframes are inline.
           var p = palette();
           ensureAnims();
+          var S = BOOT_STRINGS[bootLang()];
           function overlay(spinner, title, sub) { return brandedOverlay(p, spinner, title, sub); }
 
           var KEY = 'chunkReloadAt';
@@ -246,15 +249,14 @@
             "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
 
           if (reloadDidNotHelp) {
-            box.innerHTML = overlay(false, 'Update needed',
-              'Please close and reopen the app.');
+            box.innerHTML = overlay(false, S.updTitle, S.updMsg);
             return;
           }
 
           // Paint once (stable logo — no flicker) and tick only the countdown.
           var n = 5;
-          box.innerHTML = overlay(true, 'A new version is available',
-            'Reloading… (<span id="safia-count">' + n + '</span>)');
+          box.innerHTML = overlay(true, S.newTitle,
+            S.newMsg.replace('{n}', '<span id="safia-count">' + n + '</span>'));
           var timer = setInterval(function () {
             n -= 1;
             if (n > 0) {
@@ -271,8 +273,69 @@
           }, 1000);
         }
         window.__staleReload = staleReload;
+        // The OTHER reason a page chunk never arrives: the connection, not the
+        // build. A reset, blocked or offline request rejects exactly like a
+        // pruned hash 404s, so staleReload used to answer both — and for a dead
+        // connection its advice is not merely useless but wrong, blaming a
+        // redeploy ("a new version… reloading", then "close and reopen the
+        // app") for a network the reload hits again just as dead. App.jsx now
+        // probes the origin first and sends genuine connection failures here.
+        function netFail() {
+          if (window.__staleReloadStarted || window.__netFailStarted) return;
+          window.__netFailStarted = true;
+
+          var p = palette();
+          var S = BOOT_STRINGS[bootLang()];
+          var box = bootBox();
+          box.setAttribute('style',
+            'position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;overflow:auto;' +
+            'display:flex;align-items:center;justify-content:center;padding:24px;' +
+            'background:' + p.bg + ';color:' + p.text1 + ';' +
+            "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Inter',sans-serif");
+          // Amber "blocked but fixable" chip + an INLINE wifi-off mark, not the
+          // logo: every other boot screen fetches /logo.png, which is the one
+          // thing this screen already knows it cannot get.
+          var icon =
+            '<div style="width:64px;height:64px;border-radius:9999px;display:flex;' +
+            'align-items:center;justify-content:center;background:rgba(234,179,8,0.12);color:#eab308">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" ' +
+              'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>' +
+                '<path d="M5 12.859a10 10 0 0 1 5.17-2.69"/>' +
+                '<path d="M19 12.859a10 10 0 0 0-2.007-1.523"/>' +
+                '<path d="M2 8.82a15 15 0 0 1 4.177-2.643"/>' +
+                '<path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>' +
+              '</svg>' +
+            '</div>';
+          box.innerHTML =
+            '<div style="width:100%;max-width:320px;display:flex;flex-direction:column;' +
+            'align-items:center;text-align:center;gap:16px">' +
+              icon +
+              '<div>' +
+                '<div style="font-size:17px;font-weight:600;color:' + p.text1 + '">' +
+                  S.netTitle + '</div>' +
+                '<div style="margin-top:8px;font-size:14px;line-height:1.6;color:' + p.text3 + '">' +
+                  S.netMsg + '</div>' +
+              '</div>' +
+              '<button id="net-retry" type="button" style="width:100%;padding:12px;border:none;' +
+              'border-radius:12px;background:' + p.brand + ';color:' + p.onBrand + ';font-size:14px;' +
+              'font-weight:600;cursor:pointer">' + S.retry + '</button>' +
+              '<button id="net-reopen" type="button" style="width:100%;padding:11px;' +
+              'border:1px solid ' + p.border + ';border-radius:12px;background:transparent;color:' +
+              p.text1 + ';font-size:14px;font-weight:500;cursor:pointer">' + S.reopen + '</button>' +
+            '</div>';
+          document.getElementById('net-retry').onclick = hardReload;
+          document.getElementById('net-reopen').onclick = function () {
+            try {
+              var wa = window.Telegram && window.Telegram.WebApp;
+              if (wa && typeof wa.close === 'function') { wa.close(); return; }
+            } catch (e) {}
+            hardReload(); // not in Telegram — a fresh load is the next best thing
+          };
+        }
+        window.__netFail = netFail;
         function report() {
-          if (window.__staleReloadStarted) return; // stale-version overlay owns the screen
+          if (window.__staleReloadStarted || window.__netFailStarted) return; // those overlays own the screen
           var details = 'App failed to start.\n\n' + errors.join('\n') +
             '\n\n' + envInfo() + '\n\nEngine: ' + navigator.userAgent;
           // Already painted — just refresh the (hidden) technical details so a

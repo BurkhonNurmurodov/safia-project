@@ -21,9 +21,42 @@ import { LangProvider, useLang } from "./context/LangContext";
 // user recovers instead of hitting the red "App failed to start" screen. That
 // handler is guarded: if a reload can't fix it (a cached index.html still
 // pointing at old hashes) it shows "please reopen the app" instead of looping.
+// But a rejected import means one of two OPPOSITE things and the browser
+// reports both identically ("Failed to fetch dynamically imported module"):
+// the hashed file is genuinely gone, or the request never reached the server
+// at all (offline, a reset connection, a filtering proxy). Their recoveries
+// are opposites too — a reload fixes the first and re-breaks the second — so a
+// dropped connection used to be told "A new version is available", then
+// "Update needed. Please close and reopen the app.": advice that cannot work,
+// for a cause that isn't the real one. Ask the origin before choosing.
+// /build.json is same-origin, served no-store and always present, so a reply
+// of ANY status proves the server is reachable and the chunk really is stale;
+// only a rejection means the connection itself is what broke.
+async function originReachable() {
+  if (navigator.onLine === false) return false;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+  try {
+    await fetch(`/build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
+    return true;
+  } catch {
+    return false; // reset, blocked, offline — or too slow to be usable anyway
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function lazyWithReload(importer) {
   return lazy(() =>
-    importer().catch((err) => {
+    importer().catch(async (err) => {
+      if (!(await originReachable())) {
+        // A reload would hit the same dead connection. Say what actually broke.
+        if (typeof window.__netFail === "function") {
+          window.__netFail();
+          return new Promise(() => {}); // never resolves — the overlay takes over
+        }
+        throw err;
+      }
       if (typeof window.__staleReload === "function") {
         window.__staleReload();
         return new Promise(() => {}); // never resolves — the overlay takes over
