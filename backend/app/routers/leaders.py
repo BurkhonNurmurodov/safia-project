@@ -889,6 +889,104 @@ def decide_dispute(
             "reported": _report_after_ruling(db, d)}
 
 
+@router.post("/leaders/disputes/{dispute_id}/undo")
+def undo_dispute(
+    dispute_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_auth),
+):
+    """Take a dispute ruling back — the way out of a decision made in error.
+
+    Ruling on a dispute is one tap, and an admin FILING one is its approval
+    (see `file_dispute`), so the wrong ruling is one mis-tap away and there was
+    no way back: `decide` refuses anything that is not `pending`, and clearing
+    the verdict from the AI triage tab left this row still printing «objection
+    upheld» on the report card under a task that had just lost its weight
+    again.
+
+    So the undo reverses exactly the two writes the ruling made. The verdict
+    goes back to `open` — nobody has ruled, which in the automatic regime means
+    the flag costs its weight again, the same state the day was in before
+    anyone touched it. The dispute row is `cancelled` rather than deleted,
+    because a score that moved twice has to stay explainable afterwards, and
+    because a live `pending` row is the only thing that blocks a re-filing: a
+    cancelled one lets the brigadir object again with a better reason.
+
+    The day re-scores and re-DMs itself through the same `resend_if_changed`
+    every other correction uses, and whoever was told the objection was upheld
+    is told it was reversed.
+    """
+    if not _may_decide(payload):
+        raise HTTPException(status_code=403, detail="Admins only")
+    d = db.query(LeaderAiDispute).filter_by(id=dispute_id).first()
+    if d is None:
+        raise HTTPException(status_code=404, detail="No such dispute")
+    if d.status == "pending":
+        raise HTTPException(status_code=409, detail="Not decided yet")
+    if d.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Already undone")
+
+    who = payload.get("full_name") or ""
+    tid = int(payload["sub"]) if str(payload.get("sub") or "").isdigit() else None
+    was = d.status
+    rev = (db.query(LeaderAiReview).filter_by(id=d.review_id).first()
+           if d.review_id else None) \
+        or db.query(LeaderAiReview).filter_by(ref=d.ref).first()
+    if rev is not None:
+        rev.resolution = None
+        rev.resolved_by = None
+        rev.resolved_at = None
+        rev.resolution_note = None
+    d.status = "cancelled"
+    d.decided_by_name = who or d.decided_by_name
+    d.decided_by_telegram = tid
+    d.decided_at = datetime.now(timezone.utc)
+    db.commit()
+
+    try:
+        from app.approvals import _notify_dispute_decided
+        _notify_dispute_decided(db, d, "cancelled", who)
+    except Exception:
+        logger.exception("leader-dispute: undo notice failed for %s", d.id)
+    logger.info("leader-dispute: %s undone (was %s) by %s on %s task %s",
+                d.id, was, who, d.date, d.task_id)
+    return {"ok": True, "status": d.status, "was": was,
+            "reported": _report_after_ruling(db, d)}
+
+
+def supersede_dispute(db: Session, ref: str, resolution: str | None,
+                      by: str | None = None) -> bool:
+    """Cancel a settled dispute that a LATER ruling on the same verdict has
+    contradicted. Does not commit — the caller's own commit carries it.
+
+    The AI triage tab rules on the verdict; this table is the paper trail the
+    day report prints beside it. Moving one without the other is how a card
+    ends up showing a rejected task under a green «objection upheld» box: two
+    sentences that were each true when written and cannot both describe the
+    score on screen now. Reopening a verdict from triage is the same undo as
+    the report page's button, so it retires the same row.
+
+    A dispute records the resolution its ruling wrote — `approved` → approved,
+    `rejected` → rejected. Anything else on the verdict now (including `open`
+    and `requeried`) means a human has overruled it.
+    """
+    expects = {"approved": "approved", "rejected": "rejected"}
+    hit = False
+    for d in (db.query(LeaderAiDispute)
+              .filter(LeaderAiDispute.ref == ref,
+                      LeaderAiDispute.status.in_(tuple(expects))).all()):
+        if expects[d.status] == resolution:
+            continue
+        d.status = "cancelled"
+        if by:
+            d.decided_by_name = by[:160]
+        d.decided_at = datetime.now(timezone.utc)
+        hit = True
+        logger.info("leader-dispute: %s superseded by a %s ruling on %s",
+                    d.id, resolution or "open", ref)
+    return hit
+
+
 def _report_after_ruling(db: Session, d: LeaderAiDispute) -> bool:
     """A ruling that MOVED the day's score re-sends its report; one that did
     not stays silent. `resend_if_changed` owns that comparison — it is the same

@@ -270,6 +270,21 @@ below).
   `resolution="approved"` on the verdict — that is what restores the weight —
   and the corrected score re-DMs itself. Authority mirrors the late-day flow and
   is deliberately not grantable.
+- **A settled ruling has an UNDO** (`POST /leaders/disputes/{id}/undo`, admin,
+  the «Qarorni bekor qilish» button under the dispute box on the report page).
+  Deciding is one tap and an ADMIN's own filing IS the approval, so the wrong
+  outcome is one mis-tap away, while `decide` refuses anything not `pending`.
+  The undo reverses the ruling's two writes: the verdict returns to `open` (in
+  the automatic regime the flag costs its weight again) and the dispute row
+  becomes `cancelled` — never deleted, because a score that moved twice has to
+  stay explainable, and because only a `pending` row blocks a re-filing.
+  Everything reading disputes counts `pending` only, so the new status is inert
+  elsewhere. **The verdict and its dispute row move TOGETHER**: a triage ruling
+  that contradicts a settled dispute retires it through the shared
+  `supersede_dispute` — otherwise the card prints «objection upheld» over a task
+  that just lost its weight again. The day re-scores via `resend_if_changed` and
+  both people told about the ruling are told it was reversed
+  (`leader_dispute_undone`).
 - **`_auto_clause()` folds a NULL shift with `coalesce`, and that is
   load-bearing.** The drain splits its queue into the clause and its negation;
   under SQL three-valued logic a NULL-shift row dated after `AUTO_FROM`

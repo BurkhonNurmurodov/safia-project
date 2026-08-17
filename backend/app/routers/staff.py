@@ -275,6 +275,13 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("Возражение отклонено", "Дата: {date} | Задача: {task} | Решил(а): {by} | Задача остаётся незачтённой."),
         "en": ("Objection refused", "Date: {date} | Task: {task} | Decided by: {by} | The task stays not done."),
     },
+    # The ruling above taken back — the task returns to the AI's verdict.
+    "leader_dispute_undone": {
+        "uz": ("Norozilik bo'yicha qaror bekor qilindi", "Sana: {date} | Vazifa: {task} | Bekor qildi: {by} | Vazifa yana AI xulosasi bo'yicha hisoblanadi."),
+        "uz_cyrl": ("Норозилик бўйича қарор бекор қилинди", "Сана: {date} | Вазифа: {task} | Бекор қилди: {by} | Вазифа яна AI хулосаси бўйича ҳисобланади."),
+        "ru": ("Решение по возражению отменено", "Дата: {date} | Задача: {task} | Отменил(а): {by} | Задача снова считается по решению ИИ."),
+        "en": ("The ruling on the objection was undone", "Date: {date} | Task: {task} | Undone by: {by} | The task counts by the AI verdict again."),
+    },
     "leader_proof_requeried": {
         "uz": ("Dalil rasmini qayta yuboring", "Sana: {date} | Vazifa: {task} | So'radi: {by} | Hozircha baho o'zgargani yo'q — yangi rasm yuklang."),
         "uz_cyrl": ("Далил расмини қайта юборинг", "Сана: {date} | Вазифа: {task} | Сўради: {by} | Ҳозирча баҳо ўзгаргани йўқ — янги расм юкланг."),

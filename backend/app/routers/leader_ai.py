@@ -779,11 +779,18 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
     who = (admin.get("full_name") or admin.get("username")
            or str(admin.get("telegram_id") or "admin"))[:160]
 
+    # A ruling written here overrules whatever a dispute decided on the same
+    # verdict, so the dispute row retires with it — otherwise the day report
+    # keeps printing «objection upheld» beside a task that just lost its weight
+    # again. Local import: routers/leaders.py owns the dispute tables.
+    from app.routers.leaders import supersede_dispute
+
     if body.resolution == "open":
         rev.resolution = None
         rev.resolved_by = None
         rev.resolved_at = None
         rev.resolution_note = None
+        supersede_dispute(db, rev.ref, None, who)
         db.commit()
         log.info("leader-ai: %s reopened %s", who, rev.ref)
         return {"ok": True, "ref": rev.ref, "resolution": None,
@@ -794,6 +801,7 @@ def resolve(body: ResolveIn, db: Session = Depends(get_db),
     rev.resolved_by = who
     rev.resolved_at = datetime.now(timezone.utc)
     rev.resolution_note = (body.note or "").strip()[:1000] or None
+    supersede_dispute(db, rev.ref, body.resolution, who)
     db.commit()
     log.info("leader-ai: %s ruled %s on %s", who, rev.resolution, rev.ref)
 

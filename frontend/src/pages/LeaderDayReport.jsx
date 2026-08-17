@@ -3,11 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, CalendarDays, User, Users, Sparkles, Clock,
-  CheckCircle2, XCircle, MessageSquareWarning, Camera, ChevronDown,
+  CheckCircle2, XCircle, MessageSquareWarning, Camera, ChevronDown, RotateCcw,
 } from "lucide-react";
 import Layout from "../components/layout/Layout";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Lightbox from "../components/ui/Lightbox";
 import FormField from "../components/ui/FormField";
 import ErrorScreen from "../components/ui/ErrorScreen";
@@ -66,8 +67,13 @@ const T_ALL = {
     disputeSend: "Yuborish", cancel: "Bekor qilish",
     dispPending: "Norozilik yuborildi — admin qarorini kutmoqda",
     dispApproved: "Norozilik qabul qilindi", dispRejected: "Norozilik rad etildi",
+    dispCancelled: "Norozilik bo'yicha qaror bekor qilindi",
     dispBy: "Yuborgan: {who}", dispDecided: "Hal qildi: {who}",
+    dispUndoneBy: "Bekor qildi: {who}",
     approve: "Qabul qilish", refuse: "Rad etish",
+    undo: "Qarorni bekor qilish", undoTitle: "Qaror bekor qilinsinmi?",
+    undoBody: "«{v}» qarori bekor qilinadi va vazifa yana AI xulosasi bo'yicha hisoblanadi — ya'ni ulushini yo'qotadi. Kun bahosi qayta hisoblanadi va yangilangan hisobot lider bilan brigadirga qayta yuboriladi. Brigadir yangi sabab bilan qaytadan norozilik bildira oladi.",
+    undone: "Qaror bekor qilindi",
     sent: "Norozilik yuborildi", decided: "Qaror saqlandi",
     voided: "Kun vaqtida yuborilmagan",
     voidedNote: "Bu kun belgilangan vaqtdan tashqarida yuborilgani uchun 0% bilan hisoblanadi. Quyidagi baho faqat dalil tekshiruvini ko'rsatadi.",
@@ -104,8 +110,13 @@ const T_ALL = {
     disputeSend: "Юбориш", cancel: "Бекор қилиш",
     dispPending: "Норозилик юборилди — админ қарорини кутмоқда",
     dispApproved: "Норозилик қабул қилинди", dispRejected: "Норозилик рад этилди",
+    dispCancelled: "Норозилик бўйича қарор бекор қилинди",
     dispBy: "Юборган: {who}", dispDecided: "Ҳал қилди: {who}",
+    dispUndoneBy: "Бекор қилди: {who}",
     approve: "Қабул қилиш", refuse: "Рад этиш",
+    undo: "Қарорни бекор қилиш", undoTitle: "Қарор бекор қилинсинми?",
+    undoBody: "«{v}» қарори бекор қилинади ва вазифа яна AI хулосаси бўйича ҳисобланади — яъни улушини йўқотади. Кун баҳоси қайта ҳисобланади ва янгиланган ҳисобот лидер билан бригадирга қайта юборилади. Бригадир янги сабаб билан қайтадан норозилик билдира олади.",
+    undone: "Қарор бекор қилинди",
     sent: "Норозилик юборилди", decided: "Қарор сақланди",
     voided: "Кун вақтида юборилмаган",
     voidedNote: "Бу кун белгиланган вақтдан ташқарида юборилгани учун 0% билан ҳисобланади. Қуйидаги баҳо фақат далил текширувини кўрсатади.",
@@ -142,8 +153,13 @@ const T_ALL = {
     disputeSend: "Отправить", cancel: "Отмена",
     dispPending: "Возражение отправлено — ждёт решения админа",
     dispApproved: "Возражение принято", dispRejected: "Возражение отклонено",
+    dispCancelled: "Решение по возражению отменено",
     dispBy: "Отправил(а): {who}", dispDecided: "Решил(а): {who}",
+    dispUndoneBy: "Отменил(а): {who}",
     approve: "Принять", refuse: "Отклонить",
+    undo: "Отменить решение", undoTitle: "Отменить решение?",
+    undoBody: "Решение «{v}» будет отменено, и задача снова будет считаться по заключению ИИ — то есть потеряет свой вес. Оценка дня пересчитается, а обновлённый отчёт уйдёт лидеру и бригадиру заново. Бригадир сможет возразить снова с другой причиной.",
+    undone: "Решение отменено",
     sent: "Возражение отправлено", decided: "Решение сохранено",
     voided: "День сдан вне окна",
     voidedNote: "Этот день считается как 0%, потому что отчёт сдан вне установленного окна. Оценка ниже показывает только результат проверки фото.",
@@ -180,8 +196,13 @@ const T_ALL = {
     disputeSend: "Send", cancel: "Cancel",
     dispPending: "Objection sent — awaiting an admin decision",
     dispApproved: "Objection upheld", dispRejected: "Objection refused",
+    dispCancelled: "The ruling on the objection was undone",
     dispBy: "Filed by: {who}", dispDecided: "Decided by: {who}",
+    dispUndoneBy: "Undone by: {who}",
     approve: "Uphold", refuse: "Refuse",
+    undo: "Undo the ruling", undoTitle: "Undo this ruling?",
+    undoBody: "The «{v}» ruling is taken back and the task counts by the AI verdict again — so it loses its weight. The day is re-scored and the corrected report is re-sent to the leader and the supervisor. The supervisor can object again with a different reason.",
+    undone: "The ruling was undone",
     sent: "Objection sent", decided: "Decision saved",
     voided: "Filed outside the window",
     voidedNote: "This day counts as 0% because the checklist was filed outside its window. The score below reflects the photo check only.",
@@ -223,7 +244,8 @@ function StateChip({ state, T, size = "sm" }) {
  * single line. The evidence for a verdict nobody is contesting is noise on a
  * phone, and burying the three that failed under ten that did not is how the
  * page stops answering its own question. */
-function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDispute }) {
+function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDispute,
+                    canDecide, onUndo }) {
   const st = taskState(t);
   const bad = st?.key === "rejected";
   const name = pick(t.name, lang);
@@ -345,21 +367,40 @@ function TaskCard({ t, T, lang, uid, open, onToggle, onPhoto, canDispute, onDisp
             </p>
           )}
 
+          {/* A CANCELLED ruling is deliberately colourless: the objection no
+              longer says anything about the score, and painting it red would
+              read as «refused» — the one outcome it is not. */}
           {t.dispute && (
             <div className="rounded-lg px-2.5 py-2 text-[11px] leading-snug"
-              style={{ background: hexA(t.dispute.status === "pending" ? C_MID
-                : t.dispute.status === "approved" ? C_GOOD : C_BAD, 0.1),
+              style={{ ...(t.dispute.status === "cancelled"
+                ? { background: "var(--bg-inner)", border: "1px solid var(--border)" }
+                : { background: hexA(t.dispute.status === "pending" ? C_MID
+                  : t.dispute.status === "approved" ? C_GOOD : C_BAD, 0.1) }),
                        color: "var(--text-2)" }}>
               <span className="font-semibold">
                 {t.dispute.status === "pending" ? T.dispPending
-                  : t.dispute.status === "approved" ? T.dispApproved : T.dispRejected}
+                  : t.dispute.status === "approved" ? T.dispApproved
+                    : t.dispute.status === "cancelled" ? T.dispCancelled : T.dispRejected}
               </span>
               <br />“{t.dispute.reason}”
               <br /><span style={{ color: "var(--text-4)" }}>
                 {fill(T.dispBy, { who: t.dispute.by || "—" })}
-                {t.dispute.decidedBy ? ` · ${fill(T.dispDecided, { who: t.dispute.decidedBy })}` : ""}
+                {t.dispute.decidedBy
+                  ? ` · ${fill(t.dispute.status === "cancelled" ? T.dispUndoneBy : T.dispDecided,
+                             { who: t.dispute.decidedBy })}`
+                  : ""}
               </span>
             </div>
+          )}
+
+          {/* The way back out of a ruling, sitting under the ruling it takes
+              back — an undo detached from what it undoes is a button nobody
+              can check before pressing. Same authority as deciding, and only
+              on a ruling still in force: a cancelled row has nothing to undo. */}
+          {canDecide && ["approved", "rejected"].includes(t.dispute?.status) && (
+            <Button size="md" variant="secondary" tint onClick={onUndo} className="w-full">
+              <RotateCcw size={13} /> {T.undo}
+            </Button>
           )}
 
           {/* Never show a problem without a path to act on it. The brigadir
@@ -388,6 +429,10 @@ export default function LeaderDayReport() {
   const [zoom, setZoom] = useState("");
   const [disputeTask, setDisputeTask] = useState(null);
   const [reason, setReason] = useState("");
+  // The task whose SETTLED dispute is being taken back, and the failure that
+  // has to stay on the dialog rather than vanish with it.
+  const [undoTask, setUndoTask] = useState(null);
+  const [undoErr, setUndoErr] = useState(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["leaderDayReport", uid],
@@ -414,6 +459,22 @@ export default function LeaderDayReport() {
       show(T.decided, "success");
     },
     onError: (e) => show(e?.response?.data?.detail || T.failed, "error"),
+  });
+
+  // Taking a ruling back. Deciding is one tap and an admin's own filing IS the
+  // approval, so the wrong outcome is one mis-tap away; without this the only
+  // way back was the AI triage tab, which cleared the verdict and left the
+  // «objection upheld» box standing over a task that had lost its weight again.
+  const undoRuling = useMutation({
+    mutationFn: ({ id }) => api.post(`/api/leaders/disputes/${id}/undo`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leaderDayReport", uid] });
+      // The register and the leaderboard print this score too.
+      qc.invalidateQueries({ queryKey: ["leaders"] });
+      setUndoTask(null); setUndoErr(null);
+      show(T.undone, "success");
+    },
+    onError: (e) => setUndoErr(e?.response?.data?.detail || T.failed),
   });
 
   // Failures open, passes closed — the default the page exists for. Held as
@@ -556,7 +617,9 @@ export default function LeaderDayReport() {
               <div key={t.id}>
                 <TaskCard t={t} T={T} lang={lang} uid={data.uid} open={isOpen(t)} onToggle={() => toggle(t)}
                   onPhoto={setZoom} canDispute={data.canDispute}
-                  onDispute={() => { setDisputeTask(t); setReason(""); }} />
+                  onDispute={() => { setDisputeTask(t); setReason(""); }}
+                  canDecide={data.canDecide}
+                  onUndo={() => { setUndoErr(null); setUndoTask(t); }} />
                 {data.canDecide && t.dispute?.status === "pending" && (
                   <div className="flex gap-2 mt-1.5 px-1">
                     <Button size="md" variant="success" tint className="flex-1"
@@ -602,6 +665,24 @@ export default function LeaderDayReport() {
                      color: "var(--text-1)" }} />
         </FormField>
       </Modal>
+
+      {/* Consequential enough to confirm: it takes points back off a leader
+          and re-DMs the corrected report to two people. */}
+      {undoTask && (
+        <ConfirmDialog
+          icon={<RotateCcw />}
+          title={T.undoTitle}
+          message={fill(T.undoBody, {
+            v: undoTask.dispute?.status === "approved" ? T.dispApproved : T.dispRejected,
+          })}
+          confirmLabel={T.undo}
+          cancelLabel={T.cancel}
+          loading={undoRuling.isPending}
+          error={undoErr}
+          onCancel={() => { setUndoTask(null); setUndoErr(null); }}
+          onConfirm={() => undoRuling.mutate({ id: undoTask.dispute.id })}
+        />
+      )}
 
       {toastNode}
     </Layout>

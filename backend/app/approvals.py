@@ -800,8 +800,13 @@ def _notify_dispute_decided(db, d, status: str, decided_by: str) -> None:
     from app.routers.staff import notify_profile
     from app.services import leader_ai
 
-    nkey = ("leader_dispute_approved" if status == "approved"
-            else "leader_dispute_rejected")
+    # `cancelled` is a ruling being taken back, and it is told to exactly the
+    # same two people: whoever was told the objection was upheld has to hear
+    # that it no longer is, or the next report DM arrives with a number that
+    # dropped for no reason they were ever given.
+    nkey = {"approved": "leader_dispute_approved",
+            "cancelled": "leader_dispute_undone"}.get(
+                status, "leader_dispute_rejected")
     params = {
         "date": d.date, "by": decided_by,
         "task": leader_ai.task_label(db, d.task_id, d.manager_id, d.leader_id),
