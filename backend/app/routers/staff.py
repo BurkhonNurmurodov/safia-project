@@ -365,69 +365,76 @@ _NOTIF_STRINGS: dict[str, dict[str, tuple[str, str]]] = {
         "ru": ("{actor_name} отклонил(а) ваш документ", "{doc_label} | Дата: {date}"),
         "en": ("{actor_name} rejected your document", "{doc_label} | Date: {date}"),
     },
-    # The concern family shares ONE body shape: the words somebody actually
-    # typed come FIRST, quoted, then a blank line, then one labelled fact per
-    # line. The old single-line «Label: v | Label: v | Label: v» run-on wrapped
-    # into three lines of names on a phone before the reader reached the thing
-    # that had happened. A row whose value is empty (no leader snapshot, no
-    # reason) is dropped by _render_body, so every label here is optional.
+    # The concern family shares ONE body shape, and every row is written the same
+    # way: «quoted content» on its own line, then a blank line, then one
+    #   {emoji} {Label}: {placeholder}
+    # fact per line. The old single-line «Label: v | Label: v | Label: v» run-on
+    # wrapped into three lines of names on a phone before the reader reached the
+    # thing that had happened.
+    #
+    # That row shape is a contract, not decoration: _render_body reads it to
+    # build the rich Telegram DM (<blockquote> for the quoted words, <b> for the
+    # label — see _NOTIF_TG_ICON), so the DM and the bell come from THIS string
+    # and cannot drift the way two hand-kept tables would. A row whose value is
+    # empty (no leader snapshot, no reason) drops out whole, so every label here
+    # is optional.
     "concern_created": {
-        "uz": ("Yangi xavotir qo'shildi", "«{concern}»\n\nLider: {leader_name}\nXavotir egasi: {owner}\nSana: {date}"),
-        "uz_cyrl": ("Янги хавотир қўшилди", "«{concern}»\n\nЛидер: {leader_name}\nХавотир эгаси: {owner}\nСана: {date}"),
-        "ru": ("Добавлено новое опасение", "«{concern}»\n\nЛидер: {leader_name}\nВладелец: {owner}\nДата: {date}"),
-        "en": ("New concern added", "“{concern}”\n\nLeader: {leader_name}\nOwner: {owner}\nDate: {date}"),
+        "uz": ("Yangi xavotir qo'shildi", "«{concern}»\n\n👤 Lider: {leader_name}\n🙋 Xavotir egasi: {owner}\n📅 Sana: {date}"),
+        "uz_cyrl": ("Янги хавотир қўшилди", "«{concern}»\n\n👤 Лидер: {leader_name}\n🙋 Хавотир эгаси: {owner}\n📅 Сана: {date}"),
+        "ru": ("Добавлено новое опасение", "«{concern}»\n\n👤 Лидер: {leader_name}\n🙋 Владелец: {owner}\n📅 Дата: {date}"),
+        "en": ("New concern added", "“{concern}”\n\n👤 Leader: {leader_name}\n🙋 Owner: {owner}\n📅 Date: {date}"),
     },
     "concern_assigned": {
-        "uz": ("{actor_name} nomingizga xavotir qo'shdi", "«{concern}»\n\nXavotir egasi: {owner}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} номингизга хавотир қўшди", "«{concern}»\n\nХавотир эгаси: {owner}\nСана: {date}"),
-        "ru": ("{actor_name} добавил(а) опасение на ваше имя", "«{concern}»\n\nВладелец: {owner}\nДата: {date}"),
-        "en": ("{actor_name} added a concern for you", "“{concern}”\n\nOwner: {owner}\nDate: {date}"),
+        "uz": ("{actor_name} nomingizga xavotir qo'shdi", "«{concern}»\n\n🙋 Xavotir egasi: {owner}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} номингизга хавотир қўшди", "«{concern}»\n\n🙋 Хавотир эгаси: {owner}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} добавил(а) опасение на ваше имя", "«{concern}»\n\n🙋 Владелец: {owner}\n📅 Дата: {date}"),
+        "en": ("{actor_name} added a concern for you", "“{concern}”\n\n🙋 Owner: {owner}\n📅 Date: {date}"),
     },
     # A concern's level changed and the reader is NOT the receiving handler —
     # the brigadir of the unit it is about, and the cell's leader, stay in the
     # loop instead of watching it vanish upwards. The receiving handler gets
     # concern_escalated / concern_returned ("… to you") instead.
     "concern_moved": {
-        "uz": ("Xavotir {level_label} darajasiga o'tdi", "«{concern}»\n\nSabab: {reason}\nKim: {actor_name}\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("Хавотир {level_label} даражасига ўтди", "«{concern}»\n\nСабаб: {reason}\nКим: {actor_name}\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\nПричина: {reason}\nКто: {actor_name}\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("A concern moved to {level_label}", "“{concern}”\n\nReason: {reason}\nBy: {actor_name}\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("Xavotir {level_label} darajasiga o'tdi", "«{concern}»\n\n📝 Sabab: {reason}\n✍️ Kim: {actor_name}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("Хавотир {level_label} даражасига ўтди", "«{concern}»\n\n📝 Сабаб: {reason}\n✍️ Ким: {actor_name}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("Опасение передано на уровень «{level_label}»", "«{concern}»\n\n📝 Причина: {reason}\n✍️ Кто: {actor_name}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("A concern moved to {level_label}", "“{concern}”\n\n📝 Reason: {reason}\n✍️ By: {actor_name}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_resolved": {
-        "uz": ("{actor_name} xavotirni hal qildi", "«{concern}»\n\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни ҳал қилди", "«{concern}»\n\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("{actor_name} закрыл(а) опасение", "«{concern}»\n\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("{actor_name} resolved a concern", "“{concern}”\n\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("{actor_name} xavotirni hal qildi", "«{concern}»\n\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни ҳал қилди", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} закрыл(а) опасение", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} resolved a concern", "“{concern}”\n\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_reopened": {
-        "uz": ("{actor_name} xavotirni qayta ochdi", "«{concern}»\n\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни қайта очди", "«{concern}»\n\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("{actor_name} переоткрыл(а) опасение", "«{concern}»\n\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("{actor_name} reopened a concern", "“{concern}”\n\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("{actor_name} xavotirni qayta ochdi", "«{concern}»\n\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни қайта очди", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} переоткрыл(а) опасение", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} reopened a concern", "“{concern}”\n\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_edited": {
-        "uz": ("{actor_name} xavotirni tahrirladi", "«{concern}»\n\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни таҳрирлади", "«{concern}»\n\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("{actor_name} изменил(а) опасение", "«{concern}»\n\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("{actor_name} edited a concern", "“{concern}”\n\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("{actor_name} xavotirni tahrirladi", "«{concern}»\n\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни таҳрирлади", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} изменил(а) опасение", "«{concern}»\n\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} edited a concern", "“{concern}”\n\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_escalated": {
-        "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "«{concern}»\n\nSabab: {reason}\nDaraja: {level_label}\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "«{concern}»\n\nСабаб: {reason}\nДаража: {level_label}\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("{actor_name} передал(а) вам опасение", "«{concern}»\n\nПричина: {reason}\nУровень: {level_label}\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("{actor_name} escalated a concern to you", "“{concern}”\n\nReason: {reason}\nLevel: {level_label}\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("{actor_name} xavotirni sizga yo'naltirdi", "«{concern}»\n\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга йўналтирди", "«{concern}»\n\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} передал(а) вам опасение", "«{concern}»\n\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} escalated a concern to you", "“{concern}”\n\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_returned": {
-        "uz": ("{actor_name} xavotirni sizga qaytardi", "«{concern}»\n\nSabab: {reason}\nDaraja: {level_label}\nLider: {leader_name}\nSana: {date}"),
-        "uz_cyrl": ("{actor_name} хавотирни сизга қайтарди", "«{concern}»\n\nСабаб: {reason}\nДаража: {level_label}\nЛидер: {leader_name}\nСана: {date}"),
-        "ru": ("{actor_name} вернул(а) вам опасение", "«{concern}»\n\nПричина: {reason}\nУровень: {level_label}\nЛидер: {leader_name}\nДата: {date}"),
-        "en": ("{actor_name} returned a concern to you", "“{concern}”\n\nReason: {reason}\nLevel: {level_label}\nLeader: {leader_name}\nDate: {date}"),
+        "uz": ("{actor_name} xavotirni sizga qaytardi", "«{concern}»\n\n📝 Sabab: {reason}\n📍 Daraja: {level_label}\n👤 Lider: {leader_name}\n📅 Sana: {date}"),
+        "uz_cyrl": ("{actor_name} хавотирни сизга қайтарди", "«{concern}»\n\n📝 Сабаб: {reason}\n📍 Даража: {level_label}\n👤 Лидер: {leader_name}\n📅 Сана: {date}"),
+        "ru": ("{actor_name} вернул(а) вам опасение", "«{concern}»\n\n📝 Причина: {reason}\n📍 Уровень: {level_label}\n👤 Лидер: {leader_name}\n📅 Дата: {date}"),
+        "en": ("{actor_name} returned a concern to you", "“{concern}”\n\n📝 Reason: {reason}\n📍 Level: {level_label}\n👤 Leader: {leader_name}\n📅 Date: {date}"),
     },
     "concern_comment": {
-        "uz": ("{author_name} xavotirga izoh qoldirdi", "{comment}\nXavotir: {concern}"),
-        "uz_cyrl": ("{author_name} хавотирга изоҳ қолдирди", "{comment}\nХавотир: {concern}"),
-        "ru": ("{author_name} оставил(а) комментарий к опасению", "{comment}\nОпасение: {concern}"),
-        "en": ("{author_name} commented on a concern", "{comment}\nConcern: {concern}"),
+        "uz": ("{author_name} xavotirga izoh qoldirdi", "«{comment}»\n\n💬 Xavotir: {concern}"),
+        "uz_cyrl": ("{author_name} хавотирга изоҳ қолдирди", "«{comment}»\n\n💬 Хавотир: {concern}"),
+        "ru": ("{author_name} оставил(а) комментарий к опасению", "«{comment}»\n\n💬 Опасение: {concern}"),
+        "en": ("{author_name} commented on a concern", "“{comment}”\n\n💬 Concern: {concern}"),
     },
     "task_created": {
         "uz": ("Yangi vazifa: {creator_name}", "Muddat: {date}\n{task}"),
@@ -532,12 +539,30 @@ def _same_person(a, b) -> bool:
     return fold(a) == fold(b)
 
 
-def _render_body(tmpl: str, values: dict) -> str:
+def _html_row(line: str) -> str:
+    """One body TEMPLATE line → its Telegram HTML form, markup only.
+
+    «quoted» / “quoted” (the words a person typed) becomes a real
+    <blockquote>; an ``{emoji} {Label}: {value}`` row keeps its emoji outside a
+    <b>bold label</b>, matching the leader day-report DMs. Anything else is
+    passed through untouched. Applied to the TEMPLATE, so the label split can
+    never be thrown off by a colon inside somebody's own text."""
+    body = line.strip()
+    if body[:1] in ("«", "“") and body[-1:] in ("»", "”"):
+        return f"<blockquote>{body[1:-1]}</blockquote>"
+    icon, _, rest = line.partition(" ")
+    label, sep, value = rest.partition(":")
+    if not sep or "{" in label:
+        return line
+    return f"{icon} <b>{label}:</b>{value}"
+
+
+def _render_body(tmpl: str, values: dict, *, html: bool = False) -> str:
     """Format a notification body, dropping whole rows whose one value is empty.
 
     Notification params are optional by nature: a legacy concern carries no
-    leader snapshot, a level change may have no reason, and _mk_notif blanks a
-    leader who IS the owner. A dangling «Лидер:» with nothing after it reads as
+    leader snapshot, a level change may have no reason, and _notif_values blanks
+    a leader who IS the owner. A dangling «Лидер:» with nothing after it reads as
     missing data; no row at all reads as "not applicable", which is what it is.
 
     The decision is made on the TEMPLATE, one line at a time — never by pattern-
@@ -546,7 +571,11 @@ def _render_body(tmpl: str, values: dict) -> str:
     carrying EXACTLY ONE placeholder can be dropped, so the older single-line
     «Label: v | Label: v» bodies keep every field they ever showed. A missing
     key drops its row instead of raising, the same back-compat courtesy the
-    ``setdefault`` fallbacks above extend to params added after the fact."""
+    ``setdefault`` fallbacks in _notif_values extend to params added after the
+    fact.
+
+    ``html=True`` returns the same rows as Telegram HTML (see _html_row); pass
+    HTML-escaped values with it."""
     out: list[str] = []
     for line in tmpl.split("\n"):
         fields = [f for _, f, _, _ in string.Formatter().parse(line) if f]
@@ -554,7 +583,7 @@ def _render_body(tmpl: str, values: dict) -> str:
             v = values.get(fields[0])
             if v is None or (isinstance(v, str) and not v.strip()):
                 continue
-        rendered = line.format(**values)
+        rendered = (_html_row(line) if html else line).format(**values)
         # Collapse the separator a dropped row leaves stranded.
         if not rendered.strip() and (not out or not out[-1].strip()):
             continue
