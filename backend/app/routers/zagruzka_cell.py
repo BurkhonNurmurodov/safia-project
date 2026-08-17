@@ -323,7 +323,9 @@ def cell_zagruzka(
 
     # FALLBACK, resolved per DAY: `cell_attendance`, for days the daily sheet
     # does not cover at all — the days loaded through the «cellatt» tab before
-    # the single-file flow started carrying cell codes (2026-08-01).
+    # the single-file flow started carrying cell codes (2026-08-01). That set is
+    # now FROZEN: the tab was removed 2026-08-17, so nothing new lands in the
+    # table and this branch only ever serves those historical days.
     #
     # Per DAY, never per cell: on a day the sheet DOES cover, a cell with no rows
     # was deliberately ticked out of that day's batch, and falling back would
@@ -560,9 +562,9 @@ def cell_zagruzka(
             "days_with_attendance": [d.strftime("%d.%m.%Y") for d in days_with_attendance],
             "days_in_range": len(dates),
             # Which source fed each day: the daily factory-wide «Davomat» sheet,
-            # or the older per-cell «cellatt» upload. Named because the two are
-            # ingested by different people at different times — a day missing
-            # from BOTH is a day nobody uploaded, and that is worth seeing.
+            # or the retired per-cell «cellatt» upload. Named because a day
+            # missing from BOTH is a day nobody uploaded, and that is worth
+            # seeing — and because `cell_upload` can no longer grow.
             "attendance_sources": {
                 "sheet": [d.strftime("%d.%m.%Y") for d in sorted(sheet_days)],
                 "cell_upload": [d.strftime("%d.%m.%Y") for d in sorted(fallback_days)],

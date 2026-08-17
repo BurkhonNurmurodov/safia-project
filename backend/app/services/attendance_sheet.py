@@ -9,9 +9,10 @@ hours rule is spelled out here:
     exactly across every worked row of the reference export)
 
 ``verifix_parser`` (the per-supervisor path) stores «Отработано» as
-``hours_worked``; ``cell_attendance_parser`` (the isolated per-cell table)
-stores the number inside the day cell's parentheses, which is «Вовремя» — a
-DIFFERENT, systematically smaller value (8.5 vs 8.4 on the reference row).
+``hours_worked``; the retired per-cell parser (deleted 2026-08-17 with the
+«cellatt» tab) stored the number inside the day cell's parentheses, which is
+«Вовремя» — a DIFFERENT, systematically smaller value (8.5 vs 8.4 on the
+reference row).
 Reading the day cell here would silently shave ~0.5–3 % off every worker's
 hours the moment the upload path switched, so this parser reproduces
 «Отработано»:

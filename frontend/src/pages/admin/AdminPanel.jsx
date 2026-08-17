@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   Database, Languages, Users, ShieldCheck, Factory, IdCard, Megaphone, Trash2,
-  ListChecks, KeyRound, LayoutGrid, History, DatabaseBackup, ClipboardCheck,
+  ListChecks, KeyRound, History, DatabaseBackup, ClipboardCheck,
   Sliders, ChevronDown, X, AlertTriangle, Building2,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
@@ -20,7 +20,6 @@ import FactoriesAdmin from "./Factories";
 import PageAccess from "./PageAccess";
 import Permissions from "./Permissions";
 import ProductionUpload from "./ProductionUpload";
-import CellAttendanceUpload from "./CellAttendanceUpload";
 import AttendanceUpload from "./AttendanceUpload";
 import Broadcast from "./Broadcast";
 import AttendanceCleanup from "./AttendanceCleanup";
@@ -65,9 +64,6 @@ export const ADMIN_NAV = [
   { id: "attendance",   group: "daily",  Icon: ClipboardCheck, labelKey: "admin.tabAttendance",   descKey: "admin.desc.attendance" },
   { id: "data",         group: "daily",  Icon: Database,       labelKey: "admin.tabData",         descKey: "admin.desc.data" },
   { id: "production",   group: "daily",  Icon: Factory,        labelKey: "admin.tabProduction",   descKey: "admin.desc.production" },
-  // Self-declared test mode — kept in the daily group but last within it, rather
-  // than at slot 2 pushing real daily tools into the overflow.
-  { id: "cellatt",      group: "daily",  Icon: LayoutGrid,     labelKey: "admin.tabCellAtt",      descKey: "admin.desc.cellatt", test: true },
 
   { id: "users",        group: "people", Icon: Users,          labelKey: "admin.tabUsers",        descKey: "admin.desc.users" },
   { id: "profiles",     group: "people", Icon: IdCard,         labelKey: "admin.tabProfiles",     descKey: "admin.desc.profiles" },
@@ -97,7 +93,6 @@ const VIEWS = {
   attendance:   AttendanceUpload,
   data:         DataSources,
   production:   ProductionUpload,
-  cellatt:      CellAttendanceUpload,
   users:        UsersManagement,
   profiles:     ProfilesManagement,
   factories:    FactoriesAdmin,
