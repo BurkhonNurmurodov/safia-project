@@ -1726,8 +1726,20 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     mid-run would otherwise make the bar go backwards, which reads as a bug even
     when the work is fine.
 
-    Deliberately three cheap COUNT queries and no joins: this is polled every
-    few seconds for as long as a backfill takes.
+    **`total` is re-derived on every poll as `done + left`, never below the
+    number the run was recorded with.** The recorded total is a snapshot of the
+    queue at the start, and the queue keeps growing while a run is live — a bot
+    day-close, a sheet Refresh, a Retry all add rows the drain WILL walk under
+    this very run. With the snapshot frozen, the strip sat at «13 of 13 · 100%»
+    beside «1,222 left» for as long as those rows took: the bar measured one
+    leader's close, the remainder measured the whole queue, and nothing on
+    screen connected them. Now `done + left = total` holds every time it is
+    read, so the percentage, the ETA and the remainder describe one thing, and
+    the growth ships as `grew` so the strip can SAY the queue grew instead of
+    letting the bar drop from 100% to 1% unexplained.
+
+    Deliberately cheap COUNT queries and no joins: this is polled every few
+    seconds for as long as a backfill takes.
     """
     import json
 
@@ -1777,13 +1789,24 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         db.commit()
         return {"active": False, "pending": pending}
 
-    done = (
+    # The run's slice — dates and who — applied to EVERY number below, so done,
+    # left and errors are three readings of one set. `done` used to be counted
+    # over the whole table: a run narrowed to one brigadir would tick up when an
+    # admin pressed «check now» on somebody else's row, and its bar could pass
+    # 100% of a slice it had not finished. Records written before the who-keys
+    # existed carry none, and `_narrow` reads a missing key as "no narrowing".
+    lo, hi = run.get("from"), run.get("to")
+    r_shift, r_mgr, r_ldr = (run.get("shift"), run.get("manager"),
+                             run.get("leader"))
+    slice_kw = dict(date_from=lo, date_to=hi, shift=r_shift,
+                    manager_id=r_mgr, leader_id=r_ldr)
+
+    done = _narrow(
         db.query(LeaderAiReview)
         .filter(LeaderAiReview.reviewed_at.isnot(None),
-                LeaderAiReview.reviewed_at >= started)
-        .count()
-    )
-    total = max(1, int(run.get("total") or 1))
+                LeaderAiReview.reviewed_at >= started),
+        **slice_kw,
+    ).count()
 
     # What is left OF THIS RUN — scoped to the dates it was started for, which
     # is also what the drain now works through. `pending` above is the whole
@@ -1795,9 +1818,6 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # The global figure still ships, as `pendingAll`. The queue outside this
     # run is real, it is what Stop would clear, and dropping it from the payload
     # would only move the surprise later.
-    lo, hi = run.get("from"), run.get("to")
-    r_shift, r_mgr, r_ldr = (run.get("shift"), run.get("manager"),
-                             run.get("leader"))
     if lo or hi or r_shift or r_mgr or r_ldr:
         pending_run = _narrow(
             db.query(LeaderAiReview)
@@ -1806,11 +1826,22 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
                     # Same rule as the global figure above: the run ends when
                     # the drain has nothing left it can take.
                     ~leader_ai.paused_clause()),
-            date_from=lo, date_to=hi, shift=r_shift,
-            manager_id=r_mgr, leader_id=r_ldr,
+            **slice_kw,
         ).count()
     else:
         pending_run = pending
+
+    # THE invariant the strip is built on: done + left = total. The recorded
+    # total is only the queue as it stood when the run began, and it is a floor,
+    # not the answer — rows keep joining a live run (a leader's day-close, a
+    # sheet Refresh, a Retry), the drain walks them under this same record, and
+    # a total that ignored them left the bar full while the remainder counted
+    # in the thousands. Whatever came in after the start is `grew`, and it is
+    # shipped rather than swallowed: a bar that falls from 100% to 1% is a bug
+    # unless the strip says what arrived.
+    total0 = max(1, int(run.get("total") or 1))
+    total = max(total0, done + pending_run)
+    grew = total - total0
 
     # Rows THIS run has already failed on. A verdict is only counted `done`
     # when it is written, so a batch that errors on every row leaves the bar at
@@ -1818,8 +1849,7 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
     # which is exactly the case where something happened.
     errors_run = _narrow(
         db.query(LeaderAiReview).filter(LeaderAiReview.status == "error"),
-        date_from=lo, date_to=hi, shift=r_shift,
-        manager_id=r_mgr, leader_id=r_ldr,
+        **slice_kw,
     ).count()
 
     # A run ends when nothing is left to drain, not when done reaches total: a
@@ -1839,6 +1869,9 @@ def progress(db: Session = Depends(get_db), _: dict = Depends(verify_admin)):
         "justFinished": finished,
         "total": total,
         "done": min(done, total),
+        # Rows that joined this run after it started — the difference between
+        # the bar the run began with and the bar it is walking now.
+        "grew": grew,
         "pending": pending_run,
         "pendingAll": pending,
         "startedAt": run["started_at"],

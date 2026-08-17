@@ -47,6 +47,7 @@ const TXT = {
     title: "AI tekshiruvi ketmoqda",
     count: "{n} tadan {d} tasi tekshirildi",
     nLeft: "{n} ta qoldi", eta: "taxminan {t} qoldi", etaSoon: "tugay deb qoldi",
+    joined: "+{n} ta qo'shildi",
     outside: "oraliqdan tashqarida {n}",
     stop: "To'xtatish", done: "Tekshiruv tugadi",
     doneN: "{n} ta xulosa yozildi", hide: "Yopish",
@@ -71,6 +72,7 @@ const TXT = {
     title: "AI текшируви кетмоқда",
     count: "{n} тадан {d} таси текширилди",
     nLeft: "{n} та қолди", eta: "тахминан {t} қолди", etaSoon: "тугай деб қолди",
+    joined: "+{n} та қўшилди",
     outside: "оралиқдан ташқарида {n}",
     stop: "Тўхтатиш", done: "Текширув тугади",
     doneN: "{n} та хулоса ёзилди", hide: "Ёпиш",
@@ -95,6 +97,7 @@ const TXT = {
     title: "Идёт проверка ИИ",
     count: "проверено {d} из {n}",
     nLeft: "осталось {n}", eta: "осталось примерно {t}", etaSoon: "почти готово",
+    joined: "+{n} добавлено",
     outside: "вне периода: {n}",
     stop: "Остановить", done: "Проверка завершена",
     doneN: "Записано выводов: {n}", hide: "Закрыть",
@@ -119,6 +122,7 @@ const TXT = {
     title: "AI review running",
     count: "{d} of {n} checked",
     nLeft: "{n} left", eta: "about {t} left", etaSoon: "almost done",
+    joined: "+{n} joined",
     outside: "{n} outside this range",
     stop: "Stop", done: "Review finished",
     doneN: "{n} verdicts written", hide: "Dismiss",
@@ -521,6 +525,16 @@ export default function AiProgress({ showIdle = false }) {
           <span>{pct}%</span>
           <span>·</span>
           <span>{fmt(T.nLeft, p.pending.toLocaleString())}</span>
+          {/* Rows that joined AFTER the run began — a leader's day-close, a
+              sheet Refresh, a Retry — and that the drain walks under this same
+              bar. The server re-sizes the total to hold them, so the
+              percentage FALLS when they land; without this line that fall
+              reads as a bug, and before it the bar simply sat at 100% while
+              the remainder counted them in the thousands. */}
+          {p.grew > 0 && (
+            <><span>·</span>
+            <span>{fmt(T.joined, p.grew.toLocaleString())}</span></>
+          )}
           {eta && <><span>·</span><span>{eta}</span></>}
           {/* Queued rows on dates this run does not cover. The bar is scoped to
               the run now, which is the only way its percentage and its ETA can

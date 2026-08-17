@@ -1359,7 +1359,17 @@ def note_auto_run(db: Session, queued: int, by: str) -> bool:
     **Never displaces a live run.** An operator-started re-check owns the strip
     and, through `_active_run_scope`, the drain's confinement: overwriting it
     would silently widen a run somebody deliberately narrowed to one brigadir.
-    A finished record (`drained_at`) is fair game — that run is over.
+    A finished record (`drained_at`) is fair game — that run is over, and the
+    drain marks it so itself the moment it empties the queue (`drain()` →
+    `_release_run`), so "finished" does not depend on a `/progress` poll that
+    only happens while somebody has the page open.
+
+    Rows queued INTO a live run need no record of their own. `/progress`
+    re-derives that run's total as `done + left` on every poll and reports the
+    growth as `grew`, so the bar covers them and says they joined — refusing
+    here costs the strip nothing. Before that held, a refusal meant the rows
+    were worked under a bar sized for somebody else's 13, which read as
+    «13 of 13 · 100%» beside «1,222 left».
 
     Carries no narrowing on purpose, so the drain stays unconfined and works the
     whole queue, oldest debt included.
@@ -1373,8 +1383,10 @@ def note_auto_run(db: Session, queued: int, by: str) -> bool:
         try:
             cur = json.loads(row.value) or {}
         except Exception:
+            # A record that cannot be read protects nothing — `/progress`
+            # deletes it on sight, and until then it must not hold the strip.
             cur = {}
-        if not cur.get("drained_at"):
+        if cur and not cur.get("drained_at"):
             return False
     # The bar measures the whole QUEUE, not just the rows this event added: the
     # run carries no narrowing, so the drain works through everything waiting
@@ -1406,15 +1418,23 @@ def note_auto_run(db: Session, queued: int, by: str) -> bool:
 
 
 def _release_run(db: Session) -> None:
-    """Mark the run's range drained so it stops confining the queue.
+    """Mark the run drained: it stops confining the queue, and it stops owning
+    the strip.
 
     THE stall guard. `/progress` retires a finished run, but only while somebody
     has the page open — and nobody watches a backfill overnight. A record left
     behind by a closed tab would otherwise pin the drain to a range with nothing
     in it forever, which is the entire periodic backfill dying silently.
 
+    Called for a NARROWED run when its slice is exhausted, and for an
+    UN-NARROWED one when the whole queue is — the second matters because
+    `note_auto_run` will not overwrite a record that is not drained, so an
+    un-retired auto run swallowed every later automatic queueing into a bar
+    sized for the first one.
+
     The row SURVIVES: deleting it here would rob `/progress` of the one poll
-    that reports the run finished. It just stops meaning "confine to this".
+    that reports the run finished. It just stops meaning "confine to this" and
+    "this is the run in progress".
     """
     import json
 
@@ -1559,6 +1579,18 @@ def drain(db: Session, limit: int | None = None, beat=None) -> dict:
         reported += sweep_unreported(db)
     except Exception:
         log.exception("leader-ai: report sweep failed")
+    # An UN-NARROWED run — an automatic queueing's, or an operator's over the
+    # whole corpus — has no slice to run out of: it is over when the queue is.
+    # Retire it HERE, in the pass that emptied the queue, not in a `/progress`
+    # poll that only happens while somebody has the page open. Left un-drained,
+    # the record stayed «live» by the one test `note_auto_run` applies, so the
+    # next automatic queueing — a leader's day-close, a sheet Refresh — was
+    # refused and its rows drained under a run they had nothing to do with: a
+    # strip reading «13 of 13 · 100%» beside «1,222 left», started by a leader
+    # who had closed one day. A narrowed run releases at the top of the NEXT
+    # pass instead (above), for the reason given there.
+    if scope is None and q.with_entities(LeaderAiReview.id).first() is None:
+        _release_run(db)
     return {"ok": True, "done": done, "flagged": flagged, "errors": errors,
             "quota": quota, "quotaMsg": quota_msg, "aborted": aborted,
             "reported": reported}

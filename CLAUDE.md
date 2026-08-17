@@ -191,6 +191,16 @@ below).
   thing every progress reader reads, so this buys the bar, the ETA, Stop and
   the detail view for free. It refuses to displace a LIVE run, so a re-check
   narrowed to one brigadir is never silently widened by someone's Refresh.
+  **Two rules keep that refusal from hiding work.** (1) `/progress` re-derives a
+  run's `total` as `done + left` on every poll (the recorded total is only a
+  floor) and ships the growth as `grew` → the strip's «+N joined»; rows that
+  enter a live run from ANY door (day-close, Refresh, Retry) grow its bar
+  instead of parking it at «13 of 13 · 100%» beside «1,222 left». (2) The
+  drain retires an UN-narrowed run itself (`_release_run`) in the pass that
+  empties the queue — «finished» must not depend on a `/progress` poll that
+  only happens while somebody has the page open, because an un-retired 13-row
+  auto run stayed «live» and swallowed the next Refresh's 1,222 rows under a
+  leader's name. Narrowed runs still release at the top of the next pass.
 - **Boot resumes the queue** (`leader_ai.resume_after_boot`, called from
   `register_drain_job`, so both entrypoints get it). Every push to `main`
   deploys and restarts the unit, killing the running drain thread — and nothing
